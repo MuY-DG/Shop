@@ -6,6 +6,8 @@ import org.muybaby.shopserver.auth.dto.PhoneAuthorizeRequest;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenPair;
+import org.muybaby.shopserver.common.error.BusinessException;
+import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.user.entity.AppUser;
 import org.muybaby.shopserver.user.service.AppUserService;
@@ -17,8 +19,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class AppAuthServiceTest {
@@ -95,6 +99,24 @@ class AppAuthServiceTest {
                 .isEqualTo("****");
         assertThat(appAuthService.authorizePhone(principal, new PhoneAuthorizeRequest("two-char-phone-code")).phoneNumberMasked())
                 .isEqualTo("****");
+    }
+
+    @Test
+    void authorizePhoneRejectsDisabledUserBeforeCallingWechat() {
+        WechatMiniProgramClient wechatClient = mock(WechatMiniProgramClient.class);
+        AppUserService appUserService = mock(AppUserService.class);
+        OpaqueTokenService opaqueTokenService = mock(OpaqueTokenService.class);
+        AppAuthService appAuthService = new AppAuthService(wechatClient, appUserService, opaqueTokenService);
+        AuthenticatedPrincipal principal = new AuthenticatedPrincipal(TokenKind.APP, 1L, "openid", List.of(), List.of());
+
+        when(appUserService.requireEnabledUser(1L))
+                .thenThrow(new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+
+        assertThatThrownBy(() -> appAuthService.authorizePhone(principal, new PhoneAuthorizeRequest("phone-code")))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED);
+        verifyNoInteractions(wechatClient);
     }
 
     private AppUser appUser(Long id, String openid, String phoneNumber, Boolean phoneAuthorized) {

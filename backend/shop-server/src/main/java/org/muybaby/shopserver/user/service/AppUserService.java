@@ -86,6 +86,10 @@ public class AppUserService {
         return findEnabledById(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
     }
 
+    public AppUser requireEnabledUser(Long userId) {
+        return findEnabledById(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+    }
+
     private Optional<AppUser> findByOpenid(String openid) {
         return jdbcClient.sql("""
                         SELECT id, openid, unionid, phone_number, phone_country_code, phone_authorized,

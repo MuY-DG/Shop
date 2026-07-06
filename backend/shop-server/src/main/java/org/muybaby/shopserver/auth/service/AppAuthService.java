@@ -58,6 +58,7 @@ public class AppAuthService {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
 
+        appUserService.requireEnabledUser(principal.subjectId());
         WechatPhoneInfo phoneInfo = wechatClient.getPhoneNumber(request.code());
         AppUser user = appUserService.markPhoneAuthorized(principal.subjectId(), phoneInfo);
         return new PhoneAuthorizeResponse(Boolean.TRUE.equals(user.phoneAuthorized()), maskPhone(user.phoneNumber()));

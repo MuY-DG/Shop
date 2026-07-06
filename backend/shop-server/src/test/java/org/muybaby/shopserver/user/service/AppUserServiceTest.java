@@ -69,6 +69,27 @@ class AppUserServiceTest {
         assertThat(phoneAuthorized).isFalse();
     }
 
+    @Test
+    void requireEnabledUserReturnsEnabledUser() {
+        AppUserService appUserService = new AppUserService(jdbcClient);
+        insertAppUser(9103L, "enabled-require-openid", "ENABLED");
+
+        AppUser user = appUserService.requireEnabledUser(9103L);
+
+        assertThat(user.id()).isEqualTo(9103L);
+        assertThat(user.openid()).isEqualTo("enabled-require-openid");
+    }
+
+    @Test
+    void requireEnabledUserRejectsDisabledUser() {
+        AppUserService appUserService = new AppUserService(jdbcClient);
+        insertAppUser(9104L, "disabled-require-openid", "DISABLED");
+
+        assertThatThrownBy(() -> appUserService.requireEnabledUser(9104L))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED));
+    }
+
     private JdbcClient jdbcClientThatCreatesDuplicateBeforeInsert() {
         AtomicBoolean duplicateCreated = new AtomicBoolean(false);
         return (JdbcClient) Proxy.newProxyInstance(
