@@ -64,16 +64,23 @@ public class AppAuthService {
     }
 
     private String maskOpenid(String openid) {
-        if (openid == null || openid.length() <= 8) {
-            return openid;
-        }
-        return openid.substring(0, 4) + "****" + openid.substring(openid.length() - 4);
+        return maskValue(openid, 4, 4);
     }
 
     private String maskPhone(String phoneNumber) {
-        if (phoneNumber == null || phoneNumber.length() <= 7) {
-            return phoneNumber;
+        return maskValue(phoneNumber, 3, 4);
+    }
+
+    private String maskValue(String value, int preferredPrefixLength, int preferredSuffixLength) {
+        if (value == null) {
+            return null;
         }
-        return phoneNumber.substring(0, 3) + "****" + phoneNumber.substring(phoneNumber.length() - 4);
+        if (value.length() == 1) {
+            return "****";
+        }
+        if (value.length() <= preferredPrefixLength + preferredSuffixLength) {
+            return value.substring(0, 1) + "****" + value.substring(value.length() - 1);
+        }
+        return value.substring(0, preferredPrefixLength) + "****" + value.substring(value.length() - preferredSuffixLength);
     }
 }

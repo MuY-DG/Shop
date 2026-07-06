@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.auth;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -22,6 +23,9 @@ class AppAuthControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
     void appLoginExchangesCodeAndIssuesAppToken() throws Exception {
@@ -72,10 +76,11 @@ class AppAuthControllerTest {
                         .content("""
                                 {"code":"test-login-code"}
                                 """))
+                .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        return response.substring(response.indexOf("app_"), response.indexOf("\",\"refreshToken"));
+        return objectMapper.readTree(response).path("data").path("token").asText();
     }
 
     private String adminLoginAndExtractToken() throws Exception {
@@ -84,9 +89,10 @@ class AppAuthControllerTest {
                         .content("""
                                 {"userName":"Super","password":"123456"}
                                 """))
+                .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        return response.substring(response.indexOf("adm_"), response.indexOf("\",\"refreshToken"));
+        return objectMapper.readTree(response).path("data").path("token").asText();
     }
 }

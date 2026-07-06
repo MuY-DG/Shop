@@ -6,6 +6,7 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.user.entity.AppUser;
 import org.muybaby.shopserver.wechat.WechatCodeSession;
 import org.muybaby.shopserver.wechat.WechatPhoneInfo;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
@@ -41,16 +42,20 @@ public class AppUserService {
         }
 
         long userId = IdWorker.getId();
-        jdbcClient.sql("""
-                        INSERT INTO app_user (id, openid, unionid, status, last_login_at)
-                        VALUES (:id, :openid, :unionid, :status, :lastLoginAt)
-                        """)
-                .param("id", userId)
-                .param("openid", session.openid())
-                .param("unionid", session.unionid())
-                .param("status", "ENABLED")
-                .param("lastLoginAt", now)
-                .update();
+        try {
+            jdbcClient.sql("""
+                            INSERT INTO app_user (id, openid, unionid, status, last_login_at)
+                            VALUES (:id, :openid, :unionid, :status, :lastLoginAt)
+                            """)
+                    .param("id", userId)
+                    .param("openid", session.openid())
+                    .param("unionid", session.unionid())
+                    .param("status", "ENABLED")
+                    .param("lastLoginAt", now)
+                    .update();
+        } catch (DuplicateKeyException ex) {
+            return findByOpenid(session.openid()).orElseThrow(() -> ex);
+        }
         return findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
     }
 
