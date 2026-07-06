@@ -13,3 +13,8 @@ spring:
 logging:
   level:
     org.muybaby.shopserver: debug
+
+shop:
+  wechat:
+    mini-program:
+      mock-enabled: true

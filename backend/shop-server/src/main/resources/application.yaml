@@ -32,3 +32,8 @@ shop:
     admin-refresh-ttl: 7d
     app-access-ttl: 7d
     app-refresh-ttl: 30d
+  wechat:
+    mini-program:
+      app-id: ${WECHAT_MINI_PROGRAM_APP_ID:}
+      app-secret: ${WECHAT_MINI_PROGRAM_APP_SECRET:}
+      mock-enabled: false

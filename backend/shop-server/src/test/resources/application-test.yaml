@@ -19,3 +19,6 @@ shop:
     admin-refresh-ttl: 7d
     app-access-ttl: 7d
     app-refresh-ttl: 30d
+  wechat:
+    mini-program:
+      mock-enabled: true
