@@ -2,8 +2,12 @@ package org.muybaby.shopserver.common.error;
 
 public enum ErrorCode {
     AUTHENTICATION_REQUIRED(100001, "Authentication required"),
+    INVALID_CREDENTIALS(100002, "Invalid username or password"),
     PERMISSION_DENIED(100003, "Permission denied"),
+    TOKEN_EXPIRED(100004, "Token expired"),
     VALIDATION_FAILED(100400, "Validation failed"),
+    WECHAT_LOGIN_FAILED(100101, "WeChat login failed"),
+    WECHAT_PHONE_FAILED(100102, "WeChat phone authorization failed"),
     PRODUCT_UNAVAILABLE(200001, "Product unavailable"),
     SKU_UNAVAILABLE(200002, "SKU unavailable"),
     STOCK_SHORTAGE(200100, "Stock shortage"),

@@ -7,10 +7,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.hamcrest.Matchers.is;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(properties = "spring.security.user.password=test-password")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class SecurityConfigTest {
@@ -27,7 +30,18 @@ class SecurityConfigTest {
     @Test
     void adminApisRequireAuthentication() throws Exception {
         mockMvc.perform(get("/admin/probe"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code", is(100001)))
+                .andExpect(jsonPath("$.msg", is("Authentication required")));
+    }
+
+    @Test
+    void adminApisDoNotAcceptBasicAuthentication() throws Exception {
+        mockMvc.perform(get("/admin/probe")
+                        .with(httpBasic("user", "test-password")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code", is(100001)))
+                .andExpect(jsonPath("$.msg", is("Authentication required")));
     }
 
     @Test
