@@ -18,6 +18,8 @@ import java.util.Optional;
 @Service
 public class AppUserService {
 
+    private static final String ENABLED_STATUS = "ENABLED";
+
     private final JdbcClient jdbcClient;
 
     public AppUserService(JdbcClient jdbcClient) {
@@ -28,17 +30,19 @@ public class AppUserService {
         Optional<AppUser> existingUser = findByOpenid(session.openid());
         LocalDateTime now = LocalDateTime.now();
         if (existingUser.isPresent()) {
+            AppUser user = requireEnabled(existingUser.get());
             jdbcClient.sql("""
                             UPDATE app_user
                             SET unionid = :unionid, last_login_at = :lastLoginAt, updated_at = :updatedAt
-                            WHERE openid = :openid
+                            WHERE id = :id AND status = :status
                             """)
                     .param("unionid", session.unionid())
                     .param("lastLoginAt", now)
                     .param("updatedAt", now)
-                    .param("openid", session.openid())
+                    .param("id", user.id())
+                    .param("status", ENABLED_STATUS)
                     .update();
-            return findByOpenid(session.openid()).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+            return findEnabledById(user.id()).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
         }
 
         long userId = IdWorker.getId();
@@ -50,31 +54,36 @@ public class AppUserService {
                     .param("id", userId)
                     .param("openid", session.openid())
                     .param("unionid", session.unionid())
-                    .param("status", "ENABLED")
+                    .param("status", ENABLED_STATUS)
                     .param("lastLoginAt", now)
                     .update();
         } catch (DuplicateKeyException ex) {
-            return findByOpenid(session.openid()).orElseThrow(() -> ex);
+            AppUser existingRaceUser = findByOpenid(session.openid()).orElseThrow(() -> ex);
+            return requireEnabled(existingRaceUser);
         }
-        return findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+        return findEnabledById(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
     }
 
     public AppUser markPhoneAuthorized(Long userId, WechatPhoneInfo phoneInfo) {
-        jdbcClient.sql("""
+        int updatedRows = jdbcClient.sql("""
                         UPDATE app_user
                         SET phone_number = :phoneNumber,
                             phone_country_code = :phoneCountryCode,
                             phone_authorized = TRUE,
                             updated_at = :updatedAt
-                        WHERE id = :id
+                        WHERE id = :id AND status = :status
                         """)
                 .param("phoneNumber", phoneInfo.phoneNumber())
                 .param("phoneCountryCode", phoneInfo.countryCode())
                 .param("updatedAt", LocalDateTime.now())
                 .param("id", userId)
+                .param("status", ENABLED_STATUS)
                 .update();
 
-        return findById(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+        if (updatedRows != 1) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        return findEnabledById(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
     }
 
     private Optional<AppUser> findByOpenid(String openid) {
@@ -99,6 +108,21 @@ public class AppUserService {
                 .param("id", userId)
                 .query(this::mapRow)
                 .optional();
+    }
+
+    private Optional<AppUser> findEnabledById(Long userId) {
+        return findById(userId).filter(this::isEnabled);
+    }
+
+    private AppUser requireEnabled(AppUser user) {
+        if (!isEnabled(user)) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        return user;
+    }
+
+    private boolean isEnabled(AppUser user) {
+        return ENABLED_STATUS.equals(user.status());
     }
 
     private AppUser mapRow(ResultSet rs, int rowNum) throws SQLException {

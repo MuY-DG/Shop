@@ -37,7 +37,9 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[0].component").value("/index/index"))
                 .andExpect(jsonPath("$.data[1].path").value("/system"))
                 .andExpect(jsonPath("$.data[1].children[0].path").value("user"))
-                .andExpect(jsonPath("$.data[1].children[0].meta.authList[*].authMark", hasItem("system:user:create")));
+                .andExpect(jsonPath("$.data[1].children[0].meta.authList[*].authMark", hasItem("system:user:create")))
+                .andExpect(jsonPath("$.data[1].children[2].path").value("menu"))
+                .andExpect(jsonPath("$.data[1].children[2].meta.authList[*].authMark", hasItem("add")));
     }
 
     private String loginAndExtractToken() throws Exception {

@@ -14,7 +14,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException ex) {
         ErrorCode errorCode = ex.errorCode();
         return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
+                .status(statusFor(errorCode))
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
     }
 
@@ -24,5 +24,13 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
+    }
+
+    private HttpStatus statusFor(ErrorCode errorCode) {
+        return switch (errorCode) {
+            case AUTHENTICATION_REQUIRED -> HttpStatus.UNAUTHORIZED;
+            case PERMISSION_DENIED -> HttpStatus.FORBIDDEN;
+            default -> HttpStatus.BAD_REQUEST;
+        };
     }
 }

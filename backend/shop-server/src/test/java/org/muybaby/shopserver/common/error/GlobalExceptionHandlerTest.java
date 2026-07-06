@@ -21,4 +21,18 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().code()).isEqualTo(200100);
         assertThat(response.getBody().msg()).isEqualTo("Stock shortage");
     }
+
+    @Test
+    void authenticationRequiredBusinessExceptionReturnsUnauthorized() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleBusinessException(
+                new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED)
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(401);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(100001);
+        assertThat(response.getBody().msg()).isEqualTo("Authentication required");
+    }
 }
