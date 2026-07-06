@@ -17,4 +17,4 @@ logging:
 shop:
   wechat:
     mini-program:
-      mock-enabled: true
+      mock-enabled: false

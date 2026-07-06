@@ -1,6 +1,8 @@
 spring:
   application:
     name: shop-server
+  config:
+    import: optional:file:.env.local[.properties]
   jackson:
     default-property-inclusion: non_null
   flyway:

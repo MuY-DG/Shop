@@ -38,6 +38,36 @@ Expected result:
 BUILD SUCCESS
 ```
 
+## Local WeChat Mini Program Credentials
+
+The backend imports an optional local properties file from `backend/shop-server/.env.local`. This file is ignored by Git and should hold real mini program credentials for local integration checks:
+
+```properties
+WECHAT_MINI_PROGRAM_APP_ID=your-app-id
+WECHAT_MINI_PROGRAM_APP_SECRET=your-app-secret
+```
+
+The `dev` profile uses the real WeChat client. The `test` profile keeps the mock WeChat client for local smoke checks and automated tests.
+
+### WeChat Integration Notes
+
+Mini program login and phone authorization use two different WeChat exchanges:
+
+- Login: `wx.login()` returns a code, and the backend exchanges it through `jscode2session`.
+- Phone authorization: `getPhoneNumber` returns a phone code, and the backend obtains a stable access token before calling `getuserphonenumber`.
+
+WeChat can return JSON with `Content-Type: text/plain`, so the backend reads WeChat responses as strings before parsing JSON. WeChat's `stable_token` endpoint also rejects chunked request bodies with `HTTP 412 PRECONDITION_FAILED` and an empty response body. The backend serializes WeChat POST request bodies to JSON strings before sending them so the request has a concrete content length.
+
+Relevant safe diagnostic logs:
+
+```text
+WeChat code2Session failed: errcode=40029, errmsg=invalid code
+WeChat stableToken request failed: status=412 PRECONDITION_FAILED, empty response body
+WeChat getPhoneNumber failed: errcode=40029, errmsg=invalid code
+```
+
+These logs intentionally do not print `WECHAT_MINI_PROGRAM_APP_SECRET`, access tokens, login codes, or phone codes. If `stableToken` returns `412 PRECONDITION_FAILED`, verify the backend is running the current code that sends non-chunked JSON request bodies. If `getPhoneNumber` returns `40029 invalid code`, retry with a fresh one-time phone authorization code from WeChat DevTools or a real device.
+
 ## Authentication Smoke Checks
 
 Backend test profile uses an in-memory token store and a mock WeChat mini program client. Use this only for local smoke checks, not on a shared or exposed environment. The smoke command opts into Maven's test classpath so H2 and `src/test/resources/application-test.yaml` are available at runtime.
