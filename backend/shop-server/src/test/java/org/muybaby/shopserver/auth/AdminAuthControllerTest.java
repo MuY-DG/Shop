@@ -1,10 +1,12 @@
 package org.muybaby.shopserver.auth;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -22,6 +24,12 @@ class AdminAuthControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcClient jdbcClient;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Test
     void loginReturnsAdminTokenPair() throws Exception {
@@ -43,6 +51,30 @@ class AdminAuthControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"userName":"Super","password":"bad"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100002));
+    }
+
+    @Test
+    void loginRejectsUnknownUsernameWithInvalidCredentialsEnvelope() throws Exception {
+        mockMvc.perform(post("/admin/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"userName":"Missing","password":"123456"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100002));
+    }
+
+    @Test
+    void loginRejectsDisabledUsernameWithInvalidCredentialsEnvelope() throws Exception {
+        insertDisabledAdminUser();
+
+        mockMvc.perform(post("/admin/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"userName":"Disabled","password":"123456"}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100002));
@@ -75,9 +107,31 @@ class AdminAuthControllerTest {
                         .content("""
                                 {"userName":"Super","password":"123456"}
                                 """))
+                .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        return response.substring(response.indexOf("adm_"), response.indexOf("\",\"refreshToken"));
+        return objectMapper.readTree(response).path("data").path("token").asText();
+    }
+
+    private void insertDisabledAdminUser() {
+        jdbcClient.sql("delete from admin_user where id = :id")
+                .param("id", 99L)
+                .update();
+        String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = :userId")
+                .param("userId", 1L)
+                .query(String.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user (id, username, password_hash, display_name, email, status)
+                        values (:id, :username, :passwordHash, :displayName, :email, :status)
+                        """)
+                .param("id", 99L)
+                .param("username", "Disabled")
+                .param("passwordHash", passwordHash)
+                .param("displayName", "Disabled Admin")
+                .param("email", "disabled@shop.local")
+                .param("status", "DISABLED")
+                .update();
     }
 }

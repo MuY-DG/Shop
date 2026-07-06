@@ -17,9 +17,12 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 public class AdminAuthService {
+
+    private static final String DUMMY_PASSWORD_HASH = "$2a$10$dSCU.t56l8Z7MPya89bXnuiMIjScayWL.KeTgc92TqlfLu.woUoYm";
 
     private final AdminRbacService adminRbacService;
     private final PasswordEncoder passwordEncoder;
@@ -36,10 +39,14 @@ public class AdminAuthService {
     }
 
     public LoginTokenResponse login(AdminLoginRequest request) {
-        AdminUser user = adminRbacService.findEnabledUserByUsername(request.userName())
-                .filter(adminUser -> passwordEncoder.matches(request.password(), adminUser.passwordHash()))
-                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS));
+        Optional<AdminUser> userResult = adminRbacService.findEnabledUserByUsername(request.userName());
+        String passwordHash = userResult.map(AdminUser::passwordHash).orElse(DUMMY_PASSWORD_HASH);
+        boolean passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
+        if (userResult.isEmpty() || !passwordMatches) {
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
+        }
 
+        AdminUser user = userResult.get();
         List<String> roles = adminRbacService.roleCodesByUserId(user.id());
         List<String> permissions = adminRbacService.permissionMarksByUserId(user.id());
         TokenSession session = TokenSession.admin(user.id(), user.username(), roles, permissions, Instant.now());
