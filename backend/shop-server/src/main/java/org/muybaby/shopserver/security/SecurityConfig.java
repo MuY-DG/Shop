@@ -42,7 +42,7 @@ public class SecurityConfig {
                                 "/wechat/**"
                         ).permitAll()
                         .requestMatchers("/admin/**", "/app/**").authenticated()
-                        .anyRequest().permitAll())
+                        .anyRequest().denyAll())
                 .build();
     }
 

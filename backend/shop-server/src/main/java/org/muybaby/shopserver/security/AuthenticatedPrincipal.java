@@ -11,4 +11,8 @@ public record AuthenticatedPrincipal(
         List<String> roles,
         List<String> permissions
 ) {
+    public AuthenticatedPrincipal {
+        roles = roles == null ? List.of() : List.copyOf(roles);
+        permissions = permissions == null ? List.of() : List.copyOf(permissions);
+    }
 }
