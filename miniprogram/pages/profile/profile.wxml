@@ -1,5 +1,5 @@
 <view class="profile-page">
   <view class="profile-row">{{loginStatus}}</view>
   <view class="profile-row">{{phoneStatus}}</view>
-  <button open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber">Authorize Phone</button>
+  <button open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber" disabled="{{isLoggingIn || !isLoggedIn || phoneAuthorizing}}">Authorize Phone</button>
 </view>

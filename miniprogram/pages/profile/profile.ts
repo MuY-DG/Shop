@@ -1,5 +1,4 @@
-import { authorizePhone, silentLogin } from "../../services/auth";
-import type { AppLoginResponse, PhoneAuthorizeResponse } from "../../types/api";
+import { authorizePhone, clearAppTokens, silentLogin } from "../../services/auth";
 
 interface GetPhoneNumberEvent {
   detail?: {
@@ -10,20 +9,44 @@ interface GetPhoneNumberEvent {
 Page({
   data: {
     loginStatus: "Not logged in",
-    phoneStatus: "Phone not authorized"
+    phoneStatus: "Phone not authorized",
+    isLoggingIn: false,
+    isLoggedIn: false,
+    phoneAuthorizing: false
   },
   async onShow() {
+    this.setData({
+      isLoggingIn: true
+    });
+
     try {
       const response = await silentLogin();
-      this.syncAuthStatus(response);
+      this.setData({
+        loginStatus: `Logged in as ${response.user.openidMasked}`,
+        phoneStatus: response.user.phoneAuthorized ? "Phone authorized" : "Phone not authorized",
+        isLoggedIn: true
+      });
     } catch (error) {
+      clearAppTokens();
       this.setData({
         loginStatus: "Not logged in",
-        phoneStatus: "Phone not authorized"
+        phoneStatus: "Phone not authorized",
+        isLoggedIn: false
+      });
+    } finally {
+      this.setData({
+        isLoggingIn: false
       });
     }
   },
   async onGetPhoneNumber(event: GetPhoneNumberEvent) {
+    if (!this.data.isLoggedIn) {
+      this.setData({
+        phoneStatus: "Not logged in"
+      });
+      return;
+    }
+
     const code = event.detail?.code;
     if (!code) {
       this.setData({
@@ -31,6 +54,10 @@ Page({
       });
       return;
     }
+
+    this.setData({
+      phoneAuthorizing: true
+    });
 
     try {
       const response = await authorizePhone(code);
@@ -43,21 +70,10 @@ Page({
       this.setData({
         phoneStatus: "Phone not authorized"
       });
-    }
-  },
-  syncAuthStatus(response: AppLoginResponse | PhoneAuthorizeResponse) {
-    if ("token" in response) {
+    } finally {
       this.setData({
-        loginStatus: `Logged in as ${response.user.openidMasked}`,
-        phoneStatus: response.user.phoneAuthorized ? "Phone authorized" : "Phone not authorized"
+        phoneAuthorizing: false
       });
-      return;
     }
-
-    this.setData({
-      phoneStatus: response.phoneAuthorized
-        ? `Phone authorized (${response.phoneNumberMasked})`
-        : "Phone not authorized"
-    });
   }
 });

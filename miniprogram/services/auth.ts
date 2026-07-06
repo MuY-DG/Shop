@@ -4,6 +4,42 @@ import { request } from "../utils/request";
 const APP_TOKEN_KEY = "shop_app_token";
 const APP_REFRESH_TOKEN_KEY = "shop_app_refresh_token";
 
+function getAppTokenState() {
+  return getApp<{
+    globalData: {
+      apiBaseUrl: string;
+      token: string;
+    };
+  }>();
+}
+
+function setAppToken(token: string): void {
+  getAppTokenState().globalData.token = token;
+}
+
+function persistAppTokens(token: string, refreshToken: string): void {
+  try {
+    wx.setStorageSync(APP_TOKEN_KEY, token);
+    wx.setStorageSync(APP_REFRESH_TOKEN_KEY, refreshToken);
+    setAppToken(token);
+  } catch (error) {
+    clearAppTokens();
+    throw new Error("Failed to persist app tokens");
+  }
+}
+
+export function clearAppTokens(): void {
+  try {
+    wx.removeStorageSync(APP_TOKEN_KEY);
+  } catch (error) {}
+
+  try {
+    wx.removeStorageSync(APP_REFRESH_TOKEN_KEY);
+  } catch (error) {}
+
+  setAppToken("");
+}
+
 function wxLogin(): Promise<string> {
   return new Promise((resolve, reject) => {
     wx.login({
@@ -22,8 +58,12 @@ function wxLogin(): Promise<string> {
 }
 
 export function restoreStoredToken(): string {
-  const token = wx.getStorageSync(APP_TOKEN_KEY);
-  return typeof token === "string" ? token : "";
+  try {
+    const token = wx.getStorageSync(APP_TOKEN_KEY);
+    return typeof token === "string" ? token : "";
+  } catch (error) {
+    return "";
+  }
 }
 
 export async function silentLogin(): Promise<AppLoginResponse> {
@@ -35,16 +75,7 @@ export async function silentLogin(): Promise<AppLoginResponse> {
     data: { code }
   });
 
-  wx.setStorageSync(APP_TOKEN_KEY, response.token);
-  wx.setStorageSync(APP_REFRESH_TOKEN_KEY, response.refreshToken);
-
-  const app = getApp<{
-    globalData: {
-      apiBaseUrl: string;
-      token: string;
-    };
-  }>();
-  app.globalData.token = response.token;
+  persistAppTokens(response.token, response.refreshToken);
 
   return response;
 }
