@@ -1,0 +1,42 @@
+# macOS
+.DS_Store
+
+# Codex / Superpowers local brainstorming artifacts
+.superpowers/
+
+# Logs
+*.log
+logs/
+
+# Environment and secrets
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.jks
+
+# Java / Spring Boot
+target/
+build/
+.gradle/
+out/
+*.class
+
+# Node / Vue / Mini Program
+node_modules/
+dist/
+dist-ssr/
+.vite/
+coverage/
+miniprogram_npm/
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Temporary files
+tmp/
+temp/
+.cache/
