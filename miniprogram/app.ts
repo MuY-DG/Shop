@@ -1,7 +1,9 @@
+import { restoreStoredToken } from "./services/auth";
+
 App<IAppOption>({
   globalData: {
     apiBaseUrl: "http://localhost:8080",
-    token: ""
+    token: restoreStoredToken()
   },
   onLaunch() {
     wx.getSystemInfo({

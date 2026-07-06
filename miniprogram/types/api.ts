@@ -4,6 +4,24 @@ export interface ApiResponse<T> {
   data: T;
 }
 
+export interface AppUserSummary {
+  userId: number;
+  openidMasked: string;
+  phoneAuthorized: boolean;
+}
+
+export interface AppLoginResponse {
+  token: string;
+  refreshToken: string;
+  expiresIn: number;
+  user: AppUserSummary;
+}
+
+export interface PhoneAuthorizeResponse {
+  phoneAuthorized: boolean;
+  phoneNumberMasked: string;
+}
+
 export type RequestBody = string | WechatMiniprogram.IAnyObject | ArrayBuffer;
 
 export interface RequestOptions<TBody extends RequestBody = WechatMiniprogram.IAnyObject> {
