@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.admin.rbac;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -22,6 +23,9 @@ class AdminMenuControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Test
     void menuApiReturnsArtDesignProRouteTreeWithAuthList() throws Exception {
         String token = loginAndExtractToken();
@@ -42,9 +46,10 @@ class AdminMenuControllerTest {
                         .content("""
                                 {"userName":"Super","password":"123456"}
                                 """))
+                .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        return response.substring(response.indexOf("adm_"), response.indexOf("\",\"refreshToken"));
+        return objectMapper.readTree(response).path("data").path("token").asText();
     }
 }

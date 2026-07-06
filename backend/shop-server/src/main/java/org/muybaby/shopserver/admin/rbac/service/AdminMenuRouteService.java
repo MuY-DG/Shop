@@ -33,9 +33,9 @@ public class AdminMenuRouteService {
         for (MenuRow menuRow : menuRows) {
             MutableRoute route = routesById.get(menuRow.id());
             MutableRoute parent = routesById.get(menuRow.parentId());
-            if (parent == null) {
+            if (menuRow.parentId() == null) {
                 roots.add(route);
-            } else {
+            } else if (parent != null) {
                 parent.children().add(route);
             }
         }
@@ -52,7 +52,9 @@ public class AdminMenuRouteService {
                         join admin_role_menu rm on rm.menu_id = m.id
                         join admin_user_role ur on ur.role_id = rm.role_id
                         join admin_role r on r.id = ur.role_id
+                        join admin_user u on u.id = ur.user_id
                         where ur.user_id = :userId
+                          and u.status = 'ENABLED'
                           and r.enabled = true
                           and m.enabled = true
                           and m.visible = true
@@ -70,7 +72,12 @@ public class AdminMenuRouteService {
                         join admin_menu_permission mp on mp.permission_id = p.id
                         join admin_role_permission rp on rp.permission_id = p.id
                         join admin_user_role ur on ur.role_id = rp.role_id
-                        where ur.user_id = :userId and mp.menu_id = :menuId
+                        join admin_role r on r.id = ur.role_id
+                        join admin_user u on u.id = ur.user_id
+                        where ur.user_id = :userId
+                          and mp.menu_id = :menuId
+                          and u.status = 'ENABLED'
+                          and r.enabled = true
                         order by p.id
                         """)
                 .param("userId", userId)

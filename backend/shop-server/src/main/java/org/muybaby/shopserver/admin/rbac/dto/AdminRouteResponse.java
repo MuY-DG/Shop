@@ -10,4 +10,7 @@ public record AdminRouteResponse(
         AdminRouteMetaResponse meta,
         List<AdminRouteResponse> children
 ) {
+    public AdminRouteResponse {
+        children = children == null ? List.of() : List.copyOf(children);
+    }
 }

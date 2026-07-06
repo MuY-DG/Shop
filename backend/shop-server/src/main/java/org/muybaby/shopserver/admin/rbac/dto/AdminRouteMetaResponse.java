@@ -8,4 +8,7 @@ public record AdminRouteMetaResponse(
         boolean keepAlive,
         List<AdminRouteAuthResponse> authList
 ) {
+    public AdminRouteMetaResponse {
+        authList = authList == null ? List.of() : List.copyOf(authList);
+    }
 }
