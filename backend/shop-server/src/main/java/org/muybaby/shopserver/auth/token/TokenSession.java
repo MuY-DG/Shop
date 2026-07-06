@@ -13,8 +13,13 @@ public record TokenSession(
         List<String> permissions,
         Instant issuedAt
 ) {
+    public TokenSession {
+        roles = roles == null ? List.of() : List.copyOf(roles);
+        permissions = permissions == null ? List.of() : List.copyOf(permissions);
+    }
+
     public static TokenSession admin(Long userId, String username, List<String> roles, List<String> permissions, Instant issuedAt) {
-        return new TokenSession(UUID.randomUUID().toString(), TokenKind.ADMIN, userId, username, List.copyOf(roles), List.copyOf(permissions), issuedAt);
+        return new TokenSession(UUID.randomUUID().toString(), TokenKind.ADMIN, userId, username, roles, permissions, issuedAt);
     }
 
     public static TokenSession app(Long userId, String openidMasked, Instant issuedAt) {

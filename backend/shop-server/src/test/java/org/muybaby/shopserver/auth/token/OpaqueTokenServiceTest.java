@@ -6,9 +6,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OpaqueTokenServiceTest {
 
@@ -20,7 +23,7 @@ class OpaqueTokenServiceTest {
             Duration.ofDays(7),
             Duration.ofDays(30)
     );
-    private final OpaqueTokenService tokenService = new OpaqueTokenService(tokenStore, properties, clock);
+    private final OpaqueTokenService tokenService = new OpaqueTokenService(tokenStore, properties);
 
     @Test
     void issueAdminTokensWithAdminPrefixesAndLookupSessionByAccessToken() {
@@ -44,5 +47,41 @@ class OpaqueTokenServiceTest {
         assertThat(pair.refreshToken()).startsWith("apr_");
         assertThat(tokenService.lookupAccessToken(pair.accessToken(), TokenKind.ADMIN)).isEmpty();
         assertThat(tokenService.lookupAccessToken(pair.accessToken(), TokenKind.APP)).contains(session);
+    }
+
+    @Test
+    void rejectMismatchedKindSessionWithoutPersistingTokens() {
+        RecordingTokenStore recordingStore = new RecordingTokenStore();
+        OpaqueTokenService service = new OpaqueTokenService(recordingStore, properties);
+        TokenSession appSession = TokenSession.app(9L, "openid-user", clock.instant());
+
+        assertThatThrownBy(() -> service.issue(TokenKind.ADMIN, appSession))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Token session kind does not match requested token kind");
+
+        assertThat(recordingStore.savedKeys()).isEmpty();
+    }
+
+    private static class RecordingTokenStore implements TokenStore {
+
+        private final List<String> savedKeys = new ArrayList<>();
+
+        @Override
+        public void save(String key, TokenSession session, Duration ttl) {
+            savedKeys.add(key);
+        }
+
+        @Override
+        public Optional<TokenSession> find(String key) {
+            return Optional.empty();
+        }
+
+        @Override
+        public void delete(String key) {
+        }
+
+        List<String> savedKeys() {
+            return savedKeys;
+        }
     }
 }

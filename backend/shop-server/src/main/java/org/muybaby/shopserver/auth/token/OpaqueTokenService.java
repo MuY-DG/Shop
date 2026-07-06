@@ -6,7 +6,6 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
@@ -19,21 +18,18 @@ public class OpaqueTokenService {
 
     private final TokenStore tokenStore;
     private final TokenProperties properties;
-    private final Clock clock;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Autowired
     public OpaqueTokenService(TokenStore tokenStore, TokenProperties properties) {
-        this(tokenStore, properties, Clock.systemUTC());
-    }
-
-    public OpaqueTokenService(TokenStore tokenStore, TokenProperties properties, Clock clock) {
         this.tokenStore = tokenStore;
         this.properties = properties;
-        this.clock = clock;
     }
 
     public TokenPair issue(TokenKind kind, TokenSession session) {
+        if (session.kind() != kind) {
+            throw new IllegalArgumentException("Token session kind does not match requested token kind");
+        }
         Duration accessTtl = accessTtl(kind);
         Duration refreshTtl = refreshTtl(kind);
         String accessToken = kind.accessPrefix() + randomTokenBody();
