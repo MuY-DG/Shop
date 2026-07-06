@@ -22,7 +22,8 @@ function wxLogin(): Promise<string> {
 }
 
 export function restoreStoredToken(): string {
-  return wx.getStorageSync(APP_TOKEN_KEY) || "";
+  const token = wx.getStorageSync(APP_TOKEN_KEY);
+  return typeof token === "string" ? token : "";
 }
 
 export async function silentLogin(): Promise<AppLoginResponse> {

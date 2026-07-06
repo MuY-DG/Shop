@@ -48,7 +48,7 @@ Page({
   syncAuthStatus(response: AppLoginResponse | PhoneAuthorizeResponse) {
     if ("token" in response) {
       this.setData({
-        loginStatus: `Logged in as user ${response.user.userId}`,
+        loginStatus: `Logged in as ${response.user.openidMasked}`,
         phoneStatus: response.user.phoneAuthorized ? "Phone authorized" : "Phone not authorized"
       });
       return;
