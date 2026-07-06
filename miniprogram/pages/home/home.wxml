@@ -1,0 +1,12 @@
+<view class="page home-page">
+  <view class="hero">
+    <view class="eyebrow">Hotpot Shop</view>
+    <view class="title">火锅底料商城</view>
+    <view class="subtitle">精选牛油、清油、番茄和菌汤锅底</view>
+  </view>
+
+  <view class="panel">
+    <view class="section-title">系统状态</view>
+    <view class="muted">{{healthText}}</view>
+  </view>
+</view>

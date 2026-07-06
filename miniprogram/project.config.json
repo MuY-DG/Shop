@@ -1,0 +1,20 @@
+{
+  "description": "Hotpot Shop Mini Program",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "useCompilerPlugins": ["typescript"],
+    "postcss": true,
+    "minified": true,
+    "compileHotReLoad": false
+  },
+  "compileType": "miniprogram",
+  "libVersion": "latest",
+  "appid": "touristappid",
+  "projectname": "hotpot-shop-miniprogram",
+  "condition": {}
+}

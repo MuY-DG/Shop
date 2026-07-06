@@ -1,0 +1,5 @@
+<view class="page">
+  <view class="section-title">订单详情</view>
+  <view class="muted">支付单号：{{transactionId}}</view>
+  <view class="muted">商户单号：{{merchantTradeNo}}</view>
+</view>

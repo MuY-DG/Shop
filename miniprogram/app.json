@@ -1,0 +1,29 @@
+{
+  "pages": [
+    "pages/home/home",
+    "pages/profile/profile",
+    "pages/order/detail/detail"
+  ],
+  "window": {
+    "navigationBarTitleText": "火锅底料商城",
+    "navigationBarBackgroundColor": "#b3261e",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f7f3ee"
+  },
+  "tabBar": {
+    "color": "#6b5f58",
+    "selectedColor": "#b3261e",
+    "backgroundColor": "#ffffff",
+    "list": [
+      {
+        "pagePath": "pages/home/home",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/profile/profile",
+        "text": "我的"
+      }
+    ]
+  },
+  "usingComponents": {}
+}

@@ -1,0 +1,29 @@
+.hero {
+  padding: 48rpx 32rpx;
+  border-radius: 16rpx;
+  background: #b3261e;
+  color: #ffffff;
+}
+
+.eyebrow {
+  font-size: 24rpx;
+  opacity: 0.82;
+  margin-bottom: 12rpx;
+}
+
+.title {
+  font-size: 48rpx;
+  font-weight: 800;
+}
+
+.subtitle {
+  margin-top: 16rpx;
+  font-size: 28rpx;
+}
+
+.panel {
+  margin-top: 28rpx;
+  padding: 28rpx;
+  border-radius: 12rpx;
+  background: #ffffff;
+}
