@@ -23,3 +23,7 @@ Shop/
 ## Development
 
 See [Development Setup](docs/dev-setup.md).
+
+## Smoke Checks
+
+See [Smoke Checks](docs/smoke-checks.md).
