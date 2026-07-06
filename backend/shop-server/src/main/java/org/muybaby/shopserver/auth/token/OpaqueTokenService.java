@@ -1,0 +1,80 @@
+package org.muybaby.shopserver.auth.token;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.Base64;
+import java.util.HexFormat;
+import java.util.Optional;
+
+@Service
+public class OpaqueTokenService {
+
+    private static final String KEY_PREFIX = "shop:auth:";
+
+    private final TokenStore tokenStore;
+    private final TokenProperties properties;
+    private final Clock clock;
+    private final SecureRandom secureRandom = new SecureRandom();
+
+    @Autowired
+    public OpaqueTokenService(TokenStore tokenStore, TokenProperties properties) {
+        this(tokenStore, properties, Clock.systemUTC());
+    }
+
+    public OpaqueTokenService(TokenStore tokenStore, TokenProperties properties, Clock clock) {
+        this.tokenStore = tokenStore;
+        this.properties = properties;
+        this.clock = clock;
+    }
+
+    public TokenPair issue(TokenKind kind, TokenSession session) {
+        Duration accessTtl = accessTtl(kind);
+        Duration refreshTtl = refreshTtl(kind);
+        String accessToken = kind.accessPrefix() + randomTokenBody();
+        String refreshToken = kind.refreshPrefix() + randomTokenBody();
+        tokenStore.save(key(kind, "access", accessToken), session, accessTtl);
+        tokenStore.save(key(kind, "refresh", refreshToken), session, refreshTtl);
+        return new TokenPair(accessToken, refreshToken, accessTtl.toSeconds());
+    }
+
+    public Optional<TokenSession> lookupAccessToken(String token, TokenKind requiredKind) {
+        if (token == null || !token.startsWith(requiredKind.accessPrefix())) {
+            return Optional.empty();
+        }
+        return tokenStore.find(key(requiredKind, "access", token))
+                .filter(session -> session.kind() == requiredKind);
+    }
+
+    private Duration accessTtl(TokenKind kind) {
+        return kind == TokenKind.ADMIN ? properties.adminAccessTtl() : properties.appAccessTtl();
+    }
+
+    private Duration refreshTtl(TokenKind kind) {
+        return kind == TokenKind.ADMIN ? properties.adminRefreshTtl() : properties.appRefreshTtl();
+    }
+
+    private String key(TokenKind kind, String tokenType, String token) {
+        return KEY_PREFIX + kind.namespace() + ":" + tokenType + ":" + sha256(token);
+    }
+
+    private String randomTokenBody() {
+        byte[] bytes = new byte[32];
+        secureRandom.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private String sha256(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(digest.digest(token.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception ex) {
+            throw new IllegalStateException("SHA-256 not available", ex);
+        }
+    }
+}

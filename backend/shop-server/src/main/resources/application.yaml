@@ -26,3 +26,9 @@ shop:
   api:
     success-code: 200
     success-message: success
+  auth:
+    token-store: redis
+    admin-access-ttl: 2h
+    admin-refresh-ttl: 7d
+    app-access-ttl: 7d
+    app-refresh-ttl: 30d

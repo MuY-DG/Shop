@@ -10,3 +10,11 @@ spring:
       port: 6379
   flyway:
     enabled: false
+
+shop:
+  auth:
+    token-store: memory
+    admin-access-ttl: 2h
+    admin-refresh-ttl: 7d
+    app-access-ttl: 7d
+    app-refresh-ttl: 30d
