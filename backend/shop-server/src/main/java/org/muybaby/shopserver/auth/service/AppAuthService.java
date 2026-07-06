@@ -75,7 +75,7 @@ public class AppAuthService {
         if (value == null) {
             return null;
         }
-        if (value.length() == 1) {
+        if (value.length() <= 2) {
             return "****";
         }
         if (value.length() <= preferredPrefixLength + preferredSuffixLength) {
