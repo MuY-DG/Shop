@@ -305,7 +305,7 @@ rm 'backend/.gitkeep'
 
 - [ ] **Step 2: Add backend dependencies**
 
-Modify `backend/shop-server/pom.xml`. Keep the existing Spring Boot parent and existing `spring-boot-starter-security`, `spring-boot-starter-web`, `springdoc-openapi-starter-webmvc-ui`, `mysql-connector-j`, `lombok`, `spring-boot-starter-test`, and `spring-security-test` dependencies. Add these dependencies inside `<dependencies>`:
+Modify `backend/shop-server/pom.xml`. Keep the existing Spring Boot parent and existing `spring-boot-starter-security`, `spring-boot-starter-web`, `springdoc-openapi-starter-webmvc-ui`, `mysql-connector-j`, `lombok`, `spring-boot-starter-test`, and `spring-security-test` dependencies. Keep `springdoc-openapi-starter-webmvc-ui` pinned to version `2.8.17`, because it is not managed by the Spring Boot parent. Add these dependencies inside `<dependencies>`:
 
 ```xml
 <dependency>
