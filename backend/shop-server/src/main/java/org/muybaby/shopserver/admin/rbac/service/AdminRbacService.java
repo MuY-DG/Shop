@@ -47,7 +47,8 @@ public class AdminRbacService {
                         select r.code
                         from admin_role r
                         join admin_user_role ur on ur.role_id = r.id
-                        where ur.user_id = :userId and r.enabled = true
+                        join admin_user u on u.id = ur.user_id
+                        where ur.user_id = :userId and u.status = 'ENABLED' and r.enabled = true
                         order by r.id
                         """)
                 .param("userId", userId)
@@ -62,7 +63,8 @@ public class AdminRbacService {
                         join admin_role_permission rp on rp.permission_id = p.id
                         join admin_user_role ur on ur.role_id = rp.role_id
                         join admin_role r on r.id = ur.role_id
-                        where ur.user_id = :userId and r.enabled = true
+                        join admin_user u on u.id = ur.user_id
+                        where ur.user_id = :userId and u.status = 'ENABLED' and r.enabled = true
                         order by p.auth_mark
                         """)
                 .param("userId", userId)
