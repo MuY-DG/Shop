@@ -106,8 +106,8 @@ export interface CartItem {
   quantity: number;
   lineAmountCent: number;
   stockAvailable: number;
-  skuStatus: "ENABLED" | "DISABLED";
-  spuStatus: "DRAFT" | "ON_SALE" | "OFF_SALE";
+  skuStatus: "ENABLED" | "DISABLED" | null;
+  spuStatus: "DRAFT" | "ON_SALE" | "OFF_SALE" | null;
   available: boolean;
   unavailableReason: "SKU_UNAVAILABLE" | "PRODUCT_UNAVAILABLE" | "STOCK_SHORTAGE" | null;
   createdAt: string;

@@ -10,6 +10,7 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -63,9 +64,9 @@ public class AppCartService {
         SellableSkuRow sku = findSellableSku(request.skuId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SKU_UNAVAILABLE));
         Optional<CartQuantityRow> existingItem = findCartItemBySkuForUpdate(userId, request.skuId());
-        int targetQuantity = existingItem
+        int targetQuantity = requireQuantity(existingItem
                 .map(item -> item.quantity() + requestQuantity)
-                .orElse(requestQuantity);
+                .orElse(requestQuantity));
         requireSellable(sku, targetQuantity);
 
         Long cartItemId = existingItem
@@ -73,7 +74,7 @@ public class AppCartService {
                     updateQuantityById(item.id(), targetQuantity);
                     return item.id();
                 })
-                .orElseGet(() -> insertCartItem(userId, request.skuId(), requestQuantity));
+                .orElseGet(() -> insertOrMergeCartItem(userId, request.skuId(), requestQuantity, sku));
         return findCartItem(userId, cartItemId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND));
     }
@@ -203,6 +204,19 @@ public class AppCartService {
                 keyHolder,
                 new String[]{"id"});
         return requireGeneratedId(keyHolder);
+    }
+
+    private Long insertOrMergeCartItem(Long userId, Long skuId, Integer requestQuantity, SellableSkuRow sku) {
+        try {
+            return insertCartItem(userId, skuId, requestQuantity);
+        } catch (DuplicateKeyException ex) {
+            CartQuantityRow existingItem = findCartItemBySkuForUpdate(userId, skuId)
+                    .orElseThrow(() -> ex);
+            int targetQuantity = requireQuantity(existingItem.quantity() + requestQuantity);
+            requireSellable(sku, targetQuantity);
+            updateQuantityById(existingItem.id(), targetQuantity);
+            return existingItem.id();
+        }
     }
 
     private void updateQuantityById(Long cartItemId, Integer quantity) {

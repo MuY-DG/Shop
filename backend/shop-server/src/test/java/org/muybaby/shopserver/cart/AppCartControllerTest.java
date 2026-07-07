@@ -3,6 +3,7 @@ package org.muybaby.shopserver.cart;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.cart.dto.CartItemResponse;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
@@ -18,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -194,12 +196,45 @@ class AppCartControllerTest {
     }
 
     @Test
+    void addRejectsMergedQuantityAboveMaxLimit() throws Exception {
+        String appToken = appLoginAndExtractToken("test-login-code");
+        long skuId = createPublishedSku("CART-MAX-SKU-1", 2990L, 3990L, 2000, "ENABLED");
+
+        mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":998}
+                                """.formatted(skuId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":2}
+                                """.formatted(skuId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+    }
+
+    @Test
     void unavailableSkuAndUnpublishedSpuReturnBusinessErrors() throws Exception {
         String appToken = appLoginAndExtractToken("test-login-code");
         long disabledSkuId = createPublishedSku("CART-DISABLED-SKU", 2990L, 3990L, 5, "ENABLED");
         long enabledSkuId = createPublishedSku("CART-OFFSALE-SKU", 3990L, 4990L, 5, "ENABLED");
+        long disabledCategorySkuId = createPublishedSku("CART-DISABLED-CATEGORY-SKU", 3590L, 4590L, 5, "ENABLED");
         long spuId = jdbcClient.sql("select spu_id from product_sku where id = :skuId")
                 .param("skuId", enabledSkuId)
+                .query(Long.class)
+                .single();
+        long categoryId = jdbcClient.sql("""
+                        select s.category_id
+                        from product_spu s
+                        join product_sku k on k.spu_id = s.id
+                        where k.id = :skuId
+                        """)
+                .param("skuId", disabledCategorySkuId)
                 .query(Long.class)
                 .single();
         jdbcClient.sql("""
@@ -221,6 +256,14 @@ class AppCartControllerTest {
 
         adminProductService.unpublishSpu(spuId);
 
+        jdbcClient.sql("""
+                        update product_category
+                        set status = 'DISABLED', updated_at = current_timestamp
+                        where id = :categoryId
+                        """)
+                .param("categoryId", categoryId)
+                .update();
+
         mockMvc.perform(post("/app/cart/items")
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -229,6 +272,53 @@ class AppCartControllerTest {
                                 """.formatted(enabledSkuId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(200001));
+
+        mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":1}
+                                """.formatted(disabledCategorySkuId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200001));
+    }
+
+    @Test
+    void listKeepsCartRowWhenCategoryBecomesDisabled() throws Exception {
+        String appToken = appLoginAndExtractToken("test-login-code");
+        long skuId = createPublishedSku("CART-DISABLED-CATEGORY-LIST", 4590L, 5590L, 6, "ENABLED");
+        long categoryId = jdbcClient.sql("""
+                        select s.category_id
+                        from product_spu s
+                        join product_sku k on k.spu_id = s.id
+                        where k.id = :skuId
+                        """)
+                .param("skuId", skuId)
+                .query(Long.class)
+                .single();
+
+        mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":2}
+                                """.formatted(skuId)))
+                .andExpect(status().isOk());
+
+        jdbcClient.sql("""
+                        update product_category
+                        set status = 'DISABLED', updated_at = current_timestamp
+                        where id = :categoryId
+                        """)
+                .param("categoryId", categoryId)
+                .update();
+
+        mockMvc.perform(get("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].available").value(false))
+                .andExpect(jsonPath("$.data.items[0].unavailableReason").value("PRODUCT_UNAVAILABLE"));
     }
 
     @Test
@@ -271,7 +361,7 @@ class AppCartControllerTest {
                 .param("skuId", skuId)
                 .update();
 
-        mockMvc.perform(get("/app/cart/items")
+        String response = mockMvc.perform(get("/app/cart/items")
                         .header("Authorization", "Bearer " + appToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))
@@ -279,7 +369,17 @@ class AppCartControllerTest {
                 .andExpect(jsonPath("$.data.items[0].unavailableReason").value("SKU_UNAVAILABLE"))
                 .andExpect(jsonPath("$.data.items[0].priceCent").value(0))
                 .andExpect(jsonPath("$.data.items[0].lineAmountCent").value(0))
-                .andExpect(jsonPath("$.data.items[0].stockAvailable").value(0));
+                .andExpect(jsonPath("$.data.items[0].stockAvailable").value(0))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        CartItemResponse item = objectMapper.treeToValue(
+                objectMapper.readTree(response).path("data").path("items").get(0),
+                CartItemResponse.class
+        );
+        assertThat(item.skuStatus()).isNull();
+        assertThat(item.spuStatus()).isNull();
     }
 
     private String appLoginAndExtractToken(String code) throws Exception {
