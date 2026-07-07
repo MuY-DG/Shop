@@ -1,5 +1,5 @@
 import type { ProductCategory, ProductListItem } from "../../../types/api";
-import { formatPrice, getProductCategories, getProductList } from "../../../services/product";
+import { formatProductPriceRange, getProductCategories, getProductList } from "../../../services/product";
 
 const PAGE_SIZE = 10;
 
@@ -42,13 +42,9 @@ function toCategoryTabs(categories: ProductCategory[], activeCategoryId: number)
 }
 
 function toProductCard(product: ProductListItem): ProductCardView {
-  const priceText = product.minPriceCent === product.maxPriceCent
-    ? formatPrice(product.minPriceCent)
-    : `${formatPrice(product.minPriceCent)} - ${formatPrice(product.maxPriceCent)}`;
-
   return {
     ...product,
-    priceText,
+    priceText: formatProductPriceRange(product),
     stockText: product.totalStock > 0 ? `库存 ${product.totalStock}` : "暂时售罄",
     soldOut: product.totalStock <= 0
   };

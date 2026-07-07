@@ -54,8 +54,8 @@ export interface ProductListItem {
   subtitle: string;
   mainImage: string;
   sellingPoints: string[];
-  minPriceCent: number;
-  maxPriceCent: number;
+  minPriceCent?: number;
+  maxPriceCent?: number;
   totalStock: number;
 }
 

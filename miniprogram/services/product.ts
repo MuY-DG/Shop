@@ -42,3 +42,20 @@ export function getProductDetail(spuId: number): Promise<ProductDetail> {
 export function formatPrice(priceCent: number): string {
   return `¥${(priceCent / 100).toFixed(2)}`;
 }
+
+function isPriceCent(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+export function formatProductPriceRange(
+  product: Pick<ProductListItem, "minPriceCent" | "maxPriceCent">
+): string {
+  const { minPriceCent, maxPriceCent } = product;
+  if (!isPriceCent(minPriceCent) || !isPriceCent(maxPriceCent)) {
+    return "暂无价格";
+  }
+
+  return minPriceCent === maxPriceCent
+    ? formatPrice(minPriceCent)
+    : `${formatPrice(minPriceCent)} - ${formatPrice(maxPriceCent)}`;
+}
