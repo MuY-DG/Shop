@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -139,5 +140,39 @@ class AppProductControllerTest {
                 .andExpect(jsonPath("$.data.sellingPoints[1]").value("Hot"))
                 .andExpect(jsonPath("$.data.skus.length()").value(1))
                 .andExpect(jsonPath("$.data.skus[0].skuCode").value("MIX-SKU-1"));
+    }
+
+    @Test
+    void publicAppApisHidePublishedProductsWhenCategoryIsDisabled() throws Exception {
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Disabled After Publish", "", 3, "ENABLED"));
+        Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
+                categoryId,
+                "Hidden By Disabled Category",
+                "Category disabled subtitle",
+                "https://example.test/hidden-main.jpg",
+                "A",
+                "<p>hidden detail</p>",
+                1,
+                List.of("https://example.test/hidden-gallery.jpg"),
+                List.of(new AdminSkuUpsertRequest(null, "HIDDEN-CAT-SKU", "{}", "默认", 2990L, 3990L, 3, 200, "", "ENABLED", 1))
+        ));
+        adminProductService.publishSpu(spuId);
+        adminProductService.updateCategory(categoryId, new AdminCategoryRequest(0L, "Disabled After Publish", "", 3, "DISABLED"));
+
+        mockMvc.perform(get("/app/product/categories"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[*].id", not(org.hamcrest.Matchers.hasItem(categoryId.intValue()))));
+
+        mockMvc.perform(get("/app/product/spus")
+                        .param("current", "1")
+                        .param("size", "10")
+                        .param("categoryId", categoryId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0))
+                .andExpect(jsonPath("$.data.records.length()").value(0));
+
+        mockMvc.perform(get("/app/product/spus/" + spuId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200001));
     }
 }

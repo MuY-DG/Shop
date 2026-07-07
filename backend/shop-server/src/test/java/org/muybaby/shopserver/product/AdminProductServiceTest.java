@@ -14,6 +14,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -132,5 +133,108 @@ class AdminProductServiceTest {
 
         assertThat(stock).isEqualTo(12);
         assertThat(adjustmentLogs).isEqualTo(1);
+    }
+
+    @Test
+    void updateSpuWritesAdjustmentLogWhenExistingSkuStockChanges() {
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Update Stock Category", "", 1, "ENABLED"));
+        Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
+                categoryId,
+                "Update Stock SPU",
+                "",
+                "https://example.test/main.jpg",
+                "A",
+                "<p>detail</p>",
+                1,
+                List.of(),
+                List.of(new AdminSkuUpsertRequest(null, "UPDATE-STOCK-SKU", "{}", "默认", 1990L, 0L, 5, 100, "", "ENABLED", 1))
+        ));
+        Long skuId = jdbcClient.sql("select id from product_sku where spu_id = :spuId")
+                .param("spuId", spuId)
+                .query(Long.class)
+                .single();
+
+        adminProductService.updateSpu(spuId, new AdminSpuUpsertRequest(
+                categoryId,
+                "Update Stock SPU",
+                "",
+                "https://example.test/main.jpg",
+                "A",
+                "<p>detail</p>",
+                1,
+                List.of(),
+                List.of(new AdminSkuUpsertRequest(skuId, "UPDATE-STOCK-SKU", "{}", "默认", 1990L, 0L, 11, 100, "", "ENABLED", 1))
+        ), 7L);
+
+        Map<String, Object> adjustmentLog = jdbcClient.sql("""
+                        select change_type, quantity_before, quantity_delta, quantity_after, operator_type, operator_id
+                        from stock_log
+                        where sku_id = :skuId and change_type = 'ADJUST'
+                        """)
+                .param("skuId", skuId)
+                .query()
+                .singleRow();
+
+        assertThat(adjustmentLog)
+                .containsEntry("CHANGE_TYPE", "ADJUST")
+                .containsEntry("QUANTITY_BEFORE", 5)
+                .containsEntry("QUANTITY_DELTA", 6)
+                .containsEntry("QUANTITY_AFTER", 11)
+                .containsEntry("OPERATOR_TYPE", "ADMIN")
+                .containsEntry("OPERATOR_ID", 7L);
+    }
+
+    @Test
+    void updateSpuWritesInitialLogWhenAddingSkuWithStock() {
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Add SKU Category", "", 1, "ENABLED"));
+        Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
+                categoryId,
+                "Add SKU SPU",
+                "",
+                "https://example.test/main.jpg",
+                "A",
+                "<p>detail</p>",
+                1,
+                List.of(),
+                List.of(new AdminSkuUpsertRequest(null, "ADD-SKU-ORIGINAL", "{}", "默认", 1990L, 0L, 5, 100, "", "ENABLED", 1))
+        ));
+        Long originalSkuId = jdbcClient.sql("select id from product_sku where sku_code = 'ADD-SKU-ORIGINAL'")
+                .query(Long.class)
+                .single();
+
+        adminProductService.updateSpu(spuId, new AdminSpuUpsertRequest(
+                categoryId,
+                "Add SKU SPU",
+                "",
+                "https://example.test/main.jpg",
+                "A",
+                "<p>detail</p>",
+                1,
+                List.of(),
+                List.of(
+                        new AdminSkuUpsertRequest(originalSkuId, "ADD-SKU-ORIGINAL", "{}", "默认", 1990L, 0L, 5, 100, "", "ENABLED", 1),
+                        new AdminSkuUpsertRequest(null, "ADD-SKU-NEW", "{\"规格\":\"新\"}", "新", 2990L, 0L, 4, 120, "", "ENABLED", 2)
+                )
+        ), 8L);
+
+        Long newSkuId = jdbcClient.sql("select id from product_sku where sku_code = 'ADD-SKU-NEW'")
+                .query(Long.class)
+                .single();
+        Map<String, Object> initialLog = jdbcClient.sql("""
+                        select change_type, quantity_before, quantity_delta, quantity_after, operator_type, operator_id
+                        from stock_log
+                        where sku_id = :skuId and change_type = 'INITIAL'
+                        """)
+                .param("skuId", newSkuId)
+                .query()
+                .singleRow();
+
+        assertThat(initialLog)
+                .containsEntry("CHANGE_TYPE", "INITIAL")
+                .containsEntry("QUANTITY_BEFORE", 0)
+                .containsEntry("QUANTITY_DELTA", 4)
+                .containsEntry("QUANTITY_AFTER", 4)
+                .containsEntry("OPERATOR_TYPE", "ADMIN")
+                .containsEntry("OPERATOR_ID", 8L);
     }
 }

@@ -171,8 +171,8 @@ declare namespace Api {
       mainImage: string
       status: ProductStatus
       sortOrder: number
-      minPriceCent: number
-      maxPriceCent: number
+      minPriceCent?: number | null
+      maxPriceCent?: number | null
       totalStock: number
       skuCount: number
       createdAt: string

@@ -25,6 +25,7 @@ import org.springframework.util.StringUtils;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -94,14 +95,27 @@ public class AdminProductService {
         requireExistingCategory(request.categoryId());
         Long spuId = insertSpu(request);
         replaceImageRows(spuId, request.images());
-        replaceSkuRows(spuId, request.skus(), true);
+        replaceSkuRows(spuId, request.skus(), Map.of(), SYSTEM_OPERATOR_TYPE, SYSTEM_OPERATOR_ID);
         return spuId;
     }
 
     @Transactional
     public void updateSpu(Long spuId, AdminSpuUpsertRequest request) {
+        updateSpu(spuId, request, SYSTEM_OPERATOR_TYPE, SYSTEM_OPERATOR_ID);
+    }
+
+    @Transactional
+    public void updateSpu(Long spuId, AdminSpuUpsertRequest request, Long operatorId) {
+        updateSpu(spuId, request, ADMIN_OPERATOR_TYPE, operatorId == null ? SYSTEM_OPERATOR_ID : operatorId);
+    }
+
+    private void updateSpu(Long spuId, AdminSpuUpsertRequest request, String operatorType, Long operatorId) {
         requireExistingCategory(request.categoryId());
         ProductSpu existingSpu = findSpu(spuId).orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE));
+        Map<Long, ProductSku> existingSkusById = new HashMap<>();
+        for (ProductSku sku : findSkusBySpuId(spuId)) {
+            existingSkusById.put(sku.id(), sku);
+        }
         int updatedRows = jdbcClient.sql("""
                         UPDATE product_spu
                         SET category_id = :categoryId,
@@ -130,7 +144,7 @@ public class AdminProductService {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
         replaceImageRows(spuId, request.images());
-        replaceSkuRows(spuId, request.skus(), false);
+        replaceSkuRows(spuId, request.skus(), existingSkusById, operatorType, operatorId);
     }
 
     @Transactional
@@ -175,7 +189,7 @@ public class AdminProductService {
 
     @Transactional
     public void adjustSkuStock(Long skuId, AdminStockAdjustmentRequest request, Long operatorId) {
-        ProductSku sku = findSku(skuId).orElseThrow(() -> new BusinessException(ErrorCode.SKU_UNAVAILABLE));
+        ProductSku sku = findSkuForUpdate(skuId).orElseThrow(() -> new BusinessException(ErrorCode.SKU_UNAVAILABLE));
         int quantityBefore = sku.stockAvailable();
         int quantityAfter = quantityBefore + request.quantityDelta();
         if (quantityAfter < 0) {
@@ -238,14 +252,21 @@ public class AdminProductService {
         }
     }
 
-    private void replaceSkuRows(Long spuId, List<AdminSkuUpsertRequest> skus, boolean writeInitialLog) {
+    private void replaceSkuRows(
+            Long spuId,
+            List<AdminSkuUpsertRequest> skus,
+            Map<Long, ProductSku> existingSkusById,
+            String operatorType,
+            Long operatorId
+    ) {
         jdbcClient.sql("DELETE FROM product_sku WHERE spu_id = :spuId")
                 .param("spuId", spuId)
                 .update();
         List<AdminSkuUpsertRequest> normalizedSkus = skus == null ? List.of() : skus;
         for (AdminSkuUpsertRequest sku : normalizedSkus) {
             Long skuId = insertSku(spuId, sku);
-            if (writeInitialLog) {
+            ProductSku existingSku = sku.id() == null ? null : existingSkusById.get(sku.id());
+            if (existingSku == null) {
                 insertStockLog(
                         skuId,
                         StockChangeType.INITIAL.name(),
@@ -253,8 +274,20 @@ public class AdminProductService {
                         sku.stockAvailable(),
                         sku.stockAvailable(),
                         "initial stock",
-                        SYSTEM_OPERATOR_TYPE,
-                        SYSTEM_OPERATOR_ID
+                        operatorType,
+                        operatorId
+                );
+            } else if (existingSku.stockAvailable() != sku.stockAvailable()) {
+                int quantityDelta = sku.stockAvailable() - existingSku.stockAvailable();
+                insertStockLog(
+                        skuId,
+                        StockChangeType.ADJUST.name(),
+                        existingSku.stockAvailable(),
+                        quantityDelta,
+                        sku.stockAvailable(),
+                        "spu update stock",
+                        operatorType,
+                        operatorId
                 );
             }
         }
@@ -391,6 +424,19 @@ public class AdminProductService {
                                stock_available, weight_gram, image, status, sort_order, created_at, updated_at
                         FROM product_sku
                         WHERE id = :skuId
+                        """)
+                .param("skuId", skuId)
+                .query(this::mapSku)
+                .optional();
+    }
+
+    private Optional<ProductSku> findSkuForUpdate(Long skuId) {
+        return jdbcClient.sql("""
+                        SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
+                               stock_available, weight_gram, image, status, sort_order, created_at, updated_at
+                        FROM product_sku
+                        WHERE id = :skuId
+                        FOR UPDATE
                         """)
                 .param("skuId", skuId)
                 .query(this::mapSku)

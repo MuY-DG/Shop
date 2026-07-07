@@ -181,7 +181,13 @@
     }
   ])
 
+  const isFiniteCent = (value: number | null | undefined): value is number =>
+    typeof value === 'number' && Number.isFinite(value)
+
   const formatPriceRange = (row: Api.Product.SpuListItem) => {
+    if (!isFiniteCent(row.minPriceCent) || !isFiniteCent(row.maxPriceCent)) {
+      return '暂无价格'
+    }
     const min = (row.minPriceCent / 100).toFixed(2)
     const max = (row.maxPriceCent / 100).toFixed(2)
     return row.minPriceCent === row.maxPriceCent ? `¥${min}` : `¥${min} - ¥${max}`

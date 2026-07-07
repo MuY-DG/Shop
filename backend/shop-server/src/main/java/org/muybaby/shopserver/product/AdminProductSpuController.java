@@ -9,6 +9,8 @@ import org.muybaby.shopserver.product.dto.AdminSpuQueryRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
 import org.muybaby.shopserver.product.service.AdminProductService;
 import org.muybaby.shopserver.product.service.ProductReadMapper;
+import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,8 +50,12 @@ public class AdminProductSpuController {
     }
 
     @PutMapping("/{spuId}")
-    public ApiResponse<Void> update(@PathVariable Long spuId, @Valid @RequestBody AdminSpuUpsertRequest request) {
-        adminProductService.updateSpu(spuId, request);
+    public ApiResponse<Void> update(
+            @PathVariable Long spuId,
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @Valid @RequestBody AdminSpuUpsertRequest request
+    ) {
+        adminProductService.updateSpu(spuId, request, principal.subjectId());
         return ApiResponse.success();
     }
 

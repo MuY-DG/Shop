@@ -51,11 +51,14 @@ public class AppProductService {
         Long total = jdbcClient.sql("""
                         SELECT count(*)
                         FROM product_spu s
+                        JOIN product_category c ON c.id = s.category_id
                         WHERE s.status = :status
+                          AND c.status = :categoryStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
                           AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
                         """)
                 .param("status", ProductStatus.ON_SALE.name())
+                .param("categoryStatus", "ENABLED")
                 .param("categoryId", normalizedRequest.categoryId())
                 .param("keywordLike", keywordLike)
                 .query(Long.class)
@@ -67,8 +70,10 @@ public class AppProductService {
                                max(k.price_cent) AS max_price_cent,
                                coalesce(sum(k.stock_available), 0) AS total_stock
                         FROM product_spu s
+                        JOIN product_category c ON c.id = s.category_id
                         LEFT JOIN product_sku k ON k.spu_id = s.id AND k.status = :skuStatus
                         WHERE s.status = :spuStatus
+                          AND c.status = :categoryStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
                           AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
                         GROUP BY s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points, s.sort_order
@@ -77,6 +82,7 @@ public class AppProductService {
                         """)
                 .param("skuStatus", SkuStatus.ENABLED.name())
                 .param("spuStatus", ProductStatus.ON_SALE.name())
+                .param("categoryStatus", "ENABLED")
                 .param("categoryId", normalizedRequest.categoryId())
                 .param("keywordLike", keywordLike)
                 .param("limit", size)
@@ -95,9 +101,11 @@ public class AppProductService {
                         JOIN product_category c ON c.id = s.category_id
                         WHERE s.id = :spuId
                           AND s.status = :status
+                          AND c.status = :categoryStatus
                         """)
                 .param("spuId", spuId)
                 .param("status", ProductStatus.ON_SALE.name())
+                .param("categoryStatus", "ENABLED")
                 .query(this::mapSpuDetailRow)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE));

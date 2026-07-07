@@ -6,10 +6,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -29,6 +31,9 @@ class AdminProductSpuControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private JdbcClient jdbcClient;
 
     @Test
     void adminCanCreatePublishListDetailUnpublishAndAdjustStock() throws Exception {
@@ -108,6 +113,54 @@ class AdminProductSpuControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.skus[0].stockAvailable").value(8));
+
+        mockMvc.perform(put("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Controller SPU",
+                                  "subtitle": "Controller subtitle",
+                                  "mainImage": "https://example.test/main.jpg",
+                                  "sellingPoints": "A,B",
+                                  "detailHtml": "<p>detail</p>",
+                                  "sortOrder": 1,
+                                  "images": ["https://example.test/gallery.jpg"],
+                                  "skus": [
+                                    {
+                                      "id": %d,
+                                      "skuCode": "CTRL-SKU-1",
+                                      "specJson": "{\\"口味\\":\\"牛油\\"}",
+                                      "specText": "牛油",
+                                      "priceCent": 3990,
+                                      "originalPriceCent": 4990,
+                                      "stockAvailable": 10,
+                                      "weightGram": 300,
+                                      "image": "https://example.test/sku.jpg",
+                                      "status": "ENABLED",
+                                      "sortOrder": 1
+                                    }
+                                  ]
+                                }
+                                """.formatted(categoryId, skuId)))
+                .andExpect(status().isOk());
+
+        Integer updateStockAuditLogs = jdbcClient.sql("""
+                        select count(*)
+                        from stock_log
+                        where sku_id = :skuId
+                          and change_type = 'ADJUST'
+                          and quantity_before = 8
+                          and quantity_delta = 2
+                          and quantity_after = 10
+                          and operator_type = 'ADMIN'
+                          and operator_id = 1
+                        """)
+                .param("skuId", skuId)
+                .query(Integer.class)
+                .single();
+        assertThat(updateStockAuditLogs).isEqualTo(1);
 
         mockMvc.perform(post("/admin/product/spus/" + spuId + "/unpublish")
                         .header("Authorization", "Bearer " + token))
