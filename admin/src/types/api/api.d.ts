@@ -298,4 +298,74 @@ declare namespace Api {
       }
     >
   }
+
+  namespace Order {
+    type OrderStatus = 'CREATED' | 'PAID' | 'CLOSED' | 'REFUNDED'
+    type OrderSource = 'MINI_PROGRAM'
+
+    type OrderList = Api.Common.PaginatedResponse<OrderListItem>
+
+    interface OrderListItem {
+      orderId: number
+      orderNo: string
+      status: OrderStatus
+      productAmountCent: number
+      couponDiscountCent: number
+      freightCent: number
+      payableAmountCent: number
+      paidAmountCent: number
+      productTitle: string
+      itemCount: number
+      createdAt: string
+    }
+
+    type OrderSearchParams = Partial<
+      Api.Common.CommonSearchParams & {
+        orderNo: string
+        status: OrderStatus
+      }
+    >
+
+    interface OrderItem {
+      orderItemId: number
+      skuId: number
+      spuId: number
+      productTitle: string
+      productSubtitle: string
+      mainImage: string
+      skuImage: string
+      displayImage: string
+      skuCode: string
+      specText: string
+      originalPriceCent: number
+      unitPriceCent: number
+      quantity: number
+      lineOriginalAmountCent: number
+      lineAmountCent: number
+    }
+
+    interface OrderDetail {
+      orderId: number
+      orderNo: string
+      status: OrderStatus
+      source: OrderSource | string
+      productOriginalAmountCent: number
+      productAmountCent: number
+      userCouponId: number | null
+      couponName: string | null
+      couponDiscountCent: number
+      freightCent: number
+      payableAmountCent: number
+      paidAmountCent: number
+      receiverName: string | null
+      receiverPhone: string | null
+      receiverAddress: string | null
+      paymentTransactionId: string | null
+      merchantTradeNo: string | null
+      closeReason: string | null
+      closedAt: string | null
+      createdAt: string
+      items: OrderItem[]
+    }
+  }
 }
