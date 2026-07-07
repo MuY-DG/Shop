@@ -389,18 +389,22 @@ SKU_ID=$(
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.skus[0].id));'
 )
 
-curl -s -X POST http://localhost:8080/app/cart/items \
-  -H "Authorization: Bearer ${APP_TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d "{\"skuId\":${SKU_ID},\"quantity\":1}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.lineAmountCent !== 3990) process.exit(1); console.log(`${body.data.productTitle} ${body.data.quantity} ${body.data.lineAmountCent}`); });'
+CART_ITEM_ID=$(
+  curl -s -X POST http://localhost:8080/app/cart/items \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"skuId\":${SKU_ID},\"quantity\":1}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.lineAmountCent !== 3990) process.exit(1); console.log(body.data.id); });'
+)
 ```
 
 Query `/app/coupons/available`:
 
 ```bash
-curl -s http://localhost:8080/app/coupons/available \
+curl -s -X POST http://localhost:8080/app/coupons/available \
   -H "Authorization: Bearer ${APP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"cartItemIds\":[${CART_ITEM_ID}]}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.availableCoupons.find(item => item.id === Number(process.argv[1])); if (!coupon || body.data.discountAmountCent !== 500) process.exit(1); console.log(body.data.discountAmountCent); });' "${USER_COUPON_ID}"
 ```
 
@@ -410,7 +414,6 @@ Expected result:
 success
 新人无门槛券
 CLAIMED
-购物车优惠券测试锅底 1 3990
 500
 ```
 
