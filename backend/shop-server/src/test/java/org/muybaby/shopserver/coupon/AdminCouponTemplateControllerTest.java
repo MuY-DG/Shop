@@ -153,6 +153,40 @@ class AdminCouponTemplateControllerTest {
                 .andExpect(jsonPath("$.code").value(100400));
     }
 
+    @Test
+    void createRejectsPercentOffDiscountTypeForV1() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+
+        mockMvc.perform(post("/admin/marketing/coupons/templates")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Bad percent","couponType":"MIN_SPEND","discountType":"PERCENT_OFF",
+                                 "thresholdCent":1000,"discountCent":200,"scopeType":"ALL","scopeValue":"",
+                                 "totalStock":10,"perUserLimit":1,"validStartAt":"2026-07-07T00:00:00",
+                                 "validEndAt":"2026-08-07T23:59:59","status":"DISABLED","sortOrder":1}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+    }
+
+    @Test
+    void createRejectsAllScopeWithNonBlankScopeValue() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+
+        mockMvc.perform(post("/admin/marketing/coupons/templates")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Bad scope","couponType":"MIN_SPEND","discountType":"AMOUNT_OFF",
+                                 "thresholdCent":1000,"discountCent":200,"scopeType":"ALL","scopeValue":"sku-123",
+                                 "totalStock":10,"perUserLimit":1,"validStartAt":"2026-07-07T00:00:00",
+                                 "validEndAt":"2026-08-07T23:59:59","status":"DISABLED","sortOrder":1}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+    }
+
     private long seedTemplate(String name, int totalStock, int claimedCount, String status) {
         jdbcClient.sql("""
                         insert into coupon_template

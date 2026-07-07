@@ -169,7 +169,14 @@ public class AdminCouponService {
         CouponScopeType scopeType = parseEnum(request.scopeType(), CouponScopeType.class);
         CouponTemplateStatus status = parseEnum(request.status(), CouponTemplateStatus.class);
 
+        if (discountType != DiscountType.AMOUNT_OFF) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
         if (scopeType != CouponScopeType.ALL) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (StringUtils.hasText(request.scopeValue())) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
 
@@ -219,7 +226,7 @@ public class AdminCouponService {
                 thresholdCent,
                 discountCent,
                 scopeType,
-                defaultString(request.scopeValue()),
+                "",
                 defaultStrategyKey(request.strategyKey()),
                 totalStock,
                 perUserLimit,
