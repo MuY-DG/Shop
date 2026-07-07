@@ -1,0 +1,28 @@
+<view class="page coupon-page">
+  <view class="page-header">
+    <view class="page-title">我的优惠券</view>
+    <view class="page-subtitle">按状态查看当前可用和历史优惠券</view>
+  </view>
+
+  <view wx:if="{{loading && sections.length === 0}}" class="empty-state">优惠券加载中...</view>
+  <view wx:elif="{{errorText && sections.length === 0}}" class="empty-state">{{errorText}}</view>
+  <view wx:elif="{{sections.length === 0}}" class="empty-state">还没有领取过优惠券</view>
+  <view wx:else class="section-list">
+    <view wx:for="{{sections}}" wx:key="status" class="section-block">
+      <view class="section-title">{{item.title}}</view>
+      <view class="coupon-list">
+        <view wx:for="{{item.coupons}}" wx:key="userCouponId" class="coupon-card {{item.status !== 'CLAIMED' ? 'muted' : ''}}">
+          <view class="coupon-main">
+            <view class="coupon-amount">{{item.discountText}}</view>
+            <view class="coupon-threshold">{{item.thresholdText}}</view>
+          </view>
+          <view class="coupon-body">
+            <view class="coupon-name">{{item.name}}</view>
+            <view class="coupon-meta">{{item.validityText}}</view>
+            <view class="coupon-meta">状态：{{item.statusText}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

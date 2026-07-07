@@ -1,5 +1,20 @@
 <view class="profile-page">
-  <view class="profile-row">{{loginStatus}}</view>
-  <view class="profile-row">{{phoneStatus}}</view>
-  <button open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber" disabled="{{isLoggingIn || !isLoggedIn || phoneAuthorizing}}">Authorize Phone</button>
+  <view class="status-card">
+    <view class="profile-row">{{loginStatus}}</view>
+    <view class="profile-row">{{phoneStatus}}</view>
+    <button class="phone-button" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber" disabled="{{isLoggingIn || !isLoggedIn || phoneAuthorizing}}">Authorize Phone</button>
+  </view>
+
+  <view class="action-list">
+    <view
+      wx:for="{{actionItems}}"
+      wx:key="path"
+      class="action-row"
+      data-path="{{item.path}}"
+      bindtap="onActionTap"
+    >
+      <view class="action-title">{{item.title}}</view>
+      <view class="action-arrow">›</view>
+    </view>
+  </view>
 </view>

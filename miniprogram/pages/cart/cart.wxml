@@ -58,6 +58,12 @@
     <view class="amount-block">
       <view class="amount-label">合计</view>
       <view class="amount-value">{{totalAmountText}}</view>
+      <view wx:if="{{couponSummaryText}}" class="coupon-summary {{couponDiscountText ? 'active' : ''}}">
+        <text wx:if="{{couponDiscountText}}">{{couponDiscountText}}</text>
+        <text wx:if="{{couponDiscountText && couponPayableText}}">，</text>
+        <text wx:if="{{couponPayableText}}">{{couponPayableText}}</text>
+        <text wx:if="{{!couponDiscountText}}">{{couponSummaryText}}</text>
+      </view>
     </view>
     <button class="checkout-button" disabled="true">去结算</button>
   </view>

@@ -6,13 +6,34 @@ interface GetPhoneNumberEvent {
   };
 }
 
+interface ProfileActionItem {
+  title: string;
+  path: string;
+}
+
+interface ActionTapEvent {
+  currentTarget: {
+    dataset: Record<string, string | undefined>;
+  };
+}
+
 Page({
   data: {
     loginStatus: "Not logged in",
     phoneStatus: "Phone not authorized",
     isLoggingIn: false,
     isLoggedIn: false,
-    phoneAuthorizing: false
+    phoneAuthorizing: false,
+    actionItems: [
+      {
+        title: "领券中心",
+        path: "/pages/coupon/list/list"
+      },
+      {
+        title: "我的优惠券",
+        path: "/pages/coupon/mine/mine"
+      }
+    ] as ProfileActionItem[]
   },
   async onShow() {
     this.setData({
@@ -75,5 +96,15 @@ Page({
         phoneAuthorizing: false
       });
     }
+  },
+  onActionTap(event: ActionTapEvent) {
+    const path = event.currentTarget.dataset.path;
+    if (!path) {
+      return;
+    }
+
+    wx.navigateTo({
+      url: path
+    });
   }
 });

@@ -184,6 +184,17 @@
   font-weight: 800;
 }
 
+.coupon-summary {
+  margin-top: 8rpx;
+  color: #7a6f68;
+  font-size: 22rpx;
+  line-height: 32rpx;
+}
+
+.coupon-summary.active {
+  color: #8b5a09;
+}
+
 .checkout-button {
   width: 240rpx;
   height: 84rpx;

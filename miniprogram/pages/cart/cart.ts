@@ -6,6 +6,7 @@ import {
   getCartItems,
   updateCartItemQuantity
 } from "../../services/cart";
+import { getAvailableCoupons } from "../../services/coupon";
 import { formatPrice } from "../../services/product";
 
 interface DatasetEvent {
@@ -52,7 +53,10 @@ Page({
     items: [] as CartItemView[],
     totalQuantity: 0,
     totalAmountText: formatPrice(0),
-    unavailableCount: 0
+    unavailableCount: 0,
+    couponSummaryText: "",
+    couponDiscountText: "",
+    couponPayableText: ""
   },
   async onShow() {
     await this.loadCart();
@@ -70,11 +74,16 @@ Page({
     try {
       await ensureAppLogin();
       const response = await getCartItems();
+      const couponSummary = await this.loadCouponSummary(response.items);
+
       this.setData({
         items: response.items.map(toCartItemView),
         totalQuantity: response.totalQuantity,
         totalAmountText: formatPrice(response.totalAmountCent),
-        unavailableCount: response.unavailableCount
+        unavailableCount: response.unavailableCount,
+        couponSummaryText: couponSummary.couponSummaryText,
+        couponDiscountText: couponSummary.couponDiscountText,
+        couponPayableText: couponSummary.couponPayableText
       });
     } catch (error) {
       this.setData({
@@ -82,7 +91,10 @@ Page({
         items: [],
         totalQuantity: 0,
         totalAmountText: formatPrice(0),
-        unavailableCount: 0
+        unavailableCount: 0,
+        couponSummaryText: "",
+        couponDiscountText: "",
+        couponPayableText: ""
       });
     } finally {
       this.setData({
@@ -165,6 +177,50 @@ Page({
     wx.navigateTo({
       url: `/pages/product/detail/detail?id=${item.spuId}`
     });
+  },
+  async loadCouponSummary(items: CartItem[]) {
+    if (items.length === 0) {
+      return {
+        couponSummaryText: "",
+        couponDiscountText: "",
+        couponPayableText: ""
+      };
+    }
+
+    const availableItemIds = items
+      .filter((item) => item.available)
+      .map((item) => item.id);
+
+    if (availableItemIds.length === 0) {
+      return {
+        couponSummaryText: "暂无可用优惠券",
+        couponDiscountText: "",
+        couponPayableText: ""
+      };
+    }
+
+    try {
+      const response = await getAvailableCoupons(availableItemIds);
+      if (response.bestDiscountCent > 0) {
+        return {
+          couponSummaryText: `已优惠 ${formatPrice(response.bestDiscountCent)}，券后 ${formatPrice(response.payableAmountCent)}`,
+          couponDiscountText: `已优惠 ${formatPrice(response.bestDiscountCent)}`,
+          couponPayableText: `券后 ${formatPrice(response.payableAmountCent)}`
+        };
+      }
+
+      return {
+        couponSummaryText: "暂无可用优惠券",
+        couponDiscountText: "",
+        couponPayableText: ""
+      };
+    } catch (error) {
+      return {
+        couponSummaryText: "优惠券暂不可用",
+        couponDiscountText: "",
+        couponPayableText: ""
+      };
+    }
   },
   findItem(event: DatasetEvent): CartItemView | undefined {
     const cartItemId = Number(event.currentTarget.dataset.id);

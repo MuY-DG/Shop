@@ -120,3 +120,53 @@ export interface CartListResponse {
   totalAmountCent: number;
   unavailableCount: number;
 }
+
+export interface ClaimableCoupon {
+  templateId: number;
+  name: string;
+  description: string;
+  couponType: "NO_THRESHOLD" | "MIN_SPEND";
+  thresholdCent: number;
+  discountCent: number;
+  validStartAt: string;
+  validEndAt: string;
+  claimedCount: number;
+  perUserLimit: number;
+  claimable: boolean;
+  unavailableReason: string | null;
+}
+
+export interface UserCoupon {
+  userCouponId: number;
+  templateId: number;
+  name: string;
+  couponType: "NO_THRESHOLD" | "MIN_SPEND";
+  thresholdCent: number;
+  discountCent: number;
+  scopeType: "ALL" | "PRODUCT" | "CATEGORY";
+  status: "CLAIMED" | "LOCKED" | "USED" | "RELEASED" | "EXPIRED";
+  validStartAt: string;
+  validEndAt: string;
+  claimedAt: string;
+}
+
+export interface AvailableCouponItem {
+  userCouponId: number;
+  templateId: number;
+  name: string;
+  couponType: "NO_THRESHOLD" | "MIN_SPEND";
+  thresholdCent: number;
+  discountCent: number;
+  discountAmountCent: number;
+  available: boolean;
+  unavailableReason: string | null;
+  validEndAt: string;
+}
+
+export interface AvailableCouponResponse {
+  cartAmountCent: number;
+  bestUserCouponId: number | null;
+  bestDiscountCent: number;
+  payableAmountCent: number;
+  coupons: AvailableCouponItem[];
+}

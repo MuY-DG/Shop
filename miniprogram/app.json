@@ -5,6 +5,8 @@
     "pages/product/detail/detail",
     "pages/cart/cart",
     "pages/profile/profile",
+    "pages/coupon/list/list",
+    "pages/coupon/mine/mine",
     "pages/order/detail/detail"
   ],
   "window": {
