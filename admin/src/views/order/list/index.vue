@@ -347,8 +347,12 @@
   const openDetail = async (orderId: number) => {
     drawerVisible.value = true
     drawerLoading.value = true
+    currentDetail.value = null
     try {
       currentDetail.value = await fetchOrderDetail(orderId)
+    } catch (error) {
+      currentDetail.value = null
+      throw error
     } finally {
       drawerLoading.value = false
     }
