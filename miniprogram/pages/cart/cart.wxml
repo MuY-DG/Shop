@@ -1,0 +1,64 @@
+<view class="page cart-page">
+  <view class="cart-header">
+    <view>
+      <view class="cart-title">购物车</view>
+      <view class="cart-subtitle">{{totalQuantity}} 件商品</view>
+    </view>
+    <button
+      class="clear-button"
+      size="mini"
+      loading="{{clearing}}"
+      disabled="{{items.length === 0 || clearing}}"
+      bindtap="onClearTap"
+    >
+      清空
+    </button>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty-state">购物车加载中...</view>
+  <view wx:elif="{{errorText}}" class="empty-state">{{errorText}}</view>
+  <view wx:elif="{{items.length === 0}}" class="empty-state">购物车是空的</view>
+  <view wx:else class="cart-list">
+    <view
+      wx:for="{{items}}"
+      wx:key="id"
+      class="cart-item {{item.available ? '' : 'unavailable'}}"
+    >
+      <image
+        class="item-image"
+        src="{{item.displayImage || item.mainImage}}"
+        mode="aspectFill"
+        data-id="{{item.id}}"
+        bindtap="onProductTap"
+      />
+      <view class="item-body">
+        <view class="item-title" data-id="{{item.id}}" bindtap="onProductTap">{{item.productTitle}}</view>
+        <view class="item-spec">{{item.specText}}</view>
+        <view wx:if="{{!item.available}}" class="unavailable-text">{{item.unavailableText}}</view>
+        <view class="item-meta">
+          <view>
+            <view class="price">{{item.priceText}}</view>
+            <view class="stock">{{item.stockText}}</view>
+          </view>
+          <view class="quantity-row">
+            <button class="quantity-button" data-id="{{item.id}}" disabled="{{item.quantity <= 1}}" bindtap="onQuantityMinus">-</button>
+            <view class="quantity-value">{{item.quantity}}</view>
+            <button class="quantity-button" data-id="{{item.id}}" bindtap="onQuantityPlus">+</button>
+          </view>
+        </view>
+        <view class="item-footer">
+          <view class="line-amount">{{item.lineAmountText}}</view>
+          <button class="delete-button" size="mini" data-id="{{item.id}}" bindtap="onDeleteTap">删除</button>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="settlement-bar">
+    <view class="amount-block">
+      <view class="amount-label">合计</view>
+      <view class="amount-value">{{totalAmountText}}</view>
+    </view>
+    <button class="checkout-button" disabled="true">去结算</button>
+  </view>
+</view>

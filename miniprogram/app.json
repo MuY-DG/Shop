@@ -3,6 +3,7 @@
     "pages/home/home",
     "pages/product/list/list",
     "pages/product/detail/detail",
+    "pages/cart/cart",
     "pages/profile/profile",
     "pages/order/detail/detail"
   ],
@@ -24,6 +25,10 @@
       {
         "pagePath": "pages/product/list/list",
         "text": "分类"
+      },
+      {
+        "pagePath": "pages/cart/cart",
+        "text": "购物车"
       },
       {
         "pagePath": "pages/profile/profile",
