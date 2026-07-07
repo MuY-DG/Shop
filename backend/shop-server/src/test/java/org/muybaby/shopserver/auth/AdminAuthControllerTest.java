@@ -102,6 +102,8 @@ class AdminAuthControllerTest {
                         "coupon:template:update",
                         "coupon:template:enable",
                         "coupon:template:disable",
+                        "order:read",
+                        "order:close",
                         "system:user:create",
                         "system:user:update",
                         "system:user:disable",
