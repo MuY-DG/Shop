@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.coupon.UserCouponStatus;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
@@ -277,6 +278,61 @@ class AdminOrderControllerTest {
                 .param("skuId", seed.skuId())
                 .query(Integer.class)
                 .single()).isZero();
+    }
+
+    @Test
+    void closeReturnsOrderStateConflictWhenStockLocksDriftFromCreatedOrder() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        CreatedOrderSeed seed = createCreatedOrder("admin-order-bad-lock-user", "ADMIN-BAD-LOCK-SKU", true);
+
+        jdbcClient.sql("""
+                        update stock_lock
+                        set status = 'RELEASED',
+                            released_at = timestamp '2026-07-07 13:10:00',
+                            updated_at = timestamp '2026-07-07 13:10:00'
+                        where order_id = :orderId
+                        """)
+                .param("orderId", seed.orderId())
+                .update();
+
+        mockMvc.perform(post("/admin/orders/{orderId}/close", seed.orderId())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertThat(jdbcClient.sql("""
+                        select status
+                        from shop_order
+                        where id = :orderId
+                        """)
+                .param("orderId", seed.orderId())
+                .query(String.class)
+                .single()).isEqualTo(OrderStatus.CREATED.name());
+        assertThat(jdbcClient.sql("""
+                        select stock_available
+                        from product_sku
+                        where id = :skuId
+                        """)
+                .param("skuId", seed.skuId())
+                .query(Integer.class)
+                .single()).isEqualTo(8);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from stock_log
+                        where sku_id = :skuId
+                          and change_type = 'ORDER_RELEASE'
+                        """)
+                .param("skuId", seed.skuId())
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("""
+                        select status
+                        from user_coupon
+                        where id = :userCouponId
+                        """)
+                .param("userCouponId", seed.userCouponId())
+                .query(String.class)
+                .single()).isEqualTo(UserCouponStatus.LOCKED.name());
     }
 
     @Test

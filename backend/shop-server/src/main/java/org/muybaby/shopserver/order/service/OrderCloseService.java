@@ -13,7 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 public class OrderCloseService {
@@ -43,8 +45,19 @@ public class OrderCloseService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
 
+        List<Long> orderItemIds = jdbcClient.sql("""
+                        select id
+                        from order_item
+                        where order_id = :orderId
+                        order by id asc
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+
         List<LockedStockRow> lockedStocks = jdbcClient.sql("""
                         select id as stock_lock_id,
+                               order_item_id,
                                sku_id,
                                quantity
                         from stock_lock
@@ -57,6 +70,15 @@ public class OrderCloseService {
                 .param("status", StockLockStatus.LOCKED.name())
                 .query(this::mapLockedStockRow)
                 .list();
+
+        Set<Long> expectedOrderItemIds = new LinkedHashSet<>(orderItemIds);
+        Set<Long> lockedOrderItemIds = new LinkedHashSet<>();
+        for (LockedStockRow lockedStock : lockedStocks) {
+            lockedOrderItemIds.add(lockedStock.orderItemId());
+        }
+        if (lockedStocks.size() != orderItemIds.size() || !expectedOrderItemIds.equals(lockedOrderItemIds)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
 
         for (LockedStockRow lockedStock : lockedStocks) {
             Integer quantityBefore = jdbcClient.sql("""
@@ -80,7 +102,7 @@ public class OrderCloseService {
                     .param("updatedAt", now)
                     .param("skuId", lockedStock.skuId())
                     .update();
-            jdbcClient.sql("""
+            int releasedStockLockRows = jdbcClient.sql("""
                             update stock_lock
                             set status = :status,
                                 released_at = :releasedAt,
@@ -94,6 +116,9 @@ public class OrderCloseService {
                     .param("stockLockId", lockedStock.stockLockId())
                     .param("expectedStatus", StockLockStatus.LOCKED.name())
                     .update();
+            if (releasedStockLockRows != 1) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
             insertStockLog(
                     lockedStock.skuId(),
                     StockChangeType.ORDER_RELEASE.name(),
@@ -189,6 +214,7 @@ public class OrderCloseService {
     private LockedStockRow mapLockedStockRow(ResultSet rs, int rowNum) throws SQLException {
         return new LockedStockRow(
                 rs.getLong("stock_lock_id"),
+                rs.getLong("order_item_id"),
                 rs.getLong("sku_id"),
                 rs.getInt("quantity")
         );
@@ -197,6 +223,6 @@ public class OrderCloseService {
     private record ClosableOrder(Long orderId, String status, Long userCouponId) {
     }
 
-    private record LockedStockRow(Long stockLockId, Long skuId, Integer quantity) {
+    private record LockedStockRow(Long stockLockId, Long orderItemId, Long skuId, Integer quantity) {
     }
 }
