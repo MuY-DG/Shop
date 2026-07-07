@@ -13,9 +13,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
-import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 @Service
 public class OrderCloseService {
@@ -45,38 +45,81 @@ public class OrderCloseService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
 
-        List<Long> orderItemIds = jdbcClient.sql("""
-                        select id
+        List<OrderItemSnapshot> orderItems = jdbcClient.sql("""
+                        select id as order_item_id,
+                               sku_id,
+                               quantity
                         from order_item
                         where order_id = :orderId
                         order by id asc
                         """)
                 .param("orderId", orderId)
-                .query(Long.class)
+                .query(this::mapOrderItemSnapshot)
                 .list();
 
-        List<LockedStockRow> lockedStocks = jdbcClient.sql("""
+        List<StockLockSnapshot> stockLocks = jdbcClient.sql("""
                         select id as stock_lock_id,
                                order_item_id,
                                sku_id,
-                               quantity
+                               quantity,
+                               status
                         from stock_lock
                         where order_id = :orderId
-                          and status = :status
                         order by id asc
                         for update
                         """)
                 .param("orderId", orderId)
-                .param("status", StockLockStatus.LOCKED.name())
-                .query(this::mapLockedStockRow)
+                .query(this::mapStockLockSnapshot)
                 .list();
 
-        Set<Long> expectedOrderItemIds = new LinkedHashSet<>(orderItemIds);
-        Set<Long> lockedOrderItemIds = new LinkedHashSet<>();
-        for (LockedStockRow lockedStock : lockedStocks) {
-            lockedOrderItemIds.add(lockedStock.orderItemId());
+        if (orderItems.size() != stockLocks.size()) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-        if (lockedStocks.size() != orderItemIds.size() || !expectedOrderItemIds.equals(lockedOrderItemIds)) {
+
+        Map<Long, OrderItemSnapshot> orderItemById = new LinkedHashMap<>();
+        for (OrderItemSnapshot orderItem : orderItems) {
+            if (orderItemById.putIfAbsent(orderItem.orderItemId(), orderItem) != null) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+        }
+
+        Map<Long, LockedStockRow> lockedStockByOrderItemId = new LinkedHashMap<>();
+        for (StockLockSnapshot stockLock : stockLocks) {
+            if (!StockLockStatus.LOCKED.name().equals(stockLock.status())) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            LockedStockRow prior = lockedStockByOrderItemId.putIfAbsent(
+                    stockLock.orderItemId(),
+                    new LockedStockRow(
+                            stockLock.stockLockId(),
+                            stockLock.orderItemId(),
+                            stockLock.skuId(),
+                            stockLock.quantity()
+                    )
+            );
+            if (prior != null) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+        }
+
+        if (orderItemById.size() != lockedStockByOrderItemId.size()) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+
+        for (OrderItemSnapshot orderItem : orderItems) {
+            LockedStockRow lockedStock = lockedStockByOrderItemId.get(orderItem.orderItemId());
+            if (lockedStock == null
+                    || !orderItem.skuId().equals(lockedStock.skuId())
+                    || !orderItem.quantity().equals(lockedStock.quantity())) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+        }
+
+        List<LockedStockRow> lockedStocks = orderItems.stream()
+                .map(orderItem -> lockedStockByOrderItemId.get(orderItem.orderItemId()))
+                .toList();
+
+        if (lockedStocks.size() != orderItems.size()) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
 
@@ -211,16 +254,31 @@ public class OrderCloseService {
         );
     }
 
-    private LockedStockRow mapLockedStockRow(ResultSet rs, int rowNum) throws SQLException {
-        return new LockedStockRow(
-                rs.getLong("stock_lock_id"),
+    private OrderItemSnapshot mapOrderItemSnapshot(ResultSet rs, int rowNum) throws SQLException {
+        return new OrderItemSnapshot(
                 rs.getLong("order_item_id"),
                 rs.getLong("sku_id"),
                 rs.getInt("quantity")
         );
     }
 
+    private StockLockSnapshot mapStockLockSnapshot(ResultSet rs, int rowNum) throws SQLException {
+        return new StockLockSnapshot(
+                rs.getLong("stock_lock_id"),
+                rs.getLong("order_item_id"),
+                rs.getLong("sku_id"),
+                rs.getInt("quantity"),
+                rs.getString("status")
+        );
+    }
+
     private record ClosableOrder(Long orderId, String status, Long userCouponId) {
+    }
+
+    private record OrderItemSnapshot(Long orderItemId, Long skuId, Integer quantity) {
+    }
+
+    private record StockLockSnapshot(Long stockLockId, Long orderItemId, Long skuId, Integer quantity, String status) {
     }
 
     private record LockedStockRow(Long stockLockId, Long orderItemId, Long skuId, Integer quantity) {
