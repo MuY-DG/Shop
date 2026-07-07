@@ -311,18 +311,26 @@ APP_TOKEN=$(
 Create and enable a no-threshold coupon template:
 
 ```bash
+VALID_START_AT=$(
+  node -e 'const d = new Date(); d.setHours(0, 0, 0, 0); console.log(fmt(d)); function fmt(v) { const p = n => String(n).padStart(2, "0"); return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}T${p(v.getHours())}:${p(v.getMinutes())}:${p(v.getSeconds())}`; }'
+)
+
+VALID_END_AT=$(
+  node -e 'const d = new Date(); d.setHours(23, 59, 59, 0); d.setDate(d.getDate() + 365); console.log(fmt(d)); function fmt(v) { const p = n => String(n).padStart(2, "0"); return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}T${p(v.getHours())}:${p(v.getMinutes())}:${p(v.getSeconds())}`; }'
+)
+
 TEMPLATE_ID=$(
   curl -s -X POST http://localhost:8080/admin/marketing/coupon-templates \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d '{"name":"新人无门槛券","type":"CASH","scope":"ALL","discountAmountCent":500,"minimumSpendCent":0,"totalCount":50,"onePerUser":true,"status":"DISABLED","claimStartAt":"2026-01-01T00:00:00","claimEndAt":"2026-12-31T23:59:59","validDays":30,"description":"首单无门槛立减5元"}' \
+    -d "{\"name\":\"新人无门槛券\",\"type\":\"CASH\",\"scope\":\"ALL\",\"discountAmountCent\":500,\"minimumSpendCent\":0,\"totalCount\":50,\"onePerUser\":true,\"status\":\"DISABLED\",\"claimStartAt\":\"${VALID_START_AT}\",\"claimEndAt\":\"${VALID_END_AT}\",\"validDays\":30,\"description\":\"首单无门槛立减5元\"}" \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.id));'
 )
 
 curl -s -X PUT "http://localhost:8080/admin/marketing/coupon-templates/${TEMPLATE_ID}" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d "{\"name\":\"新人无门槛券\",\"type\":\"CASH\",\"scope\":\"ALL\",\"discountAmountCent\":500,\"minimumSpendCent\":0,\"totalCount\":50,\"onePerUser\":true,\"status\":\"ENABLED\",\"claimStartAt\":\"2026-01-01T00:00:00\",\"claimEndAt\":\"2026-12-31T23:59:59\",\"validDays\":30,\"description\":\"首单无门槛立减5元\"}" \
+  -d "{\"name\":\"新人无门槛券\",\"type\":\"CASH\",\"scope\":\"ALL\",\"discountAmountCent\":500,\"minimumSpendCent\":0,\"totalCount\":50,\"onePerUser\":true,\"status\":\"ENABLED\",\"claimStartAt\":\"${VALID_START_AT}\",\"claimEndAt\":\"${VALID_END_AT}\",\"validDays\":30,\"description\":\"首单无门槛立减5元\"}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
 ```
 
@@ -331,7 +339,7 @@ Verify claimable list:
 ```bash
 curl -s http://localhost:8080/app/coupons/claimable \
   -H "Authorization: Bearer ${APP_TOKEN}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.records[0]; if (!coupon || coupon.name !== "新人无门槛券") process.exit(1); console.log(coupon.name); });'
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.records.find(item => item.id === Number(process.argv[1]) || item.name === "新人无门槛券"); if (!coupon) process.exit(1); console.log(coupon.name); });' "${TEMPLATE_ID}"
 ```
 
 Claim coupon:
