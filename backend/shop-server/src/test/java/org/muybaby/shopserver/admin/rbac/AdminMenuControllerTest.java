@@ -9,7 +9,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -33,13 +34,33 @@ class AdminMenuControllerTest {
         mockMvc.perform(get("/admin/system/menus")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[*].path", contains("/dashboard", "/product", "/system")))
                 .andExpect(jsonPath("$.data[0].path").value("/dashboard"))
                 .andExpect(jsonPath("$.data[0].component").value("/index/index"))
-                .andExpect(jsonPath("$.data[1].path").value("/system"))
-                .andExpect(jsonPath("$.data[1].children[0].path").value("user"))
-                .andExpect(jsonPath("$.data[1].children[0].meta.authList[*].authMark", hasItem("system:user:create")))
-                .andExpect(jsonPath("$.data[1].children[2].path").value("menu"))
-                .andExpect(jsonPath("$.data[1].children[2].meta.authList[*].authMark", hasItem("add")));
+                .andExpect(jsonPath("$.data[1].path").value("/product"))
+                .andExpect(jsonPath("$.data[1].children[*].path", contains("category", "spu")))
+                .andExpect(jsonPath("$.data[1].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                        "product:category:create",
+                        "product:category:update"
+                )))
+                .andExpect(jsonPath("$.data[1].children[1].meta.authList[*].authMark", containsInAnyOrder(
+                        "product:spu:create",
+                        "product:spu:update",
+                        "product:spu:publish",
+                        "product:sku:stock"
+                )))
+                .andExpect(jsonPath("$.data[2].path").value("/system"))
+                .andExpect(jsonPath("$.data[2].children[0].path").value("user"))
+                .andExpect(jsonPath("$.data[2].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                        "system:user:create",
+                        "system:user:update",
+                        "system:user:disable"
+                )))
+                .andExpect(jsonPath("$.data[2].children[2].path").value("menu"))
+                .andExpect(jsonPath("$.data[2].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                        "system:menu:update",
+                        "add"
+                )));
     }
 
     private String loginAndExtractToken() throws Exception {
