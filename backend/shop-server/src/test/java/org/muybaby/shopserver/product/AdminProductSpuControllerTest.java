@@ -81,6 +81,8 @@ class AdminProductSpuControllerTest {
                         .param("size", "20")
                         .param("title", "Controller"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.current").value(1))
+                .andExpect(jsonPath("$.data.size").value(20))
                 .andExpect(jsonPath("$.data.total", greaterThanOrEqualTo(1)))
                 .andExpect(jsonPath("$.data.records[0].status").value("ON_SALE"));
 
@@ -101,9 +103,19 @@ class AdminProductSpuControllerTest {
                                 """))
                 .andExpect(status().isOk());
 
+        mockMvc.perform(get("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.skus[0].stockAvailable").value(8));
+
         mockMvc.perform(post("/admin/product/spus/" + spuId + "/unpublish")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("OFF_SALE"));
     }
 
     private long createCategory(String token) throws Exception {
