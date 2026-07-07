@@ -25,6 +25,13 @@ cd backend/shop-server
 ./mvnw -Dtest='OpaqueTokenServiceTest,InMemoryTokenStoreTest,PathTokenKindResolverTest,SecurityConfigTest,AdminRbacSchemaTest,AdminAuthControllerTest,AdminMenuControllerTest,AppAuthControllerTest' test
 ```
 
+Focused product catalog tests:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest='ProductCatalogSchemaTest,AdminProductServiceTest,AdminProductCategoryControllerTest,AdminProductSpuControllerTest,AppProductControllerTest,SecurityConfigTest' test
+```
+
 Full backend test suite:
 
 ```bash
@@ -117,6 +124,10 @@ curl -i -X POST http://localhost:8080/app/auth/phone \
 ```
 
 Expected result: both isolation checks return HTTP 401.
+
+## Product Catalog Smoke Checks
+
+Product catalog smoke checks are documented in `docs/smoke-checks.md#product-catalog-smoke-checks`. They run against the local backend on the `test` profile and the local test database path. The `test` profile still uses the mock WeChat mini program client for login, but category, SPU, SKU, publish/unpublish, and mini program product list/detail requests go through the real local backend product APIs, not product mocks.
 
 ## Admin Checks
 
