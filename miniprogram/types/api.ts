@@ -171,7 +171,7 @@ export interface AvailableCouponResponse {
   coupons: AvailableCouponItem[];
 }
 
-export type OrderStatus = "CREATED" | "PAID" | "CLOSED" | "CANCELLED";
+export type OrderStatus = "CREATED" | "PAID" | "CLOSED" | "REFUNDED";
 
 export interface OrderPreviewItem {
   cartItemId: number;

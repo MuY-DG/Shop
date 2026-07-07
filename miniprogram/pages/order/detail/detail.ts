@@ -46,7 +46,11 @@ function getStatusText(status: OrderStatus): string {
   if (status === "CLOSED") {
     return "已关闭";
   }
-  return "已取消";
+  if (status === "REFUNDED") {
+    return "已退款";
+  }
+  const exhaustiveStatus: never = status;
+  return exhaustiveStatus;
 }
 
 function formatDateTime(value: string | null): string {
