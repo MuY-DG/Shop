@@ -135,6 +135,13 @@
   import { computed, nextTick, reactive, ref, watch } from 'vue'
   import type { FormInstance, FormRules } from 'element-plus'
   import { createCouponTemplate, updateCouponTemplate } from '@/api/coupon'
+  import {
+    buildCouponTemplatePayload,
+    createDefaultCouponTemplateForm,
+    fillCouponTemplateForm,
+    type CouponTemplateFormState,
+    toCent
+  } from './coupon-template-form'
 
   interface Props {
     visible: boolean
@@ -144,19 +151,6 @@
   interface Emits {
     (e: 'update:visible', value: boolean): void
     (e: 'success'): void
-  }
-
-  interface CouponTemplateFormState {
-    name: string
-    description: string
-    couponType: Api.Marketing.CouponType
-    thresholdYuan: number
-    discountYuan: number
-    totalStock: number
-    perUserLimit: number
-    validRange: [string, string] | []
-    status: Api.Marketing.CouponTemplateStatus
-    sortOrder: number
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -174,28 +168,13 @@
     { label: '满减券', value: 'MIN_SPEND' }
   ]
 
-  const createDefaultForm = (): CouponTemplateFormState => ({
-    name: '',
-    description: '',
-    couponType: 'NO_THRESHOLD',
-    thresholdYuan: 0,
-    discountYuan: 0.01,
-    totalStock: 1,
-    perUserLimit: 1,
-    validRange: [],
-    status: 'DISABLED',
-    sortOrder: 0
-  })
-
-  const formData = reactive<CouponTemplateFormState>(createDefaultForm())
+  const formData = reactive<CouponTemplateFormState>(createDefaultCouponTemplateForm())
 
   const drawerTitle = computed(() => (props.template?.id ? '编辑优惠券' : '新增优惠券'))
 
-  const toCent = (value: number) => Math.round(value * 100)
-
   const rules: FormRules<CouponTemplateFormState> = {
     name: [{ required: true, message: '请输入优惠券名称', trigger: 'blur' }],
-    description: [{ required: true, message: '请输入优惠券描述', trigger: 'blur' }],
+    description: [{ max: 120, message: '描述长度不能超过 120 个字符', trigger: 'blur' }],
     couponType: [{ required: true, message: '请选择优惠券类型', trigger: 'change' }],
     thresholdYuan: [
       {
@@ -250,25 +229,12 @@
   }
 
   const resetFormData = () => {
-    Object.assign(formData, createDefaultForm())
+    Object.assign(formData, createDefaultCouponTemplateForm())
   }
 
   const fillForm = (template?: Api.Marketing.CouponTemplate | null) => {
     resetFormData()
-    if (!template) return
-
-    Object.assign(formData, {
-      name: template.name,
-      description: template.description,
-      couponType: template.couponType,
-      thresholdYuan: template.thresholdCent / 100,
-      discountYuan: template.discountCent / 100,
-      totalStock: template.totalStock,
-      perUserLimit: template.perUserLimit,
-      validRange: [template.validStartAt, template.validEndAt],
-      status: template.status,
-      sortOrder: template.sortOrder
-    })
+    Object.assign(formData, fillCouponTemplateForm(template))
   }
 
   watch(
@@ -290,27 +256,6 @@
     }
   )
 
-  const buildPayload = (): Api.Marketing.CouponTemplateForm => {
-    const [validStartAt = '', validEndAt = ''] = formData.validRange
-    return {
-      name: formData.name.trim(),
-      description: formData.description.trim(),
-      couponType: formData.couponType,
-      discountType: 'AMOUNT_OFF',
-      thresholdCent: formData.couponType === 'NO_THRESHOLD' ? 0 : toCent(formData.thresholdYuan),
-      discountCent: toCent(formData.discountYuan),
-      scopeType: 'ALL',
-      scopeValue: '',
-      strategyKey: '',
-      totalStock: formData.totalStock,
-      perUserLimit: formData.perUserLimit,
-      validStartAt,
-      validEndAt,
-      status: formData.status,
-      sortOrder: formData.sortOrder
-    }
-  }
-
   const handleSubmit = async () => {
     if (!formRef.value) return
 
@@ -321,7 +266,7 @@
 
     if (!valid) return
 
-    const payload = buildPayload()
+    const payload = buildCouponTemplatePayload(formData, props.template)
     submitting.value = true
 
     try {
