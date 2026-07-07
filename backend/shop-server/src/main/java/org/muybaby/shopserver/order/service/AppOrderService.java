@@ -82,18 +82,19 @@ public class AppOrderService {
             return existing.get();
         }
 
-        CheckoutSelection selection = loadCheckoutSelection(userId, request.cartItemIds(), true);
-        AppliedCoupon coupon = resolveCoupon(userId, request.userCouponId(), selection.context(), true);
         LocalDateTime now = LocalDateTime.now();
-        long payableAmountCent = Math.max(selection.productAmountCent() - coupon.discountCent(), 0L);
         String orderNo = nextOrderNo(now);
-
         Long orderId;
         try {
-            orderId = insertOrder(userId, orderNo, request.idempotencyKey(), selection, coupon, payableAmountCent, now);
+            orderId = insertOrderOwnership(userId, orderNo, request.idempotencyKey(), now);
         } catch (DuplicateKeyException ex) {
             return findExistingOrder(userId, request.idempotencyKey()).orElseThrow(() -> ex);
         }
+
+        CheckoutSelection selection = loadCheckoutSelection(userId, request.cartItemIds(), true);
+        AppliedCoupon coupon = resolveCoupon(userId, request.userCouponId(), selection.context(), true);
+        long payableAmountCent = Math.max(selection.productAmountCent() - coupon.discountCent(), 0L);
+        updateOrderAmounts(orderId, selection, coupon, payableAmountCent, now);
         List<Long> orderItemIds = insertOrderItems(orderId, selection.items(), now);
         applyStockLocks(userId, orderId, orderItemIds, selection.items(), now);
         if (coupon.userCouponId() != null) {
@@ -397,13 +398,10 @@ public class AppOrderService {
                 .optional();
     }
 
-    private Long insertOrder(
+    private Long insertOrderOwnership(
             Long userId,
             String orderNo,
             String idempotencyKey,
-            CheckoutSelection selection,
-            AppliedCoupon coupon,
-            long payableAmountCent,
             LocalDateTime now
     ) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
@@ -427,19 +425,53 @@ public class AppOrderService {
                         .addValue("status", OrderStatus.CREATED.name())
                         .addValue("source", ORDER_SOURCE_CART)
                         .addValue("idempotencyKey", idempotencyKey)
-                        .addValue("productOriginalAmountCent", selection.productOriginalAmountCent())
-                        .addValue("productAmountCent", selection.productAmountCent())
-                        .addValue("userCouponId", coupon.userCouponId())
-                        .addValue("couponName", defaultString(coupon.couponName()))
-                        .addValue("couponDiscountCent", coupon.discountCent())
+                        .addValue("productOriginalAmountCent", 0L)
+                        .addValue("productAmountCent", 0L)
+                        .addValue("userCouponId", null)
+                        .addValue("couponName", "")
+                        .addValue("couponDiscountCent", 0L)
                         .addValue("freightCent", 0L)
-                        .addValue("payableAmountCent", payableAmountCent)
+                        .addValue("payableAmountCent", 0L)
                         .addValue("paidAmountCent", 0L)
                         .addValue("createdAt", now)
                         .addValue("updatedAt", now),
                 keyHolder,
                 new String[]{"id"});
         return requireGeneratedId(keyHolder);
+    }
+
+    private void updateOrderAmounts(
+            Long orderId,
+            CheckoutSelection selection,
+            AppliedCoupon coupon,
+            long payableAmountCent,
+            LocalDateTime now
+    ) {
+        int updatedRows = jdbcClient.sql("""
+                        update shop_order
+                        set product_original_amount_cent = :productOriginalAmountCent,
+                            product_amount_cent = :productAmountCent,
+                            user_coupon_id = :userCouponId,
+                            coupon_name = :couponName,
+                            coupon_discount_cent = :couponDiscountCent,
+                            freight_cent = :freightCent,
+                            payable_amount_cent = :payableAmountCent,
+                            updated_at = :updatedAt
+                        where id = :orderId
+                        """)
+                .param("productOriginalAmountCent", selection.productOriginalAmountCent())
+                .param("productAmountCent", selection.productAmountCent())
+                .param("userCouponId", coupon.userCouponId())
+                .param("couponName", defaultString(coupon.couponName()))
+                .param("couponDiscountCent", coupon.discountCent())
+                .param("freightCent", 0L)
+                .param("payableAmountCent", payableAmountCent)
+                .param("updatedAt", now)
+                .param("orderId", orderId)
+                .update();
+        if (updatedRows != 1) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
     }
 
     private List<Long> insertOrderItems(Long orderId, List<OrderPreviewItemResponse> items, LocalDateTime now) {

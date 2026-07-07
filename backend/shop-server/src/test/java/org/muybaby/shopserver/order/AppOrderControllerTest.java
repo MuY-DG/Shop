@@ -4,21 +4,48 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
 import org.muybaby.shopserver.product.service.AdminProductService;
+import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
+import org.muybaby.shopserver.order.dto.OrderSubmitResponse;
+import org.muybaby.shopserver.order.service.AppOrderService;
+import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.AbstractDataSource;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import javax.sql.DataSource;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
@@ -30,6 +57,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Import(AppOrderControllerTest.IdempotencyRaceConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class AppOrderControllerTest {
 
@@ -44,6 +72,12 @@ class AppOrderControllerTest {
 
     @Autowired
     private AdminProductService adminProductService;
+
+    @Autowired
+    private AppOrderService appOrderService;
+
+    @Autowired
+    private IdempotencyRaceProbe idempotencyRaceProbe;
 
     @BeforeEach
     void clearOrderState() {
@@ -246,6 +280,75 @@ class AppOrderControllerTest {
                 .param("skuId", skuId)
                 .query(Integer.class)
                 .single()).isEqualTo(8);
+    }
+
+    @Test
+    void overlappingSubmitWithSameIdempotencyKeyReturnsExistingOrderInsteadOfCartError() throws Exception {
+        AppLoginSession session = appLogin("order-submit-race-user");
+        long userId = session.userId();
+        long skuId = createPublishedSku("ORDER-RACE-SKU", 3990L, 4990L, 10, "ENABLED");
+        addCartItem(session.token(), skuId, 2);
+
+        AuthenticatedPrincipal principal = new AuthenticatedPrincipal(
+                TokenKind.APP,
+                userId,
+                "order-submit-race-user",
+                List.of(),
+                List.of()
+        );
+        AppOrderSubmitRequest request = new AppOrderSubmitRequest(null, null, "checkout-race-001");
+        idempotencyRaceProbe.arm("order-submit-2");
+
+        ExecutorService executor = Executors.newFixedThreadPool(2, new SubmitThreadFactory());
+        try {
+            CompletableFuture<OrderSubmitResponse> firstSubmit = CompletableFuture.supplyAsync(
+                    () -> appOrderService.submit(principal, request),
+                    executor
+            );
+            CompletableFuture<OrderSubmitResponse> secondSubmit = CompletableFuture.supplyAsync(
+                    () -> appOrderService.submit(principal, request),
+                    executor
+            );
+
+            OrderSubmitResponse created = firstSubmit.get(30, TimeUnit.SECONDS);
+            idempotencyRaceProbe.markWinnerCommitted();
+            OrderSubmitResponse repeated = secondSubmit.get(30, TimeUnit.SECONDS);
+
+            assertThat(repeated.orderId()).isEqualTo(created.orderId());
+            assertThat(repeated.orderNo()).isEqualTo(created.orderNo());
+            assertThat(repeated.status()).isEqualTo(created.status());
+            assertThat(repeated.payableAmountCent()).isEqualTo(created.payableAmountCent());
+            assertThat(repeated.couponDiscountCent()).isEqualTo(created.couponDiscountCent());
+            assertThat(jdbcClient.sql("""
+                            select count(*)
+                            from shop_order
+                            where user_id = :userId
+                              and idempotency_key = :idempotencyKey
+                            """)
+                    .param("userId", userId)
+                    .param("idempotencyKey", "checkout-race-001")
+                    .query(Integer.class)
+                    .single()).isEqualTo(1);
+            assertThat(jdbcClient.sql("select count(*) from order_item where order_id = :orderId")
+                    .param("orderId", created.orderId())
+                    .query(Integer.class)
+                    .single()).isEqualTo(1);
+            assertThat(jdbcClient.sql("select count(*) from stock_lock where order_id = :orderId")
+                    .param("orderId", created.orderId())
+                    .query(Integer.class)
+                    .single()).isEqualTo(1);
+            assertThat(jdbcClient.sql("select stock_available from product_sku where id = :skuId")
+                    .param("skuId", skuId)
+                    .query(Integer.class)
+                    .single()).isEqualTo(8);
+            assertThat(jdbcClient.sql("select count(*) from cart_item where user_id = :userId")
+                    .param("userId", userId)
+                    .query(Integer.class)
+                    .single()).isEqualTo(0);
+        } finally {
+            idempotencyRaceProbe.reset();
+            executor.shutdownNow();
+        }
     }
 
     @Test
@@ -610,6 +713,187 @@ class AppOrderControllerTest {
                 .param("templateName", templateName)
                 .query(Long.class)
                 .single();
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class IdempotencyRaceConfiguration {
+
+        @Bean
+        IdempotencyRaceProbe idempotencyRaceProbe() {
+            return new IdempotencyRaceProbe();
+        }
+
+        @Bean
+        BeanPostProcessor idempotencyRaceDataSourcePostProcessor(IdempotencyRaceProbe idempotencyRaceProbe) {
+            return new BeanPostProcessor() {
+                @Override
+                public Object postProcessAfterInitialization(Object bean, String beanName) {
+                    if (bean instanceof DataSource dataSource && !(bean instanceof ProbeDataSource)) {
+                        return new ProbeDataSource(dataSource, idempotencyRaceProbe);
+                    }
+                    return bean;
+                }
+            };
+        }
+    }
+
+    static class SubmitThreadFactory implements ThreadFactory {
+
+        private final AtomicInteger counter = new AtomicInteger();
+
+        @Override
+        public Thread newThread(Runnable runnable) {
+            return new Thread(runnable, "order-submit-" + counter.incrementAndGet());
+        }
+    }
+
+    static class IdempotencyRaceProbe {
+
+        private final AtomicBoolean armed = new AtomicBoolean(false);
+        private final AtomicInteger existingOrderReadCount = new AtomicInteger();
+        private final AtomicBoolean losingSubmitPaused = new AtomicBoolean(false);
+        private volatile CyclicBarrier existingOrderBarrier = new CyclicBarrier(2);
+        private volatile CountDownLatch winnerCommitted = new CountDownLatch(0);
+        private volatile String losingThreadName;
+
+        void arm(String losingThreadName) {
+            this.losingThreadName = losingThreadName;
+            this.existingOrderReadCount.set(0);
+            this.losingSubmitPaused.set(false);
+            this.existingOrderBarrier = new CyclicBarrier(2);
+            this.winnerCommitted = new CountDownLatch(1);
+            this.armed.set(true);
+        }
+
+        void markWinnerCommitted() {
+            this.winnerCommitted.countDown();
+        }
+
+        void reset() {
+            this.armed.set(false);
+            this.winnerCommitted.countDown();
+        }
+
+        void beforeStatement(String sql) {
+            if (!armed.get()) {
+                return;
+            }
+            String normalized = normalizeSql(sql);
+            if (isExistingOrderLookup(normalized)) {
+                int currentCount = existingOrderReadCount.incrementAndGet();
+                if (currentCount <= 2) {
+                    awaitBarrier(existingOrderBarrier);
+                }
+                return;
+            }
+            if ((isCartSelection(normalized) || isOrderOwnershipInsert(normalized))
+                    && losingThreadName != null
+                    && losingThreadName.equals(Thread.currentThread().getName())
+                    && losingSubmitPaused.compareAndSet(false, true)) {
+                awaitLatch(winnerCommitted);
+            }
+        }
+
+        private boolean isExistingOrderLookup(String sql) {
+            return sql.contains("select id as order_id")
+                    && sql.contains("from shop_order")
+                    && sql.contains("idempotency_key");
+        }
+
+        private boolean isCartSelection(String sql) {
+            return sql.contains("select id as cart_item_id")
+                    && sql.contains("from cart_item");
+        }
+
+        private boolean isOrderOwnershipInsert(String sql) {
+            return sql.contains("insert into shop_order");
+        }
+
+        private String normalizeSql(String sql) {
+            return sql.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+        }
+
+        private void awaitBarrier(CyclicBarrier barrier) {
+            try {
+                barrier.await(30, TimeUnit.SECONDS);
+            } catch (Exception ex) {
+                throw new IllegalStateException("Failed to synchronize idempotency lookup race", ex);
+            }
+        }
+
+        private void awaitLatch(CountDownLatch latch) {
+            try {
+                if (!latch.await(30, TimeUnit.SECONDS)) {
+                    throw new TimeoutException("Timed out waiting for winning submit to commit");
+                }
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Interrupted while waiting for idempotency race latch", ex);
+            } catch (TimeoutException ex) {
+                throw new IllegalStateException(ex.getMessage(), ex);
+            }
+        }
+    }
+
+    static class ProbeDataSource extends AbstractDataSource {
+
+        private final DataSource delegate;
+        private final IdempotencyRaceProbe idempotencyRaceProbe;
+
+        ProbeDataSource(DataSource delegate, IdempotencyRaceProbe idempotencyRaceProbe) {
+            this.delegate = delegate;
+            this.idempotencyRaceProbe = idempotencyRaceProbe;
+        }
+
+        @Override
+        public Connection getConnection() throws java.sql.SQLException {
+            return wrap(delegate.getConnection());
+        }
+
+        @Override
+        public Connection getConnection(String username, String password) throws java.sql.SQLException {
+            return wrap(delegate.getConnection(username, password));
+        }
+
+        private Connection wrap(Connection connection) {
+            InvocationHandler handler = (proxy, method, args) -> {
+                try {
+                    if ("prepareStatement".equals(method.getName())
+                            && args != null
+                            && args.length > 0
+                            && args[0] instanceof String sql) {
+                        PreparedStatement preparedStatement = (PreparedStatement) method.invoke(connection, args);
+                        return wrapPreparedStatement(preparedStatement, sql);
+                    }
+                    return method.invoke(connection, args);
+                } catch (InvocationTargetException ex) {
+                    throw ex.getTargetException();
+                }
+            };
+            return (Connection) Proxy.newProxyInstance(
+                    Connection.class.getClassLoader(),
+                    new Class<?>[]{Connection.class},
+                    handler
+            );
+        }
+
+        private PreparedStatement wrapPreparedStatement(PreparedStatement preparedStatement, String sql) {
+            InvocationHandler handler = (proxy, method, args) -> {
+                try {
+                    if (method.getName().startsWith("execute")) {
+                        idempotencyRaceProbe.beforeStatement(sql);
+                    }
+                    return method.invoke(preparedStatement, args);
+                } catch (InvocationTargetException ex) {
+                    throw ex.getTargetException();
+                }
+            };
+            return (PreparedStatement) Proxy.newProxyInstance(
+                    PreparedStatement.class.getClassLoader(),
+                    new Class<?>[]{PreparedStatement.class},
+                    handler
+            );
+        }
     }
 
     private record AppLoginSession(String token, long userId) {
