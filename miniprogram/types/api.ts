@@ -90,3 +90,33 @@ export interface ProductDetail {
   images: ProductImage[];
   skus: ProductSku[];
 }
+
+export interface CartItem {
+  id: number;
+  skuId: number;
+  spuId: number;
+  productTitle: string;
+  productSubtitle: string;
+  mainImage: string;
+  skuImage: string;
+  displayImage: string;
+  specText: string;
+  priceCent: number;
+  originalPriceCent: number;
+  quantity: number;
+  lineAmountCent: number;
+  stockAvailable: number;
+  skuStatus: "ENABLED" | "DISABLED";
+  spuStatus: "DRAFT" | "ON_SALE" | "OFF_SALE";
+  available: boolean;
+  unavailableReason: "SKU_UNAVAILABLE" | "PRODUCT_UNAVAILABLE" | "STOCK_SHORTAGE" | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CartListResponse {
+  items: CartItem[];
+  totalQuantity: number;
+  totalAmountCent: number;
+  unavailableCount: number;
+}

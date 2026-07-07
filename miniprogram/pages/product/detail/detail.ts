@@ -1,4 +1,6 @@
 import type { ProductDetail, ProductSku } from "../../../types/api";
+import { ensureAppLogin } from "../../../services/auth";
+import { addCartItem } from "../../../services/cart";
 import { formatPrice, getProductDetail } from "../../../services/product";
 
 interface DatasetEvent {
@@ -63,6 +65,7 @@ Page({
     selectedSkuId: 0,
     selectedPriceText: "",
     selectedStockText: "",
+    addingCart: false,
     loading: false,
     errorText: ""
   },
@@ -124,5 +127,35 @@ Page({
       selectedPriceText: formatPrice(selectedSku.priceCent),
       selectedStockText: `库存 ${selectedSku.stockAvailable}`
     });
+  },
+  async onAddCartTap() {
+    if (!this.data.selectedSkuId || this.data.addingCart) {
+      return;
+    }
+
+    this.setData({
+      addingCart: true
+    });
+
+    try {
+      await ensureAppLogin();
+      await addCartItem({
+        skuId: this.data.selectedSkuId,
+        quantity: 1
+      });
+      wx.showToast({
+        title: "已加入购物车",
+        icon: "success"
+      });
+    } catch (error) {
+      wx.showToast({
+        title: error instanceof Error ? error.message : "加入失败",
+        icon: "none"
+      });
+    } finally {
+      this.setData({
+        addingCart: false
+      });
+    }
   }
 });

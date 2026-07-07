@@ -177,6 +177,10 @@
   line-height: 84rpx;
 }
 
+.action-button[disabled] {
+  opacity: 0.55;
+}
+
 .cart-button {
   background: #8a6f61;
 }

@@ -80,6 +80,15 @@ export async function silentLogin(): Promise<AppLoginResponse> {
   return response;
 }
 
+export async function ensureAppLogin(): Promise<void> {
+  const app = getAppTokenState();
+  if (app.globalData.token) {
+    return;
+  }
+
+  await silentLogin();
+}
+
 export function authorizePhone(code: string): Promise<PhoneAuthorizeResponse> {
   return request<PhoneAuthorizeResponse>({
     url: "/app/auth/phone",
