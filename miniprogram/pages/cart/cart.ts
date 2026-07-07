@@ -78,7 +78,11 @@ Page({
       });
     } catch (error) {
       this.setData({
-        errorText: error instanceof Error ? error.message : "购物车加载失败"
+        errorText: error instanceof Error ? error.message : "购物车加载失败",
+        items: [],
+        totalQuantity: 0,
+        totalAmountText: formatPrice(0),
+        unavailableCount: 0
       });
     } finally {
       this.setData({
@@ -102,6 +106,7 @@ Page({
   },
   async updateQuantity(cartItemId: number, quantity: number) {
     try {
+      await ensureAppLogin();
       await updateCartItemQuantity(cartItemId, { quantity });
       await this.loadCart();
     } catch (error) {
@@ -118,6 +123,7 @@ Page({
     }
 
     try {
+      await ensureAppLogin();
       await deleteCartItem(item.id);
       await this.loadCart();
     } catch (error) {
@@ -137,6 +143,7 @@ Page({
     });
 
     try {
+      await ensureAppLogin();
       await clearCart();
       await this.loadCart();
     } catch (error) {
