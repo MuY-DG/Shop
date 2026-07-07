@@ -4,18 +4,13 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.coupon.UserCouponStatus;
-import org.muybaby.shopserver.order.OrderStatus;
-import org.muybaby.shopserver.order.StockLockStatus;
 import org.muybaby.shopserver.order.dto.AdminOrderQueryRequest;
 import org.muybaby.shopserver.order.dto.OrderDetailResponse;
 import org.muybaby.shopserver.order.dto.OrderItemResponse;
 import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
-import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.sql.ResultSet;
@@ -26,13 +21,15 @@ import java.util.List;
 @Service
 public class AdminOrderService {
 
-    private static final String OPERATOR_TYPE_ADMIN = "ADMIN";
     private static final String CLOSE_REASON_ADMIN = "ADMIN_CLOSE";
+    private static final String OPERATOR_TYPE_ADMIN = "ADMIN";
 
     private final JdbcClient jdbcClient;
+    private final OrderCloseService orderCloseService;
 
-    public AdminOrderService(JdbcClient jdbcClient) {
+    public AdminOrderService(JdbcClient jdbcClient, OrderCloseService orderCloseService) {
         this.jdbcClient = jdbcClient;
+        this.orderCloseService = orderCloseService;
     }
 
     public PageResult<OrderSummaryResponse> page(AuthenticatedPrincipal principal, AdminOrderQueryRequest query) {
@@ -175,154 +172,9 @@ public class AdminOrderService {
         );
     }
 
-    @Transactional
     public void closeCreatedOrder(AuthenticatedPrincipal principal, Long orderId) {
         Long adminUserId = requireAdminUser(principal);
-        LocalDateTime now = LocalDateTime.now();
-        ClosableOrder order = jdbcClient.sql("""
-                        select id as order_id,
-                               status,
-                               user_coupon_id
-                        from shop_order
-                        where id = :orderId
-                        for update
-                        """)
-                .param("orderId", orderId)
-                .query(this::mapClosableOrder)
-                .optional()
-                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-        if (!OrderStatus.CREATED.name().equals(order.status())) {
-            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-        }
-
-        List<LockedStockRow> lockedStocks = jdbcClient.sql("""
-                        select id as stock_lock_id,
-                               sku_id,
-                               quantity
-                        from stock_lock
-                        where order_id = :orderId
-                          and status = :status
-                        order by id asc
-                        for update
-                        """)
-                .param("orderId", orderId)
-                .param("status", StockLockStatus.LOCKED.name())
-                .query(this::mapLockedStockRow)
-                .list();
-
-        for (LockedStockRow lockedStock : lockedStocks) {
-            Integer quantityBefore = jdbcClient.sql("""
-                            select stock_available
-                            from product_sku
-                            where id = :skuId
-                            for update
-                            """)
-                    .param("skuId", lockedStock.skuId())
-                    .query(Integer.class)
-                    .single();
-            int quantityAfter = quantityBefore + lockedStock.quantity();
-
-            jdbcClient.sql("""
-                            update product_sku
-                            set stock_available = stock_available + :quantity,
-                                updated_at = :updatedAt
-                            where id = :skuId
-                            """)
-                    .param("quantity", lockedStock.quantity())
-                    .param("updatedAt", now)
-                    .param("skuId", lockedStock.skuId())
-                    .update();
-            jdbcClient.sql("""
-                            update stock_lock
-                            set status = :status,
-                                released_at = :releasedAt,
-                                updated_at = :updatedAt
-                            where id = :stockLockId
-                              and status = :expectedStatus
-                            """)
-                    .param("status", StockLockStatus.RELEASED.name())
-                    .param("releasedAt", now)
-                    .param("updatedAt", now)
-                    .param("stockLockId", lockedStock.stockLockId())
-                    .param("expectedStatus", StockLockStatus.LOCKED.name())
-                    .update();
-            insertStockLog(
-                    lockedStock.skuId(),
-                    StockChangeType.ORDER_RELEASE.name(),
-                    quantityBefore,
-                    lockedStock.quantity(),
-                    quantityAfter,
-                    "Admin close order " + orderId,
-                    adminUserId
-            );
-        }
-
-        if (order.userCouponId() != null) {
-            jdbcClient.sql("""
-                            update user_coupon
-                            set status = :status,
-                                released_at = :releasedAt,
-                                updated_at = :updatedAt
-                            where id = :userCouponId
-                              and locked_order_id = :orderId
-                              and status = :expectedStatus
-                            """)
-                    .param("status", UserCouponStatus.RELEASED.name())
-                    .param("releasedAt", now)
-                    .param("updatedAt", now)
-                    .param("userCouponId", order.userCouponId())
-                    .param("orderId", orderId)
-                    .param("expectedStatus", UserCouponStatus.LOCKED.name())
-                    .update();
-        }
-
-        int updatedRows = jdbcClient.sql("""
-                        update shop_order
-                        set status = :status,
-                            close_reason = :closeReason,
-                            closed_at = :closedAt,
-                            updated_at = :updatedAt
-                        where id = :orderId
-                          and status = :expectedStatus
-                        """)
-                .param("status", OrderStatus.CLOSED.name())
-                .param("closeReason", CLOSE_REASON_ADMIN)
-                .param("closedAt", now)
-                .param("updatedAt", now)
-                .param("orderId", orderId)
-                .param("expectedStatus", OrderStatus.CREATED.name())
-                .update();
-        if (updatedRows != 1) {
-            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-        }
-    }
-
-    private void insertStockLog(
-            Long skuId,
-            String changeType,
-            Integer quantityBefore,
-            Integer quantityDelta,
-            Integer quantityAfter,
-            String reason,
-            Long operatorId
-    ) {
-        jdbcClient.sql("""
-                        insert into stock_log (
-                            sku_id, change_type, quantity_before, quantity_delta, quantity_after, reason, operator_type, operator_id
-                        )
-                        values (
-                            :skuId, :changeType, :quantityBefore, :quantityDelta, :quantityAfter, :reason, :operatorType, :operatorId
-                        )
-                        """)
-                .param("skuId", skuId)
-                .param("changeType", changeType)
-                .param("quantityBefore", quantityBefore)
-                .param("quantityDelta", quantityDelta)
-                .param("quantityAfter", quantityAfter)
-                .param("reason", reason)
-                .param("operatorType", OPERATOR_TYPE_ADMIN)
-                .param("operatorId", operatorId)
-                .update();
+        orderCloseService.closeCreatedOrder(orderId, CLOSE_REASON_ADMIN, OPERATOR_TYPE_ADMIN, adminUserId);
     }
 
     private Long requireAdminUser(AuthenticatedPrincipal principal) {
@@ -393,22 +245,6 @@ public class AdminOrderService {
         );
     }
 
-    private ClosableOrder mapClosableOrder(ResultSet rs, int rowNum) throws SQLException {
-        return new ClosableOrder(
-                rs.getLong("order_id"),
-                rs.getString("status"),
-                rs.getObject("user_coupon_id", Long.class)
-        );
-    }
-
-    private LockedStockRow mapLockedStockRow(ResultSet rs, int rowNum) throws SQLException {
-        return new LockedStockRow(
-                rs.getLong("stock_lock_id"),
-                rs.getLong("sku_id"),
-                rs.getInt("quantity")
-        );
-    }
-
     private record OrderDetailHeader(
             Long orderId,
             String orderNo,
@@ -431,11 +267,5 @@ public class AdminOrderService {
             LocalDateTime closedAt,
             LocalDateTime createdAt
     ) {
-    }
-
-    private record ClosableOrder(Long orderId, String status, Long userCouponId) {
-    }
-
-    private record LockedStockRow(Long stockLockId, Long skuId, Integer quantity) {
     }
 }
