@@ -272,6 +272,140 @@ success
 0
 ```
 
+## Coupon Smoke Checks
+
+This is a real local smoke check for the coupon phase. It uses the local backend and local database path. In the test profile, WeChat login is still backed by the mock WeChat mini program client; product, cart, coupon, and promotion requests go through real local backend APIs, not product/cart/coupon mocks.
+
+Start backend with the existing test-profile local command:
+
+```bash
+cd backend/shop-server
+./mvnw -Dspring-boot.run.profiles=test \
+  -Dspring-boot.run.useTestClasspath=true \
+  -Dspring-boot.run.arguments=--spring.config.additional-location=file:src/test/resources/ \
+  spring-boot:run
+```
+
+Admin login:
+
+```bash
+ADMIN_TOKEN=$(
+  curl -s -X POST http://localhost:8080/admin/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"userName":"Super","password":"123456"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+```
+
+Mini program login:
+
+```bash
+APP_TOKEN=$(
+  curl -s -X POST http://localhost:8080/app/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"code":"test-login-code"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+```
+
+Create and enable a no-threshold coupon template:
+
+```bash
+TEMPLATE_ID=$(
+  curl -s -X POST http://localhost:8080/admin/marketing/coupon-templates \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d '{"name":"新人无门槛券","type":"CASH","scope":"ALL","discountAmountCent":500,"minimumSpendCent":0,"totalCount":50,"onePerUser":true,"status":"DISABLED","claimStartAt":"2026-01-01T00:00:00","claimEndAt":"2026-12-31T23:59:59","validDays":30,"description":"首单无门槛立减5元"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.id));'
+)
+
+curl -s -X PUT "http://localhost:8080/admin/marketing/coupon-templates/${TEMPLATE_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"name\":\"新人无门槛券\",\"type\":\"CASH\",\"scope\":\"ALL\",\"discountAmountCent\":500,\"minimumSpendCent\":0,\"totalCount\":50,\"onePerUser\":true,\"status\":\"ENABLED\",\"claimStartAt\":\"2026-01-01T00:00:00\",\"claimEndAt\":\"2026-12-31T23:59:59\",\"validDays\":30,\"description\":\"首单无门槛立减5元\"}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
+```
+
+Verify claimable list:
+
+```bash
+curl -s http://localhost:8080/app/coupons/claimable \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.records[0]; if (!coupon || coupon.name !== "新人无门槛券") process.exit(1); console.log(coupon.name); });'
+```
+
+Claim coupon:
+
+```bash
+USER_COUPON_ID=$(
+  curl -s -X POST "http://localhost:8080/app/coupons/templates/${TEMPLATE_ID}/claim" \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "CLAIMED") process.exit(1); console.log(body.data.id); });'
+)
+
+curl -s http://localhost:8080/app/coupons/mine \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.records.find(item => item.id === Number(process.argv[1])); if (!coupon) process.exit(1); console.log(coupon.status); });' "${USER_COUPON_ID}"
+```
+
+Create category/SPU/SKU and publish:
+
+```bash
+CATEGORY_ID=$(
+  curl -s -X POST http://localhost:8080/admin/product/categories \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d '{"parentId":0,"name":"优惠券锅底分类","icon":"","sortOrder":30,"status":"ENABLED"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+
+SPU_ID=$(
+  curl -s -X POST http://localhost:8080/admin/product/spus \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"购物车优惠券测试锅底\",\"subtitle\":\"满减券联调\",\"mainImage\":\"https://example.test/coupon-main.jpg\",\"sellingPoints\":\"优惠联调,实时计算\",\"detailHtml\":\"<p>用于优惠券可用列表联调。</p>\",\"sortOrder\":30,\"images\":[\"https://example.test/coupon-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"COUPON-HY-001\",\"specJson\":\"{\\\"口味\\\":\\\"牛油\\\",\\\"重量\\\":\\\"300g\\\"}\",\"specText\":\"牛油 / 300g\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":100,\"weightGram\":300,\"image\":\"https://example.test/coupon-sku-300.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+
+curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
+```
+
+Add SKU to cart:
+
+```bash
+SKU_ID=$(
+  curl -s "http://localhost:8080/app/product/spus/${SPU_ID}" \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.skus[0].id));'
+)
+
+curl -s -X POST http://localhost:8080/app/cart/items \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"skuId\":${SKU_ID},\"quantity\":1}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.lineAmountCent !== 3990) process.exit(1); console.log(`${body.data.productTitle} ${body.data.quantity} ${body.data.lineAmountCent}`); });'
+```
+
+Query `/app/coupons/available`:
+
+```bash
+curl -s http://localhost:8080/app/coupons/available \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.availableCoupons.find(item => item.id === Number(process.argv[1])); if (!coupon || body.data.discountAmountCent !== 500) process.exit(1); console.log(body.data.discountAmountCent); });' "${USER_COUPON_ID}"
+```
+
+Expected result:
+
+```text
+success
+新人无门槛券
+CLAIMED
+购物车优惠券测试锅底 1 3990
+500
+```
+
 ## Admin
 
 ```bash

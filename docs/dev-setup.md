@@ -39,6 +39,13 @@ cd backend/shop-server
 ./mvnw -Dtest='CartSchemaTest,AppCartControllerTest,AppAuthControllerTest,SecurityConfigTest,PathTokenKindResolverTest' test
 ```
 
+Focused coupon tests:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest=CouponSchemaTest,AdminCouponTemplateControllerTest,AppCouponControllerTest,CouponDiscountCalculatorTest test
+```
+
 Full backend test suite:
 
 ```bash
@@ -135,6 +142,21 @@ Expected result: both isolation checks return HTTP 401.
 ## Product Catalog Smoke Checks
 
 Product catalog smoke checks are documented in `docs/smoke-checks.md#product-catalog-smoke-checks`. They run against the local backend on the `test` profile and the local test database path. The `test` profile still uses the mock WeChat mini program client for login, but category, SPU, SKU, publish/unpublish, and mini program product list/detail requests go through the real local backend product APIs, not product mocks.
+
+## Coupon Checks
+
+Run automated checks with:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest=CouponSchemaTest,AdminCouponTemplateControllerTest,AppCouponControllerTest,CouponDiscountCalculatorTest test
+cd ../../miniprogram
+pnpm typecheck
+cd ../admin
+pnpm build
+```
+
+For real local coupon smoke, follow `docs/smoke-checks.md#coupon-smoke-checks`.
 
 ## Admin Checks
 
