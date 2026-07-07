@@ -7,6 +7,8 @@
     "pages/profile/profile",
     "pages/coupon/list/list",
     "pages/coupon/mine/mine",
+    "pages/order/preview/preview",
+    "pages/order/list/list",
     "pages/order/detail/detail"
   ],
   "window": {

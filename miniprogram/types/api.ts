@@ -170,3 +170,99 @@ export interface AvailableCouponResponse {
   payableAmountCent: number;
   coupons: AvailableCouponItem[];
 }
+
+export type OrderStatus = "CREATED" | "PAID" | "CLOSED" | "CANCELLED";
+
+export interface OrderPreviewItem {
+  cartItemId: number;
+  skuId: number;
+  spuId: number;
+  productTitle: string;
+  productSubtitle: string;
+  mainImage: string;
+  skuImage: string;
+  displayImage: string;
+  skuCode: string;
+  specText: string;
+  originalPriceCent: number;
+  unitPriceCent: number;
+  quantity: number;
+  lineOriginalAmountCent: number;
+  lineAmountCent: number;
+}
+
+export interface OrderPreviewResponse {
+  items: OrderPreviewItem[];
+  productOriginalAmountCent: number;
+  productAmountCent: number;
+  userCouponId: number | null;
+  couponName: string | null;
+  couponDiscountCent: number;
+  freightCent: number;
+  payableAmountCent: number;
+}
+
+export interface OrderSubmitResponse {
+  orderId: number;
+  orderNo: string;
+  status: OrderStatus;
+  payableAmountCent: number;
+  couponDiscountCent: number;
+  createdAt: string;
+}
+
+export interface OrderSummary {
+  orderId: number;
+  orderNo: string;
+  status: OrderStatus;
+  productAmountCent: number;
+  couponDiscountCent: number;
+  freightCent: number;
+  payableAmountCent: number;
+  paidAmountCent: number;
+  productTitle: string;
+  itemCount: number;
+  createdAt: string;
+}
+
+export interface OrderItem {
+  orderItemId: number;
+  skuId: number;
+  spuId: number;
+  productTitle: string;
+  productSubtitle: string;
+  mainImage: string;
+  skuImage: string;
+  displayImage: string;
+  skuCode: string;
+  specText: string;
+  originalPriceCent: number;
+  unitPriceCent: number;
+  quantity: number;
+  lineOriginalAmountCent: number;
+  lineAmountCent: number;
+}
+
+export interface OrderDetail {
+  orderId: number;
+  orderNo: string;
+  status: OrderStatus;
+  source: string;
+  productOriginalAmountCent: number;
+  productAmountCent: number;
+  userCouponId: number | null;
+  couponName: string | null;
+  couponDiscountCent: number;
+  freightCent: number;
+  payableAmountCent: number;
+  paidAmountCent: number;
+  receiverName: string | null;
+  receiverPhone: string | null;
+  receiverAddress: string | null;
+  paymentTransactionId: string | null;
+  merchantTradeNo: string | null;
+  closeReason: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  items: OrderItem[];
+}

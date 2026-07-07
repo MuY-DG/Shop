@@ -56,7 +56,8 @@ Page({
     unavailableCount: 0,
     couponSummaryText: "",
     couponDiscountText: "",
-    couponPayableText: ""
+    couponPayableText: "",
+    checkoutDisabled: true
   },
   async onShow() {
     await this.loadCart();
@@ -83,7 +84,8 @@ Page({
         unavailableCount: response.unavailableCount,
         couponSummaryText: couponSummary.couponSummaryText,
         couponDiscountText: couponSummary.couponDiscountText,
-        couponPayableText: couponSummary.couponPayableText
+        couponPayableText: couponSummary.couponPayableText,
+        checkoutDisabled: response.items.filter((item) => item.available).length === 0
       });
     } catch (error) {
       this.setData({
@@ -94,7 +96,8 @@ Page({
         unavailableCount: 0,
         couponSummaryText: "",
         couponDiscountText: "",
-        couponPayableText: ""
+        couponPayableText: "",
+        checkoutDisabled: true
       });
     } finally {
       this.setData({
@@ -176,6 +179,23 @@ Page({
     }
     wx.navigateTo({
       url: `/pages/product/detail/detail?id=${item.spuId}`
+    });
+  },
+  onCheckoutTap() {
+    if (this.data.loading || this.data.checkoutDisabled) {
+      return;
+    }
+
+    const availableItemIds = this.data.items
+      .filter((item) => item.available)
+      .map((item) => item.id);
+
+    if (availableItemIds.length === 0) {
+      return;
+    }
+
+    wx.navigateTo({
+      url: `/pages/order/preview/preview?cart_item_ids=${availableItemIds.join(",")}`
     });
   },
   async loadCouponSummary(items: CartItem[]) {

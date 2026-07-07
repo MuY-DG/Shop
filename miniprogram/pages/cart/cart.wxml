@@ -65,6 +65,12 @@
         <text wx:if="{{!couponDiscountText}}">{{couponSummaryText}}</text>
       </view>
     </view>
-    <button class="checkout-button" disabled="true">去结算</button>
+    <button
+      class="checkout-button"
+      disabled="{{checkoutDisabled || loading}}"
+      bindtap="onCheckoutTap"
+    >
+      去结算
+    </button>
   </view>
 </view>
