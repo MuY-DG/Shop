@@ -72,4 +72,72 @@ class AppProductControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(200001));
     }
+
+    @Test
+    void productListKeepsPublishedSpuWhenAllSkusAreDisabledAndFiltersDisabledSkuData() throws Exception {
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Edge Category", "", 2, "ENABLED"));
+        Long hiddenSkuSpuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
+                categoryId,
+                "Disabled SKU SPU",
+                "Edge subtitle",
+                "https://example.test/disabled-main.jpg",
+                " Fresh , , Spicy  ",
+                "<p>edge detail</p>",
+                1,
+                List.of("https://example.test/disabled-gallery.jpg"),
+                List.of(new AdminSkuUpsertRequest(null, "EDGE-SKU-1", "{\"规格\":\"大份\"}", "大份", 5990L, 6990L, 4, 400, "https://example.test/edge-sku.jpg", "ENABLED", 1))
+        ));
+        adminProductService.publishSpu(hiddenSkuSpuId);
+        adminProductService.updateSpu(hiddenSkuSpuId, new AdminSpuUpsertRequest(
+                categoryId,
+                "Disabled SKU SPU",
+                "Edge subtitle",
+                "https://example.test/disabled-main.jpg",
+                " Fresh , , Spicy  ",
+                "<p>edge detail</p>",
+                1,
+                List.of("https://example.test/disabled-gallery.jpg"),
+                List.of(new AdminSkuUpsertRequest(null, "EDGE-SKU-1", "{\"规格\":\"大份\"}", "大份", 5990L, 6990L, 4, 400, "https://example.test/edge-sku.jpg", "DISABLED", 1))
+        ));
+
+        Long mixedSkuSpuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
+                categoryId,
+                "Mixed SKU SPU",
+                "Mixed subtitle",
+                "https://example.test/mixed-main.jpg",
+                " Crisp , , Hot ",
+                "<p>mixed detail</p>",
+                2,
+                List.of("https://example.test/mixed-gallery.jpg"),
+                List.of(
+                        new AdminSkuUpsertRequest(null, "MIX-SKU-1", "{\"规格\":\"中份\"}", "中份", 3990L, 4990L, 5, 350, "https://example.test/mix-1.jpg", "ENABLED", 1),
+                        new AdminSkuUpsertRequest(null, "MIX-SKU-2", "{\"规格\":\"大份\"}", "大份", 8990L, 9990L, 8, 500, "https://example.test/mix-2.jpg", "DISABLED", 2)
+                )
+        ));
+        adminProductService.publishSpu(mixedSkuSpuId);
+
+        mockMvc.perform(get("/app/product/spus")
+                        .param("current", "1")
+                        .param("size", "10")
+                        .param("categoryId", categoryId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.records[0].title").value("Disabled SKU SPU"))
+                .andExpect(jsonPath("$.data.records[0].minPriceCent").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].maxPriceCent").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].totalStock").value(0))
+                .andExpect(jsonPath("$.data.records[0].sellingPoints[0]").value("Fresh"))
+                .andExpect(jsonPath("$.data.records[0].sellingPoints[1]").value("Spicy"))
+                .andExpect(jsonPath("$.data.records[1].title").value("Mixed SKU SPU"))
+                .andExpect(jsonPath("$.data.records[1].minPriceCent").value(3990))
+                .andExpect(jsonPath("$.data.records[1].maxPriceCent").value(3990))
+                .andExpect(jsonPath("$.data.records[1].totalStock").value(5));
+
+        mockMvc.perform(get("/app/product/spus/" + mixedSkuSpuId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.sellingPoints[0]").value("Crisp"))
+                .andExpect(jsonPath("$.data.sellingPoints[1]").value("Hot"))
+                .andExpect(jsonPath("$.data.skus.length()").value(1))
+                .andExpect(jsonPath("$.data.skus[0].skuCode").value("MIX-SKU-1"));
+    }
 }

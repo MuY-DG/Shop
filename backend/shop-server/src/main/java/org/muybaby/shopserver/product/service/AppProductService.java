@@ -67,7 +67,7 @@ public class AppProductService {
                                max(k.price_cent) AS max_price_cent,
                                coalesce(sum(k.stock_available), 0) AS total_stock
                         FROM product_spu s
-                        JOIN product_sku k ON k.spu_id = s.id AND k.status = :skuStatus
+                        LEFT JOIN product_sku k ON k.spu_id = s.id AND k.status = :skuStatus
                         WHERE s.status = :spuStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
                           AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
