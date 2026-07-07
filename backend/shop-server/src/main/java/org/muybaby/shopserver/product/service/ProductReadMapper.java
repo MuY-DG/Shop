@@ -4,10 +4,10 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.dto.AdminCategoryResponse;
+import org.muybaby.shopserver.product.dto.AdminSkuResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuDetailResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuListItemResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuQueryRequest;
-import org.muybaby.shopserver.product.dto.AppSkuResponse;
 import org.muybaby.shopserver.product.dto.ProductImageResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -135,15 +135,15 @@ public class ProductReadMapper {
                 .query(this::mapProductImage)
                 .list();
 
-        List<AppSkuResponse> skus = jdbcClient.sql("""
+        List<AdminSkuResponse> skus = jdbcClient.sql("""
                         select id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               stock_available, weight_gram, image, status
+                               stock_available, weight_gram, image, status, sort_order
                         from product_sku
                         where spu_id = :spuId
                         order by sort_order asc, id asc
                         """)
                 .param("spuId", spuId)
-                .query(this::mapAppSku)
+                .query(this::mapAdminSku)
                 .list();
 
         return new AdminSpuDetailResponse(
@@ -219,8 +219,8 @@ public class ProductReadMapper {
         );
     }
 
-    private AppSkuResponse mapAppSku(ResultSet rs, int rowNum) throws SQLException {
-        return new AppSkuResponse(
+    private AdminSkuResponse mapAdminSku(ResultSet rs, int rowNum) throws SQLException {
+        return new AdminSkuResponse(
                 rs.getLong("id"),
                 rs.getString("sku_code"),
                 rs.getString("spec_json"),
@@ -230,7 +230,8 @@ public class ProductReadMapper {
                 rs.getInt("stock_available"),
                 rs.getInt("weight_gram"),
                 rs.getString("image"),
-                rs.getString("status")
+                rs.getString("status"),
+                rs.getInt("sort_order")
         );
     }
 

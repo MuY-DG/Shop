@@ -1,5 +1,56 @@
 # Task 6 Report
 
+## Review fix worker follow-up
+
+- Fixed the admin SPU detail SKU contract so edit mode can round-trip SKU `sortOrder`:
+  - Added backend `AdminSkuResponse` with `sortOrder`.
+  - Changed `AdminSpuDetailResponse.skus` from app SKU DTOs to admin SKU DTOs.
+  - Updated `ProductReadMapper.adminSpuDetail` to select and map `product_sku.sort_order`.
+  - Added a controller regression assertion for `$.data.skus[0].sortOrder`.
+- Kept app SKU detail separate; app-facing `AppSkuResponse` still does not expose `sortOrder`.
+- Aligned admin SKU price editing with backend validation:
+  - `priceCent` input now has `min=1`.
+  - empty new SKU defaults `priceCent` to `1`.
+  - `validateSkus` rejects `priceCent < 1`.
+- Tightened `Api.Product.SpuDetail` so it matches the admin detail response instead of extending `SpuListItem` fields that detail does not return.
+
+Verification:
+
+```bash
+cd backend/shop-server
+./mvnw test -Dtest=AdminProductSpuControllerTest
+```
+
+Result:
+
+```text
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+```bash
+cd admin
+pnpm build
+```
+
+Result:
+
+```text
+$ vue-tsc --noEmit && vite build
+✓ 3240 modules transformed.
+✓ built in 15.72s
+```
+
+```bash
+git diff --check
+```
+
+Result:
+
+```text
+No output; exit 0.
+```
+
 ## Build-fix worker follow-up
 
 - Preserved the existing `admin/pnpm-workspace.yaml` build-script approvals by keeping the six `allowBuilds` package entries set to `true`.

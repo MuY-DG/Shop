@@ -111,7 +111,7 @@
             <template #default="{ row }">
               <ElInputNumber
                 v-model="row.priceCent"
-                :min="0"
+                :min="1"
                 :precision="0"
                 controls-position="right"
               />
@@ -226,7 +226,7 @@
     skuCode: '',
     specJson: '',
     specText: '',
-    priceCent: 0,
+    priceCent: 1,
     originalPriceCent: 0,
     stockAvailable: 0,
     weightGram: 0,
@@ -362,7 +362,7 @@
         !item.skuCode.trim() ||
         !item.specText.trim() ||
         !item.specJson.trim() ||
-        item.priceCent < 0 ||
+        item.priceCent < 1 ||
         item.originalPriceCent < 0 ||
         item.stockAvailable < 0 ||
         item.weightGram < 0 ||

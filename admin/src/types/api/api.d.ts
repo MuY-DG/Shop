@@ -207,11 +207,21 @@ declare namespace Api {
       sortOrder: number
     }
 
-    interface SpuDetail extends SpuListItem {
+    interface SpuDetail {
+      id: number
+      categoryId: number
+      categoryName: string
+      title: string
+      subtitle: string
+      mainImage: string
       sellingPoints: string
       detailHtml: string
+      sortOrder: number
+      status: ProductStatus
       images: ProductImage[]
       skus: Sku[]
+      createdAt: string
+      updatedAt: string
     }
 
     interface SpuForm {

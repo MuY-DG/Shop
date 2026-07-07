@@ -90,6 +90,7 @@ class AdminProductSpuControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.skus[0].stockAvailable").value(5))
+                .andExpect(jsonPath("$.data.skus[0].sortOrder").value(1))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();

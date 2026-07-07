@@ -15,7 +15,7 @@ public record AdminSpuDetailResponse(
         Integer sortOrder,
         String status,
         List<ProductImageResponse> images,
-        List<AppSkuResponse> skus,
+        List<AdminSkuResponse> skus,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
