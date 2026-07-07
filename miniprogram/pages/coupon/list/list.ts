@@ -51,7 +51,7 @@ function toCouponView(coupon: ClaimableCoupon, claimingTemplateId: number): Clai
     thresholdText: formatThresholdText(coupon),
     validityText: `${formatDate(coupon.validStartAt)} - ${formatDate(coupon.validEndAt)}`,
     claimStateText: formatClaimStateText(coupon),
-    limitText: `已领 ${coupon.claimedCount}/${coupon.perUserLimit}`,
+    limitText: `已领 ${coupon.claimedCount}，每人限领 ${coupon.perUserLimit}`,
     actionText: coupon.claimable ? "立即领取" : "暂不可领",
     disabled: !coupon.claimable || coupon.templateId === claimingTemplateId
   };

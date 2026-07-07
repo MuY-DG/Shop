@@ -187,6 +187,33 @@ class AppCouponControllerTest {
     }
 
     @Test
+    void mineTreatsExpiredClaimedCouponsAsExpired() throws Exception {
+        AppLoginSession session = appLogin("coupon-expired-mine-user");
+        String appToken = session.token();
+        long userId = session.userId();
+        long templateId = seedTemplate("Expired Mine Coupon", "ENABLED", 10, 0, 2);
+        seedExpiredUserCoupon(userId, templateId, "Expired Mine Coupon");
+
+        mockMvc.perform(get("/app/coupons/mine")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].name").value("Expired Mine Coupon"))
+                .andExpect(jsonPath("$.data[0].status").value("EXPIRED"));
+
+        mockMvc.perform(get("/app/coupons/mine?status=CLAIMED")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(0));
+
+        mockMvc.perform(get("/app/coupons/mine?status=EXPIRED")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].status").value("EXPIRED"));
+    }
+
+    @Test
     void availableCouponsUseCurrentCartAmountAndReturnBestDiscount() throws Exception {
         AppLoginSession session = appLogin("coupon-available-user");
         String appToken = session.token();
@@ -334,6 +361,38 @@ class AppCouponControllerTest {
     }
 
     private long seedUserCoupon(long userId, long templateId, String templateName, String status, String claimedAt) {
+        return seedUserCoupon(
+                userId,
+                templateId,
+                templateName,
+                status,
+                claimedAt,
+                "2026-07-01 00:00:00",
+                "2026-08-01 23:59:59"
+        );
+    }
+
+    private long seedExpiredUserCoupon(long userId, long templateId, String templateName) {
+        return seedUserCoupon(
+                userId,
+                templateId,
+                templateName,
+                "CLAIMED",
+                "2026-07-07 08:00:00",
+                "2026-05-01 00:00:00",
+                "2026-05-31 23:59:59"
+        );
+    }
+
+    private long seedUserCoupon(
+            long userId,
+            long templateId,
+            String templateName,
+            String status,
+            String claimedAt,
+            String validStartAt,
+            String validEndAt
+    ) {
         String couponType = jdbcClient.sql("select coupon_type from coupon_template where id = :templateId")
                 .param("templateId", templateId)
                 .query(String.class)
@@ -353,8 +412,8 @@ class AppCouponControllerTest {
                              valid_end_at, status, claimed_at)
                         values
                             (:userId, :templateId, :templateName, :couponType, 'AMOUNT_OFF',
-                             :thresholdCent, :discountCent, 'ALL', '', timestamp '2026-07-01 00:00:00',
-                             timestamp '2026-08-01 23:59:59', :status, :claimedAt)
+                             :thresholdCent, :discountCent, 'ALL', '', :validStartAt,
+                             :validEndAt, :status, :claimedAt)
                         """)
                 .param("userId", userId)
                 .param("templateId", templateId)
@@ -362,6 +421,8 @@ class AppCouponControllerTest {
                 .param("couponType", couponType)
                 .param("thresholdCent", thresholdCent)
                 .param("discountCent", discountCent)
+                .param("validStartAt", LocalDateTime.parse(validStartAt.replace(" ", "T")))
+                .param("validEndAt", LocalDateTime.parse(validEndAt.replace(" ", "T")))
                 .param("status", status)
                 .param("claimedAt", LocalDateTime.parse(claimedAt.replace(" ", "T")))
                 .update();

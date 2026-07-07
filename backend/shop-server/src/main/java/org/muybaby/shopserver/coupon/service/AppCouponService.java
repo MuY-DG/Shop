@@ -136,16 +136,31 @@ public class AppCouponService {
     public List<AppUserCouponResponse> mine(AuthenticatedPrincipal principal, String status) {
         Long userId = requireAppUser(principal);
         String normalizedStatus = normalizeStatus(status);
+        LocalDateTime now = LocalDateTime.now();
         return jdbcClient.sql("""
                         select id, template_id, template_name, coupon_type, threshold_cent, discount_cent,
-                               scope_type, status, valid_start_at, valid_end_at, claimed_at
+                               scope_type,
+                               case
+                                 when status = :claimedStatus and valid_end_at < :now then :expiredStatus
+                                 else status
+                               end as effective_status,
+                               valid_start_at, valid_end_at, claimed_at
                         from user_coupon
                         where user_id = :userId
-                          and (:status is null or status = :status)
+                          and (
+                            :status is null
+                            or case
+                                 when status = :claimedStatus and valid_end_at < :now then :expiredStatus
+                                 else status
+                               end = :status
+                          )
                         order by claimed_at desc, id desc
                         """)
                 .param("userId", userId)
                 .param("status", normalizedStatus)
+                .param("claimedStatus", UserCouponStatus.CLAIMED.name())
+                .param("expiredStatus", UserCouponStatus.EXPIRED.name())
+                .param("now", now)
                 .query(this::mapAppUserCoupon)
                 .list();
     }
@@ -243,15 +258,24 @@ public class AppCouponService {
     }
 
     private Optional<AppUserCouponResponse> findUserCoupon(Long userId, Long userCouponId) {
+        LocalDateTime now = LocalDateTime.now();
         return jdbcClient.sql("""
                         select id, template_id, template_name, coupon_type, threshold_cent, discount_cent,
-                               scope_type, status, valid_start_at, valid_end_at, claimed_at
+                               scope_type,
+                               case
+                                 when status = :claimedStatus and valid_end_at < :now then :expiredStatus
+                                 else status
+                               end as effective_status,
+                               valid_start_at, valid_end_at, claimed_at
                         from user_coupon
                         where id = :userCouponId
                           and user_id = :userId
                         """)
                 .param("userCouponId", userCouponId)
                 .param("userId", userId)
+                .param("claimedStatus", UserCouponStatus.CLAIMED.name())
+                .param("expiredStatus", UserCouponStatus.EXPIRED.name())
+                .param("now", now)
                 .query(this::mapAppUserCoupon)
                 .optional();
     }
@@ -342,7 +366,7 @@ public class AppCouponService {
                 rs.getLong("threshold_cent"),
                 rs.getLong("discount_cent"),
                 rs.getString("scope_type"),
-                rs.getString("status"),
+                rs.getString("effective_status"),
                 rs.getObject("valid_start_at", LocalDateTime.class),
                 rs.getObject("valid_end_at", LocalDateTime.class),
                 rs.getObject("claimed_at", LocalDateTime.class)

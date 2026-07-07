@@ -320,17 +320,15 @@ VALID_END_AT=$(
 )
 
 TEMPLATE_ID=$(
-  curl -s -X POST http://localhost:8080/admin/marketing/coupon-templates \
+  curl -s -X POST http://localhost:8080/admin/marketing/coupons/templates \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"name\":\"新人无门槛券\",\"type\":\"CASH\",\"scope\":\"ALL\",\"discountAmountCent\":500,\"minimumSpendCent\":0,\"totalCount\":50,\"onePerUser\":true,\"status\":\"DISABLED\",\"claimStartAt\":\"${VALID_START_AT}\",\"claimEndAt\":\"${VALID_END_AT}\",\"validDays\":30,\"description\":\"首单无门槛立减5元\"}" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.id));'
+    -d "{\"name\":\"新人无门槛券\",\"description\":\"首单无门槛立减5元\",\"couponType\":\"NO_THRESHOLD\",\"discountType\":\"AMOUNT_OFF\",\"thresholdCent\":0,\"discountCent\":500,\"scopeType\":\"ALL\",\"scopeValue\":\"\",\"strategyKey\":\"\",\"totalStock\":50,\"perUserLimit\":1,\"validStartAt\":\"${VALID_START_AT}\",\"validEndAt\":\"${VALID_END_AT}\",\"status\":\"DISABLED\",\"sortOrder\":1}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
 
-curl -s -X PUT "http://localhost:8080/admin/marketing/coupon-templates/${TEMPLATE_ID}" \
+curl -s -X POST "http://localhost:8080/admin/marketing/coupons/templates/${TEMPLATE_ID}/enable" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d "{\"name\":\"新人无门槛券\",\"type\":\"CASH\",\"scope\":\"ALL\",\"discountAmountCent\":500,\"minimumSpendCent\":0,\"totalCount\":50,\"onePerUser\":true,\"status\":\"ENABLED\",\"claimStartAt\":\"${VALID_START_AT}\",\"claimEndAt\":\"${VALID_END_AT}\",\"validDays\":30,\"description\":\"首单无门槛立减5元\"}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
 ```
 
@@ -339,7 +337,7 @@ Verify claimable list:
 ```bash
 curl -s http://localhost:8080/app/coupons/claimable \
   -H "Authorization: Bearer ${APP_TOKEN}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const templateId = Number(process.argv[1]); const coupons = body.data.records; const coupon = coupons.find(item => item.templateId === templateId || item.id === templateId) || coupons.find(item => item.name === "新人无门槛券"); if (!coupon) process.exit(1); console.log(coupon.name); });' "${TEMPLATE_ID}"
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const templateId = Number(process.argv[1]); const coupon = body.data.find(item => item.templateId === templateId) || body.data.find(item => item.name === "新人无门槛券"); if (!coupon) process.exit(1); console.log(coupon.name); });' "${TEMPLATE_ID}"
 ```
 
 Claim coupon:
@@ -348,12 +346,12 @@ Claim coupon:
 USER_COUPON_ID=$(
   curl -s -X POST "http://localhost:8080/app/coupons/templates/${TEMPLATE_ID}/claim" \
     -H "Authorization: Bearer ${APP_TOKEN}" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "CLAIMED") process.exit(1); console.log(body.data.id); });'
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "CLAIMED") process.exit(1); console.log(body.data.userCouponId); });'
 )
 
 curl -s http://localhost:8080/app/coupons/mine \
   -H "Authorization: Bearer ${APP_TOKEN}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.records.find(item => item.id === Number(process.argv[1])); if (!coupon) process.exit(1); console.log(coupon.status); });' "${USER_COUPON_ID}"
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.find(item => item.userCouponId === Number(process.argv[1])); if (!coupon) process.exit(1); console.log(coupon.status); });' "${USER_COUPON_ID}"
 ```
 
 Create category/SPU/SKU and publish:
@@ -405,7 +403,7 @@ curl -s -X POST http://localhost:8080/app/coupons/available \
   -H "Authorization: Bearer ${APP_TOKEN}" \
   -H 'Content-Type: application/json' \
   -d "{\"cartItemIds\":[${CART_ITEM_ID}]}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.availableCoupons.find(item => item.id === Number(process.argv[1])); if (!coupon || body.data.discountAmountCent !== 500) process.exit(1); console.log(body.data.discountAmountCent); });' "${USER_COUPON_ID}"
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.coupons.find(item => item.userCouponId === Number(process.argv[1])); if (!coupon || body.data.bestDiscountCent !== 500) process.exit(1); console.log(body.data.bestDiscountCent); });' "${USER_COUPON_ID}"
 ```
 
 Expected result:
