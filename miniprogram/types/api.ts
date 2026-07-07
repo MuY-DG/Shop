@@ -30,3 +30,63 @@ export interface RequestOptions<TBody extends RequestBody = WechatMiniprogram.IA
   data?: TBody;
   auth?: boolean;
 }
+
+export interface PageResult<T> {
+  records: T[];
+  total: number;
+  current: number;
+  size: number;
+}
+
+export interface ProductCategory {
+  id: number;
+  parentId: number;
+  name: string;
+  icon: string;
+  sortOrder: number;
+  status: "ENABLED" | "DISABLED";
+}
+
+export interface ProductListItem {
+  id: number;
+  categoryId: number;
+  title: string;
+  subtitle: string;
+  mainImage: string;
+  sellingPoints: string[];
+  minPriceCent: number;
+  maxPriceCent: number;
+  totalStock: number;
+}
+
+export interface ProductImage {
+  id: number;
+  url: string;
+  sortOrder: number;
+}
+
+export interface ProductSku {
+  id: number;
+  skuCode: string;
+  specJson: string;
+  specText: string;
+  priceCent: number;
+  originalPriceCent: number;
+  stockAvailable: number;
+  weightGram: number;
+  image: string;
+  status: "ENABLED" | "DISABLED";
+}
+
+export interface ProductDetail {
+  id: number;
+  categoryId: number;
+  categoryName: string;
+  title: string;
+  subtitle: string;
+  mainImage: string;
+  sellingPoints: string[];
+  detailHtml: string;
+  images: ProductImage[];
+  skus: ProductSku[];
+}

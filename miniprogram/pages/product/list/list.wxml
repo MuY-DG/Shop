@@ -1,0 +1,55 @@
+<view class="page product-list-page">
+  <scroll-view class="category-bar" scroll-x="true" enhanced="true" show-scrollbar="false">
+    <view class="category-track">
+      <view
+        wx:for="{{categoryTabs}}"
+        wx:key="id"
+        class="category-tab {{item.selected ? 'active' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onCategoryTap"
+      >
+        {{item.name}}
+      </view>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{loading && products.length === 0}}" class="empty-state">商品加载中...</view>
+  <view wx:elif="{{errorText && products.length === 0}}" class="empty-state">{{errorText}}</view>
+  <view wx:elif="{{products.length === 0}}" class="empty-state">暂无商品</view>
+  <view wx:else class="product-list">
+    <view
+      wx:for="{{products}}"
+      wx:key="id"
+      class="product-card"
+      data-id="{{item.id}}"
+      bindtap="onProductTap"
+    >
+      <view class="product-image-wrap">
+        <image wx:if="{{item.mainImage}}" class="product-image" src="{{item.mainImage}}" mode="aspectFill" />
+        <view wx:else class="product-image-placeholder">火锅</view>
+      </view>
+      <view class="product-body">
+        <view class="product-title">{{item.title}}</view>
+        <view class="product-subtitle">{{item.subtitle}}</view>
+        <view class="selling-points">
+          <view
+            wx:for="{{item.sellingPoints}}"
+            wx:key="*this"
+            wx:for-item="point"
+            class="selling-point"
+          >
+            {{point}}
+          </view>
+        </view>
+        <view class="product-footer">
+          <view class="price">{{item.priceText}}</view>
+          <view class="stock {{item.soldOut ? 'sold-out' : ''}}">{{item.stockText}}</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{loadingMore}}" class="load-more">加载中...</view>
+  <view wx:elif="{{products.length > 0 && products.length >= total}}" class="load-more">没有更多了</view>
+  <view wx:if="{{errorText && products.length > 0}}" class="inline-error">{{errorText}}</view>
+</view>

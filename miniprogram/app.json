@@ -1,6 +1,8 @@
 {
   "pages": [
     "pages/home/home",
+    "pages/product/list/list",
+    "pages/product/detail/detail",
     "pages/profile/profile",
     "pages/order/detail/detail"
   ],
@@ -18,6 +20,10 @@
       {
         "pagePath": "pages/home/home",
         "text": "首页"
+      },
+      {
+        "pagePath": "pages/product/list/list",
+        "text": "分类"
       },
       {
         "pagePath": "pages/profile/profile",
