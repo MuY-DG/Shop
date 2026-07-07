@@ -8,6 +8,7 @@ public enum ErrorCode {
     VALIDATION_FAILED(100400, "Validation failed"),
     WECHAT_LOGIN_FAILED(100101, "WeChat login failed"),
     WECHAT_PHONE_FAILED(100102, "WeChat phone authorization failed"),
+    PRODUCT_CATEGORY_UNAVAILABLE(200000, "Product category unavailable"),
     PRODUCT_UNAVAILABLE(200001, "Product unavailable"),
     SKU_UNAVAILABLE(200002, "SKU unavailable"),
     STOCK_SHORTAGE(200100, "Stock shortage"),
