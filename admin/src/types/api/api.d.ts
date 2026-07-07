@@ -241,4 +241,61 @@ declare namespace Api {
       reason: string
     }
   }
+
+  namespace Marketing {
+    type CouponTemplateStatus = 'ENABLED' | 'DISABLED'
+    type CouponType = 'NO_THRESHOLD' | 'MIN_SPEND'
+    type DiscountType = 'AMOUNT_OFF' | 'PERCENT_OFF'
+    type CouponScopeType = 'ALL' | 'PRODUCT' | 'CATEGORY'
+
+    type CouponTemplateList = Api.Common.PaginatedResponse<CouponTemplate>
+
+    interface CouponTemplate {
+      id: number
+      name: string
+      description: string
+      couponType: CouponType
+      discountType: DiscountType
+      thresholdCent: number
+      discountCent: number
+      scopeType: CouponScopeType
+      scopeValue: string
+      strategyKey: string
+      totalStock: number
+      claimedCount: number
+      stockRemaining: number
+      perUserLimit: number
+      validStartAt: string
+      validEndAt: string
+      status: CouponTemplateStatus
+      sortOrder: number
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface CouponTemplateForm {
+      name: string
+      description: string
+      couponType: CouponType
+      discountType: DiscountType
+      thresholdCent: number
+      discountCent: number
+      scopeType: CouponScopeType
+      scopeValue: string
+      strategyKey: string
+      totalStock: number
+      perUserLimit: number
+      validStartAt: string
+      validEndAt: string
+      status: CouponTemplateStatus
+      sortOrder: number
+    }
+
+    type CouponTemplateSearchParams = Partial<
+      Api.Common.CommonSearchParams & {
+        name: string
+        status: CouponTemplateStatus
+      }
+    >
+  }
 }
