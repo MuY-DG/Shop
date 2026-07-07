@@ -2,6 +2,7 @@ package org.muybaby.shopserver.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -41,6 +42,7 @@ public class SecurityConfig {
                                 "/wxpay/**",
                                 "/wechat/**"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/app/product/categories", "/app/product/spus", "/app/product/spus/*").permitAll()
                         .requestMatchers("/admin/**", "/app/**").authenticated()
                         .anyRequest().denyAll())
                 .build();

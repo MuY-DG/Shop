@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -63,6 +65,18 @@ class SecurityConfigTest {
     @Test
     void appApisExceptHealthRequireAuthentication() throws Exception {
         mockMvc.perform(get("/app/probe"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code", is(100001)))
+                .andExpect(jsonPath("$.msg", is("Authentication required")));
+    }
+
+    @Test
+    void appProductReadApisArePublicButWriteApisStillRequireAuthentication() throws Exception {
+        assertNotAuthenticationBlocked("/app/product/categories");
+        assertNotAuthenticationBlocked("/app/product/spus");
+        assertNotAuthenticationBlocked("/app/product/spus/1");
+
+        mockMvc.perform(post("/app/product/categories"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code", is(100001)))
                 .andExpect(jsonPath("$.msg", is("Authentication required")));
@@ -198,6 +212,11 @@ class SecurityConfigTest {
         @GetMapping("/app/probe")
         AuthenticatedPrincipal appProbe(@AuthenticationPrincipal AuthenticatedPrincipal principal) {
             return principal;
+        }
+
+        @PostMapping("/app/product/categories")
+        String appProductCategoryWriteProbe() {
+            return "ok";
         }
 
         @GetMapping("/admin/super-only")
