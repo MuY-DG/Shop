@@ -12,6 +12,7 @@ public enum ErrorCode {
     PRODUCT_UNAVAILABLE(200001, "Product unavailable"),
     SKU_UNAVAILABLE(200002, "SKU unavailable"),
     STOCK_SHORTAGE(200100, "Stock shortage"),
+    CART_ITEM_NOT_FOUND(250001, "Cart item not found"),
     COUPON_UNAVAILABLE(300001, "Coupon unavailable"),
     ORDER_STATE_CONFLICT(400001, "Order state conflict"),
     PAYMENT_PENDING(500001, "Payment pending"),
