@@ -415,6 +415,303 @@ CLAIMED
 500
 ```
 
+## Order Smoke Checks
+
+This is a real local smoke check for the order phase. It uses the local backend and local database path. In the test profile, WeChat login is still backed by the mock WeChat mini program client described in docs/dev-setup.md; product, cart, coupon, promotion, order, and stock requests go through real local backend APIs, not product/cart/coupon/order mocks.
+
+Use this section to distinguish real local smoke from mocked checks: only the test-profile WeChat login exchange is mocked here.
+
+Start backend with the existing test-profile local command:
+
+```bash
+cd backend/shop-server
+./mvnw -Dspring-boot.run.profiles=test \
+  -Dspring-boot.run.useTestClasspath=true \
+  -Dspring-boot.run.arguments=--spring.config.additional-location=file:src/test/resources/ \
+  spring-boot:run
+```
+
+Admin login:
+
+```bash
+ADMIN_TOKEN=$(
+  curl -s -X POST http://localhost:8080/admin/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"userName":"Super","password":"123456"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+```
+
+Mini program login:
+
+```bash
+APP_TOKEN=$(
+  curl -s -X POST http://localhost:8080/app/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"code":"test-login-code"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+```
+
+Create category:
+
+```bash
+CATEGORY_ID=$(
+  curl -s -X POST http://localhost:8080/admin/product/categories \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d '{"parentId":0,"name":"订单锅底分类","icon":"","sortOrder":40,"status":"ENABLED"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+```
+
+Create SPU/SKU with deterministic SKU code and stock, then publish:
+
+```bash
+ORDER_SKU_CODE=ORDER-HY-NY-300G
+ORDER_START_STOCK=100
+ORDER_QUANTITY=1
+
+SPU_ID=$(
+  curl -s -X POST http://localhost:8080/admin/product/spus \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"订单重庆牛油火锅底料\",\"subtitle\":\"订单链路联调\",\"mainImage\":\"https://example.test/order-main.jpg\",\"sellingPoints\":\"订单联调,库存锁定\",\"detailHtml\":\"<p>用于订单真实本地 smoke。</p>\",\"sortOrder\":40,\"images\":[\"https://example.test/order-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"${ORDER_SKU_CODE}\",\"specJson\":\"{\\\"口味\\\":\\\"牛油\\\",\\\"重量\\\":\\\"300g\\\"}\",\"specText\":\"牛油 / 300g\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":${ORDER_START_STOCK},\"weightGram\":300,\"image\":\"https://example.test/order-sku-300.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+
+curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
+```
+
+Read SKU id from app detail:
+
+```bash
+SKU_ID=$(
+  curl -s "http://localhost:8080/app/product/spus/${SPU_ID}" \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const sku = body.data.skus.find(item => item.skuCode === process.argv[1]); if (!sku || sku.stockAvailable !== Number(process.argv[2])) process.exit(1); console.log(sku.id); });' "${ORDER_SKU_CODE}" "${ORDER_START_STOCK}"
+)
+
+curl -s "http://localhost:8080/app/product/spus/${SPU_ID}" \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const sku = body.data.skus.find(item => item.id === Number(process.argv[1])); if (!sku) process.exit(1); console.log(sku.skuCode); });' "${SKU_ID}"
+```
+
+Create and enable a no-threshold coupon template:
+
+```bash
+VALID_START_AT=$(
+  node -e 'const d = new Date(); d.setHours(0, 0, 0, 0); console.log(fmt(d)); function fmt(v) { const p = n => String(n).padStart(2, "0"); return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}T${p(v.getHours())}:${p(v.getMinutes())}:${p(v.getSeconds())}`; }'
+)
+
+VALID_END_AT=$(
+  node -e 'const d = new Date(); d.setHours(23, 59, 59, 0); d.setDate(d.getDate() + 365); console.log(fmt(d)); function fmt(v) { const p = n => String(n).padStart(2, "0"); return `${v.getFullYear()}-${p(v.getMonth() + 1)}-${p(v.getDate())}T${p(v.getHours())}:${p(v.getMinutes())}:${p(v.getSeconds())}`; }'
+)
+
+TEMPLATE_ID=$(
+  curl -s -X POST http://localhost:8080/admin/marketing/coupons/templates \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"name\":\"订单无门槛券\",\"description\":\"订单链路立减5元\",\"couponType\":\"NO_THRESHOLD\",\"discountType\":\"AMOUNT_OFF\",\"thresholdCent\":0,\"discountCent\":500,\"scopeType\":\"ALL\",\"scopeValue\":\"\",\"strategyKey\":\"\",\"totalStock\":50,\"perUserLimit\":1,\"validStartAt\":\"${VALID_START_AT}\",\"validEndAt\":\"${VALID_END_AT}\",\"status\":\"DISABLED\",\"sortOrder\":1}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+
+curl -s -X POST "http://localhost:8080/admin/marketing/coupons/templates/${TEMPLATE_ID}/enable" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
+```
+
+Claim coupon and capture `USER_COUPON_ID`:
+
+```bash
+USER_COUPON_ID=$(
+  curl -s -X POST "http://localhost:8080/app/coupons/templates/${TEMPLATE_ID}/claim" \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "CLAIMED") process.exit(1); console.log(body.data.userCouponId); });'
+)
+```
+
+Add SKU to cart and capture `CART_ITEM_ID`:
+
+```bash
+CART_ITEM_ID=$(
+  curl -s -X POST http://localhost:8080/app/cart/items \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"skuId\":${SKU_ID},\"quantity\":${ORDER_QUANTITY}}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.quantity !== Number(process.argv[1])) process.exit(1); console.log(body.data.id); });' "${ORDER_QUANTITY}"
+)
+```
+
+Preview order with `cartItemIds` and `userCouponId`; assert coupon discount and payable amount:
+
+```bash
+curl -s -X POST http://localhost:8080/app/orders/preview \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"cartItemIds\":[${CART_ITEM_ID}],\"userCouponId\":${USER_COUPON_ID}}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.couponDiscountCent !== 500 || body.data.payableAmountCent !== 3490) process.exit(1); console.log(body.data.couponDiscountCent); });'
+```
+
+Create order with an idempotency key and capture `ORDER_ID`:
+
+```bash
+IDEMPOTENCY_KEY="order-smoke-${SPU_ID}-${SKU_ID}"
+
+ORDER_ID=$(
+  curl -s -X POST http://localhost:8080/app/orders \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"cartItemIds\":[${CART_ITEM_ID}],\"userCouponId\":${USER_COUPON_ID},\"idempotencyKey\":\"${IDEMPOTENCY_KEY}\"}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "CREATED" || body.data.couponDiscountCent !== 500 || body.data.payableAmountCent !== 3490) process.exit(1); console.error(body.data.status); console.log(body.data.orderId); });'
+)
+```
+
+Call duplicate `POST /app/orders` with the same idempotency key and assert the same `ORDER_ID`:
+
+```bash
+curl -s -X POST http://localhost:8080/app/orders \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"cartItemIds\":[${CART_ITEM_ID}],\"userCouponId\":${USER_COUPON_ID},\"idempotencyKey\":\"${IDEMPOTENCY_KEY}\"}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.orderId !== Number(process.argv[1])) process.exit(1); console.log("duplicate"); });' "${ORDER_ID}"
+```
+
+Read detail and assert item snapshot plus coupon lock fields on the order:
+
+```bash
+curl -s "http://localhost:8080/app/orders/${ORDER_ID}" \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const item = body.data.items[0]; if (body.data.status !== "CREATED" || body.data.userCouponId !== Number(process.argv[1]) || item.skuCode !== process.argv[2] || item.quantity !== Number(process.argv[3]) || item.lineAmountCent !== 3990) process.exit(1); console.log(body.data.status); });' "${USER_COUPON_ID}" "${ORDER_SKU_CODE}" "${ORDER_QUANTITY}"
+```
+
+List created app orders and assert the order appears:
+
+```bash
+curl -s "http://localhost:8080/app/orders?current=1&size=10&status=CREATED" \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const order = body.data.records.find(item => item.orderId === Number(process.argv[1])); if (!order || order.status !== "CREATED") process.exit(1); console.log(order.status); });' "${ORDER_ID}"
+```
+
+Verify the cart row has been removed and SKU stock available decreased by ordered quantity:
+
+```bash
+curl -s http://localhost:8080/app/cart/items \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const item = body.data.items.find(value => value.id === Number(process.argv[1])); if (item) process.exit(1); console.log("cart removed"); });' "${CART_ITEM_ID}"
+
+curl -s "http://localhost:8080/app/product/spus/${SPU_ID}" \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const sku = body.data.skus.find(item => item.id === Number(process.argv[1])); const expectedStock = Number(process.argv[2]) - Number(process.argv[3]); if (!sku || sku.stockAvailable !== expectedStock) process.exit(1); console.log(sku.stockAvailable); });' "${SKU_ID}" "${ORDER_START_STOCK}" "${ORDER_QUANTITY}"
+```
+
+Verify database lifecycle rows for `stock_lock`, `stock_log`, and `user_coupon`:
+
+```sql
+select status
+from stock_lock
+where order_id = ${ORDER_ID}
+  and sku_id = ${SKU_ID};
+
+select change_type
+from stock_log
+where sku_id = ${SKU_ID}
+  and change_type = 'ORDER_LOCK'
+order by id desc
+limit 1;
+
+select status, locked_order_id
+from user_coupon
+where id = ${USER_COUPON_ID};
+```
+
+Assert the live coupon status through the app API:
+
+```bash
+curl -s http://localhost:8080/app/coupons/mine \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.find(item => item.userCouponId === Number(process.argv[1])); if (!coupon || coupon.status !== "LOCKED") process.exit(1); console.log(coupon.status); });' "${USER_COUPON_ID}"
+```
+
+Admin list/detail checks:
+
+```bash
+curl -s "http://localhost:8080/admin/orders?current=1&size=10&status=CREATED" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const order = body.data.records.find(item => item.orderId === Number(process.argv[1])); if (!order || order.status !== "CREATED") process.exit(1); console.log(order.status); });' "${ORDER_ID}"
+
+curl -s "http://localhost:8080/admin/orders/${ORDER_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const item = body.data.items[0]; if (body.data.orderId !== Number(process.argv[1]) || item.skuCode !== process.argv[2]) process.exit(1); console.log(item.skuCode); });' "${ORDER_ID}" "${ORDER_SKU_CODE}"
+```
+
+Admin close the created order:
+
+```bash
+curl -s -X POST "http://localhost:8080/admin/orders/${ORDER_ID}/close" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
+```
+
+Verify order status is `CLOSED` and SKU stock is released:
+
+```bash
+curl -s "http://localhost:8080/app/orders/${ORDER_ID}" \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "CLOSED") process.exit(1); console.log(body.data.status); });'
+
+curl -s "http://localhost:8080/app/product/spus/${SPU_ID}" \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const sku = body.data.skus.find(item => item.id === Number(process.argv[1])); if (!sku || sku.stockAvailable !== Number(process.argv[2])) process.exit(1); console.log("stock released"); });' "${SKU_ID}" "${ORDER_START_STOCK}"
+```
+
+Verify database release rows for `stock_lock`, `stock_log`, and `user_coupon`:
+
+```sql
+select status
+from stock_lock
+where order_id = ${ORDER_ID}
+  and sku_id = ${SKU_ID};
+
+select change_type
+from stock_log
+where sku_id = ${SKU_ID}
+  and change_type = 'ORDER_RELEASE'
+order by id desc
+limit 1;
+
+select status
+from user_coupon
+where id = ${USER_COUPON_ID}
+  and locked_order_id = ${ORDER_ID};
+```
+
+Assert the released coupon is claimable again through the app API:
+
+```bash
+curl -s http://localhost:8080/app/coupons/mine \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.find(item => item.userCouponId === Number(process.argv[1])); if (!coupon || coupon.status !== "CLAIMED") process.exit(1); console.log(coupon.status); });' "${USER_COUPON_ID}"
+```
+
+Expected result includes:
+
+```text
+success
+ORDER-HY-NY-300G
+500
+CREATED
+duplicate
+LOCKED
+ORDER_LOCK
+CLOSED
+RELEASED
+ORDER_RELEASE
+CLAIMED
+```
+
 ## Admin
 
 ```bash
