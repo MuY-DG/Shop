@@ -32,6 +32,13 @@ cd backend/shop-server
 ./mvnw -Dtest='ProductCatalogSchemaTest,AdminProductServiceTest,AdminProductCategoryControllerTest,AdminProductSpuControllerTest,AppProductControllerTest,SecurityConfigTest' test
 ```
 
+Focused cart tests:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest='CartSchemaTest,AppCartControllerTest,AppAuthControllerTest,SecurityConfigTest,PathTokenKindResolverTest' test
+```
+
 Full backend test suite:
 
 ```bash

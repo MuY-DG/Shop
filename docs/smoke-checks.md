@@ -127,6 +127,151 @@ success
 Product unavailable
 ```
 
+## Cart Smoke Checks
+
+This is a real local smoke check for the cart phase. It uses the local backend and local database path. In the `test` profile, WeChat login is still backed by the mock WeChat mini program client described in `docs/dev-setup.md`; product catalog and cart requests go through the real local backend APIs, not product or cart mocks.
+
+Start backend:
+
+```bash
+cd backend/shop-server
+./mvnw -Dspring-boot.run.profiles=test \
+  -Dspring-boot.run.useTestClasspath=true \
+  -Dspring-boot.run.arguments=--spring.config.additional-location=file:src/test/resources/ \
+  spring-boot:run
+```
+
+Admin login:
+
+```bash
+ADMIN_TOKEN=$(
+  curl -s -X POST http://localhost:8080/admin/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"userName":"Super","password":"123456"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+```
+
+Mini program login:
+
+```bash
+APP_TOKEN=$(
+  curl -s -X POST http://localhost:8080/app/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"code":"test-login-code"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+```
+
+Create category:
+
+```bash
+CATEGORY_ID=$(
+  curl -s -X POST http://localhost:8080/admin/product/categories \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d '{"parentId":0,"name":"购物车牛油锅底","icon":"","sortOrder":20,"status":"ENABLED"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+```
+
+Create SPU and SKU:
+
+```bash
+SPU_ID=$(
+  curl -s -X POST http://localhost:8080/admin/product/spus \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"购物车重庆牛油火锅底料\",\"subtitle\":\"厚重牛油香\",\"mainImage\":\"https://example.test/cart-main.jpg\",\"sellingPoints\":\"牛油浓香,手工炒制\",\"detailHtml\":\"<p>适合3-5人火锅。</p>\",\"sortOrder\":20,\"images\":[\"https://example.test/cart-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"CART-HY-NY-300G\",\"specJson\":\"{\\\"口味\\\":\\\"牛油\\\",\\\"重量\\\":\\\"300g\\\"}\",\"specText\":\"牛油 / 300g\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":100,\"weightGram\":300,\"image\":\"https://example.test/cart-sku-300.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+```
+
+Publish SPU:
+
+```bash
+curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
+```
+
+Read SKU id from app detail:
+
+```bash
+SKU_ID=$(
+  curl -s "http://localhost:8080/app/product/spus/${SPU_ID}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.skus[0].id));'
+)
+```
+
+Add to cart:
+
+```bash
+CART_ITEM_ID=$(
+  curl -s -X POST http://localhost:8080/app/cart/items \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"skuId\":${SKU_ID},\"quantity\":2}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.quantity !== 2) process.exit(1); console.log(body.data.id); });'
+)
+```
+
+List cart and verify current SKU price:
+
+```bash
+curl -s http://localhost:8080/app/cart/items \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const item = body.data.items[0]; if (item.priceCent !== 3990 || item.lineAmountCent !== 7980 || !item.available) process.exit(1); console.log(`${item.productTitle} ${item.quantity} ${item.lineAmountCent}`); });'
+```
+
+Update quantity:
+
+```bash
+curl -s -X PUT "http://localhost:8080/app/cart/items/${CART_ITEM_ID}/quantity" \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"quantity":3}' \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.quantity !== 3 || body.data.lineAmountCent !== 11970) process.exit(1); console.log(body.data.quantity); });'
+```
+
+Delete item:
+
+```bash
+curl -s -X DELETE "http://localhost:8080/app/cart/items/${CART_ITEM_ID}" \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
+```
+
+Add again and clear cart:
+
+```bash
+curl -s -X POST http://localhost:8080/app/cart/items \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"skuId\":${SKU_ID},\"quantity\":1}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.quantity !== 1) process.exit(1); console.log(body.data.quantity); });'
+
+curl -s -X DELETE http://localhost:8080/app/cart/items \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
+
+curl -s http://localhost:8080/app/cart/items \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.items.length !== 0) process.exit(1); console.log(body.data.items.length); });'
+```
+
+Expected result:
+
+```text
+success
+购物车重庆牛油火锅底料 2 7980
+3
+success
+1
+success
+0
+```
+
 ## Admin
 
 ```bash
