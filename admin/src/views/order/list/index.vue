@@ -184,6 +184,7 @@
   const drawerLoading = ref(false)
   const closingOrderId = ref<number | null>(null)
   const currentDetail = ref<Api.Order.OrderDetail | null>(null)
+  const detailRequestSeq = ref(0)
 
   const searchForm = ref<{
     orderNo?: string
@@ -344,23 +345,31 @@
     getData()
   }
 
-  const openDetail = async (orderId: number) => {
-    drawerVisible.value = true
+  const loadOrderDetail = async (orderId: number) => {
+    const requestId = ++detailRequestSeq.value
     drawerLoading.value = true
     currentDetail.value = null
     try {
-      currentDetail.value = await fetchOrderDetail(orderId)
+      const detail = await fetchOrderDetail(orderId)
+      if (requestId !== detailRequestSeq.value) return
+      currentDetail.value = detail
     } catch (error) {
+      if (requestId !== detailRequestSeq.value) return
       currentDetail.value = null
       throw error
     } finally {
+      if (requestId !== detailRequestSeq.value) return
       drawerLoading.value = false
     }
   }
 
-  const reloadCurrentDetail = async () => {
-    if (!currentDetail.value) return
-    currentDetail.value = await fetchOrderDetail(currentDetail.value.orderId)
+  const openDetail = async (orderId: number) => {
+    drawerVisible.value = true
+    await loadOrderDetail(orderId)
+  }
+
+  const reloadCurrentDetail = async (orderId: number) => {
+    await loadOrderDetail(orderId)
   }
 
   const handleCloseOrder = async (orderId: number, orderNo: string) => {
@@ -375,7 +384,7 @@
       await closeOrder(orderId)
       await refreshData()
       if (drawerVisible.value && currentDetail.value?.orderId === orderId) {
-        await reloadCurrentDetail()
+        await reloadCurrentDetail(orderId)
       }
     } finally {
       closingOrderId.value = null
