@@ -136,4 +136,99 @@ declare namespace Api {
         }
     >
   }
+
+  namespace Product {
+    type ProductStatus = 'DRAFT' | 'ON_SALE' | 'OFF_SALE'
+    type CategoryStatus = 'ENABLED' | 'DISABLED'
+    type SkuStatus = 'ENABLED' | 'DISABLED'
+
+    interface Category {
+      id: number
+      parentId: number
+      name: string
+      icon: string
+      sortOrder: number
+      status: CategoryStatus
+      children: Category[]
+    }
+
+    interface CategoryForm {
+      parentId: number
+      name: string
+      icon: string
+      sortOrder: number
+      status: CategoryStatus
+    }
+
+    type SpuList = Api.Common.PaginatedResponse<SpuListItem>
+
+    interface SpuListItem {
+      id: number
+      categoryId: number
+      categoryName: string
+      title: string
+      subtitle: string
+      mainImage: string
+      status: ProductStatus
+      sortOrder: number
+      minPriceCent: number
+      maxPriceCent: number
+      totalStock: number
+      skuCount: number
+      createdAt: string
+      updatedAt: string
+    }
+
+    type SpuSearchParams = Partial<
+      Api.Common.CommonSearchParams & {
+        categoryId: number
+        title: string
+        status: ProductStatus
+      }
+    >
+
+    interface ProductImage {
+      id: number
+      url: string
+      sortOrder: number
+    }
+
+    interface Sku {
+      id?: number
+      skuCode: string
+      specJson: string
+      specText: string
+      priceCent: number
+      originalPriceCent: number
+      stockAvailable: number
+      weightGram: number
+      image: string
+      status: SkuStatus
+      sortOrder: number
+    }
+
+    interface SpuDetail extends SpuListItem {
+      sellingPoints: string
+      detailHtml: string
+      images: ProductImage[]
+      skus: Sku[]
+    }
+
+    interface SpuForm {
+      categoryId: number
+      title: string
+      subtitle: string
+      mainImage: string
+      sellingPoints: string
+      detailHtml: string
+      sortOrder: number
+      images: string[]
+      skus: Sku[]
+    }
+
+    interface StockAdjustmentForm {
+      quantityDelta: number
+      reason: string
+    }
+  }
 }
