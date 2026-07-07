@@ -6,15 +6,21 @@ import org.muybaby.shopserver.cart.dto.AddCartItemRequest;
 import org.muybaby.shopserver.cart.dto.CartItemResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.aop.support.AopUtils;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
+import javax.sql.DataSource;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -23,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@Import(AppCartServiceTest.DuplicateInsertConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class AppCartServiceTest {
 
@@ -30,21 +37,23 @@ class AppCartServiceTest {
     private JdbcClient jdbcClient;
 
     @Autowired
-    private NamedParameterJdbcTemplate namedParameterJdbcTemplate;
+    private AppCartService appCartService;
+
+    @Autowired
+    private DuplicateInsertProbe duplicateInsertProbe;
 
     @Test
-    void addMergesExistingRowAfterDuplicateKeyRetry() {
+    void addMergesExistingRowAfterDuplicateKeyRetryThroughTransactionalProxy() {
         long userId = insertAppUser("cart-race-openid");
         long skuId = insertSellableSku("CART-RACE-SKU", 3990L, 4990L, 20);
         AuthenticatedPrincipal principal = new AuthenticatedPrincipal(TokenKind.APP, userId, "app-user", List.of(), List.of());
 
-        AppCartService appCartService = new AppCartService(
-                jdbcClient,
-                duplicateInsertNamedParameterJdbcTemplate(userId, skuId, 4)
-        );
+        assertThat(AopUtils.isAopProxy(appCartService)).isTrue();
+        duplicateInsertProbe.arm(userId, skuId, 4);
 
         CartItemResponse response = appCartService.add(principal, new AddCartItemRequest(skuId, 2));
 
+        assertThat(duplicateInsertProbe.wasTriggered()).isTrue();
         assertThat(response.quantity()).isEqualTo(6);
         Integer quantity = jdbcClient.sql("""
                         select quantity
@@ -66,20 +75,6 @@ class AppCartServiceTest {
                 .query(Integer.class)
                 .single();
         assertThat(count).isEqualTo(1);
-    }
-
-    private NamedParameterJdbcTemplate duplicateInsertNamedParameterJdbcTemplate(Long userId, Long skuId, int existingQuantity) {
-        AtomicBoolean duplicateCreated = new AtomicBoolean(false);
-        return new NamedParameterJdbcTemplate(namedParameterJdbcTemplate.getJdbcTemplate()) {
-            @Override
-            public int update(String sql, org.springframework.jdbc.core.namedparam.SqlParameterSource paramSource, KeyHolder generatedKeyHolder, String[] keyColumnNames) {
-                if (sql.contains("INSERT INTO cart_item") && duplicateCreated.compareAndSet(false, true)) {
-                    insertCartItem(userId, skuId, existingQuantity);
-                    throw new DuplicateKeyException("simulated cart item duplicate");
-                }
-                return super.update(sql, paramSource, generatedKeyHolder, keyColumnNames);
-            }
-        };
     }
 
     private long insertAppUser(String openid) {
@@ -141,5 +136,90 @@ class AppCartServiceTest {
                 .param("skuId", skuId)
                 .param("quantity", quantity)
                 .update();
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class DuplicateInsertConfiguration {
+
+        @Bean
+        DuplicateInsertProbe duplicateInsertProbe() {
+            return new DuplicateInsertProbe();
+        }
+
+        @Bean
+        @Primary
+        NamedParameterJdbcTemplate duplicateInsertNamedParameterJdbcTemplate(
+                DataSource dataSource,
+                DuplicateInsertProbe duplicateInsertProbe
+        ) {
+            return new DuplicateInsertNamedParameterJdbcTemplate(dataSource, duplicateInsertProbe);
+        }
+    }
+
+    static class DuplicateInsertProbe {
+
+        private final AtomicBoolean triggered = new AtomicBoolean(false);
+        private Long userId;
+        private Long skuId;
+        private Integer existingQuantity;
+
+        void arm(Long userId, Long skuId, Integer existingQuantity) {
+            this.userId = userId;
+            this.skuId = skuId;
+            this.existingQuantity = existingQuantity;
+            this.triggered.set(false);
+        }
+
+        boolean shouldCreateDuplicate(String sql) {
+            return userId != null
+                    && skuId != null
+                    && existingQuantity != null
+                    && sql.contains("INSERT INTO cart_item")
+                    && triggered.compareAndSet(false, true);
+        }
+
+        boolean wasTriggered() {
+            return triggered.get();
+        }
+    }
+
+    static class DuplicateInsertNamedParameterJdbcTemplate extends NamedParameterJdbcTemplate {
+
+        private final JdbcTemplate jdbcTemplate;
+        private final DuplicateInsertProbe duplicateInsertProbe;
+
+        DuplicateInsertNamedParameterJdbcTemplate(
+                DataSource dataSource,
+                DuplicateInsertProbe duplicateInsertProbe
+        ) {
+            this(new JdbcTemplate(dataSource), duplicateInsertProbe);
+        }
+
+        private DuplicateInsertNamedParameterJdbcTemplate(
+                JdbcTemplate jdbcTemplate,
+                DuplicateInsertProbe duplicateInsertProbe
+        ) {
+            super(jdbcTemplate);
+            this.jdbcTemplate = jdbcTemplate;
+            this.duplicateInsertProbe = duplicateInsertProbe;
+        }
+
+        @Override
+        public int update(
+                String sql,
+                SqlParameterSource paramSource,
+                KeyHolder generatedKeyHolder,
+                String[] keyColumnNames
+        ) {
+            if (duplicateInsertProbe.shouldCreateDuplicate(sql)) {
+                jdbcTemplate.update(
+                        "insert into cart_item (user_id, sku_id, quantity) values (?, ?, ?)",
+                        duplicateInsertProbe.userId,
+                        duplicateInsertProbe.skuId,
+                        duplicateInsertProbe.existingQuantity
+                );
+            }
+            return super.update(sql, paramSource, generatedKeyHolder, keyColumnNames);
+        }
     }
 }
