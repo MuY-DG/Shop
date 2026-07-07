@@ -688,12 +688,12 @@ where id = ${USER_COUPON_ID}
   and locked_order_id = ${ORDER_ID};
 ```
 
-Assert the released coupon is claimable again through the app API:
+Assert the coupon lock is released and the user coupon is marked `RELEASED` through the app API:
 
 ```bash
 curl -s http://localhost:8080/app/coupons/mine \
   -H "Authorization: Bearer ${APP_TOKEN}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.find(item => item.userCouponId === Number(process.argv[1])); if (!coupon || coupon.status !== "CLAIMED") process.exit(1); console.log(coupon.status); });' "${USER_COUPON_ID}"
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.find(item => item.userCouponId === Number(process.argv[1])); if (!coupon || coupon.status !== "RELEASED") process.exit(1); console.log(coupon.status); });' "${USER_COUPON_ID}"
 ```
 
 Expected result includes:
@@ -709,7 +709,7 @@ ORDER_LOCK
 CLOSED
 RELEASED
 ORDER_RELEASE
-CLAIMED
+RELEASED
 ```
 
 ## Admin
