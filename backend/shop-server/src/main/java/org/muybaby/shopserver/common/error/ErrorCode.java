@@ -14,6 +14,8 @@ public enum ErrorCode {
     STOCK_SHORTAGE(200100, "Stock shortage"),
     CART_ITEM_NOT_FOUND(250001, "Cart item not found"),
     COUPON_UNAVAILABLE(300001, "Coupon unavailable"),
+    COUPON_CLAIM_LIMIT_REACHED(300002, "Coupon claim limit reached"),
+    COUPON_ALREADY_USED(300003, "Coupon already used"),
     ORDER_STATE_CONFLICT(400001, "Order state conflict"),
     PAYMENT_PENDING(500001, "Payment pending"),
     WECHAT_SHIPPING_UPLOAD_FAILED(600001, "WeChat shipping upload failed"),
