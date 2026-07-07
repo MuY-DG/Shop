@@ -339,7 +339,7 @@ Verify claimable list:
 ```bash
 curl -s http://localhost:8080/app/coupons/claimable \
   -H "Authorization: Bearer ${APP_TOKEN}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.records.find(item => item.id === Number(process.argv[1]) || item.name === "新人无门槛券"); if (!coupon) process.exit(1); console.log(coupon.name); });' "${TEMPLATE_ID}"
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const templateId = Number(process.argv[1]); const coupons = body.data.records; const coupon = coupons.find(item => item.templateId === templateId || item.id === templateId) || coupons.find(item => item.name === "新人无门槛券"); if (!coupon) process.exit(1); console.log(coupon.name); });' "${TEMPLATE_ID}"
 ```
 
 Claim coupon:
