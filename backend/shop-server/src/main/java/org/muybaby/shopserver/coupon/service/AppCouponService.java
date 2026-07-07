@@ -61,6 +61,7 @@ public class AppCouponService {
                                t.discount_cent,
                                t.valid_start_at,
                                t.valid_end_at,
+                               t.total_stock,
                                t.claimed_count,
                                t.per_user_limit,
                                (select count(*) from user_coupon uc where uc.user_id = :userId and uc.template_id = t.id) as user_claim_count
@@ -303,11 +304,19 @@ public class AppCouponService {
     }
 
     private AppClaimableCouponResponse mapClaimableCoupon(ResultSet rs, int rowNum) throws SQLException {
+        int totalStock = rs.getInt("total_stock");
         int claimedCount = rs.getInt("claimed_count");
         int perUserLimit = rs.getInt("per_user_limit");
         int userClaimCount = rs.getInt("user_claim_count");
-        boolean claimable = userClaimCount < perUserLimit;
-        String unavailableReason = claimable ? null : "CLAIM_LIMIT_REACHED";
+        boolean outOfStock = claimedCount >= totalStock;
+        boolean claimLimitReached = userClaimCount >= perUserLimit;
+        boolean claimable = !outOfStock && !claimLimitReached;
+        String unavailableReason = null;
+        if (outOfStock) {
+            unavailableReason = "OUT_OF_STOCK";
+        } else if (claimLimitReached) {
+            unavailableReason = "CLAIM_LIMIT_REACHED";
+        }
         return new AppClaimableCouponResponse(
                 rs.getLong("id"),
                 rs.getString("name"),

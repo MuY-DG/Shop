@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.coupon;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
@@ -72,20 +73,26 @@ class AppCouponControllerTest {
         AppLoginSession session = appLogin("coupon-claimable-user");
         String appToken = session.token();
         seedTemplate("Claimable Coupon", "ENABLED", 10, 0, 1);
-        long exhaustedTemplateId = seedTemplate("Exhausted Coupon", "ENABLED", 1, 0, 1);
+        seedTemplate("Exhausted Coupon", "ENABLED", 1, 1, 1);
+        long limitReachedTemplateId = seedTemplate("Limit Reached Coupon", "ENABLED", 10, 0, 1);
         seedTemplate("Disabled Coupon", "DISABLED", 10, 0, 1);
         seedExpiredTemplate("Expired Coupon");
-        seedUserCoupon(session.userId(), exhaustedTemplateId, "Exhausted Coupon", "CLAIMED");
+        seedUserCoupon(session.userId(), limitReachedTemplateId, "Limit Reached Coupon", "CLAIMED");
 
-        mockMvc.perform(get("/app/coupons/claimable")
+        String response = mockMvc.perform(get("/app/coupons/claimable")
                         .header("Authorization", "Bearer " + appToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(2))
-                .andExpect(jsonPath("$.data[0].name").value("Claimable Coupon"))
-                .andExpect(jsonPath("$.data[0].claimable").value(true))
-                .andExpect(jsonPath("$.data[1].name").value("Exhausted Coupon"))
-                .andExpect(jsonPath("$.data[1].claimable").value(false))
-                .andExpect(jsonPath("$.data[1].unavailableReason").value("CLAIM_LIMIT_REACHED"));
+                .andExpect(jsonPath("$.data.length()").value(3))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode coupons = objectMapper.readTree(response).path("data");
+        assertThat(findCoupon(coupons, "Claimable Coupon").path("claimable").asBoolean()).isTrue();
+        assertThat(findCoupon(coupons, "Exhausted Coupon").path("claimable").asBoolean()).isFalse();
+        assertThat(findCoupon(coupons, "Exhausted Coupon").path("unavailableReason").asText()).isEqualTo("OUT_OF_STOCK");
+        assertThat(findCoupon(coupons, "Limit Reached Coupon").path("claimable").asBoolean()).isFalse();
+        assertThat(findCoupon(coupons, "Limit Reached Coupon").path("unavailableReason").asText()).isEqualTo("CLAIM_LIMIT_REACHED");
     }
 
     @Test
@@ -370,6 +377,15 @@ class AppCouponControllerTest {
                 .param("templateName", templateName)
                 .query(Long.class)
                 .single();
+    }
+
+    private JsonNode findCoupon(JsonNode coupons, String name) {
+        for (JsonNode coupon : coupons) {
+            if (name.equals(coupon.path("name").asText())) {
+                return coupon;
+            }
+        }
+        throw new AssertionError("Coupon not found: " + name);
     }
 
     private record AppLoginSession(String token, long userId) {
