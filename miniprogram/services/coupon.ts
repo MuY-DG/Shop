@@ -27,11 +27,11 @@ export function getMyCoupons(status?: UserCoupon["status"]): Promise<UserCoupon[
 }
 
 export function getAvailableCoupons(cartItemIds?: number[]): Promise<AvailableCouponResponse> {
-  const query = cartItemIds && cartItemIds.length > 0
-    ? `?cartItemIds=${cartItemIds.join(",")}`
-    : "";
-
   return request<AvailableCouponResponse>({
-    url: `/app/coupons/available${query}`
+    url: "/app/coupons/available",
+    method: "POST",
+    data: {
+      cartItemIds: cartItemIds ?? []
+    }
   });
 }
