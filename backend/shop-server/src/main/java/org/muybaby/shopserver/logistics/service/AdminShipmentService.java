@@ -14,6 +14,8 @@ import org.muybaby.shopserver.logistics.provider.WechatShippingUploadRequest;
 import org.muybaby.shopserver.logistics.provider.WechatShippingUploadResult;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -26,6 +28,8 @@ import java.time.LocalDateTime;
 
 @Service
 public class AdminShipmentService {
+
+    private static final Logger log = LoggerFactory.getLogger(AdminShipmentService.class);
 
     private final JdbcClient jdbcClient;
     private final ShippingProperties shippingProperties;
@@ -123,7 +127,7 @@ public class AdminShipmentService {
                     RealWechatShippingProvider.MISSING_TRANSACTION_ID_MESSAGE
             );
         } else {
-            uploadResult = wechatShippingProvider.upload(new WechatShippingUploadRequest(
+            uploadResult = uploadSafely(new WechatShippingUploadRequest(
                     orderId,
                     context.transactionId(),
                     context.outTradeNo(),
@@ -157,6 +161,24 @@ public class AdminShipmentService {
                 .param("orderId", orderId)
                 .update();
         return findShipment(orderId);
+    }
+
+    private WechatShippingUploadResult uploadSafely(WechatShippingUploadRequest request) {
+        try {
+            return wechatShippingProvider.upload(request);
+        } catch (BusinessException ex) {
+            return uploadExceptionResult(ex);
+        } catch (RuntimeException ex) {
+            return uploadExceptionResult(ex);
+        }
+    }
+
+    private WechatShippingUploadResult uploadExceptionResult(RuntimeException ex) {
+        log.warn("WeChat shipping upload failed after local shipment: exception={}", ex.getClass().getSimpleName());
+        return WechatShippingUploadResult.failed(
+                ErrorCode.WECHAT_SHIPPING_UPLOAD_FAILED.name(),
+                ErrorCode.WECHAT_SHIPPING_UPLOAD_FAILED.message()
+        );
     }
 
     private OrderShipmentContext requirePaidOrder(Long orderId) {

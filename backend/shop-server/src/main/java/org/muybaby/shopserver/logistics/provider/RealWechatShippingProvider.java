@@ -13,6 +13,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Component
@@ -24,6 +27,7 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
 
     private static final Logger log = LoggerFactory.getLogger(RealWechatShippingProvider.class);
     private static final String UPLOAD_URL = "https://api.weixin.qq.com/wxa/sec/order/upload_shipping_info?access_token={accessToken}";
+    private static final int UNIFIED_DELIVERY_MODE = 1;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -74,6 +78,8 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         return new ShippingUploadPayload(
                 new OrderKey(2, request.transactionId()),
                 1,
+                UNIFIED_DELIVERY_MODE,
+                OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
                 List.of(new ShippingItem(request.trackingNo(), request.expressCompany(), defaultString(request.shipmentNote()))),
                 new Payer(request.openid())
         );
@@ -94,6 +100,8 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
     private record ShippingUploadPayload(
             @JsonProperty("order_key") OrderKey orderKey,
             @JsonProperty("logistics_type") Integer logisticsType,
+            @JsonProperty("delivery_mode") Integer deliveryMode,
+            @JsonProperty("upload_time") String uploadTime,
             @JsonProperty("shipping_list") List<ShippingItem> shippingList,
             Payer payer
     ) {

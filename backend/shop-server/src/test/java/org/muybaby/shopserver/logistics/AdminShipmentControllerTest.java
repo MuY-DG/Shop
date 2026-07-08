@@ -7,15 +7,23 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenSession;
-import org.muybaby.shopserver.logistics.provider.MockWechatShippingProvider;
+import org.muybaby.shopserver.common.error.BusinessException;
+import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.logistics.provider.WechatShippingProvider;
+import org.muybaby.shopserver.logistics.provider.WechatShippingUploadRequest;
+import org.muybaby.shopserver.logistics.provider.WechatShippingUploadResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.time.Instant;
 import java.util.List;
@@ -49,7 +57,7 @@ class AdminShipmentControllerTest {
     private ShippingProperties shippingProperties;
 
     @Autowired
-    private MockWechatShippingProvider mockWechatShippingProvider;
+    private ControllableWechatShippingProvider wechatShippingProvider;
 
     @BeforeEach
     void clearShipmentState() {
@@ -64,7 +72,7 @@ class AdminShipmentControllerTest {
         jdbcClient.sql("delete from coupon_claim_record").update();
         jdbcClient.sql("delete from coupon_template").update();
         shippingProperties.setUploadEnabled(false);
-        mockWechatShippingProvider.reset();
+        wechatShippingProvider.reset();
     }
 
     @Test
@@ -154,7 +162,7 @@ class AdminShipmentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.wechatUploadStatus").value("SKIPPED"));
 
-        assertThat(mockWechatShippingProvider.uploadRequests()).isEmpty();
+        assertThat(wechatShippingProvider.uploadRequests()).isEmpty();
         assertShipmentRow(orderId, "SKIPPED", "", "", 0);
     }
 
@@ -172,11 +180,78 @@ class AdminShipmentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.wechatUploadStatus").value("UPLOADED"));
 
-        assertThat(mockWechatShippingProvider.uploadRequests()).hasSize(1);
-        assertThat(mockWechatShippingProvider.uploadRequests().getFirst().transactionId()).isEqualTo("wx-ship-uploaded");
-        assertThat(mockWechatShippingProvider.uploadRequests().getFirst().openid()).isEqualTo(session.openid());
-        assertThat(mockWechatShippingProvider.uploadRequests().getFirst().trackingNo()).isEqualTo("SF1234567890");
+        assertThat(wechatShippingProvider.uploadRequests()).hasSize(1);
+        assertThat(wechatShippingProvider.uploadRequests().getFirst().transactionId()).isEqualTo("wx-ship-uploaded");
+        assertThat(wechatShippingProvider.uploadRequests().getFirst().openid()).isEqualTo(session.openid());
+        assertThat(wechatShippingProvider.uploadRequests().getFirst().trackingNo()).isEqualTo("SF1234567890");
         assertShipmentRow(orderId, "UPLOADED", "", "", 0);
+    }
+
+    @Test
+    void providerBusinessExceptionWhenUploadEnabledKeepsShipmentAndRecordsFailedUpload() throws Exception {
+        shippingProperties.setUploadEnabled(true);
+        wechatShippingProvider.failWith(new BusinessException(ErrorCode.WECHAT_PHONE_FAILED));
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(appLogin("ship-provider-business-failure-user"), "SHIP-PROVIDER-BUSINESS", "wx-provider-business");
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SHIPPED"))
+                .andExpect(jsonPath("$.data.wechatUploadStatus").value("FAILED"))
+                .andExpect(jsonPath("$.data.wechatErrorCode").value("WECHAT_SHIPPING_UPLOAD_FAILED"))
+                .andExpect(jsonPath("$.data.wechatErrorMessage").value("WeChat shipping upload failed"))
+                .andExpect(jsonPath("$.data.retryCount").value(1));
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("SHIPPED");
+        assertShipmentRow(orderId, "FAILED", "WECHAT_SHIPPING_UPLOAD_FAILED", "WeChat shipping upload failed", 1);
+    }
+
+    @Test
+    void providerRuntimeExceptionWhenUploadEnabledKeepsShipmentAndRecordsSafeFailure() throws Exception {
+        shippingProperties.setUploadEnabled(true);
+        AppLoginSession session = appLogin("ship-provider-runtime-failure-user");
+        wechatShippingProvider.failWith(new IllegalStateException(
+                "synthetic token=sensitive-token openid=" + session.openid() + " tracking=SF1234567890 payload={secret}"
+        ));
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(session, "SHIP-PROVIDER-RUNTIME", "wx-provider-runtime");
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("SHIPPED"))
+                .andExpect(jsonPath("$.data.wechatUploadStatus").value("FAILED"))
+                .andExpect(jsonPath("$.data.wechatErrorCode").value("WECHAT_SHIPPING_UPLOAD_FAILED"))
+                .andExpect(jsonPath("$.data.wechatErrorMessage").value("WeChat shipping upload failed"))
+                .andExpect(jsonPath("$.data.retryCount").value(1));
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("SHIPPED");
+        String recordedMessage = jdbcClient.sql("""
+                        select wechat_error_message
+                        from order_shipment
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .query(String.class)
+                .single();
+        assertThat(recordedMessage)
+                .isEqualTo("WeChat shipping upload failed")
+                .doesNotContain("sensitive-token")
+                .doesNotContain(session.openid())
+                .doesNotContain("SF1234567890")
+                .doesNotContain("payload");
+        assertShipmentRow(orderId, "FAILED", "WECHAT_SHIPPING_UPLOAD_FAILED", "WeChat shipping upload failed", 1);
     }
 
     @Test
@@ -392,5 +467,43 @@ class AdminShipmentControllerTest {
     }
 
     private record AppLoginSession(String token, long userId, String openid) {
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class WechatShippingProviderTestConfig {
+
+        @Bean
+        @Primary
+        ControllableWechatShippingProvider controllableWechatShippingProvider() {
+            return new ControllableWechatShippingProvider();
+        }
+    }
+
+    static class ControllableWechatShippingProvider implements WechatShippingProvider {
+
+        private final List<WechatShippingUploadRequest> uploadRequests = new ArrayList<>();
+        private RuntimeException exception;
+
+        @Override
+        public WechatShippingUploadResult upload(WechatShippingUploadRequest request) {
+            uploadRequests.add(request);
+            if (exception != null) {
+                throw exception;
+            }
+            return WechatShippingUploadResult.uploaded();
+        }
+
+        List<WechatShippingUploadRequest> uploadRequests() {
+            return List.copyOf(uploadRequests);
+        }
+
+        void failWith(RuntimeException exception) {
+            this.exception = exception;
+        }
+
+        void reset() {
+            uploadRequests.clear();
+            exception = null;
+        }
     }
 }

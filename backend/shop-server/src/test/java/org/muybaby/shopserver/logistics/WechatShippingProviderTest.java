@@ -13,6 +13,7 @@ import org.springframework.web.client.RestClient;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
@@ -38,6 +39,10 @@ class WechatShippingProviderTest {
                 .andExpect(jsonPath("$.order_key.transaction_id").value("wx-transaction-provider"))
                 .andExpect(jsonPath("$.payer.openid").value("openid-provider"))
                 .andExpect(jsonPath("$.logistics_type").value(1))
+                .andExpect(jsonPath("$.delivery_mode").value(1))
+                .andExpect(jsonPath("$.upload_time").value(matchesPattern(
+                        "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?(?:Z|[+-]\\d{2}:\\d{2})$"
+                )))
                 .andExpect(jsonPath("$.shipping_list[0].tracking_no").value("SF1234567890"))
                 .andExpect(jsonPath("$.shipping_list[0].express_company").value("顺丰速运"))
                 .andExpect(content().string(not(containsString("stable-token-from-provider"))))

@@ -196,3 +196,129 @@ $ tsc --noEmit
 - Aligned `Api.Content.BannerForm` with the existing `BannerItem` contract by adding `imageUrl` and sending the trimmed URL from the banner editor payload.
 - Added a visible usage status tag in the storage file detail drawer so active and historical references are distinguishable alongside the existing protected flag.
 - `pnpm build` recreated `admin/node_modules` and refreshed ignored build artifacts locally, but no ignored/generated files are intended for commit.
+
+---
+
+## Task 5 Review Fix: Backend Shipment And WeChat Shipping Upload
+
+### Scope
+
+- Scoped writes to Task 5 backend shipment/upload code, Task 5 backend tests, and this report file.
+- Did not change unrelated frontend or documentation files.
+- Used only synthetic test values; no real WeChat certificate, key, token, openid, APIv3 key, or user-provided sensitive value was added.
+
+### RED evidence
+
+Command:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest=AdminShipmentControllerTest,WechatShippingProviderTest test
+```
+
+Result: RED, expected review-blocking failures reproduced.
+
+Summary:
+
+```text
+Tests run: 11, Failures: 2, Errors: 1, Skipped: 0
+WechatShippingProviderTest.realProviderUploadsShippingInfoWithStableTokenAndOfficialOrderKey:
+  No value at JSON path "$.delivery_mode"
+AdminShipmentControllerTest.providerBusinessExceptionWhenUploadEnabledKeepsShipmentAndRecordsFailedUpload:
+  Status expected:<200> but was:<400>
+AdminShipmentControllerTest.providerRuntimeExceptionWhenUploadEnabledKeepsShipmentAndRecordsSafeFailure:
+  Request processing failed because the provider runtime exception escaped
+```
+
+### Implemented
+
+- Added `delivery_mode=1` to the official WeChat shipping upload JSON payload.
+- Added RFC3339 `upload_time` using UTC upload time in the official WeChat shipping upload JSON payload.
+- Added provider payload assertions for `delivery_mode` and RFC3339 `upload_time`.
+- Added controller regression tests for provider `BusinessException` and runtime exception failures.
+- Wrapped `wechatShippingProvider.upload(...)` inside `AdminShipmentService.refreshWechatUpload()` so provider/access-token failures become a local `FAILED` upload record instead of rolling back local shipment.
+- Recorded generic safe upload failure code/message for thrown provider exceptions:
+  - `WECHAT_SHIPPING_UPLOAD_FAILED`
+  - `WeChat shipping upload failed`
+- Preserved existing retry-count semantics: first upload failure records retry count `1`, retry API continues incrementing.
+- Logged only exception class names for provider exceptions, not exception messages, payloads, access tokens, openids, tracking numbers, keys, or certificates.
+
+### GREEN evidence
+
+1. Focused shipment/provider tests:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest=AdminShipmentControllerTest,WechatShippingProviderTest test
+```
+
+Result:
+
+```text
+Tests run: 11, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+2. Required expanded backend slice:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest=AdminShipmentControllerTest,WechatShippingProviderTest,AdminOrderControllerTest,AppOrderControllerTest,RestWechatMiniProgramClientTest test
+```
+
+Result:
+
+```text
+Tests run: 36, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+3. Full backend test suite:
+
+```bash
+cd backend/shop-server
+./mvnw test
+```
+
+Result:
+
+```text
+Tests run: 209, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+4. Diff whitespace check:
+
+```bash
+git diff --check
+```
+
+Result: exit code `0`, no output.
+
+5. Status check before commit:
+
+```bash
+git status --short --ignored
+```
+
+Result summary:
+
+```text
+M backend/shop-server/src/main/java/org/muybaby/shopserver/logistics/provider/RealWechatShippingProvider.java
+M backend/shop-server/src/main/java/org/muybaby/shopserver/logistics/service/AdminShipmentService.java
+M backend/shop-server/src/test/java/org/muybaby/shopserver/logistics/AdminShipmentControllerTest.java
+M backend/shop-server/src/test/java/org/muybaby/shopserver/logistics/WechatShippingProviderTest.java
+ignored: .superpowers/sdd review inputs, admin generated artifacts, backend/shop-server/target/, node_modules/
+```
+
+### Files changed
+
+- `.superpowers/sdd/task-5-report.md`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/logistics/provider/RealWechatShippingProvider.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/logistics/service/AdminShipmentService.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/logistics/AdminShipmentControllerTest.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/logistics/WechatShippingProviderTest.java`
+
+### Concerns
+
+- `git status --short --ignored` still shows pre-existing ignored `.superpowers/sdd` review inputs and generated build/dependency directories. They were not modified for this fix except this tracked report file.
