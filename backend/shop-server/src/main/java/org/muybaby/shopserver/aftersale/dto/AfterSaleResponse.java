@@ -19,6 +19,7 @@ public record AfterSaleResponse(
         LocalDateTime reviewedAt,
         LocalDateTime createdAt,
         List<Long> evidenceFileIds,
+        List<AfterSaleEvidenceFileResponse> evidenceFiles,
         RefundOrderResponse refundOrder
 ) {
 }

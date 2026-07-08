@@ -551,6 +551,7 @@ declare namespace Api {
       paymentTransactionId: string | null
       merchantTradeNo: string | null
       outTradeNo?: string | null
+      transactionId?: string | null
       paymentStatus?: string | null
       paidAt?: string | null
       shipment: Shipment | null
@@ -609,7 +610,7 @@ declare namespace Api {
       updatedAt?: string | null
     }
 
-    type EffectiveConfig = Config
+    type EffectiveConfig = Omit<Config, 'id'> & { id: number | null }
 
     interface ConfigSearchParams extends Partial<Api.Common.CommonSearchParams> {}
 
@@ -663,7 +664,18 @@ declare namespace Api {
       reviewedAt?: string | null
       createdAt: string
       evidenceFileIds: number[]
+      evidenceFiles?: EvidenceFile[]
       refundOrder?: RefundOrder | null
+    }
+
+    interface EvidenceFile {
+      fileId: number
+      originalFilename: string
+      contentType: string
+      sizeBytes: number
+      visibility: Api.Storage.Visibility | string
+      purpose: Api.Storage.Purpose | string
+      status: Api.Storage.FileStatus | string
     }
 
     interface RefundOrder {

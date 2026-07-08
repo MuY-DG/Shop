@@ -90,7 +90,13 @@
             placeholder="分类"
             style="width: 220px"
           />
-          <ElSelect v-model="filters.visibility" clearable placeholder="可见性" style="width: 140px">
+          <ElSelect
+            v-model="filters.visibility"
+            :disabled="!!visibility"
+            clearable
+            placeholder="可见性"
+            style="width: 140px"
+          >
             <ElOption label="PUBLIC" value="PUBLIC" />
             <ElOption label="PRIVATE" value="PRIVATE" />
           </ElSelect>
@@ -174,6 +180,7 @@
   interface Props {
     modelValue: Api.Common.AssetValue
     purpose?: Api.Storage.Purpose
+    visibility?: Api.Storage.Visibility
     assetCategoryId?: number | null
     disabled?: boolean
     allowClear?: boolean
@@ -186,6 +193,7 @@
 
   const props = withDefaults(defineProps<Props>(), {
     purpose: undefined,
+    visibility: undefined,
     assetCategoryId: null,
     disabled: false,
     allowClear: true
@@ -226,7 +234,7 @@
   const defaultFilters = () => ({
     purpose: props.purpose,
     assetCategoryId: props.assetCategoryId ?? undefined,
-    visibility: undefined as Api.Storage.Visibility | undefined,
+    visibility: props.visibility,
     status: 'ACTIVE' as Api.Storage.FileStatus
   })
 
@@ -296,7 +304,7 @@
         size: pagination.size,
         purpose: props.purpose || filters.purpose,
         assetCategoryId: filters.assetCategoryId,
-        visibility: filters.visibility,
+        visibility: props.visibility || filters.visibility,
         status: filters.status
       })
       files.value = response.records

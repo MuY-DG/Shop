@@ -113,6 +113,7 @@ public class AdminOrderService {
                                receiver_address,
                                payment_transaction_id,
                                merchant_trade_no,
+                               paid_at,
                                close_reason,
                                closed_at,
                                created_at
@@ -151,6 +152,19 @@ public class AdminOrderService {
                 .query(this::mapOrderItem)
                 .list();
 
+        PaymentOrderSnapshot paymentOrder = findLatestPaymentOrder(orderId);
+        String transactionId = nonBlank(
+                paymentOrder == null ? null : paymentOrder.transactionId(),
+                header.paymentTransactionId()
+        );
+        String outTradeNo = nonBlank(
+                paymentOrder == null ? null : paymentOrder.outTradeNo(),
+                header.merchantTradeNo()
+        );
+        LocalDateTime paidAt = paymentOrder == null || paymentOrder.paidAt() == null
+                ? header.paidAt()
+                : paymentOrder.paidAt();
+
         return new OrderDetailResponse(
                 header.orderId(),
                 header.orderNo(),
@@ -167,8 +181,12 @@ public class AdminOrderService {
                 header.receiverName(),
                 header.receiverPhone(),
                 header.receiverAddress(),
-                header.paymentTransactionId(),
+                transactionId,
                 header.merchantTradeNo(),
+                paymentOrder == null ? null : paymentOrder.status(),
+                outTradeNo,
+                transactionId,
+                paidAt,
                 header.closeReason(),
                 header.closedAt(),
                 header.createdAt(),
@@ -224,6 +242,7 @@ public class AdminOrderService {
                 rs.getString("receiver_address"),
                 rs.getString("payment_transaction_id"),
                 rs.getString("merchant_trade_no"),
+                rs.getObject("paid_at", LocalDateTime.class),
                 rs.getString("close_reason"),
                 rs.getObject("closed_at", LocalDateTime.class),
                 rs.getObject("created_at", LocalDateTime.class)
@@ -251,6 +270,32 @@ public class AdminOrderService {
                 rs.getLong("line_original_amount_cent"),
                 rs.getLong("line_amount_cent")
         );
+    }
+
+    private PaymentOrderSnapshot findLatestPaymentOrder(Long orderId) {
+        return jdbcClient.sql("""
+                        select out_trade_no,
+                               transaction_id,
+                               status,
+                               paid_at
+                        from payment_order
+                        where order_id = :orderId
+                        order by updated_at desc, id desc
+                        limit 1
+                        """)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new PaymentOrderSnapshot(
+                        rs.getString("out_trade_no"),
+                        rs.getString("transaction_id"),
+                        rs.getString("status"),
+                        rs.getObject("paid_at", LocalDateTime.class)
+                ))
+                .optional()
+                .orElse(null);
+    }
+
+    private String nonBlank(String primary, String fallback) {
+        return StringUtils.hasText(primary) ? primary : fallback;
     }
 
     private OrderShipmentResponse findShipment(Long orderId) {
@@ -311,9 +356,18 @@ public class AdminOrderService {
             String receiverAddress,
             String paymentTransactionId,
             String merchantTradeNo,
+            LocalDateTime paidAt,
             String closeReason,
             LocalDateTime closedAt,
             LocalDateTime createdAt
+    ) {
+    }
+
+    private record PaymentOrderSnapshot(
+            String outTradeNo,
+            String transactionId,
+            String status,
+            LocalDateTime paidAt
     ) {
     }
 }

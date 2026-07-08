@@ -80,7 +80,7 @@
               {{ formatText(currentDetail.outTradeNo || currentDetail.merchantTradeNo) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem label="微信支付单号">
-              {{ formatText(currentDetail.paymentTransactionId) }}
+              {{ formatText(currentDetail.transactionId || currentDetail.paymentTransactionId) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem label="支付时间">
               {{ formatDateTime(currentDetail.paidAt) }}

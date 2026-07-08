@@ -43,6 +43,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         AppLoginSession appUser = appLogin("after-sale-admin-list-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-list");
         long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long evidenceFileId = firstEvidenceFileId(afterSaleId);
         String readToken = limitedAdminToken(List.of("aftersale:read"));
         String auditOnlyToken = limitedAdminToken(List.of("aftersale:audit"));
 
@@ -68,7 +69,14 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(afterSaleId))
-                .andExpect(jsonPath("$.data.orderNo").value(order.orderNo()));
+                .andExpect(jsonPath("$.data.orderNo").value(order.orderNo()))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].fileId").value(evidenceFileId))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].originalFilename").value("after-sale-" + evidenceFileId + ".png"))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].contentType").value("image/png"))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].sizeBytes").value(68))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].visibility").value("PRIVATE"))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].purpose").value("AFTER_SALE_IMAGE"))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].status").value("ACTIVE"));
     }
 
     @Test
@@ -291,6 +299,19 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     private long paymentOrderId(long orderId) {
         return jdbcClient.sql("select id from payment_order where order_id = :orderId")
                 .param("orderId", orderId)
+                .query(Long.class)
+                .single();
+    }
+
+    private long firstEvidenceFileId(long afterSaleId) {
+        return jdbcClient.sql("""
+                        select file_id
+                        from after_sale_evidence
+                        where after_sale_id = :afterSaleId
+                        order by sort_order asc, id asc
+                        limit 1
+                        """)
+                .param("afterSaleId", afterSaleId)
                 .query(Long.class)
                 .single();
     }

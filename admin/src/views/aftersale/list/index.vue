@@ -120,7 +120,24 @@
 
           <div class="detail-section">
             <div class="detail-section__title">凭证文件</div>
-            <div v-if="currentDetail.evidenceFileIds?.length" class="evidence-list">
+            <div v-if="currentDetail.evidenceFiles?.length" class="evidence-list">
+              <div v-for="file in currentDetail.evidenceFiles" :key="file.fileId" class="evidence-file">
+                <div class="evidence-file__header">
+                  <span>{{ formatText(file.originalFilename) }}</span>
+                  <ElTag size="small" :type="file.visibility === 'PRIVATE' ? 'warning' : 'success'">
+                    {{ formatText(file.visibility) }}
+                  </ElTag>
+                </div>
+                <div class="evidence-file__meta">
+                  <span>ID {{ file.fileId }}</span>
+                  <span>{{ formatText(file.purpose) }}</span>
+                  <span>{{ formatText(file.contentType) }}</span>
+                  <span>{{ formatFileSize(file.sizeBytes) }}</span>
+                  <span>{{ formatText(file.status) }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="currentDetail.evidenceFileIds?.length" class="evidence-list">
               <ElTag v-for="fileId in currentDetail.evidenceFileIds" :key="fileId" type="info">
                 文件 ID {{ fileId }}
               </ElTag>
@@ -351,6 +368,12 @@
   const formatStatus = (value?: string) => (value ? statusMap[value]?.text || value : '-')
   const formatRefundStatus = (value?: string) => (value ? refundStatusMap[value]?.text || value : '-')
   const formatAfterSaleType = (value?: string) => (value ? typeMap[value] || value : '-')
+  const formatFileSize = (sizeBytes?: number | null) => {
+    if (!sizeBytes) return '0 B'
+    if (sizeBytes < 1024) return `${sizeBytes} B`
+    if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`
+    return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`
+  }
 
   const formatRefundError = (refundOrder: Api.AfterSale.RefundOrder) => {
     const code = refundOrder.lastErrorCode || ''
@@ -525,9 +548,36 @@
   }
 
   .evidence-list {
+    display: grid;
+    gap: 8px;
+  }
+
+  .evidence-file {
+    display: grid;
+    gap: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--el-border-color);
+    border-radius: 6px;
+    background: var(--el-fill-color-blank);
+  }
+
+  .evidence-file__header,
+  .evidence-file__meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    align-items: center;
+    gap: 8px 12px;
+  }
+
+  .evidence-file__header {
+    justify-content: space-between;
+    color: var(--el-text-color-primary);
+  }
+
+  .evidence-file__meta {
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--el-text-color-secondary);
   }
 
   .drawer-footer,

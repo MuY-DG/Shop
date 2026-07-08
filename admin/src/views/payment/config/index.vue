@@ -195,6 +195,7 @@
           <AssetPicker
             :model-value="assetValue(formData.privateKeyFileId)"
             purpose="PAYMENT_CERTIFICATE"
+            visibility="PRIVATE"
             @change="handleFileChange('privateKeyFileId', $event)"
           />
         </ElFormItem>
@@ -202,6 +203,7 @@
           <AssetPicker
             :model-value="assetValue(formData.merchantCertificateFileId || null)"
             purpose="PAYMENT_CERTIFICATE"
+            visibility="PRIVATE"
             @change="handleFileChange('merchantCertificateFileId', $event)"
           />
         </ElFormItem>
@@ -209,6 +211,7 @@
           <AssetPicker
             :model-value="assetValue(formData.wechatPublicKeyFileId || null)"
             purpose="PAYMENT_CERTIFICATE"
+            visibility="PRIVATE"
             @change="handleFileChange('wechatPublicKeyFileId', $event)"
           />
         </ElFormItem>
@@ -276,11 +279,36 @@
     { label: '平台证书', value: 'CERTIFICATE' }
   ]
 
+  const hasText = (value?: string | null) => Boolean(String(value || '').trim())
+  const hasNumber = (value?: number | null) => typeof value === 'number'
+
+  const preserveableTextRule = (message: string, existingValue?: string | null) => ({
+    validator: (_rule: unknown, value: string | undefined, callback: (error?: Error) => void) => {
+      if (hasText(value) || (editingConfig.value && hasText(existingValue))) {
+        callback()
+        return
+      }
+      callback(new Error(message))
+    },
+    trigger: 'blur'
+  })
+
+  const preserveableFileRule = (message: string, existingFileId?: number | null) => ({
+    validator: (_rule: unknown, value: number | null | undefined, callback: (error?: Error) => void) => {
+      if (hasNumber(value) || (editingConfig.value && hasNumber(existingFileId))) {
+        callback()
+        return
+      }
+      callback(new Error(message))
+    },
+    trigger: 'change'
+  })
+
   const rules = computed<FormRules<Api.Payment.ConfigForm>>(() => ({
     configName: [{ required: true, message: '请输入配置名', trigger: 'blur' }],
-    appId: [{ required: true, message: '请输入完整 App ID', trigger: 'blur' }],
-    mchId: [{ required: true, message: '请输入完整商户号', trigger: 'blur' }],
-    merchantSerialNo: [{ required: true, message: '请输入完整商户证书序列号', trigger: 'blur' }],
+    appId: [preserveableTextRule('请输入完整 App ID', editingConfig.value?.appIdMasked)],
+    mchId: [preserveableTextRule('请输入完整商户号', editingConfig.value?.mchIdMasked)],
+    merchantSerialNo: [preserveableTextRule('请输入完整商户证书序列号', editingConfig.value?.merchantSerialNoMasked)],
     apiV3Key: [
       {
         validator: (_rule, value, callback) => {
@@ -297,21 +325,16 @@
     refundNotifyUrl: [{ required: true, message: '请输入退款回调 URL', trigger: 'blur' }],
     verifyMode: [{ required: true, message: '请选择验签模式', trigger: 'change' }],
     privateKeyFileId: [
-      {
-        validator: (_rule, value, callback) => {
-          if (!value) {
-            callback(new Error('请选择私钥文件'))
-            return
-          }
-          callback()
-        },
-        trigger: 'change'
-      }
+      preserveableFileRule('请选择私钥文件', editingConfig.value?.privateKeyFileId)
     ],
     merchantCertificateFileId: [
       {
         validator: (_rule, value, callback) => {
-          if (formData.verifyMode === 'CERTIFICATE' && !value) {
+          if (
+            formData.verifyMode === 'CERTIFICATE' &&
+            !hasNumber(value) &&
+            !(editingConfig.value && hasNumber(editingConfig.value.merchantCertificateFileId))
+          ) {
             callback(new Error('请选择商户证书文件'))
             return
           }
@@ -323,7 +346,11 @@
     wechatPublicKeyId: [
       {
         validator: (_rule, value, callback) => {
-          if (formData.verifyMode === 'PUBLIC_KEY' && !String(value || '').trim()) {
+          if (
+            formData.verifyMode === 'PUBLIC_KEY' &&
+            !hasText(value) &&
+            !(editingConfig.value && hasText(editingConfig.value.wechatPublicKeyIdMasked))
+          ) {
             callback(new Error('请输入微信公钥 ID'))
             return
           }
@@ -335,7 +362,11 @@
     wechatPublicKeyFileId: [
       {
         validator: (_rule, value, callback) => {
-          if (formData.verifyMode === 'PUBLIC_KEY' && !value) {
+          if (
+            formData.verifyMode === 'PUBLIC_KEY' &&
+            !hasNumber(value) &&
+            !(editingConfig.value && hasNumber(editingConfig.value.wechatPublicKeyFileId))
+          ) {
             callback(new Error('请选择微信公钥文件'))
             return
           }
@@ -351,7 +382,7 @@
   const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
   const formatSource = (source?: string) => (source === 'ENV' ? 'ENV 配置' : 'DB 配置')
   const formatVerifyMode = (value?: string) => (value === 'CERTIFICATE' ? '平台证书' : '微信公钥')
-  const maskedPlaceholder = (value?: string | null) => (value ? `当前：${value}，请输入完整新值` : '请输入完整值')
+  const maskedPlaceholder = (value?: string | null) => (value ? `当前：${value}，留空不修改` : '请输入完整值')
   const assetValue = (fileId: number | null): Api.Common.AssetValue => ({ fileId, url: '' })
 
   const resetForm = () => {

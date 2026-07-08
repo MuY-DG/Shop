@@ -228,39 +228,57 @@ class AdminPaymentConfigControllerTest {
     }
 
     @Test
-    void updatingDbConfigWithBlankSecretPreservesExistingCiphertext() throws Exception {
+    void updatingDbConfigWithBlankSensitiveFieldsPreservesExistingValuesAndAllowsCallbackAndFileChanges() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
         long privateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
         long certFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
         long publicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long replacementPrivateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private-v2.pem", PRIVATE_KEY_PEM);
+        long replacementCertFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert-v2.pem", CERTIFICATE_PEM);
+        long replacementPublicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public-v2.pem", PUBLIC_KEY_PEM);
 
         long configId = createConfig(writeToken, "Secret Preserve", privateKeyFileId, certFileId, publicKeyFileId);
-        String beforeCiphertext = paymentCiphertext(configId);
+        PaymentConfigSnapshot before = paymentConfigSnapshot(configId);
 
         String response = mockMvc.perform(put("/admin/pay/configs/{configId}", configId)
                         .header("Authorization", "Bearer " + writeToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(configJson(
                                 "Secret Preserve Updated",
-                                "wx_db_app_updated",
-                                "mch_db_updated",
-                                "serial_db_updated",
                                 "   ",
-                                privateKeyFileId,
-                                certFileId,
+                                "",
+                                " ",
+                                "   ",
+                                replacementPrivateKeyFileId,
+                                replacementCertFileId,
                                 "PUBLIC_KEY",
-                                "pub_key_db_updated",
-                                publicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
+                                " ",
+                                replacementPublicKeyFileId,
+                                "https://pay.example.test/wxpay/pay/notify/v2",
+                                "https://pay.example.test/wxpay/refund/notify/v2")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.configName").value("Secret Preserve Updated"))
+                .andExpect(jsonPath("$.data.privateKeyFileId").value(replacementPrivateKeyFileId))
+                .andExpect(jsonPath("$.data.merchantCertificateFileId").value(replacementCertFileId))
+                .andExpect(jsonPath("$.data.wechatPublicKeyFileId").value(replacementPublicKeyFileId))
+                .andExpect(jsonPath("$.data.notifyUrl").value("https://pay.example.test/wxpay/pay/notify/v2"))
+                .andExpect(jsonPath("$.data.refundNotifyUrl").value("https://pay.example.test/wxpay/refund/notify/v2"))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
 
         assertSecretMaterialIsAbsent(response);
-        assertThat(paymentCiphertext(configId)).isEqualTo(beforeCiphertext);
+        PaymentConfigSnapshot after = paymentConfigSnapshot(configId);
+        assertThat(after.appId()).isEqualTo(before.appId());
+        assertThat(after.mchId()).isEqualTo(before.mchId());
+        assertThat(after.merchantSerialNo()).isEqualTo(before.merchantSerialNo());
+        assertThat(after.wechatPublicKeyId()).isEqualTo(before.wechatPublicKeyId());
+        assertThat(after.apiV3KeyCiphertext()).isEqualTo(before.apiV3KeyCiphertext());
+        assertThat(after.privateKeyFileId()).isEqualTo(replacementPrivateKeyFileId);
+        assertThat(after.merchantCertificateFileId()).isEqualTo(replacementCertFileId);
+        assertThat(after.wechatPublicKeyFileId()).isEqualTo(replacementPublicKeyFileId);
+        assertThat(after.notifyUrl()).isEqualTo("https://pay.example.test/wxpay/pay/notify/v2");
+        assertThat(after.refundNotifyUrl()).isEqualTo("https://pay.example.test/wxpay/refund/notify/v2");
     }
 
     @Test
@@ -381,10 +399,34 @@ class AdminPaymentConfigControllerTest {
                 .single();
     }
 
-    private String paymentCiphertext(long configId) {
-        return jdbcClient.sql("select api_v3_key_ciphertext from payment_config where id = :configId")
+    private PaymentConfigSnapshot paymentConfigSnapshot(long configId) {
+        return jdbcClient.sql("""
+                        select app_id,
+                               mch_id,
+                               merchant_serial_no,
+                               api_v3_key_ciphertext,
+                               private_key_file_id,
+                               merchant_certificate_file_id,
+                               wechat_public_key_id,
+                               wechat_public_key_file_id,
+                               notify_url,
+                               refund_notify_url
+                        from payment_config
+                        where id = :configId
+                        """)
                 .param("configId", configId)
-                .query(String.class)
+                .query((rs, rowNum) -> new PaymentConfigSnapshot(
+                        rs.getString("app_id"),
+                        rs.getString("mch_id"),
+                        rs.getString("merchant_serial_no"),
+                        rs.getString("api_v3_key_ciphertext"),
+                        rs.getLong("private_key_file_id"),
+                        rs.getLong("merchant_certificate_file_id"),
+                        rs.getString("wechat_public_key_id"),
+                        rs.getLong("wechat_public_key_file_id"),
+                        rs.getString("notify_url"),
+                        rs.getString("refund_notify_url")
+                ))
                 .single();
     }
 
@@ -461,5 +503,19 @@ class AdminPaymentConfigControllerTest {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(response).path("data").path("token").asText();
+    }
+
+    private record PaymentConfigSnapshot(
+            String appId,
+            String mchId,
+            String merchantSerialNo,
+            String apiV3KeyCiphertext,
+            Long privateKeyFileId,
+            Long merchantCertificateFileId,
+            String wechatPublicKeyId,
+            Long wechatPublicKeyFileId,
+            String notifyUrl,
+            String refundNotifyUrl
+    ) {
     }
 }

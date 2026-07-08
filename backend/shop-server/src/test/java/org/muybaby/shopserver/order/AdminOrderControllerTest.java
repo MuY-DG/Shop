@@ -49,6 +49,8 @@ class AdminOrderControllerTest {
 
     @BeforeEach
     void clearOrderState() {
+        jdbcClient.sql("delete from payment_order").update();
+        jdbcClient.sql("delete from order_shipment").update();
         jdbcClient.sql("delete from stock_lock").update();
         jdbcClient.sql("delete from order_item").update();
         jdbcClient.sql("delete from shop_order").update();
@@ -127,6 +129,26 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data.items[0].quantity").value(2))
                 .andExpect(jsonPath("$.data.items[0].lineOriginalAmountCent").value(9980))
                 .andExpect(jsonPath("$.data.items[0].lineAmountCent").value(7980));
+    }
+
+    @Test
+    void adminOrderDetailReturnsLatestPaymentOrderFields() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long userId = appLogin("admin-order-payment-detail-user").userId();
+        long skuId = createPublishedSku("ADMIN-PAYMENT-DETAIL-SKU", 3990L, 4990L, 12, "ENABLED");
+
+        insertOrderSnapshot(9302L, "ADM-PAYMENT-DETAIL", OrderStatus.PAID.name(), userId, skuId, 9402L, "Admin Payment Detail");
+        insertPaymentOrder(9302L, "MCH9302-OLD", "wxpay-old-9302", "PAYING", "2026-07-08 11:00:00");
+        insertPaymentOrder(9302L, "MCH9302-PAID", "wxpay-paid-9302", "PAID", "2026-07-08 12:34:56");
+
+        mockMvc.perform(get("/admin/orders/{orderId}", 9302L)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.paymentStatus").value("PAID"))
+                .andExpect(jsonPath("$.data.outTradeNo").value("MCH9302-PAID"))
+                .andExpect(jsonPath("$.data.transactionId").value("wxpay-paid-9302"))
+                .andExpect(jsonPath("$.data.paymentTransactionId").value("wxpay-paid-9302"))
+                .andExpect(jsonPath("$.data.paidAt").value("2026-07-08T12:34:56"));
     }
 
     @Test
@@ -495,6 +517,30 @@ class AdminOrderControllerTest {
                 .param("orderId", orderId)
                 .param("skuId", skuId)
                 .param("productTitle", productTitle)
+                .update();
+    }
+
+    private void insertPaymentOrder(
+            long orderId,
+            String outTradeNo,
+            String transactionId,
+            String status,
+            String paidAt
+    ) {
+        jdbcClient.sql("""
+                        insert into payment_order
+                            (order_id, out_trade_no, prepay_id, transaction_id, status,
+                             amount_cent, expires_at, paid_at, created_at, updated_at)
+                        values
+                            (:orderId, :outTradeNo, :prepayId, :transactionId, :status,
+                             7480, timestamp '2026-07-08 12:50:00', :paidAt, :paidAt, :paidAt)
+                        """)
+                .param("orderId", orderId)
+                .param("outTradeNo", outTradeNo)
+                .param("prepayId", "prepay-" + outTradeNo)
+                .param("transactionId", transactionId)
+                .param("status", status)
+                .param("paidAt", LocalDateTime.parse(paidAt.replace(" ", "T")))
                 .update();
     }
 

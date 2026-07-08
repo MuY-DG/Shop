@@ -4,6 +4,7 @@ import org.muybaby.shopserver.aftersale.AfterSaleStatus;
 import org.muybaby.shopserver.aftersale.RefundOrderStatus;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleAuditRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleQueryRequest;
+import org.muybaby.shopserver.aftersale.dto.AfterSaleEvidenceFileResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.dto.RefundOrderResponse;
 import org.muybaby.shopserver.auth.token.TokenKind;
@@ -465,6 +466,7 @@ public class AdminAfterSaleService {
                 row.reviewedAt(),
                 row.createdAt(),
                 evidenceFileIds(row.id()),
+                evidenceFiles(row.id()),
                 refundOrder(row.id())
         );
     }
@@ -479,6 +481,37 @@ public class AdminAfterSaleService {
                 .param("afterSaleId", afterSaleId)
                 .query(Long.class)
                 .list();
+    }
+
+    private List<AfterSaleEvidenceFileResponse> evidenceFiles(Long afterSaleId) {
+        return jdbcClient.sql("""
+                        select ase.file_id,
+                               sf.original_filename,
+                               sf.content_type,
+                               sf.size_bytes,
+                               sf.visibility,
+                               sf.purpose,
+                               sf.status
+                        from after_sale_evidence ase
+                        join storage_file sf on sf.id = ase.file_id
+                        where ase.after_sale_id = :afterSaleId
+                        order by ase.sort_order asc, ase.id asc
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query(this::mapEvidenceFile)
+                .list();
+    }
+
+    private AfterSaleEvidenceFileResponse mapEvidenceFile(ResultSet rs, int rowNum) throws SQLException {
+        return new AfterSaleEvidenceFileResponse(
+                rs.getLong("file_id"),
+                rs.getString("original_filename"),
+                rs.getString("content_type"),
+                rs.getLong("size_bytes"),
+                rs.getString("visibility"),
+                rs.getString("purpose"),
+                rs.getString("status")
+        );
     }
 
     private RefundOrderResponse refundOrder(Long afterSaleId) {

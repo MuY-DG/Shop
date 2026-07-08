@@ -231,16 +231,33 @@ public class AdminPaymentConfigService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         String configName = requireText(request.configName(), 80);
-        String appId = requireText(request.appId(), 64);
-        String mchId = requireText(request.mchId(), 32);
-        String merchantSerialNo = requireText(request.merchantSerialNo(), 128);
+        String appId = requireTextOrExisting(request.appId(), 64, existing == null ? null : existing.appId());
+        String mchId = requireTextOrExisting(request.mchId(), 32, existing == null ? null : existing.mchId());
+        String merchantSerialNo = requireTextOrExisting(
+                request.merchantSerialNo(),
+                128,
+                existing == null ? null : existing.merchantSerialNo()
+        );
         String notifyUrl = requireText(request.notifyUrl(), 255);
         String refundNotifyUrl = requireText(request.refundNotifyUrl(), 255);
         PaymentVerifyMode verifyMode = parseVerifyMode(request.verifyMode());
-        Long privateKeyFileId = requireFileId(request.privateKeyFileId());
-        Long merchantCertificateFileId = request.merchantCertificateFileId();
-        String wechatPublicKeyId = trimToEmpty(request.wechatPublicKeyId());
-        Long wechatPublicKeyFileId = request.wechatPublicKeyFileId();
+        Long privateKeyFileId = requireFileIdOrExisting(
+                request.privateKeyFileId(),
+                existing == null ? null : existing.privateKeyFileId()
+        );
+        Long merchantCertificateFileId = fileIdOrExisting(
+                request.merchantCertificateFileId(),
+                existing == null ? null : existing.merchantCertificateFileId()
+        );
+        String wechatPublicKeyId = textOrExisting(
+                request.wechatPublicKeyId(),
+                128,
+                existing == null ? null : existing.wechatPublicKeyId()
+        );
+        Long wechatPublicKeyFileId = fileIdOrExisting(
+                request.wechatPublicKeyFileId(),
+                existing == null ? null : existing.wechatPublicKeyFileId()
+        );
 
         if (verifyMode == PaymentVerifyMode.PUBLIC_KEY) {
             wechatPublicKeyId = requireText(wechatPublicKeyId, 128);
@@ -262,6 +279,7 @@ public class AdminPaymentConfigService {
             }
             apiV3KeyCiphertext = existing.apiV3KeyCiphertext();
         } else {
+            rejectMaskedPlaceholder(apiV3Key);
             apiV3KeyCiphertext = paymentSecretCipher.encrypt(apiV3Key);
         }
 
@@ -336,6 +354,8 @@ public class AdminPaymentConfigService {
         }
         return jdbcClient.sql("""
                         select id, api_v3_key_ciphertext
+                              ,app_id, mch_id, merchant_serial_no, private_key_file_id,
+                               merchant_certificate_file_id, wechat_public_key_id, wechat_public_key_file_id
                         from payment_config
                         where id = :configId
                           and status = 'ACTIVE'
@@ -343,7 +363,14 @@ public class AdminPaymentConfigService {
                 .param("configId", configId)
                 .query((rs, rowNum) -> new PaymentConfigRow(
                         rs.getLong("id"),
-                        rs.getString("api_v3_key_ciphertext")
+                        rs.getString("api_v3_key_ciphertext"),
+                        rs.getString("app_id"),
+                        rs.getString("mch_id"),
+                        rs.getString("merchant_serial_no"),
+                        nullableLong(rs, "private_key_file_id"),
+                        nullableLong(rs, "merchant_certificate_file_id"),
+                        rs.getString("wechat_public_key_id"),
+                        nullableLong(rs, "wechat_public_key_file_id")
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
@@ -380,11 +407,45 @@ public class AdminPaymentConfigService {
         return trimmed;
     }
 
+    private String requireTextOrExisting(String value, int maxLength, String existingValue) {
+        String trimmed = trimToNull(value);
+        if (trimmed == null) {
+            return requireText(existingValue, maxLength);
+        }
+        String required = requireText(trimmed, maxLength);
+        rejectMaskedPlaceholder(required);
+        return required;
+    }
+
+    private String textOrExisting(String value, int maxLength, String existingValue) {
+        String trimmed = trimToNull(value);
+        if (trimmed == null) {
+            return trimToEmpty(existingValue);
+        }
+        String required = requireText(trimmed, maxLength);
+        rejectMaskedPlaceholder(required);
+        return required;
+    }
+
     private Long requireFileId(Long fileId) {
         if (fileId == null) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return fileId;
+    }
+
+    private Long requireFileIdOrExisting(Long fileId, Long existingFileId) {
+        return requireFileId(fileId == null ? existingFileId : fileId);
+    }
+
+    private Long fileIdOrExisting(Long fileId, Long existingFileId) {
+        return fileId == null ? existingFileId : fileId;
+    }
+
+    private void rejectMaskedPlaceholder(String value) {
+        if (value.contains("*")) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
     }
 
     private PaymentVerifyMode parseVerifyMode(String verifyMode) {
@@ -447,7 +508,17 @@ public class AdminPaymentConfigService {
         return value == null ? "" : value.trim();
     }
 
-    private record PaymentConfigRow(Long id, String apiV3KeyCiphertext) {
+    private record PaymentConfigRow(
+            Long id,
+            String apiV3KeyCiphertext,
+            String appId,
+            String mchId,
+            String merchantSerialNo,
+            Long privateKeyFileId,
+            Long merchantCertificateFileId,
+            String wechatPublicKeyId,
+            Long wechatPublicKeyFileId
+    ) {
     }
 
     private record ValidatedConfig(
