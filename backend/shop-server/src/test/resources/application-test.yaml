@@ -30,6 +30,8 @@ shop:
   wechat:
     mini-program:
       mock-enabled: true
+    shipping:
+      upload-enabled: false
   pay:
     enabled: true
     mock-enabled: true

@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.order.dto;
 
+import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -24,6 +26,7 @@ public record OrderDetailResponse(
         String closeReason,
         LocalDateTime closedAt,
         LocalDateTime createdAt,
+        OrderShipmentResponse shipment,
         List<OrderItemResponse> items
 ) {
 }

@@ -21,21 +21,36 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
 
     private static final Logger log = LoggerFactory.getLogger(RestWechatMiniProgramClient.class);
     private static final String CODE_TO_SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session";
-    private static final String STABLE_TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/stable_token";
     private static final String GET_PHONE_NUMBER_URL = "https://api.weixin.qq.com/wxa/business/getuserphonenumber";
 
     private final WechatMiniProgramProperties properties;
+    private final WechatAccessTokenProvider accessTokenProvider;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
     public RestWechatMiniProgramClient(
             WechatMiniProgramProperties properties,
+            WechatAccessTokenProvider accessTokenProvider,
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper
     ) {
         this.properties = properties;
+        this.accessTokenProvider = accessTokenProvider;
         this.restClient = restClientBuilder.build();
         this.objectMapper = objectMapper;
+    }
+
+    RestWechatMiniProgramClient(
+            WechatMiniProgramProperties properties,
+            RestClient.Builder restClientBuilder,
+            ObjectMapper objectMapper
+    ) {
+        this(
+                properties,
+                new RestWechatAccessTokenProvider(properties, restClientBuilder, objectMapper),
+                restClientBuilder,
+                objectMapper
+        );
     }
 
     @Override
@@ -68,7 +83,7 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
     @Override
     public WechatPhoneInfo getPhoneNumber(String code) {
         validateCredentials(ErrorCode.WECHAT_PHONE_FAILED);
-        String accessToken = fetchAccessToken();
+        String accessToken = accessTokenProvider.getAccessToken();
         try {
             String body = restClient.post()
                     .uri(GET_PHONE_NUMBER_URL + "?access_token={accessToken}", accessToken)
@@ -91,36 +106,6 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
             return new WechatPhoneInfo(phoneInfo.phoneNumber(), phoneInfo.purePhoneNumber(), phoneInfo.countryCode());
         } catch (RestClientException ex) {
             logWechatRequestFailure("getPhoneNumber", ex);
-            throw new BusinessException(ErrorCode.WECHAT_PHONE_FAILED);
-        }
-    }
-
-    private String fetchAccessToken() {
-        try {
-            String body = restClient.post()
-                    .uri(STABLE_TOKEN_URL)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(writeWechatRequestBody(
-                            "stableToken",
-                            new AccessTokenRequest("client_credential", properties.appId(), properties.appSecret(), false),
-                            ErrorCode.WECHAT_PHONE_FAILED
-                    ))
-                    .retrieve()
-                    .body(String.class);
-            AccessTokenResponse response = readWechatResponse(
-                    "stableToken",
-                    body,
-                    AccessTokenResponse.class,
-                    ErrorCode.WECHAT_PHONE_FAILED
-            );
-
-            if (response == null || response.hasError() || !StringUtils.hasText(response.accessToken())) {
-                logWechatError("stableToken", response == null ? null : response.errcode(), response == null ? null : response.errmsg());
-                throw new BusinessException(ErrorCode.WECHAT_PHONE_FAILED);
-            }
-            return response.accessToken();
-        } catch (RestClientException ex) {
-            logWechatRequestFailure("stableToken", ex);
             throw new BusinessException(ErrorCode.WECHAT_PHONE_FAILED);
         }
     }
@@ -183,25 +168,6 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
             String openid,
             String unionid,
             @JsonProperty("session_key") String sessionKey,
-            Integer errcode,
-            String errmsg
-    ) {
-        private boolean hasError() {
-            return errcode != null && errcode != 0;
-        }
-    }
-
-    private record AccessTokenRequest(
-            @JsonProperty("grant_type") String grantType,
-            String appid,
-            String secret,
-            @JsonProperty("force_refresh") boolean forceRefresh
-    ) {
-    }
-
-    private record AccessTokenResponse(
-            @JsonProperty("access_token") String accessToken,
-            @JsonProperty("expires_in") Integer expiresIn,
             Integer errcode,
             String errmsg
     ) {

@@ -45,6 +45,8 @@ shop:
       app-id: ${WECHAT_MINI_PROGRAM_APP_ID:}
       app-secret: ${WECHAT_MINI_PROGRAM_APP_SECRET:}
       mock-enabled: false
+    shipping:
+      upload-enabled: ${SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED:false}
   pay:
     enabled: ${WECHAT_PAY_ENABLED:false}
     mock-enabled: ${WECHAT_PAY_MOCK_ENABLED:false}

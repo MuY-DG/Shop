@@ -5,7 +5,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(prefix = "shop.wechat.mini-program", name = "mock-enabled", havingValue = "true")
-public class MockWechatMiniProgramClient implements WechatMiniProgramClient {
+public class MockWechatMiniProgramClient implements WechatMiniProgramClient, WechatAccessTokenProvider {
 
     @Override
     public WechatCodeSession code2Session(String code) {
@@ -15,5 +15,10 @@ public class MockWechatMiniProgramClient implements WechatMiniProgramClient {
     @Override
     public WechatPhoneInfo getPhoneNumber(String code) {
         return new WechatPhoneInfo("13812345678", "13812345678", "86");
+    }
+
+    @Override
+    public String getAccessToken() {
+        return "mock-access-token";
     }
 }

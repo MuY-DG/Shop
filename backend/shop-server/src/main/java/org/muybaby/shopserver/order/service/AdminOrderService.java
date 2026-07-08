@@ -4,6 +4,7 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
 import org.muybaby.shopserver.order.dto.AdminOrderQueryRequest;
 import org.muybaby.shopserver.order.dto.OrderDetailResponse;
 import org.muybaby.shopserver.order.dto.OrderItemResponse;
@@ -171,6 +172,7 @@ public class AdminOrderService {
                 header.closeReason(),
                 header.closedAt(),
                 header.createdAt(),
+                findShipment(orderId),
                 items
         );
     }
@@ -248,6 +250,46 @@ public class AdminOrderService {
                 rs.getInt("quantity"),
                 rs.getLong("line_original_amount_cent"),
                 rs.getLong("line_amount_cent")
+        );
+    }
+
+    private OrderShipmentResponse findShipment(Long orderId) {
+        return jdbcClient.sql("""
+                        select id as shipment_id,
+                               order_id,
+                               express_company,
+                               tracking_no,
+                               shipment_note,
+                               status,
+                               wechat_upload_status,
+                               wechat_error_code,
+                               wechat_error_message,
+                               retry_count,
+                               shipped_at,
+                               wechat_uploaded_at
+                        from order_shipment
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .query(this::mapShipment)
+                .optional()
+                .orElse(null);
+    }
+
+    private OrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {
+        return new OrderShipmentResponse(
+                rs.getLong("shipment_id"),
+                rs.getLong("order_id"),
+                rs.getString("express_company"),
+                rs.getString("tracking_no"),
+                rs.getString("shipment_note"),
+                rs.getString("status"),
+                rs.getString("wechat_upload_status"),
+                rs.getString("wechat_error_code"),
+                rs.getString("wechat_error_message"),
+                rs.getInt("retry_count"),
+                rs.getObject("shipped_at", LocalDateTime.class),
+                rs.getObject("wechat_uploaded_at", LocalDateTime.class)
         );
     }
 
