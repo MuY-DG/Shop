@@ -28,6 +28,15 @@ public class OrderCloseService {
 
     @Transactional
     public void closeCreatedOrder(Long orderId, String closeReason, String operatorType, Long operatorId) {
+        closeOrder(orderId, OrderStatus.CREATED, closeReason, operatorType, operatorId);
+    }
+
+    @Transactional
+    public void closePayingOrder(Long orderId, String closeReason, String operatorType, Long operatorId) {
+        closeOrder(orderId, OrderStatus.PAYING, closeReason, operatorType, operatorId);
+    }
+
+    private void closeOrder(Long orderId, OrderStatus expectedOrderStatus, String closeReason, String operatorType, Long operatorId) {
         LocalDateTime now = LocalDateTime.now();
         ClosableOrder order = jdbcClient.sql("""
                         select id as order_id,
@@ -41,7 +50,7 @@ public class OrderCloseService {
                 .query(this::mapClosableOrder)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-        if (!OrderStatus.CREATED.name().equals(order.status())) {
+        if (!expectedOrderStatus.name().equals(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
 
@@ -212,7 +221,7 @@ public class OrderCloseService {
                 .param("closedAt", now)
                 .param("updatedAt", now)
                 .param("orderId", orderId)
-                .param("expectedStatus", OrderStatus.CREATED.name())
+                .param("expectedStatus", expectedOrderStatus.name())
                 .update();
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);

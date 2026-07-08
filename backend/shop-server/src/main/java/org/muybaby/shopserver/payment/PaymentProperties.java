@@ -7,6 +7,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "shop.pay")
 public record PaymentProperties(
         boolean enabled,
+        Boolean mockEnabled,
         PaymentConfigSource configSource,
         String appId,
         String mchId,

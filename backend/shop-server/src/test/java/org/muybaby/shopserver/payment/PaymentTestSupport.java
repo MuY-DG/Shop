@@ -1,0 +1,364 @@
+package org.muybaby.shopserver.payment;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
+import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
+import org.muybaby.shopserver.storage.provider.StorageProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+
+import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+abstract class PaymentTestSupport {
+
+    @Autowired
+    protected MockMvc mockMvc;
+
+    @Autowired
+    protected ObjectMapper objectMapper;
+
+    @Autowired
+    protected JdbcClient jdbcClient;
+
+    @Autowired
+    protected PaymentSecretCipher paymentSecretCipher;
+
+    @Autowired
+    protected MockWechatPayProvider mockWechatPayProvider;
+
+    @Autowired
+    private StorageProvider storageProvider;
+
+    @BeforeEach
+    void clearPaymentFlowState() {
+        clearSeededPaymentFlowState();
+    }
+
+    @AfterEach
+    void cleanupPaymentFlowState() {
+        clearSeededPaymentFlowState();
+    }
+
+    private void clearSeededPaymentFlowState() {
+        jdbcClient.sql("delete from payment_callback_log").update();
+        jdbcClient.sql("delete from payment_order").update();
+        jdbcClient.sql("delete from stock_lock").update();
+        jdbcClient.sql("delete from order_item").update();
+        jdbcClient.sql("delete from shop_order").update();
+        jdbcClient.sql("delete from stock_log").update();
+        jdbcClient.sql("delete from user_coupon").update();
+        jdbcClient.sql("delete from coupon_claim_record").update();
+        jdbcClient.sql("delete from coupon_template").update();
+        jdbcClient.sql("delete from payment_config").update();
+        jdbcClient.sql("delete from storage_file where object_key like 'private/payment-flow/%'").update();
+        jdbcClient.sql("delete from product_sku").update();
+        jdbcClient.sql("delete from product_spu_image").update();
+        jdbcClient.sql("delete from product_spu").update();
+        jdbcClient.sql("delete from product_category").update();
+        mockWechatPayProvider.reset();
+    }
+
+    protected AppLoginSession appLogin(String code) throws Exception {
+        String response = mockMvc.perform(post("/app/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"code":"%s"}
+                                """.formatted(code)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token", startsWith("app_")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode json = objectMapper.readTree(response);
+        long userId = json.path("data").path("user").path("userId").asLong();
+        String openid = jdbcClient.sql("select openid from app_user where id = :userId")
+                .param("userId", userId)
+                .query(String.class)
+                .single();
+        return new AppLoginSession(json.path("data").path("token").asText(), userId, openid);
+    }
+
+    protected void seedEnabledPaymentConfig() {
+        long privateKeyFileId = System.nanoTime();
+        long publicKeyFileId = privateKeyFileId + 1;
+        insertPrivatePaymentFile(privateKeyFileId, "merchant-private.pem", """
+                -----BEGIN PRIVATE KEY-----
+                test-private-key-material
+                -----END PRIVATE KEY-----
+                """);
+        insertPrivatePaymentFile(publicKeyFileId, "wechat-public.pem", """
+                -----BEGIN PUBLIC KEY-----
+                test-public-key-material
+                -----END PUBLIC KEY-----
+                """);
+        jdbcClient.sql("""
+                        insert into payment_config
+                            (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_file_id, merchant_certificate_file_id, verify_mode,
+                             wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                             enabled, status)
+                        values
+                            (91001, 'Payment Flow Test', 'wx_payment_test_app', 'mch_payment_test',
+                             'serial_payment_test', :ciphertext, :privateKeyFileId, null, 'PUBLIC_KEY',
+                             'pub_key_payment_test', :publicKeyFileId, 'https://pay.test/wxpay/pay/notify',
+                             'https://pay.test/wxpay/refund/notify', true, 'ACTIVE')
+                        """)
+                .param("ciphertext", paymentSecretCipher.encrypt("api_v3_secret_test"))
+                .param("privateKeyFileId", privateKeyFileId)
+                .param("publicKeyFileId", publicKeyFileId)
+                .update();
+    }
+
+    protected SeedOrder seedCreatedOrder(long userId, long payableAmountCent, boolean withCoupon) {
+        long suffix = System.nanoTime();
+        long categoryId = insertCategory("Payment Category " + suffix);
+        long spuId = insertSpu(categoryId, "Payment SPU " + suffix);
+        long skuId = insertSku(spuId, "PAY-SKU-" + suffix);
+        Long userCouponId = withCoupon ? insertLockedCoupon(userId) : null;
+
+        jdbcClient.sql("""
+                        insert into shop_order
+                            (id, order_no, user_id, status, source, idempotency_key,
+                             product_original_amount_cent, product_amount_cent, user_coupon_id, coupon_name,
+                             coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent,
+                             receiver_name, receiver_phone, receiver_address, created_at, updated_at)
+                        values
+                            (:orderId, :orderNo, :userId, 'CREATED', 'CART', :idempotencyKey,
+                             :originalAmount, :productAmount, :userCouponId, :couponName,
+                             :couponDiscount, 0, :payableAmount, 0,
+                             'Pay User', '13800000000', 'Pay Test Address',
+                             timestamp '2026-07-08 10:00:00', timestamp '2026-07-08 10:00:00')
+                        """)
+                .param("orderId", suffix)
+                .param("orderNo", "PAY" + suffix)
+                .param("userId", userId)
+                .param("idempotencyKey", "pay-seed-" + suffix)
+                .param("originalAmount", payableAmountCent + (withCoupon ? 500L : 0L))
+                .param("productAmount", payableAmountCent + (withCoupon ? 500L : 0L))
+                .param("userCouponId", userCouponId)
+                .param("couponName", withCoupon ? "Pay Coupon" : "")
+                .param("couponDiscount", withCoupon ? 500L : 0L)
+                .param("payableAmount", payableAmountCent)
+                .update();
+        jdbcClient.sql("""
+                        insert into order_item
+                            (id, order_id, sku_id, spu_id, product_title, product_subtitle, main_image,
+                             sku_image, display_image, sku_code, spec_text, original_price_cent,
+                             unit_price_cent, quantity, line_original_amount_cent, line_amount_cent, created_at)
+                        values
+                            (:orderItemId, :orderId, :skuId, :spuId, 'Payment Item', '',
+                             'https://example.test/pay-main.jpg', 'https://example.test/pay-sku.jpg',
+                             'https://example.test/pay-sku.jpg', :skuCode, '300g',
+                             :lineAmount, :lineAmount, 2, :lineAmount, :lineAmount,
+                             timestamp '2026-07-08 10:00:00')
+                        """)
+                .param("orderItemId", suffix + 1)
+                .param("orderId", suffix)
+                .param("skuId", skuId)
+                .param("spuId", spuId)
+                .param("skuCode", "PAY-SKU-" + suffix)
+                .param("lineAmount", payableAmountCent + (withCoupon ? 500L : 0L))
+                .update();
+        jdbcClient.sql("""
+                        insert into stock_lock
+                            (order_id, order_item_id, sku_id, quantity, status, locked_at, created_at, updated_at)
+                        values
+                            (:orderId, :orderItemId, :skuId, 2, 'LOCKED',
+                             timestamp '2026-07-08 10:00:00', timestamp '2026-07-08 10:00:00',
+                             timestamp '2026-07-08 10:00:00')
+                        """)
+                .param("orderId", suffix)
+                .param("orderItemId", suffix + 1)
+                .param("skuId", skuId)
+                .update();
+        if (userCouponId != null) {
+            jdbcClient.sql("""
+                            update user_coupon
+                            set locked_order_id = :orderId, locked_at = timestamp '2026-07-08 10:00:00'
+                            where id = :userCouponId
+                            """)
+                    .param("orderId", suffix)
+                    .param("userCouponId", userCouponId)
+                    .update();
+        }
+        return new SeedOrder(suffix, "PAY" + suffix, skuId, userCouponId);
+    }
+
+    protected String pay(String token, long orderId) throws Exception {
+        return mockMvc.perform(post("/app/orders/{orderId}/pay", orderId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+    }
+
+    protected String activeOutTradeNo(long orderId) {
+        return jdbcClient.sql("""
+                        select out_trade_no
+                        from payment_order
+                        where order_id = :orderId
+                          and status = 'PAYING'
+                        order by id desc
+                        limit 1
+                        """)
+                .param("orderId", orderId)
+                .query(String.class)
+                .single();
+    }
+
+    protected void insertExpiredPayingPayment(SeedOrder order, String outTradeNo, String openid, long amountCent) {
+        jdbcClient.sql("""
+                        update shop_order
+                        set status = 'PAYING', merchant_trade_no = :outTradeNo, updated_at = current_timestamp
+                        where id = :orderId
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .param("orderId", order.orderId())
+                .update();
+        jdbcClient.sql("""
+                        insert into payment_order
+                            (order_id, payment_config_id, out_trade_no, prepay_id, payer_openid, status,
+                             amount_cent, request_digest, expires_at, created_at, updated_at)
+                        values
+                            (:orderId, 91001, :outTradeNo, :prepayId, :openid, 'PAYING',
+                             :amountCent, 'seed-digest', timestamp '2026-07-07 09:00:00',
+                             timestamp '2026-07-07 08:45:00', timestamp '2026-07-07 08:45:00')
+                        """)
+                .param("orderId", order.orderId())
+                .param("outTradeNo", outTradeNo)
+                .param("prepayId", "mock-prepay-" + outTradeNo)
+                .param("openid", openid)
+                .param("amountCent", amountCent)
+                .update();
+    }
+
+    private void insertPrivatePaymentFile(long fileId, String originalFilename, String content) {
+        String objectKey = "private/payment-flow/" + fileId + "-" + originalFilename;
+        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+        storageProvider.put(objectKey, "text/plain", new ByteArrayInputStream(bytes), bytes.length);
+        jdbcClient.sql("""
+                        insert into storage_file
+                            (id, purpose, visibility, provider, bucket, object_key, original_filename,
+                             content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id)
+                        values
+                            (:id, 'PAYMENT_CERTIFICATE', 'PRIVATE', 'LOCAL', '', :objectKey, :originalFilename,
+                             'text/plain', 'pem', :sizeBytes, '', 'ACTIVE', 'ADMIN', 1)
+                        """)
+                .param("id", fileId)
+                .param("objectKey", objectKey)
+                .param("originalFilename", originalFilename)
+                .param("sizeBytes", bytes.length)
+                .update();
+    }
+
+    private long insertCategory(String name) {
+        jdbcClient.sql("""
+                        insert into product_category (parent_id, name, icon, sort_order, status)
+                        values (0, :name, '', 1, 'ENABLED')
+                        """)
+                .param("name", name)
+                .update();
+        return jdbcClient.sql("select id from product_category where name = :name")
+                .param("name", name)
+                .query(Long.class)
+                .single();
+    }
+
+    private long insertSpu(long categoryId, String title) {
+        jdbcClient.sql("""
+                        insert into product_spu
+                            (category_id, title, subtitle, main_image, selling_points, detail_html, sort_order, status)
+                        values
+                            (:categoryId, :title, '', 'https://example.test/pay-main.jpg', 'pay', '<p>pay</p>', 1, 'ON_SALE')
+                        """)
+                .param("categoryId", categoryId)
+                .param("title", title)
+                .update();
+        return jdbcClient.sql("select id from product_spu where title = :title")
+                .param("title", title)
+                .query(Long.class)
+                .single();
+    }
+
+    private long insertSku(long spuId, String skuCode) {
+        jdbcClient.sql("""
+                        insert into product_sku
+                            (spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
+                             stock_available, weight_gram, image, status, sort_order)
+                        values
+                            (:spuId, :skuCode, '{"规格":"300g"}', :specText, 3990, 3990,
+                             8, 300, 'https://example.test/pay-sku.jpg', 'ENABLED', 1)
+                        """)
+                .param("spuId", spuId)
+                .param("skuCode", skuCode)
+                .param("specText", "300g-" + skuCode)
+                .update();
+        return jdbcClient.sql("select id from product_sku where sku_code = :skuCode")
+                .param("skuCode", skuCode)
+                .query(Long.class)
+                .single();
+    }
+
+    private long insertLockedCoupon(long userId) {
+        String templateName = "Pay Coupon " + System.nanoTime();
+        jdbcClient.sql("""
+                        insert into coupon_template
+                            (name, description, coupon_type, discount_type, threshold_cent, discount_cent,
+                             scope_type, scope_value, strategy_key, total_stock, claimed_count, per_user_limit,
+                             valid_start_at, valid_end_at, status, sort_order)
+                        values
+                            (:name, 'pay coupon', 'NO_THRESHOLD', 'AMOUNT_OFF', 0, 500,
+                             'ALL', '', 'coupon.amount-off.v1', 10, 1, 1,
+                             timestamp '2026-07-01 00:00:00', timestamp '2026-08-01 23:59:59',
+                             'ENABLED', 1)
+                        """)
+                .param("name", templateName)
+                .update();
+        long templateId = jdbcClient.sql("select id from coupon_template where name = :name")
+                .param("name", templateName)
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into user_coupon
+                            (user_id, template_id, template_name, coupon_type, discount_type,
+                             threshold_cent, discount_cent, scope_type, scope_value, valid_start_at,
+                             valid_end_at, status, claimed_at)
+                        values
+                            (:userId, :templateId, :templateName, 'NO_THRESHOLD', 'AMOUNT_OFF',
+                             0, 500, 'ALL', '', timestamp '2026-07-01 00:00:00',
+                             timestamp '2026-08-01 23:59:59', 'LOCKED', timestamp '2026-07-08 09:00:00')
+                        """)
+                .param("userId", userId)
+                .param("templateId", templateId)
+                .param("templateName", templateName)
+                .update();
+        return jdbcClient.sql("""
+                        select id
+                        from user_coupon
+                        where user_id = :userId and template_id = :templateId
+                        """)
+                .param("userId", userId)
+                .param("templateId", templateId)
+                .query(Long.class)
+                .single();
+    }
+
+    protected record AppLoginSession(String token, long userId, String openid) {
+    }
+
+    protected record SeedOrder(long orderId, String orderNo, long skuId, Long userCouponId) {
+    }
+}

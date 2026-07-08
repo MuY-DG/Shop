@@ -74,6 +74,7 @@ class PaymentConfigResolverTest {
 
         PaymentProperties envProperties = new PaymentProperties(
                 true,
+                false,
                 PaymentConfigSource.AUTO,
                 "wx_test_app",
                 "mch_test",
@@ -133,6 +134,7 @@ class PaymentConfigResolverTest {
 
         ResolvedPaymentConfig resolved = resolver.resolve(new PaymentProperties(
                 true,
+                false,
                 PaymentConfigSource.DB,
                 "",
                 "",
@@ -165,6 +167,7 @@ class PaymentConfigResolverTest {
     void dbSecretEncryptionFailsValidationWhenSecretKeyIsMissing() {
         PaymentSecretCipher cipherWithoutKey = new AesGcmPaymentSecretCipher(new PaymentProperties(
                 true,
+                false,
                 PaymentConfigSource.DB,
                 "",
                 "",

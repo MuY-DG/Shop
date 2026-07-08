@@ -47,6 +47,7 @@ shop:
       mock-enabled: false
   pay:
     enabled: ${WECHAT_PAY_ENABLED:false}
+    mock-enabled: ${WECHAT_PAY_MOCK_ENABLED:false}
     config-source: ${WECHAT_PAY_CONFIG_SOURCE:AUTO}
     app-id: ${WECHAT_PAY_APP_ID:}
     mch-id: ${WECHAT_PAY_MCH_ID:}
