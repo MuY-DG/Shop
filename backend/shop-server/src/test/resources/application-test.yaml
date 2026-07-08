@@ -19,6 +19,14 @@ shop:
     admin-refresh-ttl: 7d
     app-access-ttl: 7d
     app-refresh-ttl: 30d
+  storage:
+    provider: local
+    public-base-url: http://localhost:8080
+    local:
+      root: ${java.io.tmpdir}/shop-server-test-uploads
+    limits:
+      image-max-size: 5MB
+      private-file-max-size: 1MB
   wechat:
     mini-program:
       mock-enabled: true

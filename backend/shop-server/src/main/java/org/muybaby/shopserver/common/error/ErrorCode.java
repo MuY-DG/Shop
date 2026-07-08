@@ -19,7 +19,9 @@ public enum ErrorCode {
     ORDER_STATE_CONFLICT(400001, "Order state conflict"),
     PAYMENT_PENDING(500001, "Payment pending"),
     WECHAT_SHIPPING_UPLOAD_FAILED(600001, "WeChat shipping upload failed"),
-    WECHAT_REFUND_FAILED(700001, "WeChat refund failed");
+    WECHAT_REFUND_FAILED(700001, "WeChat refund failed"),
+    STORAGE_FILE_UNAVAILABLE(800001, "Storage file unavailable"),
+    STORAGE_UPLOAD_POLICY_REJECTED(800002, "Storage upload policy rejected");
 
     private final int code;
     private final String message;

@@ -1,0 +1,13 @@
+package org.muybaby.shopserver.storage;
+
+public enum StorageFileUsageType {
+    PRODUCT_CATEGORY_ICON,
+    PRODUCT_SPU_MAIN,
+    PRODUCT_SPU_GALLERY,
+    PRODUCT_SKU_IMAGE,
+    PRODUCT_DETAIL_HTML,
+    HOME_BANNER,
+    ORDER_ITEM_SNAPSHOT,
+    AFTER_SALE_EVIDENCE,
+    PAYMENT_CONFIG_CERT
+}

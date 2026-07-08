@@ -32,6 +32,14 @@ shop:
     admin-refresh-ttl: 7d
     app-access-ttl: 7d
     app-refresh-ttl: 30d
+  storage:
+    provider: local
+    public-base-url: ${SHOP_STORAGE_PUBLIC_BASE_URL:http://localhost:8080}
+    local:
+      root: ${SHOP_STORAGE_LOCAL_ROOT:var/uploads}
+    limits:
+      image-max-size: ${SHOP_STORAGE_IMAGE_MAX_SIZE:5MB}
+      private-file-max-size: ${SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE:1MB}
   wechat:
     mini-program:
       app-id: ${WECHAT_MINI_PROGRAM_APP_ID:}
