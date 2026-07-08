@@ -31,6 +31,7 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -38,6 +39,13 @@ public class AppPaymentService {
 
     private static final String CURRENCY_CNY = "CNY";
     private static final String OPERATOR_TYPE_APP = "APP";
+    private static final Set<String> PAID_DUPLICATE_ORDER_STATUSES = Set.of(
+            OrderStatus.PAID.name(),
+            OrderStatus.SHIPPED.name(),
+            OrderStatus.COMPLETED.name(),
+            OrderStatus.REFUNDING.name(),
+            OrderStatus.REFUNDED.name()
+    );
 
     private final JdbcClient jdbcClient;
     private final PaymentProperties paymentProperties;
@@ -529,7 +537,7 @@ public class AppPaymentService {
     }
 
     private void validatePaidDuplicateOrder(OrderPaymentRow order, String outTradeNo, String transactionId, long amountCent) {
-        if (!OrderStatus.PAID.name().equals(order.status())
+        if (!PAID_DUPLICATE_ORDER_STATUSES.contains(order.status())
                 || order.paidAmountCent() != amountCent
                 || !outTradeNo.equals(order.merchantTradeNo())
                 || !StringUtils.hasText(order.paymentTransactionId())

@@ -275,8 +275,7 @@
   const formData = reactive<Api.Payment.ConfigForm>(createDefaultForm())
 
   const verifyModeOptions = [
-    { label: '微信公钥', value: 'PUBLIC_KEY' },
-    { label: '平台证书', value: 'CERTIFICATE' }
+    { label: '微信公钥', value: 'PUBLIC_KEY' }
   ]
 
   const hasText = (value?: string | null) => Boolean(String(value || '').trim())
@@ -330,14 +329,6 @@
     merchantCertificateFileId: [
       {
         validator: (_rule, value, callback) => {
-          if (
-            formData.verifyMode === 'CERTIFICATE' &&
-            !hasNumber(value) &&
-            !(editingConfig.value && hasNumber(editingConfig.value.merchantCertificateFileId))
-          ) {
-            callback(new Error('请选择商户证书文件'))
-            return
-          }
           callback()
         },
         trigger: 'change'
@@ -381,7 +372,7 @@
   const formatText = (value?: string | number | null) => (value === null || value === undefined || value === '' ? '-' : String(value))
   const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
   const formatSource = (source?: string) => (source === 'ENV' ? 'ENV 配置' : 'DB 配置')
-  const formatVerifyMode = (value?: string) => (value === 'CERTIFICATE' ? '平台证书' : '微信公钥')
+  const formatVerifyMode = (value?: string) => (value === 'CERTIFICATE' ? '平台证书（暂不支持）' : '微信公钥')
   const maskedPlaceholder = (value?: string | null) => (value ? `当前：${value}，留空不修改` : '请输入完整值')
   const assetValue = (fileId: number | null): Api.Common.AssetValue => ({ fileId, url: '' })
 
@@ -440,7 +431,7 @@
       configName: row.configName,
       privateKeyFileId: row.privateKeyFileId ?? null,
       merchantCertificateFileId: row.merchantCertificateFileId ?? null,
-      verifyMode: row.verifyMode === 'CERTIFICATE' ? 'CERTIFICATE' : 'PUBLIC_KEY',
+      verifyMode: 'PUBLIC_KEY',
       wechatPublicKeyFileId: row.wechatPublicKeyFileId ?? null,
       notifyUrl: row.notifyUrl,
       refundNotifyUrl: row.refundNotifyUrl
@@ -455,8 +446,7 @@
       mchId: trimText(formData.mchId),
       merchantSerialNo: trimText(formData.merchantSerialNo),
       privateKeyFileId: formData.privateKeyFileId,
-      merchantCertificateFileId:
-        formData.verifyMode === 'CERTIFICATE' ? formData.merchantCertificateFileId || null : formData.merchantCertificateFileId || null,
+      merchantCertificateFileId: formData.merchantCertificateFileId || null,
       verifyMode: formData.verifyMode,
       wechatPublicKeyId: formData.verifyMode === 'PUBLIC_KEY' ? trimText(formData.wechatPublicKeyId) : '',
       wechatPublicKeyFileId: formData.verifyMode === 'PUBLIC_KEY' ? formData.wechatPublicKeyFileId || null : null,

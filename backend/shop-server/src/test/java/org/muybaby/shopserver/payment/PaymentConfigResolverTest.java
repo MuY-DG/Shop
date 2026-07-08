@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.payment;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.muybaby.shopserver.common.error.BusinessException;
@@ -65,6 +66,12 @@ class PaymentConfigResolverTest {
     @TempDir
     Path tempDir;
 
+    @BeforeEach
+    void clearPaymentConfigState() {
+        jdbcClient.sql("delete from payment_config").update();
+        jdbcClient.sql("delete from storage_file where object_key like 'test/%'").update();
+    }
+
     @Test
     void envConfigResolvesWhenCompleteAndSourceModeIsAuto() throws Exception {
         Path privateKeyPath = tempDir.resolve("merchant_private_key.pem");
@@ -104,6 +111,34 @@ class PaymentConfigResolverTest {
         assertThat(resolved.verifyMode()).isEqualTo(PaymentVerifyMode.PUBLIC_KEY);
         assertThat(resolved.wechatPublicKeyId()).isEqualTo("pub_key_test");
         assertThat(resolved.wechatPublicKeyPem()).isEqualTo(PUBLIC_KEY_PEM);
+    }
+
+    @Test
+    void envConfigRejectsCertificateVerifyMode() throws Exception {
+        Path privateKeyPath = tempDir.resolve("merchant_private_key.pem");
+        Files.writeString(privateKeyPath, PRIVATE_KEY_PEM, StandardCharsets.UTF_8);
+
+        PaymentProperties envProperties = new PaymentProperties(
+                true,
+                false,
+                PaymentConfigSource.ENV,
+                "wx_test_app",
+                "mch_test",
+                "serial_test",
+                privateKeyPath.toString(),
+                "api_v3_secret_test",
+                "https://pay.test/wxpay/pay/notify",
+                "https://pay.test/wxpay/refund/notify",
+                PaymentVerifyMode.CERTIFICATE,
+                "",
+                "",
+                15,
+                "0123456789abcdef0123456789abcdef"
+        );
+
+        assertThatThrownBy(() -> resolver.resolve(envProperties))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
     }
 
     @Test
@@ -161,6 +196,50 @@ class PaymentConfigResolverTest {
         assertThat(resolved.verifyMode()).isEqualTo(PaymentVerifyMode.PUBLIC_KEY);
         assertThat(resolved.wechatPublicKeyId()).isEqualTo("pub_key_db");
         assertThat(resolved.wechatPublicKeyPem()).isEqualTo(PUBLIC_KEY_PEM);
+    }
+
+    @Test
+    void dbConfigRejectsUnsupportedCertificateVerifyModeBeforeRuntimeProviderUse() {
+        Long privateKeyFileId = insertPrivateStorageFile(22101L, "private/payment/merchant.pem", PRIVATE_KEY_PEM);
+        Long merchantCertificateFileId = insertPrivateStorageFile(22102L, "private/payment/merchant_cert.pem", PUBLIC_KEY_PEM);
+        String ciphertext = secretCipher.encrypt("api_v3_secret_test");
+
+        jdbcClient.sql("""
+                        insert into payment_config
+                            (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_file_id, merchant_certificate_file_id, verify_mode,
+                             wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                             enabled, status)
+                        values
+                            (22103, 'DB Certificate Config', 'wx_db_app', 'mch_db', 'serial_db',
+                             :ciphertext, :privateKeyFileId, :merchantCertificateFileId, 'CERTIFICATE',
+                             '', null, 'https://db.test/wxpay/pay/notify',
+                             'https://db.test/wxpay/refund/notify', true, 'ACTIVE')
+                        """)
+                .param("ciphertext", ciphertext)
+                .param("privateKeyFileId", privateKeyFileId)
+                .param("merchantCertificateFileId", merchantCertificateFileId)
+                .update();
+
+        assertThatThrownBy(() -> resolver.resolve(new PaymentProperties(
+                true,
+                false,
+                PaymentConfigSource.DB,
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                PaymentVerifyMode.PUBLIC_KEY,
+                "",
+                "",
+                15,
+                "0123456789abcdef0123456789abcdef"
+        )))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
     }
 
     @Test

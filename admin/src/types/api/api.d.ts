@@ -585,7 +585,8 @@ declare namespace Api {
 
   namespace Payment {
     type ConfigSource = 'ENV' | 'DB'
-    type VerifyMode = 'PUBLIC_KEY' | 'CERTIFICATE'
+    /** Only PUBLIC_KEY is selectable; legacy DB values can still appear through Config.verifyMode as string. */
+    type VerifyMode = 'PUBLIC_KEY'
 
     type ConfigList = Api.Common.PaginatedResponse<Config>
 

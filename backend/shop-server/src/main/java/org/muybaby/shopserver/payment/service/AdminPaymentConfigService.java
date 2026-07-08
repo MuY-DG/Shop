@@ -263,9 +263,6 @@ public class AdminPaymentConfigService {
             wechatPublicKeyId = requireText(wechatPublicKeyId, 128);
             wechatPublicKeyFileId = requireFileId(wechatPublicKeyFileId);
         }
-        if (verifyMode == PaymentVerifyMode.CERTIFICATE) {
-            merchantCertificateFileId = requireFileId(merchantCertificateFileId);
-        }
 
         validatePaymentFile(privateKeyFileId);
         validatePaymentFile(merchantCertificateFileId);
@@ -454,7 +451,11 @@ public class AdminPaymentConfigService {
             return PaymentVerifyMode.PUBLIC_KEY;
         }
         try {
-            return PaymentVerifyMode.valueOf(value);
+            PaymentVerifyMode parsed = PaymentVerifyMode.valueOf(value);
+            if (parsed != PaymentVerifyMode.PUBLIC_KEY) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            return parsed;
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }

@@ -351,6 +351,61 @@ class AdminPaymentConfigControllerTest {
                 .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
     }
 
+    @Test
+    void certificateVerifyModeIsRejectedForCreateAndUpdate() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        long privateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+
+        mockMvc.perform(post("/admin/pay/configs")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(configJson(
+                                "Unsupported Certificate Mode",
+                                "wx_db_app_123456",
+                                "mch_db_123456",
+                                "serial_db_123456",
+                                "synthetic_db_api_v3_key",
+                                privateKeyFileId,
+                                certFileId,
+                                "CERTIFICATE",
+                                "pub_key_db_123456",
+                                publicKeyFileId,
+                                "https://pay.example.test/wxpay/pay/notify",
+                                "https://pay.example.test/wxpay/refund/notify")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
+        assertThat(jdbcClient.sql("select count(*) from payment_config where verify_mode = 'CERTIFICATE'")
+                .query(Integer.class)
+                .single()).isZero();
+
+        long configId = createConfig(writeToken, "Public Key Config", privateKeyFileId, certFileId, publicKeyFileId);
+        mockMvc.perform(put("/admin/pay/configs/{configId}", configId)
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(configJson(
+                                "Unsupported Certificate Update",
+                                "   ",
+                                "   ",
+                                "   ",
+                                "   ",
+                                privateKeyFileId,
+                                certFileId,
+                                "CERTIFICATE",
+                                "pub_key_db_123456",
+                                publicKeyFileId,
+                                "https://pay.example.test/wxpay/pay/notify",
+                                "https://pay.example.test/wxpay/refund/notify")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
+
+        assertThat(jdbcClient.sql("select verify_mode from payment_config where id = :configId")
+                .param("configId", configId)
+                .query(String.class)
+                .single()).isEqualTo("PUBLIC_KEY");
+    }
+
     private long createConfig(String token, String configName, long privateKeyFileId, long certFileId, long publicKeyFileId) throws Exception {
         String response = mockMvc.perform(post("/admin/pay/configs")
                         .header("Authorization", "Bearer " + token)

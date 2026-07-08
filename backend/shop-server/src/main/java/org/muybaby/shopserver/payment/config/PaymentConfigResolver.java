@@ -61,6 +61,7 @@ public class PaymentConfigResolver {
         if (!isCompleteEnv(candidate)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
+        PaymentVerifyMode verifyMode = requireSupportedVerifyMode(candidate.verifyMode());
         return new ResolvedPaymentConfig(
                 PaymentConfigSource.ENV,
                 candidate.enabled(),
@@ -71,7 +72,7 @@ public class PaymentConfigResolver {
                 readTextFile(candidate.privateKeyPath()),
                 candidate.notifyUrl(),
                 candidate.refundNotifyUrl(),
-                normalizeVerifyMode(candidate.verifyMode()),
+                verifyMode,
                 nullToEmpty(candidate.publicKeyId()),
                 readOptionalTextFile(candidate.publicKeyPath()),
                 null,
@@ -95,6 +96,7 @@ public class PaymentConfigResolver {
                 .query(this::mapPaymentConfigRow)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        PaymentVerifyMode verifyMode = requireSupportedVerifyMode(row.verifyMode());
 
         return new ResolvedPaymentConfig(
                 PaymentConfigSource.DB,
@@ -106,9 +108,9 @@ public class PaymentConfigResolver {
                 readPrivateFile(row.privateKeyFileId()),
                 row.notifyUrl(),
                 row.refundNotifyUrl(),
-                row.verifyMode(),
-                requiredPublicKeyId(row.verifyMode(), row.wechatPublicKeyId()),
-                readPublicKeyFile(row.verifyMode(), row.wechatPublicKeyFileId()),
+                verifyMode,
+                requiredPublicKeyId(verifyMode, row.wechatPublicKeyId()),
+                readPublicKeyFile(verifyMode, row.wechatPublicKeyFileId()),
                 row.privateKeyFileId(),
                 row.merchantCertificateFileId(),
                 row.wechatPublicKeyFileId()
@@ -143,7 +145,7 @@ public class PaymentConfigResolver {
 
     private boolean isCompleteVerifyMaterial(PaymentProperties candidate) {
         if (normalizeVerifyMode(candidate.verifyMode()) != PaymentVerifyMode.PUBLIC_KEY) {
-            return true;
+            return false;
         }
         return StringUtils.hasText(candidate.publicKeyId())
                 && StringUtils.hasText(candidate.publicKeyPath());
@@ -183,6 +185,14 @@ public class PaymentConfigResolver {
 
     private PaymentVerifyMode normalizeVerifyMode(PaymentVerifyMode verifyMode) {
         return verifyMode == null ? PaymentVerifyMode.PUBLIC_KEY : verifyMode;
+    }
+
+    private PaymentVerifyMode requireSupportedVerifyMode(PaymentVerifyMode verifyMode) {
+        PaymentVerifyMode normalized = normalizeVerifyMode(verifyMode);
+        if (normalized != PaymentVerifyMode.PUBLIC_KEY) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return normalized;
     }
 
     private String nullToEmpty(String value) {
