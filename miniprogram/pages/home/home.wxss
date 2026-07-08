@@ -49,6 +49,10 @@
   font-size: 38rpx;
   font-weight: 800;
   line-height: 46rpx;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
 }
 
 .banner-subtitle {
@@ -56,6 +60,10 @@
   font-size: 25rpx;
   line-height: 34rpx;
   opacity: 0.92;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .status-strip {

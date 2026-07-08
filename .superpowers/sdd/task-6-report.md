@@ -217,3 +217,36 @@ $ tsc --noEmit
 - Banner fetch failure now falls back to the existing static hero without blocking category/product loading.
 - `APP_PATH` banner routes switch to tab pages with `wx.switchTab`; non-tab paths use `wx.navigateTo`.
 - No real local smoke was run in this task; only the required mini program typecheck was executed.
+
+---
+
+## 2026-07-07 Task 6 Review Fix
+
+### Changes
+
+- Hardened `miniprogram/services/storage.ts` so `uploadEvidenceFile` rejects malformed success payloads unless the upload metadata includes a finite numeric `id`, a non-empty string `purpose`, a non-empty string `visibility`, and a usable image URL in `url` or `publicUrl`.
+- Added clamp rules to `miniprogram/pages/home/home.wxss` for `.banner-title` and `.banner-subtitle` so long admin-managed text stays inside the fixed swiper frame.
+
+### Verification
+
+Command:
+
+```bash
+cd miniprogram && pnpm typecheck
+```
+
+Result:
+
+- Passed
+- Command completed with exit code 0
+
+Command:
+
+```bash
+git diff --check -- miniprogram/services/storage.ts miniprogram/pages/home/home.wxss .superpowers/sdd/task-6-report.md
+```
+
+Result:
+
+- Passed
+- No diff check warnings were reported.

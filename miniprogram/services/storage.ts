@@ -27,6 +27,44 @@ function parseUploadEnvelope(rawData: string): ApiResponse<StorageFileUploadResp
   return parsed as ApiResponse<StorageFileUploadResponse>;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getUploadUrl(data: Record<string, unknown>): string | null {
+  const url = typeof data.url === "string" && data.url.trim() ? data.url.trim() : "";
+  if (url) {
+    return url;
+  }
+
+  const publicUrl = typeof data.publicUrl === "string" && data.publicUrl.trim() ? data.publicUrl.trim() : "";
+  return publicUrl || null;
+}
+
+function isStorageFileUploadResponse(
+  data: unknown,
+  purpose: EvidenceUploadPurpose
+): data is StorageFileUploadResponse {
+  if (!isRecord(data)) {
+    return false;
+  }
+
+  const id = data.id;
+  const responsePurpose = data.purpose;
+  const visibility = data.visibility;
+  const uploadUrl = getUploadUrl(data);
+
+  return (
+    typeof id === "number" &&
+    Number.isFinite(id) &&
+    typeof responsePurpose === "string" &&
+    responsePurpose === purpose &&
+    typeof visibility === "string" &&
+    visibility.trim().length > 0 &&
+    uploadUrl !== null
+  );
+}
+
 export function uploadEvidenceFile(
   filePath: string,
   purpose: EvidenceUploadPurpose
@@ -66,6 +104,11 @@ export function uploadEvidenceFile(
 
         if (body.code !== SUCCESS_CODE || !body.data) {
           reject(new Error(body.msg || "上传失败"));
+          return;
+        }
+
+        if (!isStorageFileUploadResponse(body.data, purpose)) {
+          reject(new Error("上传响应格式错误"));
           return;
         }
 
