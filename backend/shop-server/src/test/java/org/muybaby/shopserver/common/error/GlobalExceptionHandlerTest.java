@@ -35,4 +35,43 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().code()).isEqualTo(100001);
         assertThat(response.getBody().msg()).isEqualTo("Authentication required");
     }
+
+    @Test
+    void bindingFailuresStillReturnBadRequestEnvelope() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleRequestBindingException();
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(100400);
+        assertThat(response.getBody().msg()).isEqualTo("Validation failed");
+        assertThat(response.getBody().data()).isNull();
+    }
+
+    @Test
+    void unsupportedMediaTypeReturnsUnsupportedMediaTypeEnvelope() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleHttpMediaTypeNotSupportedException();
+
+        assertThat(response.getStatusCode().value()).isEqualTo(415);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(100400);
+        assertThat(response.getBody().msg()).isEqualTo("Validation failed");
+        assertThat(response.getBody().data()).isNull();
+    }
+
+    @Test
+    void unsupportedMethodReturnsMethodNotAllowedEnvelope() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleHttpRequestMethodNotSupportedException();
+
+        assertThat(response.getStatusCode().value()).isEqualTo(405);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(100400);
+        assertThat(response.getBody().msg()).isEqualTo("Validation failed");
+        assertThat(response.getBody().data()).isNull();
+    }
 }

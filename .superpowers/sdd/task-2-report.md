@@ -168,3 +168,33 @@ Result:
 
 - `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`
 - `BUILD SUCCESS`
+
+---
+
+## 2026-07-08 Review Fix: Preserve HTTP Status For 405/415
+
+### Scope
+
+Fixed the remaining Task 2 review finding in `GlobalExceptionHandler` without changing Task 3+ behavior:
+
+- binding, missing-parameter, multipart, and type-mismatch failures still return JSON `ApiResponse` with HTTP 400
+- unsupported media type now returns the same JSON envelope with HTTP 415
+- unsupported method now returns the same JSON envelope with HTTP 405
+
+### Verification
+
+Ran the requested focused test command:
+
+```bash
+cd backend/shop-server && ./mvnw -Dtest=GlobalExceptionHandlerTest,StorageControllerTest,SecurityConfigTest test
+```
+
+Result:
+
+- `Tests run: 26, Failures: 0, Errors: 0, Skipped: 0`
+- `BUILD SUCCESS`
+
+### Notes
+
+- Added focused regression coverage in `GlobalExceptionHandlerTest` for HTTP 400 binding failures, HTTP 415 unsupported media type, and HTTP 405 unsupported method.
+- Left unrelated docs/spec/plan files unstaged as requested.

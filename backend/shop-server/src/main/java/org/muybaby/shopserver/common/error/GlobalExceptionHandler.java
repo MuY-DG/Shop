@@ -42,14 +42,28 @@ public class GlobalExceptionHandler {
             MethodArgumentTypeMismatchException.class,
             ServletRequestBindingException.class,
             MultipartException.class,
-            HttpMessageNotReadableException.class,
-            HttpMediaTypeNotSupportedException.class,
-            HttpRequestMethodNotSupportedException.class
+            HttpMessageNotReadableException.class
     })
     public ResponseEntity<ApiResponse<Void>> handleRequestBindingException() {
         ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleHttpMediaTypeNotSupportedException() {
+        ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        return ResponseEntity
+                .status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleHttpRequestMethodNotSupportedException() {
+        ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        return ResponseEntity
+                .status(HttpStatus.METHOD_NOT_ALLOWED)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
     }
 
