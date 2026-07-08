@@ -169,6 +169,21 @@ Result:
 
 ---
 
+## 2026-07-07 Task 6 Second Review Fix
+
+### Changes
+
+- Updated `miniprogram/services/storage.ts` so `uploadEvidenceFile` accepts valid PRIVATE app upload metadata without requiring `url` or `publicUrl`, while still rejecting malformed success payloads that miss required numeric or string fields.
+- Updated `miniprogram/pages/home/home.ts` so `APP_PATH` tab destinations with a query string use `wx.reLaunch({ url: jumpPath })` and preserve the configured query, while plain tab paths still use `wx.switchTab`.
+
+### Verification
+
+- `cd miniprogram && pnpm typecheck` passed.
+- `git diff --check -- miniprogram/services/storage.ts miniprogram/pages/home/home.ts .superpowers/sdd/task-6-report.md` passed.
+
+
+---
+
 ## 2026-07-07 Task 6 Mini Program Banner And Upload Helper
 
 ### Scope

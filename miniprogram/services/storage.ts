@@ -31,14 +31,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function getUploadUrl(data: Record<string, unknown>): string | null {
-  const url = typeof data.url === "string" && data.url.trim() ? data.url.trim() : "";
-  if (url) {
-    return url;
-  }
-
-  const publicUrl = typeof data.publicUrl === "string" && data.publicUrl.trim() ? data.publicUrl.trim() : "";
-  return publicUrl || null;
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function isStorageFileUploadResponse(
@@ -52,16 +46,23 @@ function isStorageFileUploadResponse(
   const id = data.id;
   const responsePurpose = data.purpose;
   const visibility = data.visibility;
-  const uploadUrl = getUploadUrl(data);
 
   return (
     typeof id === "number" &&
     Number.isFinite(id) &&
-    typeof responsePurpose === "string" &&
     responsePurpose === purpose &&
-    typeof visibility === "string" &&
-    visibility.trim().length > 0 &&
-    uploadUrl !== null
+    isNonEmptyString(visibility) &&
+    isNonEmptyString(data.provider) &&
+    isNonEmptyString(data.originalFilename) &&
+    isNonEmptyString(data.contentType) &&
+    isNonEmptyString(data.extension) &&
+    isNonEmptyString(data.status) &&
+    isNonEmptyString(data.createdAt) &&
+    isNonEmptyString(data.updatedAt) &&
+    typeof data.sizeBytes === "number" &&
+    Number.isFinite(data.sizeBytes) &&
+    (!("url" in data) || typeof data.url === "string" || data.url === null) &&
+    (!("publicUrl" in data) || typeof data.publicUrl === "string" || data.publicUrl === null)
   );
 }
 

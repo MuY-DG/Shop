@@ -184,6 +184,13 @@ Page({
         }
 
         if (isTabPath(jumpPath)) {
+          if (jumpPath.includes("?")) {
+            wx.reLaunch({
+              url: jumpPath
+            });
+            return;
+          }
+
           wx.switchTab({
             url: toPagePath(jumpPath)
           });
