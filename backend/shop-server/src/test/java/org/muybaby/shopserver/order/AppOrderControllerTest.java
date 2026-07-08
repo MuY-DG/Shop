@@ -291,6 +291,44 @@ class AppOrderControllerTest {
     }
 
     @Test
+    void submitWithOversizedCouponLeavesOneCentPayable() throws Exception {
+        AppLoginSession session = appLogin("order-submit-one-cent-payable-user");
+        String appToken = session.token();
+        long userId = session.userId();
+        long skuId = createPublishedSku("ORDER-MIN-PAYABLE-SKU", 300L, 300L, 10, "ENABLED");
+        long userCouponId = seedUserCoupon(userId,
+                seedTemplate("Oversized No Threshold", "ENABLED", 10, 0, 2, 0L, 500L),
+                "Oversized No Threshold",
+                "CLAIMED",
+                "2026-07-07 10:00:00");
+
+        long cartItemId = cartItemId(addCartItem(appToken, skuId, 1));
+
+        mockMvc.perform(post("/app/orders/preview")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cartItemIds":[%d],"userCouponId":%d}
+                                """.formatted(cartItemId, userCouponId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.productAmountCent").value(300))
+                .andExpect(jsonPath("$.data.userCouponId").value(userCouponId))
+                .andExpect(jsonPath("$.data.couponDiscountCent").value(299))
+                .andExpect(jsonPath("$.data.payableAmountCent").value(1));
+
+        mockMvc.perform(post("/app/orders")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cartItemIds":[%d],"userCouponId":%d,"idempotencyKey":"checkout-one-cent-payable-001"}
+                                """.formatted(cartItemId, userCouponId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CREATED"))
+                .andExpect(jsonPath("$.data.couponDiscountCent").value(299))
+                .andExpect(jsonPath("$.data.payableAmountCent").value(1));
+    }
+
+    @Test
     void submitSnapshotsFileIdsAndCreatesProtectedStorageUsages() throws Exception {
         AppLoginSession session = appLogin("order-file-usage-user");
         String appToken = session.token();

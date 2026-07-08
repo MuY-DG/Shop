@@ -27,11 +27,18 @@ public class CouponDiscountCalculator implements PromotionCalculator<CouponCandi
             return new DiscountResult(candidate.userCouponId(), false, 0L, "THRESHOLD_NOT_MET");
         }
 
-        long discountCent = candidate.discountCent() == null ? 0L : candidate.discountCent();
+        long discountCent = Math.max(candidate.discountCent() == null ? 0L : candidate.discountCent(), 0L);
+        if (discountCent == 0L) {
+            return new DiscountResult(candidate.userCouponId(), true, 0L, null);
+        }
+        long maxDiscountCent = Math.max(totalAmountCent - 1L, 0L);
+        if (maxDiscountCent == 0L) {
+            return new DiscountResult(candidate.userCouponId(), false, 0L, "PAYABLE_AMOUNT_TOO_LOW");
+        }
         return new DiscountResult(
                 candidate.userCouponId(),
                 true,
-                Math.min(discountCent, totalAmountCent),
+                Math.min(discountCent, maxDiscountCent),
                 null
         );
     }

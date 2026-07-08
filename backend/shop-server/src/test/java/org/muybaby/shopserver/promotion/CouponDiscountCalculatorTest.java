@@ -42,14 +42,26 @@ class CouponDiscountCalculatorTest {
     }
 
     @Test
-    void discountDoesNotExceedCartAmount() {
+    void discountLeavesAtLeastOneCentPayableAmount() {
         CouponDiscountCalculator calculator = new CouponDiscountCalculator();
         CheckoutContext context = new CheckoutContext(1L, List.of(new CheckoutItem(1000L, 100L, 300L, 1)));
 
         DiscountResult result = calculator.calculate(context, coupon(7001L, "ALL", 0L, 500L));
 
         assertThat(result.available()).isTrue();
-        assertThat(result.discountAmountCent()).isEqualTo(300L);
+        assertThat(result.discountAmountCent()).isEqualTo(299L);
+    }
+
+    @Test
+    void oneCentOrderCannotUseAmountOffCoupon() {
+        CouponDiscountCalculator calculator = new CouponDiscountCalculator();
+        CheckoutContext context = new CheckoutContext(1L, List.of(new CheckoutItem(1000L, 100L, 1L, 1)));
+
+        DiscountResult result = calculator.calculate(context, coupon(7001L, "ALL", 0L, 500L));
+
+        assertThat(result.available()).isFalse();
+        assertThat(result.discountAmountCent()).isZero();
+        assertThat(result.unavailableReason()).isEqualTo("PAYABLE_AMOUNT_TOO_LOW");
     }
 
     private CouponCandidate coupon(Long userCouponId, String scopeType, Long thresholdCent, Long discountCent) {
