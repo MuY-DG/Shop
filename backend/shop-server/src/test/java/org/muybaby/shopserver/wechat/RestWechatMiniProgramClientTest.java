@@ -5,8 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -27,6 +31,21 @@ import static org.springframework.http.HttpMethod.POST;
 class RestWechatMiniProgramClientTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Test
+    void springContextCreatesRealMiniProgramClientWhenMockDisabled() {
+        new ApplicationContextRunner()
+                .withUserConfiguration(RealWechatClientComponents.class)
+                .withBean(WechatMiniProgramProperties.class, () -> new WechatMiniProgramProperties("app-id", "app-secret", false))
+                .withBean(RestClient.Builder.class, RestClient::builder)
+                .withBean(ObjectMapper.class, ObjectMapper::new)
+                .withPropertyValues("shop.wechat.mini-program.mock-enabled=false")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(RestWechatMiniProgramClient.class);
+                    assertThat(context).hasSingleBean(RestWechatAccessTokenProvider.class);
+                });
+    }
 
     @Test
     void code2SessionCallsWechatApiAndReturnsSession() {
@@ -238,5 +257,17 @@ class RestWechatMiniProgramClientTest {
                 .doesNotContain("app-secret")
                 .doesNotContain("phone-code");
         server.verify();
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    @ComponentScan(
+            basePackageClasses = RestWechatMiniProgramClient.class,
+            useDefaultFilters = false,
+            includeFilters = @ComponentScan.Filter(
+                    type = FilterType.ASSIGNABLE_TYPE,
+                    classes = {RestWechatMiniProgramClient.class, RestWechatAccessTokenProvider.class}
+            )
+    )
+    static class RealWechatClientComponents {
     }
 }

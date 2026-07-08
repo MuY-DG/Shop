@@ -7,6 +7,7 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -28,6 +29,7 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
+    @Autowired
     public RestWechatMiniProgramClient(
             WechatMiniProgramProperties properties,
             WechatAccessTokenProvider accessTokenProvider,
