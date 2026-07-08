@@ -32,7 +32,7 @@ public class ProductReadMapper {
 
     public List<AdminCategoryResponse> adminCategoryTree() {
         List<CategoryRow> categoryRows = jdbcClient.sql("""
-                        SELECT id, parent_id, name, icon, sort_order, status
+                        SELECT id, parent_id, name, icon, icon_file_id, sort_order, status
                         FROM product_category
                         ORDER BY parent_id, sort_order, id
                         """)
@@ -115,6 +115,7 @@ public class ProductReadMapper {
     public AdminSpuDetailResponse adminSpuDetail(Long spuId) {
         SpuDetailRow spu = jdbcClient.sql("""
                         select s.id, s.category_id, c.name as category_name, s.title, s.subtitle, s.main_image,
+                               s.main_image_file_id,
                                s.selling_points, s.detail_html, s.sort_order, s.status, s.created_at, s.updated_at
                         from product_spu s
                         join product_category c on c.id = s.category_id
@@ -126,7 +127,7 @@ public class ProductReadMapper {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE));
 
         List<ProductImageResponse> images = jdbcClient.sql("""
-                        select id, url, sort_order
+                        select id, url, file_id, sort_order
                         from product_spu_image
                         where spu_id = :spuId
                         order by sort_order asc, id asc
@@ -137,7 +138,7 @@ public class ProductReadMapper {
 
         List<AdminSkuResponse> skus = jdbcClient.sql("""
                         select id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               stock_available, weight_gram, image, status, sort_order
+                               stock_available, weight_gram, image, image_file_id, status, sort_order
                         from product_sku
                         where spu_id = :spuId
                         order by sort_order asc, id asc
@@ -153,6 +154,7 @@ public class ProductReadMapper {
                 spu.title(),
                 spu.subtitle(),
                 spu.mainImage(),
+                spu.mainImageFileId(),
                 spu.sellingPoints(),
                 spu.detailHtml(),
                 spu.sortOrder(),
@@ -170,6 +172,7 @@ public class ProductReadMapper {
                 rs.getLong("parent_id"),
                 rs.getString("name"),
                 rs.getString("icon"),
+                rs.getObject("icon_file_id", Long.class),
                 rs.getInt("sort_order"),
                 rs.getString("status")
         );
@@ -202,6 +205,7 @@ public class ProductReadMapper {
                 rs.getString("title"),
                 rs.getString("subtitle"),
                 rs.getString("main_image"),
+                rs.getObject("main_image_file_id", Long.class),
                 rs.getString("selling_points"),
                 rs.getString("detail_html"),
                 rs.getInt("sort_order"),
@@ -215,6 +219,7 @@ public class ProductReadMapper {
         return new ProductImageResponse(
                 rs.getLong("id"),
                 rs.getString("url"),
+                rs.getObject("file_id", Long.class),
                 rs.getInt("sort_order")
         );
     }
@@ -230,6 +235,7 @@ public class ProductReadMapper {
                 rs.getInt("stock_available"),
                 rs.getInt("weight_gram"),
                 rs.getString("image"),
+                rs.getObject("image_file_id", Long.class),
                 rs.getString("status"),
                 rs.getInt("sort_order")
         );
@@ -240,6 +246,7 @@ public class ProductReadMapper {
             Long parentId,
             String name,
             String icon,
+            Long iconFileId,
             Integer sortOrder,
             String status
     ) {
@@ -252,6 +259,7 @@ public class ProductReadMapper {
             String title,
             String subtitle,
             String mainImage,
+            Long mainImageFileId,
             String sellingPoints,
             String detailHtml,
             Integer sortOrder,
@@ -266,6 +274,7 @@ public class ProductReadMapper {
             Long parentId,
             String name,
             String icon,
+            Long iconFileId,
             Integer sortOrder,
             String status,
             List<MutableCategory> children
@@ -277,6 +286,7 @@ public class ProductReadMapper {
                     categoryRow.parentId(),
                     categoryRow.name(),
                     categoryRow.icon(),
+                    categoryRow.iconFileId(),
                     categoryRow.sortOrder(),
                     categoryRow.status(),
                     new ArrayList<>()
@@ -289,6 +299,7 @@ public class ProductReadMapper {
                     parentId,
                     name,
                     icon,
+                    iconFileId,
                     sortOrder,
                     status,
                     children.stream()

@@ -18,6 +18,20 @@ class OrderSchemaTest {
     @Test
     void orderTablesAndAdminMenuExist() {
         jdbcClient.sql("""
+                        insert into storage_file
+                            (id, purpose, asset_category_id, visibility, provider, bucket, object_key, original_filename,
+                             content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
+                             public_url, status, uploaded_by_type, uploaded_by_id)
+                        values
+                            (7001, 'PRODUCT_IMAGE', 1, 'PUBLIC', 'LOCAL', '', 'public/schema/main.png', 'schema-main.png',
+                             'image/png', 'png', 68, 'schema-main', 1, 1, '', null,
+                             'http://localhost:8080/files/public/schema/main.png', 'ACTIVE', 'ADMIN', 1),
+                            (7002, 'PRODUCT_IMAGE', 1, 'PUBLIC', 'LOCAL', '', 'public/schema/sku.png', 'schema-sku.png',
+                             'image/png', 'png', 68, 'schema-sku', 1, 1, '', null,
+                             'http://localhost:8080/files/public/schema/sku.png', 'ACTIVE', 'ADMIN', 1)
+                        """)
+                .update();
+        jdbcClient.sql("""
                         insert into shop_order
                             (id, order_no, user_id, status, source, idempotency_key,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
@@ -29,10 +43,12 @@ class OrderSchemaTest {
                 .update();
         jdbcClient.sql("""
                         insert into order_item
-                            (id, order_id, sku_id, spu_id, product_title, sku_code, quantity,
+                            (id, order_id, sku_id, spu_id, product_title, main_image_file_id, sku_image_file_id,
+                             display_image_file_id, sku_code, quantity,
                              original_price_cent, unit_price_cent, line_original_amount_cent, line_amount_cent)
                         values
-                            (8101, 8001, 9904, 9902, 'Schema Item', 'SCHEMA-SKU', 2,
+                            (8101, 8001, 9904, 9902, 'Schema Item', 7001, 7002,
+                             7002, 'SCHEMA-SKU', 2,
                              4990, 3990, 9980, 7980)
                         """)
                 .update();
@@ -60,8 +76,16 @@ class OrderSchemaTest {
                         """)
                 .query(Integer.class)
                 .single();
+        Long displayImageFileId = jdbcClient.sql("""
+                        select display_image_file_id
+                        from order_item
+                        where id = 8101
+                        """)
+                .query(Long.class)
+                .single();
 
         assertThat(orderMenuCount).isEqualTo(2);
         assertThat(permissionCount).isEqualTo(2);
+        assertThat(displayImageFileId).isEqualTo(7002L);
     }
 }

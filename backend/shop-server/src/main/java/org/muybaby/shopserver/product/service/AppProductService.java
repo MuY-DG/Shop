@@ -31,7 +31,7 @@ public class AppProductService {
 
     public List<AppCategoryResponse> categories() {
         return jdbcClient.sql("""
-                        SELECT id, parent_id, name, icon, sort_order, status
+                        SELECT id, parent_id, name, icon, icon_file_id, sort_order, status
                         FROM product_category
                         WHERE status = :status
                         ORDER BY parent_id, sort_order, id
@@ -96,6 +96,7 @@ public class AppProductService {
     public AppSpuDetailResponse detail(Long spuId) {
         SpuDetailRow spu = jdbcClient.sql("""
                         SELECT s.id, s.category_id, c.name AS category_name, s.title, s.subtitle, s.main_image,
+                               s.main_image_file_id,
                                s.selling_points, s.detail_html
                         FROM product_spu s
                         JOIN product_category c ON c.id = s.category_id
@@ -111,7 +112,7 @@ public class AppProductService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE));
 
         List<ProductImageResponse> images = jdbcClient.sql("""
-                        SELECT id, url, sort_order
+                        SELECT id, url, file_id, sort_order
                         FROM product_spu_image
                         WHERE spu_id = :spuId
                         ORDER BY sort_order ASC, id ASC
@@ -122,7 +123,7 @@ public class AppProductService {
 
         List<AppSkuResponse> skus = jdbcClient.sql("""
                         SELECT id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               stock_available, weight_gram, image, status
+                               stock_available, weight_gram, image, image_file_id, status
                         FROM product_sku
                         WHERE spu_id = :spuId
                           AND status = :status
@@ -140,6 +141,7 @@ public class AppProductService {
                 spu.title(),
                 spu.subtitle(),
                 spu.mainImage(),
+                spu.mainImageFileId(),
                 splitSellingPoints(spu.sellingPoints()),
                 spu.detailHtml(),
                 images,
@@ -153,6 +155,7 @@ public class AppProductService {
                 rs.getLong("parent_id"),
                 rs.getString("name"),
                 rs.getString("icon"),
+                rs.getObject("icon_file_id", Long.class),
                 rs.getInt("sort_order"),
                 rs.getString("status")
         );
@@ -180,6 +183,7 @@ public class AppProductService {
                 rs.getString("title"),
                 rs.getString("subtitle"),
                 rs.getString("main_image"),
+                rs.getObject("main_image_file_id", Long.class),
                 rs.getString("selling_points"),
                 rs.getString("detail_html")
         );
@@ -189,6 +193,7 @@ public class AppProductService {
         return new ProductImageResponse(
                 rs.getLong("id"),
                 rs.getString("url"),
+                rs.getObject("file_id", Long.class),
                 rs.getInt("sort_order")
         );
     }
@@ -204,6 +209,7 @@ public class AppProductService {
                 rs.getInt("stock_available"),
                 rs.getInt("weight_gram"),
                 rs.getString("image"),
+                rs.getObject("image_file_id", Long.class),
                 rs.getString("status")
         );
     }
@@ -229,6 +235,7 @@ public class AppProductService {
             String title,
             String subtitle,
             String mainImage,
+            Long mainImageFileId,
             String sellingPoints,
             String detailHtml
     ) {

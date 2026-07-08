@@ -11,6 +11,7 @@ public record ProductSpuImage(
         @TableId(type = IdType.AUTO) Long id,
         Long spuId,
         String url,
+        Long fileId,
         Integer sortOrder,
         LocalDateTime createdAt
 ) {

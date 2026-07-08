@@ -18,6 +18,7 @@ public record ProductSku(
         Integer stockAvailable,
         Integer weightGram,
         String image,
+        Long imageFileId,
         String status,
         Integer sortOrder,
         LocalDateTime createdAt,

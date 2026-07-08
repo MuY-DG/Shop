@@ -9,6 +9,7 @@ public record AppSpuDetailResponse(
         String title,
         String subtitle,
         String mainImage,
+        Long mainImageFileId,
         List<String> sellingPoints,
         String detailHtml,
         List<ProductImageResponse> images,

@@ -10,6 +10,7 @@ public record AdminSkuResponse(
         Integer stockAvailable,
         Integer weightGram,
         String image,
+        Long imageFileId,
         String status,
         Integer sortOrder
 ) {

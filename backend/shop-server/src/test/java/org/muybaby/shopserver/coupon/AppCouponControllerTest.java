@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
+import org.muybaby.shopserver.product.dto.AdminProductImageUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
 import org.muybaby.shopserver.product.service.AdminProductService;
@@ -291,17 +292,18 @@ class AppCouponControllerTest {
     }
 
     private long createPublishedSku(String skuCode, long priceCent, long originalPriceCent, int stock, String skuStatus) {
-        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Coupon Category " + skuCode, "", 1, "ENABLED"));
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Coupon Category " + skuCode, "", null, 1, "ENABLED"));
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,
                 "Coupon SPU " + skuCode,
                 "Coupon subtitle",
                 "https://example.test/coupon-main.jpg",
+                null,
                 "辣香浓郁,适合下单",
                 "<p>Coupon detail</p>",
                 1,
-                List.of("https://example.test/coupon-gallery.jpg"),
-                List.of(new AdminSkuUpsertRequest(null, skuCode, "{\"规格\":\"300g\"}", "300g", priceCent, originalPriceCent, stock, 300, "https://example.test/coupon-sku.jpg", skuStatus, 1))
+                List.of(new AdminProductImageUpsertRequest("https://example.test/coupon-gallery.jpg", null)),
+                List.of(new AdminSkuUpsertRequest(null, skuCode, "{\"规格\":\"300g\"}", "300g", priceCent, originalPriceCent, stock, 300, "https://example.test/coupon-sku.jpg", null, skuStatus, 1))
         ));
         adminProductService.publishSpu(spuId);
         return jdbcClient.sql("select id from product_sku where sku_code = :skuCode")

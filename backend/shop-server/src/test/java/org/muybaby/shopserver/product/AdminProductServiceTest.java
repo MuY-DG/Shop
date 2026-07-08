@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
+import org.muybaby.shopserver.product.dto.AdminProductImageUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminStockAdjustmentRequest;
@@ -31,17 +32,18 @@ class AdminProductServiceTest {
 
     @Test
     void createSpuPersistsImagesSkusAndInitialStockLog() {
-        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Service Category", "", 1, "ENABLED"));
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Service Category", "", null, 1, "ENABLED"));
 
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,
                 "Service SPU",
                 "Service subtitle",
                 "https://example.test/main.jpg",
+                null,
                 "A,B",
                 "<p>detail</p>",
                 1,
-                List.of("https://example.test/gallery.jpg"),
+                List.of(new AdminProductImageUpsertRequest("https://example.test/gallery.jpg", null)),
                 List.of(new AdminSkuUpsertRequest(
                         null,
                         "SERVICE-SKU-1",
@@ -52,6 +54,7 @@ class AdminProductServiceTest {
                         8,
                         300,
                         "https://example.test/sku.jpg",
+                        null,
                         "ENABLED",
                         1
                 ))
@@ -82,17 +85,18 @@ class AdminProductServiceTest {
 
     @Test
     void publishRequiresEnabledCategoryAndEnabledSku() {
-        Long disabledCategoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Disabled Category", "", 1, "DISABLED"));
+        Long disabledCategoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Disabled Category", "", null, 1, "DISABLED"));
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 disabledCategoryId,
                 "Unpublishable SPU",
                 "",
                 "https://example.test/main.jpg",
+                null,
                 "A",
                 "<p>detail</p>",
                 1,
                 List.of(),
-                List.of(new AdminSkuUpsertRequest(null, "UNPUBLISHABLE-SKU", "{}", "默认", 1990L, 0L, 1, 100, "", "ENABLED", 1))
+                List.of(new AdminSkuUpsertRequest(null, "UNPUBLISHABLE-SKU", "{}", "默认", 1990L, 0L, 1, 100, "", null, "ENABLED", 1))
         ));
 
         assertThatThrownBy(() -> adminProductService.publishSpu(spuId))
@@ -103,17 +107,18 @@ class AdminProductServiceTest {
 
     @Test
     void adjustSkuStockWritesAdjustmentLog() {
-        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Stock Category", "", 1, "ENABLED"));
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Stock Category", "", null, 1, "ENABLED"));
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,
                 "Stock SPU",
                 "",
                 "https://example.test/main.jpg",
+                null,
                 "A",
                 "<p>detail</p>",
                 1,
                 List.of(),
-                List.of(new AdminSkuUpsertRequest(null, "STOCK-SKU", "{}", "默认", 1990L, 0L, 5, 100, "", "ENABLED", 1))
+                List.of(new AdminSkuUpsertRequest(null, "STOCK-SKU", "{}", "默认", 1990L, 0L, 5, 100, "", null, "ENABLED", 1))
         ));
         Long skuId = jdbcClient.sql("select id from product_sku where spu_id = :spuId")
                 .param("spuId", spuId)
@@ -137,17 +142,18 @@ class AdminProductServiceTest {
 
     @Test
     void updateSpuWritesAdjustmentLogWhenExistingSkuStockChanges() {
-        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Update Stock Category", "", 1, "ENABLED"));
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Update Stock Category", "", null, 1, "ENABLED"));
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,
                 "Update Stock SPU",
                 "",
                 "https://example.test/main.jpg",
+                null,
                 "A",
                 "<p>detail</p>",
                 1,
                 List.of(),
-                List.of(new AdminSkuUpsertRequest(null, "UPDATE-STOCK-SKU", "{}", "默认", 1990L, 0L, 5, 100, "", "ENABLED", 1))
+                List.of(new AdminSkuUpsertRequest(null, "UPDATE-STOCK-SKU", "{}", "默认", 1990L, 0L, 5, 100, "", null, "ENABLED", 1))
         ));
         Long skuId = jdbcClient.sql("select id from product_sku where spu_id = :spuId")
                 .param("spuId", spuId)
@@ -159,11 +165,12 @@ class AdminProductServiceTest {
                 "Update Stock SPU",
                 "",
                 "https://example.test/main.jpg",
+                null,
                 "A",
                 "<p>detail</p>",
                 1,
                 List.of(),
-                List.of(new AdminSkuUpsertRequest(skuId, "UPDATE-STOCK-SKU", "{}", "默认", 1990L, 0L, 11, 100, "", "ENABLED", 1))
+                List.of(new AdminSkuUpsertRequest(skuId, "UPDATE-STOCK-SKU", "{}", "默认", 1990L, 0L, 11, 100, "", null, "ENABLED", 1))
         ), 7L);
 
         Map<String, Object> adjustmentLog = jdbcClient.sql("""
@@ -186,17 +193,18 @@ class AdminProductServiceTest {
 
     @Test
     void updateSpuWritesInitialLogWhenAddingSkuWithStock() {
-        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Add SKU Category", "", 1, "ENABLED"));
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Add SKU Category", "", null, 1, "ENABLED"));
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,
                 "Add SKU SPU",
                 "",
                 "https://example.test/main.jpg",
+                null,
                 "A",
                 "<p>detail</p>",
                 1,
                 List.of(),
-                List.of(new AdminSkuUpsertRequest(null, "ADD-SKU-ORIGINAL", "{}", "默认", 1990L, 0L, 5, 100, "", "ENABLED", 1))
+                List.of(new AdminSkuUpsertRequest(null, "ADD-SKU-ORIGINAL", "{}", "默认", 1990L, 0L, 5, 100, "", null, "ENABLED", 1))
         ));
         Long originalSkuId = jdbcClient.sql("select id from product_sku where sku_code = 'ADD-SKU-ORIGINAL'")
                 .query(Long.class)
@@ -207,13 +215,14 @@ class AdminProductServiceTest {
                 "Add SKU SPU",
                 "",
                 "https://example.test/main.jpg",
+                null,
                 "A",
                 "<p>detail</p>",
                 1,
                 List.of(),
                 List.of(
-                        new AdminSkuUpsertRequest(originalSkuId, "ADD-SKU-ORIGINAL", "{}", "默认", 1990L, 0L, 5, 100, "", "ENABLED", 1),
-                        new AdminSkuUpsertRequest(null, "ADD-SKU-NEW", "{\"规格\":\"新\"}", "新", 2990L, 0L, 4, 120, "", "ENABLED", 2)
+                        new AdminSkuUpsertRequest(originalSkuId, "ADD-SKU-ORIGINAL", "{}", "默认", 1990L, 0L, 5, 100, "", null, "ENABLED", 1),
+                        new AdminSkuUpsertRequest(null, "ADD-SKU-NEW", "{\"规格\":\"新\"}", "新", 2990L, 0L, 4, 120, "", null, "ENABLED", 2)
                 )
         ), 8L);
 

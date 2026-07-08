@@ -5,6 +5,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.cart.dto.CartItemResponse;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
+import org.muybaby.shopserver.product.dto.AdminProductImageUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
 import org.muybaby.shopserver.product.service.AdminProductService;
@@ -409,17 +410,18 @@ class AppCartControllerTest {
     }
 
     private long createPublishedSku(String skuCode, long priceCent, long originalPriceCent, int stock, String skuStatus) {
-        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Cart Category " + skuCode, "", 1, "ENABLED"));
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Cart Category " + skuCode, "", null, 1, "ENABLED"));
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,
                 "Cart SPU " + skuCode,
                 "Cart subtitle",
                 "https://example.test/cart-main.jpg",
+                null,
                 "牛油浓香,手工炒制",
                 "<p>Cart detail</p>",
                 1,
-                List.of("https://example.test/cart-gallery.jpg"),
-                List.of(new AdminSkuUpsertRequest(null, skuCode, "{\"规格\":\"300g\"}", "300g", priceCent, originalPriceCent, stock, 300, "https://example.test/cart-sku.jpg", skuStatus, 1))
+                List.of(new AdminProductImageUpsertRequest("https://example.test/cart-gallery.jpg", null)),
+                List.of(new AdminSkuUpsertRequest(null, skuCode, "{\"规格\":\"300g\"}", "300g", priceCent, originalPriceCent, stock, 300, "https://example.test/cart-sku.jpg", null, skuStatus, 1))
         ));
         adminProductService.publishSpu(spuId);
         return jdbcClient.sql("select id from product_sku where sku_code = :skuCode")

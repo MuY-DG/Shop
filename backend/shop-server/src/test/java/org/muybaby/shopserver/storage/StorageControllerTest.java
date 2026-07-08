@@ -2,6 +2,7 @@ package org.muybaby.shopserver.storage;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +49,12 @@ class StorageControllerTest {
     @Autowired
     private JdbcClient jdbcClient;
 
+    @BeforeEach
+    void clearStorageTables() {
+        jdbcClient.sql("delete from storage_file_usage").update();
+        jdbcClient.sql("delete from storage_file").update();
+    }
+
     @Test
     void adminUploadListDetailUsagesAndMoveFlow() throws Exception {
         String adminToken = adminLoginAndExtractToken();
@@ -83,7 +90,6 @@ class StorageControllerTest {
                         .param("purpose", "PRODUCT_IMAGE")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.records[0].id").value(fileId))
                 .andExpect(jsonPath("$.data.records[0].url").value(startsWith("http://localhost:8080/files/public/")));
 

@@ -14,6 +14,7 @@ public record AdminSkuUpsertRequest(
         @NotNull @Min(0) Integer stockAvailable,
         @NotNull @Min(0) Integer weightGram,
         String image,
+        Long imageFileId,
         @NotBlank String status,
         @NotNull @Min(0) Integer sortOrder
 ) {

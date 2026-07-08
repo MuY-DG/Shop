@@ -10,6 +10,7 @@ public record AppSkuResponse(
         Integer stockAvailable,
         Integer weightGram,
         String image,
+        Long imageFileId,
         String status
 ) {
 }

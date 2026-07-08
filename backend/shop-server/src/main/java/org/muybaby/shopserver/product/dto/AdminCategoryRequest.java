@@ -8,6 +8,7 @@ public record AdminCategoryRequest(
         @NotNull Long parentId,
         @NotBlank String name,
         String icon,
+        Long iconFileId,
         @NotNull @Min(0) Integer sortOrder,
         @NotBlank String status
 ) {

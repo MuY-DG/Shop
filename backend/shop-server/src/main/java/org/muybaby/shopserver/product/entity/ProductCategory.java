@@ -12,6 +12,7 @@ public record ProductCategory(
         Long parentId,
         String name,
         String icon,
+        Long iconFileId,
         Integer sortOrder,
         String status,
         LocalDateTime createdAt,

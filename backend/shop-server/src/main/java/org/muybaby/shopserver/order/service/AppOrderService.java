@@ -24,6 +24,9 @@ import org.muybaby.shopserver.promotion.CouponCandidate;
 import org.muybaby.shopserver.promotion.CouponDiscountCalculator;
 import org.muybaby.shopserver.promotion.DiscountResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.StorageFileUsageType;
+import org.muybaby.shopserver.storage.StorageUsageOwnerType;
+import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -60,11 +63,17 @@ public class AppOrderService {
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
+    private final StorageUsageService storageUsageService;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
-    public AppOrderService(JdbcClient jdbcClient, NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
+    public AppOrderService(
+            JdbcClient jdbcClient,
+            NamedParameterJdbcTemplate namedParameterJdbcTemplate,
+            StorageUsageService storageUsageService
+    ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
+        this.storageUsageService = storageUsageService;
     }
 
     public OrderPreviewResponse preview(AuthenticatedPrincipal principal, AppOrderPreviewRequest request) {
@@ -208,8 +217,11 @@ public class AppOrderService {
                                product_title,
                                product_subtitle,
                                main_image,
+                               main_image_file_id,
                                sku_image,
+                               sku_image_file_id,
                                display_image,
+                               display_image_file_id,
                                sku_code,
                                spec_text,
                                original_price_cent,
@@ -286,8 +298,11 @@ public class AppOrderService {
                     row.productTitle(),
                     row.productSubtitle(),
                     row.mainImage(),
+                    row.mainImageFileId(),
                     row.skuImage(),
+                    row.skuImageFileId(),
                     row.displayImage(),
+                    row.displayImageFileId(),
                     row.skuCode(),
                     row.specText(),
                     row.originalPriceCent(),
@@ -481,12 +496,13 @@ public class AppOrderService {
             namedParameterJdbcTemplate.update("""
                             insert into order_item (
                                 order_id, sku_id, spu_id, product_title, product_subtitle, main_image,
-                                sku_image, display_image, sku_code, spec_text, original_price_cent,
+                                main_image_file_id, sku_image, sku_image_file_id, display_image, display_image_file_id,
+                                sku_code, spec_text, original_price_cent,
                                 unit_price_cent, quantity, line_original_amount_cent, line_amount_cent, created_at
                             )
                             values (
                                 :orderId, :skuId, :spuId, :productTitle, :productSubtitle, :mainImage,
-                                :skuImage, :displayImage, :skuCode, :specText, :originalPriceCent,
+                                :mainImageFileId, :skuImage, :skuImageFileId, :displayImage, :displayImageFileId, :skuCode, :specText, :originalPriceCent,
                                 :unitPriceCent, :quantity, :lineOriginalAmountCent, :lineAmountCent, :createdAt
                             )
                             """,
@@ -497,8 +513,11 @@ public class AppOrderService {
                             .addValue("productTitle", item.productTitle())
                             .addValue("productSubtitle", defaultString(item.productSubtitle()))
                             .addValue("mainImage", defaultString(item.mainImage()))
+                            .addValue("mainImageFileId", item.mainImageFileId())
                             .addValue("skuImage", defaultString(item.skuImage()))
+                            .addValue("skuImageFileId", item.skuImageFileId())
                             .addValue("displayImage", defaultString(item.displayImage()))
+                            .addValue("displayImageFileId", item.displayImageFileId())
                             .addValue("skuCode", item.skuCode())
                             .addValue("specText", defaultString(item.specText()))
                             .addValue("originalPriceCent", item.originalPriceCent())
@@ -509,9 +528,38 @@ public class AppOrderService {
                             .addValue("createdAt", now),
                     keyHolder,
                     new String[]{"id"});
-            orderItemIds.add(requireGeneratedId(keyHolder));
+            Long orderItemId = requireGeneratedId(keyHolder);
+            addOrderItemFileUsages(orderItemId, item);
+            orderItemIds.add(orderItemId);
         }
         return orderItemIds;
+    }
+
+    private void addOrderItemFileUsages(Long orderItemId, OrderPreviewItemResponse item) {
+        addProtectedSnapshotUsage(orderItemId, item.productTitle(), item.mainImageFileId(), item.mainImage(), 1);
+        addProtectedSnapshotUsage(orderItemId, item.productTitle(), item.skuImageFileId(), item.skuImage(), 2);
+        addProtectedSnapshotUsage(orderItemId, item.productTitle(), item.displayImageFileId(), item.displayImage(), 3);
+    }
+
+    private void addProtectedSnapshotUsage(
+            Long orderItemId,
+            String ownerLabel,
+            Long fileId,
+            String snapshotUrl,
+            int sortOrder
+    ) {
+        if (fileId == null) {
+            return;
+        }
+        storageUsageService.addProtectedUsage(
+                fileId,
+                StorageFileUsageType.ORDER_ITEM_SNAPSHOT,
+                StorageUsageOwnerType.ORDER_ITEM,
+                orderItemId,
+                ownerLabel,
+                defaultString(snapshotUrl),
+                sortOrder
+        );
     }
 
     private void applyStockLocks(
@@ -660,11 +708,17 @@ public class AppOrderService {
                                s.title as product_title,
                                s.subtitle as product_subtitle,
                                s.main_image,
+                               s.main_image_file_id,
                                k.image as sku_image,
+                               k.image_file_id as sku_image_file_id,
                                case
                                    when k.image is null or k.image = '' then s.main_image
                                    else k.image
                                end as display_image,
+                               case
+                                   when k.image is null or k.image = '' then s.main_image_file_id
+                                   else k.image_file_id
+                               end as display_image_file_id,
                                k.sku_code,
                                k.spec_text,
                                k.original_price_cent,
@@ -856,8 +910,11 @@ public class AppOrderService {
                 rs.getString("product_title"),
                 rs.getString("product_subtitle"),
                 rs.getString("main_image"),
+                rs.getObject("main_image_file_id", Long.class),
                 rs.getString("sku_image"),
+                rs.getObject("sku_image_file_id", Long.class),
                 rs.getString("display_image"),
+                rs.getObject("display_image_file_id", Long.class),
                 rs.getString("sku_code"),
                 rs.getString("spec_text"),
                 rs.getLong("original_price_cent"),
@@ -876,8 +933,11 @@ public class AppOrderService {
                 rs.getString("product_title"),
                 rs.getString("product_subtitle"),
                 rs.getString("main_image"),
+                rs.getObject("main_image_file_id", Long.class),
                 rs.getString("sku_image"),
+                rs.getObject("sku_image_file_id", Long.class),
                 rs.getString("display_image"),
+                rs.getObject("display_image_file_id", Long.class),
                 rs.getString("sku_code"),
                 rs.getString("spec_text"),
                 rs.getLong("original_price_cent"),
@@ -979,8 +1039,11 @@ public class AppOrderService {
             String productTitle,
             String productSubtitle,
             String mainImage,
+            Long mainImageFileId,
             String skuImage,
+            Long skuImageFileId,
             String displayImage,
+            Long displayImageFileId,
             String skuCode,
             String specText,
             Long originalPriceCent,

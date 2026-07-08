@@ -7,12 +7,16 @@ import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
+import org.muybaby.shopserver.product.dto.AdminProductImageUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminStockAdjustmentRequest;
 import org.muybaby.shopserver.product.entity.ProductCategory;
 import org.muybaby.shopserver.product.entity.ProductSku;
 import org.muybaby.shopserver.product.entity.ProductSpu;
+import org.muybaby.shopserver.storage.StorageFileUsageType;
+import org.muybaby.shopserver.storage.StorageUsageOwnerType;
+import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -26,9 +30,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class AdminProductService {
@@ -39,10 +46,16 @@ public class AdminProductService {
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
+    private final StorageUsageService storageUsageService;
 
-    public AdminProductService(JdbcClient jdbcClient, NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
+    public AdminProductService(
+            JdbcClient jdbcClient,
+            NamedParameterJdbcTemplate namedParameterJdbcTemplate,
+            StorageUsageService storageUsageService
+    ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
+        this.storageUsageService = storageUsageService;
     }
 
     @Transactional
@@ -50,18 +63,21 @@ public class AdminProductService {
         String status = requireCategoryStatus(request.status()).name();
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
-                        INSERT INTO product_category (parent_id, name, icon, sort_order, status)
-                        VALUES (:parentId, :name, :icon, :sortOrder, :status)
+                        INSERT INTO product_category (parent_id, name, icon, icon_file_id, sort_order, status)
+                        VALUES (:parentId, :name, :icon, :iconFileId, :sortOrder, :status)
                         """,
                 new MapSqlParameterSource()
                         .addValue("parentId", request.parentId())
                         .addValue("name", request.name())
                         .addValue("icon", defaultString(request.icon()))
+                        .addValue("iconFileId", request.iconFileId())
                         .addValue("sortOrder", request.sortOrder())
                         .addValue("status", status),
                 keyHolder,
                 new String[]{"id"});
-        return requireGeneratedId(keyHolder);
+        Long categoryId = requireGeneratedId(keyHolder);
+        syncCategoryFileUsages(categoryId, request);
+        return categoryId;
     }
 
     @Transactional
@@ -72,6 +88,7 @@ public class AdminProductService {
                         SET parent_id = :parentId,
                             name = :name,
                             icon = :icon,
+                            icon_file_id = :iconFileId,
                             sort_order = :sortOrder,
                             status = :status,
                             updated_at = :updatedAt
@@ -80,6 +97,7 @@ public class AdminProductService {
                 .param("parentId", request.parentId())
                 .param("name", request.name())
                 .param("icon", defaultString(request.icon()))
+                .param("iconFileId", request.iconFileId())
                 .param("sortOrder", request.sortOrder())
                 .param("status", status)
                 .param("updatedAt", LocalDateTime.now())
@@ -88,6 +106,7 @@ public class AdminProductService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
         }
+        syncCategoryFileUsages(categoryId, request);
     }
 
     @Transactional
@@ -96,6 +115,7 @@ public class AdminProductService {
         Long spuId = insertSpu(request);
         replaceImageRows(spuId, request.images());
         replaceSkuRows(spuId, request.skus(), Map.of(), SYSTEM_OPERATOR_TYPE, SYSTEM_OPERATOR_ID);
+        syncSpuFileUsages(spuId, request);
         return spuId;
     }
 
@@ -122,6 +142,7 @@ public class AdminProductService {
                             title = :title,
                             subtitle = :subtitle,
                             main_image = :mainImage,
+                            main_image_file_id = :mainImageFileId,
                             selling_points = :sellingPoints,
                             detail_html = :detailHtml,
                             sort_order = :sortOrder,
@@ -133,6 +154,7 @@ public class AdminProductService {
                 .param("title", request.title())
                 .param("subtitle", defaultString(request.subtitle()))
                 .param("mainImage", request.mainImage())
+                .param("mainImageFileId", request.mainImageFileId())
                 .param("sellingPoints", defaultString(request.sellingPoints()))
                 .param("detailHtml", defaultString(request.detailHtml()))
                 .param("sortOrder", request.sortOrder())
@@ -145,6 +167,7 @@ public class AdminProductService {
         }
         replaceImageRows(spuId, request.images());
         replaceSkuRows(spuId, request.skus(), existingSkusById, operatorType, operatorId);
+        syncSpuFileUsages(spuId, request);
     }
 
     @Transactional
@@ -215,10 +238,10 @@ public class AdminProductService {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         INSERT INTO product_spu (
-                            category_id, title, subtitle, main_image, selling_points, detail_html, sort_order, status
+                            category_id, title, subtitle, main_image, main_image_file_id, selling_points, detail_html, sort_order, status
                         )
                         VALUES (
-                            :categoryId, :title, :subtitle, :mainImage, :sellingPoints, :detailHtml, :sortOrder, :status
+                            :categoryId, :title, :subtitle, :mainImage, :mainImageFileId, :sellingPoints, :detailHtml, :sortOrder, :status
                         )
                         """,
                 new MapSqlParameterSource()
@@ -226,6 +249,7 @@ public class AdminProductService {
                         .addValue("title", request.title())
                         .addValue("subtitle", defaultString(request.subtitle()))
                         .addValue("mainImage", request.mainImage())
+                        .addValue("mainImageFileId", request.mainImageFileId())
                         .addValue("sellingPoints", defaultString(request.sellingPoints()))
                         .addValue("detailHtml", defaultString(request.detailHtml()))
                         .addValue("sortOrder", request.sortOrder())
@@ -235,18 +259,19 @@ public class AdminProductService {
         return requireGeneratedId(keyHolder);
     }
 
-    private void replaceImageRows(Long spuId, List<String> images) {
+    private void replaceImageRows(Long spuId, List<AdminProductImageUpsertRequest> images) {
         jdbcClient.sql("DELETE FROM product_spu_image WHERE spu_id = :spuId")
                 .param("spuId", spuId)
                 .update();
-        List<String> normalizedImages = images == null ? List.of() : images;
+        List<AdminProductImageUpsertRequest> normalizedImages = images == null ? List.of() : images;
         for (int index = 0; index < normalizedImages.size(); index++) {
             jdbcClient.sql("""
-                            INSERT INTO product_spu_image (spu_id, url, sort_order)
-                            VALUES (:spuId, :url, :sortOrder)
+                            INSERT INTO product_spu_image (spu_id, url, file_id, sort_order)
+                            VALUES (:spuId, :url, :fileId, :sortOrder)
                             """)
                     .param("spuId", spuId)
-                    .param("url", normalizedImages.get(index))
+                    .param("url", normalizedImages.get(index).url())
+                    .param("fileId", normalizedImages.get(index).fileId())
                     .param("sortOrder", index + 1)
                     .update();
         }
@@ -263,8 +288,10 @@ public class AdminProductService {
                 .param("spuId", spuId)
                 .update();
         List<AdminSkuUpsertRequest> normalizedSkus = skus == null ? List.of() : skus;
+        Set<Long> retainedSkuIds = new HashSet<>();
         for (AdminSkuUpsertRequest sku : normalizedSkus) {
             Long skuId = insertSku(spuId, sku);
+            retainedSkuIds.add(skuId);
             ProductSku existingSku = sku.id() == null ? null : existingSkusById.get(sku.id());
             if (existingSku == null) {
                 insertStockLog(
@@ -290,6 +317,12 @@ public class AdminProductService {
                         operatorId
                 );
             }
+            syncSkuFileUsages(skuId, sku);
+        }
+        for (Long existingSkuId : existingSkusById.keySet()) {
+            if (!retainedSkuIds.contains(existingSkuId)) {
+                storageUsageService.removeOwnerUsages(StorageUsageOwnerType.PRODUCT_SKU, existingSkuId);
+            }
         }
     }
 
@@ -299,11 +332,11 @@ public class AdminProductService {
             jdbcClient.sql("""
                             INSERT INTO product_sku (
                                 id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                                stock_available, weight_gram, image, status, sort_order
+                                stock_available, weight_gram, image, image_file_id, status, sort_order
                             )
                             VALUES (
                                 :id, :spuId, :skuCode, :specJson, :specText, :priceCent, :originalPriceCent,
-                                :stockAvailable, :weightGram, :image, :status, :sortOrder
+                                :stockAvailable, :weightGram, :image, :imageFileId, :status, :sortOrder
                             )
                             """)
                     .param("id", request.id())
@@ -316,6 +349,7 @@ public class AdminProductService {
                     .param("stockAvailable", request.stockAvailable())
                     .param("weightGram", request.weightGram())
                     .param("image", defaultString(request.image()))
+                    .param("imageFileId", request.imageFileId())
                     .param("status", status)
                     .param("sortOrder", request.sortOrder())
                     .update();
@@ -326,11 +360,11 @@ public class AdminProductService {
         namedParameterJdbcTemplate.update("""
                         INSERT INTO product_sku (
                             spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                            stock_available, weight_gram, image, status, sort_order
+                            stock_available, weight_gram, image, image_file_id, status, sort_order
                         )
                         VALUES (
                             :spuId, :skuCode, :specJson, :specText, :priceCent, :originalPriceCent,
-                            :stockAvailable, :weightGram, :image, :status, :sortOrder
+                            :stockAvailable, :weightGram, :image, :imageFileId, :status, :sortOrder
                         )
                         """,
                 new MapSqlParameterSource()
@@ -343,11 +377,100 @@ public class AdminProductService {
                         .addValue("stockAvailable", request.stockAvailable())
                         .addValue("weightGram", request.weightGram())
                         .addValue("image", defaultString(request.image()))
+                        .addValue("imageFileId", request.imageFileId())
                         .addValue("status", status)
                         .addValue("sortOrder", request.sortOrder()),
                 keyHolder,
                 new String[]{"id"});
         return requireGeneratedId(keyHolder);
+    }
+
+    private void syncCategoryFileUsages(Long categoryId, AdminCategoryRequest request) {
+        List<StorageUsageService.UsageAssignment> usages = request.iconFileId() == null
+                ? List.of()
+                : List.of(new StorageUsageService.UsageAssignment(
+                request.iconFileId(),
+                StorageFileUsageType.PRODUCT_CATEGORY_ICON,
+                defaultString(request.icon()),
+                1,
+                false
+        ));
+        storageUsageService.replaceOwnerUsages(StorageUsageOwnerType.PRODUCT_CATEGORY, categoryId, request.name(), usages);
+    }
+
+    private void syncSpuFileUsages(Long spuId, AdminSpuUpsertRequest request) {
+        Map<String, StorageUsageService.UsageAssignment> dedupedUsages = new LinkedHashMap<>();
+        if (request.mainImageFileId() != null) {
+            putUsage(dedupedUsages, request.mainImageFileId(), StorageFileUsageType.PRODUCT_SPU_MAIN, request.mainImage(), 1);
+        }
+        List<AdminProductImageUpsertRequest> gallery = request.images() == null ? List.of() : request.images();
+        for (int index = 0; index < gallery.size(); index++) {
+            AdminProductImageUpsertRequest image = gallery.get(index);
+            if (image.fileId() != null) {
+                putUsage(dedupedUsages, image.fileId(), StorageFileUsageType.PRODUCT_SPU_GALLERY, image.url(), index + 1);
+            }
+        }
+        int detailSortOrder = 1000;
+        for (ResolvedStorageFile detailFile : resolveDetailHtmlFiles(request.detailHtml())) {
+            putUsage(dedupedUsages, detailFile.fileId(), StorageFileUsageType.PRODUCT_DETAIL_HTML, detailFile.publicUrl(), detailSortOrder++);
+        }
+        storageUsageService.replaceOwnerUsages(
+                StorageUsageOwnerType.PRODUCT_SPU,
+                spuId,
+                request.title(),
+                List.copyOf(dedupedUsages.values())
+        );
+    }
+
+    private void syncSkuFileUsages(Long skuId, AdminSkuUpsertRequest request) {
+        List<StorageUsageService.UsageAssignment> usages = request.imageFileId() == null
+                ? List.of()
+                : List.of(new StorageUsageService.UsageAssignment(
+                request.imageFileId(),
+                StorageFileUsageType.PRODUCT_SKU_IMAGE,
+                defaultString(request.image()),
+                1,
+                false
+        ));
+        storageUsageService.replaceOwnerUsages(StorageUsageOwnerType.PRODUCT_SKU, skuId, request.skuCode(), usages);
+    }
+
+    private void putUsage(
+            Map<String, StorageUsageService.UsageAssignment> dedupedUsages,
+            Long fileId,
+            StorageFileUsageType usageType,
+            String snapshotUrl,
+            int sortOrder
+    ) {
+        if (fileId == null) {
+            return;
+        }
+        dedupedUsages.putIfAbsent(
+                usageType.name() + ":" + fileId,
+                new StorageUsageService.UsageAssignment(fileId, usageType, defaultString(snapshotUrl), sortOrder, false)
+        );
+    }
+
+    private List<ResolvedStorageFile> resolveDetailHtmlFiles(String detailHtml) {
+        if (!StringUtils.hasText(detailHtml)) {
+            return List.of();
+        }
+        return jdbcClient.sql("""
+                        select id, public_url
+                        from storage_file
+                        where status = 'ACTIVE'
+                          and visibility = 'PUBLIC'
+                          and public_url is not null
+                          and public_url <> ''
+                          and locate(public_url, :detailHtml) > 0
+                        order by locate(public_url, :detailHtml), id
+                        """)
+                .param("detailHtml", detailHtml)
+                .query((rs, rowNum) -> new ResolvedStorageFile(
+                        rs.getLong("id"),
+                        rs.getString("public_url")
+                ))
+                .list();
     }
 
     private void insertStockLog(
@@ -385,7 +508,7 @@ public class AdminProductService {
 
     private Optional<ProductCategory> findCategory(Long categoryId) {
         return jdbcClient.sql("""
-                        SELECT id, parent_id, name, icon, sort_order, status, created_at, updated_at
+                        SELECT id, parent_id, name, icon, icon_file_id, sort_order, status, created_at, updated_at
                         FROM product_category
                         WHERE id = :categoryId
                         """)
@@ -396,7 +519,7 @@ public class AdminProductService {
 
     private Optional<ProductSpu> findSpu(Long spuId) {
         return jdbcClient.sql("""
-                        SELECT id, category_id, title, subtitle, main_image, selling_points, detail_html, sort_order, status, created_at, updated_at
+                        SELECT id, category_id, title, subtitle, main_image, main_image_file_id, selling_points, detail_html, sort_order, status, created_at, updated_at
                         FROM product_spu
                         WHERE id = :spuId
                         """)
@@ -408,7 +531,7 @@ public class AdminProductService {
     private List<ProductSku> findSkusBySpuId(Long spuId) {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               stock_available, weight_gram, image, status, sort_order, created_at, updated_at
+                               stock_available, weight_gram, image, image_file_id, status, sort_order, created_at, updated_at
                         FROM product_sku
                         WHERE spu_id = :spuId
                         ORDER BY sort_order ASC, id ASC
@@ -421,7 +544,7 @@ public class AdminProductService {
     private Optional<ProductSku> findSku(Long skuId) {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               stock_available, weight_gram, image, status, sort_order, created_at, updated_at
+                               stock_available, weight_gram, image, image_file_id, status, sort_order, created_at, updated_at
                         FROM product_sku
                         WHERE id = :skuId
                         """)
@@ -433,7 +556,7 @@ public class AdminProductService {
     private Optional<ProductSku> findSkuForUpdate(Long skuId) {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               stock_available, weight_gram, image, status, sort_order, created_at, updated_at
+                               stock_available, weight_gram, image, image_file_id, status, sort_order, created_at, updated_at
                         FROM product_sku
                         WHERE id = :skuId
                         FOR UPDATE
@@ -481,6 +604,7 @@ public class AdminProductService {
                 rs.getLong("parent_id"),
                 rs.getString("name"),
                 rs.getString("icon"),
+                rs.getObject("icon_file_id", Long.class),
                 rs.getInt("sort_order"),
                 rs.getString("status"),
                 rs.getObject("created_at", LocalDateTime.class),
@@ -495,6 +619,7 @@ public class AdminProductService {
                 rs.getString("title"),
                 rs.getString("subtitle"),
                 rs.getString("main_image"),
+                rs.getObject("main_image_file_id", Long.class),
                 rs.getString("selling_points"),
                 rs.getString("detail_html"),
                 rs.getInt("sort_order"),
@@ -516,10 +641,14 @@ public class AdminProductService {
                 rs.getInt("stock_available"),
                 rs.getInt("weight_gram"),
                 rs.getString("image"),
+                rs.getObject("image_file_id", Long.class),
                 rs.getString("status"),
                 rs.getInt("sort_order"),
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class)
         );
+    }
+
+    private record ResolvedStorageFile(Long fileId, String publicUrl) {
     }
 }

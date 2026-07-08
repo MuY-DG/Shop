@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.AfterEach;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
+import org.muybaby.shopserver.product.dto.AdminProductImageUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
 import org.muybaby.shopserver.product.service.AdminProductService;
@@ -89,6 +91,12 @@ class AppOrderControllerTest {
         jdbcClient.sql("delete from coupon_claim_record").update();
         jdbcClient.sql("delete from user_coupon").update();
         jdbcClient.sql("delete from coupon_template").update();
+    }
+
+    @AfterEach
+    void clearStorageState() {
+        jdbcClient.sql("delete from storage_file_usage").update();
+        jdbcClient.sql("delete from storage_file").update();
     }
 
     @Test
@@ -280,6 +288,84 @@ class AppOrderControllerTest {
                 .param("skuId", skuId)
                 .query(Integer.class)
                 .single()).isEqualTo(8);
+    }
+
+    @Test
+    void submitSnapshotsFileIdsAndCreatesProtectedStorageUsages() throws Exception {
+        AppLoginSession session = appLogin("order-file-usage-user");
+        String appToken = session.token();
+        StoredFile mainFile = insertStorageFile("order-main-file.png");
+        StoredFile skuFile = insertStorageFile("order-sku-file.png");
+        ProductFixture product = createPublishedSkuWithFiles("ORDER-FILE-SKU", 3990L, 4990L, 10, "ENABLED", mainFile, skuFile);
+
+        long cartItemId = cartItemId(addCartItem(appToken, product.skuId(), 2));
+
+        mockMvc.perform(post("/app/orders/preview")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cartItemIds":[%d]}
+                                """.formatted(cartItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].mainImageFileId").value(mainFile.id()))
+                .andExpect(jsonPath("$.data.items[0].skuImageFileId").value(skuFile.id()))
+                .andExpect(jsonPath("$.data.items[0].displayImageFileId").value(skuFile.id()));
+
+        String submitResponse = mockMvc.perform(post("/app/orders")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cartItemIds":[%d],"idempotencyKey":"checkout-file-usage-001"}
+                                """.formatted(cartItemId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long orderId = objectMapper.readTree(submitResponse).path("data").path("orderId").asLong();
+        Long orderItemId = jdbcClient.sql("""
+                        select id
+                        from order_item
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .single();
+
+        mockMvc.perform(get("/app/orders/{orderId}", orderId)
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].mainImageFileId").value(mainFile.id()))
+                .andExpect(jsonPath("$.data.items[0].skuImageFileId").value(skuFile.id()))
+                .andExpect(jsonPath("$.data.items[0].displayImageFileId").value(skuFile.id()));
+
+        assertThat(jdbcClient.sql("""
+                        select main_image_file_id
+                        from order_item
+                        where id = :orderItemId
+                        """)
+                .param("orderItemId", orderItemId)
+                .query(Long.class)
+                .single()).isEqualTo(mainFile.id());
+        assertThat(jdbcClient.sql("""
+                        select sku_image_file_id
+                        from order_item
+                        where id = :orderItemId
+                        """)
+                .param("orderItemId", orderItemId)
+                .query(Long.class)
+                .single()).isEqualTo(skuFile.id());
+        assertThat(jdbcClient.sql("""
+                        select display_image_file_id
+                        from order_item
+                        where id = :orderItemId
+                        """)
+                .param("orderItemId", orderItemId)
+                .query(Long.class)
+                .single()).isEqualTo(skuFile.id());
+
+        assertThat(protectedSnapshotUsageCount(mainFile.id(), orderItemId, mainFile.publicUrl())).isEqualTo(1);
+        assertThat(protectedSnapshotUsageCount(skuFile.id(), orderItemId, skuFile.publicUrl())).isEqualTo(2);
     }
 
     @Test
@@ -601,23 +687,91 @@ class AppOrderControllerTest {
     }
 
     private long createPublishedSku(String skuCode, long priceCent, long originalPriceCent, int stock, String skuStatus) {
-        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Order Category " + skuCode, "", 1, "ENABLED"));
+        return createPublishedSkuWithFiles(skuCode, priceCent, originalPriceCent, stock, skuStatus, null, null).skuId();
+    }
+
+    private ProductFixture createPublishedSkuWithFiles(
+            String skuCode,
+            long priceCent,
+            long originalPriceCent,
+            int stock,
+            String skuStatus,
+            StoredFile mainFile,
+            StoredFile skuFile
+    ) {
+        String mainImageUrl = mainFile == null ? "https://example.test/order-main.jpg" : mainFile.publicUrl();
+        Long mainImageFileId = mainFile == null ? null : mainFile.id();
+        String skuImageUrl = skuFile == null ? "https://example.test/order-sku.jpg" : skuFile.publicUrl();
+        Long skuImageFileId = skuFile == null ? null : skuFile.id();
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Order Category " + skuCode, "", null, 1, "ENABLED"));
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,
                 "Order SPU " + skuCode,
                 "Order subtitle",
-                "https://example.test/order-main.jpg",
+                mainImageUrl,
+                mainImageFileId,
                 "麻辣,鲜香,浓郁",
                 "<p>Order detail</p>",
                 1,
-                List.of("https://example.test/order-gallery.jpg"),
-                List.of(new AdminSkuUpsertRequest(null, skuCode, "{\"规格\":\"300g\"}", "300g", priceCent, originalPriceCent, stock, 300, "https://example.test/order-sku.jpg", skuStatus, 1))
+                List.of(new AdminProductImageUpsertRequest("https://example.test/order-gallery.jpg", null)),
+                List.of(new AdminSkuUpsertRequest(null, skuCode, "{\"规格\":\"300g\"}", "300g", priceCent, originalPriceCent, stock, 300, skuImageUrl, skuImageFileId, skuStatus, 1))
         ));
         adminProductService.publishSpu(spuId);
-        return jdbcClient.sql("select id from product_sku where sku_code = :skuCode")
+        Long skuId = jdbcClient.sql("select id from product_sku where sku_code = :skuCode")
                 .param("skuCode", skuCode)
                 .query(Long.class)
                 .single();
+        return new ProductFixture(spuId, skuId);
+    }
+
+    private int protectedSnapshotUsageCount(long fileId, long orderItemId, String snapshotUrl) {
+        Integer count = jdbcClient.sql("""
+                        select count(*)
+                        from storage_file_usage
+                        where file_id = :fileId
+                          and usage_type = 'ORDER_ITEM_SNAPSHOT'
+                          and owner_type = 'ORDER_ITEM'
+                          and owner_id = :orderItemId
+                          and snapshot_url = :snapshotUrl
+                          and protected = true
+                          and status = 'ACTIVE'
+                        """)
+                .param("fileId", fileId)
+                .param("orderItemId", orderItemId)
+                .param("snapshotUrl", snapshotUrl)
+                .query(Integer.class)
+                .single();
+        return count == null ? 0 : count;
+    }
+
+    private StoredFile insertStorageFile(String originalFilename) {
+        String objectKey = "public/test/order/" + System.nanoTime() + "-" + originalFilename;
+        String publicUrl = "http://localhost:8080/files/public/test/" + originalFilename;
+        jdbcClient.sql("""
+                        insert into storage_file
+                            (purpose, asset_category_id, visibility, provider, bucket, object_key, original_filename,
+                             content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
+                             public_url, status, uploaded_by_type, uploaded_by_id)
+                        values
+                            ('PRODUCT_IMAGE', 1, 'PUBLIC', 'LOCAL', '', :objectKey, :originalFilename,
+                             'image/png', 'png', 68, :sha256, 1, 1, '', null,
+                             :publicUrl, 'ACTIVE', 'ADMIN', 1)
+                        """)
+                .param("objectKey", objectKey)
+                .param("originalFilename", originalFilename)
+                .param("sha256", "sha-" + objectKey)
+                .param("publicUrl", publicUrl)
+                .update();
+        Long fileId = jdbcClient.sql("""
+                        select id
+                        from storage_file
+                        where object_key = :objectKey
+                        """)
+                .param("objectKey", objectKey)
+                .query(Long.class)
+                .single();
+        assertThat(fileId).isNotNull();
+        return new StoredFile(fileId, publicUrl);
     }
 
     private long seedTemplate(String name, String status, int totalStock, int claimedCount, int perUserLimit, long thresholdCent, long discountCent) {
@@ -894,6 +1048,12 @@ class AppOrderControllerTest {
                     handler
             );
         }
+    }
+
+    private record ProductFixture(long spuId, long skuId) {
+    }
+
+    private record StoredFile(Long id, String publicUrl) {
     }
 
     private record AppLoginSession(String token, long userId) {

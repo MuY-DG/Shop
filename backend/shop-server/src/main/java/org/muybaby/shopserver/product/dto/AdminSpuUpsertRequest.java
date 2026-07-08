@@ -12,10 +12,11 @@ public record AdminSpuUpsertRequest(
         @NotBlank String title,
         String subtitle,
         @NotBlank String mainImage,
+        Long mainImageFileId,
         String sellingPoints,
         String detailHtml,
         @NotNull @Min(0) Integer sortOrder,
-        List<String> images,
+        @Valid List<AdminProductImageUpsertRequest> images,
         @Valid List<AdminSkuUpsertRequest> skus
 ) {
 }

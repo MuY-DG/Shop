@@ -5,6 +5,7 @@ public record AppCategoryResponse(
         Long parentId,
         String name,
         String icon,
+        Long iconFileId,
         Integer sortOrder,
         String status
 ) {

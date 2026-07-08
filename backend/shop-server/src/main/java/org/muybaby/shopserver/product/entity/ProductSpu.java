@@ -13,6 +13,7 @@ public record ProductSpu(
         String title,
         String subtitle,
         String mainImage,
+        Long mainImageFileId,
         String sellingPoints,
         String detailHtml,
         Integer sortOrder,
