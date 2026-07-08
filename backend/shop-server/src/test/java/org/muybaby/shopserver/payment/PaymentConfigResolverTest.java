@@ -68,6 +68,7 @@ class PaymentConfigResolverTest {
 
     @BeforeEach
     void clearPaymentConfigState() {
+        jdbcClient.sql("delete from payment_runtime_setting").update();
         jdbcClient.sql("delete from payment_config").update();
         jdbcClient.sql("delete from storage_file where object_key like 'test/%'").update();
     }
@@ -271,6 +272,8 @@ class PaymentConfigResolverTest {
     void maskedConfigDoesNotExposeSecretsOrKeyContents() throws Exception {
         ResolvedPaymentConfig resolved = new ResolvedPaymentConfig(
                 PaymentConfigSource.ENV,
+                null,
+                "Environment",
                 true,
                 "wx_test_app",
                 "mch_test",

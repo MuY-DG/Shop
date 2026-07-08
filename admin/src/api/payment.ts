@@ -6,6 +6,20 @@ export function fetchEffectivePaymentConfig() {
   })
 }
 
+export function fetchPaymentConfigSource() {
+  return request.get<Api.Payment.ConfigSourceSetting>({
+    url: '/admin/pay/configs/source'
+  })
+}
+
+export function updatePaymentConfigSource(data: Api.Payment.ConfigSourceForm) {
+  return request.put<Api.Payment.ConfigSourceSetting>({
+    url: '/admin/pay/configs/source',
+    data,
+    showSuccessMessage: true
+  })
+}
+
 export function fetchPaymentConfigs(params: Api.Payment.ConfigSearchParams) {
   return request.get<Api.Payment.ConfigList>({
     url: '/admin/pay/configs',

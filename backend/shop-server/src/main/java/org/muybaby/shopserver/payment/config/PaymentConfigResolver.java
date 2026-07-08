@@ -26,25 +26,36 @@ public class PaymentConfigResolver {
     private final JdbcClient jdbcClient;
     private final PaymentSecretCipher secretCipher;
     private final PrivateStorageFileService privateStorageFileService;
+    private final PaymentConfigSourceSettingService sourceSettingService;
 
     public PaymentConfigResolver(
             PaymentProperties properties,
             JdbcClient jdbcClient,
             PaymentSecretCipher secretCipher,
-            PrivateStorageFileService privateStorageFileService
+            PrivateStorageFileService privateStorageFileService,
+            PaymentConfigSourceSettingService sourceSettingService
     ) {
         this.properties = properties;
         this.jdbcClient = jdbcClient;
         this.secretCipher = secretCipher;
         this.privateStorageFileService = privateStorageFileService;
+        this.sourceSettingService = sourceSettingService;
     }
 
     public ResolvedPaymentConfig resolve() {
-        return resolve(properties);
+        return resolve(properties, sourceSettingService.currentSource());
     }
 
     public ResolvedPaymentConfig resolve(PaymentProperties candidate) {
         PaymentConfigSource source = candidate.configSource() == null ? PaymentConfigSource.AUTO : candidate.configSource();
+        return resolve(candidate, source);
+    }
+
+    public ResolvedPaymentConfig resolve(PaymentConfigSource source) {
+        return resolve(properties, source == null ? PaymentConfigSource.AUTO : source);
+    }
+
+    private ResolvedPaymentConfig resolve(PaymentProperties candidate, PaymentConfigSource source) {
         if (source == PaymentConfigSource.ENV) {
             return resolveEnv(candidate);
         }
@@ -64,6 +75,8 @@ public class PaymentConfigResolver {
         PaymentVerifyMode verifyMode = requireSupportedVerifyMode(candidate.verifyMode());
         return new ResolvedPaymentConfig(
                 PaymentConfigSource.ENV,
+                null,
+                "Environment",
                 candidate.enabled(),
                 candidate.appId(),
                 candidate.mchId(),
@@ -83,7 +96,7 @@ public class PaymentConfigResolver {
 
     public ResolvedPaymentConfig resolveDb() {
         PaymentConfigRow row = jdbcClient.sql("""
-                        select id, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                        select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                                private_key_file_id, merchant_certificate_file_id, verify_mode,
                                wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                                enabled
@@ -100,6 +113,8 @@ public class PaymentConfigResolver {
 
         return new ResolvedPaymentConfig(
                 PaymentConfigSource.DB,
+                row.id(),
+                row.configName(),
                 row.enabled(),
                 row.appId(),
                 row.mchId(),
@@ -202,6 +217,7 @@ public class PaymentConfigResolver {
     private PaymentConfigRow mapPaymentConfigRow(ResultSet rs, int rowNum) throws SQLException {
         return new PaymentConfigRow(
                 rs.getLong("id"),
+                rs.getString("config_name"),
                 rs.getString("app_id"),
                 rs.getString("mch_id"),
                 rs.getString("merchant_serial_no"),
@@ -224,6 +240,7 @@ public class PaymentConfigResolver {
 
     private record PaymentConfigRow(
             Long id,
+            String configName,
             String appId,
             String mchId,
             String merchantSerialNo,

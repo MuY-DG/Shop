@@ -5,12 +5,15 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.PaymentConfigSource;
+import org.muybaby.shopserver.payment.config.PaymentConfigSourceSettingService;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigRequest;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigResponse;
+import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
+import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StoragePurpose;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
@@ -45,6 +48,7 @@ public class AdminPaymentConfigService {
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final PaymentConfigResolver paymentConfigResolver;
+    private final PaymentConfigSourceSettingService paymentConfigSourceSettingService;
     private final PaymentSecretCipher paymentSecretCipher;
     private final PrivateStorageFileService privateStorageFileService;
     private final StorageUsageService storageUsageService;
@@ -53,6 +57,7 @@ public class AdminPaymentConfigService {
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             PaymentConfigResolver paymentConfigResolver,
+            PaymentConfigSourceSettingService paymentConfigSourceSettingService,
             PaymentSecretCipher paymentSecretCipher,
             PrivateStorageFileService privateStorageFileService,
             StorageUsageService storageUsageService
@@ -60,6 +65,7 @@ public class AdminPaymentConfigService {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.paymentConfigResolver = paymentConfigResolver;
+        this.paymentConfigSourceSettingService = paymentConfigSourceSettingService;
         this.paymentSecretCipher = paymentSecretCipher;
         this.privateStorageFileService = privateStorageFileService;
         this.storageUsageService = storageUsageService;
@@ -68,9 +74,9 @@ public class AdminPaymentConfigService {
     public EffectivePaymentConfigResponse effective() {
         ResolvedPaymentConfig config = paymentConfigResolver.resolve();
         return new EffectivePaymentConfigResponse(
-                null,
+                config.configId(),
                 config.source().name(),
-                config.source() == PaymentConfigSource.ENV ? "Environment" : "Database",
+                config.configName(),
                 mask(config.appId(), 3, 3),
                 mask(config.mchId(), 2, 2),
                 mask(config.merchantSerialNo(), 3, 3),
@@ -87,6 +93,21 @@ public class AdminPaymentConfigService {
                 null,
                 null
         );
+    }
+
+    public PaymentConfigSourceResponse source() {
+        return paymentConfigSourceSettingService.current();
+    }
+
+    @Transactional
+    public PaymentConfigSourceResponse updateSource(PaymentConfigSourceUpdateRequest request) {
+        if (request == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        PaymentConfigSource source = paymentConfigSourceSettingService.parse(request.source());
+        paymentConfigResolver.resolve(source);
+        paymentConfigSourceSettingService.update(source);
+        return paymentConfigSourceSettingService.current();
     }
 
     public PageResult<AdminPaymentConfigResponse> page(Long current, Long size) {

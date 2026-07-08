@@ -94,7 +94,11 @@ SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
 
 Payment callbacks are handled by `/wxpay/pay/notify`; refund callbacks are handled by `/wxpay/refund/notify`. A real local WeChat Pay smoke check needs an HTTPS tunnel to the local backend, and both callback URLs must use that public tunnel domain so WeChat can reach the local service.
 
-`WECHAT_PAY_CONFIG_SOURCE=AUTO` uses complete environment credentials first and otherwise falls back to the enabled database payment config. Use `ENV` when the local `.env.local` values should be mandatory, or `DB` when payment credentials are managed through `/admin/pay/configs`. For DB config, upload merchant private key, merchant certificate, and WeChat Pay public key files as private payment files through admin storage; do not commit the uploaded files or the local upload directory.
+`WECHAT_PAY_CONFIG_SOURCE=AUTO` is the startup/default source: it uses complete environment credentials first and otherwise falls back to the enabled database payment config. Use `ENV` when the local `.env.local` values should be mandatory, or `DB` when payment credentials are managed through `/admin/pay/configs`.
+
+The admin payment configuration page has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from `.env.local`. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
+
+For DB config, upload merchant private key, merchant certificate, and WeChat Pay public key files as private payment files through admin storage; do not commit the uploaded files or the local upload directory.
 
 Never commit `.env.local`, merchant certificates, private keys, APIv3 keys, public-key files, local upload roots, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
 

@@ -5,6 +5,8 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigRequest;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigResponse;
+import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
+import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.payment.service.AdminPaymentConfigService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +32,18 @@ public class AdminPaymentConfigController {
     @PreAuthorize("hasAuthority('payment:config:read')")
     public ApiResponse<EffectivePaymentConfigResponse> effective() {
         return ApiResponse.success(adminPaymentConfigService.effective());
+    }
+
+    @GetMapping("/source")
+    @PreAuthorize("hasAuthority('payment:config:read')")
+    public ApiResponse<PaymentConfigSourceResponse> source() {
+        return ApiResponse.success(adminPaymentConfigService.source());
+    }
+
+    @PutMapping("/source")
+    @PreAuthorize("hasAuthority('payment:config:enable')")
+    public ApiResponse<PaymentConfigSourceResponse> updateSource(@RequestBody PaymentConfigSourceUpdateRequest request) {
+        return ApiResponse.success(adminPaymentConfigService.updateSource(request));
     }
 
     @GetMapping

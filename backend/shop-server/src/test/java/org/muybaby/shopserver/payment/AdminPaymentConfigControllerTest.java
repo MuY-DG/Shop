@@ -104,6 +104,7 @@ class AdminPaymentConfigControllerTest {
     void clearPaymentConfigState() {
         jdbcClient.sql("delete from storage_file_usage").update();
         jdbcClient.sql("delete from payment_config").update();
+        jdbcClient.sql("delete from payment_runtime_setting").update();
         jdbcClient.sql("delete from storage_file").update();
     }
 
@@ -162,6 +163,88 @@ class AdminPaymentConfigControllerTest {
                 .doesNotContain("mch_env_123456")
                 .doesNotContain("serial_env_123456")
                 .doesNotContain("pub_key_env_123456");
+    }
+
+    @Test
+    void sourceEndpointRequiresReadForViewAndEnableForSwitching() throws Exception {
+        String readToken = limitedAdminToken(List.of("payment:config:read"));
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
+
+        mockMvc.perform(get("/admin/pay/configs/source"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.code()));
+
+        mockMvc.perform(get("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + writeToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
+
+        mockMvc.perform(get("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("ENV"))
+                .andExpect(jsonPath("$.data.persisted").value(false));
+
+        mockMvc.perform(put("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":"AUTO"}
+                                """))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
+
+        mockMvc.perform(put("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + enableToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":"ENV"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("ENV"))
+                .andExpect(jsonPath("$.data.persisted").value(true));
+    }
+
+    @Test
+    void switchingSourceToDbMakesEnabledDbConfigEffectiveWithoutRestart() throws Exception {
+        String readToken = limitedAdminToken(List.of("payment:config:read"));
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
+        long privateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long configId = createConfig(writeToken, "Switchable DB Pay", privateKeyFileId, certFileId, publicKeyFileId);
+
+        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", configId)
+                        .header("Authorization", "Bearer " + enableToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(true));
+
+        mockMvc.perform(get("/admin/pay/configs/effective")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("ENV"))
+                .andExpect(jsonPath("$.data.configName").value("Environment"));
+
+        mockMvc.perform(put("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + enableToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":"DB"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("DB"))
+                .andExpect(jsonPath("$.data.persisted").value(true));
+
+        mockMvc.perform(get("/admin/pay/configs/effective")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(configId))
+                .andExpect(jsonPath("$.data.source").value("DB"))
+                .andExpect(jsonPath("$.data.configName").value("Switchable DB Pay"))
+                .andExpect(jsonPath("$.data.privateKeyFileId").value(privateKeyFileId))
+                .andExpect(jsonPath("$.data.wechatPublicKeyFileId").value(publicKeyFileId));
     }
 
     @Test

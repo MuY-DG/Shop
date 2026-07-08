@@ -584,7 +584,7 @@ declare namespace Api {
   }
 
   namespace Payment {
-    type ConfigSource = 'ENV' | 'DB'
+    type ConfigSource = 'AUTO' | 'ENV' | 'DB'
     /** Only PUBLIC_KEY is selectable; legacy DB values can still appear through Config.verifyMode as string. */
     type VerifyMode = 'PUBLIC_KEY'
 
@@ -612,6 +612,16 @@ declare namespace Api {
     }
 
     type EffectiveConfig = Omit<Config, 'id'> & { id: number | null }
+
+    interface ConfigSourceSetting {
+      source: ConfigSource
+      persisted: boolean
+      defaultSource: ConfigSource
+    }
+
+    interface ConfigSourceForm {
+      source: ConfigSource
+    }
 
     interface ConfigSearchParams extends Partial<Api.Common.CommonSearchParams> {}
 

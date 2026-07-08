@@ -2,6 +2,8 @@ package org.muybaby.shopserver.payment.config;
 
 public record ResolvedPaymentConfig(
         PaymentConfigSource source,
+        Long configId,
+        String configName,
         boolean enabled,
         String appId,
         String mchId,

@@ -7,13 +7,31 @@
             <div class="section-header__title">有效支付配置</div>
             <div class="section-header__subtitle">运行时实际使用的微信支付配置，只展示 masked 元数据</div>
           </div>
-          <ElTag v-if="effectiveConfig" :type="effectiveConfig.source === 'ENV' ? 'warning' : 'success'">
-            {{ formatSource(effectiveConfig.source) }}
-          </ElTag>
+          <div class="effective-header__aside">
+            <ElTag v-if="effectiveConfig" :type="sourceTagType(effectiveConfig.source)">
+              {{ formatSource(effectiveConfig.source) }}
+            </ElTag>
+            <ElTag v-if="sourceSetting" size="small" :type="sourceSetting.persisted ? 'success' : 'info'">
+              {{ sourceSetting.persisted ? '后台设置' : `${formatSource(sourceSetting.defaultSource)} 默认` }}
+            </ElTag>
+          </div>
         </div>
       </template>
 
       <div v-loading="effectiveLoading">
+        <div class="source-switch" v-loading="sourceLoading">
+          <span class="source-switch__label">运行来源</span>
+          <ElSegmented v-model="sourceSelection" :options="sourceOptions" :disabled="sourceLoading || sourceSaving" />
+          <ElButton
+            type="primary"
+            v-auth="'payment:config:enable'"
+            :loading="sourceSaving"
+            :disabled="sourceSelection === sourceSetting?.source"
+            @click="handleSourceSave"
+          >
+            保存
+          </ElButton>
+        </div>
         <ElEmpty v-if="!effectiveLoading && !effectiveConfig" description="暂无有效配置" />
         <ElDescriptions v-else-if="effectiveConfig" :column="3" border>
           <ElDescriptionsItem label="配置名">{{ formatText(effectiveConfig.configName) }}</ElDescriptionsItem>
@@ -57,7 +75,7 @@
         <div class="section-header">
           <div>
             <div class="section-header__title">DB 配置</div>
-            <div class="section-header__subtitle">DB 配置可作为有效配置或 ENV 配置的备用方案</div>
+            <div class="section-header__subtitle">DB 配置在运行来源为 DB，或 AUTO 回退 DB 时使用</div>
           </div>
           <div class="section-header__actions">
             <ElButton @click="loadConfigs">刷新</ElButton>
@@ -97,10 +115,10 @@
             </div>
           </template>
         </ElTableColumn>
-        <ElTableColumn label="启用" width="90">
+        <ElTableColumn label="DB 候选" width="100">
           <template #default="{ row }">
             <ElTag :type="row.enabled ? 'success' : 'info'" size="small">
-              {{ row.enabled ? 'Active' : 'Standby' }}
+              {{ row.enabled ? '当前候选' : '备用' }}
             </ElTag>
           </template>
         </ElTableColumn>
@@ -121,7 +139,7 @@
                 :loading="enablingId === row.id"
                 @click="handleEnable(row)"
               >
-                启用
+                设为候选
               </ElButton>
             </div>
           </template>
@@ -235,18 +253,24 @@
     createPaymentConfig,
     enablePaymentConfig,
     fetchEffectivePaymentConfig,
+    fetchPaymentConfigSource,
     fetchPaymentConfigs,
+    updatePaymentConfigSource,
     updatePaymentConfig
   } from '@/api/payment'
 
   defineOptions({ name: 'PaymentConfig' })
 
   const effectiveLoading = ref(false)
+  const sourceLoading = ref(false)
+  const sourceSaving = ref(false)
   const tableLoading = ref(false)
   const submitting = ref(false)
   const drawerVisible = ref(false)
   const enablingId = ref<number | null>(null)
   const effectiveConfig = ref<Api.Payment.EffectiveConfig | null>(null)
+  const sourceSetting = ref<Api.Payment.ConfigSourceSetting | null>(null)
+  const sourceSelection = ref<Api.Payment.ConfigSource>('AUTO')
   const configs = ref<Api.Payment.Config[]>([])
   const editingConfig = ref<Api.Payment.Config | null>(null)
   const formRef = ref<FormInstance>()
@@ -276,6 +300,12 @@
 
   const verifyModeOptions = [
     { label: '微信公钥', value: 'PUBLIC_KEY' }
+  ]
+
+  const sourceOptions: Array<{ label: string; value: Api.Payment.ConfigSource }> = [
+    { label: 'AUTO', value: 'AUTO' },
+    { label: 'ENV', value: 'ENV' },
+    { label: 'DB', value: 'DB' }
   ]
 
   const hasText = (value?: string | null) => Boolean(String(value || '').trim())
@@ -371,7 +401,16 @@
   const trimText = (value?: string) => String(value || '').trim()
   const formatText = (value?: string | number | null) => (value === null || value === undefined || value === '' ? '-' : String(value))
   const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
-  const formatSource = (source?: string) => (source === 'ENV' ? 'ENV 配置' : 'DB 配置')
+  const formatSource = (source?: string) => {
+    if (source === 'ENV') return 'ENV 配置'
+    if (source === 'DB') return 'DB 配置'
+    return 'AUTO 配置'
+  }
+  const sourceTagType = (source?: string) => {
+    if (source === 'ENV') return 'warning'
+    if (source === 'DB') return 'success'
+    return 'info'
+  }
   const formatVerifyMode = (value?: string) => (value === 'CERTIFICATE' ? '平台证书（暂不支持）' : '微信公钥')
   const maskedPlaceholder = (value?: string | null) => (value ? `当前：${value}，留空不修改` : '请输入完整值')
   const assetValue = (fileId: number | null): Api.Common.AssetValue => ({ fileId, url: '' })
@@ -398,6 +437,16 @@
     }
   }
 
+  const loadSource = async () => {
+    sourceLoading.value = true
+    try {
+      sourceSetting.value = await fetchPaymentConfigSource()
+      sourceSelection.value = sourceSetting.value.source
+    } finally {
+      sourceLoading.value = false
+    }
+  }
+
   const loadConfigs = async () => {
     tableLoading.value = true
     try {
@@ -415,7 +464,18 @@
   }
 
   const loadAll = async () => {
-    await Promise.all([loadEffective(), loadConfigs()])
+    await Promise.all([loadSource(), loadEffective(), loadConfigs()])
+  }
+
+  const handleSourceSave = async () => {
+    sourceSaving.value = true
+    try {
+      sourceSetting.value = await updatePaymentConfigSource({ source: sourceSelection.value })
+      sourceSelection.value = sourceSetting.value.source
+      await Promise.all([loadEffective(), loadConfigs()])
+    } finally {
+      sourceSaving.value = false
+    }
   }
 
   const openCreateDrawer = () => {
@@ -477,7 +537,7 @@
   }
 
   const handleEnable = async (row: Api.Payment.Config) => {
-    await ElMessageBox.confirm(`确定启用支付配置「${row.configName}」吗？`, '启用确认', {
+    await ElMessageBox.confirm(`确定将「${row.configName}」设为 DB 候选配置吗？`, 'DB 候选确认', {
       type: 'warning',
       confirmButtonText: '确定',
       cancelButtonText: '取消'
@@ -533,11 +593,32 @@
   }
 
   .section-header__actions,
+  .effective-header__aside,
   .table-actions {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-shrink: 0;
+  }
+
+  .effective-header__aside {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .source-switch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    min-height: 32px;
+  }
+
+  .source-switch__label {
+    flex-shrink: 0;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--el-text-color-regular);
   }
 
   .payment-config__table {
@@ -601,6 +682,13 @@
     .section-header__actions {
       width: 100%;
       justify-content: flex-end;
+    }
+
+    .effective-header__aside,
+    .source-switch {
+      width: 100%;
+      justify-content: flex-start;
+      flex-wrap: wrap;
     }
   }
 </style>

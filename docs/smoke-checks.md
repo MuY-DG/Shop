@@ -1004,7 +1004,7 @@ https://<public-tunnel-domain>/wxpay/pay/notify
 https://<public-tunnel-domain>/wxpay/refund/notify
 ```
 
-4. If using `WECHAT_PAY_CONFIG_SOURCE=DB`, upload payment private files through admin storage and configure `/admin/pay/configs` with those private file IDs. Confirm `/admin/pay/configs/effective` returns masked values and the same callback URLs.
+4. If using DB-managed credentials, upload payment private files through admin storage, configure `/admin/pay/configs` with those private file IDs, set that DB config as the DB candidate, and save the admin runtime source as `DB`. Confirm `/admin/pay/configs/source` returns `DB` with `persisted=true`, and `/admin/pay/configs/effective` returns masked values and the same callback URLs.
 5. In a real mini program session, create an order and tap payment.
 6. Complete WeChat payment with the real payer account.
 7. Verify the backend receives `POST /wxpay/pay/notify`, the callback log reaches `SUCCESS`, and the order becomes `PAID`.
