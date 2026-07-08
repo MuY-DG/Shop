@@ -30,3 +30,8 @@ shop:
   wechat:
     mini-program:
       mock-enabled: true
+  pay:
+    enabled: true
+    config-source: DB
+    expire-minutes: 15
+    secret-key: 0123456789abcdef0123456789abcdef

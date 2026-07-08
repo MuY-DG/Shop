@@ -45,3 +45,18 @@ shop:
       app-id: ${WECHAT_MINI_PROGRAM_APP_ID:}
       app-secret: ${WECHAT_MINI_PROGRAM_APP_SECRET:}
       mock-enabled: false
+  pay:
+    enabled: ${WECHAT_PAY_ENABLED:false}
+    config-source: ${WECHAT_PAY_CONFIG_SOURCE:AUTO}
+    app-id: ${WECHAT_PAY_APP_ID:}
+    mch-id: ${WECHAT_PAY_MCH_ID:}
+    merchant-serial-no: ${WECHAT_PAY_MERCHANT_SERIAL_NO:}
+    private-key-path: ${WECHAT_PAY_PRIVATE_KEY_PATH:}
+    api-v3-key: ${WECHAT_PAY_API_V3_KEY:}
+    notify-url: ${WECHAT_PAY_NOTIFY_URL:}
+    refund-notify-url: ${WECHAT_PAY_REFUND_NOTIFY_URL:}
+    verify-mode: ${WECHAT_PAY_VERIFY_MODE:PUBLIC_KEY}
+    public-key-id: ${WECHAT_PAY_PUBLIC_KEY_ID:}
+    public-key-path: ${WECHAT_PAY_PUBLIC_KEY_PATH:}
+    expire-minutes: ${SHOP_PAY_EXPIRE_MINUTES:15}
+    secret-key: ${SHOP_PAYMENT_SECRET_KEY:}
