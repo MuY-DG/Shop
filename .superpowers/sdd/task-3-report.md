@@ -162,3 +162,79 @@ Result:
 
 - `Tests run: 28, Failures: 0, Errors: 0, Skipped: 0`
 - `BUILD SUCCESS`
+
+## Task 3 Review Fixes (2026-07-07, omitted vs explicit-null file ids)
+
+### Review scope
+
+Addressed the backward-compatibility bug where update payloads treated omitted file-id fields the same as explicit JSON `null`.
+
+Required behavior now covered:
+
+1. Omitted `iconFileId`, `mainImageFileId`, gallery `fileId`, and SKU `imageFileId` preserve the existing file id only when the URL snapshot is unchanged.
+2. Explicit JSON `null` clears the stored file id and removes active usages even when the URL snapshot is unchanged.
+3. Legacy gallery string payloads still behave as omitted-fileId input; object payloads can now distinguish `fileId` omitted vs `fileId: null`.
+
+### RED evidence
+
+First regression run used:
+
+```bash
+cd backend/shop-server && ./mvnw -Dtest=AdminProductCategoryControllerTest,AdminProductSpuControllerTest,AppOrderControllerTest,StorageControllerTest test
+```
+
+Observed failures before the fix:
+
+- `AdminProductCategoryControllerTest.explicitNullCategoryUpdateClearsIconFileIdWhenUrlIsUnchanged`
+  - expected `icon_file_id = null`
+  - actual `icon_file_id = 5`
+- `AdminProductSpuControllerTest.explicitNullSpuUpdateClearsMainGalleryAndSkuFileIdsWhenUrlsAreUnchanged`
+  - expected cleared file ids on unchanged URLs
+  - actual `main_image_file_id = 10` and legacy-preserve logic kept the prior ids
+
+### Fix implementation
+
+- Converted these DTOs to presence-aware Jackson classes while keeping constructor-style usage and record-style accessors:
+  - `AdminCategoryRequest`
+  - `AdminSpuUpsertRequest`
+  - `AdminProductImageUpsertRequest`
+  - `AdminSkuUpsertRequest`
+- Added presence accessors:
+  - `iconFileIdSpecified()`
+  - `mainImageFileIdSpecified()`
+  - `fileIdSpecified()`
+  - `imageFileIdSpecified()`
+- `AdminProductImageUpsertRequest` still accepts both legacy strings and object payloads through a delegating `JsonNode` creator:
+  - strings => `fileIdSpecified = false`
+  - objects with omitted `fileId` => `fileIdSpecified = false`
+  - objects with `fileId: null` => `fileIdSpecified = true`
+- Updated `AdminProductService` normalization so existing file ids are preserved only when the request omitted the file-id field and the URL snapshot is unchanged.
+- Added regression coverage proving explicit `null` clears:
+  - category icon file id
+  - SPU main image file id
+  - gallery file id
+  - SKU image file id
+
+### GREEN verification
+
+Focused regression slice:
+
+```bash
+cd backend/shop-server && ./mvnw -Dtest=AdminProductCategoryControllerTest,AdminProductSpuControllerTest,AppOrderControllerTest,StorageControllerTest test
+```
+
+Result:
+
+- `Tests run: 26, Failures: 0, Errors: 0, Skipped: 0`
+- `BUILD SUCCESS`
+
+Original Task 3 slice:
+
+```bash
+cd backend/shop-server && ./mvnw -Dtest=AdminProductCategoryControllerTest,AdminProductSpuControllerTest,AppProductControllerTest,AppOrderControllerTest,OrderSchemaTest,StorageControllerTest test
+```
+
+Result:
+
+- `Tests run: 30, Failures: 0, Errors: 0, Skipped: 0`
+- `BUILD SUCCESS`

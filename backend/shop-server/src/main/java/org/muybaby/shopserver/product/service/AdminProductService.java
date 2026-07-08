@@ -287,7 +287,7 @@ public class AdminProductService {
 
     private AdminCategoryRequest normalizeCategoryRequest(AdminCategoryRequest request, ProductCategory existingCategory) {
         Long iconFileId = request.iconFileId();
-        if (iconFileId == null && sameUrlSnapshot(request.icon(), existingCategory.icon())) {
+        if (!request.iconFileIdSpecified() && iconFileId == null && sameUrlSnapshot(request.icon(), existingCategory.icon())) {
             iconFileId = existingCategory.iconFileId();
         }
         return new AdminCategoryRequest(
@@ -296,7 +296,8 @@ public class AdminProductService {
                 request.icon(),
                 iconFileId,
                 request.sortOrder(),
-                request.status()
+                request.status(),
+                request.iconFileIdSpecified()
         );
     }
 
@@ -307,7 +308,9 @@ public class AdminProductService {
             Map<Long, ProductSku> existingSkusById
     ) {
         Long mainImageFileId = request.mainImageFileId();
-        if (mainImageFileId == null && sameUrlSnapshot(request.mainImage(), existingSpu.mainImage())) {
+        if (!request.mainImageFileIdSpecified()
+                && mainImageFileId == null
+                && sameUrlSnapshot(request.mainImage(), existingSpu.mainImage())) {
             mainImageFileId = existingSpu.mainImageFileId();
         }
 
@@ -325,13 +328,13 @@ public class AdminProductService {
                 : request.images().stream()
                 .map(image -> {
                     Long fileId = image.fileId();
-                    if (fileId == null) {
+                    if (!image.fileIdSpecified() && fileId == null) {
                         Deque<Long> existingFileIds = existingGalleryFileIdsByUrl.get(defaultString(image.url()));
                         if (existingFileIds != null && !existingFileIds.isEmpty()) {
                             fileId = existingFileIds.removeFirst();
                         }
                     }
-                    return new AdminProductImageUpsertRequest(image.url(), fileId);
+                    return new AdminProductImageUpsertRequest(image.url(), fileId, image.fileIdSpecified());
                 })
                 .toList();
 
@@ -351,13 +354,15 @@ public class AdminProductService {
                 request.detailHtml(),
                 request.sortOrder(),
                 normalizedImages,
-                normalizedSkus
+                normalizedSkus,
+                request.mainImageFileIdSpecified()
         );
     }
 
     private AdminSkuUpsertRequest normalizeSkuRequest(AdminSkuUpsertRequest request, ProductSku existingSku) {
         Long imageFileId = request.imageFileId();
-        if (imageFileId == null
+        if (!request.imageFileIdSpecified()
+                && imageFileId == null
                 && existingSku != null
                 && sameUrlSnapshot(request.image(), existingSku.image())) {
             imageFileId = existingSku.imageFileId();
@@ -374,7 +379,8 @@ public class AdminProductService {
                 request.image(),
                 imageFileId,
                 request.status(),
-                request.sortOrder()
+                request.sortOrder(),
+                request.imageFileIdSpecified()
         );
     }
 

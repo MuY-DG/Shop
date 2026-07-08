@@ -127,6 +127,46 @@ class AdminProductCategoryControllerTest {
     }
 
     @Test
+    void explicitNullCategoryUpdateClearsIconFileIdWhenUrlIsUnchanged() throws Exception {
+        String token = loginAndExtractToken();
+        StoredFile iconFile = insertStorageFile("category-icon-clear.png");
+
+        String createResponse = mockMvc.perform(post("/admin/product/categories")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parentId":0,"name":"Clear Category","icon":"%s","iconFileId":%d,"sortOrder":1,"status":"ENABLED"}
+                                """.formatted(iconFile.publicUrl(), iconFile.id())))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long categoryId = objectMapper.readTree(createResponse).path("data").asLong();
+
+        mockMvc.perform(put("/admin/product/categories/" + categoryId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parentId":0,"name":"Clear Category","icon":"%s","iconFileId":null,"sortOrder":1,"status":"ENABLED"}
+                                """.formatted(iconFile.publicUrl())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        Long iconFileId = jdbcClient.sql("""
+                        select icon_file_id
+                        from product_category
+                        where id = :categoryId
+                        """)
+                .param("categoryId", categoryId)
+                .query((rs, rowNum) -> rs.getObject("icon_file_id", Long.class))
+                .optional()
+                .orElse(null);
+        assertThat(iconFileId).isNull();
+        assertThat(activeUsageCount(iconFile.id(), "PRODUCT_CATEGORY_ICON", "PRODUCT_CATEGORY", categoryId)).isZero();
+        assertThat(removedUsageCount(iconFile.id(), "PRODUCT_CATEGORY_ICON", "PRODUCT_CATEGORY", categoryId)).isEqualTo(1);
+    }
+
+    @Test
     void adminCategoryUpdateWithoutFileIdRemovesActiveIconUsage() throws Exception {
         String token = loginAndExtractToken();
         StoredFile iconFile = insertStorageFile("category-icon-remove.png");

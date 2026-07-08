@@ -416,6 +416,146 @@ class AdminProductSpuControllerTest {
         assertThat(activeUsageCount(skuFile.id(), "PRODUCT_SKU_IMAGE", "PRODUCT_SKU", skuId)).isEqualTo(1);
     }
 
+    @Test
+    void explicitNullSpuUpdateClearsMainGalleryAndSkuFileIdsWhenUrlsAreUnchanged() throws Exception {
+        String token = loginAndExtractToken();
+        long categoryId = createCategory(token);
+        StoredFile mainFile = insertStorageFile("spu-main-clear.png");
+        StoredFile galleryFile = insertStorageFile("spu-gallery-clear.png");
+        StoredFile skuFile = insertStorageFile("spu-sku-clear.png");
+
+        String createResponse = mockMvc.perform(post("/admin/product/spus")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Clear Update SPU",
+                                  "subtitle": "Clear subtitle",
+                                  "mainImage": "%s",
+                                  "mainImageFileId": %d,
+                                  "sellingPoints": "A,B",
+                                  "detailHtml": "<p>clear</p>",
+                                  "sortOrder": 1,
+                                  "images": [
+                                    {"url": "%s", "fileId": %d}
+                                  ],
+                                  "skus": [
+                                    {
+                                      "skuCode": "CTRL-SKU-CLEAR-UPDATE",
+                                      "specJson": "{\\"口味\\":\\"牛油\\"}",
+                                      "specText": "牛油",
+                                      "priceCent": 3990,
+                                      "originalPriceCent": 4990,
+                                      "stockAvailable": 5,
+                                      "weightGram": 300,
+                                      "image": "%s",
+                                      "imageFileId": %d,
+                                      "status": "ENABLED",
+                                      "sortOrder": 1
+                                    }
+                                  ]
+                                }
+                                """.formatted(
+                                categoryId,
+                                mainFile.publicUrl(), mainFile.id(),
+                                galleryFile.publicUrl(), galleryFile.id(),
+                                skuFile.publicUrl(), skuFile.id()
+                        )))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long spuId = objectMapper.readTree(createResponse).path("data").asLong();
+
+        String detailResponse = mockMvc.perform(get("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long skuId = objectMapper.readTree(detailResponse).path("data").path("skus").get(0).path("id").asLong();
+
+        mockMvc.perform(put("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Clear Update SPU",
+                                  "subtitle": "Clear subtitle",
+                                  "mainImage": "%s",
+                                  "mainImageFileId": null,
+                                  "sellingPoints": "A,B",
+                                  "detailHtml": "<p>clear</p>",
+                                  "sortOrder": 1,
+                                  "images": [
+                                    {"url": "%s", "fileId": null}
+                                  ],
+                                  "skus": [
+                                    {
+                                      "id": %d,
+                                      "skuCode": "CTRL-SKU-CLEAR-UPDATE",
+                                      "specJson": "{\\"口味\\":\\"牛油\\"}",
+                                      "specText": "牛油",
+                                      "priceCent": 3990,
+                                      "originalPriceCent": 4990,
+                                      "stockAvailable": 5,
+                                      "weightGram": 300,
+                                      "image": "%s",
+                                      "imageFileId": null,
+                                      "status": "ENABLED",
+                                      "sortOrder": 1
+                                    }
+                                  ]
+                                }
+                                """.formatted(
+                                categoryId,
+                                mainFile.publicUrl(),
+                                galleryFile.publicUrl(),
+                                skuId,
+                                skuFile.publicUrl()
+                        )))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        assertThat(jdbcClient.sql("""
+                        select main_image_file_id
+                        from product_spu
+                        where id = :spuId
+                        """)
+                .param("spuId", spuId)
+                .query((rs, rowNum) -> rs.getObject("main_image_file_id", Long.class))
+                .optional()
+                .orElse(null)).isNull();
+        assertThat(jdbcClient.sql("""
+                        select file_id
+                        from product_spu_image
+                        where spu_id = :spuId
+                          and url = :url
+                        """)
+                .param("spuId", spuId)
+                .param("url", galleryFile.publicUrl())
+                .query((rs, rowNum) -> rs.getObject("file_id", Long.class))
+                .optional()
+                .orElse(null)).isNull();
+        assertThat(jdbcClient.sql("""
+                        select image_file_id
+                        from product_sku
+                        where id = :skuId
+                        """)
+                .param("skuId", skuId)
+                .query((rs, rowNum) -> rs.getObject("image_file_id", Long.class))
+                .optional()
+                .orElse(null)).isNull();
+        assertThat(activeUsageCount(mainFile.id(), "PRODUCT_SPU_MAIN", "PRODUCT_SPU", spuId)).isZero();
+        assertThat(removedUsageCount(mainFile.id(), "PRODUCT_SPU_MAIN", "PRODUCT_SPU", spuId)).isEqualTo(1);
+        assertThat(activeUsageCount(galleryFile.id(), "PRODUCT_SPU_GALLERY", "PRODUCT_SPU", spuId)).isZero();
+        assertThat(removedUsageCount(galleryFile.id(), "PRODUCT_SPU_GALLERY", "PRODUCT_SPU", spuId)).isEqualTo(1);
+        assertThat(activeUsageCount(skuFile.id(), "PRODUCT_SKU_IMAGE", "PRODUCT_SKU", skuId)).isZero();
+        assertThat(removedUsageCount(skuFile.id(), "PRODUCT_SKU_IMAGE", "PRODUCT_SKU", skuId)).isEqualTo(1);
+    }
+
     private long createCategory(String token) throws Exception {
         String response = mockMvc.perform(post("/admin/product/categories")
                         .header("Authorization", "Bearer " + token)
