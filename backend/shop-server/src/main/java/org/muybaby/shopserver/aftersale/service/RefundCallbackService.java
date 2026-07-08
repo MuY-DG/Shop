@@ -11,6 +11,8 @@ import org.muybaby.shopserver.payment.provider.WechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatRefundNotification;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -39,6 +41,7 @@ public class RefundCallbackService {
         this.wechatPayProvider = wechatPayProvider;
     }
 
+    @Transactional(noRollbackFor = BusinessException.class)
     public void handleRefundNotification(
             String timestamp,
             String nonce,
@@ -98,6 +101,7 @@ public class RefundCallbackService {
             throw ex;
         } catch (RuntimeException ex) {
             updateCallbackLog(logId, "FAILED", "REFUND_CALLBACK_FAILED", "refund callback failed");
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             throw new BusinessException(ErrorCode.WECHAT_REFUND_FAILED);
         }
     }
@@ -132,7 +136,7 @@ public class RefundCallbackService {
     }
 
     private boolean isDuplicate(RefundCallbackRow refund, WechatRefundNotification notification) {
-        if (RefundOrderStatus.SUCCESS.name().equals(refund.status()) && isSuccessfulRefund(notification)) {
+        if (RefundOrderStatus.SUCCESS.name().equals(refund.status())) {
             return true;
         }
         return RefundOrderStatus.FAILED.name().equals(refund.status()) && !isSuccessfulRefund(notification);

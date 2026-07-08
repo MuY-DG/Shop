@@ -2,17 +2,27 @@ package org.muybaby.shopserver.aftersale;
 
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.payment.PaymentTestSupport;
+import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
+import org.muybaby.shopserver.payment.provider.WechatRefundRequest;
+import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -23,6 +33,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class AdminAfterSaleControllerTest extends PaymentTestSupport {
+
+    @MockitoSpyBean
+    private MockWechatPayProvider refundProvider;
 
     @Test
     void adminListAndDetailReturnPagedEnvelopeAndRequireReadAuthority() throws Exception {
@@ -145,6 +158,113 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .single()).isEqualTo("REFUNDING");
     }
 
+    @Test
+    void adminApproveUsesStableOutRefundNoAndDoesNotCallProviderAgainOnRetry() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-approve-retry-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve-retry");
+        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long paymentOrderId = paymentOrderId(order.orderId());
+        String expectedOutRefundNo = expectedOutRefundNo(afterSaleId, order.orderId(), paymentOrderId);
+        String adminToken = adminLogin();
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":3980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REFUNDING"));
+
+        List<RefundOrderSnapshot> rows = refundOrders(afterSaleId);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).outRefundNo()).isEqualTo(expectedOutRefundNo);
+        ArgumentCaptor<WechatRefundRequest> refundRequestCaptor = ArgumentCaptor.forClass(WechatRefundRequest.class);
+        verify(refundProvider, times(1)).requestRefund(any(), refundRequestCaptor.capture());
+        assertThat(refundRequestCaptor.getValue().outRefundNo()).isEqualTo(expectedOutRefundNo);
+
+        clearInvocations(refundProvider);
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":3980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertThat(refundOrders(afterSaleId))
+                .hasSize(1)
+                .first()
+                .extracting(RefundOrderSnapshot::outRefundNo)
+                .isEqualTo(expectedOutRefundNo);
+        verify(refundProvider, never()).requestRefund(any(), any());
+    }
+
+    @Test
+    void adminApproveProviderFailureKeepsLocalRefundOrderAndSanitizesErrorBeforeRetry() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-approve-provider-failure-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve-provider-failure");
+        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long paymentOrderId = paymentOrderId(order.orderId());
+        String expectedOutRefundNo = expectedOutRefundNo(afterSaleId, order.orderId(), paymentOrderId);
+        String adminToken = adminLogin();
+        String sensitiveProviderMessage = "synthetic-provider-sensitive-detail";
+        doThrow(new RuntimeException(sensitiveProviderMessage))
+                .when(refundProvider)
+                .requestRefund(any(), any());
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":3980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(700001))
+                .andExpect(jsonPath("$.msg").value("WeChat refund failed"));
+
+        List<RefundOrderSnapshot> rows = refundOrders(afterSaleId);
+        assertThat(rows).hasSize(1);
+        RefundOrderSnapshot refundOrder = rows.get(0);
+        assertThat(refundOrder.outRefundNo()).isEqualTo(expectedOutRefundNo).hasSizeLessThanOrEqualTo(64);
+        assertThat(refundOrder.status()).isEqualTo("FAILED");
+        assertThat(refundOrder.lastErrorCode()).isEqualTo("WECHAT_REFUND_FAILED");
+        assertThat(refundOrder.lastErrorMessage())
+                .isEqualTo("WeChat refund failed")
+                .doesNotContain(sensitiveProviderMessage);
+        assertThat(jdbcClient.sql("select status from after_sale_request where id = :afterSaleId")
+                .param("afterSaleId", afterSaleId)
+                .query(String.class)
+                .single()).isEqualTo("REFUND_FAILED");
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("PAID");
+        verify(refundProvider, times(1)).requestRefund(any(), any());
+
+        clearInvocations(refundProvider);
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":3980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertThat(refundOrders(afterSaleId))
+                .hasSize(1)
+                .first()
+                .extracting(RefundOrderSnapshot::outRefundNo)
+                .isEqualTo(expectedOutRefundNo);
+        verify(refundProvider, never()).requestRefund(any(), any());
+    }
+
     private long applyAfterSale(AppLoginSession appUser, SeedPaidOrder order, long requestedAmountCent) throws Exception {
         long evidenceFileId = insertAppEvidenceFile(appUser.userId(), "AFTER_SALE_IMAGE");
         String response = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
@@ -166,5 +286,41 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 {"afterSaleType":"%s","reason":"%s","requestedAmountCent":%d,
                  "description":"%s","evidenceFileIds":[%s]}
                 """.formatted(type, reason, requestedAmountCent, description, evidenceFileIds);
+    }
+
+    private long paymentOrderId(long orderId) {
+        return jdbcClient.sql("select id from payment_order where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .single();
+    }
+
+    private String expectedOutRefundNo(long afterSaleId, long orderId, long paymentOrderId) {
+        return "RF" + afterSaleId + "O" + orderId + "P" + paymentOrderId;
+    }
+
+    private List<RefundOrderSnapshot> refundOrders(long afterSaleId) {
+        return jdbcClient.sql("""
+                        select out_refund_no, status, last_error_code, last_error_message
+                        from refund_order
+                        where after_sale_id = :afterSaleId
+                        order by id
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query((rs, rowNum) -> new RefundOrderSnapshot(
+                        rs.getString("out_refund_no"),
+                        rs.getString("status"),
+                        rs.getString("last_error_code"),
+                        rs.getString("last_error_message")
+                ))
+                .list();
+    }
+
+    private record RefundOrderSnapshot(
+            String outRefundNo,
+            String status,
+            String lastErrorCode,
+            String lastErrorMessage
+    ) {
     }
 }

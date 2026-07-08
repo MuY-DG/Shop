@@ -131,3 +131,89 @@ Result:
 - The requested `WxPayNotifyController` file does not exist in this codebase. The refund notify endpoint was added to the existing `WechatPayCallbackController`.
 - The current tool surface did not expose a subagent reviewer. I performed a local diff review and then ran the required verification commands.
 - Maven test output includes existing project warnings such as SpringDoc default endpoint warnings, generated Spring Security passwords, Mockito dynamic-agent warnings, and an existing shipment upload warning in tests; none blocked the verified test results.
+
+---
+
+## 2026-07-08 Review Fix: Refund Ordering And Callback Hardening
+
+### Status
+
+DONE
+
+### Findings addressed
+
+- Persisted a stable local `refund_order` and deterministic `out_refund_no` before invoking the WeChat refund provider.
+- Removed the timestamp-based refund number generation. The new test-locked format is deterministic for the same after-sale, order, and payment order and remains within the 64-character column limit.
+- Made repeated admin approve attempts conflict without creating a second `refund_order` or calling the provider again.
+- Preserved a local failed refund row when the provider throws, with sanitized `WECHAT_REFUND_FAILED` error code/message and no provider exception text stored.
+- Added a transaction boundary to refund callback handling so the row lock and callback/status mutations run consistently.
+- Treated non-success callbacks received after a successful refund as duplicates, preserving `refund_order=SUCCESS`, `after_sale_request=REFUNDED`, and `shop_order=REFUNDED`.
+
+### RED evidence
+
+Command:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest=AdminAfterSaleControllerTest,RefundCallbackServiceTest test
+```
+
+Result before production changes:
+
+- Failed as expected.
+- Summary observed: `Tests run: 9, Failures: 2, Errors: 1, Skipped: 0`.
+- Failure causes matched the review blockers: timestamp refund number, unhandled provider runtime failure with no durable refund row, and success state downgraded by a later abnormal refund callback.
+
+### GREEN evidence
+
+Command:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest=AdminAfterSaleControllerTest,RefundCallbackServiceTest test
+```
+
+Result:
+
+- Passed.
+- Summary observed: `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0`.
+- Final Maven result: `BUILD SUCCESS`.
+
+Command:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest=AppAfterSaleControllerTest,AdminAfterSaleControllerTest,RefundCallbackServiceTest,StorageControllerTest test
+```
+
+Result:
+
+- Passed.
+- Summary observed: `Tests run: 21, Failures: 0, Errors: 0, Skipped: 0`.
+- Final Maven result: `BUILD SUCCESS`.
+
+Command:
+
+```bash
+cd backend/shop-server
+./mvnw test
+```
+
+Result:
+
+- Passed.
+- Summary observed: `Tests run: 221, Failures: 0, Errors: 0, Skipped: 0`.
+- Final Maven result: `BUILD SUCCESS`.
+
+### Files changed in this fix
+
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/service/AdminAfterSaleService.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/service/RefundCallbackService.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/aftersale/AdminAfterSaleControllerTest.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/aftersale/RefundCallbackServiceTest.java`
+- `.superpowers/sdd/task-6-report.md`
+
+### Concerns
+
+- Provider failure is recorded as a local `FAILED` refund order and the after-sale request moves to `REFUND_FAILED`; this keeps the active after-sale blocker in place while preserving `out_refund_no` for audit/callback matching.
+- Test data remains synthetic. No real WeChat certificate, key, APIv3 key, token, openid, or user-provided sensitive test value was added.

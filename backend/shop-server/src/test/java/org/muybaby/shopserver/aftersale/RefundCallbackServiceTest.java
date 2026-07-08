@@ -73,6 +73,50 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
     }
 
     @Test
+    void failedNotificationAfterSuccessfulRefundIsIgnoredWithoutDowngradingState() throws Exception {
+        ApprovedRefund approved = approveRefund("after-sale-refund-success-then-failed", 6980L, 3980L);
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-success-before-late-failure",
+                        "REFUND.SUCCESS",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-success-before-late-failure",
+                        "SUCCESS",
+                        3980L,
+                        6980L
+                ), "mock-valid-signature")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+        assertRefundSuccessState(approved, "wx-refund-success-before-late-failure");
+
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-late-abnormal",
+                        "REFUND.ABNORMAL",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-late-abnormal",
+                        "ABNORMAL",
+                        3980L,
+                        6980L
+                ), "mock-valid-signature")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        assertRefundSuccessState(approved, "wx-refund-success-before-late-failure");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where callback_type = 'REFUND'
+                          and notify_id = 'notify-refund-late-abnormal'
+                          and out_refund_no = :outRefundNo
+                          and status = 'DUPLICATE'
+                        """)
+                .param("outRefundNo", approved.outRefundNo())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    @Test
     void failedRefundNotificationMarksRefundFailedAndKeepsOrderRefunding() throws Exception {
         ApprovedRefund approved = approveRefund("after-sale-refund-failed", 6980L, 3980L);
 
