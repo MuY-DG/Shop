@@ -19,3 +19,18 @@ export function closeOrder(orderId: number) {
     showSuccessMessage: true
   })
 }
+
+export function shipOrder(orderId: number, data: Api.Order.ShipOrderForm) {
+  return request.post<Api.Order.Shipment>({
+    url: `/admin/orders/${orderId}/ship`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function retryOrderShippingUpload(orderId: number) {
+  return request.post<Api.Order.Shipment>({
+    url: `/admin/orders/${orderId}/shipping/retry-wechat-upload`,
+    showSuccessMessage: true
+  })
+}

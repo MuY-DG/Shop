@@ -23,6 +23,15 @@
           <div class="order-actions">
             <ElButton type="primary" link @click="openDetail(row.orderId)">详情</ElButton>
             <ElButton
+              v-if="row.status === 'PAID'"
+              v-auth="'order:ship'"
+              type="success"
+              link
+              @click="openShipDialog(row.orderId, row.orderNo)"
+            >
+              发货
+            </ElButton>
+            <ElButton
               v-if="row.status === 'CREATED'"
               v-auth="'order:close'"
               type="danger"
@@ -64,11 +73,17 @@
             <ElDescriptionsItem label="订单来源">
               {{ formatSource(currentDetail.source) }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="商户单号">
-              {{ formatText(currentDetail.merchantTradeNo) }}
+            <ElDescriptionsItem label="支付状态">
+              {{ formatPaymentStatus(currentDetail.paymentStatus || currentDetail.status) }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="支付流水号">
+            <ElDescriptionsItem label="商户订单号">
+              {{ formatText(currentDetail.outTradeNo || currentDetail.merchantTradeNo) }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="微信支付单号">
               {{ formatText(currentDetail.paymentTransactionId) }}
+            </ElDescriptionsItem>
+            <ElDescriptionsItem label="支付时间">
+              {{ formatDateTime(currentDetail.paidAt) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem label="优惠券">
               {{ currentDetail.couponName ? currentDetail.couponName : '未使用' }}
@@ -109,6 +124,40 @@
               <div class="label">订单应付</div>
               <div class="value">{{ formatMoney(currentDetail.payableAmountCent) }}</div>
             </div>
+          </div>
+
+          <div class="order-section">
+            <div class="order-section__title">发货信息</div>
+            <ElDescriptions :column="2" border>
+              <ElDescriptionsItem label="快递公司">
+                {{ formatText(currentDetail.shipment?.expressCompany) }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="快递单号">
+                {{ formatText(currentDetail.shipment?.trackingNo) }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="发货备注">
+                {{ formatText(currentDetail.shipment?.shipmentNote) }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="发货时间">
+                {{ formatDateTime(currentDetail.shipment?.shippedAt) }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="微信上传状态">
+                <ElTag
+                  v-if="currentDetail.shipment?.wechatUploadStatus"
+                  size="small"
+                  :type="shippingUploadStatusMap[currentDetail.shipment.wechatUploadStatus]?.type || 'info'"
+                >
+                  {{ formatShippingUploadStatus(currentDetail.shipment.wechatUploadStatus) }}
+                </ElTag>
+                <span v-else>-</span>
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="重试次数">
+                {{ currentDetail.shipment?.retryCount ?? '-' }}
+              </ElDescriptionsItem>
+              <ElDescriptionsItem label="微信错误" :span="2">
+                {{ formatWechatUploadError(currentDetail.shipment) }}
+              </ElDescriptionsItem>
+            </ElDescriptions>
           </div>
 
           <div class="order-items">
@@ -157,6 +206,23 @@
         <div class="order-detail__footer">
           <ElButton @click="drawerVisible = false">关闭</ElButton>
           <ElButton
+            v-if="currentDetail?.status === 'PAID'"
+            v-auth="'order:ship'"
+            type="success"
+            @click="openShipDialog(currentDetail.orderId, currentDetail.orderNo)"
+          >
+            发货
+          </ElButton>
+          <ElButton
+            v-if="currentDetail?.shipment?.wechatUploadStatus === 'FAILED'"
+            v-auth="'order:shipping:retry'"
+            type="warning"
+            :loading="retryingOrderId === currentDetail?.orderId"
+            @click="handleRetryShippingUpload(currentDetail.orderId, currentDetail.orderNo)"
+          >
+            重试微信上传
+          </ElButton>
+          <ElButton
             v-if="currentDetail?.status === 'CREATED'"
             v-auth="'order:close'"
             type="danger"
@@ -168,23 +234,66 @@
         </div>
       </template>
     </ElDrawer>
+
+    <ElDialog v-model="shipDialogVisible" title="订单发货" width="520px" align-center>
+      <ElForm ref="shipFormRef" :model="shipForm" :rules="shipRules" label-width="92px">
+        <ElFormItem label="订单号">
+          <ElInput :model-value="shipTargetOrderNo" disabled />
+        </ElFormItem>
+        <ElFormItem label="快递公司" prop="expressCompany">
+          <ElInput v-model="shipForm.expressCompany" maxlength="80" placeholder="请输入快递公司" />
+        </ElFormItem>
+        <ElFormItem label="快递单号" prop="trackingNo">
+          <ElInput v-model="shipForm.trackingNo" maxlength="80" placeholder="请输入快递单号" />
+        </ElFormItem>
+        <ElFormItem label="发货备注" prop="shipmentNote">
+          <ElInput
+            v-model="shipForm.shipmentNote"
+            type="textarea"
+            maxlength="255"
+            show-word-limit
+            :rows="3"
+            placeholder="可选，给运营记录使用"
+          />
+        </ElFormItem>
+      </ElForm>
+
+      <template #footer>
+        <div class="dialog-footer">
+          <ElButton @click="shipDialogVisible = false">取消</ElButton>
+          <ElButton type="primary" :loading="shipSubmitting" @click="handleShipOrder">确认发货</ElButton>
+        </div>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { computed, h, ref } from 'vue'
+  import { computed, h, reactive, ref } from 'vue'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useTable } from '@/hooks/core/useTable'
-  import { closeOrder, fetchOrderDetail, fetchOrders } from '@/api/order'
-  import { ElImage, ElMessageBox, ElTag } from 'element-plus'
+  import { closeOrder, fetchOrderDetail, fetchOrders, retryOrderShippingUpload, shipOrder } from '@/api/order'
+  import { ElImage, ElMessageBox, ElTag, type FormInstance, type FormRules } from 'element-plus'
 
   defineOptions({ name: 'OrderList' })
 
   const drawerVisible = ref(false)
   const drawerLoading = ref(false)
   const closingOrderId = ref<number | null>(null)
+  const retryingOrderId = ref<number | null>(null)
   const currentDetail = ref<Api.Order.OrderDetail | null>(null)
   const detailRequestSeq = ref(0)
+  const shipDialogVisible = ref(false)
+  const shipSubmitting = ref(false)
+  const shipTargetOrderId = ref<number | null>(null)
+  const shipTargetOrderNo = ref('')
+  const shipFormRef = ref<FormInstance>()
+
+  const shipForm = reactive<Api.Order.ShipOrderForm>({
+    expressCompany: '',
+    trackingNo: '',
+    shipmentNote: ''
+  })
 
   const searchForm = ref<{
     orderNo?: string
@@ -199,9 +308,24 @@
     { type: 'warning' | 'success' | 'info' | 'danger'; text: string }
   > = {
     CREATED: { type: 'warning', text: '待支付' },
+    PAYING: { type: 'warning', text: '支付中' },
     PAID: { type: 'success', text: '已支付' },
+    SHIPPED: { type: 'success', text: '已发货' },
+    COMPLETED: { type: 'success', text: '已完成' },
     CLOSED: { type: 'info', text: '已关闭' },
+    REFUNDING: { type: 'warning', text: '退款中' },
     REFUNDED: { type: 'danger', text: '已退款' }
+  }
+
+  const shippingUploadStatusMap: Record<string, { type: 'success' | 'info' | 'danger'; text: string }> = {
+    SKIPPED: { type: 'info', text: '已跳过' },
+    UPLOADED: { type: 'success', text: '已上传' },
+    FAILED: { type: 'danger', text: '上传失败' }
+  }
+
+  const shipRules: FormRules<Api.Order.ShipOrderForm> = {
+    expressCompany: [{ required: true, message: '请输入快递公司', trigger: 'blur' }],
+    trackingNo: [{ required: true, message: '请输入快递单号', trigger: 'blur' }]
   }
 
   const searchItems = computed<SearchFormItem[]>(() => [
@@ -223,8 +347,12 @@
         placeholder: '请选择状态',
         options: [
           { label: '待支付', value: 'CREATED' },
+          { label: '支付中', value: 'PAYING' },
           { label: '已支付', value: 'PAID' },
+          { label: '已发货', value: 'SHIPPED' },
+          { label: '已完成', value: 'COMPLETED' },
           { label: '已关闭', value: 'CLOSED' },
+          { label: '退款中', value: 'REFUNDING' },
           { label: '已退款', value: 'REFUNDED' }
         ]
       }
@@ -239,6 +367,24 @@
   }
 
   const formatText = (value: string | null | undefined) => value || '-'
+
+  const formatPaymentStatus = (value: string | null | undefined) => {
+    if (!value) return '-'
+    return statusMap[value as Api.Order.OrderStatus]?.text || value
+  }
+
+  const formatShippingUploadStatus = (value: string | null | undefined) => {
+    if (!value) return '-'
+    return shippingUploadStatusMap[value]?.text || value
+  }
+
+  const formatWechatUploadError = (shipment?: Api.Order.Shipment | null) => {
+    if (!shipment) return '-'
+    const code = shipment.wechatErrorCode || ''
+    const message = shipment.wechatErrorMessage || ''
+    if (!code && !message) return '-'
+    return [code, message].filter(Boolean).join(' / ')
+  }
 
   const formatSource = (value: string | null | undefined) => {
     if (!value) return '-'
@@ -293,7 +439,7 @@
           width: 110,
           formatter: (row) => {
             const config = statusMap[row.status]
-            return h(ElTag, { type: config.type }, () => config.text)
+            return h(ElTag, { type: config?.type || 'info' }, () => config?.text || row.status)
           }
         },
         {
@@ -370,6 +516,61 @@
 
   const reloadCurrentDetail = async (orderId: number) => {
     await loadOrderDetail(orderId)
+  }
+
+  const resetShipForm = () => {
+    shipForm.expressCompany = ''
+    shipForm.trackingNo = ''
+    shipForm.shipmentNote = ''
+    shipFormRef.value?.clearValidate()
+  }
+
+  const openShipDialog = (orderId: number, orderNo: string) => {
+    shipTargetOrderId.value = orderId
+    shipTargetOrderNo.value = orderNo
+    resetShipForm()
+    shipDialogVisible.value = true
+  }
+
+  const handleShipOrder = async () => {
+    if (!shipTargetOrderId.value) return
+    await shipFormRef.value?.validate()
+
+    shipSubmitting.value = true
+    const orderId = shipTargetOrderId.value
+    try {
+      await shipOrder(orderId, {
+        expressCompany: shipForm.expressCompany.trim(),
+        trackingNo: shipForm.trackingNo.trim(),
+        shipmentNote: shipForm.shipmentNote?.trim()
+      })
+      shipDialogVisible.value = false
+      await refreshData()
+      if (drawerVisible.value && currentDetail.value?.orderId === orderId) {
+        await reloadCurrentDetail(orderId)
+      }
+    } finally {
+      shipSubmitting.value = false
+    }
+  }
+
+  const handleRetryShippingUpload = async (orderId: number, orderNo: string) => {
+    await ElMessageBox.confirm(`确定重试订单 ${orderNo} 的微信发货上传吗？`, '重试确认', {
+      type: 'warning',
+      confirmButtonText: '确定',
+      cancelButtonText: '取消'
+    })
+
+    retryingOrderId.value = orderId
+    try {
+      await retryOrderShippingUpload(orderId)
+      await refreshData()
+      if (drawerVisible.value && currentDetail.value?.orderId === orderId) {
+        await reloadCurrentDetail(orderId)
+      }
+    } finally {
+      retryingOrderId.value = null
+    }
   }
 
   const handleCloseOrder = async (orderId: number, orderNo: string) => {
@@ -479,6 +680,13 @@
     gap: 12px;
   }
 
+  .order-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .order-section__title,
   .order-items__title {
     font-size: 14px;
     line-height: 22px;
@@ -501,6 +709,13 @@
   }
 
   .order-detail__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .dialog-footer {
     display: flex;
     justify-content: flex-end;
     gap: 12px;

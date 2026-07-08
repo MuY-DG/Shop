@@ -286,7 +286,7 @@ declare namespace Api {
       | 'HOME_BANNER'
       | 'ORDER_ITEM_SNAPSHOT'
       | 'AFTER_SALE_EVIDENCE'
-      | 'PAYMENT_CONFIGURATION'
+      | 'PAYMENT_CONFIG_CERT'
 
     type UsageOwnerType =
       | 'PRODUCT_CATEGORY'
@@ -478,8 +478,18 @@ declare namespace Api {
   }
 
   namespace Order {
-    type OrderStatus = 'CREATED' | 'PAID' | 'CLOSED' | 'REFUNDED'
+    type OrderStatus =
+      | 'CREATED'
+      | 'PAYING'
+      | 'PAID'
+      | 'SHIPPED'
+      | 'COMPLETED'
+      | 'CLOSED'
+      | 'REFUNDING'
+      | 'REFUNDED'
     type OrderSource = 'MINI_PROGRAM'
+    type ShipmentStatus = 'SHIPPED'
+    type WechatShippingUploadStatus = 'SKIPPED' | 'UPLOADED' | 'FAILED'
 
     type OrderList = Api.Common.PaginatedResponse<OrderListItem>
 
@@ -540,10 +550,141 @@ declare namespace Api {
       receiverAddress: string | null
       paymentTransactionId: string | null
       merchantTradeNo: string | null
+      outTradeNo?: string | null
+      paymentStatus?: string | null
+      paidAt?: string | null
+      shipment: Shipment | null
       closeReason: string | null
       closedAt: string | null
       createdAt: string
       items: OrderItem[]
+    }
+
+    interface Shipment {
+      shipmentId: number
+      orderId: number
+      expressCompany: string
+      trackingNo: string
+      shipmentNote?: string | null
+      status: ShipmentStatus | string
+      wechatUploadStatus: WechatShippingUploadStatus | string
+      wechatErrorCode?: string | null
+      wechatErrorMessage?: string | null
+      retryCount: number
+      shippedAt?: string | null
+      wechatUploadedAt?: string | null
+    }
+
+    interface ShipOrderForm {
+      expressCompany: string
+      trackingNo: string
+      shipmentNote?: string
+    }
+  }
+
+  namespace Payment {
+    type ConfigSource = 'ENV' | 'DB'
+    type VerifyMode = 'PUBLIC_KEY' | 'CERTIFICATE'
+
+    type ConfigList = Api.Common.PaginatedResponse<Config>
+
+    interface Config {
+      id: number
+      source: ConfigSource | string
+      configName: string
+      appIdMasked: string
+      mchIdMasked: string
+      merchantSerialNoMasked: string
+      apiV3KeyConfigured: boolean
+      privateKeyFileId?: number | null
+      merchantCertificateFileId?: number | null
+      verifyMode: VerifyMode | string
+      wechatPublicKeyIdMasked?: string | null
+      wechatPublicKeyFileId?: number | null
+      notifyUrl: string
+      refundNotifyUrl: string
+      enabled: boolean
+      status: string
+      createdAt?: string | null
+      updatedAt?: string | null
+    }
+
+    type EffectiveConfig = Config
+
+    interface ConfigSearchParams extends Partial<Api.Common.CommonSearchParams> {}
+
+    interface ConfigForm {
+      configName: string
+      appId: string
+      mchId: string
+      merchantSerialNo: string
+      apiV3Key?: string
+      privateKeyFileId: number | null
+      merchantCertificateFileId?: number | null
+      verifyMode: VerifyMode
+      wechatPublicKeyId?: string
+      wechatPublicKeyFileId?: number | null
+      notifyUrl: string
+      refundNotifyUrl: string
+    }
+  }
+
+  namespace AfterSale {
+    type AfterSaleType = 'REFUND_ONLY' | 'RETURN_REFUND'
+    type AfterSaleStatus =
+      | 'REQUESTED'
+      | 'APPROVED'
+      | 'REJECTED'
+      | 'REFUNDING'
+      | 'REFUNDED'
+      | 'REFUND_FAILED'
+    type RefundOrderStatus = 'PROCESSING' | 'SUCCESS' | 'FAILED'
+
+    type List = Api.Common.PaginatedResponse<Item>
+
+    interface SearchParams extends Partial<Api.Common.CommonSearchParams> {
+      status?: AfterSaleStatus
+      orderNo?: string
+    }
+
+    interface Item {
+      id: number
+      orderId: number
+      orderNo: string
+      userId: number
+      afterSaleType: AfterSaleType | string
+      status: AfterSaleStatus | string
+      reason: string
+      description?: string | null
+      requestedAmountCent: number
+      approvedAmountCent?: number | null
+      auditNote?: string | null
+      reviewedBy?: number | null
+      reviewedAt?: string | null
+      createdAt: string
+      evidenceFileIds: number[]
+      refundOrder?: RefundOrder | null
+    }
+
+    interface RefundOrder {
+      id: number
+      afterSaleId: number
+      orderId: number
+      paymentOrderId: number
+      outRefundNo: string
+      refundId?: string | null
+      refundAmountCent: number
+      status: RefundOrderStatus | string
+      callbackStatus?: string | null
+      lastErrorCode?: string | null
+      lastErrorMessage?: string | null
+      requestedAt?: string | null
+      successAt?: string | null
+    }
+
+    interface AuditPayload {
+      approvedAmountCent?: number | null
+      auditNote: string
     }
   }
 }
