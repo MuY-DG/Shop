@@ -7,6 +7,7 @@ public record WechatPayNotification(
         String eventType,
         String outTradeNo,
         String transactionId,
+        String tradeState,
         long amountCent,
         String currency,
         LocalDateTime paidAt,

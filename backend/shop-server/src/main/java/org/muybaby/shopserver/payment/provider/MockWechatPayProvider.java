@@ -79,6 +79,7 @@ public class MockWechatPayProvider implements WechatPayProvider {
                     root.path("event_type").asText(),
                     outTradeNo,
                     transactionId,
+                    resource.path("trade_state").asText(),
                     amountCent,
                     amount.path("currency").asText("CNY"),
                     parseWechatTime(resource.path("success_time").asText()),

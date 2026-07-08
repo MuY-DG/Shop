@@ -75,6 +75,9 @@ public class PaymentCallbackService {
                 ""
         );
         try {
+            if (!isSuccessfulPayNotification(notification)) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
             AppPaymentService.PaidFinalizationResult result = appPaymentService.finalizePaid(
                     notification.outTradeNo(),
                     notification.transactionId(),
@@ -166,5 +169,10 @@ public class PaymentCallbackService {
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private boolean isSuccessfulPayNotification(WechatPayNotification notification) {
+        return "TRANSACTION.SUCCESS".equals(notification.eventType())
+                && "SUCCESS".equals(notification.tradeState());
     }
 }

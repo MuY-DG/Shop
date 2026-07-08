@@ -183,8 +183,10 @@ public class AppPaymentService {
         PaymentOrderRow payment = findPaymentForUpdate(outTradeNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         if (OrderStatus.PAID.name().equals(payment.status())) {
+            validatePaidDuplicate(payment, transactionId, amountCent);
             OrderPaymentRow order = findOrderForUpdate(payment.orderId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+            validatePaidDuplicateOrder(order, outTradeNo, transactionId, amountCent);
             return new PaidFinalizationResult(order.orderId(), order.status(), payment.transactionId(), true);
         }
         if (!OrderStatus.PAYING.name().equals(payment.status()) || payment.amountCent() != amountCent) {
@@ -286,9 +288,17 @@ public class AppPaymentService {
 
     private WechatPaymentParamsResponse buildPaymentParams(ResolvedPaymentConfig config, String outTradeNo, String prepayId) {
         String packageValue = "prepay_id=" + prepayId;
-        if (!Boolean.TRUE.equals(paymentProperties.mockEnabled())
-                && StringUtils.hasText(config.privateKeyPem())
-                && StringUtils.hasText(config.wechatPublicKeyPem())) {
+        if (Boolean.TRUE.equals(paymentProperties.mockEnabled())) {
+            return new WechatPaymentParamsResponse(
+                    "1783500000",
+                    "mock-nonce-" + outTradeNo,
+                    packageValue,
+                    "RSA",
+                    "mock-pay-sign-" + outTradeNo
+            );
+        }
+        requireSigningMaterial(config);
+        try {
             String timeStamp = String.valueOf(System.currentTimeMillis() / 1000);
             String nonceStr = UUID.randomUUID().toString().replace("-", "");
             String message = config.appId() + "\n" + timeStamp + "\n" + nonceStr + "\n" + packageValue + "\n";
@@ -304,14 +314,9 @@ public class AppPaymentService {
                     .sign(message)
                     .getSign();
             return new WechatPaymentParamsResponse(timeStamp, nonceStr, packageValue, "RSA", paySign);
+        } catch (RuntimeException ex) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        return new WechatPaymentParamsResponse(
-                "1783500000",
-                "mock-nonce-" + outTradeNo,
-                packageValue,
-                "RSA",
-                "mock-pay-sign-" + outTradeNo
-        );
     }
 
     private WechatPaymentParamsResponse toResponse(WechatJsapiPrepayResult prepay) {
@@ -338,8 +343,10 @@ public class AppPaymentService {
                                user_id,
                                status,
                                payable_amount_cent,
+                               paid_amount_cent,
                                user_coupon_id,
-                               payment_transaction_id
+                               payment_transaction_id,
+                               merchant_trade_no
                         from shop_order
                         where id = :orderId
                           and user_id = :userId
@@ -358,8 +365,10 @@ public class AppPaymentService {
                                user_id,
                                status,
                                payable_amount_cent,
+                               paid_amount_cent,
                                user_coupon_id,
-                               payment_transaction_id
+                               payment_transaction_id,
+                               merchant_trade_no
                         from shop_order
                         where id = :orderId
                         for update
@@ -460,8 +469,10 @@ public class AppPaymentService {
                 rs.getLong("user_id"),
                 rs.getString("status"),
                 rs.getLong("payable_amount_cent"),
+                rs.getLong("paid_amount_cent"),
                 rs.getObject("user_coupon_id", Long.class),
-                rs.getString("payment_transaction_id")
+                rs.getString("payment_transaction_id"),
+                rs.getString("merchant_trade_no")
         );
     }
 
@@ -491,14 +502,46 @@ public class AppPaymentService {
         return value == null ? "" : value;
     }
 
+    private void requireSigningMaterial(ResolvedPaymentConfig config) {
+        if (!StringUtils.hasText(config.appId())
+                || !StringUtils.hasText(config.mchId())
+                || !StringUtils.hasText(config.merchantSerialNo())
+                || !StringUtils.hasText(config.apiV3Key())
+                || !StringUtils.hasText(config.privateKeyPem())
+                || !StringUtils.hasText(config.wechatPublicKeyId())
+                || !StringUtils.hasText(config.wechatPublicKeyPem())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+    }
+
+    private void validatePaidDuplicate(PaymentOrderRow payment, String transactionId, long amountCent) {
+        if (payment.amountCent() != amountCent
+                || !StringUtils.hasText(payment.transactionId())
+                || !payment.transactionId().equals(transactionId)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
+    private void validatePaidDuplicateOrder(OrderPaymentRow order, String outTradeNo, String transactionId, long amountCent) {
+        if (!OrderStatus.PAID.name().equals(order.status())
+                || order.paidAmountCent() != amountCent
+                || !outTradeNo.equals(order.merchantTradeNo())
+                || !StringUtils.hasText(order.paymentTransactionId())
+                || !order.paymentTransactionId().equals(transactionId)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
     private record OrderPaymentRow(
             Long orderId,
             String orderNo,
             Long userId,
             String status,
             long payableAmountCent,
+            long paidAmountCent,
             Long userCouponId,
-            String paymentTransactionId
+            String paymentTransactionId,
+            String merchantTradeNo
     ) {
     }
 

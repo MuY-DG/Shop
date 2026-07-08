@@ -82,6 +82,38 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
     }
 
     @Test
+    void nonSuccessPayNotificationFailsWithoutChangingPaymentState() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-non-success-callback-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+
+        postPayNotify(payNotifyBody(
+                        "notify-payment-closed",
+                        "TRANSACTION.CLOSED",
+                        outTradeNo,
+                        "wx-transaction-closed",
+                        6980L,
+                        "CLOSED"
+                ), "mock-valid-signature")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertPayingState(order, outTradeNo);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where out_trade_no = :outTradeNo
+                          and transaction_id = 'wx-transaction-closed'
+                          and status = 'FAILED'
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    @Test
     void notificationAmountMismatchFailsWithoutChangingPaymentState() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-amount-mismatch-user");
@@ -104,6 +136,52 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                 .single()).isEqualTo("PAYING");
     }
 
+    @Test
+    void duplicateNotificationStillRejectsMismatchedAmountOrTransaction() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-duplicate-mismatch-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+        String successBody = payNotifyBody("notify-payment-dup-success", outTradeNo, "wx-transaction-duplicate", 6980L);
+
+        postPayNotify(successBody, "mock-valid-signature")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+        postPayNotify(successBody, "mock-valid-signature")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        postPayNotify(payNotifyBody("notify-payment-dup-amount", outTradeNo, "wx-transaction-duplicate", 1L),
+                        "mock-valid-signature")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+        postPayNotify(payNotifyBody("notify-payment-dup-transaction", outTradeNo, "wx-transaction-different", 6980L),
+                        "mock-valid-signature")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertPaidState(order, outTradeNo, "wx-transaction-duplicate");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where out_trade_no = :outTradeNo
+                          and status = 'DUPLICATE'
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where out_trade_no = :outTradeNo
+                          and status = 'FAILED'
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+    }
+
     private org.springframework.test.web.servlet.ResultActions postPayNotify(String body, String signature) throws Exception {
         return mockMvc.perform(post("/wxpay/pay/notify")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -115,18 +193,30 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
     }
 
     private String payNotifyBody(String notifyId, String outTradeNo, String transactionId, long amountCent) {
+        return payNotifyBody(notifyId, "TRANSACTION.SUCCESS", outTradeNo, transactionId, amountCent, "SUCCESS");
+    }
+
+    private String payNotifyBody(
+            String notifyId,
+            String eventType,
+            String outTradeNo,
+            String transactionId,
+            long amountCent,
+            String tradeState
+    ) {
         return """
                 {
                   "id":"%s",
-                  "event_type":"TRANSACTION.SUCCESS",
+                  "event_type":"%s",
                   "resource":{
                     "out_trade_no":"%s",
                     "transaction_id":"%s",
+                    "trade_state":"%s",
                     "success_time":"2026-07-08T12:00:00+08:00",
                     "amount":{"total":%d,"payer_total":%d,"currency":"CNY"}
                   }
                 }
-                """.formatted(notifyId, outTradeNo, transactionId, amountCent, amountCent);
+                """.formatted(notifyId, eventType, outTradeNo, transactionId, tradeState, amountCent, amountCent);
     }
 
     private void assertPaidState(SeedOrder order, String outTradeNo, String transactionId) {
@@ -173,5 +263,32 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                 .param("orderId", order.orderId())
                 .query(Integer.class)
                 .single()).isEqualTo(1);
+    }
+
+    private void assertPayingState(SeedOrder order, String outTradeNo) {
+        assertThat(jdbcClient.sql("select status from payment_order where out_trade_no = :outTradeNo")
+                .param("outTradeNo", outTradeNo)
+                .query(String.class)
+                .single()).isEqualTo("PAYING");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from shop_order
+                        where id = :orderId
+                          and status = 'PAYING'
+                          and paid_amount_cent = 0
+                          and paid_at is null
+                          and payment_transaction_id = ''
+                        """)
+                .param("orderId", order.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select status from stock_lock where order_id = :orderId")
+                .param("orderId", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("LOCKED");
+        assertThat(jdbcClient.sql("select status from user_coupon where id = :userCouponId")
+                .param("userCouponId", order.userCouponId())
+                .query(String.class)
+                .single()).isEqualTo("LOCKED");
     }
 }

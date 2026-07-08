@@ -90,18 +90,22 @@ abstract class PaymentTestSupport {
     }
 
     protected void seedEnabledPaymentConfig() {
-        long privateKeyFileId = System.nanoTime();
-        long publicKeyFileId = privateKeyFileId + 1;
-        insertPrivatePaymentFile(privateKeyFileId, "merchant-private.pem", """
+        seedEnabledPaymentConfig("""
                 -----BEGIN PRIVATE KEY-----
                 test-private-key-material
                 -----END PRIVATE KEY-----
-                """);
-        insertPrivatePaymentFile(publicKeyFileId, "wechat-public.pem", """
+                """, """
                 -----BEGIN PUBLIC KEY-----
                 test-public-key-material
                 -----END PUBLIC KEY-----
                 """);
+    }
+
+    protected void seedEnabledPaymentConfig(String privateKeyPem, String publicKeyPem) {
+        long privateKeyFileId = System.nanoTime();
+        long publicKeyFileId = privateKeyFileId + 1;
+        insertPrivatePaymentFile(privateKeyFileId, "merchant-private.pem", privateKeyPem);
+        insertPrivatePaymentFile(publicKeyFileId, "wechat-public.pem", publicKeyPem);
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,

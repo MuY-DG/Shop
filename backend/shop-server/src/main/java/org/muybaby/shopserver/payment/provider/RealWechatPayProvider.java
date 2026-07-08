@@ -132,6 +132,7 @@ public class RealWechatPayProvider implements WechatPayProvider {
                     root.path("event_type").asText(),
                     transaction.getOutTradeNo(),
                     nullToEmpty(transaction.getTransactionId()),
+                    transaction.getTradeState() == null ? "" : transaction.getTradeState().name(),
                     amountCent,
                     transaction.getAmount() == null ? "CNY" : nullToEmpty(transaction.getAmount().getCurrency()),
                     paidAt,

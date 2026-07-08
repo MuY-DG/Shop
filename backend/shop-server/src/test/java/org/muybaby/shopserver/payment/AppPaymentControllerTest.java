@@ -2,11 +2,16 @@ package org.muybaby.shopserver.payment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.payment.config.PaymentConfigSource;
+import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
+import org.muybaby.shopserver.payment.service.AppPaymentService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -18,6 +23,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class AppPaymentControllerTest extends PaymentTestSupport {
+
+    @Autowired
+    private AppPaymentService appPaymentService;
+
+    @Autowired
+    private PaymentProperties paymentProperties;
 
     @Test
     void paymentEndpointsRequireAppToken() throws Exception {
@@ -92,6 +103,30 @@ class AppPaymentControllerTest extends PaymentTestSupport {
                 .param("orderId", order.orderId())
                 .query(Integer.class)
                 .single()).isEqualTo(1);
+    }
+
+    @Test
+    void nonMockRepeatPayWithMissingSigningMaterialFailsClosedWithoutMockParams() throws Exception {
+        seedEnabledPaymentConfig("", "");
+        AppLoginSession session = appLogin("payment-repeat-non-mock-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        ReflectionTestUtils.setField(appPaymentService, "paymentProperties", nonMockPaymentProperties());
+
+        mockMvc.perform(post("/app/orders/{orderId}/pay", order.orderId())
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        String outTradeNo = activeOutTradeNo(order.orderId());
+        assertThat(jdbcClient.sql("select count(*) from payment_order where order_id = :orderId")
+                .param("orderId", order.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select status from payment_order where out_trade_no = :outTradeNo")
+                .param("outTradeNo", outTradeNo)
+                .query(String.class)
+                .single()).isEqualTo("PAYING");
     }
 
     @Test
@@ -192,5 +227,25 @@ class AppPaymentControllerTest extends PaymentTestSupport {
                 .param("userCouponId", order.userCouponId())
                 .query(String.class)
                 .single()).isEqualTo("CLAIMED");
+    }
+
+    private PaymentProperties nonMockPaymentProperties() {
+        return new PaymentProperties(
+                paymentProperties.enabled(),
+                false,
+                PaymentConfigSource.DB,
+                paymentProperties.appId(),
+                paymentProperties.mchId(),
+                paymentProperties.merchantSerialNo(),
+                paymentProperties.privateKeyPath(),
+                paymentProperties.apiV3Key(),
+                paymentProperties.notifyUrl(),
+                paymentProperties.refundNotifyUrl(),
+                PaymentVerifyMode.PUBLIC_KEY,
+                paymentProperties.publicKeyId(),
+                paymentProperties.publicKeyPath(),
+                paymentProperties.expireMinutes(),
+                paymentProperties.secretKey()
+        );
     }
 }
