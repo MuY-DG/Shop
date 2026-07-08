@@ -933,6 +933,141 @@ UI smoke checklist after starting the admin dev server and opening the mini prog
 - Mini program app-token upload succeeds for AFTER_SALE_IMAGE/REFUND_EVIDENCE helper use.
 - Illegal extension, oversized file, empty file, and path traversal filename are rejected.
 
+## Mock Payment Automated Smoke Checks
+
+This section is automated or test-profile smoke only. It uses the backend mock WeChat Pay provider from `application-test.yaml`; it must not be reported as a real WeChat request.
+
+Recommended backend checks:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest='AppPaymentControllerTest,PaymentCallbackServiceTest,PaymentTimeoutCloseServiceTest,PaymentSchemaTest,PaymentConfigResolverTest,AdminPaymentConfigControllerTest' test
+```
+
+Optional local endpoint smoke can reuse the existing Order Smoke Checks setup: start the backend with the `test` profile, create product/cart/coupon/order data through the real local backend APIs, then call:
+
+```bash
+curl -s -X POST "http://localhost:8080/app/orders/${ORDER_ID}/pay" \
+  -H "Authorization: Bearer ${APP_TOKEN}"
+```
+
+Assert the response contains all WeChat JSAPI payment fields:
+
+```text
+timeStamp
+nonceStr
+package
+signType
+paySign
+```
+
+The current local runtime does not expose a public test-only endpoint that marks a mock provider payment as paid. Use a test-only mock callback helper or backend test endpoint only if one is implemented under the `test` profile. Otherwise, treat the backend tests above as the automated mock payment smoke for callback and sync behavior.
+
+Automated verification points:
+
+- `POST /app/orders/{orderId}/pay` creates or reuses one active mock payment and returns JSAPI payment params.
+- Mock callback or mock sync finalizes a paid order as `PAID`.
+- Paid finalization changes `stock_lock.status` to `CONFIRMED`.
+- Paid finalization changes a locked coupon to `USED`.
+- Timeout close changes the unpaid payment/order to `CLOSED`.
+- Timeout close releases stock locks and returns the coupon to `CLAIMED`.
+
+## Real WeChat Payment Local Smoke Checklist
+
+This is manual real smoke, not automated. Do not mark it passed until a real mini program payment completes against a local backend exposed through HTTPS.
+
+1. Fill `backend/shop-server/.env.local` with local-only placeholders replaced by real local credentials:
+
+```properties
+WECHAT_PAY_ENABLED=true
+WECHAT_PAY_CONFIG_SOURCE=ENV
+WECHAT_PAY_APP_ID=<wechat-mini-program-app-id>
+WECHAT_PAY_MCH_ID=<wechat-pay-merchant-id>
+WECHAT_PAY_MERCHANT_SERIAL_NO=<merchant-certificate-serial-no>
+WECHAT_PAY_PRIVATE_KEY_PATH=<absolute-path-to-local-merchant-private-key.pem>
+WECHAT_PAY_API_V3_KEY=<wechat-pay-api-v3-key>
+WECHAT_PAY_NOTIFY_URL=https://<public-tunnel-domain>/wxpay/pay/notify
+WECHAT_PAY_REFUND_NOTIFY_URL=https://<public-tunnel-domain>/wxpay/refund/notify
+WECHAT_PAY_VERIFY_MODE=PUBLIC_KEY
+WECHAT_PAY_PUBLIC_KEY_ID=<wechat-pay-public-key-id>
+WECHAT_PAY_PUBLIC_KEY_PATH=<absolute-path-to-local-wechat-pay-public-key.pem>
+SHOP_PAY_EXPIRE_MINUTES=15
+SHOP_PAYMENT_SECRET_KEY=<local-32-byte-payment-secret-key>
+SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
+```
+
+2. Start the backend with the `dev` profile and expose it with an HTTPS tunnel.
+3. Set payment callback URLs to the public tunnel domain:
+
+```text
+https://<public-tunnel-domain>/wxpay/pay/notify
+https://<public-tunnel-domain>/wxpay/refund/notify
+```
+
+4. If using `WECHAT_PAY_CONFIG_SOURCE=DB`, upload payment private files through admin storage and configure `/admin/pay/configs` with those private file IDs. Confirm `/admin/pay/configs/effective` returns masked values and the same callback URLs.
+5. In a real mini program session, create an order and tap payment.
+6. Complete WeChat payment with the real payer account.
+7. Verify the backend receives `POST /wxpay/pay/notify`, the callback log reaches `SUCCESS`, and the order becomes `PAID`.
+8. If the callback is delayed, call `POST /app/orders/{orderId}/payment/sync` from the mini program/backend client and verify final state still comes from the backend payment provider query.
+9. Verify `payment_transaction_id` is present before using this order for real WeChat shipping upload.
+
+Do not commit `.env.local`, certificate/key files, upload directories, or screenshots/logs containing credential values, certificate paths, public key IDs, merchant identifiers, AppIDs, callback domains, or payment responses with sensitive data.
+
+## Shipment Smoke Checklist
+
+Automated shipment checks use backend tests and mock or mocked HTTP providers; they do not prove a real WeChat shipping upload:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest='AdminShipmentControllerTest,ShipmentSchemaTest,WechatShippingProviderTest' test
+```
+
+Local skipped path:
+
+- Set `SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false`.
+- Start the backend and create or reuse a paid order.
+- Admin ships the order through `POST /admin/orders/{orderId}/ship` with `expressCompany`, `trackingNo`, and optional `shipmentNote`.
+- Verify order status is `SHIPPED`.
+- Verify shipment `wechatUploadStatus` is `SKIPPED` in admin and mini program order detail.
+- Confirm backend logs do not contain WeChat access tokens.
+
+Real upload enabled path:
+
+- Set `SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=true`.
+- Use a real paid order with `payment_transaction_id`, payer `openid`, and real WeChat mini program credentials so the backend can obtain an access token internally.
+- Admin ships the order through `POST /admin/orders/{orderId}/ship`.
+- Verify shipment `wechatUploadStatus` becomes `UPLOADED`, or `FAILED` with a safe `wechatErrorCode` and `wechatErrorMessage`.
+- If upload fails, retry through `POST /admin/orders/{orderId}/shipping/retry-wechat-upload` and verify `retryCount` increments without creating a duplicate shipment row.
+- Confirm logs include only safe error summaries and never print access tokens.
+
+## Refund Smoke Checklist
+
+Automated refund checks use the backend mock provider and mock notifications; they do not prove a real WeChat refund:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest='AppAfterSaleControllerTest,AdminAfterSaleControllerTest,RefundCallbackServiceTest,AfterSaleSchemaTest' test
+```
+
+Mini program and admin smoke:
+
+- Mini program uploads evidence through `/app/files/upload` with purpose `REFUND_EVIDENCE`.
+- Mini program applies refund-only through `POST /app/orders/{orderId}/after-sales` with `afterSaleType=REFUND_ONLY`, `requestedAmountCent`, `reason`, and `evidenceFileIds`.
+- Mini program applies return-refund through the same endpoint with `afterSaleType=RETURN_REFUND` against a shipped order.
+- Admin rejects one request through `POST /admin/after-sales/{afterSaleId}/reject` and verifies status `REJECTED` while the order remains paid or shipped.
+- Admin approves one request through `POST /admin/after-sales/{afterSaleId}/approve` with `approvedAmountCent`; with the mock provider, verify the after-sale moves to `REFUNDING` and `refund_order.status` starts as `PROCESSING`.
+- Backend mock refund callback tests verify successful callback transitions to after-sale `REFUNDED`, refund order `SUCCESS`, and order `REFUNDED`.
+
+Real local WeChat refund smoke:
+
+- Start from a real paid or shipped order created through the real payment smoke.
+- Use HTTPS tunnel callback URL `https://<public-tunnel-domain>/wxpay/refund/notify`.
+- Apply refund-only or return-refund from the mini program with `REFUND_EVIDENCE`.
+- Approve the after-sale in admin and verify WeChat accepts the refund request.
+- Wait for `POST /wxpay/refund/notify`.
+- Verify refund callback log reaches `SUCCESS`, `refund_order.status` becomes `SUCCESS`, after-sale status becomes `REFUNDED`, and order status becomes `REFUNDED`.
+- Do not claim real refund smoke passed when only mock provider tests or test-profile callbacks were run.
+
 ## Admin
 
 ```bash

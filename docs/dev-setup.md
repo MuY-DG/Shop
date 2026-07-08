@@ -70,6 +70,34 @@ WECHAT_MINI_PROGRAM_APP_SECRET=your-app-secret
 
 The `dev` profile uses the real WeChat client. The `test` profile keeps the mock WeChat client for local smoke checks and automated tests.
 
+## Local WeChat Pay Credentials
+
+Keep local WeChat Pay credentials in `backend/shop-server/.env.local` or configure them through the admin payment configuration screen. Use placeholders in documentation and commits only:
+
+```properties
+WECHAT_PAY_ENABLED=true
+WECHAT_PAY_CONFIG_SOURCE=AUTO
+WECHAT_PAY_APP_ID=<wechat-mini-program-app-id>
+WECHAT_PAY_MCH_ID=<wechat-pay-merchant-id>
+WECHAT_PAY_MERCHANT_SERIAL_NO=<merchant-certificate-serial-no>
+WECHAT_PAY_PRIVATE_KEY_PATH=<absolute-path-to-local-merchant-private-key.pem>
+WECHAT_PAY_API_V3_KEY=<wechat-pay-api-v3-key>
+WECHAT_PAY_NOTIFY_URL=https://<public-tunnel-domain>/wxpay/pay/notify
+WECHAT_PAY_REFUND_NOTIFY_URL=https://<public-tunnel-domain>/wxpay/refund/notify
+WECHAT_PAY_VERIFY_MODE=PUBLIC_KEY
+WECHAT_PAY_PUBLIC_KEY_ID=<wechat-pay-public-key-id>
+WECHAT_PAY_PUBLIC_KEY_PATH=<absolute-path-to-local-wechat-pay-public-key.pem>
+SHOP_PAY_EXPIRE_MINUTES=15
+SHOP_PAYMENT_SECRET_KEY=<local-32-byte-payment-secret-key>
+SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
+```
+
+Payment callbacks are handled by `/wxpay/pay/notify`; refund callbacks are handled by `/wxpay/refund/notify`. A real local WeChat Pay smoke check needs an HTTPS tunnel to the local backend, and both callback URLs must use that public tunnel domain so WeChat can reach the local service.
+
+`WECHAT_PAY_CONFIG_SOURCE=AUTO` uses complete environment credentials first and otherwise falls back to the enabled database payment config. Use `ENV` when the local `.env.local` values should be mandatory, or `DB` when payment credentials are managed through `/admin/pay/configs`. For DB config, upload merchant private key, merchant certificate, and WeChat Pay public key files as private payment files through admin storage; do not commit the uploaded files or the local upload directory.
+
+Never commit `.env.local`, merchant certificates, private keys, APIv3 keys, public-key files, local upload roots, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
+
 ## Local File Storage
 
 The file upload phase uses local storage first and leaves OSS/COS for a later provider implementation. Local settings should stay in `backend/shop-server/.env.local` when they are environment-specific:
