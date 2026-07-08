@@ -5,6 +5,10 @@
   box-sizing: border-box;
 }
 
+.order-detail-page.with-action-bar {
+  padding-bottom: 180rpx;
+}
+
 .empty-state {
   padding: 160rpx 32rpx;
   color: #7a6f68;
@@ -22,14 +26,20 @@
   box-sizing: border-box;
 }
 
-.summary-head {
+.summary-head,
+.section-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 20rpx;
 }
 
-.summary-label {
+.summary-main {
+  min-width: 0;
+}
+
+.summary-label,
+.field-label {
   color: #7a6f68;
   font-size: 22rpx;
   line-height: 32rpx;
@@ -41,9 +51,11 @@
   font-size: 28rpx;
   font-weight: 800;
   line-height: 38rpx;
+  word-break: break-all;
 }
 
-.status {
+.status,
+.aftersale-status {
   flex: none;
   color: #b3261e;
   font-size: 26rpx;
@@ -69,6 +81,45 @@
   color: #241f1c;
   font-size: 30rpx;
   font-weight: 800;
+}
+
+.section-head .section-title {
+  margin-bottom: 0;
+}
+
+.aftersale-section {
+  border: 1rpx solid #f0d8c8;
+}
+
+.aftersale-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx 24rpx;
+  margin-top: 22rpx;
+}
+
+.field-value {
+  margin-top: 6rpx;
+  color: #241f1c;
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 36rpx;
+  word-break: break-word;
+}
+
+.field-value.amount {
+  color: #b3261e;
+}
+
+.audit-note {
+  margin-top: 22rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid #f0e4dc;
+}
+
+.field-value.note {
+  color: #51443e;
+  font-weight: 500;
 }
 
 .item-list {
@@ -149,6 +200,11 @@
   line-height: 36rpx;
 }
 
+.amount-row text {
+  min-width: 0;
+  word-break: break-word;
+}
+
 .amount-row.discount {
   color: #8b5a09;
 }
@@ -159,4 +215,52 @@
   color: #b3261e;
   font-size: 32rpx;
   font-weight: 800;
+}
+
+.action-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  gap: 18rpx;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
+  background: #ffffff;
+  box-shadow: 0 -10rpx 30rpx rgba(68, 44, 32, 0.08);
+  box-sizing: border-box;
+}
+
+.action-button {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 84rpx;
+  margin: 0;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 84rpx;
+}
+
+.action-button.secondary {
+  max-width: 220rpx;
+  background: #fff8f4;
+  color: #8b3f26;
+}
+
+.action-button.primary {
+  max-width: 260rpx;
+  background: #b3261e;
+  color: #ffffff;
+}
+
+.action-button.disabled {
+  max-width: 260rpx;
+  background: #eee2da;
+  color: #7a6f68;
+}
+
+.action-button[disabled] {
+  opacity: 0.65;
 }

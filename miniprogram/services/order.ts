@@ -4,7 +4,10 @@ import type {
   OrderStatus,
   OrderSubmitResponse,
   OrderSummary,
-  PageResult
+  PageResult,
+  PaymentCancelResponse,
+  PaymentPrepayResponse,
+  PaymentSyncResponse
 } from "../types/api";
 import { request } from "../utils/request";
 
@@ -50,5 +53,26 @@ export function getOrders(params: {
 export function getOrderDetail(orderId: number): Promise<OrderDetail> {
   return request<OrderDetail>({
     url: `/app/orders/${orderId}`
+  });
+}
+
+export function payOrder(orderId: number): Promise<PaymentPrepayResponse> {
+  return request<PaymentPrepayResponse>({
+    url: `/app/orders/${orderId}/pay`,
+    method: "POST"
+  });
+}
+
+export function cancelOrder(orderId: number): Promise<PaymentCancelResponse> {
+  return request<PaymentCancelResponse>({
+    url: `/app/orders/${orderId}/cancel`,
+    method: "POST"
+  });
+}
+
+export function syncOrderPayment(orderId: number): Promise<PaymentSyncResponse> {
+  return request<PaymentSyncResponse>({
+    url: `/app/orders/${orderId}/payment/sync`,
+    method: "POST"
   });
 }

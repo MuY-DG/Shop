@@ -28,11 +28,23 @@ function getStatusText(status: OrderStatus): string {
   if (status === "CREATED") {
     return "待支付";
   }
+  if (status === "PAYING") {
+    return "支付中";
+  }
   if (status === "PAID") {
     return "已支付";
   }
+  if (status === "SHIPPED") {
+    return "已发货";
+  }
+  if (status === "COMPLETED") {
+    return "已完成";
+  }
   if (status === "CLOSED") {
     return "已关闭";
+  }
+  if (status === "REFUNDING") {
+    return "退款中";
   }
   if (status === "REFUNDED") {
     return "已退款";

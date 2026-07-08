@@ -208,7 +208,101 @@ export interface AvailableCouponResponse {
   coupons: AvailableCouponItem[];
 }
 
-export type OrderStatus = "CREATED" | "PAID" | "CLOSED" | "REFUNDED";
+export type OrderStatus =
+  | "CREATED"
+  | "PAYING"
+  | "PAID"
+  | "SHIPPED"
+  | "COMPLETED"
+  | "CLOSED"
+  | "REFUNDING"
+  | "REFUNDED";
+
+export interface PaymentPrepayResponse {
+  paymentOrderId?: number;
+  outTradeNo?: string;
+  timeStamp: string;
+  nonceStr: string;
+  package: string;
+  signType: string;
+  paySign: string;
+  expiresAt?: string;
+}
+
+export interface PaymentCancelResponse {
+  orderId: number;
+  status: OrderStatus;
+}
+
+export interface PaymentSyncResponse {
+  orderId: number;
+  status: OrderStatus;
+  transactionId: string;
+}
+
+export type AfterSaleType = "REFUND_ONLY" | "RETURN_REFUND";
+
+export type AfterSaleStatus =
+  | "REQUESTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "REFUNDING"
+  | "REFUNDED"
+  | "REFUND_FAILED";
+
+export interface AfterSaleApplyPayload {
+  afterSaleType: AfterSaleType;
+  reason: string;
+  requestedAmountCent: number;
+  description: string;
+  evidenceFileIds: number[];
+}
+
+export interface AfterSaleEvidenceFile {
+  fileId: number;
+  originalFilename: string;
+  contentType: string;
+  sizeBytes: number;
+  visibility: string;
+  purpose: EvidenceUploadPurpose;
+  status: string;
+}
+
+export interface RefundOrder {
+  id: number;
+  afterSaleId: number;
+  orderId: number;
+  paymentOrderId: number;
+  outRefundNo: string;
+  refundId: string | null;
+  refundAmountCent: number;
+  status: string;
+  callbackStatus: string;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  requestedAt: string;
+  successAt: string | null;
+}
+
+export interface AfterSaleResponse {
+  id: number;
+  orderId: number;
+  orderNo: string;
+  userId: number;
+  afterSaleType: AfterSaleType;
+  status: AfterSaleStatus;
+  reason: string;
+  description: string;
+  requestedAmountCent: number;
+  approvedAmountCent: number | null;
+  auditNote: string | null;
+  reviewedBy: number | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  evidenceFileIds: number[];
+  evidenceFiles: AfterSaleEvidenceFile[];
+  refundOrder: RefundOrder | null;
+}
 
 export interface OrderPreviewItem {
   cartItemId: number;

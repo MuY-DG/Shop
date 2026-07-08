@@ -9,7 +9,8 @@
     "pages/coupon/mine/mine",
     "pages/order/preview/preview",
     "pages/order/list/list",
-    "pages/order/detail/detail"
+    "pages/order/detail/detail",
+    "pages/aftersale/apply/apply"
   ],
   "window": {
     "navigationBarTitleText": "火锅底料商城",

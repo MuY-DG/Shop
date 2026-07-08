@@ -1,10 +1,10 @@
-<view class="page order-detail-page">
+<view class="page order-detail-page {{showActionBar ? 'with-action-bar' : ''}}">
   <view wx:if="{{loading && !detail}}" class="empty-state">订单详情加载中...</view>
   <view wx:elif="{{errorText && !detail}}" class="empty-state">{{errorText}}</view>
   <block wx:elif="{{detail}}">
     <view class="summary">
       <view class="summary-head">
-        <view>
+        <view class="summary-main">
           <view class="summary-label">订单号</view>
           <view class="order-no">{{detail.orderNo}}</view>
         </view>
@@ -14,6 +14,35 @@
       <view wx:if="{{detail.closeReason}}" class="close-block">
         <view>关闭原因：{{detail.closeReason}}</view>
         <view wx:if="{{detail.closedAtText}}">关闭时间：{{detail.closedAtText}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{latestAfterSale}}" class="section aftersale-section">
+      <view class="section-head">
+        <view class="section-title">售后状态</view>
+        <view class="aftersale-status">{{latestAfterSale.statusText}}</view>
+      </view>
+      <view class="aftersale-grid">
+        <view>
+          <view class="field-label">类型</view>
+          <view class="field-value">{{latestAfterSale.typeText}}</view>
+        </view>
+        <view>
+          <view class="field-label">申请金额</view>
+          <view class="field-value amount">{{latestAfterSale.requestedAmountText}}</view>
+        </view>
+        <view>
+          <view class="field-label">退款金额</view>
+          <view class="field-value amount">{{latestAfterSale.refundAmountText}}</view>
+        </view>
+        <view>
+          <view class="field-label">申请时间</view>
+          <view class="field-value">{{latestAfterSale.createdAtText}}</view>
+        </view>
+      </view>
+      <view class="audit-note">
+        <view class="field-label">审核备注</view>
+        <view class="field-value note">{{latestAfterSale.auditNoteText}}</view>
       </view>
     </view>
 
@@ -64,4 +93,40 @@
       </view>
     </view>
   </block>
+
+  <view wx:if="{{detail && showActionBar}}" class="action-bar">
+    <button
+      wx:if="{{canCancel}}"
+      class="action-button secondary"
+      loading="{{cancelOperating}}"
+      disabled="{{paymentOperating || cancelOperating}}"
+      bindtap="onCancelTap"
+    >
+      取消订单
+    </button>
+    <button
+      wx:if="{{canApplyAfterSale}}"
+      class="action-button secondary"
+      disabled="{{paymentOperating || cancelOperating}}"
+      bindtap="onAfterSaleTap"
+    >
+      申请售后
+    </button>
+    <button
+      wx:elif="{{hasActiveAfterSale}}"
+      class="action-button disabled"
+      disabled
+    >
+      售后处理中
+    </button>
+    <button
+      wx:if="{{canPay}}"
+      class="action-button primary"
+      loading="{{paymentOperating}}"
+      disabled="{{paymentOperating || cancelOperating}}"
+      bindtap="onPayTap"
+    >
+      立即支付
+    </button>
+  </view>
 </view>
