@@ -75,9 +75,11 @@ class UploadPolicyTest {
     @Test
     void requireAllowedRejectsInvalidExtensionEmptyUnreadableAndOversizedFiles() {
         assertValidationFailure(() -> uploadPolicy.requireAllowed(StoragePurpose.PRODUCT_IMAGE, "not-image.svg", "image/svg+xml", 512, true));
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(StoragePurpose.PRODUCT_IMAGE, "wrong-type.jpg", "application/octet-stream", 512, true));
         assertValidationFailure(() -> uploadPolicy.requireAllowed(StoragePurpose.PRODUCT_IMAGE, "empty.jpg", "image/jpeg", 0, true));
         assertValidationFailure(() -> uploadPolicy.requireAllowed(StoragePurpose.PRODUCT_IMAGE, "broken.jpg", "image/jpeg", 512, false));
         assertValidationFailure(() -> uploadPolicy.requireAllowed(StoragePurpose.PAYMENT_CERTIFICATE, "too-large.pem", "text/plain", DataSize.ofMegabytes(2).toBytes(), false));
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(StoragePurpose.PAYMENT_CERTIFICATE, "wrong-type.pem", "image/png", 512, false));
     }
 
     @Test

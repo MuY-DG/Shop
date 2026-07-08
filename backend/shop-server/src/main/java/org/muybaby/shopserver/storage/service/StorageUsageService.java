@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.storage.service;
 
+import org.muybaby.shopserver.common.error.BusinessException;
+import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.dto.StorageFileUsageResponse;
@@ -109,6 +111,7 @@ public class StorageUsageService {
             Integer sortOrder,
             boolean protectedUsage
     ) {
+        requireActiveFile(fileId);
         jdbcClient.sql("""
                         insert into storage_file_usage
                             (file_id, usage_type, owner_type, owner_id, owner_label, snapshot_url, sort_order, protected, status)
@@ -124,6 +127,19 @@ public class StorageUsageService {
                 .param("sortOrder", sortOrder == null ? 0 : sortOrder)
                 .param("protectedUsage", protectedUsage)
                 .update();
+    }
+
+    private void requireActiveFile(Long fileId) {
+        jdbcClient.sql("""
+                        select id
+                        from storage_file
+                        where id = :fileId
+                          and status = 'ACTIVE'
+                        """)
+                .param("fileId", fileId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
     }
 
     private StorageFileUsageResponse mapUsage(ResultSet rs, int rowNum) throws SQLException {

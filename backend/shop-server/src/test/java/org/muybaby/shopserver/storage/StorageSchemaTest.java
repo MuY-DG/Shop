@@ -23,6 +23,7 @@ class StorageSchemaTest {
         assertThat(tableExists("storage_asset_category")).isTrue();
         assertThat(tableExists("storage_file_usage")).isTrue();
         assertThat(tableExists("home_banner")).isTrue();
+        assertThat(columnIsAutoIncrement("storage_asset_category", "id")).isTrue();
 
         assertThat(columnExists("product_category", "icon_file_id")).isTrue();
         assertThat(columnExists("product_spu", "main_image_file_id")).isTrue();
@@ -97,5 +98,19 @@ class StorageSchemaTest {
                 .query(Integer.class)
                 .single();
         return count != null && count == 1;
+    }
+
+    private boolean columnIsAutoIncrement(String tableName, String columnName) {
+        String isIdentity = jdbcClient.sql("""
+                        select is_identity
+                        from information_schema.columns
+                        where table_name = :tableName
+                          and column_name = :columnName
+                        """)
+                .param("tableName", tableName)
+                .param("columnName", columnName)
+                .query(String.class)
+                .single();
+        return "YES".equalsIgnoreCase(isIdentity) || "TRUE".equalsIgnoreCase(isIdentity);
     }
 }

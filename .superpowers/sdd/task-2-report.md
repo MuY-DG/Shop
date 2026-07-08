@@ -1,4 +1,4 @@
-# Task 2 Report: App Order Preview And Submit Backend
+# Task 2 Report: Backend Storage APIs, Public File Route, Categories, And Delete Protection
 
 ## Status
 
@@ -6,188 +6,165 @@ DONE
 
 ## Scope
 
-Implemented the Task 2 backend app order flow in `backend/shop-server` only:
+Implemented Task 2 backend-only storage delivery in `backend/shop-server`:
 
-- `POST /app/orders/preview`
-- `POST /app/orders`
-- `GET /app/orders`
-- `GET /app/orders/{orderId}`
+- Admin storage upload/list/detail/usages/move/delete APIs.
+- App authenticated upload API with app-purpose restriction.
+- Public file read route for `GET /files/public/**` only.
+- Asset category tree create/update/list APIs.
+- Delete protection against any active usage, including protected usage.
+- Minimal `StorageUsageService` hooks for later product/order/banner tasks.
 
-Covered the required current-user cart resolution, coupon selection/validation, order snapshot creation, stock lock, coupon lock, cart cleanup, and idempotent submit behavior.
+## RED Evidence
 
-## TDD Evidence
-
-### RED
-
-Command:
+Ran:
 
 ```bash
-cd backend/shop-server
-./mvnw -Dtest=AppOrderControllerTest test
+cd backend/shop-server && ./mvnw -Dtest=StorageControllerTest,SecurityConfigTest,AdminRbacSchemaTest test
 ```
 
-Observed failure before implementation:
+Observed expected failing coverage before implementation:
 
-- `AppOrderControllerTest.previewUsesCurrentUserCartRowsAndSelectsBestCouponWhenCouponOmitted`
-  - expected `200`, got `404` on `/app/orders/preview`
-- `AppOrderControllerTest.submitCreatesOrderLocksStockAndCouponDeletesCartRowsAndIsIdempotent`
-  - expected `200`, got `404` on `/app/orders`
-- `AppOrderControllerTest.submitRejectsCartItemThatDoesNotBelongToCurrentUser`
-  - expected `400`, got `404` on `/app/orders`
-- `AppOrderControllerTest.submitRejectsDisabledSkuOffSaleCategoryAndStockShortage`
-  - expected `400`, got `404` on `/app/orders`
-- `AppOrderControllerTest.submitRejectsSelectedCouponThatIsNotApplicable`
-  - expected `400`, got `404` on `/app/orders`
-- `AppOrderControllerTest.appOrderListAndDetailReturnOnlyCurrentUsersOrders`
-  - expected `200`, got `404` on `/app/orders`
+- `SecurityConfigTest.publicEndpointsAreNotBlockedByAuthentication` failed because `GET /files/public/health-probe.png` returned `401`.
+- `StorageControllerTest.*` failed with `404` on:
+  - `/admin/files/upload`
+  - `/app/files/upload`
+  - `/admin/file-categories`
+  - `/files/public/**`
 
-Failure cause matched expectation: the app order controller/service routes did not exist yet.
+This confirmed the new route/controller surface was absent before production changes.
 
-### GREEN
+## Implemented Changes
 
-Command:
+### Backend API Surface
+
+- Added controllers:
+  - `org.muybaby.shopserver.storage.AdminFileController`
+  - `org.muybaby.shopserver.storage.AppFileController`
+  - `org.muybaby.shopserver.storage.AdminFileCategoryController`
+  - `org.muybaby.shopserver.storage.PublicFileController`
+
+### Services / DTOs
+
+- Added `StorageService` for upload, paging, detail/usages, move, delete, and public resource serving.
+- Added `StorageUsageService` with:
+  - `replaceOwnerUsages(...)`
+  - `addProtectedUsage(...)`
+  - `removeOwnerUsages(...)`
+- Added storage DTOs for file/category/query/move/usage responses.
+- Added `StorageConfiguration` bean wiring for `StorageProvider`, `UploadPolicy`, and `StorageObjectKeyGenerator`.
+
+### Security / Validation
+
+- Permitted only `GET /files/public/**` anonymously in `SecurityConfig`.
+- Kept `/admin/**` and `/app/**` authenticated.
+- Enforced app upload purposes to `AFTER_SALE_IMAGE` and `REFUND_EVIDENCE` only.
+- Rejected path traversal filenames, empty files, unsupported extensions, oversized files, and unreadable/corrupted images.
+- Ensured clients never control `object_key`; keys are backend-generated.
+- Ensured private files omit `url` and `publicUrl`.
+
+### Delete Protection
+
+- Added `ErrorCode.STORAGE_FILE_IN_USE` and `ErrorCode.STORAGE_ASSET_CATEGORY_UNAVAILABLE`.
+- `DELETE /admin/files/{id}` now:
+  - blocks on any `storage_file_usage.status = 'ACTIVE'`
+  - soft-deletes metadata via `status = 'DELETED'` + `deleted_at`
+  - best-effort deletes provider content only after metadata soft-delete and only when no active usage remains
+
+## Verification
+
+Re-ran:
 
 ```bash
-cd backend/shop-server
-./mvnw -Dtest=AppOrderControllerTest test
+cd backend/shop-server && ./mvnw -Dtest=StorageControllerTest,SecurityConfigTest,AdminRbacSchemaTest test
 ```
 
 Result:
 
-- `Tests run: 7, Failures: 0, Errors: 0, Skipped: 0`
-- `BUILD SUCCESS`
+- `Tests run: 21, Failures: 0, Errors: 0, Skipped: 0`
+- Build status: `BUILD SUCCESS`
 
-## Files Changed
+## Files Intentionally Left Unstaged
 
-- `backend/shop-server/src/main/java/org/muybaby/shopserver/order/AppOrderController.java`
-- `backend/shop-server/src/main/java/org/muybaby/shopserver/order/service/AppOrderService.java`
-- `backend/shop-server/src/test/java/org/muybaby/shopserver/order/AppOrderControllerTest.java`
+Per task instructions, I did not stage unrelated existing doc/spec/plan changes:
 
-## Implementation Notes
+- `docs/dev-setup.md`
+- `docs/superpowers/specs/2026-07-06-hotpot-shop-design.md`
+- `docs/superpowers/specs/2026-07-08-shop-file-storage-design.md`
+- `docs/superpowers/plans/2026-07-08-shop-file-storage-implementation-plan.md`
 
-### Controller
+## Commit Scope For Task 2
 
-- Added `AppOrderController` following the existing app cart/coupon controller style.
-- Kept preview request body optional so null or empty `cartItemIds` resolves to all current-user cart rows.
-- Exposed app list/detail endpoints on the same controller to satisfy the Task 2 contract.
+Stage only Task 2 backend files:
 
-### Service
-
-- Added `AppOrderService` with a shared checkout loader that:
-  - resolves owned cart rows for the current app user
-  - treats null or empty `cartItemIds` as all current-user cart rows
-  - returns `250001` when explicit cart ids do not resolve for the current user
-  - validates SKU/SPU/category availability and stock before preview/submit
-- Reused `CheckoutContext`, `CheckoutItem`, `CouponCandidate`, `CouponDiscountCalculator`, and `DiscountResult` for coupon evaluation.
-- When `userCouponId` is omitted, selects the best current `CLAIMED` coupon for the computed checkout context; when supplied, enforces ownership, claimed status, validity window, and calculator applicability.
-- Submit transaction:
-  - checks `(user_id, idempotency_key)` first and returns the existing order when present
-  - inserts `shop_order` and `order_item` snapshots
-  - decrements `product_sku.stock_available`
-  - inserts `stock_lock`
-  - writes `stock_log` with `ORDER_LOCK`
-  - locks the chosen coupon in `user_coupon`
-  - deletes the submitted cart rows
-- Added duplicate-key fallback on order insert so a race on `(user_id, idempotency_key)` still resolves back to the already-created order.
-
-### Tests
-
-- Added `AppOrderControllerTest` first and drove the implementation from it.
-- Covered:
-  - app token boundary on `/app/orders/preview`
-  - preview pricing/snapshots plus auto-best coupon selection
-  - submit side effects and repeated-submit idempotency
-  - foreign cart-row rejection
-  - disabled SKU / off-sale SPU / disabled category / stock shortage business errors
-  - selected inapplicable coupon rejection
-  - current-user-only list/detail reads
-
-## Self-Review
-
-- Stayed inside Task 2 backend scope; did not touch admin or mini program files.
-- Followed the repo’s existing app service/controller patterns instead of introducing a new abstraction layer.
-- Kept all stock/coupon/cart mutations in the submit transaction.
-- Verified null/empty cart selection behavior, explicit cart ownership enforcement, and auto-best coupon selection with focused controller tests.
-- Hardened idempotency beyond the sequential test case by handling duplicate-key insert races.
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/storage/**`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/security/SecurityConfig.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/common/error/ErrorCode.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/storage/StorageControllerTest.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/security/SecurityConfigTest.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/admin/rbac/AdminRbacSchemaTest.java`
 
 ## Concerns
 
-- The brief defines no dedicated app order not-found error code. `GET /app/orders/{orderId}` currently throws `100400 / VALIDATION_FAILED` for a missing or foreign order id because Task 2 was constrained to the existing error-code set.
-
-## Commit
-
-- `44f71cb` — `feat: add app order creation`
+None at the focused Task 2 backend scope. Broader product/order/banner usage integration is intentionally deferred to later tasks.
 
 ---
 
-## Follow-up: Critical Review Fix For App Order Idempotency
+## 2026-07-08 Review Fix Follow-Up
 
-### Status
+### Scope
 
-DONE
+Addressed Task 2 review findings without touching Task 3+ feature behavior:
 
-### Review Finding Addressed
+- moved cheap upload policy checks ahead of `MultipartFile.getBytes()` / `ImageIO`
+- preserved `{ code, msg, data }` JSON failures for malformed upload requests
+- blocked orphan `storage_file_usage` inserts for missing/deleted files
+- switched `storage_asset_category.id` to auto-increment plus generated-key creation
 
-Fixed the Task 2 critical race where overlapping submits with the same `idempotencyKey` could both miss `findExistingOrder()`, then race through cart loading and fail with a cart validation error before the duplicate-key fallback on `shop_order` insert had any chance to recover the second request.
+### RED Evidence
 
-### TDD Evidence
-
-#### RED
-
-Command:
+Ran:
 
 ```bash
-cd backend/shop-server
-./mvnw -Dtest=AppOrderControllerTest#overlappingSubmitWithSameIdempotencyKeyReturnsExistingOrderInsteadOfCartError test
+cd backend/shop-server && ./mvnw -Dtest=StorageControllerTest,StorageServiceTest,StorageUsageServiceTest,StorageSchemaTest,UploadPolicyTest,GlobalExceptionHandlerTest,SecurityConfigTest,AdminRbacSchemaTest test
 ```
 
-Observed failure before the fix:
+Observed expected failures before the fix:
 
-- `AppOrderControllerTest.overlappingSubmitWithSameIdempotencyKeyReturnsExistingOrderInsteadOfCartError`
-  - second overlapping submit failed with `BusinessException: Validation failed`
-  - stack reached `AppOrderService.loadCheckoutSelection(...)`
-  - this matched the review finding: the loser request was still on the cart path after missing the first idempotency lookup
+- `StorageServiceTest.unsupportedExtensionIsRejectedBeforeReadingBytes` and `oversizedImageIsRejectedBeforeReadingBytes` showed `getBytes()` was called too early.
+- `StorageControllerTest.uploadBindingFailuresStillReturnApiResponseEnvelope` showed invalid `purpose` returned Spring's empty default 400 response instead of JSON.
+- `StorageUsageServiceTest.addProtectedUsageRejectsMissingFile` and `replaceOwnerUsagesRejectsDeletedFiles` proved orphan usages were still insertable.
+- `StorageSchemaTest.storageMigrationCreatesTablesColumnsAndSeeds` showed `storage_asset_category.id` was not identity/auto-increment.
 
-#### GREEN
+### Implemented Fixes
 
-Focused race regression:
+- `AdminFileController` / `AppFileController` now accept `purpose` as `String`; `StorageService` parses and rejects invalid purpose with `STORAGE_UPLOAD_POLICY_REJECTED`.
+- `StorageService.upload*()` now validates filename, content type, extension, non-empty, and size from `MultipartFile.getSize()` before reading bytes, then re-validates after byte read while still rejecting corrupted images.
+- `UploadPolicy` now enforces allowed content types in addition to extension and size rules.
+- `GlobalExceptionHandler` now wraps multipart/binding/request-shape failures into `ApiResponse.fail(...)` with HTTP 400.
+- `StorageUsageService` now requires `storage_file.status = 'ACTIVE'` before inserting usage rows.
+- `V7__storage.sql` now defines `storage_asset_category.id BIGINT PRIMARY KEY AUTO_INCREMENT`, and `StorageService.createCategory(...)` uses generated keys instead of `select coalesce(max(id), 0) + 1`.
 
-```bash
-cd backend/shop-server
-./mvnw -Dtest=AppOrderControllerTest#overlappingSubmitWithSameIdempotencyKeyReturnsExistingOrderInsteadOfCartError test
-```
+### GREEN Evidence
 
-Result:
-
-- `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0`
-- `BUILD SUCCESS`
-
-Full Task 2 controller suite:
+Specified verification command:
 
 ```bash
-cd backend/shop-server
-./mvnw -Dtest=AppOrderControllerTest test
+cd backend/shop-server && ./mvnw -Dtest=StorageControllerTest,SecurityConfigTest,AdminRbacSchemaTest test
 ```
 
 Result:
 
-- `Tests run: 8, Failures: 0, Errors: 0, Skipped: 0`
+- `Tests run: 22, Failures: 0, Errors: 0, Skipped: 0`
 - `BUILD SUCCESS`
 
-### Files Changed
+Additional focused verification:
 
-- `backend/shop-server/src/main/java/org/muybaby/shopserver/order/service/AppOrderService.java`
-- `backend/shop-server/src/test/java/org/muybaby/shopserver/order/AppOrderControllerTest.java`
+```bash
+cd backend/shop-server && ./mvnw -Dtest=StorageServiceTest,StorageUsageServiceTest,StorageSchemaTest,UploadPolicyTest,GlobalExceptionHandlerTest test
+```
 
-### Implementation Notes
+Result:
 
-- Moved idempotency ownership to the start of `AppOrderService.submit()` by inserting the `shop_order` row before cart-row locking/loading.
-- The early insert now reserves the unique `(user_id, idempotency_key)` slot inside the submit transaction with a placeholder header that uses schema defaults and zero monetary fields.
-- After cart validation and coupon resolution complete, the same transaction updates that reserved order row with the final checkout snapshots and amounts before writing `order_item`, `stock_lock`, stock logs, coupon lock, and cart deletion.
-- Kept the existing fast path for sequential replay via `findExistingOrder(...)` and retained the duplicate-key fallback for concurrent callers that lose the early ownership race.
-
-### Regression Coverage Added
-
-- Added a deterministic overlapping-submit regression in `AppOrderControllerTest`.
-- The test forces both submits past the initial `findExistingOrder(...)` read, then holds the designated loser until the winner commits, proving the second request now returns the same created order rather than failing on cart state.
-- Assertions also confirm there is still only one `shop_order`, one `order_item`, one `stock_lock`, a single stock decrement, and cart cleanup only once.
+- `Tests run: 14, Failures: 0, Errors: 0, Skipped: 0`
+- `BUILD SUCCESS`

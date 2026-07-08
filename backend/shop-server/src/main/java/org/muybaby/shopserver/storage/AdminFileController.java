@@ -34,7 +34,7 @@ public class AdminFileController {
     @PostMapping("/upload")
     public ApiResponse<StorageFileResponse> upload(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
-            @RequestParam StoragePurpose purpose,
+            @RequestParam String purpose,
             @RequestParam(required = false) Long assetCategoryId,
             @RequestParam("file") MultipartFile file
     ) {

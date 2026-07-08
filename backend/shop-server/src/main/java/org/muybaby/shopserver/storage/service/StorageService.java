@@ -20,6 +20,10 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -47,6 +51,7 @@ import java.util.Map;
 public class StorageService {
 
     private final JdbcClient jdbcClient;
+    private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final StorageProvider storageProvider;
     private final UploadPolicy uploadPolicy;
     private final StorageObjectKeyGenerator storageObjectKeyGenerator;
@@ -55,6 +60,7 @@ public class StorageService {
 
     public StorageService(
             JdbcClient jdbcClient,
+            NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             StorageProvider storageProvider,
             UploadPolicy uploadPolicy,
             StorageObjectKeyGenerator storageObjectKeyGenerator,
@@ -62,6 +68,7 @@ public class StorageService {
             StorageProperties storageProperties
     ) {
         this.jdbcClient = jdbcClient;
+        this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageProvider = storageProvider;
         this.uploadPolicy = uploadPolicy;
         this.storageObjectKeyGenerator = storageObjectKeyGenerator;
@@ -75,11 +82,21 @@ public class StorageService {
     }
 
     @Transactional
+    public StorageFileResponse uploadAdmin(AuthenticatedPrincipal principal, String purpose, Long assetCategoryId, MultipartFile file) {
+        return uploadAdmin(principal, parsePurpose(purpose), assetCategoryId, file);
+    }
+
+    @Transactional
     public StorageFileResponse uploadApp(AuthenticatedPrincipal principal, StoragePurpose purpose, Long assetCategoryId, MultipartFile file) {
         if (purpose != StoragePurpose.AFTER_SALE_IMAGE && purpose != StoragePurpose.REFUND_EVIDENCE) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
         return upload(principal, purpose, assetCategoryId, file, UploadedByType.APP);
+    }
+
+    @Transactional
+    public StorageFileResponse uploadApp(AuthenticatedPrincipal principal, String purpose, Long assetCategoryId, MultipartFile file) {
+        return uploadApp(principal, parsePurpose(purpose), assetCategoryId, file);
     }
 
     public PageResult<StorageFileResponse> page(StorageFileQueryRequest query) {
@@ -242,24 +259,23 @@ public class StorageService {
     @Transactional
     public Long createCategory(StorageAssetCategoryRequest request) {
         requireParentExists(request.parentId());
-        long categoryId = jdbcClient.sql("select coalesce(max(id), 0) + 1 from storage_asset_category")
-                .query(Long.class)
-                .single();
-        jdbcClient.sql("""
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        namedParameterJdbcTemplate.update("""
                         insert into storage_asset_category
-                            (id, parent_id, name, code, description, sort_order, status)
+                            (parent_id, name, code, description, sort_order, status)
                         values
-                            (:id, :parentId, :name, :code, :description, :sortOrder, :status)
-                        """)
-                .param("id", categoryId)
-                .param("parentId", request.parentId())
-                .param("name", request.name().trim())
-                .param("code", request.code().trim())
-                .param("description", request.description() == null ? "" : request.description().trim())
-                .param("sortOrder", request.sortOrder() == null ? 0 : request.sortOrder())
-                .param("status", request.status().trim())
-                .update();
-        return categoryId;
+                            (:parentId, :name, :code, :description, :sortOrder, :status)
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("parentId", request.parentId())
+                        .addValue("name", request.name().trim())
+                        .addValue("code", request.code().trim())
+                        .addValue("description", request.description() == null ? "" : request.description().trim())
+                        .addValue("sortOrder", request.sortOrder() == null ? 0 : request.sortOrder())
+                        .addValue("status", request.status().trim()),
+                keyHolder,
+                new String[]{"id"});
+        return requireGeneratedId(keyHolder);
     }
 
     @Transactional
@@ -296,12 +312,20 @@ public class StorageService {
     ) {
         requireCategoryIfPresent(assetCategoryId);
         String originalFilename = sanitizeFilename(file.getOriginalFilename());
-        byte[] bytes = readBytes(file);
-        BufferedImage image = readImageIfNeeded(bytes, purpose);
+        String contentType = defaultContentType(file.getContentType());
         UploadPolicy.UploadDecision decision = uploadPolicy.requireAllowed(
                 purpose,
                 originalFilename,
-                defaultContentType(file.getContentType()),
+                contentType,
+                file.getSize(),
+                true
+        );
+        byte[] bytes = readBytes(file);
+        BufferedImage image = readImageIfNeeded(bytes, purpose);
+        decision = uploadPolicy.requireAllowed(
+                purpose,
+                originalFilename,
+                contentType,
                 bytes.length,
                 !purpose.image() || image != null
         );
@@ -511,6 +535,17 @@ public class StorageService {
         return StringUtils.hasText(contentType) ? contentType : MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }
 
+    private StoragePurpose parsePurpose(String purpose) {
+        if (!StringUtils.hasText(purpose)) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        try {
+            return StoragePurpose.valueOf(purpose.trim());
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+    }
+
     private String normalizePublicPath(String publicPath) {
         String normalized = publicPath == null ? "" : publicPath.trim();
         while (normalized.startsWith("/")) {
@@ -542,6 +577,18 @@ public class StorageService {
 
     private String blankToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private Long requireGeneratedId(KeyHolder keyHolder) {
+        Number key = keyHolder.getKey();
+        if (key != null) {
+            return key.longValue();
+        }
+        Map<String, Object> keys = keyHolder.getKeys();
+        if (keys != null && keys.get("id") instanceof Number generatedId) {
+            return generatedId.longValue();
+        }
+        throw new IllegalStateException("Failed to retrieve generated key");
     }
 
     private record FileRow(

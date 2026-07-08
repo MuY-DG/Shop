@@ -1,5 +1,5 @@
 CREATE TABLE storage_asset_category (
-    id BIGINT PRIMARY KEY,
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
     parent_id BIGINT NOT NULL DEFAULT 0,
     name VARCHAR(64) NOT NULL,
     code VARCHAR(64) NOT NULL,

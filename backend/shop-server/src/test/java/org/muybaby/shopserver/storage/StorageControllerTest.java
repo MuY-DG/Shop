@@ -180,6 +180,12 @@ class StorageControllerTest {
         long categoryId = createCategory(adminToken, """
                 {"parentId":9,"name":"售后补图","code":"AFTER_SALE_REVIEW","description":"before","sortOrder":9,"status":"ENABLED"}
                 """);
+        long secondCategoryId = createCategory(adminToken, """
+                {"parentId":9,"name":"售后补图二级","code":"AFTER_SALE_REVIEW_SECOND","description":"second","sortOrder":10,"status":"ENABLED"}
+                """);
+
+        assertThat(categoryId).isGreaterThan(9L);
+        assertThat(secondCategoryId).isGreaterThan(categoryId);
 
         mockMvc.perform(put("/admin/file-categories/{categoryId}", categoryId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -329,6 +335,46 @@ class StorageControllerTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED.code()));
+    }
+
+    @Test
+    void uploadBindingFailuresStillReturnApiResponseEnvelope() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+
+        mockMvc.perform(multipart("/admin/files/upload")
+                        .file(new MockMultipartFile("file", "hotpot.png", "image/png", TINY_PNG))
+                        .param("purpose", "NOT_A_PURPOSE")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED.code()))
+                .andExpect(jsonPath("$.msg").value(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED.message()));
+
+        mockMvc.perform(multipart("/admin/files/upload")
+                        .param("purpose", "PRODUCT_IMAGE")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()))
+                .andExpect(jsonPath("$.msg").value(ErrorCode.VALIDATION_FAILED.message()));
+
+        mockMvc.perform(multipart("/admin/files/upload")
+                        .file(new MockMultipartFile("file", "hotpot.png", "image/png", TINY_PNG))
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()))
+                .andExpect(jsonPath("$.msg").value(ErrorCode.VALIDATION_FAILED.message()));
+
+        mockMvc.perform(multipart("/admin/files/upload")
+                        .file(new MockMultipartFile("file", "hotpot.png", "image/png", TINY_PNG))
+                        .param("purpose", "PRODUCT_IMAGE")
+                        .param("assetCategoryId", "oops")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()))
+                .andExpect(jsonPath("$.msg").value(ErrorCode.VALIDATION_FAILED.message()));
     }
 
     private long createCategory(String adminToken, String body) throws Exception {

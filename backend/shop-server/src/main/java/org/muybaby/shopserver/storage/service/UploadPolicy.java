@@ -13,6 +13,17 @@ public class UploadPolicy {
 
     private static final Set<String> IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp", "gif");
     private static final Set<String> CERTIFICATE_EXTENSIONS = Set.of("pem", "crt", "cer", "txt");
+    private static final Set<String> IMAGE_CONTENT_TYPES = Set.of(
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif"
+    );
+    private static final Set<String> CERTIFICATE_CONTENT_TYPES = Set.of(
+            "text/plain",
+            "application/x-x509-ca-cert",
+            "application/pkix-cert"
+    );
 
     private final StorageProperties storageProperties;
 
@@ -33,14 +44,14 @@ public class UploadPolicy {
 
         String extension = extensionOf(originalFilename);
         if (purpose.image()) {
-            if (!IMAGE_EXTENSIONS.contains(extension) || !imageReadable) {
+            if (!IMAGE_EXTENSIONS.contains(extension) || !IMAGE_CONTENT_TYPES.contains(normalizeContentType(contentType)) || !imageReadable) {
                 throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
             }
             if (sizeBytes > storageProperties.limits().imageMaxSize().toBytes()) {
                 throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
             }
         } else {
-            if (!CERTIFICATE_EXTENSIONS.contains(extension)) {
+            if (!CERTIFICATE_EXTENSIONS.contains(extension) || !CERTIFICATE_CONTENT_TYPES.contains(normalizeContentType(contentType))) {
                 throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
             }
             if (sizeBytes > storageProperties.limits().privateFileMaxSize().toBytes()) {
@@ -61,6 +72,15 @@ public class UploadPolicy {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
         return originalFilename.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeContentType(String contentType) {
+        if (contentType == null) {
+            return "";
+        }
+        int separator = contentType.indexOf(';');
+        String normalized = separator >= 0 ? contentType.substring(0, separator) : contentType;
+        return normalized.trim().toLowerCase(Locale.ROOT);
     }
 
     public record UploadDecision(

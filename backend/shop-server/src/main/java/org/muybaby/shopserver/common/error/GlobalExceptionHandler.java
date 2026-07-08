@@ -3,9 +3,18 @@ package org.muybaby.shopserver.common.error;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.BindException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.bind.ServletRequestBindingException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -20,6 +29,24 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidationException() {
+        ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
+    }
+
+    @ExceptionHandler({
+            BindException.class,
+            MissingServletRequestParameterException.class,
+            MissingServletRequestPartException.class,
+            MethodArgumentTypeMismatchException.class,
+            ServletRequestBindingException.class,
+            MultipartException.class,
+            HttpMessageNotReadableException.class,
+            HttpMediaTypeNotSupportedException.class,
+            HttpRequestMethodNotSupportedException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleRequestBindingException() {
         ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
