@@ -2,7 +2,7 @@ import { restoreStoredToken } from "./services/auth";
 
 App<IAppOption>({
   globalData: {
-    apiBaseUrl: "http://localhost:8080",
+    apiBaseUrl: "https://pay-dev.muybaby6.icu",
     token: restoreStoredToken()
   },
   onLaunch() {
