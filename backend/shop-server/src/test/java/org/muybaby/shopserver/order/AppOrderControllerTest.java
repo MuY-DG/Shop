@@ -369,6 +369,72 @@ class AppOrderControllerTest {
     }
 
     @Test
+    void submitSkipsProtectedSnapshotUsageWhenSkuImageUrlIsBlank() throws Exception {
+        AppLoginSession session = appLogin("order-blank-snapshot-user");
+        String appToken = session.token();
+        StoredFile mainFile = insertStorageFile("ord-main-blank.png");
+        StoredFile skuFile = insertStorageFile("ord-sku-blank.png");
+        ProductFixture product = createPublishedSkuWithCustomImages(
+                "ORDER-BLANK-SNAPSHOT-SKU",
+                3990L,
+                4990L,
+                10,
+                "ENABLED",
+                mainFile.publicUrl(),
+                mainFile.id(),
+                "",
+                skuFile.id()
+        );
+
+        long cartItemId = cartItemId(addCartItem(appToken, product.skuId(), 1));
+
+        String submitResponse = mockMvc.perform(post("/app/orders")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cartItemIds":[%d],"idempotencyKey":"checkout-blank-snapshot-001"}
+                                """.formatted(cartItemId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long orderId = objectMapper.readTree(submitResponse).path("data").path("orderId").asLong();
+        Long orderItemId = jdbcClient.sql("""
+                        select id
+                        from order_item
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .single();
+
+        assertThat(jdbcClient.sql("""
+                        select sku_image_file_id
+                        from order_item
+                        where id = :orderItemId
+                        """)
+                .param("orderItemId", orderItemId)
+                .query(Long.class)
+                .single()).isEqualTo(skuFile.id());
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from storage_file_usage
+                        where file_id = :fileId
+                          and usage_type = 'ORDER_ITEM_SNAPSHOT'
+                          and owner_type = 'ORDER_ITEM'
+                          and owner_id = :orderItemId
+                          and protected = true
+                          and status = 'ACTIVE'
+                        """)
+                .param("fileId", skuFile.id())
+                .param("orderItemId", orderItemId)
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(protectedSnapshotUsageCount(mainFile.id(), orderItemId, mainFile.publicUrl())).isEqualTo(2);
+    }
+
+    @Test
     void overlappingSubmitWithSameIdempotencyKeyReturnsExistingOrderInsteadOfCartError() throws Exception {
         AppLoginSession session = appLogin("order-submit-race-user");
         long userId = session.userId();
@@ -703,6 +769,30 @@ class AppOrderControllerTest {
         Long mainImageFileId = mainFile == null ? null : mainFile.id();
         String skuImageUrl = skuFile == null ? "https://example.test/order-sku.jpg" : skuFile.publicUrl();
         Long skuImageFileId = skuFile == null ? null : skuFile.id();
+        return createPublishedSkuWithCustomImages(
+                skuCode,
+                priceCent,
+                originalPriceCent,
+                stock,
+                skuStatus,
+                mainImageUrl,
+                mainImageFileId,
+                skuImageUrl,
+                skuImageFileId
+        );
+    }
+
+    private ProductFixture createPublishedSkuWithCustomImages(
+            String skuCode,
+            long priceCent,
+            long originalPriceCent,
+            int stock,
+            String skuStatus,
+            String mainImageUrl,
+            Long mainImageFileId,
+            String skuImageUrl,
+            Long skuImageFileId
+    ) {
         Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Order Category " + skuCode, "", null, 1, "ENABLED"));
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,

@@ -280,6 +280,142 @@ class AdminProductSpuControllerTest {
                 .andExpect(jsonPath("$.data.images[0].url").value("https://example.test/legacy-gallery.jpg"));
     }
 
+    @Test
+    void legacySpuUpdatePreservesMainGalleryAndSkuFileIdsWhenUrlsAreUnchanged() throws Exception {
+        String token = loginAndExtractToken();
+        long categoryId = createCategory(token);
+        StoredFile mainFile = insertStorageFile("spu-main-legacy.png");
+        StoredFile galleryFile = insertStorageFile("spu-gallery-legacy.png");
+        StoredFile skuFile = insertStorageFile("spu-sku-legacy.png");
+
+        String createResponse = mockMvc.perform(post("/admin/product/spus")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Legacy Update SPU",
+                                  "subtitle": "Legacy subtitle",
+                                  "mainImage": "%s",
+                                  "mainImageFileId": %d,
+                                  "sellingPoints": "A,B",
+                                  "detailHtml": "<p>legacy</p>",
+                                  "sortOrder": 1,
+                                  "images": [
+                                    {"url": "%s", "fileId": %d}
+                                  ],
+                                  "skus": [
+                                    {
+                                      "skuCode": "CTRL-SKU-LEGACY-UPDATE",
+                                      "specJson": "{\\"口味\\":\\"牛油\\"}",
+                                      "specText": "牛油",
+                                      "priceCent": 3990,
+                                      "originalPriceCent": 4990,
+                                      "stockAvailable": 5,
+                                      "weightGram": 300,
+                                      "image": "%s",
+                                      "imageFileId": %d,
+                                      "status": "ENABLED",
+                                      "sortOrder": 1
+                                    }
+                                  ]
+                                }
+                                """.formatted(
+                                categoryId,
+                                mainFile.publicUrl(), mainFile.id(),
+                                galleryFile.publicUrl(), galleryFile.id(),
+                                skuFile.publicUrl(), skuFile.id()
+                        )))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long spuId = objectMapper.readTree(createResponse).path("data").asLong();
+
+        String detailResponse = mockMvc.perform(get("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long skuId = objectMapper.readTree(detailResponse).path("data").path("skus").get(0).path("id").asLong();
+
+        mockMvc.perform(put("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Legacy Update SPU",
+                                  "subtitle": "Legacy subtitle",
+                                  "mainImage": "%s",
+                                  "sellingPoints": "A,B",
+                                  "detailHtml": "<p>legacy</p>",
+                                  "sortOrder": 1,
+                                  "images": ["%s"],
+                                  "skus": [
+                                    {
+                                      "id": %d,
+                                      "skuCode": "CTRL-SKU-LEGACY-UPDATE",
+                                      "specJson": "{\\"口味\\":\\"牛油\\"}",
+                                      "specText": "牛油",
+                                      "priceCent": 3990,
+                                      "originalPriceCent": 4990,
+                                      "stockAvailable": 5,
+                                      "weightGram": 300,
+                                      "image": "%s",
+                                      "status": "ENABLED",
+                                      "sortOrder": 1
+                                    }
+                                  ]
+                                }
+                                """.formatted(
+                                categoryId,
+                                mainFile.publicUrl(),
+                                galleryFile.publicUrl(),
+                                skuId,
+                                skuFile.publicUrl()
+                        )))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mainImageFileId").value(mainFile.id()))
+                .andExpect(jsonPath("$.data.images[0].fileId").value(galleryFile.id()))
+                .andExpect(jsonPath("$.data.skus[0].imageFileId").value(skuFile.id()));
+
+        assertThat(jdbcClient.sql("""
+                        select main_image_file_id
+                        from product_spu
+                        where id = :spuId
+                        """)
+                .param("spuId", spuId)
+                .query(Long.class)
+                .single()).isEqualTo(mainFile.id());
+        assertThat(jdbcClient.sql("""
+                        select file_id
+                        from product_spu_image
+                        where spu_id = :spuId
+                          and url = :url
+                        """)
+                .param("spuId", spuId)
+                .param("url", galleryFile.publicUrl())
+                .query(Long.class)
+                .single()).isEqualTo(galleryFile.id());
+        assertThat(jdbcClient.sql("""
+                        select image_file_id
+                        from product_sku
+                        where id = :skuId
+                        """)
+                .param("skuId", skuId)
+                .query(Long.class)
+                .single()).isEqualTo(skuFile.id());
+        assertThat(activeUsageCount(mainFile.id(), "PRODUCT_SPU_MAIN", "PRODUCT_SPU", spuId)).isEqualTo(1);
+        assertThat(activeUsageCount(galleryFile.id(), "PRODUCT_SPU_GALLERY", "PRODUCT_SPU", spuId)).isEqualTo(1);
+        assertThat(activeUsageCount(skuFile.id(), "PRODUCT_SKU_IMAGE", "PRODUCT_SKU", skuId)).isEqualTo(1);
+    }
+
     private long createCategory(String token) throws Exception {
         String response = mockMvc.perform(post("/admin/product/categories")
                         .header("Authorization", "Bearer " + token)

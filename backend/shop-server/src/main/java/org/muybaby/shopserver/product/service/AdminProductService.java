@@ -14,6 +14,7 @@ import org.muybaby.shopserver.product.dto.AdminStockAdjustmentRequest;
 import org.muybaby.shopserver.product.entity.ProductCategory;
 import org.muybaby.shopserver.product.entity.ProductSku;
 import org.muybaby.shopserver.product.entity.ProductSpu;
+import org.muybaby.shopserver.product.entity.ProductSpuImage;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
@@ -29,8 +30,10 @@ import org.springframework.util.StringUtils;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Deque;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -82,6 +85,9 @@ public class AdminProductService {
 
     @Transactional
     public void updateCategory(Long categoryId, AdminCategoryRequest request) {
+        ProductCategory existingCategory = findCategory(categoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE));
+        AdminCategoryRequest normalizedRequest = normalizeCategoryRequest(request, existingCategory);
         String status = requireCategoryStatus(request.status()).name();
         int updatedRows = jdbcClient.sql("""
                         UPDATE product_category
@@ -94,11 +100,11 @@ public class AdminProductService {
                             updated_at = :updatedAt
                         WHERE id = :categoryId
                         """)
-                .param("parentId", request.parentId())
-                .param("name", request.name())
-                .param("icon", defaultString(request.icon()))
-                .param("iconFileId", request.iconFileId())
-                .param("sortOrder", request.sortOrder())
+                .param("parentId", normalizedRequest.parentId())
+                .param("name", normalizedRequest.name())
+                .param("icon", defaultString(normalizedRequest.icon()))
+                .param("iconFileId", normalizedRequest.iconFileId())
+                .param("sortOrder", normalizedRequest.sortOrder())
                 .param("status", status)
                 .param("updatedAt", LocalDateTime.now())
                 .param("categoryId", categoryId)
@@ -106,7 +112,7 @@ public class AdminProductService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
         }
-        syncCategoryFileUsages(categoryId, request);
+        syncCategoryFileUsages(categoryId, normalizedRequest);
     }
 
     @Transactional
@@ -132,10 +138,12 @@ public class AdminProductService {
     private void updateSpu(Long spuId, AdminSpuUpsertRequest request, String operatorType, Long operatorId) {
         requireExistingCategory(request.categoryId());
         ProductSpu existingSpu = findSpu(spuId).orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE));
+        List<ProductSpuImage> existingImages = findSpuImagesBySpuId(spuId);
         Map<Long, ProductSku> existingSkusById = new HashMap<>();
         for (ProductSku sku : findSkusBySpuId(spuId)) {
             existingSkusById.put(sku.id(), sku);
         }
+        AdminSpuUpsertRequest normalizedRequest = normalizeSpuRequest(request, existingSpu, existingImages, existingSkusById);
         int updatedRows = jdbcClient.sql("""
                         UPDATE product_spu
                         SET category_id = :categoryId,
@@ -150,14 +158,14 @@ public class AdminProductService {
                             updated_at = :updatedAt
                         WHERE id = :spuId
                         """)
-                .param("categoryId", request.categoryId())
-                .param("title", request.title())
-                .param("subtitle", defaultString(request.subtitle()))
-                .param("mainImage", request.mainImage())
-                .param("mainImageFileId", request.mainImageFileId())
-                .param("sellingPoints", defaultString(request.sellingPoints()))
-                .param("detailHtml", defaultString(request.detailHtml()))
-                .param("sortOrder", request.sortOrder())
+                .param("categoryId", normalizedRequest.categoryId())
+                .param("title", normalizedRequest.title())
+                .param("subtitle", defaultString(normalizedRequest.subtitle()))
+                .param("mainImage", normalizedRequest.mainImage())
+                .param("mainImageFileId", normalizedRequest.mainImageFileId())
+                .param("sellingPoints", defaultString(normalizedRequest.sellingPoints()))
+                .param("detailHtml", defaultString(normalizedRequest.detailHtml()))
+                .param("sortOrder", normalizedRequest.sortOrder())
                 .param("status", existingSpu.status())
                 .param("updatedAt", LocalDateTime.now())
                 .param("spuId", spuId)
@@ -165,9 +173,9 @@ public class AdminProductService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
-        replaceImageRows(spuId, request.images());
-        replaceSkuRows(spuId, request.skus(), existingSkusById, operatorType, operatorId);
-        syncSpuFileUsages(spuId, request);
+        replaceImageRows(spuId, normalizedRequest.images());
+        replaceSkuRows(spuId, normalizedRequest.skus(), existingSkusById, operatorType, operatorId);
+        syncSpuFileUsages(spuId, normalizedRequest);
     }
 
     @Transactional
@@ -275,6 +283,99 @@ public class AdminProductService {
                     .param("sortOrder", index + 1)
                     .update();
         }
+    }
+
+    private AdminCategoryRequest normalizeCategoryRequest(AdminCategoryRequest request, ProductCategory existingCategory) {
+        Long iconFileId = request.iconFileId();
+        if (iconFileId == null && sameUrlSnapshot(request.icon(), existingCategory.icon())) {
+            iconFileId = existingCategory.iconFileId();
+        }
+        return new AdminCategoryRequest(
+                request.parentId(),
+                request.name(),
+                request.icon(),
+                iconFileId,
+                request.sortOrder(),
+                request.status()
+        );
+    }
+
+    private AdminSpuUpsertRequest normalizeSpuRequest(
+            AdminSpuUpsertRequest request,
+            ProductSpu existingSpu,
+            List<ProductSpuImage> existingImages,
+            Map<Long, ProductSku> existingSkusById
+    ) {
+        Long mainImageFileId = request.mainImageFileId();
+        if (mainImageFileId == null && sameUrlSnapshot(request.mainImage(), existingSpu.mainImage())) {
+            mainImageFileId = existingSpu.mainImageFileId();
+        }
+
+        Map<String, Deque<Long>> existingGalleryFileIdsByUrl = new HashMap<>();
+        for (ProductSpuImage image : existingImages) {
+            if (image.fileId() != null) {
+                existingGalleryFileIdsByUrl
+                        .computeIfAbsent(defaultString(image.url()), key -> new ArrayDeque<>())
+                        .addLast(image.fileId());
+            }
+        }
+
+        List<AdminProductImageUpsertRequest> normalizedImages = request.images() == null
+                ? null
+                : request.images().stream()
+                .map(image -> {
+                    Long fileId = image.fileId();
+                    if (fileId == null) {
+                        Deque<Long> existingFileIds = existingGalleryFileIdsByUrl.get(defaultString(image.url()));
+                        if (existingFileIds != null && !existingFileIds.isEmpty()) {
+                            fileId = existingFileIds.removeFirst();
+                        }
+                    }
+                    return new AdminProductImageUpsertRequest(image.url(), fileId);
+                })
+                .toList();
+
+        List<AdminSkuUpsertRequest> normalizedSkus = request.skus() == null
+                ? null
+                : request.skus().stream()
+                .map(sku -> normalizeSkuRequest(sku, existingSkusById.get(sku.id())))
+                .toList();
+
+        return new AdminSpuUpsertRequest(
+                request.categoryId(),
+                request.title(),
+                request.subtitle(),
+                request.mainImage(),
+                mainImageFileId,
+                request.sellingPoints(),
+                request.detailHtml(),
+                request.sortOrder(),
+                normalizedImages,
+                normalizedSkus
+        );
+    }
+
+    private AdminSkuUpsertRequest normalizeSkuRequest(AdminSkuUpsertRequest request, ProductSku existingSku) {
+        Long imageFileId = request.imageFileId();
+        if (imageFileId == null
+                && existingSku != null
+                && sameUrlSnapshot(request.image(), existingSku.image())) {
+            imageFileId = existingSku.imageFileId();
+        }
+        return new AdminSkuUpsertRequest(
+                request.id(),
+                request.skuCode(),
+                request.specJson(),
+                request.specText(),
+                request.priceCent(),
+                request.originalPriceCent(),
+                request.stockAvailable(),
+                request.weightGram(),
+                request.image(),
+                imageFileId,
+                request.status(),
+                request.sortOrder()
+        );
     }
 
     private void replaceSkuRows(
@@ -528,6 +629,18 @@ public class AdminProductService {
                 .optional();
     }
 
+    private List<ProductSpuImage> findSpuImagesBySpuId(Long spuId) {
+        return jdbcClient.sql("""
+                        select id, spu_id, url, file_id, sort_order, created_at
+                        from product_spu_image
+                        where spu_id = :spuId
+                        order by sort_order asc, id asc
+                        """)
+                .param("spuId", spuId)
+                .query(this::mapSpuImage)
+                .list();
+    }
+
     private List<ProductSku> findSkusBySpuId(Long spuId) {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
@@ -598,6 +711,10 @@ public class AdminProductService {
         return value == null ? "" : value;
     }
 
+    private boolean sameUrlSnapshot(String requestUrl, String existingUrl) {
+        return defaultString(requestUrl).equals(defaultString(existingUrl));
+    }
+
     private ProductCategory mapCategory(ResultSet rs, int rowNum) throws SQLException {
         return new ProductCategory(
                 rs.getLong("id"),
@@ -646,6 +763,17 @@ public class AdminProductService {
                 rs.getInt("sort_order"),
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class)
+        );
+    }
+
+    private ProductSpuImage mapSpuImage(ResultSet rs, int rowNum) throws SQLException {
+        return new ProductSpuImage(
+                rs.getLong("id"),
+                rs.getLong("spu_id"),
+                rs.getString("url"),
+                rs.getObject("file_id", Long.class),
+                rs.getInt("sort_order"),
+                rs.getObject("created_at", LocalDateTime.class)
         );
     }
 
