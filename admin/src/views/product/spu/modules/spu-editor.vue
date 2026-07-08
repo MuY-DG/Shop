@@ -47,8 +47,15 @@
             </ElFormItem>
           </ElCol>
           <ElCol :xs="24">
-            <ElFormItem label="主图地址" prop="mainImage">
-              <ElInput v-model="formData.mainImage" placeholder="请输入主图 URL" />
+            <ElFormItem label="主图素材" prop="mainImage">
+              <div class="asset-field">
+                <AssetPicker
+                  v-model="mainImageAsset"
+                  purpose="PRODUCT_IMAGE"
+                  @change="handleMainImageChange"
+                />
+                <ElInput v-model="formData.mainImage" placeholder="请输入主图 URL" />
+              </div>
             </ElFormItem>
           </ElCol>
           <ElCol :xs="24">
@@ -65,12 +72,7 @@
           </ElCol>
           <ElCol :xs="24">
             <ElFormItem label="详情 HTML" prop="detailHtml">
-              <ElInput
-                v-model="formData.detailHtml"
-                type="textarea"
-                :rows="6"
-                placeholder="请输入详情 HTML"
-              />
+              <ArtWangEditor v-model="formData.detailHtml" height="360px" />
             </ElFormItem>
           </ElCol>
         </ElRow>
@@ -78,7 +80,14 @@
         <ElDivider content-position="left">图集</ElDivider>
         <ElSpace direction="vertical" fill style="width: 100%">
           <div v-for="(image, index) in formData.images" :key="`image-${index}`" class="image-row">
-            <ElInput v-model="formData.images[index]" placeholder="请输入图片 URL" />
+            <div class="asset-field">
+              <AssetPicker
+                :model-value="{ fileId: image.fileId ?? null, url: image.url }"
+                purpose="PRODUCT_IMAGE"
+                @change="(value) => updateGalleryAsset(index, value)"
+              />
+              <ElInput v-model="formData.images[index].url" placeholder="请输入图片 URL" />
+            </div>
             <ElButton text type="danger" @click="removeImage(index)">删除</ElButton>
           </div>
           <ElButton @click="addImage" plain>新增图片</ElButton>
@@ -147,9 +156,16 @@
               />
             </template>
           </ElTableColumn>
-          <ElTableColumn label="图片" min-width="160">
+          <ElTableColumn label="图片" min-width="260">
             <template #default="{ row }">
-              <ElInput v-model="row.image" placeholder="图片 URL" />
+              <div class="asset-field asset-field--compact">
+                <AssetPicker
+                  :model-value="{ fileId: row.imageFileId ?? null, url: row.image }"
+                  purpose="PRODUCT_SKU_IMAGE"
+                  @change="(value) => updateSkuAsset(row, value)"
+                />
+                <ElInput v-model="row.image" placeholder="图片 URL" />
+              </div>
             </template>
           </ElTableColumn>
           <ElTableColumn label="状态" width="110">
@@ -192,6 +208,8 @@
   import { computed, nextTick, reactive, ref, watch } from 'vue'
   import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
   import { createProductSpu, fetchProductSpuDetail, updateProductSpu } from '@/api/product'
+  import AssetPicker from '@/components/business/asset-picker/index.vue'
+  import ArtWangEditor from '@/components/core/forms/art-wang-editor/index.vue'
 
   interface TreeOption {
     value: number
@@ -222,6 +240,11 @@
   const loading = ref(false)
   const submitting = ref(false)
 
+  const createEmptyImage = (): Api.Product.ProductImageForm => ({
+    url: '',
+    fileId: null
+  })
+
   const createEmptySku = (): Api.Product.Sku => ({
     skuCode: '',
     specJson: '',
@@ -231,6 +254,7 @@
     stockAvailable: 0,
     weightGram: 0,
     image: '',
+    imageFileId: null,
     status: 'ENABLED',
     sortOrder: 0
   })
@@ -240,10 +264,11 @@
     title: '',
     subtitle: '',
     mainImage: '',
+    mainImageFileId: null,
     sellingPoints: '',
     detailHtml: '',
     sortOrder: 0,
-    images: [''],
+    images: [createEmptyImage()],
     skus: [createEmptySku()]
   })
 
@@ -275,7 +300,18 @@
       }
     ],
     title: [{ required: true, message: '请输入商品标题', trigger: 'blur' }],
-    mainImage: [{ required: true, message: '请输入主图地址', trigger: 'blur' }]
+    mainImage: [
+      {
+        validator: (_rule, value, callback) => {
+          if (!value?.trim()) {
+            callback(new Error('请输入主图地址'))
+            return
+          }
+          callback()
+        },
+        trigger: 'blur'
+      }
+    ]
   }
 
   const resetFormData = () => {
@@ -290,11 +326,22 @@
       title: detail.title,
       subtitle: detail.subtitle,
       mainImage: detail.mainImage,
+      mainImageFileId: detail.mainImageFileId ?? null,
       sellingPoints: detail.sellingPoints,
       detailHtml: detail.detailHtml,
       sortOrder: detail.sortOrder,
-      images: detail.images?.length ? detail.images.map((item) => item.url) : [''],
-      skus: detail.skus?.length ? detail.skus.map((item) => ({ ...item })) : [createEmptySku()]
+      images: detail.images?.length
+        ? detail.images.map((item) => ({
+            url: item.url,
+            fileId: item.fileId ?? null
+          }))
+        : [createEmptyImage()],
+      skus: detail.skus?.length
+        ? detail.skus.map((item) => ({
+            ...item,
+            imageFileId: item.imageFileId ?? null
+          }))
+        : [createEmptySku()]
     })
   }
 
@@ -327,16 +374,39 @@
     { immediate: true }
   )
 
+  const mainImageAsset = computed<Api.Common.AssetValue>({
+    get: () => ({
+      fileId: formData.mainImageFileId ?? null,
+      url: formData.mainImage
+    }),
+    set: (value) => {
+      formData.mainImage = value.url
+      formData.mainImageFileId = value.fileId
+    }
+  })
+
+  const handleMainImageChange = (value: Api.Common.AssetValue) => {
+    formData.mainImage = value.url
+    formData.mainImageFileId = value.fileId
+  }
+
   const addImage = () => {
-    formData.images.push('')
+    formData.images.push(createEmptyImage())
   }
 
   const removeImage = (index: number) => {
     if (formData.images.length === 1) {
-      formData.images[0] = ''
+      formData.images[0] = createEmptyImage()
       return
     }
     formData.images.splice(index, 1)
+  }
+
+  const updateGalleryAsset = (index: number, value: Api.Common.AssetValue) => {
+    formData.images[index] = {
+      url: value.url,
+      fileId: value.fileId
+    }
   }
 
   const addSku = () => {
@@ -349,6 +419,11 @@
       return
     }
     formData.skus.splice(index, 1)
+  }
+
+  const updateSkuAsset = (row: Api.Product.Sku, value: Api.Common.AssetValue) => {
+    row.image = value.url
+    row.imageFileId = value.fileId
   }
 
   const validateSkus = () => {
@@ -382,16 +457,23 @@
     title: formData.title.trim(),
     subtitle: formData.subtitle.trim(),
     mainImage: formData.mainImage.trim(),
+    mainImageFileId: formData.mainImageFileId ?? null,
     sellingPoints: formData.sellingPoints.trim(),
     detailHtml: formData.detailHtml,
     sortOrder: formData.sortOrder,
-    images: formData.images.map((item) => item.trim()).filter(Boolean),
+    images: formData.images
+      .map((item) => ({
+        url: item.url.trim(),
+        fileId: item.fileId ?? null
+      }))
+      .filter((item) => item.url),
     skus: formData.skus.map((item: Api.Product.Sku) => ({
       ...item,
       skuCode: item.skuCode.trim(),
       specText: item.specText.trim(),
       specJson: item.specJson.trim(),
-      image: item.image.trim()
+      image: item.image.trim(),
+      imageFileId: item.imageFileId ?? null
     }))
   })
 
@@ -431,7 +513,16 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
-    align-items: center;
+    align-items: start;
+  }
+
+  .asset-field {
+    display: grid;
+    gap: 10px;
+  }
+
+  .asset-field--compact {
+    min-width: 220px;
   }
 
   .section-title {

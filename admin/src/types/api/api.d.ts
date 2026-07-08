@@ -58,6 +58,11 @@ declare namespace Api {
 
     /** 启用状态 */
     type EnableStatus = '1' | '2'
+
+    interface AssetValue {
+      fileId: number | null
+      url: string
+    }
   }
 
   /** 认证类型 */
@@ -147,6 +152,7 @@ declare namespace Api {
       parentId: number
       name: string
       icon: string
+      iconFileId?: number | null
       sortOrder: number
       status: CategoryStatus
       children: Category[]
@@ -156,6 +162,7 @@ declare namespace Api {
       parentId: number
       name: string
       icon: string
+      iconFileId?: number | null
       sortOrder: number
       status: CategoryStatus
     }
@@ -169,6 +176,7 @@ declare namespace Api {
       title: string
       subtitle: string
       mainImage: string
+      mainImageFileId?: number | null
       status: ProductStatus
       sortOrder: number
       minPriceCent?: number | null
@@ -190,7 +198,13 @@ declare namespace Api {
     interface ProductImage {
       id: number
       url: string
+      fileId?: number | null
       sortOrder: number
+    }
+
+    interface ProductImageForm {
+      url: string
+      fileId?: number | null
     }
 
     interface Sku {
@@ -203,6 +217,7 @@ declare namespace Api {
       stockAvailable: number
       weightGram: number
       image: string
+      imageFileId?: number | null
       status: SkuStatus
       sortOrder: number
     }
@@ -214,6 +229,7 @@ declare namespace Api {
       title: string
       subtitle: string
       mainImage: string
+      mainImageFileId?: number | null
       sellingPoints: string
       detailHtml: string
       sortOrder: number
@@ -229,16 +245,177 @@ declare namespace Api {
       title: string
       subtitle: string
       mainImage: string
+      mainImageFileId?: number | null
       sellingPoints: string
       detailHtml: string
       sortOrder: number
-      images: string[]
+      images: ProductImageForm[]
       skus: Sku[]
     }
 
     interface StockAdjustmentForm {
       quantityDelta: number
       reason: string
+    }
+  }
+
+  namespace Storage {
+    type Purpose =
+      | 'PRODUCT_IMAGE'
+      | 'PRODUCT_SKU_IMAGE'
+      | 'CATEGORY_ICON'
+      | 'HOME_BANNER'
+      | 'MARKETING_IMAGE'
+      | 'APP_ICON'
+      | 'RICH_TEXT_IMAGE'
+      | 'PAYMENT_CERTIFICATE'
+      | 'AFTER_SALE_IMAGE'
+      | 'REFUND_EVIDENCE'
+
+    type Visibility = 'PUBLIC' | 'PRIVATE'
+    type FileStatus = 'ACTIVE' | 'DELETED'
+    type UploadedByType = 'ADMIN' | 'APP'
+    type CategoryStatus = 'ENABLED' | 'DISABLED'
+
+    type UsageType =
+      | 'PRODUCT_CATEGORY_ICON'
+      | 'PRODUCT_SPU_MAIN'
+      | 'PRODUCT_SPU_GALLERY'
+      | 'PRODUCT_SKU_IMAGE'
+      | 'PRODUCT_DETAIL_HTML'
+      | 'HOME_BANNER'
+      | 'ORDER_ITEM_SNAPSHOT'
+      | 'AFTER_SALE_EVIDENCE'
+      | 'PAYMENT_CONFIGURATION'
+
+    type UsageOwnerType =
+      | 'PRODUCT_CATEGORY'
+      | 'PRODUCT_SPU'
+      | 'PRODUCT_SKU'
+      | 'HOME_BANNER'
+      | 'ORDER_ITEM'
+      | 'AFTER_SALE'
+      | 'PAYMENT_CONFIG'
+
+    type FileList = Api.Common.PaginatedResponse<FileItem>
+
+    interface FileQueryParams extends Partial<Api.Common.CommonSearchParams> {
+      purpose?: Purpose
+      assetCategoryId?: number
+      visibility?: Visibility
+      status?: FileStatus
+    }
+
+    interface FileItem {
+      id: number
+      purpose: Purpose
+      assetCategoryId?: number | null
+      visibility: Visibility
+      provider: string
+      originalFilename: string
+      contentType: string
+      extension: string
+      sizeBytes: number
+      sha256?: string
+      width?: number | null
+      height?: number | null
+      status: FileStatus
+      uploadedByType: UploadedByType
+      uploadedById?: number | null
+      url?: string | null
+      publicUrl?: string | null
+      createdAt: string
+      updatedAt: string
+      deletedAt?: string | null
+      usages?: FileUsage[]
+    }
+
+    interface FileUsage {
+      id: number
+      fileId: number
+      usageType: UsageType | string
+      ownerType: UsageOwnerType | string
+      ownerId?: number | null
+      ownerLabel: string
+      snapshotUrl?: string | null
+      sortOrder?: number | null
+      protected: boolean
+      status: string
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface AssetCategory {
+      id: number
+      parentId: number
+      name: string
+      code: string
+      description?: string | null
+      sortOrder: number
+      status: CategoryStatus
+      createdAt: string
+      updatedAt: string
+      children: AssetCategory[]
+    }
+
+    interface AssetCategoryForm {
+      parentId: number
+      name: string
+      code: string
+      description?: string
+      sortOrder: number
+      status: CategoryStatus
+    }
+
+    interface UploadPayload {
+      purpose: Purpose
+      file: File
+      assetCategoryId?: number | null
+    }
+
+    interface MovePayload {
+      assetCategoryId: number
+    }
+  }
+
+  namespace Content {
+    type BannerStatus = 'ENABLED' | 'DISABLED'
+    type BannerJumpType = 'NONE' | 'PRODUCT' | 'CATEGORY' | 'COUPON' | 'APP_PATH' | 'URL'
+    type BannerList = Api.Common.PaginatedResponse<BannerItem>
+
+    interface BannerQueryParams extends Partial<Api.Common.CommonSearchParams> {
+      title?: string
+      status?: BannerStatus
+    }
+
+    interface BannerItem {
+      id: number
+      title: string
+      subtitle: string
+      imageFileId: number
+      imageUrl: string
+      jumpType: BannerJumpType
+      jumpTargetId?: number | null
+      jumpPath?: string | null
+      status: BannerStatus
+      sortOrder: number
+      startAt?: string | null
+      endAt?: string | null
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface BannerForm {
+      title: string
+      subtitle: string
+      imageFileId: number | null
+      jumpType: BannerJumpType
+      jumpTargetId?: number | null
+      jumpPath?: string
+      status: BannerStatus
+      sortOrder: number
+      startAt?: string | null
+      endAt?: string | null
     }
   }
 

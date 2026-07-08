@@ -24,6 +24,13 @@
       <ElFormItem label="分类名称" prop="name">
         <ElInput v-model="formData.name" maxlength="40" placeholder="请输入分类名称" />
       </ElFormItem>
+      <ElFormItem label="分类图标">
+        <AssetPicker
+          v-model="iconAsset"
+          purpose="CATEGORY_ICON"
+          @change="handleIconChange"
+        />
+      </ElFormItem>
       <ElFormItem label="图标地址" prop="icon">
         <ElInput v-model="formData.icon" placeholder="请输入图标 URL" />
       </ElFormItem>
@@ -57,6 +64,7 @@
 <script setup lang="ts">
   import { computed, nextTick, reactive, ref, watch } from 'vue'
   import type { FormInstance, FormRules } from 'element-plus'
+  import AssetPicker from '@/components/business/asset-picker/index.vue'
 
   interface TreeOption {
     value: number
@@ -92,6 +100,7 @@
     parentId: 0,
     name: '',
     icon: '',
+    iconFileId: null,
     sortOrder: 0,
     status: 'ENABLED'
   })
@@ -132,6 +141,7 @@
         parentId: props.category.parentId,
         name: props.category.name,
         icon: props.category.icon,
+        iconFileId: props.category.iconFileId ?? null,
         sortOrder: props.category.sortOrder,
         status: props.category.status
       })
@@ -157,6 +167,22 @@
     Object.assign(formData, defaultForm())
   }
 
+  const iconAsset = computed<Api.Common.AssetValue>({
+    get: () => ({
+      fileId: formData.iconFileId ?? null,
+      url: formData.icon
+    }),
+    set: (value) => {
+      formData.icon = value.url
+      formData.iconFileId = value.fileId
+    }
+  })
+
+  const handleIconChange = (value: Api.Common.AssetValue) => {
+    formData.icon = value.url
+    formData.iconFileId = value.fileId
+  }
+
   const handleSubmit = async () => {
     if (!formRef.value) return
     const valid = await formRef.value
@@ -168,6 +194,7 @@
       parentId: formData.parentId ?? 0,
       name: formData.name.trim(),
       icon: formData.icon.trim(),
+      iconFileId: formData.iconFileId ?? null,
       sortOrder: formData.sortOrder,
       status: formData.status
     })
