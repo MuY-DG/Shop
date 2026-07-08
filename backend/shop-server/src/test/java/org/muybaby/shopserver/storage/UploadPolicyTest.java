@@ -45,6 +45,24 @@ class UploadPolicyTest {
     }
 
     @Test
+    void publicImagePurposesAllReturnPublicVisibility() {
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.PRODUCT_IMAGE, "product.jpg", "image/jpeg", 1024, true).visibility())
+                .isEqualTo(FileVisibility.PUBLIC);
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.PRODUCT_SKU_IMAGE, "sku.png", "image/png", 1024, true).visibility())
+                .isEqualTo(FileVisibility.PUBLIC);
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.CATEGORY_ICON, "category.webp", "image/webp", 1024, true).visibility())
+                .isEqualTo(FileVisibility.PUBLIC);
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.HOME_BANNER, "banner.gif", "image/gif", 1024, true).visibility())
+                .isEqualTo(FileVisibility.PUBLIC);
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.MARKETING_IMAGE, "marketing.jpeg", "image/jpeg", 1024, true).visibility())
+                .isEqualTo(FileVisibility.PUBLIC);
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.APP_ICON, "app.jpg", "image/jpeg", 1024, true).visibility())
+                .isEqualTo(FileVisibility.PUBLIC);
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.RICH_TEXT_IMAGE, "rich-text.png", "image/png", 1024, true).visibility())
+                .isEqualTo(FileVisibility.PUBLIC);
+    }
+
+    @Test
     void privatePurposesAlwaysReturnPrivateVisibility() {
         assertThat(uploadPolicy.requireAllowed(StoragePurpose.PAYMENT_CERTIFICATE, "merchant.pem", "text/plain", 512, false).visibility())
                 .isEqualTo(FileVisibility.PRIVATE);
