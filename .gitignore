@@ -3,6 +3,7 @@
 
 # Codex / Superpowers local brainstorming artifacts
 .superpowers/
+.worktrees/
 
 # Logs
 *.log
