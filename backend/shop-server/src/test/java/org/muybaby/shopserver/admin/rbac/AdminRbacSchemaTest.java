@@ -28,8 +28,24 @@ class AdminRbacSchemaTest {
         Integer menuCount = jdbcClient.sql("select count(*) from admin_menu where enabled = true")
                 .query(Integer.class)
                 .single();
+        Integer storagePermissionCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission
+                        where auth_mark in ('file:upload', 'file:read', 'file:delete', 'file:category')
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer storageRouteCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu
+                        where path = '/storage/files'
+                        """)
+                .query(Integer.class)
+                .single();
 
         assertThat(passwordEncoder.matches("123456", passwordHash)).isTrue();
         assertThat(menuCount).isGreaterThanOrEqualTo(5);
+        assertThat(storagePermissionCount).isEqualTo(4);
+        assertThat(storageRouteCount).isEqualTo(1);
     }
 }

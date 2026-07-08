@@ -134,6 +134,7 @@ class SecurityConfigTest {
     void publicEndpointsAreNotBlockedByAuthentication() throws Exception {
         assertNotAuthenticationBlocked("/admin/auth/login");
         assertNotAuthenticationBlocked("/app/auth/login");
+        assertNotAuthenticationBlocked("/files/public/health-probe.png");
         assertNotAuthenticationBlocked("/wxpay/notify");
         assertNotAuthenticationBlocked("/wechat/events");
         assertNotAuthenticationBlocked("/actuator/health");

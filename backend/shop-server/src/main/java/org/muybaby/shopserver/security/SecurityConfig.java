@@ -42,6 +42,7 @@ public class SecurityConfig {
                                 "/wxpay/**",
                                 "/wechat/**"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/files/public/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/app/product/categories", "/app/product/spus", "/app/product/spus/*").permitAll()
                         .requestMatchers("/admin/**", "/app/**").authenticated()
                         .anyRequest().denyAll())

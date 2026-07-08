@@ -21,7 +21,9 @@ public enum ErrorCode {
     WECHAT_SHIPPING_UPLOAD_FAILED(600001, "WeChat shipping upload failed"),
     WECHAT_REFUND_FAILED(700001, "WeChat refund failed"),
     STORAGE_FILE_UNAVAILABLE(800001, "Storage file unavailable"),
-    STORAGE_UPLOAD_POLICY_REJECTED(800002, "Storage upload policy rejected");
+    STORAGE_UPLOAD_POLICY_REJECTED(800002, "Storage upload policy rejected"),
+    STORAGE_FILE_IN_USE(800003, "Storage file in use"),
+    STORAGE_ASSET_CATEGORY_UNAVAILABLE(800004, "Storage asset category unavailable");
 
     private final int code;
     private final String message;
