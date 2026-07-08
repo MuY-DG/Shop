@@ -126,12 +126,21 @@ export function handleError(error: AxiosError<ErrorResponse>): never {
   }
 
   const statusCode = error.response?.status
-  const errorMessage = error.response?.data?.msg || error.message
+  const responseData = error.response?.data
+  const errorMessage = responseData?.msg || error.message
   const requestConfig = error.config
 
   // 处理网络错误
   if (!error.response) {
     throw new HttpError($t('httpMsg.networkError'), ApiStatus.error, {
+      url: requestConfig?.url,
+      method: requestConfig?.method?.toUpperCase()
+    })
+  }
+
+  if (typeof responseData?.code === 'number' && responseData.msg) {
+    throw new HttpError(responseData.msg, responseData.code, {
+      data: responseData,
       url: requestConfig?.url,
       method: requestConfig?.method?.toUpperCase()
     })

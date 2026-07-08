@@ -22,6 +22,7 @@ build/
 .gradle/
 out/
 *.class
+backend/shop-server/var/
 
 # Node / Vue / Mini Program
 .pnpm-store/
