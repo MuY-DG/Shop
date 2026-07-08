@@ -84,6 +84,8 @@ class UploadPolicyTest {
 
     @Test
     void certificatePurposeAllowsExpectedExtensionsOnly() {
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.PAYMENT_CERTIFICATE, "merchant.pem", "application/x-pem-file", 512, false).extension())
+                .isEqualTo("pem");
         assertThat(uploadPolicy.requireAllowed(StoragePurpose.PAYMENT_CERTIFICATE, "merchant.crt", "application/x-x509-ca-cert", 512, false).extension())
                 .isEqualTo("crt");
         assertThat(uploadPolicy.requireAllowed(StoragePurpose.PAYMENT_CERTIFICATE, "merchant.cer", "application/pkix-cert", 512, false).extension())

@@ -750,7 +750,7 @@ SMOKE_DIR="$(mktemp -d)"
 python3 - <<'PY' "${SMOKE_DIR}/tiny.png"
 import base64
 import sys
-png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4x8AAAAASUVORK5CYII="
 with open(sys.argv[1], "wb") as f:
     f.write(base64.b64decode(png))
 PY

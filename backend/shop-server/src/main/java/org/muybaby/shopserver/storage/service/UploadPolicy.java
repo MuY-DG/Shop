@@ -21,6 +21,7 @@ public class UploadPolicy {
     );
     private static final Set<String> CERTIFICATE_CONTENT_TYPES = Set.of(
             "text/plain",
+            "application/x-pem-file",
             "application/x-x509-ca-cert",
             "application/pkix-cert"
     );

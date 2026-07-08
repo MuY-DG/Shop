@@ -51,6 +51,19 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void oversizedMultipartReturnsStorageUploadPolicyEnvelope() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleMaxUploadSizeExceededException();
+
+        assertThat(response.getStatusCode().value()).isEqualTo(400);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(800002);
+        assertThat(response.getBody().msg()).isEqualTo("Storage upload policy rejected");
+        assertThat(response.getBody().data()).isNull();
+    }
+
+    @Test
     void unsupportedMediaTypeReturnsUnsupportedMediaTypeEnvelope() {
         GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
