@@ -238,3 +238,30 @@ Result:
 
 - `Tests run: 30, Failures: 0, Errors: 0, Skipped: 0`
 - `BUILD SUCCESS`
+
+## Task 3 Review Fixes (2026-07-07, protected blank snapshot usage)
+
+### Review scope
+
+Adjusted `AppOrderService` so `ORDER_ITEM_SNAPSHOT` usage is created for every non-null order item snapshot file id, even when the snapshot URL is blank. The usage row still stores `defaultString(snapshotUrl)` for compatibility.
+
+### Regression update
+
+- Renamed the blank-URL order regression to `submitCreatesProtectedSnapshotUsageWhenSkuImageUrlIsBlank`
+- Updated the assertion to expect a protected `storage_file_usage` row for the blank snapshot case instead of absence
+
+### Verification
+
+Focused run:
+
+```bash
+cd backend/shop-server && ./mvnw -Dtest=AppOrderControllerTest,StorageControllerTest test
+```
+
+Expanded run:
+
+```bash
+cd backend/shop-server && ./mvnw -Dtest=AdminProductCategoryControllerTest,AdminProductSpuControllerTest,AppProductControllerTest,AppOrderControllerTest,OrderSchemaTest,StorageControllerTest test
+```
+
+Both completed with `BUILD SUCCESS`.

@@ -548,7 +548,7 @@ public class AppOrderService {
             String snapshotUrl,
             int sortOrder
     ) {
-        if (fileId == null || !StringUtils.hasText(snapshotUrl)) {
+        if (fileId == null) {
             return;
         }
         storageUsageService.addProtectedUsage(

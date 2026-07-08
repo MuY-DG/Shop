@@ -369,7 +369,7 @@ class AppOrderControllerTest {
     }
 
     @Test
-    void submitSkipsProtectedSnapshotUsageWhenSkuImageUrlIsBlank() throws Exception {
+    void submitCreatesProtectedSnapshotUsageWhenSkuImageUrlIsBlank() throws Exception {
         AppLoginSession session = appLogin("order-blank-snapshot-user");
         String appToken = session.token();
         StoredFile mainFile = insertStorageFile("ord-main-blank.png");
@@ -430,7 +430,7 @@ class AppOrderControllerTest {
                 .param("fileId", skuFile.id())
                 .param("orderItemId", orderItemId)
                 .query(Integer.class)
-                .single()).isZero();
+                .single()).isEqualTo(1);
         assertThat(protectedSnapshotUsageCount(mainFile.id(), orderItemId, mainFile.publicUrl())).isEqualTo(2);
     }
 
