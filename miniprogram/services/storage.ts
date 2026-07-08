@@ -16,7 +16,7 @@ function parseUploadEnvelope(rawData: string): ApiResponse<StorageFileUploadResp
 
   try {
     parsed = JSON.parse(rawData);
-  } catch (error) {
+  } catch {
     throw new Error("上传响应格式错误");
   }
 
@@ -35,6 +35,18 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return isFiniteNumber(value) && value > 0;
+}
+
+function isOptionalPositiveFiniteNumber(value: unknown): boolean {
+  return value === undefined || value === null || isPositiveFiniteNumber(value);
+}
+
 function isStorageFileUploadResponse(
   data: unknown,
   purpose: EvidenceUploadPurpose
@@ -49,8 +61,7 @@ function isStorageFileUploadResponse(
   const uploadedByType = data.uploadedByType;
 
   return (
-    typeof id === "number" &&
-    Number.isFinite(id) &&
+    isPositiveFiniteNumber(id) &&
     responsePurpose === purpose &&
     visibility === "PRIVATE" &&
     uploadedByType === "APP" &&
@@ -58,11 +69,14 @@ function isStorageFileUploadResponse(
     isNonEmptyString(data.originalFilename) &&
     isNonEmptyString(data.contentType) &&
     isNonEmptyString(data.extension) &&
-    isNonEmptyString(data.status) &&
+    data.status === "ACTIVE" &&
     isNonEmptyString(data.createdAt) &&
     isNonEmptyString(data.updatedAt) &&
-    typeof data.sizeBytes === "number" &&
-    Number.isFinite(data.sizeBytes) &&
+    isPositiveFiniteNumber(data.sizeBytes) &&
+    isOptionalPositiveFiniteNumber(data.uploadedById) &&
+    isOptionalPositiveFiniteNumber(data.assetCategoryId) &&
+    isOptionalPositiveFiniteNumber(data.width) &&
+    isOptionalPositiveFiniteNumber(data.height) &&
     (!("url" in data) || typeof data.url === "string" || data.url === null) &&
     (!("publicUrl" in data) || typeof data.publicUrl === "string" || data.publicUrl === null)
   );

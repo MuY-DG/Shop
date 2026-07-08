@@ -78,7 +78,9 @@ Page({
   },
   async onLoad() {
     this.loadHealth();
-    this.loadHomeContent();
+    void this.loadBanners();
+    void this.loadCategories();
+    void this.loadProducts();
   },
   async loadHealth() {
     try {
@@ -92,38 +94,54 @@ Page({
       });
     }
   },
-  async loadHomeContent() {
+  async loadBanners() {
     this.setData({
-      loadingProducts: true,
-      productErrorText: "",
       banners: []
     });
 
-    const [bannerResult, productResult] = await Promise.allSettled([
-      getHomeBanners(),
-      Promise.all([getProductCategories(), getProductList({ current: 1, size: 6 })])
-    ]);
-
-    if (bannerResult.status === "fulfilled") {
+    try {
+      const banners = await getHomeBanners();
       this.setData({
-        banners: bannerResult.value
+        banners
+      });
+    } catch {
+      this.setData({
+        banners: []
       });
     }
-
-    if (productResult.status === "fulfilled") {
+  },
+  async loadCategories() {
+    try {
+      const categories = await getProductCategories();
       this.setData({
-        categories: productResult.value[0].map(toCategoryView),
-        products: productResult.value[1].records.map(toProductCard)
+        categories: categories.map(toCategoryView)
       });
-    } else {
+    } catch {
       this.setData({
-        productErrorText: productResult.reason instanceof Error ? productResult.reason.message : "商品暂不可用"
+        categories: []
       });
     }
-
+  },
+  async loadProducts() {
     this.setData({
-      loadingProducts: false
+      loadingProducts: true,
+      productErrorText: ""
     });
+
+    try {
+      const products = await getProductList({ current: 1, size: 6 });
+      this.setData({
+        products: products.records.map(toProductCard)
+      });
+    } catch (error) {
+      this.setData({
+        productErrorText: error instanceof Error ? error.message : "商品暂不可用"
+      });
+    } finally {
+      this.setData({
+        loadingProducts: false
+      });
+    }
   },
   onCategoryTap(event: DatasetEvent) {
     const categoryId = Number(event.currentTarget.dataset.id);

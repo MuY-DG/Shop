@@ -266,3 +266,11 @@ Result:
 
 - Passed
 - No diff check warnings were reported.
+
+---
+
+## 2026-07-07 Task 6 Fourth Review Fix
+
+- Tightened `miniprogram/services/storage.ts` upload success validation so PRIVATE responses still allow missing or null `url` and `publicUrl`, while requiring positive numeric `id` and `sizeBytes`, matching purpose/visibility/status/provider metadata, and optional positive numeric metadata when present.
+- Split `miniprogram/pages/home/home.ts` into independent banner, category, and product loaders so banner latency or failure no longer blocks category or product rendering.
+- Verification run: `cd miniprogram && pnpm typecheck` and `git diff --check -- miniprogram/services/storage.ts miniprogram/pages/home/home.ts .superpowers/sdd/task-6-report.md`.
