@@ -1,3 +1,70 @@
+.banner-shell {
+  overflow: hidden;
+  border-radius: 16rpx;
+  background: #ffffff;
+  box-shadow: 0 14rpx 40rpx rgba(110, 82, 67, 0.12);
+}
+
+.banner-swiper {
+  width: 100%;
+  height: 360rpx;
+}
+
+.banner-slide {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #7a1d17;
+}
+
+.banner-image,
+.banner-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.banner-overlay {
+  background: linear-gradient(180deg, rgba(36, 22, 19, 0.12) 0%, rgba(36, 22, 19, 0.68) 100%);
+}
+
+.banner-content {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  padding: 28rpx 28rpx 40rpx;
+  color: #ffffff;
+}
+
+.banner-eyebrow {
+  font-size: 22rpx;
+  opacity: 0.88;
+}
+
+.banner-title {
+  margin-top: 12rpx;
+  font-size: 38rpx;
+  font-weight: 800;
+  line-height: 46rpx;
+}
+
+.banner-subtitle {
+  margin-top: 12rpx;
+  font-size: 25rpx;
+  line-height: 34rpx;
+  opacity: 0.92;
+}
+
+.status-strip {
+  padding: 18rpx 24rpx 22rpx;
+  color: #7a6f68;
+  font-size: 22rpx;
+  background: #ffffff;
+}
+
 .hero {
   padding: 48rpx 32rpx;
   border-radius: 16rpx;

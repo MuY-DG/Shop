@@ -1,5 +1,31 @@
 <view class="page home-page">
-  <view class="hero">
+  <view wx:if="{{banners.length > 0}}" class="banner-shell">
+    <swiper
+      class="banner-swiper"
+      circular="true"
+      autoplay="true"
+      interval="5000"
+      duration="320"
+      indicator-dots="true"
+      indicator-color="rgba(255, 255, 255, 0.45)"
+      indicator-active-color="#ffffff"
+    >
+      <swiper-item wx:for="{{banners}}" wx:key="id">
+        <view class="banner-slide" data-index="{{index}}" bindtap="onBannerTap">
+          <image class="banner-image" src="{{item.imageUrl}}" mode="aspectFill" />
+          <view class="banner-overlay"></view>
+          <view class="banner-content">
+            <view class="banner-eyebrow">Hotpot Shop</view>
+            <view class="banner-title">{{item.title}}</view>
+            <view wx:if="{{item.subtitle}}" class="banner-subtitle">{{item.subtitle}}</view>
+          </view>
+        </view>
+      </swiper-item>
+    </swiper>
+    <view class="status-strip">{{healthText}}</view>
+  </view>
+
+  <view wx:else class="hero">
     <view class="eyebrow">Hotpot Shop</view>
     <view class="title">火锅底料商城</view>
     <view class="subtitle">精选牛油、清油、番茄和菌汤锅底</view>

@@ -47,6 +47,43 @@ export interface ProductCategory {
   status: "ENABLED" | "DISABLED";
 }
 
+export type HomeBannerJumpType = "NONE" | "PRODUCT" | "CATEGORY" | "COUPON" | "APP_PATH" | "URL";
+
+export interface HomeBanner {
+  id: number;
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+  jumpType: HomeBannerJumpType;
+  jumpTargetId: number | null;
+  jumpPath: string | null;
+}
+
+export type EvidenceUploadPurpose = "AFTER_SALE_IMAGE" | "REFUND_EVIDENCE";
+
+export interface StorageFileUploadResponse {
+  id: number;
+  purpose: EvidenceUploadPurpose;
+  assetCategoryId: number | null;
+  visibility: string;
+  provider: string;
+  originalFilename: string;
+  contentType: string;
+  extension: string;
+  sizeBytes: number;
+  sha256?: string | null;
+  width?: number | null;
+  height?: number | null;
+  status: string;
+  uploadedByType: string;
+  uploadedById?: number | null;
+  url?: string | null;
+  publicUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+}
+
 export interface ProductListItem {
   id: number;
   categoryId: number;

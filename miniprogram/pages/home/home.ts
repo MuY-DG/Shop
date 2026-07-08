@@ -1,4 +1,5 @@
-import type { ProductCategory, ProductListItem } from "../../types/api";
+import type { HomeBanner, ProductCategory, ProductListItem } from "../../types/api";
+import { getHomeBanners } from "../../services/home";
 import { formatProductPriceRange, getProductCategories, getProductList } from "../../services/product";
 import { request } from "../../utils/request";
 
@@ -24,6 +25,13 @@ interface ProductCardView extends ProductListItem {
   soldOut: boolean;
 }
 
+const TAB_PAGE_PATHS = new Set([
+  "/pages/home/home",
+  "/pages/product/list/list",
+  "/pages/cart/cart",
+  "/pages/profile/profile"
+]);
+
 function toCategoryView(category: ProductCategory): CategoryView {
   const icon = category.icon || "";
   return {
@@ -42,9 +50,27 @@ function toProductCard(product: ProductListItem): ProductCardView {
   };
 }
 
+function normalizeAppPath(path: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+function toPagePath(path: string): string {
+  return normalizeAppPath(path).split("?")[0] || "";
+}
+
+function isTabPath(path: string): boolean {
+  return TAB_PAGE_PATHS.has(toPagePath(path));
+}
+
 Page({
   data: {
     healthText: "后端诊断: 正在连接...",
+    banners: [] as HomeBanner[],
     categories: [] as CategoryView[],
     products: [] as ProductCardView[],
     productErrorText: "",
@@ -52,7 +78,7 @@ Page({
   },
   async onLoad() {
     this.loadHealth();
-    this.loadProductPreview();
+    this.loadHomeContent();
   },
   async loadHealth() {
     try {
@@ -66,31 +92,38 @@ Page({
       });
     }
   },
-  async loadProductPreview() {
+  async loadHomeContent() {
     this.setData({
       loadingProducts: true,
-      productErrorText: ""
+      productErrorText: "",
+      banners: []
     });
 
-    try {
-      const [categories, productPage] = await Promise.all([
-        getProductCategories(),
-        getProductList({ current: 1, size: 6 })
-      ]);
+    const [bannerResult, productResult] = await Promise.allSettled([
+      getHomeBanners(),
+      Promise.all([getProductCategories(), getProductList({ current: 1, size: 6 })])
+    ]);
 
+    if (bannerResult.status === "fulfilled") {
       this.setData({
-        categories: categories.map(toCategoryView),
-        products: productPage.records.map(toProductCard)
-      });
-    } catch (error) {
-      this.setData({
-        productErrorText: error instanceof Error ? error.message : "商品暂不可用"
-      });
-    } finally {
-      this.setData({
-        loadingProducts: false
+        banners: bannerResult.value
       });
     }
+
+    if (productResult.status === "fulfilled") {
+      this.setData({
+        categories: productResult.value[0].map(toCategoryView),
+        products: productResult.value[1].records.map(toProductCard)
+      });
+    } else {
+      this.setData({
+        productErrorText: productResult.reason instanceof Error ? productResult.reason.message : "商品暂不可用"
+      });
+    }
+
+    this.setData({
+      loadingProducts: false
+    });
   },
   onCategoryTap(event: DatasetEvent) {
     const categoryId = Number(event.currentTarget.dataset.id);
@@ -111,5 +144,62 @@ Page({
     wx.navigateTo({
       url: `/pages/product/detail/detail?id=${productId}`
     });
+  },
+  onBannerTap(event: DatasetEvent) {
+    const index = Number(event.currentTarget.dataset.index);
+    if (!Number.isFinite(index) || index < 0) {
+      return;
+    }
+
+    const banner = (this.data.banners as HomeBanner[])[index];
+    if (!banner) {
+      return;
+    }
+
+    switch (banner.jumpType) {
+      case "PRODUCT": {
+        const productId = Number(banner.jumpTargetId);
+        if (!Number.isFinite(productId) || productId <= 0) {
+          return;
+        }
+        wx.navigateTo({
+          url: `/pages/product/detail/detail?id=${productId}`
+        });
+        return;
+      }
+      case "CATEGORY": {
+        const categoryId = Number(banner.jumpTargetId);
+        if (!Number.isFinite(categoryId) || categoryId <= 0) {
+          return;
+        }
+        wx.reLaunch({
+          url: `/pages/product/list/list?categoryId=${categoryId}`
+        });
+        return;
+      }
+      case "APP_PATH": {
+        const jumpPath = normalizeAppPath(banner.jumpPath || "");
+        if (!jumpPath) {
+          return;
+        }
+
+        if (isTabPath(jumpPath)) {
+          wx.switchTab({
+            url: toPagePath(jumpPath)
+          });
+          return;
+        }
+
+        wx.navigateTo({
+          url: jumpPath
+        });
+        return;
+      }
+      case "NONE":
+      case "URL":
+      case "COUPON":
+      default:
+        return;
+    }
   }
 });
