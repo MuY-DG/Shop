@@ -240,6 +240,7 @@ $ tsc --noEmit
 ### Changes
 
 - Hardened `miniprogram/services/storage.ts` so `uploadEvidenceFile` rejects malformed success payloads unless the upload metadata includes a finite numeric `id`, a non-empty string `purpose`, a non-empty string `visibility`, and a usable image URL in `url` or `publicUrl`.
+- Tightened the same guard again so app upload responses only pass when `visibility` is `PRIVATE` and `uploadedByType` is `APP`, while still allowing `url` and `publicUrl` to be absent for private files.
 - Added clamp rules to `miniprogram/pages/home/home.wxss` for `.banner-title` and `.banner-subtitle` so long admin-managed text stays inside the fixed swiper frame.
 
 ### Verification

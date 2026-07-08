@@ -46,12 +46,14 @@ function isStorageFileUploadResponse(
   const id = data.id;
   const responsePurpose = data.purpose;
   const visibility = data.visibility;
+  const uploadedByType = data.uploadedByType;
 
   return (
     typeof id === "number" &&
     Number.isFinite(id) &&
     responsePurpose === purpose &&
-    isNonEmptyString(visibility) &&
+    visibility === "PRIVATE" &&
+    uploadedByType === "APP" &&
     isNonEmptyString(data.provider) &&
     isNonEmptyString(data.originalFilename) &&
     isNonEmptyString(data.contentType) &&
