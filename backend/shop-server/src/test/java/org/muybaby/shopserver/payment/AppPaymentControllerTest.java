@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.payment.config.PaymentConfigSource;
 import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
+import org.muybaby.shopserver.payment.provider.WechatPayOrderQueryResult;
 import org.muybaby.shopserver.payment.service.AppPaymentService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -12,6 +13,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
+
+import java.time.LocalDateTime;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -149,6 +153,37 @@ class AppPaymentControllerTest extends PaymentTestSupport {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void paymentSyncRejectsPaidProviderResultForDifferentOutTradeNo() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-sync-mismatch-user");
+        SeedOrder firstOrder = seedCreatedOrder(session.userId(), 6980L, true);
+        SeedOrder secondOrder = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), firstOrder.orderId());
+        pay(session.token(), secondOrder.orderId());
+        String firstOutTradeNo = activeOutTradeNo(firstOrder.orderId());
+        String secondOutTradeNo = activeOutTradeNo(secondOrder.orderId());
+        Map<String, WechatPayOrderQueryResult> paidOrders =
+                (Map<String, WechatPayOrderQueryResult>) ReflectionTestUtils.getField(mockWechatPayProvider, "paidOrders");
+        paidOrders.put(firstOutTradeNo, new WechatPayOrderQueryResult(
+                true,
+                secondOutTradeNo,
+                "wx-transaction-wrong-sync",
+                6980L,
+                LocalDateTime.of(2026, 7, 8, 12, 0),
+                "SUCCESS"
+        ));
+
+        mockMvc.perform(post("/app/orders/{orderId}/payment/sync", firstOrder.orderId())
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertPayingPaymentState(firstOrder, firstOutTradeNo);
+        assertPayingPaymentState(secondOrder, secondOutTradeNo);
+    }
+
+    @Test
     void cancelPayingOrderClosesProviderPaymentAndReleasesLocks() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-cancel-user");
@@ -204,6 +239,35 @@ class AppPaymentControllerTest extends PaymentTestSupport {
                 .param("userCouponId", order.userCouponId())
                 .query(String.class)
                 .single()).isEqualTo("USED");
+    }
+
+    private void assertPayingPaymentState(SeedOrder order, String outTradeNo) {
+        assertThat(jdbcClient.sql("select status from payment_order where out_trade_no = :outTradeNo")
+                .param("outTradeNo", outTradeNo)
+                .query(String.class)
+                .single()).isEqualTo("PAYING");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from shop_order
+                        where id = :orderId
+                          and status = 'PAYING'
+                          and paid_amount_cent = 0
+                          and paid_at is null
+                          and coalesce(payment_transaction_id, '') = ''
+                          and merchant_trade_no = :outTradeNo
+                        """)
+                .param("orderId", order.orderId())
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select status from stock_lock where order_id = :orderId")
+                .param("orderId", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("LOCKED");
+        assertThat(jdbcClient.sql("select status from user_coupon where id = :userCouponId")
+                .param("userCouponId", order.userCouponId())
+                .query(String.class)
+                .single()).isEqualTo("LOCKED");
     }
 
     private void assertClosedReleasedState(SeedOrder order, String outTradeNo) {

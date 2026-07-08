@@ -145,6 +145,9 @@ public class AppPaymentService {
         if (!queryResult.paid()) {
             return new PaymentSyncResponse(order.orderId(), order.status(), "");
         }
+        if (!payment.outTradeNo().equals(queryResult.outTradeNo())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
         PaidFinalizationResult result = finalizePaid(
                 queryResult.outTradeNo(),
                 queryResult.transactionId(),
@@ -152,6 +155,9 @@ public class AppPaymentService {
                 queryResult.paidAt() == null ? LocalDateTime.now() : queryResult.paidAt(),
                 ""
         );
+        if (!order.orderId().equals(result.orderId())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
         return new PaymentSyncResponse(result.orderId(), result.orderStatus(), result.transactionId());
     }
 
