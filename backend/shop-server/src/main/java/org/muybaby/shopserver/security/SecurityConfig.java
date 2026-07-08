@@ -43,7 +43,7 @@ public class SecurityConfig {
                                 "/wechat/**"
                         ).permitAll()
                         .requestMatchers(HttpMethod.GET, "/files/public/**").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/app/product/categories", "/app/product/spus", "/app/product/spus/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/app/product/categories", "/app/product/spus", "/app/product/spus/*", "/app/home/banners").permitAll()
                         .requestMatchers("/admin/**", "/app/**").authenticated()
                         .anyRequest().denyAll())
                 .build();
