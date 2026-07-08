@@ -22,7 +22,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -60,6 +62,18 @@ class SecurityConfigTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code", is(100001)))
                 .andExpect(jsonPath("$.msg", is("Authentication required")));
+    }
+
+    @Test
+    void unsupportedMethodReturnsMethodNotAllowedEnvelopeAndAllowHeader() throws Exception {
+        String token = adminToken(List.of("R_SUPER"), List.of("product:read"));
+
+        mockMvc.perform(post("/admin/probe")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(jsonPath("$.code", is(100400)))
+                .andExpect(jsonPath("$.msg", is("Validation failed")))
+                .andExpect(header().string("Allow", containsString("GET")));
     }
 
     @Test

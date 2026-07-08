@@ -60,10 +60,11 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
-    public ResponseEntity<ApiResponse<Void>> handleHttpRequestMethodNotSupportedException() {
+    public ResponseEntity<ApiResponse<Void>> handleHttpRequestMethodNotSupportedException(HttpRequestMethodNotSupportedException ex) {
         ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
         return ResponseEntity
                 .status(HttpStatus.METHOD_NOT_ALLOWED)
+                .headers(ex.getHeaders())
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
     }
 

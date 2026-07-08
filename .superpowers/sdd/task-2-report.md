@@ -198,3 +198,35 @@ Result:
 
 - Added focused regression coverage in `GlobalExceptionHandlerTest` for HTTP 400 binding failures, HTTP 415 unsupported media type, and HTTP 405 unsupported method.
 - Left unrelated docs/spec/plan files unstaged as requested.
+
+---
+
+## 2026-07-08 Review Fix: Preserve `Allow` Header For 405
+
+### Scope
+
+Fixed the remaining Task 2 review finding for unsupported HTTP methods:
+
+- `GlobalExceptionHandler.handleHttpRequestMethodNotSupportedException(...)` now preserves Spring's `Allow` header from `HttpRequestMethodNotSupportedException`
+- `SecurityConfigTest` now covers a real MVC request against `/admin/probe` that returns:
+  - HTTP 405
+  - JSON `ApiResponse` envelope
+  - `Allow` header containing `GET`
+
+### Verification
+
+Ran the requested focused test command:
+
+```bash
+cd backend/shop-server && ./mvnw -Dtest=GlobalExceptionHandlerTest,SecurityConfigTest,StorageControllerTest test
+```
+
+Result:
+
+- `Tests run: 27, Failures: 0, Errors: 0, Skipped: 0`
+- `BUILD SUCCESS`
+
+### Notes
+
+- Kept unrelated docs/spec/plan files untouched.
+- Did not change Task 3+ behavior.
