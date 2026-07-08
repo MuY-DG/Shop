@@ -682,18 +682,17 @@ where sku_id = ${SKU_ID}
 order by id desc
 limit 1;
 
-select status
+select status, locked_order_id, locked_at, released_at
 from user_coupon
-where id = ${USER_COUPON_ID}
-  and locked_order_id = ${ORDER_ID};
+where id = ${USER_COUPON_ID};
 ```
 
-Assert the coupon lock is released and the user coupon is marked `RELEASED` through the app API:
+Assert the coupon lock is released and the user coupon is back to `CLAIMED` through the app API, so it can be selected again by later checkout flows:
 
 ```bash
 curl -s http://localhost:8080/app/coupons/mine \
   -H "Authorization: Bearer ${APP_TOKEN}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.find(item => item.userCouponId === Number(process.argv[1])); if (!coupon || coupon.status !== "RELEASED") process.exit(1); console.log(coupon.status); });' "${USER_COUPON_ID}"
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const coupon = body.data.find(item => item.userCouponId === Number(process.argv[1])); if (!coupon || coupon.status !== "CLAIMED") process.exit(1); console.log(coupon.status); });' "${USER_COUPON_ID}"
 ```
 
 Expected result includes:
@@ -709,7 +708,7 @@ ORDER_LOCK
 CLOSED
 RELEASED
 ORDER_RELEASE
-RELEASED
+CLAIMED
 ```
 
 ## Admin

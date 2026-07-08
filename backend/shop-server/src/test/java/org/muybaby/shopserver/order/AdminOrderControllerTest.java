@@ -129,7 +129,7 @@ class AdminOrderControllerTest {
     }
 
     @Test
-    void closeCreatedOrderReleasesStockLocksAndCoupon() throws Exception {
+    void closeCreatedOrderReleasesStockLocksAndReturnsCouponToAvailablePool() throws Exception {
         String adminToken = adminLoginAndExtractToken();
         CreatedOrderSeed seed = createCreatedOrder("admin-order-close-user", "ADMIN-CLOSE-SKU", true);
 
@@ -198,7 +198,7 @@ class AdminOrderControllerTest {
                         """)
                 .param("userCouponId", seed.userCouponId())
                 .query(String.class)
-                .single()).isEqualTo("RELEASED");
+                .single()).isEqualTo("CLAIMED");
         assertThat(jdbcClient.sql("""
                         select locked_order_id
                         from user_coupon
@@ -206,7 +206,15 @@ class AdminOrderControllerTest {
                         """)
                 .param("userCouponId", seed.userCouponId())
                 .query(Long.class)
-                .single()).isEqualTo(seed.orderId());
+                .optional()).isEmpty();
+        assertThat(jdbcClient.sql("""
+                        select locked_at
+                        from user_coupon
+                        where id = :userCouponId
+                        """)
+                .param("userCouponId", seed.userCouponId())
+                .query(LocalDateTime.class)
+                .optional()).isEmpty();
         assertThat(jdbcClient.sql("""
                         select released_at
                         from user_coupon
@@ -215,6 +223,19 @@ class AdminOrderControllerTest {
                 .param("userCouponId", seed.userCouponId())
                 .query(LocalDateTime.class)
                 .single()).isNotNull();
+
+        String cartResponse = addCartItem(seed.appToken(), seed.skuId(), 1);
+        long cartItemId = objectMapper.readTree(cartResponse).path("data").path("id").asLong();
+        mockMvc.perform(post("/app/coupons/available")
+                        .header("Authorization", "Bearer " + seed.appToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cartItemIds":[%d]}
+                                """.formatted(cartItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.bestUserCouponId").value(seed.userCouponId()))
+                .andExpect(jsonPath("$.data.bestDiscountCent").value(500))
+                .andExpect(jsonPath("$.data.payableAmountCent").value(3490));
     }
 
     @Test
@@ -507,6 +528,7 @@ class AdminOrderControllerTest {
         return new CreatedOrderSeed(
                 data.path("orderId").asLong(),
                 data.path("orderNo").asText(),
+                session.token(),
                 session.userId(),
                 skuId,
                 userCouponId
@@ -656,6 +678,6 @@ class AdminOrderControllerTest {
     private record AppLoginSession(String token, long userId) {
     }
 
-    private record CreatedOrderSeed(Long orderId, String orderNo, Long userId, Long skuId, Long userCouponId) {
+    private record CreatedOrderSeed(Long orderId, String orderNo, String appToken, Long userId, Long skuId, Long userCouponId) {
     }
 }

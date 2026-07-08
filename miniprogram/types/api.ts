@@ -144,7 +144,7 @@ export interface UserCoupon {
   thresholdCent: number;
   discountCent: number;
   scopeType: "ALL" | "PRODUCT" | "CATEGORY";
-  status: "CLAIMED" | "LOCKED" | "USED" | "RELEASED" | "EXPIRED";
+  status: "CLAIMED" | "LOCKED" | "USED" | "EXPIRED";
   validStartAt: string;
   validEndAt: string;
   claimedAt: string;

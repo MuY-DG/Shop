@@ -178,13 +178,15 @@ public class OrderCloseService {
             int releasedCouponRows = jdbcClient.sql("""
                             update user_coupon
                             set status = :status,
+                                locked_order_id = null,
+                                locked_at = null,
                                 released_at = :releasedAt,
                                 updated_at = :updatedAt
                             where id = :userCouponId
                               and locked_order_id = :orderId
                               and status = :expectedStatus
                             """)
-                    .param("status", UserCouponStatus.RELEASED.name())
+                    .param("status", UserCouponStatus.CLAIMED.name())
                     .param("releasedAt", now)
                     .param("updatedAt", now)
                     .param("userCouponId", order.userCouponId())

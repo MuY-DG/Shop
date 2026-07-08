@@ -198,10 +198,10 @@ Coupon lifecycle:
 
 ```text
 CLAIMED -> LOCKED -> USED
-                 \-> RELEASED
+                 \-> CLAIMED
 ```
 
-Unpaid order timeout releases the locked coupon. Payment success consumes it.
+Unpaid order timeout releases the locked coupon back to `CLAIMED`. Payment success consumes it.
 
 ## 8. Order State Machine
 

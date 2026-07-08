@@ -45,7 +45,7 @@ Included:
 - Admin order list/detail APIs.
 - Admin close-created-order endpoint to exercise the release transaction before the scheduled timeout phase.
 - Stock lock and release stock logs.
-- Coupon lock and release through `user_coupon.status`, `locked_order_id`, `locked_at`, and `released_at`.
+- Coupon lock through `user_coupon.status`, `locked_order_id`, and `locked_at`; close-time release returns the coupon to `CLAIMED`, clears `locked_order_id`/`locked_at`, and records `released_at`.
 - Mini program order preview page, order list page, updated order detail page, order service wrapper, and cart checkout navigation.
 - Admin order page and API wrapper.
 - Order smoke checks in `docs/smoke-checks.md`.
@@ -405,7 +405,7 @@ Cover:
 - Admin token required; app token on `/admin/orders` returns `401`.
 - Admin list returns `records/total/current/size` and can filter by `status` and `orderNo`.
 - Admin detail returns item snapshots and amount snapshots.
-- Closing a `CREATED` order changes order status to `CLOSED`, releases each `stock_lock`, increments SKU stock, writes `ORDER_RELEASE` stock logs, and updates a locked coupon to `RELEASED`.
+- Closing a `CREATED` order changes order status to `CLOSED`, releases each `stock_lock`, increments SKU stock, writes `ORDER_RELEASE` stock logs, and returns a locked coupon to `CLAIMED` so it is available again.
 - Closing the same order twice returns `400001` and does not duplicate release logs.
 
 Run: `cd backend/shop-server && ./mvnw -Dtest=AdminOrderControllerTest test`
@@ -547,7 +547,7 @@ Append `## Order Smoke Checks` after `## Coupon Smoke Checks`. The smoke must:
 12. Fetch app order detail.
 13. Fetch admin order detail.
 14. Close order through admin endpoint.
-15. Verify SKU stock restored and user coupon is `RELEASED`.
+15. Verify SKU stock restored and user coupon is `CLAIMED` again.
 
 - [ ] **Step 2: Run full automated checks**
 

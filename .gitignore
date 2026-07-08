@@ -24,6 +24,7 @@ out/
 *.class
 
 # Node / Vue / Mini Program
+.pnpm-store/
 node_modules/
 dist/
 dist-ssr/

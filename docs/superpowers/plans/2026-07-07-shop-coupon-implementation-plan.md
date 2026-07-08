@@ -486,7 +486,7 @@ public enum CouponTemplateStatus { ENABLED, DISABLED }
 public enum CouponType { NO_THRESHOLD, MIN_SPEND }
 public enum DiscountType { AMOUNT_OFF, PERCENT_OFF }
 public enum CouponScopeType { ALL, PRODUCT, CATEGORY }
-public enum UserCouponStatus { CLAIMED, LOCKED, USED, RELEASED, EXPIRED }
+public enum UserCouponStatus { CLAIMED, LOCKED, USED, EXPIRED }
 ```
 
 Add DTO records with exact names:
@@ -1042,7 +1042,7 @@ Add mini program API types matching Task 3 response DTOs:
 
 ```typescript
 export interface ClaimableCoupon { templateId: number; name: string; description: string; couponType: "NO_THRESHOLD" | "MIN_SPEND"; thresholdCent: number; discountCent: number; validStartAt: string; validEndAt: string; claimedCount: number; perUserLimit: number; claimable: boolean; unavailableReason: string | null; }
-export interface UserCoupon { userCouponId: number; templateId: number; name: string; couponType: "NO_THRESHOLD" | "MIN_SPEND"; thresholdCent: number; discountCent: number; scopeType: "ALL" | "PRODUCT" | "CATEGORY"; status: "CLAIMED" | "LOCKED" | "USED" | "RELEASED" | "EXPIRED"; validStartAt: string; validEndAt: string; claimedAt: string; }
+export interface UserCoupon { userCouponId: number; templateId: number; name: string; couponType: "NO_THRESHOLD" | "MIN_SPEND"; thresholdCent: number; discountCent: number; scopeType: "ALL" | "PRODUCT" | "CATEGORY"; status: "CLAIMED" | "LOCKED" | "USED" | "EXPIRED"; validStartAt: string; validEndAt: string; claimedAt: string; }
 export interface AvailableCouponItem { userCouponId: number; templateId: number; name: string; couponType: "NO_THRESHOLD" | "MIN_SPEND"; thresholdCent: number; discountCent: number; discountAmountCent: number; available: boolean; unavailableReason: string | null; validEndAt: string; }
 export interface AvailableCouponResponse { cartAmountCent: number; bestUserCouponId: number | null; bestDiscountCent: number; payableAmountCent: number; coupons: AvailableCouponItem[]; }
 ```

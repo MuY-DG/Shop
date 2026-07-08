@@ -26,7 +26,6 @@ const STATUS_ORDER: UserCoupon["status"][] = [
   "CLAIMED",
   "LOCKED",
   "USED",
-  "RELEASED",
   "EXPIRED"
 ];
 
@@ -43,9 +42,6 @@ function getStatusText(status: UserCoupon["status"]): string {
   }
   if (status === "USED") {
     return "已使用";
-  }
-  if (status === "RELEASED") {
-    return "已释放";
   }
   return "已过期";
 }

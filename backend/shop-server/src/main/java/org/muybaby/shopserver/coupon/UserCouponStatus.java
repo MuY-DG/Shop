@@ -4,6 +4,5 @@ public enum UserCouponStatus {
     CLAIMED,
     LOCKED,
     USED,
-    RELEASED,
     EXPIRED
 }
