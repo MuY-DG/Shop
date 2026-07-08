@@ -70,6 +70,22 @@ WECHAT_MINI_PROGRAM_APP_SECRET=your-app-secret
 
 The `dev` profile uses the real WeChat client. The `test` profile keeps the mock WeChat client for local smoke checks and automated tests.
 
+## Local File Storage
+
+The file upload phase uses local storage first and leaves OSS/COS for a later provider implementation. Local settings should stay in `backend/shop-server/.env.local` when they are environment-specific:
+
+```properties
+SHOP_STORAGE_PROVIDER=local
+SHOP_STORAGE_LOCAL_ROOT=var/uploads
+SHOP_STORAGE_PUBLIC_BASE_URL=http://localhost:8080
+SHOP_STORAGE_IMAGE_MAX_SIZE=5MB
+SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE=1MB
+```
+
+`SHOP_STORAGE_LOCAL_ROOT` should point to a writable local directory and should not be committed to Git. Public files are served by the backend through the controlled `/files/public/**` route. Private files, including payment certificates and keys, do not have a public URL and are referenced by `fileId` metadata only.
+
+File storage and home banner smoke checks are documented in `docs/smoke-checks.md#file-storage-and-home-banner-smoke-checks`.
+
 ### WeChat Integration Notes
 
 Mini program login and phone authorization use two different WeChat exchanges:

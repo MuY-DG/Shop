@@ -711,6 +711,228 @@ ORDER_RELEASE
 CLAIMED
 ```
 
+## File Storage And Home Banner Smoke Checks
+
+This is a real local smoke checklist for the file upload, asset library, and home banner phase. It uses the local backend and local database path. In the `test` profile, WeChat login is backed by the mock WeChat mini program client, but upload, storage metadata, product usage, banner usage, delete protection, and mini program banner APIs go through the real local backend APIs.
+
+Start backend:
+
+```bash
+cd backend/shop-server
+./mvnw -Dspring-boot.run.profiles=test \
+  -Dspring-boot.run.useTestClasspath=true \
+  -Dspring-boot.run.arguments=--spring.config.additional-location=file:src/test/resources/ \
+  spring-boot:run
+```
+
+Admin login and mini program login:
+
+```bash
+ADMIN_TOKEN=$(
+  curl -s -X POST http://localhost:8080/admin/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"userName":"Super","password":"123456"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+
+APP_TOKEN=$(
+  curl -s -X POST http://localhost:8080/app/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"code":"test-login-code"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+```
+
+Create tiny local smoke files:
+
+```bash
+SMOKE_DIR="$(mktemp -d)"
+python3 - <<'PY' "${SMOKE_DIR}/tiny.png"
+import base64
+import sys
+png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+with open(sys.argv[1], "wb") as f:
+    f.write(base64.b64decode(png))
+PY
+printf '%s\n' '-----BEGIN CERTIFICATE-----' 'smoke-only' '-----END CERTIFICATE-----' > "${SMOKE_DIR}/smoke.pem"
+printf 'not an allowed file' > "${SMOKE_DIR}/bad.exe"
+: > "${SMOKE_DIR}/empty.png"
+python3 - <<'PY' "${SMOKE_DIR}/large.png"
+import sys
+with open(sys.argv[1], "wb") as f:
+    f.write(b"\x89PNG\r\n\x1a\n")
+    f.write(b"0" * (6 * 1024 * 1024))
+PY
+```
+
+Upload a product image, category icon, home banner image, private payment certificate, and app evidence image:
+
+```bash
+PRODUCT_FILE_ID=$(
+  curl -s -X POST http://localhost:8080/admin/files/upload \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -F purpose=PRODUCT_IMAGE \
+    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.visibility !== "PUBLIC" || !body.data.url) process.exit(1); console.error(body.data.url); console.log(body.data.id); });'
+)
+
+PRODUCT_IMAGE_URL=$(
+  curl -s "http://localhost:8080/admin/files/${PRODUCT_FILE_ID}" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.url));'
+)
+
+CATEGORY_ICON_FILE_ID=$(
+  curl -s -X POST http://localhost:8080/admin/files/upload \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -F purpose=CATEGORY_ICON \
+    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.id));'
+)
+
+CATEGORY_ICON_URL=$(
+  curl -s "http://localhost:8080/admin/files/${CATEGORY_ICON_FILE_ID}" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.url));'
+)
+
+BANNER_FILE_ID=$(
+  curl -s -X POST http://localhost:8080/admin/files/upload \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -F purpose=HOME_BANNER \
+    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.id));'
+)
+
+BANNER_IMAGE_URL=$(
+  curl -s "http://localhost:8080/admin/files/${BANNER_FILE_ID}" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.url));'
+)
+
+PRIVATE_CERT_ID=$(
+  curl -s -X POST http://localhost:8080/admin/files/upload \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -F purpose=PAYMENT_CERTIFICATE \
+    -F file=@"${SMOKE_DIR}/smoke.pem;type=application/x-pem-file" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.visibility !== "PRIVATE" || body.data.url || body.data.publicUrl) process.exit(1); console.log(body.data.id); });'
+)
+
+APP_EVIDENCE_ID=$(
+  curl -s -X POST http://localhost:8080/app/files/upload \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+    -F purpose=AFTER_SALE_IMAGE \
+    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.visibility !== "PRIVATE" || body.data.uploadedByType !== "APP") process.exit(1); console.log(body.data.id); });'
+)
+```
+
+Create a category and product using uploaded file ids, then publish the product:
+
+```bash
+CATEGORY_ID=$(
+  curl -s -X POST http://localhost:8080/admin/product/categories \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"parentId\":0,\"name\":\"素材库分类\",\"icon\":\"${CATEGORY_ICON_URL}\",\"iconFileId\":${CATEGORY_ICON_FILE_ID},\"sortOrder\":90,\"status\":\"ENABLED\"}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+
+SPU_ID=$(
+  curl -s -X POST http://localhost:8080/admin/product/spus \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"素材库牛油火锅底料\",\"subtitle\":\"上传主图 smoke\",\"mainImage\":\"${PRODUCT_IMAGE_URL}\",\"mainImageFileId\":${PRODUCT_FILE_ID},\"sellingPoints\":\"素材库,本地上传\",\"detailHtml\":\"<p><img src=\\\"${PRODUCT_IMAGE_URL}\\\" /></p>\",\"sortOrder\":90,\"images\":[{\"url\":\"${PRODUCT_IMAGE_URL}\",\"fileId\":${PRODUCT_FILE_ID}}],\"skus\":[{\"skuCode\":\"FILE-SMOKE-300G\",\"specJson\":\"{\\\"规格\\\":\\\"300g\\\"}\",\"specText\":\"300g\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":20,\"weightGram\":300,\"image\":\"${PRODUCT_IMAGE_URL}\",\"imageFileId\":${PRODUCT_FILE_ID},\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+
+curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
+```
+
+Create and enable a home banner using the uploaded banner image:
+
+```bash
+BANNER_ID=$(
+  curl -s -X POST http://localhost:8080/admin/home/banners \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"title\":\"首页轮播 smoke\",\"subtitle\":\"本地素材库上传\",\"imageFileId\":${BANNER_FILE_ID},\"imageUrl\":\"${BANNER_IMAGE_URL}\",\"jumpType\":\"PRODUCT\",\"jumpTargetId\":${SPU_ID},\"jumpPath\":\"\",\"status\":\"ENABLED\",\"sortOrder\":1}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
+)
+
+curl -s http://localhost:8080/app/home/banners \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const banner = body.data.find(item => item.id === Number(process.argv[1])); if (!banner || banner.imageUrl !== process.argv[2]) process.exit(1); console.log(banner.title); });' "${BANNER_ID}" "${BANNER_IMAGE_URL}"
+```
+
+Verify product/category/banner usages appear in file detail:
+
+```bash
+curl -s "http://localhost:8080/admin/files/${PRODUCT_FILE_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const types = body.data.usages.map(item => item.usageType); if (!types.includes("PRODUCT_SPU_MAIN") || !types.includes("PRODUCT_SPU_GALLERY") || !types.includes("PRODUCT_SKU_IMAGE") || !types.includes("PRODUCT_DETAIL_HTML")) process.exit(1); console.log(types.join(",")); });'
+
+curl -s "http://localhost:8080/admin/files/${CATEGORY_ICON_FILE_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (!body.data.usages.some(item => item.usageType === "PRODUCT_CATEGORY_ICON" && item.status === "ACTIVE")) process.exit(1); console.log("category icon usage"); });'
+
+curl -s "http://localhost:8080/admin/files/${BANNER_FILE_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (!body.data.usages.some(item => item.usageType === "HOME_BANNER" && item.status === "ACTIVE")) process.exit(1); console.log("banner usage"); });'
+```
+
+Verify in-use product/banner files cannot be deleted:
+
+```bash
+curl -s -X DELETE "http://localhost:8080/admin/files/${PRODUCT_FILE_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+
+curl -s -X DELETE "http://localhost:8080/admin/files/${BANNER_FILE_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+```
+
+Verify invalid uploads are rejected:
+
+```bash
+curl -s -X POST http://localhost:8080/admin/files/upload \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -F purpose=PRODUCT_IMAGE \
+  -F file=@"${SMOKE_DIR}/bad.exe;type=application/octet-stream" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+
+curl -s -X POST http://localhost:8080/admin/files/upload \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -F purpose=PRODUCT_IMAGE \
+  -F file=@"${SMOKE_DIR}/empty.png;type=image/png" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+
+curl -s -X POST http://localhost:8080/admin/files/upload \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -F purpose=PRODUCT_IMAGE \
+  -F file=@"${SMOKE_DIR}/large.png;type=image/png" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+
+curl -s -X POST http://localhost:8080/admin/files/upload \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -F purpose=PRODUCT_IMAGE \
+  -F 'file=@"'"${SMOKE_DIR}"'/tiny.png";filename=../tiny.png;type=image/png' \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+```
+
+UI smoke checklist after starting the admin dev server and opening the mini program in WeChat DevTools:
+
+- Admin uploads a product image from `/storage/files`, then uses it in product editing.
+- Admin uploads and categorizes a home banner image; mini program home swiper displays it.
+- Admin uploads a category icon; mini program home/category entry displays the image.
+- Admin file detail shows product and banner usage locations, including ACTIVE/REMOVED state.
+- Files referenced by product, banner, order snapshots, or later payment configuration cannot be deleted.
+- Admin uploads a private `.pem` file and sees metadata but no public URL or preview.
+- Mini program app-token upload succeeds for AFTER_SALE_IMAGE/REFUND_EVIDENCE helper use.
+- Illegal extension, oversized file, empty file, and path traversal filename are rejected.
+
 ## Admin
 
 ```bash

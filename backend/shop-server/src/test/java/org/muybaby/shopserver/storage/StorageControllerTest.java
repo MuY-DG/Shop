@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -17,6 +20,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.util.Base64;
+import java.time.Instant;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
@@ -48,6 +53,9 @@ class StorageControllerTest {
 
     @Autowired
     private JdbcClient jdbcClient;
+
+    @Autowired
+    private OpaqueTokenService opaqueTokenService;
 
     @BeforeEach
     void clearStorageTables() {
@@ -118,6 +126,76 @@ class StorageControllerTest {
                 .query(Long.class)
                 .single();
         assertThat(movedCategoryId).isEqualTo(categoryId);
+    }
+
+    @Test
+    void adminFileApisRequireSpecificAuthorities() throws Exception {
+        String readToken = limitedAdminToken(List.of("file:read"));
+        String uploadOnlyToken = limitedAdminToken(List.of("file:upload"));
+        String categoryOnlyToken = limitedAdminToken(List.of("file:category"));
+        String deleteOnlyToken = limitedAdminToken(List.of("file:delete"));
+
+        mockMvc.perform(get("/admin/files")
+                        .header("Authorization", "Bearer " + uploadOnlyToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        mockMvc.perform(get("/admin/files")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(multipart("/admin/files/upload")
+                        .file(new MockMultipartFile("file", "blocked.png", "image/png", TINY_PNG))
+                        .param("purpose", "PRODUCT_IMAGE")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        mockMvc.perform(post("/admin/file-categories")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parentId":9,"name":"权限拒绝","code":"AUTH_REJECTED","description":"","sortOrder":1,"status":"ENABLED"}
+                                """)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        long categoryId = createCategory(categoryOnlyToken, """
+                {"parentId":9,"name":"权限允许","code":"AUTH_ALLOWED","description":"","sortOrder":1,"status":"ENABLED"}
+                """);
+        assertThat(categoryId).isGreaterThan(9L);
+
+        String uploadResponse = mockMvc.perform(multipart("/admin/files/upload")
+                        .file(new MockMultipartFile("file", "allowed.png", "image/png", TINY_PNG))
+                        .param("purpose", "PRODUCT_IMAGE")
+                        .header("Authorization", "Bearer " + uploadOnlyToken))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long fileId = objectMapper.readTree(uploadResponse).path("data").path("id").asLong();
+
+        mockMvc.perform(post("/admin/files/{fileId}/move", fileId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"assetCategoryId\":" + categoryId + "}")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        mockMvc.perform(post("/admin/files/{fileId}/move", fileId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"assetCategoryId\":" + categoryId + "}")
+                        .header("Authorization", "Bearer " + categoryOnlyToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/admin/files/{fileId}", fileId)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        mockMvc.perform(delete("/admin/files/{fileId}", fileId)
+                        .header("Authorization", "Bearer " + deleteOnlyToken))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -304,6 +382,58 @@ class StorageControllerTest {
     }
 
     @Test
+    void deleteIsBlockedWhenLocalPublicUrlIsReferencedWithoutFileId() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        UploadedFile productFile = uploadPublicFile(adminToken, "url-only-product.png");
+        UploadedFile bannerFile = uploadPublicFile(adminToken, "url-only-banner.png");
+        UploadedFile orderFile = uploadPublicFile(adminToken, "url-only-order.png");
+
+        jdbcClient.sql("""
+                        insert into product_spu
+                            (category_id, title, subtitle, main_image, main_image_file_id, selling_points,
+                             detail_html, sort_order, status)
+                        values
+                            (1, 'URL only SPU', '', :publicUrl, null, '', '', 1, 'DRAFT')
+                        """)
+                .param("publicUrl", productFile.publicUrl())
+                .update();
+        jdbcClient.sql("""
+                        insert into home_banner
+                            (title, subtitle, image_file_id, image_url, jump_type, jump_target_id, jump_path,
+                             status, sort_order)
+                        values
+                            ('URL only banner', '', null, :publicUrl, 'NONE', null, '', 'ENABLED', 1)
+                        """)
+                .param("publicUrl", bannerFile.publicUrl())
+                .update();
+        jdbcClient.sql("""
+                        insert into order_item
+                            (order_id, sku_id, spu_id, product_title, product_subtitle, main_image,
+                             main_image_file_id, sku_image, sku_image_file_id, display_image, display_image_file_id,
+                             sku_code, spec_text, original_price_cent, unit_price_cent, quantity,
+                             line_original_amount_cent, line_amount_cent)
+                        values
+                            (9001, 1, 1, 'URL only order item', '', '', null, '', null, :publicUrl, null,
+                             'URL-ONLY-SKU', '', 100, 100, 1, 100, 100)
+                        """)
+                .param("publicUrl", orderFile.publicUrl())
+                .update();
+
+        mockMvc.perform(delete("/admin/files/{fileId}", productFile.id())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(800003));
+        mockMvc.perform(delete("/admin/files/{fileId}", bannerFile.id())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(800003));
+        mockMvc.perform(delete("/admin/files/{fileId}", orderFile.id())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(800003));
+    }
+
+    @Test
     void uploadRejectsUnsupportedExtensionOversizeEmptyCorruptedImageAndPathTraversal() throws Exception {
         String adminToken = adminLoginAndExtractToken();
 
@@ -396,6 +526,19 @@ class StorageControllerTest {
         return objectMapper.readTree(response).path("data").asLong();
     }
 
+    private UploadedFile uploadPublicFile(String adminToken, String filename) throws Exception {
+        String response = mockMvc.perform(multipart("/admin/files/upload")
+                        .file(new MockMultipartFile("file", filename, "image/png", TINY_PNG))
+                        .param("purpose", "PRODUCT_IMAGE")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode data = objectMapper.readTree(response).path("data");
+        return new UploadedFile(data.path("id").asLong(), data.path("publicUrl").asText());
+    }
+
     private String adminLoginAndExtractToken() throws Exception {
         String response = mockMvc.perform(post("/admin/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -420,5 +563,13 @@ class StorageControllerTest {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(response).path("data").path("token").asText();
+    }
+
+    private String limitedAdminToken(List<String> permissions) {
+        TokenSession session = TokenSession.admin(99L, "limited-admin", List.of("R_LIMITED"), permissions, Instant.now());
+        return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
+    }
+
+    private record UploadedFile(Long id, String publicUrl) {
     }
 }

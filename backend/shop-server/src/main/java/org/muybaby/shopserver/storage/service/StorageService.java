@@ -175,7 +175,7 @@ public class StorageService {
         if (StorageFileStatus.DELETED.name().equals(row.status())) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
-        if (storageUsageService.hasActiveUsages(fileId)) {
+        if (storageUsageService.hasActiveUsages(fileId) || hasLocalPublicUrlReferences(row.publicUrl())) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_IN_USE);
         }
 
@@ -194,6 +194,38 @@ public class StorageService {
         } catch (RuntimeException ignored) {
             // Metadata soft-delete is authoritative; best-effort provider cleanup happens after status update.
         }
+    }
+
+    private boolean hasLocalPublicUrlReferences(String publicUrl) {
+        if (!StringUtils.hasText(publicUrl)) {
+            return false;
+        }
+        Integer count = jdbcClient.sql("""
+                        select count(*)
+                        from (
+                            select id from product_category where icon = :publicUrl
+                            union all
+                            select id from product_spu
+                            where main_image = :publicUrl
+                               or detail_html like :detailPattern escape '\\'
+                            union all
+                            select id from product_spu_image where url = :publicUrl
+                            union all
+                            select id from product_sku where image = :publicUrl
+                            union all
+                            select id from home_banner where image_url = :publicUrl
+                            union all
+                            select id from order_item
+                            where main_image = :publicUrl
+                               or sku_image = :publicUrl
+                               or display_image = :publicUrl
+                        ) local_url_reference
+                        """)
+                .param("publicUrl", publicUrl)
+                .param("detailPattern", "%" + escapeLike(publicUrl) + "%")
+                .query(Integer.class)
+                .single();
+        return count != null && count > 0;
     }
 
     public ResponseEntity<InputStreamResource> publicResource(String publicPath) {
@@ -577,6 +609,13 @@ public class StorageService {
 
     private String blankToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private String escapeLike(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
     }
 
     private Long requireGeneratedId(KeyHolder keyHolder) {

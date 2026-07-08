@@ -454,7 +454,7 @@ Infrastructure:
 - Payment callback logs.
 - Refund callback logs.
 - WeChat shipping upload logs.
-- File storage adapter interface; local storage in dev, OSS/COS adapter later.
+- File upload and asset library module with metadata persistence, asset categories, usage relations, purpose-based upload policy, local storage provider first, and OSS/COS adapter interface for later.
 
 ## 15. Development Milestones
 
@@ -487,6 +487,20 @@ Milestone 3: cart, checkout, coupon.
 - Coupon claim/list/use.
 - Checkout amount calculation.
 - Stock and coupon pre-check.
+
+Milestone 3.5: file upload and storage foundation.
+
+- Backend file metadata table.
+- Asset category/folder management.
+- File usage relations for products, banners, order snapshots, after-sale evidence, and payment configuration files.
+- Purpose-based upload policy.
+- Local storage provider.
+- Admin upload/list/delete APIs.
+- Mini program authenticated upload API for future after-sale evidence.
+- Admin asset picker and file usage visibility.
+- Product image and rich text upload integration.
+- Home banner management and mini program carousel display.
+- Storage provider interface for later OSS/COS.
 
 Milestone 4: order and payment.
 

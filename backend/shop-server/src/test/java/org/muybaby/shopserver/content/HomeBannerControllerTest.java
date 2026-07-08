@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,7 +19,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Base64;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -47,6 +52,9 @@ class HomeBannerControllerTest {
 
     @Autowired
     private JdbcClient jdbcClient;
+
+    @Autowired
+    private OpaqueTokenService opaqueTokenService;
 
     @BeforeEach
     void clearTables() {
@@ -156,6 +164,69 @@ class HomeBannerControllerTest {
                 .andExpect(jsonPath("$.code").value(200));
         assertThat(findBannerRow(bannerId).status()).isEqualTo("ENABLED");
         assertThat(activeUsageCount(bannerId)).isEqualTo(1);
+    }
+
+    @Test
+    void adminBannerApisRequireSpecificAuthorities() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        UploadedFile uploadedFile = uploadBannerFile(adminToken, "banner-auth.png");
+        String readToken = limitedAdminToken(List.of("content:banner:read"));
+        String createToken = limitedAdminToken(List.of("content:banner:create"));
+        String updateToken = limitedAdminToken(List.of("content:banner:update"));
+        String publishToken = limitedAdminToken(List.of("content:banner:publish"));
+
+        mockMvc.perform(get("/admin/home/banners")
+                        .header("Authorization", "Bearer " + createToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        mockMvc.perform(get("/admin/home/banners")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk());
+
+        String requestBody = """
+                {"title":"权限轮播","subtitle":"","imageFileId":%d,
+                 "jumpType":"NONE","status":"DISABLED","sortOrder":1}
+                """.formatted(uploadedFile.id());
+
+        mockMvc.perform(post("/admin/home/banners")
+                        .header("Authorization", "Bearer " + readToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        String createResponse = mockMvc.perform(post("/admin/home/banners")
+                        .header("Authorization", "Bearer " + createToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long bannerId = objectMapper.readTree(createResponse).path("data").asLong();
+
+        mockMvc.perform(put("/admin/home/banners/{bannerId}", bannerId)
+                        .header("Authorization", "Bearer " + createToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody.replace("权限轮播", "权限轮播更新")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        mockMvc.perform(put("/admin/home/banners/{bannerId}", bannerId)
+                        .header("Authorization", "Bearer " + updateToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestBody.replace("权限轮播", "权限轮播更新")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/admin/home/banners/{bannerId}/enable", bannerId)
+                        .header("Authorization", "Bearer " + updateToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        mockMvc.perform(post("/admin/home/banners/{bannerId}/enable", bannerId)
+                        .header("Authorization", "Bearer " + publishToken))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -416,6 +487,11 @@ class HomeBannerControllerTest {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(response).path("data").path("token").asText();
+    }
+
+    private String limitedAdminToken(List<String> permissions) {
+        TokenSession session = TokenSession.admin(99L, "limited-admin", List.of("R_LIMITED"), permissions, Instant.now());
+        return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
     }
 
     private record UploadedFile(Long id, String url) {

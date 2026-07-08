@@ -34,7 +34,15 @@ class AdminMenuControllerTest {
         mockMvc.perform(get("/admin/system/menus")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[*].path", contains("/dashboard", "/product", "/marketing", "/order", "/system")))
+                .andExpect(jsonPath("$.data[*].path", contains(
+                        "/dashboard",
+                        "/product",
+                        "/marketing",
+                        "/order",
+                        "/storage/files",
+                        "/content/banner",
+                        "/system"
+                )))
                 .andExpect(jsonPath("$.data[0].path").value("/dashboard"))
                 .andExpect(jsonPath("$.data[0].component").value("/index/index"))
                 .andExpect(jsonPath("$.data[1].path").value("/product"))
@@ -63,15 +71,29 @@ class AdminMenuControllerTest {
                         "order:read",
                         "order:close"
                 )))
-                .andExpect(jsonPath("$.data[4].path").value("/system"))
-                .andExpect(jsonPath("$.data[4].children[0].path").value("user"))
-                .andExpect(jsonPath("$.data[4].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[4].path").value("/storage/files"))
+                .andExpect(jsonPath("$.data[4].meta.authList[*].authMark", containsInAnyOrder(
+                        "file:upload",
+                        "file:read",
+                        "file:delete",
+                        "file:category"
+                )))
+                .andExpect(jsonPath("$.data[5].path").value("/content/banner"))
+                .andExpect(jsonPath("$.data[5].meta.authList[*].authMark", containsInAnyOrder(
+                        "content:banner:read",
+                        "content:banner:create",
+                        "content:banner:update",
+                        "content:banner:publish"
+                )))
+                .andExpect(jsonPath("$.data[6].path").value("/system"))
+                .andExpect(jsonPath("$.data[6].children[0].path").value("user"))
+                .andExpect(jsonPath("$.data[6].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "system:user:create",
                         "system:user:update",
                         "system:user:disable"
                 )))
-                .andExpect(jsonPath("$.data[4].children[2].path").value("menu"))
-                .andExpect(jsonPath("$.data[4].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[6].children[2].path").value("menu"))
+                .andExpect(jsonPath("$.data[6].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "system:menu:update",
                         "add"
                 )));
