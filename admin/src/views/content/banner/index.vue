@@ -142,7 +142,6 @@
   defineOptions({ name: 'ContentBanner' })
 
   interface BannerEditorForm extends Omit<Api.Content.BannerForm, 'jumpPath' | 'startAt' | 'endAt'> {
-    imageUrl: string
     jumpPath: string
     startAt: string | null
     endAt: string | null
@@ -499,6 +498,7 @@
     title: formData.title.trim(),
     subtitle: formData.subtitle.trim(),
     imageFileId: formData.imageFileId,
+    imageUrl: formData.imageUrl.trim(),
     jumpType: formData.jumpType,
     jumpTargetId: requiresTargetId.value ? formData.jumpTargetId ?? null : null,
     jumpPath: requiresPath.value ? formData.jumpPath.trim() : '',

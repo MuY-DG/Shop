@@ -212,6 +212,13 @@
             <ElTableColumn prop="usageType" label="用途" min-width="140" />
             <ElTableColumn prop="ownerType" label="归属类型" min-width="120" />
             <ElTableColumn prop="ownerLabel" label="归属对象" min-width="160" />
+            <ElTableColumn prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <ElTag size="small" :type="row.status === 'ACTIVE' ? 'success' : 'info'">
+                  {{ row.status === 'ACTIVE' ? '当前' : '历史' }}
+                </ElTag>
+              </template>
+            </ElTableColumn>
             <ElTableColumn prop="protected" label="受保护" width="90">
               <template #default="{ row }">
                 <ElTag size="small" :type="row.protected ? 'warning' : 'info'">

@@ -190,4 +190,9 @@ $ tsc --noEmit
 
 - No real browser smoke or backend-connected admin manual verification was run in this task; verification stayed within `pnpm typecheck` and `CI=true pnpm build`.
 - The new storage/banner routes rely on backend-seeded dynamic menus and live APIs already being available; this task did not alter backend/menu data.
+
+## Review fix
+
+- Aligned `Api.Content.BannerForm` with the existing `BannerItem` contract by adding `imageUrl` and sending the trimmed URL from the banner editor payload.
+- Added a visible usage status tag in the storage file detail drawer so active and historical references are distinguishable alongside the existing protected flag.
 - `pnpm build` recreated `admin/node_modules` and refreshed ignored build artifacts locally, but no ignored/generated files are intended for commit.

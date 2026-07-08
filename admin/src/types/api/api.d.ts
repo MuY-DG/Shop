@@ -409,6 +409,7 @@ declare namespace Api {
       title: string
       subtitle: string
       imageFileId: number | null
+      imageUrl: string
       jumpType: BannerJumpType
       jumpTargetId?: number | null
       jumpPath?: string
