@@ -1,276 +1,133 @@
-# Task 6 Report: Coupon Smoke Documentation And Focused Verification
+# Task 6 Report: Backend After-Sale Refund Flow
 
 ## Status
 
-DONE_WITH_CONCERNS
+DONE
 
-## Docs Changed
+## Scope
 
-### `docs/dev-setup.md`
+- Added app after-sale application/detail/list APIs for paid or shipped orders.
+- Added admin after-sale list/detail/audit APIs.
+- Added basic WeChat refund request flow through the existing payment provider abstraction.
+- Added refund notification handling at `POST /wxpay/refund/notify`.
+- Kept all new API responses in the existing `{ code, msg, data }` envelope.
+- Did not modify Task 5 shipping implementation.
+- Did not add real WeChat certificates, keys, APIv3 keys, tokens, openids, or user-provided sensitive test values.
 
-- Added a focused coupon backend test command under `## Backend Checks`.
-- Added the exact `## Coupon Checks` section from the brief.
-- Included the required automated verification commands:
-  - `./mvnw -Dtest=CouponSchemaTest,AdminCouponTemplateControllerTest,AppCouponControllerTest,CouponDiscountCalculatorTest test`
-  - `pnpm typecheck`
-  - `pnpm build`
-- Added the pointer to `docs/smoke-checks.md#coupon-smoke-checks`.
+## TDD Evidence
 
-### `docs/smoke-checks.md`
-
-- Added `## Coupon Smoke Checks` immediately after `## Cart Smoke Checks`.
-- Included the required real-local-smoke distinction text:
-  - test-profile WeChat login is mocked
-  - product/cart/coupon/promotion requests go through real local backend APIs
-  - no product/cart/coupon mocks are involved in those requests
-- Added the required coupon smoke steps and commands for:
-  1. starting backend with the existing test-profile command
-  2. admin login
-  3. mini program login
-  4. creating and enabling a no-threshold coupon template
-  5. verifying claimable list
-  6. claiming coupon
-  7. verifying my coupons
-  8. creating category/SPU/SKU and publishing
-  9. adding SKU to cart
-  10. querying `/app/coupons/available`
-- Added the exact expected final output block from the brief:
-
-```text
-success
-新人无门槛券
-CLAIMED
-购物车优惠券测试锅底 1 3990
-500
-```
-
-## Focused Verification Results
-
-Per the user instruction for this subagent, only the focused verification commands were run.
-
-### Backend focused coupon tests
+### RED
 
 Command:
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest=CouponSchemaTest,AdminCouponTemplateControllerTest,AppCouponControllerTest,CouponDiscountCalculatorTest test
+./mvnw -Dtest=AppAfterSaleControllerTest,AdminAfterSaleControllerTest,RefundCallbackServiceTest test
 ```
 
 Result:
 
-- Passed
-- Summary observed: `Tests run: 17, Failures: 0, Errors: 0, Skipped: 0`
-- Final Maven result: `BUILD SUCCESS`
+- Failed as expected before implementation.
+- Observed 9 test failures caused by missing after-sale/refund APIs, including 404 responses such as `No static resource app/orders/.../after-sales`.
 
-### Mini program typecheck
+### GREEN
 
 Command:
 
 ```bash
-cd miniprogram
-pnpm typecheck
+cd backend/shop-server
+./mvnw -Dtest=AppAfterSaleControllerTest,AdminAfterSaleControllerTest,RefundCallbackServiceTest test
 ```
 
 Result:
 
-- Passed
-- Command completed with exit code 0
-
-### Admin build
+- Passed.
+- Summary observed: `Tests run: 9, Failures: 0, Errors: 0, Skipped: 0`.
+- Final Maven result: `BUILD SUCCESS`.
 
 Command:
 
 ```bash
-cd admin
-pnpm build
+cd backend/shop-server
+./mvnw -Dtest=AppAfterSaleControllerTest,AdminAfterSaleControllerTest,RefundCallbackServiceTest,StorageControllerTest test
 ```
 
 Result:
 
-- Passed
-- Vite production build completed successfully
-- Final observed line: `built in 18.64s`
+- Passed.
+- Summary observed: `Tests run: 18, Failures: 0, Errors: 0, Skipped: 0`.
+- Final Maven result: `BUILD SUCCESS`.
 
-## Commit
+Command:
 
-Created commit:
+```bash
+cd backend/shop-server
+./mvnw test
+```
 
-- `c50c459 docs: add coupon smoke checks`
+Result:
+
+- Passed.
+- Summary observed: `Tests run: 218, Failures: 0, Errors: 0, Skipped: 0`.
+- Final Maven result: `BUILD SUCCESS`.
+
+Command:
+
+```bash
+git diff --check
+```
+
+Result:
+
+- Passed.
+- Produced no output.
+
+## Implementation Notes
+
+- App users can apply only for their own `PAID` or `SHIPPED` orders.
+- Supported after-sale types are `REFUND_ONLY` and `RETURN_REFUND`.
+- `requestedAmountCent` must be positive and no more than the paid amount.
+- Evidence files are validated as current app user uploads, `ACTIVE`, `PRIVATE`, and purpose `AFTER_SALE_IMAGE` or `REFUND_EVIDENCE`.
+- Evidence file usage is protected through the existing storage usage service.
+- Duplicate active after-sale requests are blocked for statuses `REQUESTED`, `APPROVED`, `REFUNDING`, and `REFUND_FAILED`.
+- Admin reject records status, audit note, reviewer, and reviewed time without changing the order status.
+- Admin approve locks the after-sale, order, and payment rows; requires a paid payment order with a transaction reference; creates a refund order; invokes the configured WeChat provider; and moves the order to `REFUNDING`.
+- Refund callback parsing and verification/decryption goes through the configured provider.
+- Refund callbacks write `payment_callback_log` entries with `callback_type='REFUND'`.
+- Successful refund callbacks idempotently set refund order `SUCCESS`, after-sale `REFUNDED`, and order `REFUNDED`.
+- Failed refund callbacks set refund order `FAILED` and after-sale `REFUND_FAILED`, while leaving the order in `REFUNDING`.
 
 ## Files Changed
 
-- `docs/dev-setup.md`
-- `docs/smoke-checks.md`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/AdminAfterSaleController.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/AfterSaleStatus.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/AfterSaleType.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/AppAfterSaleController.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/RefundOrderStatus.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/dto/AdminAfterSaleAuditRequest.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/dto/AdminAfterSaleQueryRequest.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/dto/AfterSaleResponse.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/dto/AppAfterSaleApplyRequest.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/dto/RefundOrderResponse.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/service/AdminAfterSaleService.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/service/AppAfterSaleService.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/aftersale/service/RefundCallbackService.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/payment/WechatPayCallbackController.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/payment/provider/MockWechatPayProvider.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/payment/provider/RealWechatPayProvider.java`
+- `backend/shop-server/src/main/java/org/muybaby/shopserver/payment/provider/WechatRefundNotification.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/aftersale/AdminAfterSaleControllerTest.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/aftersale/AppAfterSaleControllerTest.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/aftersale/RefundCallbackServiceTest.java`
+- `backend/shop-server/src/test/java/org/muybaby/shopserver/payment/PaymentTestSupport.java`
+- `.superpowers/sdd/task-6-report.md`
 
-## Self-Review
+## Commit
 
-- Scope stayed within the brief: only the two requested docs were edited.
-- The coupon smoke docs now clearly distinguish real local smoke from automated tests/builds.
-- The smoke text explicitly states that test-profile WeChat login is mocked, while product/cart/coupon/promotion requests are real local backend API calls.
-- No long-lived backend smoke server was started in this subagent.
-- No unrelated tracked or ignored files were cleaned or reverted.
-- The branch remained `codex/shop-coupon`.
+- Commit message: `feat: add after sale refund flow`
 
 ## Concerns
 
-- I followed the user’s explicit instruction to run only the focused verification commands, so I did not run the heavier final verification block from the brief:
-
-```bash
-cd backend/shop-server && ./mvnw test
-cd miniprogram && pnpm typecheck
-cd admin && pnpm build
-git status --short --ignored
-```
-
-- I still collected `git status --short --ignored` after the commit for visibility. It showed only ignored local noise entries and no remaining tracked modifications at that moment.
-- The repository emitted an existing Git housekeeping warning during commit about `.git/gc.log` and unreachable loose objects. This did not block the commit and was not modified here.
-
----
-
-## Task 6 Review Fixes
-
-### Changes made
-
-- Updated `docs/smoke-checks.md` so coupon smoke commands no longer hard-code `claimEndAt` to `2026-12-31T23:59:59`.
-- Added runtime-generated `VALID_START_AT` and `VALID_END_AT` shell variables, and reused them in both create and update coupon-template requests.
-- Updated the claimable-list verification snippet to find the target coupon by `TEMPLATE_ID` or the smoke template name `新人无门槛券` instead of assuming `records[0]`.
-
-### Diff check
-
-Command:
-
-```bash
-git diff --check -- docs/smoke-checks.md docs/dev-setup.md
-```
-
-Result:
-
-- Passed
-- `git diff --check -- docs/smoke-checks.md docs/dev-setup.md` produced no output.
-
-### Remaining Task 6 doc review follow-up
-
-- Updated the `docs/smoke-checks.md` claimable-list lookup to prefer the newly created template by ID first, then fall back to the smoke template name only if no ID match exists.
-- Used the documented/backend response shape for claimable items: `body.data.records[*].templateId` with `item.id` kept as a compatibility fallback in the snippet.
-
-### Verification
-
-Command:
-
-```bash
-git diff --check -- docs/smoke-checks.md
-```
-
-Result:
-
-- Passed
-- `git diff --check -- docs/smoke-checks.md` produced no output.
-
----
-
-## 2026-07-07 Task 6 Second Review Fix
-
-### Changes
-
-- Updated `miniprogram/services/storage.ts` so `uploadEvidenceFile` accepts valid PRIVATE app upload metadata without requiring `url` or `publicUrl`, while still rejecting malformed success payloads that miss required numeric or string fields.
-- Updated `miniprogram/pages/home/home.ts` so `APP_PATH` tab destinations with a query string use `wx.reLaunch({ url: jumpPath })` and preserve the configured query, while plain tab paths still use `wx.switchTab`.
-
-### Verification
-
-- `cd miniprogram && pnpm typecheck` passed.
-- `git diff --check -- miniprogram/services/storage.ts miniprogram/pages/home/home.ts .superpowers/sdd/task-6-report.md` passed.
-
-
----
-
-## 2026-07-07 Task 6 Mini Program Banner And Upload Helper
-
-### Scope
-
-- Added `HomeBanner`, `StorageFileUploadResponse`, and `EvidenceUploadPurpose` in `miniprogram/types/api.ts`.
-- Created `miniprogram/services/home.ts` for `GET /app/home/banners`.
-- Created `miniprogram/services/storage.ts` for authenticated `wx.uploadFile` evidence uploads.
-- Updated `miniprogram/pages/home/home.ts`, `home.wxml`, and `home.wxss` to load banners in parallel with product preview, render a swiper when banners exist, preserve the existing hero fallback when banners are absent, and route banner taps by jump type.
-
-### RED Evidence
-
-Command:
-
-```bash
-cd miniprogram && pnpm typecheck
-```
-
-Result:
-
-- Failed as expected before implementation was complete.
-- Observed TypeScript error:
-
-```text
-services/storage.ts(4,7): error TS2322: Type '"HOME_BANNER"' is not assignable to type 'EvidenceUploadPurpose'.
-```
-
-### GREEN Evidence
-
-Command:
-
-```bash
-cd miniprogram && pnpm typecheck
-```
-
-Result:
-
-- Passed
-- Observed output:
-
-```text
-$ tsc --noEmit
-```
-
-### Notes
-
-- Banner fetch failure now falls back to the existing static hero without blocking category/product loading.
-- `APP_PATH` banner routes switch to tab pages with `wx.switchTab`; non-tab paths use `wx.navigateTo`.
-- No real local smoke was run in this task; only the required mini program typecheck was executed.
-
----
-
-## 2026-07-07 Task 6 Review Fix
-
-### Changes
-
-- Hardened `miniprogram/services/storage.ts` so `uploadEvidenceFile` rejects malformed success payloads unless the upload metadata includes a finite numeric `id`, a non-empty string `purpose`, a non-empty string `visibility`, and a usable image URL in `url` or `publicUrl`.
-- Tightened the same guard again so app upload responses only pass when `visibility` is `PRIVATE` and `uploadedByType` is `APP`, while still allowing `url` and `publicUrl` to be absent for private files.
-- Added clamp rules to `miniprogram/pages/home/home.wxss` for `.banner-title` and `.banner-subtitle` so long admin-managed text stays inside the fixed swiper frame.
-
-### Verification
-
-Command:
-
-```bash
-cd miniprogram && pnpm typecheck
-```
-
-Result:
-
-- Passed
-- Command completed with exit code 0
-
-Command:
-
-```bash
-git diff --check -- miniprogram/services/storage.ts miniprogram/pages/home/home.wxss .superpowers/sdd/task-6-report.md
-```
-
-Result:
-
-- Passed
-- No diff check warnings were reported.
-
----
-
-## 2026-07-07 Task 6 Fourth Review Fix
-
-- Tightened `miniprogram/services/storage.ts` upload success validation so PRIVATE responses still allow missing or null `url` and `publicUrl`, while requiring positive numeric `id` and `sizeBytes`, matching purpose/visibility/status/provider metadata, and optional positive numeric metadata when present.
-- Split `miniprogram/pages/home/home.ts` into independent banner, category, and product loaders so banner latency or failure no longer blocks category or product rendering.
-- Verification run: `cd miniprogram && pnpm typecheck` and `git diff --check -- miniprogram/services/storage.ts miniprogram/pages/home/home.ts .superpowers/sdd/task-6-report.md`.
+- The requested `WxPayNotifyController` file does not exist in this codebase. The refund notify endpoint was added to the existing `WechatPayCallbackController`.
+- The current tool surface did not expose a subagent reviewer. I performed a local diff review and then ran the required verification commands.
+- Maven test output includes existing project warnings such as SpringDoc default endpoint warnings, generated Spring Security passwords, Mockito dynamic-agent warnings, and an existing shipment upload warning in tests; none blocked the verified test results.

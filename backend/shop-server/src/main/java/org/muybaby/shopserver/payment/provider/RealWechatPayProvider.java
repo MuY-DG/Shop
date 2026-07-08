@@ -171,7 +171,40 @@ public class RealWechatPayProvider implements WechatPayProvider {
             String signature,
             String body
     ) {
-        throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        try {
+            RequestParam requestParam = new RequestParam.Builder()
+                    .serialNumber(serial)
+                    .timestamp(timestamp)
+                    .nonce(nonce)
+                    .signature(signature)
+                    .body(body)
+                    .build();
+            com.wechat.pay.java.service.refund.model.RefundNotification refundNotification =
+                    notificationParser(config).parse(requestParam, com.wechat.pay.java.service.refund.model.RefundNotification.class);
+            JsonNode root = objectMapper.readTree(body);
+            String resourceDigest = root.path("resource").isMissingNode() ? "" : sha256(root.path("resource").toString());
+            long refundAmountCent = refundNotification.getAmount() == null || refundNotification.getAmount().getRefund() == null
+                    ? 0L
+                    : refundNotification.getAmount().getRefund();
+            LocalDateTime successAt = refundNotification.getSuccessTime() == null
+                    ? null
+                    : OffsetDateTime.parse(refundNotification.getSuccessTime()).toLocalDateTime();
+            return new WechatRefundNotification(
+                    root.path("id").asText(),
+                    root.path("event_type").asText(),
+                    refundNotification.getOutTradeNo(),
+                    refundNotification.getOutRefundNo(),
+                    nullToEmpty(refundNotification.getRefundId()),
+                    refundNotification.getRefundStatus() == null ? "" : refundNotification.getRefundStatus().name(),
+                    refundAmountCent,
+                    successAt,
+                    resourceDigest
+            );
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
     }
 
     private JsapiServiceExtension jsapiService(ResolvedPaymentConfig config) {

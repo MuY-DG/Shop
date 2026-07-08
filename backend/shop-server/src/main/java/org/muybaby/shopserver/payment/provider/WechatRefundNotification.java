@@ -4,6 +4,7 @@ import java.time.LocalDateTime;
 
 public record WechatRefundNotification(
         String notifyId,
+        String eventType,
         String outTradeNo,
         String outRefundNo,
         String refundId,

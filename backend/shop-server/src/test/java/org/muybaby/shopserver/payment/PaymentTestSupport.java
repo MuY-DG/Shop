@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
@@ -14,13 +17,16 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-abstract class PaymentTestSupport {
+public abstract class PaymentTestSupport {
 
     @Autowired
     protected MockMvc mockMvc;
@@ -38,6 +44,9 @@ abstract class PaymentTestSupport {
     protected MockWechatPayProvider mockWechatPayProvider;
 
     @Autowired
+    protected OpaqueTokenService opaqueTokenService;
+
+    @Autowired
     private StorageProvider storageProvider;
 
     @BeforeEach
@@ -51,7 +60,12 @@ abstract class PaymentTestSupport {
     }
 
     private void clearSeededPaymentFlowState() {
+        jdbcClient.sql("delete from storage_file_usage").update();
+        jdbcClient.sql("delete from refund_order").update();
+        jdbcClient.sql("delete from after_sale_evidence").update();
+        jdbcClient.sql("delete from after_sale_request").update();
         jdbcClient.sql("delete from payment_callback_log").update();
+        jdbcClient.sql("delete from order_shipment").update();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from stock_lock").update();
         jdbcClient.sql("delete from order_item").update();
@@ -62,6 +76,7 @@ abstract class PaymentTestSupport {
         jdbcClient.sql("delete from coupon_template").update();
         jdbcClient.sql("delete from payment_config").update();
         jdbcClient.sql("delete from storage_file where object_key like 'private/payment-flow/%'").update();
+        jdbcClient.sql("delete from storage_file where object_key like 'private/after-sale-flow/%'").update();
         jdbcClient.sql("delete from product_sku").update();
         jdbcClient.sql("delete from product_spu_image").update();
         jdbcClient.sql("delete from product_spu").update();
@@ -197,6 +212,105 @@ abstract class PaymentTestSupport {
                     .update();
         }
         return new SeedOrder(suffix, "PAY" + suffix, skuId, userCouponId);
+    }
+
+    protected SeedPaidOrder seedPaidOrder(AppLoginSession session, long paidAmountCent, String status, String transactionId) {
+        SeedOrder order = seedCreatedOrder(session.userId(), paidAmountCent, false);
+        String outTradeNo = "MCH" + order.orderId();
+        LocalDateTime paidAt = LocalDateTime.of(2026, 7, 8, 12, 0);
+        jdbcClient.sql("""
+                        update shop_order
+                        set status = :status,
+                            paid_amount_cent = :paidAmountCent,
+                            paid_at = :paidAt,
+                            shipped_at = :shippedAt,
+                            payment_transaction_id = :transactionId,
+                            merchant_trade_no = :outTradeNo,
+                            updated_at = current_timestamp
+                        where id = :orderId
+                        """)
+                .param("status", status)
+                .param("paidAmountCent", paidAmountCent)
+                .param("paidAt", paidAt)
+                .param("shippedAt", "SHIPPED".equals(status) ? paidAt.plusHours(2) : null)
+                .param("transactionId", transactionId)
+                .param("outTradeNo", outTradeNo)
+                .param("orderId", order.orderId())
+                .update();
+        jdbcClient.sql("""
+                        update stock_lock
+                        set status = 'CONFIRMED',
+                            updated_at = current_timestamp
+                        where order_id = :orderId
+                        """)
+                .param("orderId", order.orderId())
+                .update();
+        jdbcClient.sql("""
+                        insert into payment_order
+                            (order_id, payment_config_id, out_trade_no, prepay_id, transaction_id,
+                             payer_openid, status, amount_cent, request_digest, callback_digest,
+                             expires_at, paid_at, created_at, updated_at)
+                        values
+                            (:orderId, 91001, :outTradeNo, :prepayId, :transactionId,
+                             :openid, 'PAID', :paidAmountCent, 'seed-refund-request-digest',
+                             'seed-refund-callback-digest', timestamp '2026-07-08 12:15:00',
+                             :paidAt, :paidAt, :paidAt)
+                        """)
+                .param("orderId", order.orderId())
+                .param("outTradeNo", outTradeNo)
+                .param("prepayId", "mock-prepay-" + outTradeNo)
+                .param("transactionId", transactionId)
+                .param("openid", session.openid())
+                .param("paidAmountCent", paidAmountCent)
+                .param("paidAt", paidAt)
+                .update();
+        return new SeedPaidOrder(order.orderId(), order.orderNo(), outTradeNo, transactionId, paidAmountCent);
+    }
+
+    protected long insertAppEvidenceFile(long userId, String purpose) {
+        return insertStorageFile(userId, purpose, "PRIVATE", "ACTIVE");
+    }
+
+    protected long insertStorageFile(long uploadedById, String purpose, String visibility, String status) {
+        long fileId = System.nanoTime();
+        jdbcClient.sql("""
+                        insert into storage_file
+                            (id, purpose, visibility, provider, bucket, object_key, original_filename,
+                             content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
+                             public_url, status, uploaded_by_type, uploaded_by_id)
+                        values
+                            (:fileId, :purpose, :visibility, 'LOCAL', '', :objectKey, :originalFilename,
+                             'image/png', 'png', 68, :sha256, 1, 1, '', null, null, :status, 'APP', :uploadedById)
+                        """)
+                .param("fileId", fileId)
+                .param("purpose", purpose)
+                .param("visibility", visibility)
+                .param("objectKey", "private/after-sale-flow/" + fileId + ".png")
+                .param("originalFilename", "after-sale-" + fileId + ".png")
+                .param("sha256", "after-sale-sha256-" + fileId)
+                .param("status", status)
+                .param("uploadedById", uploadedById)
+                .update();
+        return fileId;
+    }
+
+    protected String adminLogin() throws Exception {
+        String response = mockMvc.perform(post("/admin/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"userName":"Super","password":"123456"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token", startsWith("adm_")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response).path("data").path("token").asText();
+    }
+
+    protected String limitedAdminToken(List<String> permissions) {
+        TokenSession session = TokenSession.admin(99L, "limited-after-sale-admin", List.of("R_AFTER_SALE_LIMITED"), permissions, Instant.now());
+        return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
     }
 
     protected String pay(String token, long orderId) throws Exception {
@@ -364,5 +478,8 @@ abstract class PaymentTestSupport {
     }
 
     protected record SeedOrder(long orderId, String orderNo, long skuId, Long userCouponId) {
+    }
+
+    protected record SeedPaidOrder(long orderId, String orderNo, String outTradeNo, String transactionId, long paidAmountCent) {
     }
 }

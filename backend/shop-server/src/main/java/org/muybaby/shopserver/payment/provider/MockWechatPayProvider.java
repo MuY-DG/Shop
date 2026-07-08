@@ -106,7 +106,29 @@ public class MockWechatPayProvider implements WechatPayProvider {
             String signature,
             String body
     ) {
-        throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        if (!VALID_SIGNATURE.equals(signature)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        try {
+            JsonNode root = objectMapper.readTree(body);
+            JsonNode resource = root.path("resource");
+            JsonNode amount = resource.path("amount");
+            return new WechatRefundNotification(
+                    root.path("id").asText(),
+                    root.path("event_type").asText(),
+                    resource.path("out_trade_no").asText(),
+                    resource.path("out_refund_no").asText(),
+                    resource.path("refund_id").asText(),
+                    resource.path("refund_status").asText(),
+                    amount.path("refund").asLong(),
+                    parseWechatTime(resource.path("success_time").asText()),
+                    sha256(resource.toString())
+            );
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
     }
 
     public void markOrderPaid(String outTradeNo, long amountCent, String transactionId) {
