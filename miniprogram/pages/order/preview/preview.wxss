@@ -12,6 +12,21 @@
   text-align: center;
 }
 
+.retry-button {
+  margin-top: 24rpx;
+  color: #b3261e;
+}
+
+.inline-error {
+  margin-bottom: 20rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 10rpx;
+  background: #fff0ed;
+  color: #b3261e;
+  font-size: 24rpx;
+  line-height: 34rpx;
+}
+
 .section {
   margin-bottom: 24rpx;
   padding: 24rpx;
@@ -26,6 +41,44 @@
   color: #241f1c;
   font-size: 30rpx;
   font-weight: 800;
+}
+
+.address-section {
+  position: relative;
+}
+
+.address-content {
+  padding-right: 110rpx;
+}
+
+.address-receiver {
+  display: flex;
+  gap: 20rpx;
+  color: #241f1c;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.address-detail {
+  margin-top: 12rpx;
+  color: #51443e;
+  font-size: 25rpx;
+  line-height: 36rpx;
+}
+
+.address-change {
+  position: absolute;
+  right: 24rpx;
+  bottom: 26rpx;
+  color: #b3261e;
+  font-size: 24rpx;
+}
+
+.address-empty {
+  padding: 18rpx 0;
+  color: #b3261e;
+  font-size: 28rpx;
+  font-weight: 700;
 }
 
 .item-list {

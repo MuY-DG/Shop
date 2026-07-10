@@ -1,7 +1,23 @@
-import type { OrderPreviewItem, OrderPreviewResponse } from "../../../types/api";
+import type {
+  AddressResponse,
+  CheckoutQuery,
+  OrderPreviewItem,
+  OrderPreviewResponse
+} from "../../../types/api";
+import { getAddresses } from "../../../services/address";
 import { ensureAppLogin } from "../../../services/auth";
 import { previewOrder, submitOrder } from "../../../services/order";
 import { formatPrice } from "../../../services/product";
+import {
+  buildPreviewRequest,
+  buildSubmitRequest,
+  createIdempotencyKey,
+  isAddressResponse,
+  isCheckoutSubmitDisabled,
+  parseCheckoutQuery,
+  replaceAddressFromEvent,
+  resolveAddressSelection
+} from "../../../features/checkout";
 
 interface OrderPreviewItemView extends OrderPreviewItem {
   imageUrl: string;
@@ -24,24 +40,10 @@ interface PreviewPageData {
   loading: boolean;
   submitting: boolean;
   errorText: string;
-  cartItemIds: number[];
+  selection: CheckoutQuery | null;
+  selectedAddress: AddressResponse | null;
   idempotencyKey: string;
   preview: OrderPreviewView | null;
-}
-
-function parseCartItemIds(value: string | undefined): number[] {
-  if (!value) {
-    return [];
-  }
-
-  return value
-    .split(",")
-    .map((item) => Number(item))
-    .filter((item) => Number.isFinite(item) && item > 0);
-}
-
-function createIdempotencyKey(): string {
-  return `mp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function toItemView(item: OrderPreviewItem): OrderPreviewItemView {
@@ -68,91 +70,176 @@ function toPreviewView(preview: OrderPreviewResponse): OrderPreviewView {
 }
 
 Page<PreviewPageData, WechatMiniprogram.Page.CustomOption>({
+  initializationComplete: false,
+  previewRequestSequence: 0,
+  submitLocked: false,
   data: {
     loading: false,
     submitting: false,
     errorText: "",
-    cartItemIds: [] as number[],
+    selection: null as CheckoutQuery | null,
+    selectedAddress: null as AddressResponse | null,
     idempotencyKey: "",
     preview: null as OrderPreviewView | null
   },
   async onLoad(query: Record<string, string | undefined>) {
-    const cartItemIds = parseCartItemIds(query.cart_item_ids);
-    this.setData({
-      cartItemIds,
-      idempotencyKey: createIdempotencyKey()
-    });
-
-    if (cartItemIds.length === 0) {
-      this.setData({
-        errorText: "请选择可结算商品"
-      });
-      return;
-    }
-
-    await this.loadPreview();
-  },
-  async onPullDownRefresh() {
-    await this.loadPreview();
-    wx.stopPullDownRefresh();
-  },
-  async loadPreview() {
-    if (this.data.cartItemIds.length === 0) {
-      return;
-    }
-
-    this.setData({
-      loading: true,
-      errorText: ""
-    });
-
     try {
-      await ensureAppLogin();
-      const preview = await previewOrder({
-        cartItemIds: this.data.cartItemIds
-      });
+      const selection = parseCheckoutQuery(query);
       this.setData({
-        preview: toPreviewView(preview)
+        selection,
+        idempotencyKey: createIdempotencyKey()
       });
+      await this.refreshCheckout();
     } catch (error) {
       this.setData({
-        errorText: error instanceof Error ? error.message : "订单预览加载失败",
-        preview: null
+        errorText: error instanceof Error ? error.message : "结算参数无效"
       });
     } finally {
-      this.setData({
-        loading: false
-      });
+      this.initializationComplete = true;
     }
   },
+  async onShow() {
+    if (this.initializationComplete) {
+      await this.refreshCheckout();
+    }
+  },
+  async onPullDownRefresh() {
+    await this.refreshCheckout();
+    wx.stopPullDownRefresh();
+  },
+  onRetryTap() {
+    void this.refreshCheckout();
+  },
+  async refreshCheckout() {
+    const selection = this.data.selection;
+    if (!selection) {
+      return;
+    }
+    const requestSequence = ++this.previewRequestSequence;
+    this.setData({ loading: true, errorText: "" });
+    try {
+      await ensureAppLogin();
+      const addresses = await getAddresses();
+      if (requestSequence !== this.previewRequestSequence) {
+        return;
+      }
+      const selectedAddress = resolveAddressSelection(
+        addresses,
+        this.data.selectedAddress
+      );
+      this.setData({ selectedAddress });
+      await this.loadPreview(selectedAddress, requestSequence);
+    } catch (error) {
+      if (requestSequence === this.previewRequestSequence) {
+        this.setData({
+          errorText: error instanceof Error ? error.message : "订单预览加载失败",
+          preview: null
+        });
+      }
+    } finally {
+      if (requestSequence === this.previewRequestSequence) {
+        this.setData({ loading: false });
+      }
+    }
+  },
+  async loadPreview(
+    selectedAddress: AddressResponse | null,
+    requestSequence?: number
+  ) {
+    const activeRequestSequence =
+      requestSequence ?? ++this.previewRequestSequence;
+    const selection = this.data.selection;
+    if (!selection) {
+      return;
+    }
+    this.setData({ loading: true, errorText: "" });
+    try {
+      await ensureAppLogin();
+      const preview = await previewOrder(
+        buildPreviewRequest(
+          selection,
+          selectedAddress?.id ?? null,
+          this.data.preview?.userCouponId ?? null
+        )
+      );
+      if (activeRequestSequence !== this.previewRequestSequence) {
+        return;
+      }
+      this.setData({ preview: toPreviewView(preview) });
+    } catch (error) {
+      if (activeRequestSequence === this.previewRequestSequence) {
+        this.setData({
+          errorText: error instanceof Error ? error.message : "订单预览加载失败",
+          preview: null
+        });
+      }
+    } finally {
+      if (activeRequestSequence === this.previewRequestSequence) {
+        this.setData({ loading: false });
+      }
+    }
+  },
+  onAddressTap() {
+    wx.navigateTo({
+      url: "/pages/address/list/list?mode=select",
+      events: {
+        addressSelected: (value: unknown) => {
+          if (!isAddressResponse(value)) {
+            wx.showToast({ title: "地址信息无效，请重试", icon: "none" });
+            return;
+          }
+          const selectedAddress = replaceAddressFromEvent(
+            this.data.selectedAddress,
+            value
+          );
+          this.setData({ selectedAddress });
+          void this.loadPreview(selectedAddress);
+        }
+      }
+    });
+  },
   async onSubmitTap() {
-    if (!this.data.preview || this.data.submitting) {
+    const selection = this.data.selection;
+    const address = this.data.selectedAddress;
+    if (
+      this.submitLocked ||
+      !selection ||
+      !address ||
+      isCheckoutSubmitDisabled(
+        this.data.preview !== null,
+        address,
+        this.data.submitting
+      )
+    ) {
       return;
     }
 
-    this.setData({
-      submitting: true
-    });
-
+    this.submitLocked = true;
+    this.setData({ submitting: true });
     try {
       await ensureAppLogin();
-      const response = await submitOrder({
-        cartItemIds: this.data.cartItemIds,
-        userCouponId: this.data.preview.userCouponId,
-        idempotencyKey: this.data.idempotencyKey
-      });
-
+      const response = await submitOrder(
+        buildSubmitRequest(
+          selection,
+          address.id,
+          this.data.preview?.userCouponId ?? null,
+          this.data.idempotencyKey
+        )
+      );
       wx.redirectTo({
-        url: `/pages/order/detail/detail?order_id=${response.orderId}`
+        url: `/pages/order/detail/detail?order_id=${response.orderId}`,
+        fail: () => {
+          this.submitLocked = false;
+          this.setData({ submitting: false });
+          wx.showToast({ title: "订单已创建，请到订单列表查看", icon: "none" });
+        }
       });
     } catch (error) {
+      this.submitLocked = false;
+      this.setData({ submitting: false });
       wx.showToast({
         title: error instanceof Error ? error.message : "提交失败",
         icon: "none"
-      });
-    } finally {
-      this.setData({
-        submitting: false
       });
     }
   }

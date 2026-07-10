@@ -113,6 +113,56 @@
   font-weight: 800;
 }
 
+.quantity-section,
+.quantity-control {
+  display: flex;
+  align-items: center;
+}
+
+.quantity-section {
+  justify-content: space-between;
+  gap: 24rpx;
+}
+
+.quantity-title {
+  margin-bottom: 6rpx;
+}
+
+.quantity-limit {
+  color: #7a6f68;
+  font-size: 22rpx;
+}
+
+.quantity-control {
+  display: grid;
+  grid-template-columns: 58rpx 74rpx 58rpx;
+}
+
+.quantity-button {
+  width: 58rpx;
+  height: 58rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 8rpx;
+  background: #fff8f4;
+  color: #8a6f61;
+  font-size: 30rpx;
+  line-height: 58rpx;
+}
+
+.quantity-button[disabled] {
+  opacity: 0.45;
+}
+
+.quantity-value {
+  height: 58rpx;
+  color: #241f1c;
+  font-size: 26rpx;
+  font-weight: 800;
+  line-height: 58rpx;
+  text-align: center;
+}
+
 .sku-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

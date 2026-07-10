@@ -10,6 +10,8 @@
     "pages/order/preview/preview",
     "pages/order/list/list",
     "pages/order/detail/detail",
+    "pages/address/list/list",
+    "pages/address/edit/edit",
     "pages/aftersale/apply/apply"
   ],
   "window": {

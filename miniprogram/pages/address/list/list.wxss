@@ -1,0 +1,138 @@
+.address-list-page {
+  min-height: 100vh;
+  padding: 24rpx 24rpx 150rpx;
+  background: #f7f3ee;
+  box-sizing: border-box;
+}
+
+.selection-tip {
+  margin-bottom: 20rpx;
+  color: #7a6f68;
+  font-size: 24rpx;
+  text-align: center;
+}
+
+.inline-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-bottom: 20rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 10rpx;
+  background: #fff0ed;
+  color: #b3261e;
+  font-size: 24rpx;
+}
+
+.inline-retry {
+  flex: none;
+  margin: 0;
+  color: #b3261e;
+}
+
+.empty-state {
+  padding: 160rpx 32rpx;
+  color: #7a6f68;
+  font-size: 28rpx;
+  text-align: center;
+}
+
+.retry-button {
+  margin-top: 24rpx;
+  color: #b3261e;
+}
+
+.address-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.address-card {
+  padding: 26rpx;
+  border-radius: 12rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 32rpx rgba(110, 82, 67, 0.08);
+}
+
+.address-header,
+.receiver,
+.address-actions {
+  display: flex;
+  align-items: center;
+}
+
+.address-header {
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.receiver {
+  gap: 20rpx;
+}
+
+.receiver-name {
+  color: #241f1c;
+  font-size: 30rpx;
+  font-weight: 800;
+}
+
+.receiver-phone {
+  color: #51443e;
+  font-size: 26rpx;
+}
+
+.default-badge {
+  padding: 4rpx 10rpx;
+  border-radius: 6rpx;
+  background: #fff0ed;
+  color: #b3261e;
+  font-size: 22rpx;
+}
+
+.formatted-address {
+  margin-top: 16rpx;
+  color: #51443e;
+  font-size: 26rpx;
+  line-height: 38rpx;
+}
+
+.address-actions {
+  justify-content: flex-end;
+  gap: 12rpx;
+  margin-top: 22rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid #f0e4dc;
+}
+
+.minor-button {
+  margin: 0;
+  background: #fff8f4;
+  color: #8a6f61;
+}
+
+.minor-button.danger {
+  color: #b3261e;
+}
+
+.select-hint {
+  margin-top: 18rpx;
+  color: #b3261e;
+  font-size: 24rpx;
+  text-align: right;
+}
+
+.create-button {
+  position: fixed;
+  right: 24rpx;
+  bottom: calc(22rpx + env(safe-area-inset-bottom));
+  left: 24rpx;
+  height: 84rpx;
+  border-radius: 12rpx;
+  background: #b3261e;
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 84rpx;
+}

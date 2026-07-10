@@ -2,6 +2,10 @@ import type { ProductDetail, ProductSku } from "../../../types/api";
 import { ensureAppLogin } from "../../../services/auth";
 import { addCartItem } from "../../../services/cart";
 import { formatPrice, getProductDetail } from "../../../services/product";
+import {
+  buildProductCommand,
+  clampQuantity
+} from "../../../features/checkout";
 
 interface DatasetEvent {
   currentTarget: {
@@ -63,9 +67,12 @@ Page({
     galleryImages: [] as GalleryImage[],
     skuViews: [] as SkuView[],
     selectedSkuId: 0,
+    selectedQuantity: 1,
+    selectedQuantityMax: 0,
     selectedPriceText: "",
     selectedStockText: "",
     addingCart: false,
+    buying: false,
     loading: false,
     errorText: ""
   },
@@ -97,6 +104,10 @@ Page({
         galleryImages: toGalleryImages(detail),
         skuViews,
         selectedSkuId,
+        selectedQuantity: 1,
+        selectedQuantityMax: selectedSku
+          ? Math.min(999, selectedSku.stockAvailable)
+          : 0,
         selectedPriceText: selectedSku ? formatPrice(selectedSku.priceCent) : "暂无价格",
         selectedStockText: selectedSku ? `库存 ${selectedSku.stockAvailable}` : "暂无可售规格"
       });
@@ -117,19 +128,69 @@ Page({
     }
 
     const selectedSku = this.data.detail.skus.find((sku) => sku.id === skuId);
-    if (!selectedSku || selectedSku.status !== "ENABLED" || selectedSku.stockAvailable <= 0) {
+    if (!selectedSku) {
+      return;
+    }
+    if (selectedSku.status !== "ENABLED") {
+      wx.showToast({ title: "该规格已下架", icon: "none" });
+      return;
+    }
+    if (selectedSku.stockAvailable <= 0) {
+      wx.showToast({ title: "该规格已售罄", icon: "none" });
       return;
     }
 
     this.setData({
       selectedSkuId: selectedSku.id,
+      selectedQuantity: clampQuantity(
+        this.data.selectedQuantity,
+        selectedSku.stockAvailable
+      ),
+      selectedQuantityMax: Math.min(999, selectedSku.stockAvailable),
       skuViews: toSkuViews(this.data.detail.skus, selectedSku.id),
       selectedPriceText: formatPrice(selectedSku.priceCent),
       selectedStockText: `库存 ${selectedSku.stockAvailable}`
     });
   },
+  onQuantityMinus() {
+    const selectedSku = this.getSelectedSku();
+    if (!selectedSku) {
+      return;
+    }
+    this.setData({
+      selectedQuantity: clampQuantity(
+        this.data.selectedQuantity - 1,
+        selectedSku.stockAvailable
+      )
+    });
+  },
+  onQuantityPlus() {
+    const selectedSku = this.getSelectedSku();
+    if (!selectedSku) {
+      return;
+    }
+    this.setData({
+      selectedQuantity: clampQuantity(
+        this.data.selectedQuantity + 1,
+        selectedSku.stockAvailable
+      )
+    });
+  },
   async onAddCartTap() {
-    if (!this.data.selectedSkuId || this.data.addingCart) {
+    if (this.data.addingCart) {
+      return;
+    }
+
+    const command = buildProductCommand(
+      "ADD_TO_CART",
+      this.getSelectedSku(),
+      this.data.selectedQuantity
+    );
+    if (command.type === "ERROR") {
+      wx.showToast({ title: command.message, icon: "none" });
+      return;
+    }
+    if (command.type !== "ADD_TO_CART") {
       return;
     }
 
@@ -139,10 +200,7 @@ Page({
 
     try {
       await ensureAppLogin();
-      await addCartItem({
-        skuId: this.data.selectedSkuId,
-        quantity: 1
-      });
+      await addCartItem(command.payload);
       wx.showToast({
         title: "已加入购物车",
         icon: "success"
@@ -157,5 +215,43 @@ Page({
         addingCart: false
       });
     }
+  },
+  async onBuyNowTap() {
+    if (this.data.buying) {
+      return;
+    }
+    const command = buildProductCommand(
+      "DIRECT_BUY",
+      this.getSelectedSku(),
+      this.data.selectedQuantity
+    );
+    if (command.type === "ERROR") {
+      wx.showToast({ title: command.message, icon: "none" });
+      return;
+    }
+    if (command.type !== "DIRECT_BUY") {
+      return;
+    }
+
+    this.setData({ buying: true });
+    try {
+      await ensureAppLogin();
+      await wx.navigateTo({ url: command.url });
+    } catch (error) {
+      wx.showToast({
+        title: error instanceof Error ? error.message : "暂时无法购买",
+        icon: "none"
+      });
+    } finally {
+      this.setData({ buying: false });
+    }
+  },
+  getSelectedSku(): ProductSku | undefined {
+    if (!this.data.detail || this.data.selectedSkuId <= 0) {
+      return undefined;
+    }
+    return this.data.detail.skus.find(
+      (sku) => sku.id === this.data.selectedSkuId
+    );
   }
 });

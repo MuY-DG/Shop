@@ -112,6 +112,30 @@ export interface ProductSku {
   status: "ENABLED" | "DISABLED";
 }
 
+export interface AddressResponse {
+  id: number;
+  receiverName: string;
+  receiverPhone: string;
+  province: string;
+  city: string;
+  district: string;
+  detailAddress: string;
+  isDefault: boolean;
+  formattedAddress: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AddressUpsertRequest = {
+  receiverName: string;
+  receiverPhone: string;
+  province: string;
+  city: string;
+  district: string;
+  detailAddress: string;
+  isDefault: boolean;
+};
+
 export interface ProductDetail {
   id: number;
   categoryId: number;
@@ -302,7 +326,7 @@ export interface AfterSaleResponse {
 }
 
 export interface OrderPreviewItem {
-  cartItemId: number;
+  cartItemId?: number | null;
   skuId: number;
   spuId: number;
   productTitle: string;
@@ -318,6 +342,28 @@ export interface OrderPreviewItem {
   lineOriginalAmountCent: number;
   lineAmountCent: number;
 }
+
+export type CheckoutQuery =
+  | {
+      source: "CART";
+      cartItemIds: number[];
+    }
+  | {
+      source: "DIRECT";
+      skuId: number;
+      quantity: number;
+    };
+
+export type OrderPreviewRequest = CheckoutQuery & {
+  addressId?: number;
+  userCouponId?: number | null;
+};
+
+export type OrderSubmitRequest = CheckoutQuery & {
+  addressId: number;
+  userCouponId?: number | null;
+  idempotencyKey: string;
+};
 
 export interface OrderPreviewResponse {
   items: OrderPreviewItem[];

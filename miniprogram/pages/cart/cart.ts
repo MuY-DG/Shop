@@ -8,6 +8,7 @@ import {
 } from "../../services/cart";
 import { getAvailableCoupons } from "../../services/coupon";
 import { formatPrice } from "../../services/product";
+import { buildCartCheckoutUrl } from "../../features/checkout";
 
 interface DatasetEvent {
   currentTarget: {
@@ -195,7 +196,7 @@ Page({
     }
 
     wx.navigateTo({
-      url: `/pages/order/preview/preview?cart_item_ids=${availableItemIds.join(",")}`
+      url: buildCartCheckoutUrl(availableItemIds)
     });
   },
   async loadCouponSummary(items: CartItem[]) {

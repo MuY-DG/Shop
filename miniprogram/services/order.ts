@@ -1,7 +1,9 @@
 import type {
   OrderDetail,
+  OrderPreviewRequest,
   OrderPreviewResponse,
   OrderStatus,
+  OrderSubmitRequest,
   OrderSubmitResponse,
   OrderSummary,
   PageResult,
@@ -11,10 +13,7 @@ import type {
 } from "../types/api";
 import { request } from "../utils/request";
 
-export function previewOrder(payload: {
-  cartItemIds: number[];
-  userCouponId?: number | null;
-}): Promise<OrderPreviewResponse> {
+export function previewOrder(payload: OrderPreviewRequest): Promise<OrderPreviewResponse> {
   return request<OrderPreviewResponse>({
     url: "/app/orders/preview",
     method: "POST",
@@ -22,11 +21,7 @@ export function previewOrder(payload: {
   });
 }
 
-export function submitOrder(payload: {
-  cartItemIds: number[];
-  userCouponId?: number | null;
-  idempotencyKey: string;
-}): Promise<OrderSubmitResponse> {
+export function submitOrder(payload: OrderSubmitRequest): Promise<OrderSubmitResponse> {
   return request<OrderSubmitResponse>({
     url: "/app/orders",
     method: "POST",

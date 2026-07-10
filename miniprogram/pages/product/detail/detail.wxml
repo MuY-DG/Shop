@@ -48,6 +48,26 @@
       </view>
     </view>
 
+    <view class="section quantity-section">
+      <view>
+        <view class="section-title quantity-title">购买数量</view>
+        <view class="quantity-limit">最多可购 {{selectedQuantityMax}} 件</view>
+      </view>
+      <view class="quantity-control">
+        <button
+          class="quantity-button"
+          disabled="{{selectedQuantity <= 1}}"
+          bindtap="onQuantityMinus"
+        >-</button>
+        <view class="quantity-value">{{selectedQuantity}}</view>
+        <button
+          class="quantity-button"
+          disabled="{{selectedQuantityMax <= 0 || selectedQuantity >= selectedQuantityMax}}"
+          bindtap="onQuantityPlus"
+        >+</button>
+      </view>
+    </view>
+
     <view wx:if="{{detail.detailHtml}}" class="section">
       <view class="section-title">详情</view>
       <rich-text nodes="{{detail.detailHtml}}"></rich-text>
@@ -57,12 +77,17 @@
   <view class="action-bar">
     <button
       class="action-button cart-button"
-      disabled="{{!selectedSkuId || addingCart}}"
+      disabled="{{!selectedSkuId || addingCart || buying}}"
       loading="{{addingCart}}"
       bindtap="onAddCartTap"
     >
       加入购物车
     </button>
-    <button class="action-button buy-button" disabled="true">立即购买</button>
+    <button
+      class="action-button buy-button"
+      disabled="{{!selectedSkuId || buying || addingCart}}"
+      loading="{{buying}}"
+      bindtap="onBuyNowTap"
+    >立即购买</button>
   </view>
 </view>
