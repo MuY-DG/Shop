@@ -110,6 +110,10 @@ class AdminOrderControllerTest {
         long skuId = createPublishedSku("ADMIN-DETAIL-SKU", 3990L, 4990L, 12, "ENABLED");
 
         insertOrderSnapshot(9301L, "ADM-DETAIL-ORDER", OrderStatus.CREATED.name(), userId, skuId, 9401L, "Admin Detail Item");
+        String receiverAddress = longestValidReceiverAddress();
+        jdbcClient.sql("update shop_order set receiver_address = :receiverAddress where id = 9301")
+                .param("receiverAddress", receiverAddress)
+                .update();
 
         mockMvc.perform(get("/admin/orders/{orderId}", 9301L)
                         .header("Authorization", "Bearer " + adminToken))
@@ -117,6 +121,7 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data.orderId").value(9301))
                 .andExpect(jsonPath("$.data.orderNo").value("ADM-DETAIL-ORDER"))
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
+                .andExpect(jsonPath("$.data.receiverAddress").value(receiverAddress))
                 .andExpect(jsonPath("$.data.productOriginalAmountCent").value(9980))
                 .andExpect(jsonPath("$.data.productAmountCent").value(7980))
                 .andExpect(jsonPath("$.data.couponDiscountCent").value(500))
@@ -129,6 +134,13 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data.items[0].quantity").value(2))
                 .andExpect(jsonPath("$.data.items[0].lineOriginalAmountCent").value(9980))
                 .andExpect(jsonPath("$.data.items[0].lineAmountCent").value(7980));
+    }
+
+    private String longestValidReceiverAddress() {
+        return "省".repeat(64)
+                + " " + "市".repeat(64)
+                + " " + "区".repeat(64)
+                + " " + "路".repeat(255);
     }
 
     @Test

@@ -679,6 +679,10 @@ class AppOrderControllerTest {
 
         insertOrderSnapshot(9101L, "ORD-LIST-USER", userId, skuId, 9901L, "List User Item");
         insertOrderSnapshot(9102L, "ORD-LIST-OTHER", otherUserId, skuId, 9902L, "Other User Item");
+        String receiverAddress = longestValidReceiverAddress();
+        jdbcClient.sql("update shop_order set receiver_address = :receiverAddress where id = 9101")
+                .param("receiverAddress", receiverAddress)
+                .update();
 
         mockMvc.perform(get("/app/orders?current=1&size=10")
                         .header("Authorization", "Bearer " + appToken))
@@ -696,9 +700,17 @@ class AppOrderControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.orderId").value(9101))
                 .andExpect(jsonPath("$.data.orderNo").value("ORD-LIST-USER"))
+                .andExpect(jsonPath("$.data.receiverAddress").value(receiverAddress))
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].skuId").value(skuId))
                 .andExpect(jsonPath("$.data.items[0].productTitle").value("List User Item"));
+    }
+
+    private String longestValidReceiverAddress() {
+        return "省".repeat(64)
+                + " " + "市".repeat(64)
+                + " " + "区".repeat(64)
+                + " " + "路".repeat(255);
     }
 
     private long cartItemId(String cartResponse) throws Exception {

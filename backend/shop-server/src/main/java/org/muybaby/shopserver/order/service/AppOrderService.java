@@ -935,7 +935,7 @@ public class AppOrderService {
         return jdbcClient.sql("""
                         select id as shipment_id,
                                order_id,
-                               express_company,
+                               express_company_name as express_company,
                                tracking_no,
                                shipment_note,
                                status,

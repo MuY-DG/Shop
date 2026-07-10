@@ -53,7 +53,7 @@ public class AdminShipmentService {
         try {
             jdbcClient.sql("""
                             insert into order_shipment
-                                (order_id, express_company, tracking_no, shipment_note, status,
+                                (order_id, express_company_name, tracking_no, shipment_note, status,
                                  wechat_upload_status, wechat_error_code, wechat_error_message,
                                  retry_count, shipped_at, created_at, updated_at)
                             values
@@ -222,7 +222,7 @@ public class AdminShipmentService {
         return jdbcClient.sql("""
                         select id as shipment_id,
                                order_id,
-                               express_company,
+                               express_company_name as express_company,
                                tracking_no,
                                shipment_note,
                                status,

@@ -332,9 +332,12 @@ class AdminShipmentControllerTest {
                         select count(*)
                         from order_shipment
                         where order_id = :orderId
-                          and express_company = '顺丰速运'
+                          and express_company_name = '顺丰速运'
                           and tracking_no = 'SF1234567890'
                           and shipment_note = 'front desk pickup'
+                          and logistics_type = 1
+                          and delivery_mode = 1
+                          and item_desc = '历史订单商品'
                           and status = 'SHIPPED'
                           and wechat_upload_status = :uploadStatus
                           and wechat_error_code = :errorCode
