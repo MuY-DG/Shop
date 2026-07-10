@@ -1,41 +1,75 @@
-import type { ApiResponse, RequestBody, RequestOptions } from "../types/api";
+import type { RequestBody, RequestOptions } from "../types/api";
+import {
+  rawRequest,
+  type RawHttpResult,
+  type RawRequestOptions
+} from "./http";
+import {
+  sessionManager,
+  type SessionManager
+} from "../services/session";
 
 const SUCCESS_CODE = 200;
 
-export function request<TData, TBody extends RequestBody = WechatMiniprogram.IAnyObject>(
-  options: RequestOptions<TBody>
-): Promise<TData> {
-  const app = getApp<{
-    globalData: {
-      apiBaseUrl: string;
-      token: string;
-    };
-  }>();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json"
-  };
+export interface AuthRecoveryOptions {
+  auth?: boolean;
+  recoverAuth?: boolean;
+}
 
-  if (options.auth !== false && app.globalData.token) {
-    headers.Authorization = `Bearer ${app.globalData.token}`;
+export async function withAuthRecovery<T>(
+  send: (authToken: string | null) => Promise<RawHttpResult<T>>,
+  options: AuthRecoveryOptions = {},
+  session: SessionManager = sessionManager
+): Promise<RawHttpResult<T>> {
+  const firstToken =
+    options.auth === false ? null : session.getState().accessToken || null;
+  const first = await send(firstToken);
+  if (
+    first.statusCode !== 401 ||
+    options.auth === false ||
+    options.recoverAuth === false
+  ) {
+    return first;
   }
 
-  return new Promise<TData>((resolve, reject) => {
-    wx.request<ApiResponse<TData>>({
-      url: `${app.globalData.apiBaseUrl}${options.url}`,
-      method: options.method ? options.method : "GET",
-      data: options.data,
-      header: headers,
-      success: (response) => {
-        const body = response.data;
-        if (body && body.code === SUCCESS_CODE) {
-          resolve(body.data);
-          return;
-        }
-        reject(new Error(body?.msg || "请求失败"));
-      },
-      fail: (error) => {
-        reject(new Error(error.errMsg));
-      }
-    });
-  });
+  await session.recoverAfterUnauthorized(first.authTokenUsed);
+
+  const secondToken = session.getState().accessToken || null;
+  const second = await send(secondToken);
+  if (second.statusCode === 401) {
+    session.clearIfCurrent(second.authTokenUsed);
+  }
+  return second;
+}
+
+function unwrap<T>(result: RawHttpResult<T>): T {
+  if (
+    result.statusCode >= 200 &&
+    result.statusCode < 300 &&
+    result.body?.code === SUCCESS_CODE
+  ) {
+    return result.body.data;
+  }
+  throw new Error(result.body?.msg || "请求失败");
+}
+
+export async function request<
+  TData,
+  TBody extends RequestBody = WechatMiniprogram.IAnyObject
+>(options: RequestOptions<TBody>): Promise<TData> {
+  const rawOptions: Omit<RawRequestOptions<TBody>, "authToken"> = {
+    url: options.url,
+    method: options.method,
+    data: options.data
+  };
+  const result = await withAuthRecovery(
+    (authToken) =>
+      rawRequest<TData, TBody>({
+        ...rawOptions,
+        authToken: options.auth === false ? null : authToken
+      }),
+    options,
+    sessionManager
+  );
+  return unwrap(result);
 }

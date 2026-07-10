@@ -1,30 +1,51 @@
-import type { ApiResponse, EvidenceUploadPurpose, StorageFileUploadResponse } from "../types/api";
+import type {
+  ApiResponse,
+  EvidenceUploadPurpose,
+  StorageFileUploadResponse
+} from "../types/api";
+import type { RawHttpResult } from "../utils/http";
+import { withAuthRecovery } from "../utils/request";
+import {
+  sessionManager,
+  type SessionManager
+} from "./session";
 
 const SUCCESS_CODE = 200;
 
-function getUploadApp() {
+function getApiBaseUrl(): string {
   return getApp<{
     globalData: {
       apiBaseUrl: string;
-      token: string;
     };
-  }>();
+  }>().globalData.apiBaseUrl;
 }
 
-function parseUploadEnvelope(rawData: string): ApiResponse<StorageFileUploadResponse> {
-  let parsed: unknown;
-
+function parseUploadEnvelope(
+  rawData: unknown
+): ApiResponse<StorageFileUploadResponse> | null {
+  if (typeof rawData !== "string") {
+    return null;
+  }
   try {
-    parsed = JSON.parse(rawData);
+    const parsed: unknown = JSON.parse(rawData);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const candidate = parsed as Partial<ApiResponse<StorageFileUploadResponse>>;
+    if (
+      typeof candidate.code !== "number" ||
+      typeof candidate.msg !== "string"
+    ) {
+      return null;
+    }
+    return {
+      code: candidate.code,
+      msg: candidate.msg,
+      data: ("data" in candidate ? candidate.data : null) as StorageFileUploadResponse
+    };
   } catch {
-    throw new Error("上传响应格式错误");
+    return null;
   }
-
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error("上传响应格式错误");
-  }
-
-  return parsed as ApiResponse<StorageFileUploadResponse>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -54,17 +75,11 @@ function isStorageFileUploadResponse(
   if (!isRecord(data)) {
     return false;
   }
-
-  const id = data.id;
-  const responsePurpose = data.purpose;
-  const visibility = data.visibility;
-  const uploadedByType = data.uploadedByType;
-
   return (
-    isPositiveFiniteNumber(id) &&
-    responsePurpose === purpose &&
-    visibility === "PRIVATE" &&
-    uploadedByType === "APP" &&
+    isPositiveFiniteNumber(data.id) &&
+    data.purpose === purpose &&
+    data.visibility === "PRIVATE" &&
+    data.uploadedByType === "APP" &&
     isNonEmptyString(data.provider) &&
     isNonEmptyString(data.originalFilename) &&
     isNonEmptyString(data.contentType) &&
@@ -78,64 +93,79 @@ function isStorageFileUploadResponse(
     isOptionalPositiveFiniteNumber(data.width) &&
     isOptionalPositiveFiniteNumber(data.height) &&
     (!("url" in data) || typeof data.url === "string" || data.url === null) &&
-    (!("publicUrl" in data) || typeof data.publicUrl === "string" || data.publicUrl === null)
+    (!("publicUrl" in data) ||
+      typeof data.publicUrl === "string" ||
+      data.publicUrl === null)
   );
 }
 
-export function uploadEvidenceFile(
+export interface EvidenceUploaderDependencies {
+  session: SessionManager;
+  upload(
+    filePath: string,
+    purpose: EvidenceUploadPurpose,
+    authToken: string | null
+  ): Promise<RawHttpResult<StorageFileUploadResponse>>;
+}
+
+export function createEvidenceUploader(
+  dependencies: EvidenceUploaderDependencies
+): (
   filePath: string,
   purpose: EvidenceUploadPurpose
-): Promise<StorageFileUploadResponse> {
-  const app = getUploadApp();
-  const header: Record<string, string> = {};
+) => Promise<StorageFileUploadResponse> {
+  return async (filePath, purpose) => {
+    const result = await withAuthRecovery(
+      (authToken) => dependencies.upload(filePath, purpose, authToken),
+      {},
+      dependencies.session
+    );
+    if (result.statusCode < 200 || result.statusCode >= 300) {
+      throw new Error(result.body?.msg || "上传失败");
+    }
+    if (result.body?.code !== SUCCESS_CODE || !result.body.data) {
+      throw new Error(result.body?.msg || "上传响应格式错误");
+    }
+    if (!isStorageFileUploadResponse(result.body.data, purpose)) {
+      throw new Error("上传响应格式错误");
+    }
+    return result.body.data;
+  };
+}
 
-  if (app.globalData.token) {
-    header.Authorization = `Bearer ${app.globalData.token}`;
+function rawUploadEvidenceFile(
+  filePath: string,
+  purpose: EvidenceUploadPurpose,
+  authToken: string | null
+): Promise<RawHttpResult<StorageFileUploadResponse>> {
+  const authTokenUsed = authToken || null;
+  const header: Record<string, string> = {};
+  if (authTokenUsed) {
+    header.Authorization = `Bearer ${authTokenUsed}`;
   }
 
-  return new Promise<StorageFileUploadResponse>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     wx.uploadFile({
-      url: `${app.globalData.apiBaseUrl}/app/files/upload`,
+      url: `${getApiBaseUrl()}/app/files/upload`,
       filePath,
       name: "file",
       formData: { purpose },
       header,
       success: (response) => {
-        if (typeof response.data !== "string") {
-          reject(new Error("上传响应格式错误"));
-          return;
-        }
-
-        let body: StorageUploadEnvelope;
-        try {
-          body = parseUploadEnvelope(response.data);
-        } catch (error) {
-          reject(error instanceof Error ? error : new Error("上传响应格式错误"));
-          return;
-        }
-
-        if (response.statusCode < 200 || response.statusCode >= 300) {
-          reject(new Error(body.msg || "上传失败"));
-          return;
-        }
-
-        if (body.code !== SUCCESS_CODE || !body.data) {
-          reject(new Error(body.msg || "上传失败"));
-          return;
-        }
-
-        if (!isStorageFileUploadResponse(body.data, purpose)) {
-          reject(new Error("上传响应格式错误"));
-          return;
-        }
-
-        resolve(body.data);
+        resolve({
+          statusCode: response.statusCode,
+          body: parseUploadEnvelope(response.data),
+          authTokenUsed
+        });
       },
-      fail: (error) => {
-        reject(new Error(error.errMsg));
-      }
+      fail: (error) => reject(new Error(error.errMsg))
     });
   });
 }
+
+export const uploadEvidenceFile = createEvidenceUploader({
+  session: sessionManager,
+  upload: rawUploadEvidenceFile
+});
 
 export type StorageUploadEnvelope = ApiResponse<StorageFileUploadResponse>;

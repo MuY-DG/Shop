@@ -25,6 +25,13 @@
   margin-top: 12rpx;
 }
 
+.profile-warning {
+  margin-top: 12rpx;
+  color: #b26a2b;
+  font-size: 24rpx;
+  line-height: 36rpx;
+}
+
 .phone-button {
   margin-top: 24rpx;
 }

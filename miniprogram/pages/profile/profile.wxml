@@ -2,7 +2,8 @@
   <view class="status-card">
     <view class="profile-row">{{loginStatus}}</view>
     <view class="profile-row">{{phoneStatus}}</view>
-    <button class="phone-button" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber" disabled="{{isLoggingIn || !isLoggedIn || phoneAuthorizing}}">Authorize Phone</button>
+    <view wx:if="{{profileWarning}}" class="profile-warning">{{profileWarning}}</view>
+    <button class="phone-button" open-type="getPhoneNumber" bindgetphonenumber="onGetPhoneNumber" disabled="{{isLoggingIn || !isLoggedIn || phoneAuthorizing}}">{{phoneButtonText}}</button>
   </view>
 
   <view class="action-list">

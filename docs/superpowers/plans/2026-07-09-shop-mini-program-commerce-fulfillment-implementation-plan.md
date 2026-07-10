@@ -615,6 +615,7 @@ Commit:
 **Files:**
 - Modify: miniprogram/package.json
 - Modify: miniprogram/pnpm-lock.yaml
+- Create: miniprogram/pnpm-workspace.yaml
 - Modify: miniprogram/tsconfig.json
 - Create: miniprogram/tsconfig.test.json
 - Modify: miniprogram/types/api.ts
@@ -656,6 +657,20 @@ Add dev dependency tsx and script:
   }
 }
 ~~~
+
+pnpm 11 applies a supply-chain build policy to dependency install scripts, and `tsx` pulls in `esbuild`. pnpm 11.10 no longer reads `pnpm.onlyBuiltDependencies` from package.json; with no workspace allow-list, `pnpm install --force` fails with `ERR_PNPM_IGNORED_BUILDS`. Create `miniprogram/pnpm-workspace.yaml` with the narrow allow-list:
+
+~~~yaml
+allowBuilds:
+  esbuild: true
+~~~
+
+Verify the clean/forced install path:
+
+    pnpm install --force
+    pnpm rebuild esbuild
+
+Expected GREEN: the forced install exits 0, and the rebuild runs esbuild's `node install.js` to completion.
 
 Create tests with injected in-memory storage and fake login/request functions. Required assertions:
 
@@ -854,7 +869,7 @@ Review malformed storage, circular imports, simultaneous 401s, refresh endpoint 
 
 Commit:
 
-    git add miniprogram/package.json miniprogram/pnpm-lock.yaml miniprogram/tsconfig.json miniprogram/tsconfig.test.json miniprogram/types/api.ts miniprogram/utils miniprogram/services miniprogram/app.ts miniprogram/pages/profile miniprogram/tests
+    git add docs/superpowers/plans/2026-07-09-shop-mini-program-commerce-fulfillment-implementation-plan.md miniprogram/package.json miniprogram/pnpm-lock.yaml miniprogram/pnpm-workspace.yaml miniprogram/tsconfig.json miniprogram/tsconfig.test.json miniprogram/types/api.ts miniprogram/utils miniprogram/services miniprogram/app.ts miniprogram/pages/profile miniprogram/tests
     git commit -m "feat: add mini program session recovery"
 
 ---

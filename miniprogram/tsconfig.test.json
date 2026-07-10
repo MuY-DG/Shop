@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "miniprogram-api-typings"]
+  },
+  "include": [
+    "./tests/**/*.ts",
+    "./types/**/*.ts",
+    "./services/**/*.ts",
+    "./utils/**/*.ts",
+    "./pages/profile/profile.ts"
+  ],
+  "exclude": []
+}

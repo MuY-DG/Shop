@@ -4,22 +4,18 @@ export interface ApiResponse<T> {
   data: T;
 }
 
-export interface AppUserSummary {
+export interface AppUserProfile {
   userId: number;
   openidMasked: string;
   phoneAuthorized: boolean;
+  phoneNumberMasked: string | null;
 }
 
-export interface AppLoginResponse {
+export interface AppSessionResponse {
   token: string;
   refreshToken: string;
   expiresIn: number;
-  user: AppUserSummary;
-}
-
-export interface PhoneAuthorizeResponse {
-  phoneAuthorized: boolean;
-  phoneNumberMasked: string;
+  user: AppUserProfile;
 }
 
 export type RequestBody = string | WechatMiniprogram.IAnyObject | ArrayBuffer;
@@ -29,6 +25,7 @@ export interface RequestOptions<TBody extends RequestBody = WechatMiniprogram.IA
   method?: "GET" | "POST" | "PUT" | "DELETE";
   data?: TBody;
   auth?: boolean;
+  recoverAuth?: boolean;
 }
 
 export interface PageResult<T> {
