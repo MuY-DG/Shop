@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.order.service;
 
+import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
+import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
@@ -8,13 +10,15 @@ import org.muybaby.shopserver.coupon.UserCouponStatus;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
 import org.muybaby.shopserver.order.CheckoutSource;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.OrderStatusGroup;
 import org.muybaby.shopserver.order.StockLockStatus;
+import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
 import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
-import org.muybaby.shopserver.order.dto.OrderDetailResponse;
 import org.muybaby.shopserver.order.dto.OrderItemResponse;
 import org.muybaby.shopserver.order.dto.OrderPreviewItemResponse;
 import org.muybaby.shopserver.order.dto.OrderPreviewResponse;
+import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
 import org.muybaby.shopserver.order.dto.OrderSubmitResponse;
 import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
 import org.muybaby.shopserver.product.StockChangeType;
@@ -62,6 +66,7 @@ public class AppOrderService {
     private final StorageUsageService storageUsageService;
     private final CheckoutSelectionService checkoutSelectionService;
     private final AppAddressService appAddressService;
+    private final AppAfterSaleService appAfterSaleService;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
     public AppOrderService(
@@ -69,13 +74,15 @@ public class AppOrderService {
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             StorageUsageService storageUsageService,
             CheckoutSelectionService checkoutSelectionService,
-            AppAddressService appAddressService
+            AppAddressService appAddressService,
+            AppAfterSaleService appAfterSaleService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageUsageService = storageUsageService;
         this.checkoutSelectionService = checkoutSelectionService;
         this.appAddressService = appAddressService;
+        this.appAfterSaleService = appAfterSaleService;
     }
 
     public OrderPreviewResponse preview(AuthenticatedPrincipal principal, AppOrderPreviewRequest request) {
@@ -144,21 +151,47 @@ public class AppOrderService {
         );
     }
 
-    public PageResult<OrderSummaryResponse> list(AuthenticatedPrincipal principal, Long current, Long size, String status) {
+    public PageResult<OrderSummaryResponse> list(
+            AuthenticatedPrincipal principal,
+            Long current,
+            Long size,
+            String status
+    ) {
+        return list(principal, current, size, status, OrderStatusGroup.ALL);
+    }
+
+    public PageResult<OrderSummaryResponse> list(
+            AuthenticatedPrincipal principal,
+            Long current,
+            Long size,
+            String status,
+            OrderStatusGroup statusGroup
+    ) {
         Long userId = requireAppUser(principal);
         long pageCurrent = normalizeCurrent(current);
         long pageSize = normalizeSize(size);
         long offset = (pageCurrent - 1) * pageSize;
         String normalizedStatus = normalizeStatus(status);
+        OrderStatusGroup normalizedStatusGroup = statusGroup == null ? OrderStatusGroup.ALL : statusGroup;
+        if (normalizedStatus != null && normalizedStatusGroup != OrderStatusGroup.ALL) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        boolean allStatuses = normalizedStatusGroup == OrderStatusGroup.ALL;
+        List<String> groupedStatuses = allStatuses
+                ? List.of("__ALL_STATUS_GROUP__")
+                : statusesForGroup(normalizedStatusGroup);
 
         Long total = jdbcClient.sql("""
                         select count(*)
                         from shop_order
                         where user_id = :userId
                           and (:status is null or status = :status)
+                          and (:allStatuses = true or status in (:groupedStatuses))
                         """)
                 .param("userId", userId)
                 .param("status", normalizedStatus)
+                .param("allStatuses", allStatuses)
+                .param("groupedStatuses", groupedStatuses)
                 .query(Long.class)
                 .single();
 
@@ -187,11 +220,14 @@ public class AppOrderService {
                         from shop_order o
                         where o.user_id = :userId
                           and (:status is null or o.status = :status)
+                          and (:allStatuses = true or o.status in (:groupedStatuses))
                         order by o.created_at desc, o.id desc
                         limit :limit offset :offset
                         """)
                 .param("userId", userId)
                 .param("status", normalizedStatus)
+                .param("allStatuses", allStatuses)
+                .param("groupedStatuses", groupedStatuses)
                 .param("limit", pageSize)
                 .param("offset", offset)
                 .query(this::mapOrderSummary)
@@ -200,7 +236,7 @@ public class AppOrderService {
         return PageResult.of(records, total == null ? 0L : total, pageCurrent, pageSize);
     }
 
-    public OrderDetailResponse detail(AuthenticatedPrincipal principal, Long orderId) {
+    public AppOrderDetailResponse detail(AuthenticatedPrincipal principal, Long orderId) {
         Long userId = requireAppUser(principal);
         OrderDetailHeader header = jdbcClient.sql("""
                         select id as order_id,
@@ -220,9 +256,14 @@ public class AppOrderService {
                                receiver_address,
                                payment_transaction_id,
                                merchant_trade_no,
+                               paid_at,
                                close_reason,
                                closed_at,
-                               created_at
+                               created_at,
+                               shipped_at,
+                               completed_at,
+                               refunding_at,
+                               refunded_at
                         from shop_order
                         where id = :orderId
                           and user_id = :userId
@@ -260,7 +301,21 @@ public class AppOrderService {
                 .query(this::mapOrderItem)
                 .list();
 
-        return new OrderDetailResponse(
+        PaymentOrderSnapshot paymentOrder = findLatestPaymentOrder(orderId);
+        String transactionId = nonBlank(
+                paymentOrder == null ? null : paymentOrder.transactionId(),
+                header.paymentTransactionId()
+        );
+        String outTradeNo = nonBlank(
+                paymentOrder == null ? null : paymentOrder.outTradeNo(),
+                header.merchantTradeNo()
+        );
+        LocalDateTime paidAt = paymentOrder == null || paymentOrder.paidAt() == null
+                ? header.paidAt()
+                : paymentOrder.paidAt();
+        AfterSaleResponse latestAfterSale = appAfterSaleService.latestForOrder(principal, orderId);
+
+        return new AppOrderDetailResponse(
                 header.orderId(),
                 header.orderNo(),
                 header.status(),
@@ -276,18 +331,67 @@ public class AppOrderService {
                 header.receiverName(),
                 header.receiverPhone(),
                 header.receiverAddress(),
-                header.paymentTransactionId(),
+                transactionId,
                 header.merchantTradeNo(),
-                null,
-                header.merchantTradeNo(),
-                header.paymentTransactionId(),
-                null,
+                paymentOrder == null ? null : paymentOrder.status(),
+                outTradeNo,
+                transactionId,
+                paidAt,
                 header.closeReason(),
                 header.closedAt(),
                 header.createdAt(),
+                header.shippedAt(),
+                header.completedAt(),
+                header.refundingAt(),
+                header.refundedAt(),
                 findShipment(orderId),
+                latestAfterSale,
                 items
         );
+    }
+
+    @Transactional
+    public OrderReceiptResponse confirmReceipt(AuthenticatedPrincipal principal, Long orderId) {
+        Long userId = requireAppUser(principal);
+        ReceiptOrder order = jdbcClient.sql("""
+                        select id as order_id,
+                               status,
+                               completed_at
+                        from shop_order
+                        where id = :orderId
+                          and user_id = :userId
+                        for update
+                        """)
+                .param("orderId", orderId)
+                .param("userId", userId)
+                .query((rs, rowNum) -> new ReceiptOrder(
+                        rs.getLong("order_id"),
+                        rs.getString("status"),
+                        rs.getObject("completed_at", LocalDateTime.class)
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+
+        if (OrderStatus.COMPLETED.name().equals(order.status())) {
+            return new OrderReceiptResponse(order.orderId(), order.status(), order.completedAt());
+        }
+        if (!OrderStatus.SHIPPED.name().equals(order.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+
+        LocalDateTime completedAt = LocalDateTime.now().withNano(0);
+        jdbcClient.sql("""
+                        update shop_order
+                        set status = :completedStatus,
+                            completed_at = :completedAt,
+                            updated_at = :completedAt
+                        where id = :orderId
+                        """)
+                .param("completedStatus", OrderStatus.COMPLETED.name())
+                .param("completedAt", completedAt)
+                .param("orderId", order.orderId())
+                .update();
+        return new OrderReceiptResponse(order.orderId(), OrderStatus.COMPLETED.name(), completedAt);
     }
 
     private AppliedCoupon resolveCoupon(Long userId, Long userCouponId, CheckoutContext context, boolean forUpdate) {
@@ -778,9 +882,14 @@ public class AppOrderService {
                 rs.getString("receiver_address"),
                 rs.getString("payment_transaction_id"),
                 rs.getString("merchant_trade_no"),
+                rs.getObject("paid_at", LocalDateTime.class),
                 rs.getString("close_reason"),
                 rs.getObject("closed_at", LocalDateTime.class),
-                rs.getObject("created_at", LocalDateTime.class)
+                rs.getObject("created_at", LocalDateTime.class),
+                rs.getObject("shipped_at", LocalDateTime.class),
+                rs.getObject("completed_at", LocalDateTime.class),
+                rs.getObject("refunding_at", LocalDateTime.class),
+                rs.getObject("refunded_at", LocalDateTime.class)
         );
     }
 
@@ -805,6 +914,32 @@ public class AppOrderService {
                 rs.getLong("line_original_amount_cent"),
                 rs.getLong("line_amount_cent")
         );
+    }
+
+    private PaymentOrderSnapshot findLatestPaymentOrder(Long orderId) {
+        return jdbcClient.sql("""
+                        select out_trade_no,
+                               transaction_id,
+                               status,
+                               paid_at
+                        from payment_order
+                        where order_id = :orderId
+                        order by updated_at desc, id desc
+                        limit 1
+                        """)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new PaymentOrderSnapshot(
+                        rs.getString("out_trade_no"),
+                        rs.getString("transaction_id"),
+                        rs.getString("status"),
+                        rs.getObject("paid_at", LocalDateTime.class)
+                ))
+                .optional()
+                .orElse(null);
+    }
+
+    private String nonBlank(String primary, String fallback) {
+        return StringUtils.hasText(primary) ? primary : fallback;
     }
 
     private OrderShipmentResponse findShipment(Long orderId) {
@@ -881,18 +1016,37 @@ public class AppOrderService {
     }
 
     private long normalizeCurrent(Long current) {
-        return current == null || current < 1 ? 1L : current;
+        if (current == null) {
+            return 1L;
+        }
+        if (current < 1) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return current;
     }
 
     private long normalizeSize(Long size) {
-        if (size == null || size < 1) {
+        if (size == null) {
             return DEFAULT_PAGE_SIZE;
+        }
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return Math.min(size, MAX_PAGE_SIZE);
     }
 
     private String normalizeStatus(String status) {
         return StringUtils.hasText(status) ? status.trim() : null;
+    }
+
+    private List<String> statusesForGroup(OrderStatusGroup statusGroup) {
+        return switch (statusGroup) {
+            case UNPAID -> List.of(OrderStatus.CREATED.name(), OrderStatus.PAYING.name());
+            case TO_SHIP -> List.of(OrderStatus.PAID.name());
+            case TO_RECEIVE -> List.of(OrderStatus.SHIPPED.name());
+            case COMPLETED -> List.of(OrderStatus.COMPLETED.name());
+            case ALL -> List.of("__ALL_STATUS_GROUP__");
+        };
     }
 
     private String nextOrderNo(LocalDateTime now) {
@@ -956,9 +1110,29 @@ public class AppOrderService {
             String receiverAddress,
             String paymentTransactionId,
             String merchantTradeNo,
+            LocalDateTime paidAt,
             String closeReason,
             LocalDateTime closedAt,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            LocalDateTime shippedAt,
+            LocalDateTime completedAt,
+            LocalDateTime refundingAt,
+            LocalDateTime refundedAt
+    ) {
+    }
+
+    private record PaymentOrderSnapshot(
+            String outTradeNo,
+            String transactionId,
+            String status,
+            LocalDateTime paidAt
+    ) {
+    }
+
+    private record ReceiptOrder(
+            Long orderId,
+            String status,
+            LocalDateTime completedAt
     ) {
     }
 }

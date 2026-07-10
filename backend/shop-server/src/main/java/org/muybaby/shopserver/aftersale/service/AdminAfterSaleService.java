@@ -35,7 +35,11 @@ import java.util.Set;
 public class AdminAfterSaleService {
 
     private static final Set<String> AUDITABLE_STATUSES = Set.of(AfterSaleStatus.REQUESTED.name());
-    private static final Set<String> REFUNDABLE_ORDER_STATUSES = Set.of(OrderStatus.PAID.name(), OrderStatus.SHIPPED.name());
+    private static final Set<String> REFUNDABLE_ORDER_STATUSES = Set.of(
+            OrderStatus.PAID.name(),
+            OrderStatus.SHIPPED.name(),
+            OrderStatus.COMPLETED.name()
+    );
 
     private final JdbcClient jdbcClient;
     private final PaymentConfigResolver paymentConfigResolver;

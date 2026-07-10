@@ -273,6 +273,38 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         verify(refundProvider, never()).requestRefund(any(), any());
     }
 
+    @Test
+    void completedOrderAfterSaleCanBeApprovedIntoExistingRefundFlow() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-completed-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "COMPLETED", "wx-refund-admin-completed");
+        jdbcClient.sql("""
+                        update shop_order
+                        set shipped_at = timestamp '2026-07-08 14:00:00',
+                            completed_at = timestamp '2026-07-09 09:00:00'
+                        where id = :orderId
+                        """)
+                .param("orderId", order.orderId())
+                .update();
+        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        String adminToken = adminLogin();
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":3980,"auditNote":"确认收货后仍同意退款"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REFUNDING"))
+                .andExpect(jsonPath("$.data.refundOrder.status").value("PROCESSING"));
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("REFUNDING");
+    }
+
     private long applyAfterSale(AppLoginSession appUser, SeedPaidOrder order, long requestedAmountCent) throws Exception {
         long evidenceFileId = insertAppEvidenceFile(appUser.userId(), "AFTER_SALE_IMAGE");
         String response = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())

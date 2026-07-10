@@ -4,6 +4,7 @@ import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.dto.AppAfterSaleApplyRequest;
 import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
 import org.muybaby.shopserver.common.api.ApiResponse;
+import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,5 +47,15 @@ public class AppAfterSaleController {
             @PathVariable Long afterSaleId
     ) {
         return ApiResponse.success(appAfterSaleService.detail(principal, afterSaleId));
+    }
+
+    @GetMapping("/app/after-sales")
+    public ApiResponse<PageResult<AfterSaleResponse>> list(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            Long current,
+            Long size,
+            String status
+    ) {
+        return ApiResponse.success(appAfterSaleService.list(principal, current, size, status));
     }
 }

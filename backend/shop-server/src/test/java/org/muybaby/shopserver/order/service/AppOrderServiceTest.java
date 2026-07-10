@@ -2,12 +2,19 @@ package org.muybaby.shopserver.order.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.CheckoutSource;
+import org.muybaby.shopserver.order.OrderStatusGroup;
+import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
 import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
+import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
+import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
 import org.muybaby.shopserver.order.dto.OrderPreviewResponse;
 import org.muybaby.shopserver.order.dto.OrderSubmitResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
@@ -21,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -42,6 +50,11 @@ class AppOrderServiceTest {
 
     @BeforeEach
     void clearOrderState() {
+        jdbcClient.sql("delete from refund_order").update();
+        jdbcClient.sql("delete from after_sale_evidence").update();
+        jdbcClient.sql("delete from after_sale_request").update();
+        jdbcClient.sql("delete from order_shipment").update();
+        jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from stock_lock").update();
         jdbcClient.sql("delete from order_item").update();
         jdbcClient.sql("delete from shop_order").update();
@@ -55,6 +68,159 @@ class AppOrderServiceTest {
         jdbcClient.sql("delete from product_spu_image").update();
         jdbcClient.sql("delete from product_spu").update();
         jdbcClient.sql("delete from product_category").update();
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "UNPAID,CREATED;PAYING",
+            "TO_SHIP,PAID",
+            "TO_RECEIVE,SHIPPED",
+            "COMPLETED,COMPLETED"
+    })
+    void statusGroupReturnsOnlyMappedStatuses(OrderStatusGroup group, String allowedCsv) {
+        long userId = insertUser("status-group-" + group);
+        long otherUserId = insertUser("status-group-other-" + group);
+        LocalDateTime base = LocalDateTime.of(2026, 7, 10, 9, 0);
+        List<String> statuses = List.of("CREATED", "PAYING", "PAID", "SHIPPED", "COMPLETED", "CLOSED", "REFUNDING");
+        for (int index = 0; index < statuses.size(); index++) {
+            insertReadOrder(userId, statuses.get(index), base.plusMinutes(index));
+        }
+        insertReadOrder(otherUserId, statuses.getFirst(), base.plusHours(1));
+
+        Set<String> allowed = Set.of(allowedCsv.split(";"));
+        PageResult<OrderSummaryResponse> page = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, group);
+
+        assertThat(page.records()).isNotEmpty().allMatch(item -> allowed.contains(item.status()));
+        assertThat(page.records()).extracting(OrderSummaryResponse::status).containsExactlyInAnyOrderElementsOf(allowed);
+        assertThat(page.total()).isEqualTo(allowed.size());
+    }
+
+    @Test
+    void pagingIsStableExactStatusRemainsCompatibleAndAmbiguousFiltersReject() {
+        long userId = insertUser("order-page");
+        LocalDateTime base = LocalDateTime.of(2026, 7, 10, 10, 0);
+        long oldest = insertReadOrder(userId, "CREATED", base);
+        long tiedLower = insertReadOrder(userId, "PAID", base.plusMinutes(1));
+        long tiedHigher = insertReadOrder(userId, "SHIPPED", base.plusMinutes(1));
+        long newest = insertReadOrder(userId, "COMPLETED", base.plusMinutes(2));
+
+        PageResult<OrderSummaryResponse> first = appOrderService.list(
+                appPrincipal(userId), 1L, 2L, null, OrderStatusGroup.ALL);
+        PageResult<OrderSummaryResponse> second = appOrderService.list(
+                appPrincipal(userId), 2L, 2L, null, OrderStatusGroup.ALL);
+        PageResult<OrderSummaryResponse> exact = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, "PAID", OrderStatusGroup.ALL);
+        PageResult<OrderSummaryResponse> clamped = appOrderService.list(
+                appPrincipal(userId), 1L, 1_000L, null, OrderStatusGroup.ALL);
+
+        assertThat(first.total()).isEqualTo(4L);
+        assertThat(first.records()).extracting(OrderSummaryResponse::orderId).containsExactly(newest, tiedHigher);
+        assertThat(second.records()).extracting(OrderSummaryResponse::orderId).containsExactly(tiedLower, oldest);
+        assertThat(exact.records()).extracting(OrderSummaryResponse::orderId).containsExactly(tiedLower);
+        assertThat(clamped.size()).isEqualTo(100L);
+        assertBusiness(ErrorCode.VALIDATION_FAILED,
+                () -> appOrderService.list(appPrincipal(userId), 0L, 10L, null, OrderStatusGroup.ALL));
+        assertBusiness(ErrorCode.VALIDATION_FAILED,
+                () -> appOrderService.list(appPrincipal(userId), 1L, 0L, null, OrderStatusGroup.ALL));
+        assertBusiness(ErrorCode.VALIDATION_FAILED,
+                () -> appOrderService.list(appPrincipal(userId), 1L, 10L, "PAID", OrderStatusGroup.TO_SHIP));
+    }
+
+    @Test
+    void detailReturnsLatestPersistedPaymentReceiverShipmentAfterSaleAndAllKeyTimes() {
+        long userId = insertUser("detail-truth");
+        LocalDateTime createdAt = LocalDateTime.of(2026, 7, 9, 8, 0);
+        LocalDateTime paidAt = createdAt.plusMinutes(5);
+        LocalDateTime shippedAt = createdAt.plusHours(2);
+        LocalDateTime completedAt = createdAt.plusDays(1);
+        LocalDateTime refundingAt = completedAt.plusHours(1);
+        LocalDateTime refundedAt = completedAt.plusHours(2);
+        long orderId = insertDetailedOrder(userId, "REFUNDED", createdAt, paidAt, shippedAt,
+                completedAt, refundingAt, refundedAt);
+        insertPayment(orderId, "PAY-OLD-" + orderId, "wx-old-" + orderId, "CLOSED",
+                paidAt.minusMinutes(1), createdAt.plusMinutes(1));
+        insertPayment(orderId, "PAY-LATEST-" + orderId, "wx-latest-" + orderId, "SUCCEEDED",
+                paidAt, createdAt.plusMinutes(2));
+        insertShipment(orderId, shippedAt);
+        long olderAfterSale = insertAfterSale(orderId, userId, "REJECTED", completedAt.plusMinutes(1));
+        long latestAfterSale = insertAfterSale(orderId, userId, "REFUNDED", completedAt.plusMinutes(2));
+
+        AppOrderDetailResponse detail = appOrderService.detail(appPrincipal(userId), orderId);
+
+        assertThat(detail.orderId()).isEqualTo(orderId);
+        assertThat(detail.receiverName()).isEqualTo("Receiver Snapshot");
+        assertThat(detail.receiverPhone()).isEqualTo("13800138000");
+        assertThat(detail.receiverAddress()).isEqualTo("Persisted Receiver Address");
+        assertThat(detail.paymentStatus()).isEqualTo("SUCCEEDED");
+        assertThat(detail.outTradeNo()).isEqualTo("PAY-LATEST-" + orderId);
+        assertThat(detail.transactionId()).isEqualTo("wx-latest-" + orderId);
+        assertThat(detail.paymentTransactionId()).isEqualTo("wx-latest-" + orderId);
+        assertThat(detail.merchantTradeNo()).isEqualTo("legacy-trade-" + orderId);
+        assertThat(detail.paidAt()).isEqualTo(paidAt);
+        assertThat(detail.shippedAt()).isEqualTo(shippedAt);
+        assertThat(detail.completedAt()).isEqualTo(completedAt);
+        assertThat(detail.refundingAt()).isEqualTo(refundingAt);
+        assertThat(detail.refundedAt()).isEqualTo(refundedAt);
+        assertThat(detail.shipment()).isNotNull();
+        assertThat(detail.shipment().trackingNo()).isEqualTo("TRACK-" + orderId);
+        assertThat(detail.latestAfterSale()).isNotNull();
+        assertThat(detail.latestAfterSale().id()).isEqualTo(latestAfterSale).isNotEqualTo(olderAfterSale);
+    }
+
+    @Test
+    void detailWithoutPaymentShipmentOrAfterSaleKeepsNestedFieldsNullable() {
+        long userId = insertUser("detail-nullable");
+        long orderId = insertDetailedOrder(userId, "CREATED", LocalDateTime.of(2026, 7, 9, 9, 0),
+                null, null, null, null, null);
+
+        AppOrderDetailResponse detail = appOrderService.detail(appPrincipal(userId), orderId);
+
+        assertThat(detail.paymentStatus()).isNull();
+        assertThat(detail.paidAt()).isNull();
+        assertThat(detail.shipment()).isNull();
+        assertThat(detail.latestAfterSale()).isNull();
+        assertThat(detail.completedAt()).isNull();
+        assertThat(detail.refundingAt()).isNull();
+        assertThat(detail.refundedAt()).isNull();
+    }
+
+    @Test
+    void detailLatestPaymentUsesPersistedOrderFallbackForBlankTradeFieldsAndMissingPaidAt() {
+        long userId = insertUser("detail-payment-fallback");
+        LocalDateTime paidAt = LocalDateTime.of(2026, 7, 9, 10, 5);
+        long orderId = insertDetailedOrder(userId, "PAYING", paidAt.minusMinutes(5),
+                paidAt, null, null, null, null);
+        insertPayment(orderId, "", "", "PAYING", null, paidAt.plusMinutes(1));
+
+        AppOrderDetailResponse detail = appOrderService.detail(appPrincipal(userId), orderId);
+
+        assertThat(detail.paymentStatus()).isEqualTo("PAYING");
+        assertThat(detail.outTradeNo()).isEqualTo("legacy-trade-" + orderId);
+        assertThat(detail.transactionId()).isEqualTo("legacy-tx-" + orderId);
+        assertThat(detail.paymentTransactionId()).isEqualTo("legacy-tx-" + orderId);
+        assertThat(detail.paidAt()).isEqualTo(paidAt);
+    }
+
+    @Test
+    void confirmReceiptIsOwnedAtomicStateTransitionAndCompletedReplayIsIdempotent() {
+        long userId = insertUser("receipt-owner");
+        long otherUserId = insertUser("receipt-other");
+        long shippedOrderId = insertReadOrder(userId, "SHIPPED", LocalDateTime.of(2026, 7, 10, 11, 0));
+        long invalidOrderId = insertReadOrder(userId, "PAID", LocalDateTime.of(2026, 7, 10, 11, 1));
+
+        OrderReceiptResponse first = appOrderService.confirmReceipt(appPrincipal(userId), shippedOrderId);
+        OrderReceiptResponse replay = appOrderService.confirmReceipt(appPrincipal(userId), shippedOrderId);
+
+        assertThat(first.status()).isEqualTo("COMPLETED");
+        assertThat(first.completedAt()).isNotNull();
+        assertThat(replay).isEqualTo(first);
+        assertThat(jdbcClient.sql("select completed_at from shop_order where id = :orderId")
+                .param("orderId", shippedOrderId).query(LocalDateTime.class).single()).isEqualTo(first.completedAt());
+        assertBusiness(ErrorCode.VALIDATION_FAILED,
+                () -> appOrderService.confirmReceipt(appPrincipal(otherUserId), shippedOrderId));
+        assertBusiness(ErrorCode.ORDER_STATE_CONFLICT,
+                () -> appOrderService.confirmReceipt(appPrincipal(userId), invalidOrderId));
     }
 
     @Test
@@ -333,6 +499,135 @@ class AppOrderServiceTest {
                                 1234, 1234, 0, 0, 1234, 0, :now, :now)
                         """)
                 .param("userId", userId).param("key", key).param("now", now).update();
+    }
+
+    private long insertReadOrder(long userId, String status, LocalDateTime createdAt) {
+        long orderId = SEQUENCE.incrementAndGet();
+        jdbcClient.sql("""
+                        insert into shop_order
+                            (id, order_no, user_id, status, source, idempotency_key,
+                             product_original_amount_cent, product_amount_cent, coupon_discount_cent,
+                             freight_cent, payable_amount_cent, paid_amount_cent,
+                             receiver_name, receiver_phone, receiver_address, created_at, updated_at)
+                        values
+                            (:orderId, :orderNo, :userId, :status, 'CART', :idempotencyKey,
+                             1200, 1000, 0, 0, 1000, 1000,
+                             'Read Receiver', '13800138000', 'Read Address', :createdAt, :createdAt)
+                        """)
+                .param("orderId", orderId)
+                .param("orderNo", "READ-" + orderId)
+                .param("userId", userId)
+                .param("status", status)
+                .param("idempotencyKey", "read-" + orderId)
+                .param("createdAt", createdAt)
+                .update();
+        return orderId;
+    }
+
+    private long insertDetailedOrder(
+            long userId,
+            String status,
+            LocalDateTime createdAt,
+            LocalDateTime paidAt,
+            LocalDateTime shippedAt,
+            LocalDateTime completedAt,
+            LocalDateTime refundingAt,
+            LocalDateTime refundedAt
+    ) {
+        long orderId = SEQUENCE.incrementAndGet();
+        jdbcClient.sql("""
+                        insert into shop_order
+                            (id, order_no, user_id, status, source, idempotency_key,
+                             product_original_amount_cent, product_amount_cent, coupon_discount_cent,
+                             freight_cent, payable_amount_cent, paid_amount_cent,
+                             receiver_name, receiver_phone, receiver_address,
+                             payment_transaction_id, merchant_trade_no, paid_at, shipped_at,
+                             completed_at, refunding_at, refunded_at, created_at, updated_at)
+                        values
+                            (:orderId, :orderNo, :userId, :status, 'DIRECT', :idempotencyKey,
+                             1500, 1400, 100, 50, 1350, 1350,
+                             'Receiver Snapshot', '13800138000', 'Persisted Receiver Address',
+                             :legacyTransactionId, :legacyTradeNo, :paidAt, :shippedAt,
+                             :completedAt, :refundingAt, :refundedAt, :createdAt, :createdAt)
+                        """)
+                .param("orderId", orderId)
+                .param("orderNo", "DETAIL-" + orderId)
+                .param("userId", userId)
+                .param("status", status)
+                .param("idempotencyKey", "detail-" + orderId)
+                .param("legacyTransactionId", "legacy-tx-" + orderId)
+                .param("legacyTradeNo", "legacy-trade-" + orderId)
+                .param("paidAt", paidAt)
+                .param("shippedAt", shippedAt)
+                .param("completedAt", completedAt)
+                .param("refundingAt", refundingAt)
+                .param("refundedAt", refundedAt)
+                .param("createdAt", createdAt)
+                .update();
+        return orderId;
+    }
+
+    private void insertPayment(
+            long orderId,
+            String outTradeNo,
+            String transactionId,
+            String status,
+            LocalDateTime paidAt,
+            LocalDateTime updatedAt
+    ) {
+        long paymentId = SEQUENCE.incrementAndGet();
+        jdbcClient.sql("""
+                        insert into payment_order
+                            (id, order_id, out_trade_no, transaction_id, status, amount_cent,
+                             expires_at, paid_at, created_at, updated_at)
+                        values
+                            (:paymentId, :orderId, :outTradeNo, :transactionId, :status, 1350,
+                             :expiresAt, :paidAt, :createdAt, :updatedAt)
+                        """)
+                .param("paymentId", paymentId)
+                .param("orderId", orderId)
+                .param("outTradeNo", outTradeNo)
+                .param("transactionId", transactionId)
+                .param("status", status)
+                .param("expiresAt", updatedAt.plusMinutes(30))
+                .param("paidAt", paidAt)
+                .param("createdAt", updatedAt.minusMinutes(1))
+                .param("updatedAt", updatedAt)
+                .update();
+    }
+
+    private void insertShipment(long orderId, LocalDateTime shippedAt) {
+        jdbcClient.sql("""
+                        insert into order_shipment
+                            (order_id, express_company_name, tracking_no, shipment_note,
+                             status, wechat_upload_status, shipped_at)
+                        values
+                            (:orderId, 'Test Express', :trackingNo, 'left warehouse',
+                             'SHIPPED', 'SUCCESS', :shippedAt)
+                        """)
+                .param("orderId", orderId)
+                .param("trackingNo", "TRACK-" + orderId)
+                .param("shippedAt", shippedAt)
+                .update();
+    }
+
+    private long insertAfterSale(long orderId, long userId, String status, LocalDateTime createdAt) {
+        long afterSaleId = SEQUENCE.incrementAndGet();
+        jdbcClient.sql("""
+                        insert into after_sale_request
+                            (id, order_id, user_id, after_sale_type, status, reason,
+                             description, requested_amount_cent, created_at, updated_at)
+                        values
+                            (:afterSaleId, :orderId, :userId, 'REFUND_ONLY', :status, 'detail truth',
+                             '', 100, :createdAt, :createdAt)
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .param("orderId", orderId)
+                .param("userId", userId)
+                .param("status", status)
+                .param("createdAt", createdAt)
+                .update();
+        return afterSaleId;
     }
 
     private Map<Long, Integer> cartQuantities(long userId) {

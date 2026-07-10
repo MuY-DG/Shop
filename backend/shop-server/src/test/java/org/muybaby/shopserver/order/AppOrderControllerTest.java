@@ -83,6 +83,11 @@ class AppOrderControllerTest {
 
     @BeforeEach
     void clearOrderState() {
+        jdbcClient.sql("delete from refund_order").update();
+        jdbcClient.sql("delete from after_sale_evidence").update();
+        jdbcClient.sql("delete from after_sale_request").update();
+        jdbcClient.sql("delete from order_shipment").update();
+        jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from stock_lock").update();
         jdbcClient.sql("delete from order_item").update();
         jdbcClient.sql("delete from shop_order").update();
@@ -781,6 +786,67 @@ class AppOrderControllerTest {
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].skuId").value(skuId))
                 .andExpect(jsonPath("$.data.items[0].productTitle").value("List User Item"));
+    }
+
+    @Test
+    void orderCenterHttpSupportsStatusGroupsRejectsAmbiguityAndConfirmsOwnedReceiptIdempotently() throws Exception {
+        AppLoginSession owner = appLogin("order-center-http-owner");
+        AppLoginSession other = appLogin("order-center-http-other");
+        long skuId = createPublishedSku("ORDER-CENTER-HTTP", 3990L, 4990L, 10, "ENABLED");
+        insertOrderSnapshot(9201L, "ORD-CENTER-CREATED", owner.userId(), skuId, 9921L, "Created Item");
+        insertOrderSnapshot(9202L, "ORD-CENTER-PAYING", owner.userId(), skuId, 9922L, "Paying Item");
+        insertOrderSnapshot(9203L, "ORD-CENTER-SHIPPED", owner.userId(), skuId, 9923L, "Shipped Item");
+        jdbcClient.sql("update shop_order set status = 'PAYING' where id = 9202").update();
+        jdbcClient.sql("""
+                        update shop_order
+                        set status = 'SHIPPED', shipped_at = timestamp '2026-07-08 14:00:00'
+                        where id = 9203
+                        """).update();
+
+        mockMvc.perform(get("/app/orders")
+                        .param("current", "1")
+                        .param("size", "10")
+                        .param("statusGroup", "UNPAID")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(2))
+                .andExpect(jsonPath("$.data.total").value(2));
+
+        mockMvc.perform(get("/app/orders")
+                        .param("status", "SHIPPED")
+                        .param("statusGroup", "TO_RECEIVE")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        mockMvc.perform(get("/app/orders")
+                        .param("statusGroup", "NOT_A_GROUP")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isBadRequest());
+
+        String first = mockMvc.perform(post("/app/orders/{orderId}/confirm-receipt", 9203L)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.orderId").value(9203L))
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.completedAt").isNotEmpty())
+                .andReturn().getResponse().getContentAsString();
+        String firstCompletedAt = objectMapper.readTree(first).path("data").path("completedAt").asText();
+
+        mockMvc.perform(post("/app/orders/{orderId}/confirm-receipt", 9203L)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.completedAt").value(firstCompletedAt));
+
+        mockMvc.perform(post("/app/orders/{orderId}/confirm-receipt", 9203L)
+                        .header("Authorization", "Bearer " + other.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        mockMvc.perform(post("/app/orders/{orderId}/confirm-receipt", 9201L)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
     }
 
     private String longestValidReceiverAddress() {

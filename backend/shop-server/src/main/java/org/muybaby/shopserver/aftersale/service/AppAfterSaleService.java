@@ -7,6 +7,7 @@ import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.dto.AppAfterSaleApplyRequest;
 import org.muybaby.shopserver.aftersale.dto.RefundOrderResponse;
 import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
@@ -34,13 +35,19 @@ import java.util.Set;
 @Service
 public class AppAfterSaleService {
 
+    private static final int DEFAULT_PAGE_SIZE = 10;
+    private static final int MAX_PAGE_SIZE = 100;
     private static final Set<String> ACTIVE_STATUSES = Set.of(
             AfterSaleStatus.REQUESTED.name(),
             AfterSaleStatus.APPROVED.name(),
             AfterSaleStatus.REFUNDING.name(),
             AfterSaleStatus.REFUND_FAILED.name()
     );
-    private static final Set<String> ALLOWED_ORDER_STATUSES = Set.of(OrderStatus.PAID.name(), OrderStatus.SHIPPED.name());
+    private static final Set<String> ALLOWED_ORDER_STATUSES = Set.of(
+            OrderStatus.PAID.name(),
+            OrderStatus.SHIPPED.name(),
+            OrderStatus.COMPLETED.name()
+    );
     private static final Set<String> ALLOWED_EVIDENCE_PURPOSES = Set.of("AFTER_SALE_IMAGE", "REFUND_EVIDENCE");
 
     private final JdbcClient jdbcClient;
@@ -83,6 +90,65 @@ public class AppAfterSaleService {
         return requireResponseForUser(afterSaleId, userId);
     }
 
+    public PageResult<AfterSaleResponse> list(
+            AuthenticatedPrincipal principal,
+            Long current,
+            Long size,
+            String status
+    ) {
+        Long userId = requireAppUser(principal);
+        long pageCurrent = normalizeCurrent(current);
+        long pageSize = normalizeSize(size);
+        long offset = (pageCurrent - 1) * pageSize;
+        String normalizedStatus = StringUtils.hasText(status) ? status.trim() : null;
+
+        Long total = jdbcClient.sql("""
+                        select count(*)
+                        from after_sale_request asr
+                        join shop_order o on o.id = asr.order_id
+                        where o.user_id = :userId
+                          and (:status is null or asr.status = :status)
+                        """)
+                .param("userId", userId)
+                .param("status", normalizedStatus)
+                .query(Long.class)
+                .single();
+
+        List<AfterSaleResponse> records = jdbcClient.sql("""
+                        select asr.id,
+                               asr.order_id,
+                               o.order_no,
+                               asr.user_id,
+                               asr.after_sale_type,
+                               asr.status,
+                               asr.reason,
+                               asr.description,
+                               asr.requested_amount_cent,
+                               asr.approved_amount_cent,
+                               asr.audit_note,
+                               asr.reviewed_by,
+                               asr.reviewed_at,
+                               asr.created_at
+                        from after_sale_request asr
+                        join shop_order o on o.id = asr.order_id
+                        where o.user_id = :userId
+                          and (:status is null or asr.status = :status)
+                        order by asr.created_at desc, asr.id desc
+                        limit :limit offset :offset
+                        """)
+                .param("userId", userId)
+                .param("status", normalizedStatus)
+                .param("limit", pageSize)
+                .param("offset", offset)
+                .query(this::mapAfterSale)
+                .list()
+                .stream()
+                .map(this::toResponse)
+                .toList();
+
+        return PageResult.of(records, total == null ? 0L : total, pageCurrent, pageSize);
+    }
+
     public List<AfterSaleResponse> listForOrder(AuthenticatedPrincipal principal, Long orderId) {
         Long userId = requireAppUser(principal);
         requireOwnedOrder(orderId, userId);
@@ -104,7 +170,7 @@ public class AppAfterSaleService {
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
                         where asr.order_id = :orderId
-                          and asr.user_id = :userId
+                          and o.user_id = :userId
                         order by asr.created_at desc, asr.id desc
                         """)
                 .param("orderId", orderId)
@@ -119,6 +185,38 @@ public class AppAfterSaleService {
     public AfterSaleResponse detail(AuthenticatedPrincipal principal, Long afterSaleId) {
         Long userId = requireAppUser(principal);
         return requireResponseForUser(afterSaleId, userId);
+    }
+
+    public AfterSaleResponse latestForOrder(AuthenticatedPrincipal principal, Long orderId) {
+        Long userId = requireAppUser(principal);
+        return jdbcClient.sql("""
+                        select asr.id,
+                               asr.order_id,
+                               o.order_no,
+                               asr.user_id,
+                               asr.after_sale_type,
+                               asr.status,
+                               asr.reason,
+                               asr.description,
+                               asr.requested_amount_cent,
+                               asr.approved_amount_cent,
+                               asr.audit_note,
+                               asr.reviewed_by,
+                               asr.reviewed_at,
+                               asr.created_at
+                        from after_sale_request asr
+                        join shop_order o on o.id = asr.order_id
+                        where asr.order_id = :orderId
+                          and o.user_id = :userId
+                        order by asr.created_at desc, asr.id desc
+                        limit 1
+                        """)
+                .param("orderId", orderId)
+                .param("userId", userId)
+                .query(this::mapAfterSale)
+                .optional()
+                .map(this::toResponse)
+                .orElse(null);
     }
 
     private Long requireAppUser(AuthenticatedPrincipal principal) {
@@ -281,7 +379,7 @@ public class AppAfterSaleService {
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
                         where asr.id = :afterSaleId
-                          and asr.user_id = :userId
+                          and o.user_id = :userId
                         """)
                 .param("afterSaleId", afterSaleId)
                 .param("userId", userId)
@@ -391,6 +489,26 @@ public class AppAfterSaleService {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
         return normalized;
+    }
+
+    private long normalizeCurrent(Long current) {
+        if (current == null) {
+            return 1L;
+        }
+        if (current < 1) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return current;
+    }
+
+    private long normalizeSize(Long size) {
+        if (size == null) {
+            return DEFAULT_PAGE_SIZE;
+        }
+        if (size < 1) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return Math.min(size, MAX_PAGE_SIZE);
     }
 
     private AfterSaleType parseType(String value) {

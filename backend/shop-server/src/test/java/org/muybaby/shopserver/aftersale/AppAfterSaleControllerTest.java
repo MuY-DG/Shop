@@ -157,6 +157,60 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.data.status").value("REQUESTED"));
     }
 
+    @Test
+    void completedOrderCanApplyAndCurrentUserPageAndDetailAreOwned() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession owner = appLogin("after-sale-app-completed-owner");
+        AppLoginSession other = appLogin("after-sale-app-completed-other");
+        SeedPaidOrder completedOrder = seedPaidOrder(owner, 9980L, "COMPLETED", "wx-completed-owner");
+        SeedPaidOrder otherOrder = seedPaidOrder(other, 7980L, "PAID", "wx-page-other");
+        jdbcClient.sql("""
+                        update shop_order
+                        set shipped_at = timestamp '2026-07-08 14:00:00',
+                            completed_at = timestamp '2026-07-09 09:00:00'
+                        where id = :orderId
+                        """)
+                .param("orderId", completedOrder.orderId())
+                .update();
+        long ownerFileId = insertAppEvidenceFile(owner.userId(), "AFTER_SALE_IMAGE");
+        long otherFileId = insertAppEvidenceFile(other.userId(), "AFTER_SALE_IMAGE");
+
+        String ownerResponse = mockMvc.perform(post("/app/orders/{orderId}/after-sales", completedOrder.orderId())
+                        .header("Authorization", "Bearer " + owner.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(applyBody("RETURN_REFUND", "已确认收货仍需售后", 9980L,
+                                "completed order protection", ownerFileId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REQUESTED"))
+                .andReturn().getResponse().getContentAsString();
+        long ownerAfterSaleId = objectMapper.readTree(ownerResponse).path("data").path("id").asLong();
+
+        String otherResponse = mockMvc.perform(post("/app/orders/{orderId}/after-sales", otherOrder.orderId())
+                        .header("Authorization", "Bearer " + other.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(applyBody("REFUND_ONLY", "他人售后", 100L, "other record", otherFileId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long otherAfterSaleId = objectMapper.readTree(otherResponse).path("data").path("id").asLong();
+
+        mockMvc.perform(get("/app/after-sales")
+                        .param("current", "1")
+                        .param("size", "1")
+                        .param("status", "REQUESTED")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(1))
+                .andExpect(jsonPath("$.data.records[0].id").value(ownerAfterSaleId))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.current").value(1))
+                .andExpect(jsonPath("$.data.size").value(1));
+
+        mockMvc.perform(get("/app/after-sales/{afterSaleId}", otherAfterSaleId)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+    }
+
     private String applyBody(String type, String reason, long requestedAmountCent, String description, long... fileIds) {
         String evidenceFileIds = Arrays.stream(fileIds)
                 .mapToObj(Long::toString)

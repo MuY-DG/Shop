@@ -5,8 +5,9 @@ import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
 import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
-import org.muybaby.shopserver.order.dto.OrderDetailResponse;
+import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
 import org.muybaby.shopserver.order.dto.OrderPreviewResponse;
+import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
 import org.muybaby.shopserver.order.dto.OrderSubmitResponse;
 import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
 import org.muybaby.shopserver.order.service.AppOrderService;
@@ -50,16 +51,25 @@ public class AppOrderController {
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             Long current,
             Long size,
-            String status
+            String status,
+            OrderStatusGroup statusGroup
     ) {
-        return ApiResponse.success(appOrderService.list(principal, current, size, status));
+        return ApiResponse.success(appOrderService.list(principal, current, size, status, statusGroup));
     }
 
     @GetMapping("/{orderId}")
-    public ApiResponse<OrderDetailResponse> detail(
+    public ApiResponse<AppOrderDetailResponse> detail(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long orderId
     ) {
         return ApiResponse.success(appOrderService.detail(principal, orderId));
+    }
+
+    @PostMapping("/{orderId}/confirm-receipt")
+    public ApiResponse<OrderReceiptResponse> confirmReceipt(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId
+    ) {
+        return ApiResponse.success(appOrderService.confirmReceipt(principal, orderId));
     }
 }

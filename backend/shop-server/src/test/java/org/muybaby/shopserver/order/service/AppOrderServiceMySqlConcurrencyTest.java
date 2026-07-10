@@ -8,6 +8,7 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.CheckoutSource;
 import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
+import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
 import org.muybaby.shopserver.order.dto.OrderSubmitResponse;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
@@ -131,6 +132,58 @@ class AppOrderServiceMySqlConcurrencyTest {
         assertSingleCommittedCheckout(fixture, 2);
         assertThat(jdbcClient.sql("select status from user_coupon where id = :couponId")
                 .param("couponId", fixture.userCouponId()).query(String.class).single()).isEqualTo("LOCKED");
+    }
+
+    @Test
+    void concurrentReceiptConfirmationsSerializeAndReturnOnePersistedCompletionTime() throws Exception {
+        long userId = insertUser("mysql-receipt-race");
+        long orderId = SEQUENCE.incrementAndGet();
+        LocalDateTime createdAt = LocalDateTime.of(2026, 7, 10, 14, 0);
+        jdbcClient.sql("""
+                        insert into shop_order
+                            (id, order_no, user_id, status, source, idempotency_key,
+                             product_original_amount_cent, product_amount_cent, coupon_discount_cent,
+                             freight_cent, payable_amount_cent, paid_amount_cent,
+                             receiver_name, receiver_phone, receiver_address, shipped_at, created_at, updated_at)
+                        values
+                            (:orderId, :orderNo, :userId, 'SHIPPED', 'CART', :idempotencyKey,
+                             1000, 1000, 0, 0, 1000, 1000,
+                             'Race Receiver', '13800138000', 'Race Address', :shippedAt, :createdAt, :createdAt)
+                        """)
+                .param("orderId", orderId)
+                .param("orderNo", "MYSQL-RECEIPT-" + orderId)
+                .param("userId", userId)
+                .param("idempotencyKey", "mysql-receipt-" + orderId)
+                .param("shippedAt", createdAt.plusHours(1))
+                .param("createdAt", createdAt)
+                .update();
+
+        CyclicBarrier start = new CyclicBarrier(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<OrderReceiptResponse> first = executor.submit(() -> {
+                start.await(30, TimeUnit.SECONDS);
+                return appOrderService.confirmReceipt(principal(userId), orderId);
+            });
+            Future<OrderReceiptResponse> second = executor.submit(() -> {
+                start.await(30, TimeUnit.SECONDS);
+                return appOrderService.confirmReceipt(principal(userId), orderId);
+            });
+
+            OrderReceiptResponse firstResult = first.get(30, TimeUnit.SECONDS);
+            OrderReceiptResponse secondResult = second.get(30, TimeUnit.SECONDS);
+            LocalDateTime stored = jdbcClient.sql("select completed_at from shop_order where id = :orderId")
+                    .param("orderId", orderId)
+                    .query(LocalDateTime.class)
+                    .single();
+
+            assertThat(firstResult.status()).isEqualTo("COMPLETED");
+            assertThat(secondResult.status()).isEqualTo("COMPLETED");
+            assertThat(firstResult.completedAt()).isEqualTo(stored);
+            assertThat(secondResult.completedAt()).isEqualTo(stored);
+        } finally {
+            shutdown(executor);
+        }
     }
 
     @Test
