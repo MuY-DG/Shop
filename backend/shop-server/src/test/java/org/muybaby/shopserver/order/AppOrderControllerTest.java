@@ -91,6 +91,7 @@ class AppOrderControllerTest {
         jdbcClient.sql("delete from coupon_claim_record").update();
         jdbcClient.sql("delete from user_coupon").update();
         jdbcClient.sql("delete from coupon_template").update();
+        jdbcClient.sql("delete from user_address").update();
     }
 
     @AfterEach
@@ -117,6 +118,70 @@ class AppOrderControllerTest {
     }
 
     @Test
+    void checkoutHttpContractSupportsDirectAndConditionallyRejectsMixedRequests() throws Exception {
+        AppLoginSession session = appLogin("order-http-contract-user");
+        AppLoginSession other = appLogin("order-http-contract-other");
+        long skuId = createPublishedSku("ORDER-HTTP-DIRECT", 3990L, 4990L, 10, "ENABLED");
+        long cartItemId = cartItemId(addCartItem(session.token(), skuId, 1));
+        long addressId = insertAddress(session.userId(), "http-contract");
+        long otherAddressId = insertAddress(other.userId(), "http-contract-other");
+
+        mockMvc.perform(post("/app/orders/preview")
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":"DIRECT","skuId":%d,"quantity":2,"addressId":%d}
+                                """.formatted(skuId, addressId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].skuId").value(skuId))
+                .andExpect(jsonPath("$.data.items[0].quantity").value(2))
+                .andExpect(jsonPath("$.data.items[0].cartItemId").doesNotExist());
+
+        mockMvc.perform(post("/app/orders/preview")
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cartItemIds":[%d]}
+                                """.formatted(cartItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].cartItemId").value(cartItemId));
+
+        List<String> invalidPayloads = List.of(
+                "{\"source\":\"CART\",\"cartItemIds\":[%d],\"skuId\":%d}".formatted(cartItemId, skuId),
+                "{\"source\":\"DIRECT\",\"cartItemIds\":[%d],\"skuId\":%d,\"quantity\":1}".formatted(cartItemId, skuId),
+                "{\"source\":\"DIRECT\",\"skuId\":%d,\"quantity\":0}".formatted(skuId),
+                "{\"source\":\"DIRECT\",\"skuId\":%d,\"quantity\":1000}".formatted(skuId)
+        );
+        for (String payload : invalidPayloads) {
+            mockMvc.perform(post("/app/orders/preview")
+                            .header("Authorization", "Bearer " + session.token())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(payload))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(100400));
+        }
+
+        mockMvc.perform(post("/app/orders/preview")
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":"DIRECT","skuId":%d,"quantity":1,"addressId":%d}
+                                """.formatted(skuId, otherAddressId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        mockMvc.perform(post("/app/orders")
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":"DIRECT","skuId":%d,"quantity":1,"idempotencyKey":"missing-address"}
+                                """.formatted(skuId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+    }
+
+    @Test
     void previewUsesCurrentUserCartRowsAndSelectsBestCouponWhenCouponOmitted() throws Exception {
         AppLoginSession session = appLogin("order-preview-user");
         String appToken = session.token();
@@ -140,8 +205,8 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[]}
-                                """))
+                                {"cartItemIds":[%d]}
+                                """.formatted(cartItemId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].cartItemId").value(cartItemId))
@@ -181,11 +246,12 @@ class AppOrderControllerTest {
                 "CLAIMED",
                 "2026-07-07 09:00:00");
 
-        addCartItem(appToken, skuId, 2);
+        long cartItemId = cartItemId(addCartItem(appToken, skuId, 2));
+        long addressId = insertAddress(userId, "submit");
 
         String submitPayload = """
-                {"idempotencyKey":"checkout-20260707-001"}
-                """;
+                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-20260707-001"}
+                """.formatted(cartItemId, addressId);
         String submitResponse = mockMvc.perform(post("/app/orders")
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -303,6 +369,7 @@ class AppOrderControllerTest {
                 "2026-07-07 10:00:00");
 
         long cartItemId = cartItemId(addCartItem(appToken, skuId, 1));
+        long addressId = insertAddress(userId, "one-cent");
 
         mockMvc.perform(post("/app/orders/preview")
                         .header("Authorization", "Bearer " + appToken)
@@ -320,8 +387,8 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[%d],"userCouponId":%d,"idempotencyKey":"checkout-one-cent-payable-001"}
-                                """.formatted(cartItemId, userCouponId)))
+                                {"cartItemIds":[%d],"addressId":%d,"userCouponId":%d,"idempotencyKey":"checkout-one-cent-payable-001"}
+                                """.formatted(cartItemId, addressId, userCouponId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
                 .andExpect(jsonPath("$.data.couponDiscountCent").value(299))
@@ -332,6 +399,7 @@ class AppOrderControllerTest {
     void submitSnapshotsFileIdsAndCreatesProtectedStorageUsages() throws Exception {
         AppLoginSession session = appLogin("order-file-usage-user");
         String appToken = session.token();
+        long addressId = insertAddress(session.userId(), "file-usage");
         StoredFile mainFile = insertStorageFile("order-main-file.png");
         StoredFile skuFile = insertStorageFile("order-sku-file.png");
         ProductFixture product = createPublishedSkuWithFiles("ORDER-FILE-SKU", 3990L, 4990L, 10, "ENABLED", mainFile, skuFile);
@@ -353,8 +421,8 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[%d],"idempotencyKey":"checkout-file-usage-001"}
-                                """.formatted(cartItemId)))
+                                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-file-usage-001"}
+                                """.formatted(cartItemId, addressId)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -410,6 +478,7 @@ class AppOrderControllerTest {
     void submitCreatesProtectedSnapshotUsageWhenSkuImageUrlIsBlank() throws Exception {
         AppLoginSession session = appLogin("order-blank-snapshot-user");
         String appToken = session.token();
+        long addressId = insertAddress(session.userId(), "blank-snapshot");
         StoredFile mainFile = insertStorageFile("ord-main-blank.png");
         StoredFile skuFile = insertStorageFile("ord-sku-blank.png");
         ProductFixture product = createPublishedSkuWithCustomImages(
@@ -430,8 +499,8 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[%d],"idempotencyKey":"checkout-blank-snapshot-001"}
-                                """.formatted(cartItemId)))
+                                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-blank-snapshot-001"}
+                                """.formatted(cartItemId, addressId)))
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
@@ -477,7 +546,8 @@ class AppOrderControllerTest {
         AppLoginSession session = appLogin("order-submit-race-user");
         long userId = session.userId();
         long skuId = createPublishedSku("ORDER-RACE-SKU", 3990L, 4990L, 10, "ENABLED");
-        addCartItem(session.token(), skuId, 2);
+        long cartItemId = cartItemId(addCartItem(session.token(), skuId, 2));
+        long addressId = insertAddress(userId, "race");
 
         AuthenticatedPrincipal principal = new AuthenticatedPrincipal(
                 TokenKind.APP,
@@ -486,7 +556,8 @@ class AppOrderControllerTest {
                 List.of(),
                 List.of()
         );
-        AppOrderSubmitRequest request = new AppOrderSubmitRequest(null, null, "checkout-race-001");
+        AppOrderSubmitRequest request = new AppOrderSubmitRequest(
+                null, List.of(cartItemId), null, null, addressId, null, "checkout-race-001");
         idempotencyRaceProbe.arm("order-submit-2");
 
         ExecutorService executor = Executors.newFixedThreadPool(2, new SubmitThreadFactory());
@@ -543,8 +614,11 @@ class AppOrderControllerTest {
 
     @Test
     void submitRejectsCartItemThatDoesNotBelongToCurrentUser() throws Exception {
-        String ownerToken = appLoginAndExtractToken("order-owner-user");
-        String otherToken = appLoginAndExtractToken("order-other-user");
+        AppLoginSession owner = appLogin("order-owner-user");
+        AppLoginSession other = appLogin("order-other-user");
+        String ownerToken = owner.token();
+        String otherToken = other.token();
+        long otherAddressId = insertAddress(other.userId(), "ownership");
         long skuId = createPublishedSku("ORDER-OWNERSHIP-SKU", 3990L, 4990L, 10, "ENABLED");
 
         String cartResponse = addCartItem(ownerToken, skuId, 1);
@@ -554,15 +628,17 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + otherToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[%d],"idempotencyKey":"checkout-ownership-001"}
-                                """.formatted(cartItemId)))
+                                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-ownership-001"}
+                                """.formatted(cartItemId, otherAddressId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(250001));
     }
 
     @Test
     void submitRejectsDisabledSkuOffSaleCategoryAndStockShortage() throws Exception {
-        String appToken = appLoginAndExtractToken("order-unavailable-user");
+        AppLoginSession session = appLogin("order-unavailable-user");
+        String appToken = session.token();
+        long addressId = insertAddress(session.userId(), "unavailable");
 
         long disabledSkuId = createPublishedSku("ORDER-DISABLED-SKU", 3990L, 4990L, 10, "ENABLED");
         long disabledCartItemId = cartItemId(addCartItem(appToken, disabledSkuId, 1));
@@ -615,8 +691,8 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[%d],"idempotencyKey":"checkout-disabled-001"}
-                                """.formatted(disabledCartItemId)))
+                                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-disabled-001"}
+                                """.formatted(disabledCartItemId, addressId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(200002));
 
@@ -624,8 +700,8 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[%d],"idempotencyKey":"checkout-offsale-001"}
-                                """.formatted(offSaleCartItemId)))
+                                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-offsale-001"}
+                                """.formatted(offSaleCartItemId, addressId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(200001));
 
@@ -633,8 +709,8 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[%d],"idempotencyKey":"checkout-category-disabled-001"}
-                                """.formatted(categoryDisabledCartItemId)))
+                                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-category-disabled-001"}
+                                """.formatted(categoryDisabledCartItemId, addressId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(200001));
 
@@ -642,8 +718,8 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[%d],"idempotencyKey":"checkout-shortage-001"}
-                                """.formatted(shortageCartItemId)))
+                                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-shortage-001"}
+                                """.formatted(shortageCartItemId, addressId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(200100));
     }
@@ -658,13 +734,14 @@ class AppOrderControllerTest {
         long userCouponId = seedUserCoupon(userId, templateId, "Threshold Too High", "CLAIMED", "2026-07-07 09:00:00");
 
         long cartItemId = cartItemId(addCartItem(appToken, skuId, 1));
+        long addressId = insertAddress(userId, "coupon");
 
         mockMvc.perform(post("/app/orders")
                         .header("Authorization", "Bearer " + appToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"cartItemIds":[%d],"userCouponId":%d,"idempotencyKey":"checkout-coupon-001"}
-                                """.formatted(cartItemId, userCouponId)))
+                                {"cartItemIds":[%d],"addressId":%d,"userCouponId":%d,"idempotencyKey":"checkout-coupon-001"}
+                                """.formatted(cartItemId, addressId, userCouponId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(300001));
     }
@@ -728,6 +805,22 @@ class AppOrderControllerTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
+    }
+
+    private long insertAddress(long userId, String suffix) {
+        jdbcClient.sql("""
+                        insert into user_address
+                            (user_id, receiver_name, receiver_phone, province, city, district, detail_address, is_default)
+                        values (:userId, :receiverName, '13800138000', '北京市', '', '朝阳区', :detailAddress, true)
+                        """)
+                .param("userId", userId)
+                .param("receiverName", "收货人-" + suffix)
+                .param("detailAddress", "火锅路-" + suffix + "号")
+                .update();
+        return jdbcClient.sql("select max(id) from user_address where user_id = :userId")
+                .param("userId", userId)
+                .query(Long.class)
+                .single();
     }
 
     private void insertOrderSnapshot(long orderId, String orderNo, long userId, long skuId, long orderItemId, String productTitle) {

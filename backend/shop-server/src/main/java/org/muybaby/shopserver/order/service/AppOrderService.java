@@ -6,6 +6,7 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.coupon.UserCouponStatus;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
+import org.muybaby.shopserver.order.CheckoutSource;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.StockLockStatus;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
@@ -16,11 +17,8 @@ import org.muybaby.shopserver.order.dto.OrderPreviewItemResponse;
 import org.muybaby.shopserver.order.dto.OrderPreviewResponse;
 import org.muybaby.shopserver.order.dto.OrderSubmitResponse;
 import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
-import org.muybaby.shopserver.product.ProductStatus;
-import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.promotion.CheckoutContext;
-import org.muybaby.shopserver.promotion.CheckoutItem;
 import org.muybaby.shopserver.promotion.CouponCandidate;
 import org.muybaby.shopserver.promotion.CouponDiscountCalculator;
 import org.muybaby.shopserver.promotion.DiscountResult;
@@ -28,8 +26,9 @@ import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
+import org.muybaby.shopserver.user.address.service.AppAddressService;
+import org.muybaby.shopserver.user.address.service.OwnedAddress;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -45,17 +44,13 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class AppOrderService {
 
-    private static final String CATEGORY_ENABLED = "ENABLED";
-    private static final String ORDER_SOURCE_CART = "CART";
     private static final String OPERATOR_TYPE_APP = "APP";
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 100;
@@ -65,52 +60,79 @@ public class AppOrderService {
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final StorageUsageService storageUsageService;
+    private final CheckoutSelectionService checkoutSelectionService;
+    private final AppAddressService appAddressService;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
     public AppOrderService(
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
-            StorageUsageService storageUsageService
+            StorageUsageService storageUsageService,
+            CheckoutSelectionService checkoutSelectionService,
+            AppAddressService appAddressService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageUsageService = storageUsageService;
+        this.checkoutSelectionService = checkoutSelectionService;
+        this.appAddressService = appAddressService;
     }
 
     public OrderPreviewResponse preview(AuthenticatedPrincipal principal, AppOrderPreviewRequest request) {
         Long userId = requireAppUser(principal);
-        CheckoutSelection selection = loadCheckoutSelection(userId, request == null ? null : request.cartItemIds(), false);
-        AppliedCoupon coupon = resolveCoupon(userId, request == null ? null : request.userCouponId(), selection.context(), false);
+        CheckoutRequest checkoutRequest = CheckoutRequest.from(request);
+        CheckoutSelection selection = checkoutSelectionService.preview(userId, checkoutRequest);
+        if (checkoutRequest.addressId() != null) {
+            appAddressService.get(userId, checkoutRequest.addressId());
+        }
+        AppliedCoupon coupon = resolveCoupon(userId, checkoutRequest.userCouponId(), selection.context(), false);
         return toPreviewResponse(selection, coupon);
     }
 
     @Transactional
     public OrderSubmitResponse submit(AuthenticatedPrincipal principal, AppOrderSubmitRequest request) {
         Long userId = requireAppUser(principal);
-        Optional<OrderSubmitResponse> existing = findExistingOrder(userId, request.idempotencyKey());
+        CheckoutRequest checkoutRequest = CheckoutRequest.from(request);
+        checkoutSelectionService.validate(checkoutRequest);
+        validateSubmitRequest(request, checkoutRequest);
+        String requestDigest = CheckoutRequestDigest.digest(checkoutRequest);
+
+        Optional<ExistingOrder> existing = findExistingOrder(userId, request.idempotencyKey(), false);
         if (existing.isPresent()) {
-            return existing.get();
+            return replayExisting(existing.get(), requestDigest);
         }
 
         LocalDateTime now = LocalDateTime.now();
         String orderNo = nextOrderNo(now);
         Long orderId;
         try {
-            orderId = insertOrderOwnership(userId, orderNo, request.idempotencyKey(), now);
+            orderId = insertOrderOwnership(
+                    userId,
+                    orderNo,
+                    checkoutRequest.source(),
+                    request.idempotencyKey(),
+                    requestDigest,
+                    now
+            );
         } catch (DuplicateKeyException ex) {
-            return findExistingOrder(userId, request.idempotencyKey()).orElseThrow(() -> ex);
+            ExistingOrder winner = findExistingOrder(userId, request.idempotencyKey(), true)
+                    .orElseThrow(() -> ex);
+            return replayExisting(winner, requestDigest);
         }
 
-        CheckoutSelection selection = loadCheckoutSelection(userId, request.cartItemIds(), true);
-        AppliedCoupon coupon = resolveCoupon(userId, request.userCouponId(), selection.context(), true);
+        CheckoutSelection selection = checkoutSelectionService.lockForSubmit(userId, checkoutRequest);
+        OwnedAddress receiver = appAddressService.requireOwnedForUpdate(userId, checkoutRequest.addressId());
+        AppliedCoupon coupon = resolveCoupon(userId, checkoutRequest.userCouponId(), selection.context(), true);
         long payableAmountCent = Math.max(selection.productAmountCent() - coupon.discountCent(), 0L);
-        updateOrderAmounts(orderId, selection, coupon, payableAmountCent, now);
-        List<Long> orderItemIds = insertOrderItems(orderId, selection.items(), now);
-        applyStockLocks(userId, orderId, orderItemIds, selection.items(), now);
+        updateOrderAmounts(orderId, selection, coupon, receiver, payableAmountCent, now);
+        List<Long> orderItemIds = insertOrderItems(orderId, selection.previewItems(), now);
+        applyStockLocks(userId, orderId, orderItemIds, selection.previewItems(), now);
         if (coupon.userCouponId() != null) {
             lockCoupon(userId, coupon.userCouponId(), orderId, now);
         }
-        deleteCartItems(userId, selection.cartItemIds());
+        if (selection.source() == CheckoutSource.CART) {
+            deleteCartItems(userId, selection.selectedCartItemIds());
+        }
 
         return new OrderSubmitResponse(
                 orderId,
@@ -268,73 +290,6 @@ public class AppOrderService {
         );
     }
 
-    private CheckoutSelection loadCheckoutSelection(Long userId, List<Long> cartItemIds, boolean forUpdate) {
-        List<Long> normalizedCartItemIds = normalizeCartItemIds(cartItemIds);
-        List<CartSelectionRow> selectedCartRows = findOwnedCartRows(userId, normalizedCartItemIds, forUpdate);
-        if (normalizedCartItemIds != null && selectedCartRows.size() != normalizedCartItemIds.size()) {
-            throw new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND);
-        }
-        if (selectedCartRows.isEmpty()) {
-            throw new BusinessException(normalizedCartItemIds == null ? ErrorCode.VALIDATION_FAILED : ErrorCode.CART_ITEM_NOT_FOUND);
-        }
-        if (forUpdate) {
-            lockSkuRows(selectedCartRows.stream().map(CartSelectionRow::skuId).toList());
-        }
-
-        List<Long> selectedIds = selectedCartRows.stream().map(CartSelectionRow::cartItemId).toList();
-        List<CheckoutRow> checkoutRows = findCheckoutRowsByCartIds(userId, selectedIds);
-        if (checkoutRows.size() != selectedCartRows.size()) {
-            throw new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND);
-        }
-
-        List<OrderPreviewItemResponse> previewItems = new ArrayList<>(checkoutRows.size());
-        List<CheckoutItem> checkoutItems = new ArrayList<>(checkoutRows.size());
-        long productOriginalAmountCent = 0L;
-        long productAmountCent = 0L;
-        for (CheckoutRow row : checkoutRows) {
-            validateCheckoutRow(row);
-            long lineOriginalAmountCent = row.originalPriceCent() * row.quantity();
-            long lineAmountCent = row.unitPriceCent() * row.quantity();
-            productOriginalAmountCent += lineOriginalAmountCent;
-            productAmountCent += lineAmountCent;
-            previewItems.add(new OrderPreviewItemResponse(
-                    row.cartItemId(),
-                    row.skuId(),
-                    row.spuId(),
-                    row.productTitle(),
-                    row.productSubtitle(),
-                    row.mainImage(),
-                    row.mainImageFileId(),
-                    row.skuImage(),
-                    row.skuImageFileId(),
-                    row.displayImage(),
-                    row.displayImageFileId(),
-                    row.skuCode(),
-                    row.specText(),
-                    row.originalPriceCent(),
-                    row.unitPriceCent(),
-                    row.quantity(),
-                    lineOriginalAmountCent,
-                    lineAmountCent
-            ));
-            checkoutItems.add(new CheckoutItem(
-                    row.skuId(),
-                    row.spuId(),
-                    lineAmountCent,
-                    row.quantity()
-            ));
-        }
-
-        return new CheckoutSelection(
-                previewItems,
-                checkoutItems,
-                selectedIds,
-                productOriginalAmountCent,
-                productAmountCent,
-                new CheckoutContext(userId, checkoutItems)
-        );
-    }
-
     private AppliedCoupon resolveCoupon(Long userId, Long userCouponId, CheckoutContext context, boolean forUpdate) {
         LocalDateTime now = LocalDateTime.now();
         if (userCouponId != null) {
@@ -401,42 +356,50 @@ public class AppOrderService {
         ));
     }
 
-    private Optional<OrderSubmitResponse> findExistingOrder(Long userId, String idempotencyKey) {
-        return jdbcClient.sql("""
+    private Optional<ExistingOrder> findExistingOrder(Long userId, String idempotencyKey, boolean forUpdate) {
+        String sql = """
                         select id as order_id,
                                order_no,
                                status,
                                payable_amount_cent,
                                coupon_discount_cent,
+                               checkout_request_digest,
                                created_at
                         from shop_order
                         where user_id = :userId
                           and idempotency_key = :idempotencyKey
-                        """)
+                        """ + (forUpdate ? " for update" : "");
+        return jdbcClient.sql(sql)
                 .param("userId", userId)
                 .param("idempotencyKey", idempotencyKey)
-                .query(this::mapOrderSubmit)
+                .query(this::mapExistingOrder)
                 .optional();
+    }
+
+    private OrderSubmitResponse replayExisting(ExistingOrder existing, String requestDigest) {
+        if (!StringUtils.hasText(existing.checkoutRequestDigest())
+                || existing.checkoutRequestDigest().equals(requestDigest)) {
+            return existing.response();
+        }
+        throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
     }
 
     private Long insertOrderOwnership(
             Long userId,
             String orderNo,
+            CheckoutSource source,
             String idempotencyKey,
+            String checkoutRequestDigest,
             LocalDateTime now
     ) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into shop_order (
-                            order_no, user_id, status, source, idempotency_key,
-                            product_original_amount_cent, product_amount_cent, user_coupon_id, coupon_name,
-                            coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent,
+                            order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             created_at, updated_at
                         )
                         values (
-                            :orderNo, :userId, :status, :source, :idempotencyKey,
-                            :productOriginalAmountCent, :productAmountCent, :userCouponId, :couponName,
-                            :couponDiscountCent, :freightCent, :payableAmountCent, :paidAmountCent,
+                            :orderNo, :userId, :status, :source, :idempotencyKey, :checkoutRequestDigest,
                             :createdAt, :updatedAt
                         )
                         """,
@@ -444,16 +407,9 @@ public class AppOrderService {
                         .addValue("orderNo", orderNo)
                         .addValue("userId", userId)
                         .addValue("status", OrderStatus.CREATED.name())
-                        .addValue("source", ORDER_SOURCE_CART)
+                        .addValue("source", source.name())
                         .addValue("idempotencyKey", idempotencyKey)
-                        .addValue("productOriginalAmountCent", 0L)
-                        .addValue("productAmountCent", 0L)
-                        .addValue("userCouponId", null)
-                        .addValue("couponName", "")
-                        .addValue("couponDiscountCent", 0L)
-                        .addValue("freightCent", 0L)
-                        .addValue("payableAmountCent", 0L)
-                        .addValue("paidAmountCent", 0L)
+                        .addValue("checkoutRequestDigest", checkoutRequestDigest)
                         .addValue("createdAt", now)
                         .addValue("updatedAt", now),
                 keyHolder,
@@ -465,6 +421,7 @@ public class AppOrderService {
             Long orderId,
             CheckoutSelection selection,
             AppliedCoupon coupon,
+            OwnedAddress receiver,
             long payableAmountCent,
             LocalDateTime now
     ) {
@@ -477,6 +434,9 @@ public class AppOrderService {
                             coupon_discount_cent = :couponDiscountCent,
                             freight_cent = :freightCent,
                             payable_amount_cent = :payableAmountCent,
+                            receiver_name = :receiverName,
+                            receiver_phone = :receiverPhone,
+                            receiver_address = :receiverAddress,
                             updated_at = :updatedAt
                         where id = :orderId
                         """)
@@ -487,6 +447,9 @@ public class AppOrderService {
                 .param("couponDiscountCent", coupon.discountCent())
                 .param("freightCent", 0L)
                 .param("payableAmountCent", payableAmountCent)
+                .param("receiverName", receiver.receiverName())
+                .param("receiverPhone", receiver.receiverPhone())
+                .param("receiverAddress", receiver.formattedAddress())
                 .param("updatedAt", now)
                 .param("orderId", orderId)
                 .update();
@@ -581,6 +544,7 @@ public class AppOrderService {
                             select stock_available
                             from product_sku
                             where id = :skuId
+                            for update
                             """)
                     .param("skuId", item.skuId())
                     .query(Integer.class)
@@ -671,82 +635,6 @@ public class AppOrderService {
         }
     }
 
-    private List<CartSelectionRow> findOwnedCartRows(Long userId, List<Long> cartItemIds, boolean forUpdate) {
-        StringBuilder sql = new StringBuilder("""
-                select id as cart_item_id, sku_id, quantity
-                from cart_item
-                where user_id = :userId
-                """);
-        MapSqlParameterSource parameters = new MapSqlParameterSource()
-                .addValue("userId", userId);
-        if (cartItemIds != null) {
-            sql.append(" and id in (:cartItemIds)");
-            parameters.addValue("cartItemIds", cartItemIds);
-        }
-        sql.append(" order by id asc");
-        if (forUpdate) {
-            sql.append(" for update");
-        }
-        return namedParameterJdbcTemplate.query(sql.toString(), parameters, mapCartSelectionRow());
-    }
-
-    private void lockSkuRows(List<Long> skuIds) {
-        List<Long> normalizedSkuIds = distinctIds(skuIds);
-        if (normalizedSkuIds.isEmpty()) {
-            return;
-        }
-        namedParameterJdbcTemplate.query("""
-                        select id
-                        from product_sku
-                        where id in (:skuIds)
-                        for update
-                        """,
-                new MapSqlParameterSource().addValue("skuIds", normalizedSkuIds),
-                (rs, rowNum) -> rs.getLong("id"));
-    }
-
-    private List<CheckoutRow> findCheckoutRowsByCartIds(Long userId, List<Long> cartItemIds) {
-        return namedParameterJdbcTemplate.query("""
-                        select c.id as cart_item_id,
-                               c.sku_id,
-                               c.quantity,
-                               k.spu_id,
-                               s.title as product_title,
-                               s.subtitle as product_subtitle,
-                               s.main_image,
-                               s.main_image_file_id,
-                               k.image as sku_image,
-                               k.image_file_id as sku_image_file_id,
-                               case
-                                   when k.image is null or k.image = '' then s.main_image
-                                   else k.image
-                               end as display_image,
-                               case
-                                   when k.image is null or k.image = '' then s.main_image_file_id
-                                   else k.image_file_id
-                               end as display_image_file_id,
-                               k.sku_code,
-                               k.spec_text,
-                               k.original_price_cent,
-                               k.price_cent as unit_price_cent,
-                               k.stock_available,
-                               k.status as sku_status,
-                               s.status as spu_status,
-                               pc.status as category_status
-                        from cart_item c
-                        join product_sku k on k.id = c.sku_id
-                        join product_spu s on s.id = k.spu_id
-                        join product_category pc on pc.id = s.category_id
-                        where c.user_id = :userId
-                          and c.id in (:cartItemIds)
-                        order by c.id asc
-                        """,
-                new MapSqlParameterSource()
-                        .addValue("userId", userId)
-                        .addValue("cartItemIds", cartItemIds),
-                this::mapCheckoutRow);
-    }
-
     private Optional<UserCouponRow> findUserCoupon(Long userId, Long userCouponId, boolean forUpdate) {
         String sql = """
                 select id as user_coupon_id,
@@ -804,7 +692,7 @@ public class AppOrderService {
     private OrderPreviewResponse toPreviewResponse(CheckoutSelection selection, AppliedCoupon coupon) {
         long payableAmountCent = Math.max(selection.productAmountCent() - coupon.discountCent(), 0L);
         return new OrderPreviewResponse(
-                selection.items(),
+                selection.previewItems(),
                 selection.productOriginalAmountCent(),
                 selection.productAmountCent(),
                 coupon.userCouponId(),
@@ -813,18 +701,6 @@ public class AppOrderService {
                 0L,
                 payableAmountCent
         );
-    }
-
-    private void validateCheckoutRow(CheckoutRow row) {
-        if (!SkuStatus.ENABLED.name().equals(row.skuStatus())) {
-            throw new BusinessException(ErrorCode.SKU_UNAVAILABLE);
-        }
-        if (!ProductStatus.ON_SALE.name().equals(row.spuStatus()) || !CATEGORY_ENABLED.equals(row.categoryStatus())) {
-            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
-        }
-        if (row.stockAvailable() < row.quantity()) {
-            throw new BusinessException(ErrorCode.STOCK_SHORTAGE);
-        }
     }
 
     private void insertStockLog(
@@ -856,15 +732,15 @@ public class AppOrderService {
                 .update();
     }
 
-    private OrderSubmitResponse mapOrderSubmit(ResultSet rs, int rowNum) throws SQLException {
-        return new OrderSubmitResponse(
+    private ExistingOrder mapExistingOrder(ResultSet rs, int rowNum) throws SQLException {
+        return new ExistingOrder(new OrderSubmitResponse(
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getString("status"),
                 rs.getLong("payable_amount_cent"),
                 rs.getLong("coupon_discount_cent"),
                 rs.getObject("created_at", LocalDateTime.class)
-        );
+        ), rs.getString("checkout_request_digest"));
     }
 
     private OrderSummaryResponse mapOrderSummary(ResultSet rs, int rowNum) throws SQLException {
@@ -971,31 +847,6 @@ public class AppOrderService {
         );
     }
 
-    private CheckoutRow mapCheckoutRow(ResultSet rs, int rowNum) throws SQLException {
-        return new CheckoutRow(
-                rs.getLong("cart_item_id"),
-                rs.getLong("sku_id"),
-                rs.getLong("spu_id"),
-                rs.getString("product_title"),
-                rs.getString("product_subtitle"),
-                rs.getString("main_image"),
-                rs.getObject("main_image_file_id", Long.class),
-                rs.getString("sku_image"),
-                rs.getObject("sku_image_file_id", Long.class),
-                rs.getString("display_image"),
-                rs.getObject("display_image_file_id", Long.class),
-                rs.getString("sku_code"),
-                rs.getString("spec_text"),
-                rs.getLong("original_price_cent"),
-                rs.getLong("unit_price_cent"),
-                rs.getInt("quantity"),
-                rs.getInt("stock_available"),
-                rs.getString("sku_status"),
-                rs.getString("spu_status"),
-                rs.getString("category_status")
-        );
-    }
-
     private UserCouponRow mapUserCoupon(ResultSet rs, int rowNum) throws SQLException {
         return new UserCouponRow(
                 rs.getLong("user_coupon_id"),
@@ -1013,19 +864,20 @@ public class AppOrderService {
         );
     }
 
-    private RowMapper<CartSelectionRow> mapCartSelectionRow() {
-        return (rs, rowNum) -> new CartSelectionRow(
-                rs.getLong("cart_item_id"),
-                rs.getLong("sku_id"),
-                rs.getInt("quantity")
-        );
-    }
-
     private Long requireAppUser(AuthenticatedPrincipal principal) {
         if (principal == null || principal.kind() != TokenKind.APP) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
         return principal.subjectId();
+    }
+
+    private void validateSubmitRequest(AppOrderSubmitRequest request, CheckoutRequest checkoutRequest) {
+        if (request == null
+                || checkoutRequest.addressId() == null
+                || !StringUtils.hasText(request.idempotencyKey())
+                || request.idempotencyKey().length() > 80) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
     }
 
     private long normalizeCurrent(Long current) {
@@ -1043,23 +895,6 @@ public class AppOrderService {
         return StringUtils.hasText(status) ? status.trim() : null;
     }
 
-    private List<Long> normalizeCartItemIds(List<Long> cartItemIds) {
-        if (cartItemIds == null || cartItemIds.isEmpty()) {
-            return null;
-        }
-        return distinctIds(cartItemIds);
-    }
-
-    private List<Long> distinctIds(List<Long> ids) {
-        Set<Long> unique = new LinkedHashSet<>();
-        for (Long id : ids) {
-            if (id != null) {
-                unique.add(id);
-            }
-        }
-        return List.copyOf(unique);
-    }
-
     private String nextOrderNo(LocalDateTime now) {
         long sequence = ORDER_NO_SEQUENCE.incrementAndGet() % 1_000_000L;
         return "ORD" + now.format(ORDER_NO_TIME_FORMATTER) + String.format("%06d", sequence);
@@ -1073,43 +908,6 @@ public class AppOrderService {
 
     private String defaultString(String value) {
         return value == null ? "" : value;
-    }
-
-    private record CartSelectionRow(Long cartItemId, Long skuId, Integer quantity) {
-    }
-
-    private record CheckoutRow(
-            Long cartItemId,
-            Long skuId,
-            Long spuId,
-            String productTitle,
-            String productSubtitle,
-            String mainImage,
-            Long mainImageFileId,
-            String skuImage,
-            Long skuImageFileId,
-            String displayImage,
-            Long displayImageFileId,
-            String skuCode,
-            String specText,
-            Long originalPriceCent,
-            Long unitPriceCent,
-            Integer quantity,
-            Integer stockAvailable,
-            String skuStatus,
-            String spuStatus,
-            String categoryStatus
-    ) {
-    }
-
-    private record CheckoutSelection(
-            List<OrderPreviewItemResponse> items,
-            List<CheckoutItem> checkoutItems,
-            List<Long> cartItemIds,
-            long productOriginalAmountCent,
-            long productAmountCent,
-            CheckoutContext context
-    ) {
     }
 
     private record UserCouponRow(
@@ -1126,6 +924,9 @@ public class AppOrderService {
             LocalDateTime validEndAt,
             String status
     ) {
+    }
+
+    private record ExistingOrder(OrderSubmitResponse response, String checkoutRequestDigest) {
     }
 
     private record EvaluatedCoupon(UserCouponRow userCoupon, DiscountResult discountResult) {

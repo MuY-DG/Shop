@@ -59,6 +59,7 @@ class AdminOrderControllerTest {
         jdbcClient.sql("delete from coupon_claim_record").update();
         jdbcClient.sql("delete from user_coupon").update();
         jdbcClient.sql("delete from coupon_template").update();
+        jdbcClient.sql("delete from user_address").update();
     }
 
     @Test
@@ -564,15 +565,17 @@ class AdminOrderControllerTest {
             long templateId = seedTemplate("Admin Close Coupon " + skuCode, "ENABLED", 10, 0, 1, 0L, 500L);
             userCouponId = seedUserCoupon(session.userId(), templateId, "Admin Close Coupon " + skuCode, "CLAIMED", "2026-07-07 08:00:00");
         }
-        addCartItem(session.token(), skuId, 2);
+        long cartItemId = objectMapper.readTree(addCartItem(session.token(), skuId, 2))
+                .path("data").path("id").asLong();
+        long addressId = insertAddress(session.userId(), skuCode);
 
         String payload = userCouponId == null
                 ? """
-                {"idempotencyKey":"seed-%s"}
-                """.formatted(skuCode)
+                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"seed-%s"}
+                """.formatted(cartItemId, addressId, skuCode)
                 : """
-                {"userCouponId":%d,"idempotencyKey":"seed-%s"}
-                """.formatted(userCouponId, skuCode);
+                {"cartItemIds":[%d],"addressId":%d,"userCouponId":%d,"idempotencyKey":"seed-%s"}
+                """.formatted(cartItemId, addressId, userCouponId, skuCode);
         String response = mockMvc.perform(post("/app/orders")
                         .header("Authorization", "Bearer " + session.token())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -605,6 +608,22 @@ class AdminOrderControllerTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
+    }
+
+    private long insertAddress(long userId, String suffix) {
+        jdbcClient.sql("""
+                        insert into user_address
+                            (user_id, receiver_name, receiver_phone, province, city, district, detail_address, is_default)
+                        values (:userId, :receiverName, '13800138000', '北京市', '', '朝阳区', :detailAddress, true)
+                        """)
+                .param("userId", userId)
+                .param("receiverName", "Admin order receiver " + suffix)
+                .param("detailAddress", "Admin order road " + suffix)
+                .update();
+        return jdbcClient.sql("select max(id) from user_address where user_id = :userId")
+                .param("userId", userId)
+                .query(Long.class)
+                .single();
     }
 
     private AppLoginSession appLogin(String code) throws Exception {
