@@ -233,29 +233,32 @@ Logout:
 
 ### 5.3 Session Family And Refresh Rotation
 
-Access and refresh tokens for one login belong to one session family identified by TokenSession.sessionId.
+Each login creates one stable session family identified by `TokenSession.sessionId`. Every access/refresh pair in that family has its own `TokenSession.generationId`; refresh keeps the same `sessionId` and creates a new `generationId`. A production generation ID is canonical 36-character UUID text in `8-4-4-4-12` hexadecimal shape; lowercase and uppercase hex are both accepted and preserved. Java and Redis apply the same shape check without imposing UUID version or variant bits. A legacy serialized generation value that is missing, JSON null, non-string, ASCII or Unicode whitespace, or otherwise not canonical falls back to `sessionId`.
 
 Token storage must support these atomic operations:
 
-- Save an access/refresh grant and its session index.
-- Lookup an access token.
-- Atomically consume one refresh token.
-- Revoke every token key in a session family.
+- Save an access/refresh generation and its stable family index only when no family-revoked marker exists. The marker check and writes are one synchronized/Lua compare-and-set operation.
+- Lookup an access token and reject it when either its stable family marker or generation marker exists.
+- Atomically consume one refresh token, write a marker for only the consumed generation, and delete the indexed old generation.
+- Logout by writing the stable family marker and deleting every currently indexed token key in that family.
 
 Refresh algorithm:
 
 1. Validate apr_ prefix.
-2. Atomically consume the refresh token.
+2. Atomically consume the refresh token. The decoded `sessionId` must be a nonblank string; otherwise delete only the presented refresh key and return absent. Normalize every missing, JSON-null, non-string, whitespace, or noncanonical legacy generation value to `sessionId` without applying string operations to non-string JSON values.
 3. Reject absent, expired, already-consumed, or wrong-kind tokens.
-4. Revoke the old access and any remaining family keys.
+4. Write the old generation marker and revoke its old access and remaining indexed keys.
 5. Re-read the enabled app user and map the current profile.
-6. Issue a fresh access/refresh pair in a fresh session family.
+6. Issue a fresh access/refresh pair with a new `generationId` in the same stable `sessionId` family.
+7. Atomically save the new generation only if logout has not marked the family revoked.
 
 Concurrent use of one refresh token produces one successful rotation at most.
 
-Logout resolves the access token session and revokes the whole current session family. It does not log either raw token.
+Refresh and logout are linearizable across the consume/save boundary. If logout writes the family marker before the refreshed generation is saved, save is rejected with authentication required and no token is resurrected. If refreshed generation save wins first, logout deletes that indexed generation. Replaying an already-consumed legacy refresh deletes only the presented stale token and cannot delete a newer generation's stable family index.
 
-In-memory and Redis implementations must have equivalent semantics. Redis uses atomic commands or a Lua operation for refresh consumption and family rotation.
+Logout resolves the access token session, writes the stable family marker, and revokes the whole current session family. Generation and family markers live for at least `max(accessTtl, refreshTtl)`, so an unindexed legacy token cannot become usable after a shorter sibling TTL expires. It does not log either raw token.
+
+In-memory and Redis implementations must have equivalent session-family, canonical-generation, and legacy-fallback semantics. Redis uses Lua for family save, refresh consumption, and logout; missing, set, and corrupt index types have defined fail-closed behavior, and only hashed token keys are stored or passed to Lua.
 
 ### 5.4 Versioned Client Auth State
 

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 
+import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -11,6 +12,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -99,7 +101,8 @@ class OpaqueTokenServiceTest {
         }
 
         assertThat(tokenService.lookupAccessToken(pair.accessToken(), TokenKind.APP)).isEmpty();
-        assertThat(tokenStore.isSessionRevoked(session.sessionId())).isTrue();
+        assertThat(tokenStore.isSessionRevoked(session.sessionId())).isFalse();
+        assertThat(tokenStore.isGenerationRevoked(session.generationId())).isTrue();
         assertAuthenticationRequired(() -> tokenService.consumeRefreshToken(pair.refreshToken(), TokenKind.APP));
     }
 
@@ -148,6 +151,66 @@ class OpaqueTokenServiceTest {
         assertAuthenticationRequired(() -> tokenService.consumeRefreshToken(pair.refreshToken(), TokenKind.APP));
     }
 
+    @Test
+    void consumedGenerationMarkerRejectsLegacyAccessWithoutAFamilyIndex() throws Exception {
+        TokenSession session = new TokenSession(
+                "legacy-family",
+                "11111111-1111-4111-8111-111111111111",
+                TokenKind.APP,
+                9L,
+                "openid-user",
+                List.of(),
+                List.of(),
+                clock.instant()
+        );
+        TokenPair pair = tokenService.issue(TokenKind.APP, session);
+        removeFamilyIndex(session.sessionId());
+
+        assertThat(tokenService.consumeRefreshToken(pair.refreshToken(), TokenKind.APP)).isEqualTo(session);
+
+        assertThat(tokenStore.isSessionRevoked(session.sessionId())).isFalse();
+        assertThat(tokenStore.isGenerationRevoked(session.generationId())).isTrue();
+        assertThat(tokenService.lookupAccessToken(pair.accessToken(), TokenKind.APP)).isEmpty();
+    }
+
+    @Test
+    void consumedGenerationMarkerOutlivesALongerLegacyAccessToken() throws Exception {
+        MutableClock mutableClock = new MutableClock(Instant.parse("2026-07-06T12:00:00Z"));
+        InMemoryTokenStore store = new InMemoryTokenStore(mutableClock);
+        OpaqueTokenService service = new OpaqueTokenService(
+                store,
+                properties(Duration.ofDays(2), Duration.ofDays(1))
+        );
+        TokenSession session = TokenSession.app(9L, "openid-user", mutableClock.instant());
+        TokenPair pair = service.issue(TokenKind.APP, session);
+        removeFamilyIndex(store, session.sessionId());
+        service.consumeRefreshToken(pair.refreshToken(), TokenKind.APP);
+
+        mutableClock.advance(Duration.ofDays(1).plusSeconds(1));
+
+        assertThat(store.isGenerationRevoked(session.generationId())).isTrue();
+        assertThat(service.lookupAccessToken(pair.accessToken(), TokenKind.APP)).isEmpty();
+    }
+
+    @Test
+    void logoutFamilyMarkerOutlivesALongerLegacyAccessToken() throws Exception {
+        MutableClock mutableClock = new MutableClock(Instant.parse("2026-07-06T12:00:00Z"));
+        InMemoryTokenStore store = new InMemoryTokenStore(mutableClock);
+        OpaqueTokenService service = new OpaqueTokenService(
+                store,
+                properties(Duration.ofDays(2), Duration.ofDays(1))
+        );
+        TokenSession session = TokenSession.app(9L, "openid-user", mutableClock.instant());
+        TokenPair pair = service.issue(TokenKind.APP, session);
+        removeFamilyIndex(store, session.sessionId());
+        service.revokeSession(session.sessionId(), TokenKind.APP);
+
+        mutableClock.advance(Duration.ofDays(1).plusSeconds(1));
+
+        assertThat(store.isSessionRevoked(session.sessionId())).isTrue();
+        assertThat(service.lookupAccessToken(pair.accessToken(), TokenKind.APP)).isEmpty();
+    }
+
     private boolean consumeAfterBarrier(CyclicBarrier barrier, String refreshToken) throws Exception {
         barrier.await(5, TimeUnit.SECONDS);
         try {
@@ -163,6 +226,18 @@ class OpaqueTokenServiceTest {
         assertThatThrownBy(action)
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED));
+    }
+
+    @SuppressWarnings("unchecked")
+    private void removeFamilyIndex(String sessionId) throws Exception {
+        removeFamilyIndex(tokenStore, sessionId);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void removeFamilyIndex(InMemoryTokenStore store, String sessionId) throws Exception {
+        Field field = InMemoryTokenStore.class.getDeclaredField("sessionKeys");
+        field.setAccessible(true);
+        ((Map<String, ?>) field.get(store)).remove(sessionId);
     }
 
     private TokenProperties properties(Duration appAccessTtl, Duration appRefreshTtl) {
@@ -181,10 +256,11 @@ class OpaqueTokenServiceTest {
         private String savedSessionId;
 
         @Override
-        public void saveFamily(String sessionId, List<TokenGrant> grants) {
+        public boolean saveFamily(String sessionId, List<TokenGrant> grants) {
             saveCalls++;
             savedSessionId = sessionId;
             savedGrants.addAll(grants);
+            return true;
         }
 
         @Override
@@ -203,6 +279,11 @@ class OpaqueTokenServiceTest {
 
         @Override
         public boolean isSessionRevoked(String sessionId) {
+            return false;
+        }
+
+        @Override
+        public boolean isGenerationRevoked(String generationId) {
             return false;
         }
 

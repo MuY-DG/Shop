@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,10 +18,14 @@ import java.util.concurrent.ConcurrentHashMap;
 @ConditionalOnProperty(name = "shop.auth.token-store", havingValue = "memory")
 public class InMemoryTokenStore implements TokenStore {
 
+    private static final int MARKER_CLEANUP_LIMIT = 64;
+
     private final Clock clock;
     private final Map<String, StoredSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, Set<String>> sessionKeys = new ConcurrentHashMap<>();
     private final Map<String, Instant> revokedSessions = new ConcurrentHashMap<>();
+    private final Map<String, Instant> revokedGenerations = new ConcurrentHashMap<>();
+    private final PriorityQueue<MarkerExpiry> markerExpiries = new PriorityQueue<>();
 
     public InMemoryTokenStore() {
         this(Clock.systemUTC());
@@ -31,7 +36,8 @@ public class InMemoryTokenStore implements TokenStore {
     }
 
     @Override
-    public synchronized void saveFamily(String sessionId, List<TokenGrant> grants) {
+    public synchronized boolean saveFamily(String sessionId, List<TokenGrant> grants) {
+        sweepExpiredMarkers();
         if (sessionId == null || sessionId.isBlank()) {
             throw new IllegalArgumentException("Session ID is required");
         }
@@ -49,14 +55,19 @@ public class InMemoryTokenStore implements TokenStore {
             preparedSessions.put(grant.key(), new StoredSession(grant.session(), now.plus(grant.ttl())));
             preparedKeys.add(grant.key());
         }
+        if (isSessionRevokedInternal(sessionId)) {
+            return false;
+        }
 
         sessions.putAll(preparedSessions);
         Set<String> keys = sessionKeys.computeIfAbsent(sessionId, ignored -> ConcurrentHashMap.newKeySet());
         keys.addAll(preparedKeys);
+        return true;
     }
 
     @Override
     public synchronized Optional<TokenSession> find(String key) {
+        sweepExpiredMarkers();
         StoredSession stored = sessions.get(key);
         if (stored == null) {
             return Optional.empty();
@@ -70,6 +81,7 @@ public class InMemoryTokenStore implements TokenStore {
 
     @Override
     public synchronized Optional<TokenSession> consumeRefreshAndRevokeFamily(String refreshKey, Duration revokedTtl) {
+        sweepExpiredMarkers();
         StoredSession stored = sessions.get(refreshKey);
         if (stored == null) {
             return Optional.empty();
@@ -80,12 +92,13 @@ public class InMemoryTokenStore implements TokenStore {
         }
 
         String sessionId = stored.session().sessionId();
-        if (isSessionRevokedInternal(sessionId)) {
+        String generationId = stored.session().generationId();
+        if (isSessionRevokedInternal(sessionId) || isGenerationRevokedInternal(generationId)) {
             removeToken(refreshKey, sessionId);
             return Optional.empty();
         }
 
-        revokedSessions.put(sessionId, clock.instant().plus(revokedTtl));
+        putMarker(revokedGenerations, generationId, revokedTtl, MarkerType.GENERATION);
         removeFamily(sessionId);
         sessions.remove(refreshKey);
         return Optional.of(stored.session());
@@ -93,16 +106,50 @@ public class InMemoryTokenStore implements TokenStore {
 
     @Override
     public synchronized void revokeSession(String sessionId, Duration revokedTtl) {
+        sweepExpiredMarkers();
         if (sessionId == null || sessionId.isBlank()) {
             return;
         }
-        revokedSessions.put(sessionId, clock.instant().plus(revokedTtl));
+        putMarker(revokedSessions, sessionId, revokedTtl, MarkerType.FAMILY);
         removeFamily(sessionId);
     }
 
     @Override
     public synchronized boolean isSessionRevoked(String sessionId) {
+        sweepExpiredMarkers();
         return isSessionRevokedInternal(sessionId);
+    }
+
+    @Override
+    public synchronized boolean isGenerationRevoked(String generationId) {
+        sweepExpiredMarkers();
+        return isGenerationRevokedInternal(generationId);
+    }
+
+    private void putMarker(
+            Map<String, Instant> markers,
+            String id,
+            Duration ttl,
+            MarkerType markerType
+    ) {
+        Instant expiresAt = clock.instant().plus(ttl);
+        markers.put(id, expiresAt);
+        markerExpiries.add(new MarkerExpiry(markerType, id, expiresAt));
+    }
+
+    private void sweepExpiredMarkers() {
+        Instant now = clock.instant();
+        for (int count = 0; count < MARKER_CLEANUP_LIMIT; count++) {
+            MarkerExpiry expiry = markerExpiries.peek();
+            if (expiry == null || expiry.expiresAt().isAfter(now)) {
+                return;
+            }
+            markerExpiries.remove();
+            Map<String, Instant> markers = expiry.type() == MarkerType.FAMILY
+                    ? revokedSessions
+                    : revokedGenerations;
+            markers.remove(expiry.id(), expiry.expiresAt());
+        }
     }
 
     private boolean isSessionRevokedInternal(String sessionId) {
@@ -115,6 +162,21 @@ public class InMemoryTokenStore implements TokenStore {
         }
         if (!expiresAt.isAfter(clock.instant())) {
             revokedSessions.remove(sessionId, expiresAt);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isGenerationRevokedInternal(String generationId) {
+        if (generationId == null || generationId.isBlank()) {
+            return false;
+        }
+        Instant expiresAt = revokedGenerations.get(generationId);
+        if (expiresAt == null) {
+            return false;
+        }
+        if (!expiresAt.isAfter(clock.instant())) {
+            revokedGenerations.remove(generationId, expiresAt);
             return false;
         }
         return true;
@@ -139,5 +201,19 @@ public class InMemoryTokenStore implements TokenStore {
     }
 
     private record StoredSession(TokenSession session, Instant expiresAt) {
+    }
+
+    private enum MarkerType {
+        FAMILY,
+        GENERATION
+    }
+
+    private record MarkerExpiry(MarkerType type, String id, Instant expiresAt)
+            implements Comparable<MarkerExpiry> {
+
+        @Override
+        public int compareTo(MarkerExpiry other) {
+            return expiresAt.compareTo(other.expiresAt);
+        }
     }
 }

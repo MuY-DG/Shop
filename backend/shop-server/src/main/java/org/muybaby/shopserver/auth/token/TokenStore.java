@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 public interface TokenStore {
-    void saveFamily(String sessionId, List<TokenGrant> grants);
+    boolean saveFamily(String sessionId, List<TokenGrant> grants);
 
     Optional<TokenSession> find(String key);
 
@@ -14,4 +14,6 @@ public interface TokenStore {
     void revokeSession(String sessionId, Duration revokedTtl);
 
     boolean isSessionRevoked(String sessionId);
+
+    boolean isGenerationRevoked(String generationId);
 }

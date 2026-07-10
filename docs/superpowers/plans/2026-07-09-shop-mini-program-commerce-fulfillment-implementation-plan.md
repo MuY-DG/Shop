@@ -369,6 +369,8 @@ Commit:
 - Modify: backend/shop-server/src/main/java/org/muybaby/shopserver/auth/token/InMemoryTokenStore.java
 - Modify: backend/shop-server/src/main/java/org/muybaby/shopserver/auth/token/RedisTokenStore.java
 - Modify: backend/shop-server/src/main/java/org/muybaby/shopserver/auth/token/OpaqueTokenService.java
+- Modify: backend/shop-server/src/main/java/org/muybaby/shopserver/auth/token/TokenSession.java
+- Modify: backend/shop-server/src/main/java/org/muybaby/shopserver/auth/token/TokenProperties.java
 - Modify: backend/shop-server/src/main/java/org/muybaby/shopserver/security/AuthenticatedPrincipal.java
 - Modify: backend/shop-server/src/main/java/org/muybaby/shopserver/security/TokenAuthentication.java
 - Modify: backend/shop-server/src/main/java/org/muybaby/shopserver/security/PathTokenKindResolver.java
@@ -379,6 +381,8 @@ Commit:
 - Modify: backend/shop-server/src/test/java/org/muybaby/shopserver/auth/token/InMemoryTokenStoreTest.java
 - Modify: backend/shop-server/src/test/java/org/muybaby/shopserver/auth/token/RedisTokenStoreTest.java
 - Create: backend/shop-server/src/test/java/org/muybaby/shopserver/auth/token/RedisTokenStoreIntegrationTest.java
+- Modify: backend/shop-server/src/test/java/org/muybaby/shopserver/auth/token/TokenSessionTest.java
+- Create: backend/shop-server/src/test/java/org/muybaby/shopserver/auth/token/TokenPropertiesTest.java
 - Modify: backend/shop-server/src/test/java/org/muybaby/shopserver/security/PathTokenKindResolverTest.java
 - Modify: backend/shop-server/src/test/java/org/muybaby/shopserver/security/SecurityConfigTest.java
 - Modify: backend/shop-server/src/test/java/org/muybaby/shopserver/security/AuthenticatedPrincipalTest.java
@@ -386,12 +390,14 @@ Commit:
 **Interfaces:**
 - AppUserProfile(Long userId, String openidMasked, boolean phoneAuthorized, String phoneNumberMasked).
 - AppSessionResponse(String token, String refreshToken, long expiresIn, AppUserProfile user).
-- RefreshTokenRequest with required apr_ refreshToken.
-- TokenStore.saveFamily(String sessionId, List<TokenGrant> grants) atomically stores and indexes a pair.
-- TokenStore.consumeRefreshAndRevokeFamily(String refreshKey, Duration revokedTtl) atomically returns the refresh session, marks its session revoked, and revokes its indexed family.
-- TokenStore.revokeSession(String sessionId, Duration revokedTtl) and isSessionRevoked(String sessionId).
-- OpaqueTokenService.consumeRefreshToken(String token, TokenKind kind) returns the old TokenSession after atomically consuming and revoking its family.
+- RefreshTokenRequest carries the apr_ refreshToken; missing, null, blank, malformed-prefix, expired, consumed, and wrong-kind values all map to AUTHENTICATION_REQUIRED, while unparsable JSON remains a binding error.
+- TokenSession.sessionId is the stable login/session-family ID and generationId identifies one rotating pair. Production generation IDs use canonical 36-character `8-4-4-4-12` hex UUID shape, accepting either hex case without enforcing version or variant bits. Missing, JSON-null, non-string, whitespace, or otherwise noncanonical legacy generationId falls back to sessionId; the existing seven-argument constructor remains compatible.
+- TokenStore.saveFamily(String sessionId, List<TokenGrant> grants) returns boolean and atomically stores/indexes a pair only when the stable family marker is absent.
+- TokenStore.consumeRefreshAndRevokeFamily(String refreshKey, Duration revokedTtl) atomically returns the refresh session, marks only its generation revoked, and removes its indexed old family keys.
+- TokenStore.revokeSession(String sessionId, Duration revokedTtl), isSessionRevoked(String sessionId), and isGenerationRevoked(String generationId) implement stable-family logout and dual-marker lookup.
+- OpaqueTokenService.consumeRefreshToken(String token, TokenKind kind) returns the old TokenSession after atomically consuming and revoking only its generation.
 - OpaqueTokenService.revokeSession(String sessionId, TokenKind kind).
+- TokenProperties rejects null, zero, or negative TTLs but does not require refreshTtl >= accessTtl. Revocation TTL is max(accessTtl, refreshTtl).
 
 - [ ] **Step 1: Add failing controller and rotation tests**
 
@@ -451,7 +457,11 @@ void refreshRotatesOnceAndLogoutRevokesTheNewSession() throws Exception {
 }
 ~~~
 
-Add a bind-phone-then-later-login-and-me test that asserts both later responses still contain the same masked number and never contain the full number. Add expired-refresh, wrong-kind refresh, and malformed-refresh tests. Seed a pre-Task-2 legacy pair that has TokenSession values but no session-index set; after logout, both its old access request and its still-present old refresh token must return 401 through a revoked-session marker. Add OpaqueTokenServiceTest concurrency coverage with two threads consuming one apr_ token and assert exactly one success. Add store tests for atomic family issue, consume-and-revoke, logout revoke, marker expiry, and legacy no-index revocation. Concurrent tests use a barrier, bounded Future.get timeouts, executor shutdown/join, and final session-key assertions.
+Add a bind-phone-then-later-login-and-me test that asserts both later responses still contain the same masked number and never contain the full number. Add expired-refresh, wrong-kind, malformed-prefix, missing, null, and blank refresh tests; only unparsable JSON remains HTTP 400. Seed pre-Task-2 legacy pairs with no session-index set and verify family and generation markers keep their residual access/refresh values unusable.
+
+Prove session-family rotation explicitly: login creates stable `sessionId` plus one `generationId`; refresh preserves `sessionId` and changes `generationId`. Add a deterministic latch service test that pauses after refresh consumption, completes logout, then resumes refresh and expects AUTHENTICATION_REQUIRED with no token resurrection. Add the inverse ordering proof that logout deletes a refreshed generation when issue wins first. Add an access-2d/refresh-1d no-index regression showing consume and logout markers still block access after one day.
+
+Add OpaqueTokenServiceTest concurrency coverage with two threads consuming one apr_ token and assert exactly one success. Add store tests for atomic family issue, consume-generation revoke, family logout revoke, marker expiry/physical cleanup, and legacy no-index revocation. Unit and real Redis tests together cover missing, empty, JSON-null, non-string, ASCII/Unicode-whitespace, and malformed legacy generation JSON. Real Redis also covers wrong-type consume/logout indexes, stale old-generation replay without deleting the current generation, family-marker save rejection, access/refresh/index/marker PTTL ranges, and independent logout. Concurrent tests use a barrier or latch, bounded Future.get timeouts, executor shutdown/join, and final session-key assertions.
 
 Run:
 
@@ -499,30 +509,32 @@ Change TokenStore to:
 
 ~~~java
 public interface TokenStore {
-    void saveFamily(String sessionId, List<TokenGrant> grants);
+    boolean saveFamily(String sessionId, List<TokenGrant> grants);
     Optional<TokenSession> find(String key);
     Optional<TokenSession> consumeRefreshAndRevokeFamily(String refreshKey, Duration revokedTtl);
     void revokeSession(String sessionId, Duration revokedTtl);
     boolean isSessionRevoked(String sessionId);
+    boolean isGenerationRevoked(String generationId);
 }
 ~~~
 
-InMemoryTokenStore synchronizes saveFamily/consumeRefreshAndRevokeFamily/revokeSession and keeps a ConcurrentHashMap from sessionId to token keys.
+InMemoryTokenStore synchronizes saveFamily/consumeRefreshAndRevokeFamily/revokeSession and keeps a ConcurrentHashMap from stable sessionId to the currently indexed token keys. It stores separate expiring family and generation markers. Ordinary operations physically sweep expired marker entries in bounded batches.
 
 Replace separate token writes with TokenStore.saveFamily(sessionId, grants), where each TokenGrant contains one already-hashed key, serialized TokenSession, and TTL. Replace take+revoke with consumeRefreshAndRevokeFamily(refreshKey).
 
-RedisTokenStore executes two Lua scripts:
+RedisTokenStore executes Lua scripts with equivalent semantics:
 
-- saveFamily atomically SETs the access/refresh values with their TTLs, SADDs both hashed keys into shop:auth:session:<sessionId>, and expires the index at the refresh TTL.
-- consumeRefreshAndRevokeFamily atomically GETs the refresh JSON and obtains sessionId. It first checks shop:auth:revoked:<sessionId>; when the marker already exists, it deletes the presented stale refresh key and returns nil. Otherwise it SETs the marker with a TTL at least as long as the refresh TTL, reads the indexed hashed keys, deletes every family key plus the index, and returns the consumed JSON. A missing/expired refresh returns nil without mutation.
-- revokeSession atomically writes the same revoked marker and deletes every indexed key plus the index in one Lua invocation.
-- isSessionRevoked checks that marker. OpaqueTokenService.lookupAccessToken rejects a stored access session when its marker exists.
+- saveFamily checks `shop:auth:revoked:<sessionId>` and the index type before its first write. If the marker exists it returns false; otherwise it atomically SETs access/refresh values with their own TTLs, SADDs both hashed keys into `shop:auth:session:<sessionId>`, and expires the index at the maximum grant TTL.
+- consumeRefreshAndRevokeFamily atomically GETs the refresh JSON and first requires sessionId to be a nonblank string; invalid session IDs safely delete only the presented refresh and return absent. Java and Lua both accept generationId only in canonical 36-character `8-4-4-4-12` hex UUID shape. Missing, JSON-null, non-string, ASCII/Unicode-whitespace, and malformed legacy values fall back to sessionId without invoking Lua string functions on `cjson.null` or another non-string value. It checks both family and `shop:auth:generation-revoked:<generationId>` markers. A pre-marked stale refresh deletes only the presented key, never a newer generation's stable family index. Otherwise it reads TYPE/SMEMBERS before mutation, writes the generation marker, deletes enumerable old-generation keys plus the stable index, deletes the presented refresh, and returns the payload.
+- revokeSession reads TYPE/SMEMBERS before mutation, writes `shop:auth:revoked:<sessionId>`, and deletes every enumerable key plus the stable index in one Lua invocation.
+- none and set indexes follow their normal paths. A corrupt consume index is deleted after the generation marker and presented refresh are handled; a corrupt logout index is deleted after the family marker is written. Residual unenumerable token values remain unavailable through the marker instead of producing HTTP 500.
+- isSessionRevoked and isGenerationRevoked check their respective markers. OpaqueTokenService.lookupAccessToken rejects a stored access session when either marker exists.
 
-InMemoryTokenStore implements the same family operations, marker-first consume check, and expiring revoked markers in one synchronized critical section. The marker is essential for pre-Task-2 Redis pairs that have no family index: refresh/logout still invalidates both sibling access and still-stored refresh tokens. Do not store raw tokens in the session set or Lua arguments; store only hashed keys produced by OpaqueTokenService.
+The family-marker check and save writes share one synchronized/Lua operation. Therefore logout-first rejects a later refreshed generation, while save-first lets logout delete it. Both marker TTLs are at least max(accessTtl, refreshTtl), which is essential for pre-Task-2 pairs with no family index. Do not store raw tokens in the session set or Lua arguments; store only hashed keys produced by OpaqueTokenService.
 
 - [ ] **Step 4: Implement issue, refresh consumption, and logout**
 
-When issuing a pair, pass both hashed TokenGrant values to one saveFamily call under TokenSession.sessionId.
+When issuing a pair, pass both hashed TokenGrant values to one saveFamily call under stable TokenSession.sessionId. Login constructs a new sessionId and generationId. Refresh constructs a new generationId while preserving the consumed TokenSession.sessionId. If saveFamily returns false because logout already marked the family, throw AUTHENTICATION_REQUIRED.
 
 Add:
 
@@ -532,7 +544,7 @@ public TokenSession consumeRefreshToken(String token, TokenKind requiredKind) {
         throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
     }
     TokenSession session = tokenStore.consumeRefreshAndRevokeFamily(
-                    key(requiredKind, "refresh", token), refreshTtl(requiredKind))
+                    key(requiredKind, "refresh", token), revocationTtl(requiredKind))
             .filter(value -> value.kind() == requiredKind)
             .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
     return session;
@@ -540,14 +552,18 @@ public TokenSession consumeRefreshToken(String token, TokenKind requiredKind) {
 
 public void revokeSession(String sessionId, TokenKind kind) {
     if (sessionId != null && !sessionId.isBlank()) {
-        tokenStore.revokeSession(sessionId, refreshTtl(kind));
+        tokenStore.revokeSession(sessionId, revocationTtl(kind));
     }
+}
+
+private Duration revocationTtl(TokenKind kind) {
+    return max(accessTtl(kind), refreshTtl(kind));
 }
 ~~~
 
 Add sessionId to AuthenticatedPrincipal. Preserve a five-argument convenience constructor for existing tests, and have TokenAuthentication map the real TokenSession.sessionId.
 
-When issuing a pair, OpaqueTokenService calls saveFamily once rather than save twice. Add RedisTokenStoreIntegrationTest using a disposable redis:latest Testcontainer to prove issue is all-or-nothing, concurrent consume has one winner, and refresh-vs-logout leaves no usable old access/refresh token. Unit tests also verify no raw token is present in Redis keys or session-index members.
+When issuing a pair, OpaqueTokenService calls saveFamily once rather than save twice. `TokenProperties` validates all four TTLs as non-null and strictly positive, but allows access TTL to exceed refresh TTL because revocationTtl uses their maximum. Add RedisTokenStoreIntegrationTest using a disposable redis:latest Testcontainer to prove issue is all-or-nothing, concurrent consume has one winner, refresh-vs-logout is linearizable, corrupt indexes fail closed, canonical UUID generation IDs preserve either hex case, and every invalid legacy generation shape falls back without reviving access or deleting the current generation. Unit tests also verify no raw token is present in Redis keys, session-index members, or Lua arguments.
 
 AppAuthService methods:
 
@@ -559,7 +575,7 @@ public AppUserProfile me(AuthenticatedPrincipal principal);
 public void logout(AuthenticatedPrincipal principal);
 ~~~
 
-refresh consumes the old token, re-reads an enabled app user, creates a fresh TokenSession.app, issues a new pair, and returns the current profile.
+refresh consumes the old token, re-reads an enabled app user, creates a fresh TokenSession generation in the old stable session family, issues a new pair, and returns the current profile.
 
 - [ ] **Step 5: Wire endpoints and security**
 
@@ -567,24 +583,27 @@ AppAuthController exposes login, refresh, phone, and logout. AppUserController e
 
 PathTokenKindResolver and SecurityConfig must both treat exactly /app/auth/refresh as public. /app/auth/logout and /app/users/me remain authenticated APP routes.
 
-Malformed, expired, consumed, or admin refresh tokens return HTTP 401 with code AUTHENTICATION_REQUIRED.
+Missing, null, blank, malformed-prefix, expired, consumed, or admin refresh tokens return HTTP 401 with code AUTHENTICATION_REQUIRED. Only syntactically unparsable JSON returns HTTP 400.
 
 - [ ] **Step 6: Run focused auth tests**
 
 Run:
 
     cd backend/shop-server
+    ./mvnw -Dtest='TokenSessionTest,TokenPropertiesTest,OpaqueTokenServiceTest,InMemoryTokenStoreTest,RedisTokenStoreTest,RedisTokenStoreIntegrationTest' test
     ./mvnw -Dtest='AppAuthControllerTest,AppAuthServiceTest,AppUserServiceTest,OpaqueTokenServiceTest,InMemoryTokenStoreTest,RedisTokenStoreTest,RedisTokenStoreIntegrationTest,AuthenticatedPrincipalTest,PathTokenKindResolverTest,SecurityConfigTest' test
 
-Expected GREEN: BUILD SUCCESS, one successful concurrent refresh at most, and logout invalidates its access session.
+Expected GREEN: BUILD SUCCESS; one successful concurrent refresh at most; sessionId remains stable while canonical UUID generationId rotates; logout/refresh ordering cannot resurrect or incorrectly delete the current generation; family/generation markers outlive every token they protect; Redis token/index/marker PTTLs are in range; wrong-type indexes and null, non-string, whitespace, or malformed legacy generations fail closed without HTTP 500.
 
 - [ ] **Step 7: Review, fix, re-review, and commit**
 
-Review especially Redis atomicity, raw-token leakage, wrong-kind refresh, and accidental admin-token behavior changes. Re-run Step 6 after every fix.
+Review especially Redis mutation-before-TYPE errors, family-marker save CAS, stable-family logout/refresh linearization, stale-generation replay, Java/Lua canonical UUID equivalence, safe `cjson.null` and invalid legacy generation fallback, marker TTL >= max token TTL, bounded memory marker cleanup, raw-token leakage, wrong-kind/empty refresh responses, and accidental admin-token behavior changes. Re-run both Step 6 commands after every fix, then run the admin compatibility and full backend suites.
 
 Commit:
 
     git add backend/shop-server/src/main/java/org/muybaby/shopserver/auth backend/shop-server/src/main/java/org/muybaby/shopserver/user/AppUserController.java backend/shop-server/src/main/java/org/muybaby/shopserver/security backend/shop-server/src/test/java/org/muybaby/shopserver/auth backend/shop-server/src/test/java/org/muybaby/shopserver/security
+    git add backend/shop-server/src/main/java/org/muybaby/shopserver/auth/token/TokenSession.java backend/shop-server/src/main/java/org/muybaby/shopserver/auth/token/TokenProperties.java backend/shop-server/src/test/java/org/muybaby/shopserver/auth/token/TokenSessionTest.java backend/shop-server/src/test/java/org/muybaby/shopserver/auth/token/TokenPropertiesTest.java
+    git add docs/superpowers/plans/2026-07-09-shop-mini-program-commerce-fulfillment-implementation-plan.md docs/superpowers/specs/2026-07-09-shop-mini-program-commerce-fulfillment-design.md
     git commit -m "feat: add app session lifecycle"
 
 ---

@@ -1,13 +1,16 @@
 package org.muybaby.shopserver.auth.service;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.muybaby.shopserver.auth.dto.AppLoginRequest;
 import org.muybaby.shopserver.auth.dto.AppSessionResponse;
 import org.muybaby.shopserver.auth.dto.PhoneAuthorizeRequest;
 import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.auth.token.InMemoryTokenStore;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenPair;
+import org.muybaby.shopserver.auth.token.TokenProperties;
 import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
@@ -18,9 +21,18 @@ import org.muybaby.shopserver.wechat.WechatCodeSession;
 import org.muybaby.shopserver.wechat.WechatMiniProgramClient;
 import org.muybaby.shopserver.wechat.WechatPhoneInfo;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -101,6 +113,92 @@ class AppAuthServiceTest {
         assertThat(response.user().phoneNumberMasked()).isEqualTo("138****5678");
         verify(fixture.opaqueTokenService()).consumeRefreshToken("apr_old", TokenKind.APP);
         verify(fixture.appUserService()).requireEnabledUser(7L);
+    }
+
+    @Test
+    void refreshKeepsTheSessionFamilyAndRotatesTheGeneration() {
+        Fixture fixture = fixture();
+        TokenSession oldSession = new TokenSession(
+                "family-7",
+                "11111111-1111-4111-8111-111111111111",
+                TokenKind.APP,
+                7L,
+                "old-mask",
+                List.of(),
+                List.of(),
+                Instant.parse("2026-07-09T00:00:00Z")
+        );
+        when(fixture.opaqueTokenService().consumeRefreshToken("apr_old", TokenKind.APP)).thenReturn(oldSession);
+        when(fixture.appUserService().requireEnabledUser(7L))
+                .thenReturn(appUser(7L, "current-openid", null, false));
+        when(fixture.opaqueTokenService().issue(any(), any()))
+                .thenReturn(new TokenPair("app_new", "apr_new", 604800));
+
+        fixture.service().refresh(new RefreshTokenRequest("apr_old"));
+
+        ArgumentCaptor<TokenSession> sessionCaptor = ArgumentCaptor.forClass(TokenSession.class);
+        verify(fixture.opaqueTokenService()).issue(org.mockito.ArgumentMatchers.eq(TokenKind.APP), sessionCaptor.capture());
+        assertThat(sessionCaptor.getValue().sessionId()).isEqualTo("family-7");
+        assertThat(sessionCaptor.getValue().generationId())
+                .isNotBlank()
+                .isNotEqualTo("11111111-1111-4111-8111-111111111111")
+                .isNotEqualTo("family-7");
+    }
+
+    @Test
+    void logoutAfterRefreshConsumptionPreventsTokenResurrection() throws Exception {
+        Clock clock = Clock.fixed(Instant.parse("2026-07-09T00:00:00Z"), ZoneOffset.UTC);
+        InMemoryTokenStore tokenStore = new InMemoryTokenStore(clock);
+        OpaqueTokenService tokenService = new OpaqueTokenService(
+                tokenStore,
+                new TokenProperties(
+                        Duration.ofHours(2),
+                        Duration.ofDays(7),
+                        Duration.ofHours(1),
+                        Duration.ofDays(1)
+                )
+        );
+        AppUserService appUserService = mock(AppUserService.class);
+        AppAuthService service = new AppAuthService(
+                mock(WechatMiniProgramClient.class),
+                appUserService,
+                tokenService,
+                new AppUserProfileMapper()
+        );
+        TokenSession loginSession = TokenSession.app(7L, "openid", clock.instant());
+        TokenPair loginPair = tokenService.issue(TokenKind.APP, loginSession);
+        CountDownLatch refreshConsumed = new CountDownLatch(1);
+        CountDownLatch allowRefreshToIssue = new CountDownLatch(1);
+        when(appUserService.requireEnabledUser(7L)).thenAnswer(invocation -> {
+            refreshConsumed.countDown();
+            if (!allowRefreshToIssue.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting to resume refresh");
+            }
+            return appUser(7L, "current-openid", null, false);
+        });
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try {
+            Future<AppSessionResponse> refresh = executor.submit(
+                    () -> service.refresh(new RefreshTokenRequest(loginPair.refreshToken()))
+            );
+            assertThat(refreshConsumed.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(tokenStore.isGenerationRevoked(loginSession.generationId())).isTrue();
+
+            service.logout(appPrincipal(loginSession.sessionId(), 7L));
+            assertThat(tokenStore.isSessionRevoked(loginSession.sessionId())).isTrue();
+            allowRefreshToIssue.countDown();
+
+            assertThatThrownBy(() -> refresh.get(5, TimeUnit.SECONDS))
+                    .isInstanceOfSatisfying(ExecutionException.class, exception ->
+                            assertThat(exception.getCause()).isInstanceOfSatisfying(BusinessException.class, cause ->
+                                    assertThat(cause.errorCode()).isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED)));
+            assertThat(tokenService.lookupAccessToken(loginPair.accessToken(), TokenKind.APP)).isEmpty();
+        } finally {
+            allowRefreshToIssue.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
     }
 
     @Test

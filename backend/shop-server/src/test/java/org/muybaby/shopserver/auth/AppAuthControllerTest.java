@@ -173,6 +173,30 @@ class AppAuthControllerTest {
     }
 
     @Test
+    void blankNullAndMissingRefreshTokensAreAuthenticationRequired() throws Exception {
+        for (String requestBody : List.of(
+                "{}",
+                "{\"refreshToken\":null}",
+                "{\"refreshToken\":\"\"}",
+                "{\"refreshToken\":\"   \"}"
+        )) {
+            mockMvc.perform(post("/app/auth/refresh")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(requestBody))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value(100001));
+        }
+    }
+
+    @Test
+    void unparseableRefreshJsonRemainsBadRequest() throws Exception {
+        mockMvc.perform(post("/app/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void legacySessionWithoutFamilyIndexIsRevokedThroughMarker() throws Exception {
         AppSession login = login("legacy-session");
         TokenSession session = opaqueTokenService.lookupAccessToken(login.token(), TokenKind.APP).orElseThrow();

@@ -44,13 +44,13 @@ public class AppAuthService {
     public AppSessionResponse login(AppLoginRequest request) {
         WechatCodeSession codeSession = wechatClient.code2Session(request.code());
         AppUser user = appUserService.upsertByOpenid(codeSession);
-        return issueSession(user);
+        return issueSession(user, null);
     }
 
     public AppSessionResponse refresh(RefreshTokenRequest request) {
         TokenSession oldSession = opaqueTokenService.consumeRefreshToken(request.refreshToken(), TokenKind.APP);
         AppUser user = appUserService.requireEnabledUser(oldSession.subjectId());
-        return issueSession(user);
+        return issueSession(user, oldSession.sessionId());
     }
 
     public AppUserProfile authorizePhone(AuthenticatedPrincipal principal, PhoneAuthorizeRequest request) {
@@ -71,9 +71,11 @@ public class AppAuthService {
         opaqueTokenService.revokeSession(principal.sessionId(), TokenKind.APP);
     }
 
-    private AppSessionResponse issueSession(AppUser user) {
+    private AppSessionResponse issueSession(AppUser user, String sessionId) {
         AppUserProfile profile = profileMapper.from(user);
-        TokenSession tokenSession = TokenSession.app(user.id(), profile.openidMasked(), Instant.now());
+        TokenSession tokenSession = sessionId == null
+                ? TokenSession.app(user.id(), profile.openidMasked(), Instant.now())
+                : TokenSession.app(sessionId, user.id(), profile.openidMasked(), Instant.now());
         TokenPair tokenPair = opaqueTokenService.issue(TokenKind.APP, tokenSession);
         return new AppSessionResponse(
                 tokenPair.accessToken(),

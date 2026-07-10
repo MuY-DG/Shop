@@ -37,10 +37,13 @@ public class OpaqueTokenService {
         Duration refreshTtl = refreshTtl(kind);
         String accessToken = kind.accessPrefix() + randomTokenBody();
         String refreshToken = kind.refreshPrefix() + randomTokenBody();
-        tokenStore.saveFamily(session.sessionId(), List.of(
+        boolean saved = tokenStore.saveFamily(session.sessionId(), List.of(
                 new TokenGrant(key(kind, "access", accessToken), session, accessTtl),
                 new TokenGrant(key(kind, "refresh", refreshToken), session, refreshTtl)
         ));
+        if (!saved) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
         return new TokenPair(accessToken, refreshToken, accessTtl.toSeconds());
     }
 
@@ -50,7 +53,8 @@ public class OpaqueTokenService {
         }
         return tokenStore.find(key(requiredKind, "access", token))
                 .filter(session -> session.kind() == requiredKind)
-                .filter(session -> !tokenStore.isSessionRevoked(session.sessionId()));
+                .filter(session -> !tokenStore.isSessionRevoked(session.sessionId()))
+                .filter(session -> !tokenStore.isGenerationRevoked(session.generationId()));
     }
 
     public TokenSession consumeRefreshToken(String token, TokenKind requiredKind) {
@@ -59,7 +63,7 @@ public class OpaqueTokenService {
         }
         return tokenStore.consumeRefreshAndRevokeFamily(
                         key(requiredKind, "refresh", token),
-                        refreshTtl(requiredKind)
+                        revocationTtl(requiredKind)
                 )
                 .filter(session -> session.kind() == requiredKind)
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
@@ -67,7 +71,7 @@ public class OpaqueTokenService {
 
     public void revokeSession(String sessionId, TokenKind kind) {
         if (sessionId != null && !sessionId.isBlank()) {
-            tokenStore.revokeSession(sessionId, refreshTtl(kind));
+            tokenStore.revokeSession(sessionId, revocationTtl(kind));
         }
     }
 
@@ -77,6 +81,12 @@ public class OpaqueTokenService {
 
     private Duration refreshTtl(TokenKind kind) {
         return kind == TokenKind.ADMIN ? properties.adminRefreshTtl() : properties.appRefreshTtl();
+    }
+
+    private Duration revocationTtl(TokenKind kind) {
+        Duration accessTtl = accessTtl(kind);
+        Duration refreshTtl = refreshTtl(kind);
+        return accessTtl.compareTo(refreshTtl) >= 0 ? accessTtl : refreshTtl;
     }
 
     private String key(TokenKind kind, String tokenType, String token) {

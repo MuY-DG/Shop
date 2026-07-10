@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.auth.token;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.mockito.invocation.Invocation;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -22,6 +23,7 @@ import static org.mockito.Mockito.when;
 
 class RedisTokenStoreTest {
 
+    private static final String GENERATION_ID = "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF";
     private final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
 
     @Test
@@ -44,6 +46,26 @@ class RedisTokenStoreTest {
         assertThat(actualSession.issuedAt()).isEqualTo(Instant.parse("2026-07-06T12:00:00Z"));
         assertThat(actualSession.roles()).containsExactly("R_SUPER");
         assertThat(actualSession.permissions()).containsExactly("system:user:create");
+    }
+
+    @Test
+    void legacyJsonWithMissingOrBlankGenerationFallsBackToSessionId() throws Exception {
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        @SuppressWarnings("unchecked")
+        ValueOperations<String, String> valueOperations = mock(ValueOperations.class);
+        RedisTokenStore store = new RedisTokenStore(redisTemplate, objectMapper);
+        ObjectNode missingGeneration = objectMapper.valueToTree(adminSession());
+        missingGeneration.remove("generationId");
+        ObjectNode blankGeneration = objectMapper.valueToTree(adminSession());
+        blankGeneration.put("generationId", "   ");
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("missing-generation"))
+                .thenReturn(objectMapper.writeValueAsString(missingGeneration));
+        when(valueOperations.get("blank-generation"))
+                .thenReturn(objectMapper.writeValueAsString(blankGeneration));
+
+        assertThat(store.find("missing-generation").orElseThrow().generationId()).isEqualTo("session-1");
+        assertThat(store.find("blank-generation").orElseThrow().generationId()).isEqualTo("session-1");
     }
 
     @Test
@@ -72,6 +94,7 @@ class RedisTokenStoreTest {
 
         assertThat(keys).containsExactly(
                 "shop:auth:session:" + session.sessionId(),
+                "shop:auth:revoked:" + session.sessionId(),
                 accessKey,
                 refreshKey
         );
@@ -90,6 +113,7 @@ class RedisTokenStoreTest {
         when(redisTemplate.execute(
                 org.mockito.ArgumentMatchers.<RedisScript<String>>any(),
                 org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any()
@@ -111,6 +135,7 @@ class RedisTokenStoreTest {
     private TokenSession adminSession() {
         return new TokenSession(
                 "session-1",
+                GENERATION_ID,
                 TokenKind.ADMIN,
                 1L,
                 "Super",

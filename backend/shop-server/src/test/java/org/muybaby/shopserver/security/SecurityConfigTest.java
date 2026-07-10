@@ -90,8 +90,8 @@ class SecurityConfigTest {
         mockMvc.perform(post("/app/auth/refresh")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code", is(100400)));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code", is(100001)));
 
         mockMvc.perform(post("/app/auth/refresh/extra"))
                 .andExpect(status().isUnauthorized());
