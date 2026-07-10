@@ -1,6 +1,8 @@
 package org.muybaby.shopserver.auth.token;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.muybaby.shopserver.common.error.BusinessException;
+import org.muybaby.shopserver.common.error.ErrorCode;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -9,6 +11,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -34,8 +37,10 @@ public class OpaqueTokenService {
         Duration refreshTtl = refreshTtl(kind);
         String accessToken = kind.accessPrefix() + randomTokenBody();
         String refreshToken = kind.refreshPrefix() + randomTokenBody();
-        tokenStore.save(key(kind, "access", accessToken), session, accessTtl);
-        tokenStore.save(key(kind, "refresh", refreshToken), session, refreshTtl);
+        tokenStore.saveFamily(session.sessionId(), List.of(
+                new TokenGrant(key(kind, "access", accessToken), session, accessTtl),
+                new TokenGrant(key(kind, "refresh", refreshToken), session, refreshTtl)
+        ));
         return new TokenPair(accessToken, refreshToken, accessTtl.toSeconds());
     }
 
@@ -44,7 +49,26 @@ public class OpaqueTokenService {
             return Optional.empty();
         }
         return tokenStore.find(key(requiredKind, "access", token))
-                .filter(session -> session.kind() == requiredKind);
+                .filter(session -> session.kind() == requiredKind)
+                .filter(session -> !tokenStore.isSessionRevoked(session.sessionId()));
+    }
+
+    public TokenSession consumeRefreshToken(String token, TokenKind requiredKind) {
+        if (token == null || !token.startsWith(requiredKind.refreshPrefix())) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        return tokenStore.consumeRefreshAndRevokeFamily(
+                        key(requiredKind, "refresh", token),
+                        refreshTtl(requiredKind)
+                )
+                .filter(session -> session.kind() == requiredKind)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+    }
+
+    public void revokeSession(String sessionId, TokenKind kind) {
+        if (sessionId != null && !sessionId.isBlank()) {
+            tokenStore.revokeSession(sessionId, refreshTtl(kind));
+        }
     }
 
     private Duration accessTtl(TokenKind kind) {

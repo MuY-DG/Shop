@@ -2,7 +2,9 @@ package org.muybaby.shopserver.security;
 
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.auth.token.TokenSession;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -10,6 +12,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 class AuthenticatedPrincipalTest {
+
+    @Test
+    void tokenAuthenticationPropagatesSessionIdToPrincipal() {
+        TokenSession session = new TokenSession(
+                "session-123",
+                TokenKind.APP,
+                7L,
+                "openid",
+                List.of(),
+                List.of(),
+                Instant.parse("2026-07-09T00:00:00Z")
+        );
+
+        AuthenticatedPrincipal principal = new TokenAuthentication(session).getPrincipal();
+
+        assertThat(principal.sessionId()).isEqualTo("session-123");
+    }
 
     @Test
     void normalizesNullRolesAndPermissions() {

@@ -1,7 +1,14 @@
 package org.muybaby.shopserver.auth;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.auth.token.InMemoryTokenStore;
+import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.auth.token.TokenGrant;
+import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.auth.token.TokenPair;
+import org.muybaby.shopserver.auth.token.TokenSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -9,9 +16,23 @@ import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -27,6 +48,12 @@ class AppAuthControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private OpaqueTokenService opaqueTokenService;
+
+    @Autowired
+    private InMemoryTokenStore tokenStore;
+
     @Test
     void appLoginExchangesCodeAndIssuesAppToken() throws Exception {
         mockMvc.perform(post("/app/auth/login")
@@ -39,30 +66,135 @@ class AppAuthControllerTest {
                 .andExpect(jsonPath("$.data.refreshToken", startsWith("apr_")))
                 .andExpect(jsonPath("$.data.expiresIn").value(604800))
                 .andExpect(jsonPath("$.data.user.openidMasked").value("test****code"))
-                .andExpect(jsonPath("$.data.user.phoneAuthorized").value(false));
+                .andExpect(jsonPath("$.data.user.phoneAuthorized").value(false))
+                .andExpect(jsonPath("$.data.user.phoneNumberMasked").doesNotExist());
     }
 
     @Test
-    void phoneAuthorizationRequiresAppTokenAndStoresMaskedPhone() throws Exception {
-        String token = appLoginAndExtractToken();
+    void loginMeAndPhoneReturnTheSameProfileShape() throws Exception {
+        AppSession login = login("profile-consistency");
+
+        mockMvc.perform(get("/app/users/me")
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(login.userId()))
+                .andExpect(jsonPath("$.data.openidMasked").value("test****ency"))
+                .andExpect(jsonPath("$.data.phoneAuthorized").value(false))
+                .andExpect(jsonPath("$.data.phoneNumberMasked").doesNotExist());
 
         mockMvc.perform(post("/app/auth/phone")
-                        .header("Authorization", "Bearer " + token)
+                        .header("Authorization", bearer(login.token()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"code":"test-phone-code"}
-                                """))
+                        .content("{\"code\":\"test-phone-code\"}"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(login.userId()))
+                .andExpect(jsonPath("$.data.openidMasked").value("test****ency"))
                 .andExpect(jsonPath("$.data.phoneAuthorized").value(true))
-                .andExpect(jsonPath("$.data.phoneNumberMasked").value("138****5678"));
+                .andExpect(jsonPath("$.data.phoneNumberMasked").value("138****5678"))
+                .andExpect(content().string(not(containsString("13812345678"))));
+    }
+
+    @Test
+    void refreshRotatesOnceAndLogoutRevokesTheNewSession() throws Exception {
+        AppSession login = login("refresh-once");
+        MvcResult refreshed = mockMvc.perform(post("/app/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", login.refreshToken()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token", startsWith("app_")))
+                .andExpect(jsonPath("$.data.refreshToken", startsWith("apr_")))
+                .andExpect(jsonPath("$.data.user.userId").value(login.userId()))
+                .andReturn();
+
+        mockMvc.perform(post("/app/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", login.refreshToken()))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(100001));
+
+        String newAccess = read(refreshed, "/data/token").asText();
+        mockMvc.perform(post("/app/auth/logout")
+                        .header("Authorization", bearer(newAccess)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/app/users/me")
+                        .header("Authorization", bearer(newAccess)))
+                .andExpect(status().isUnauthorized());
+
+        String newRefresh = read(refreshed, "/data/refreshToken").asText();
+        mockMvc.perform(post("/app/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", newRefresh))))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void phoneAuthorizationPersistsIntoLaterLoginAndMeWithoutLeakingFullNumber() throws Exception {
+        AppSession firstLogin = login("persistent-phone");
+        mockMvc.perform(post("/app/auth/phone")
+                        .header("Authorization", bearer(firstLogin.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"test-phone-code\"}"))
+                .andExpect(status().isOk());
+
+        MvcResult laterLoginResult = mockMvc.perform(post("/app/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"persistent-phone\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.userId").value(firstLogin.userId()))
+                .andExpect(jsonPath("$.data.user.phoneAuthorized").value(true))
+                .andExpect(jsonPath("$.data.user.phoneNumberMasked").value("138****5678"))
+                .andExpect(content().string(not(containsString("13812345678"))))
+                .andReturn();
+
+        String laterAccess = read(laterLoginResult, "/data/token").asText();
+        mockMvc.perform(get("/app/users/me")
+                        .header("Authorization", bearer(laterAccess)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(firstLogin.userId()))
+                .andExpect(jsonPath("$.data.phoneAuthorized").value(true))
+                .andExpect(jsonPath("$.data.phoneNumberMasked").value("138****5678"))
+                .andExpect(content().string(not(containsString("13812345678"))));
+    }
+
+    @Test
+    void refreshRejectsExpiredWrongKindAndMalformedTokensAsAuthenticationRequired() throws Exception {
+        String expiredToken = "apr_expired-token";
+        TokenSession expiredSession = TokenSession.app(99L, "expired", Instant.now());
+        tokenStore.saveFamily(expiredSession.sessionId(), List.of(new TokenGrant(
+                tokenKey(TokenKind.APP, "refresh", expiredToken),
+                expiredSession,
+                Duration.ZERO
+        )));
+
+        assertRefreshUnauthorized(expiredToken);
+        assertRefreshUnauthorized(adminLoginAndExtractRefreshToken());
+        assertRefreshUnauthorized("not-a-refresh-token");
+    }
+
+    @Test
+    void legacySessionWithoutFamilyIndexIsRevokedThroughMarker() throws Exception {
+        AppSession login = login("legacy-session");
+        TokenSession session = opaqueTokenService.lookupAccessToken(login.token(), TokenKind.APP).orElseThrow();
+        removeSessionIndex(session.sessionId());
+
+        mockMvc.perform(post("/app/auth/logout")
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/app/users/me")
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isUnauthorized());
+        assertRefreshUnauthorized(login.refreshToken());
+        org.assertj.core.api.Assertions.assertThat(tokenStore.isSessionRevoked(session.sessionId())).isTrue();
     }
 
     @Test
     void adminTokenCannotAuthorizeAppPhoneApi() throws Exception {
-        String adminToken = adminLoginAndExtractToken();
+        String adminToken = adminLoginAndExtractToken("token");
 
         mockMvc.perform(post("/app/auth/phone")
-                        .header("Authorization", "Bearer " + adminToken)
+                        .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"code":"test-phone-code"}
@@ -70,29 +202,62 @@ class AppAuthControllerTest {
                 .andExpect(status().isUnauthorized());
     }
 
-    private String appLoginAndExtractToken() throws Exception {
-        String response = mockMvc.perform(post("/app/auth/login")
+    private AppSession login(String code) throws Exception {
+        MvcResult result = mockMvc.perform(post("/app/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"code":"test-login-code"}
-                                """))
+                        .content(objectMapper.writeValueAsString(Map.of("code", code))))
                 .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        return objectMapper.readTree(response).path("data").path("token").asText();
+                .andReturn();
+        return new AppSession(
+                read(result, "/data/token").asText(),
+                read(result, "/data/refreshToken").asText(),
+                read(result, "/data/user/userId").asLong()
+        );
     }
 
-    private String adminLoginAndExtractToken() throws Exception {
-        String response = mockMvc.perform(post("/admin/auth/login")
+    private void assertRefreshUnauthorized(String refreshToken) throws Exception {
+        mockMvc.perform(post("/app/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("refreshToken", refreshToken))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(100001));
+    }
+
+    private String adminLoginAndExtractRefreshToken() throws Exception {
+        return adminLoginAndExtractToken("refreshToken");
+    }
+
+    private String adminLoginAndExtractToken(String field) throws Exception {
+        MvcResult result = mockMvc.perform(post("/admin/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"userName":"Super","password":"123456"}
                                 """))
                 .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        return objectMapper.readTree(response).path("data").path("token").asText();
+                .andReturn();
+        return read(result, "/data/" + field).asText();
+    }
+
+    private JsonNode read(MvcResult result, String pointer) throws Exception {
+        return objectMapper.readTree(result.getResponse().getContentAsString()).at(pointer);
+    }
+
+    private String bearer(String token) {
+        return "Bearer " + token;
+    }
+
+    private String tokenKey(TokenKind kind, String type, String token) throws Exception {
+        byte[] digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+        return "shop:auth:" + kind.namespace() + ":" + type + ":" + HexFormat.of().formatHex(digest);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void removeSessionIndex(String sessionId) throws Exception {
+        Field field = InMemoryTokenStore.class.getDeclaredField("sessionKeys");
+        field.setAccessible(true);
+        ((Map<String, ?>) field.get(tokenStore)).remove(sessionId);
+    }
+
+    private record AppSession(String token, String refreshToken, long userId) {
     }
 }

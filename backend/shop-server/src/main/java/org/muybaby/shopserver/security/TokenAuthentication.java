@@ -16,6 +16,7 @@ public class TokenAuthentication extends AbstractAuthenticationToken {
     public TokenAuthentication(TokenSession session) {
         super(authorities(session));
         this.principal = new AuthenticatedPrincipal(
+                session.sessionId(),
                 session.kind(),
                 session.subjectId(),
                 session.subjectName(),

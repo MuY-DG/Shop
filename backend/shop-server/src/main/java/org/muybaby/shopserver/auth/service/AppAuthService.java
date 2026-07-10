@@ -1,10 +1,10 @@
 package org.muybaby.shopserver.auth.service;
 
 import org.muybaby.shopserver.auth.dto.AppLoginRequest;
-import org.muybaby.shopserver.auth.dto.AppLoginResponse;
-import org.muybaby.shopserver.auth.dto.AppUserSummary;
+import org.muybaby.shopserver.auth.dto.AppSessionResponse;
+import org.muybaby.shopserver.auth.dto.AppUserProfile;
 import org.muybaby.shopserver.auth.dto.PhoneAuthorizeRequest;
-import org.muybaby.shopserver.auth.dto.PhoneAuthorizeResponse;
+import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenPair;
@@ -27,61 +27,65 @@ public class AppAuthService {
     private final WechatMiniProgramClient wechatClient;
     private final AppUserService appUserService;
     private final OpaqueTokenService opaqueTokenService;
+    private final AppUserProfileMapper profileMapper;
 
     public AppAuthService(
             WechatMiniProgramClient wechatClient,
             AppUserService appUserService,
-            OpaqueTokenService opaqueTokenService
+            OpaqueTokenService opaqueTokenService,
+            AppUserProfileMapper profileMapper
     ) {
         this.wechatClient = wechatClient;
         this.appUserService = appUserService;
         this.opaqueTokenService = opaqueTokenService;
+        this.profileMapper = profileMapper;
     }
 
-    public AppLoginResponse login(AppLoginRequest request) {
-        WechatCodeSession session = wechatClient.code2Session(request.code());
-        AppUser user = appUserService.upsertByOpenid(session);
-        String openidMasked = maskOpenid(user.openid());
-        TokenSession tokenSession = TokenSession.app(user.id(), openidMasked, Instant.now());
-        TokenPair tokenPair = opaqueTokenService.issue(TokenKind.APP, tokenSession);
-
-        return new AppLoginResponse(
-                tokenPair.accessToken(),
-                tokenPair.refreshToken(),
-                tokenPair.expiresIn(),
-                new AppUserSummary(user.id(), openidMasked, Boolean.TRUE.equals(user.phoneAuthorized()))
-        );
+    public AppSessionResponse login(AppLoginRequest request) {
+        WechatCodeSession codeSession = wechatClient.code2Session(request.code());
+        AppUser user = appUserService.upsertByOpenid(codeSession);
+        return issueSession(user);
     }
 
-    public PhoneAuthorizeResponse authorizePhone(AuthenticatedPrincipal principal, PhoneAuthorizeRequest request) {
-        if (principal == null || principal.kind() != TokenKind.APP) {
-            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
-        }
+    public AppSessionResponse refresh(RefreshTokenRequest request) {
+        TokenSession oldSession = opaqueTokenService.consumeRefreshToken(request.refreshToken(), TokenKind.APP);
+        AppUser user = appUserService.requireEnabledUser(oldSession.subjectId());
+        return issueSession(user);
+    }
 
+    public AppUserProfile authorizePhone(AuthenticatedPrincipal principal, PhoneAuthorizeRequest request) {
+        requireAppPrincipal(principal);
         appUserService.requireEnabledUser(principal.subjectId());
         WechatPhoneInfo phoneInfo = wechatClient.getPhoneNumber(request.code());
         AppUser user = appUserService.markPhoneAuthorized(principal.subjectId(), phoneInfo);
-        return new PhoneAuthorizeResponse(Boolean.TRUE.equals(user.phoneAuthorized()), maskPhone(user.phoneNumber()));
+        return profileMapper.from(user);
     }
 
-    private String maskOpenid(String openid) {
-        return maskValue(openid, 4, 4);
+    public AppUserProfile me(AuthenticatedPrincipal principal) {
+        requireAppPrincipal(principal);
+        return profileMapper.from(appUserService.requireEnabledUser(principal.subjectId()));
     }
 
-    private String maskPhone(String phoneNumber) {
-        return maskValue(phoneNumber, 3, 4);
+    public void logout(AuthenticatedPrincipal principal) {
+        requireAppPrincipal(principal);
+        opaqueTokenService.revokeSession(principal.sessionId(), TokenKind.APP);
     }
 
-    private String maskValue(String value, int preferredPrefixLength, int preferredSuffixLength) {
-        if (value == null) {
-            return null;
+    private AppSessionResponse issueSession(AppUser user) {
+        AppUserProfile profile = profileMapper.from(user);
+        TokenSession tokenSession = TokenSession.app(user.id(), profile.openidMasked(), Instant.now());
+        TokenPair tokenPair = opaqueTokenService.issue(TokenKind.APP, tokenSession);
+        return new AppSessionResponse(
+                tokenPair.accessToken(),
+                tokenPair.refreshToken(),
+                tokenPair.expiresIn(),
+                profile
+        );
+    }
+
+    private void requireAppPrincipal(AuthenticatedPrincipal principal) {
+        if (principal == null || principal.kind() != TokenKind.APP) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
-        if (value.length() <= 2) {
-            return "****";
-        }
-        if (value.length() <= preferredPrefixLength + preferredSuffixLength) {
-            return value.substring(0, 1) + "****" + value.substring(value.length() - 1);
-        }
-        return value.substring(0, preferredPrefixLength) + "****" + value.substring(value.length() - preferredSuffixLength);
     }
 }

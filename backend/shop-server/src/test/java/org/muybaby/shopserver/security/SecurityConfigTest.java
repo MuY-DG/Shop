@@ -9,6 +9,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.test.context.ActiveProfiles;
@@ -85,6 +86,22 @@ class SecurityConfigTest {
     }
 
     @Test
+    void exactlyTheAppRefreshEndpointIsPublicWhileLogoutMeAndRefreshSubpathsStayProtected() throws Exception {
+        mockMvc.perform(post("/app/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code", is(100400)));
+
+        mockMvc.perform(post("/app/auth/refresh/extra"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/app/auth/logout"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/app/users/me"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void appProductReadApisArePublicButWriteApisStillRequireAuthentication() throws Exception {
         assertNotAuthenticationBlocked("/app/product/categories");
         assertNotAuthenticationBlocked("/app/product/spus");
@@ -148,6 +165,7 @@ class SecurityConfigTest {
     void publicEndpointsAreNotBlockedByAuthentication() throws Exception {
         assertNotAuthenticationBlocked("/admin/auth/login");
         assertNotAuthenticationBlocked("/app/auth/login");
+        assertNotAuthenticationBlocked("/app/auth/refresh");
         assertNotAuthenticationBlocked("/files/public/health-probe.png");
         assertNotAuthenticationBlocked("/wxpay/notify");
         assertNotAuthenticationBlocked("/wechat/events");
