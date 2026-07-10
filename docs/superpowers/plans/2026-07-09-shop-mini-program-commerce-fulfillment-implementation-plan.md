@@ -878,13 +878,17 @@ Commit:
 **Goal:** Add the minimum current-user address book with transactional default invariants and an ownership-safe lookup that checkout can reuse.
 
 **Files:**
+- Modify: backend/shop-server/src/main/java/org/muybaby/shopserver/user/mapper/AppUserMapper.java
 - Create: backend/shop-server/src/main/java/org/muybaby/shopserver/user/address/AppAddressController.java
 - Create: backend/shop-server/src/main/java/org/muybaby/shopserver/user/address/dto/AddressUpsertRequest.java
 - Create: backend/shop-server/src/main/java/org/muybaby/shopserver/user/address/dto/AddressResponse.java
+- Create: backend/shop-server/src/main/java/org/muybaby/shopserver/user/address/entity/UserAddress.java
+- Create: backend/shop-server/src/main/java/org/muybaby/shopserver/user/address/mapper/UserAddressMapper.java
 - Create: backend/shop-server/src/main/java/org/muybaby/shopserver/user/address/service/AppAddressService.java
 - Create: backend/shop-server/src/main/java/org/muybaby/shopserver/user/address/service/OwnedAddress.java
 - Create: backend/shop-server/src/test/java/org/muybaby/shopserver/user/address/AppAddressControllerTest.java
 - Create: backend/shop-server/src/test/java/org/muybaby/shopserver/user/address/service/AppAddressServiceTest.java
+- Create: backend/shop-server/src/test/java/org/muybaby/shopserver/user/address/service/AppAddressServiceMySqlConcurrencyTest.java
 
 **Interfaces:**
 - GET /app/addresses returns the current user's addresses, default first and then newest first.
@@ -984,7 +988,7 @@ public AddressResponse setDefault(long userId, long addressId);
 public OwnedAddress requireOwnedForUpdate(long userId, long addressId);
 ~~~
 
-For create/update/delete/setDefault, first lock the owning app_user row, then lock that user's address rows before counting or switching defaults. The app_user lock serializes two concurrent first-address creates even when no address row exists yet. First address is default even when isDefault=false. Clear other defaults before setting the selected row. When deleting a default, promote the oldest remaining row ordered by created_at and id. Use the existing not-found/error conventions and do not reveal whether another user's id exists.
+For create/update/delete/setDefault/requireOwnedForUpdate, use one fixed lock order: call AppUserMapper.selectByIdForUpdate first, then UserAddressMapper.selectByUserIdForUpdate ordered by created_at and id, before counting, selecting, or switching defaults. The app_user lock serializes two concurrent first-address creates even when no address row exists yet. First address is default even when isDefault=false. Clear other defaults before setting the selected row. When deleting a default, promote the oldest remaining row ordered by created_at and id. Use the existing not-found/error conventions and do not reveal whether another user's id exists.
 
 - [ ] **Step 4: Wire the current-user controller**
 
@@ -996,8 +1000,9 @@ Run:
 
     cd backend/shop-server
     ./mvnw -Dtest='AppAddressControllerTest,AppAddressServiceTest,SecurityConfigTest' test
+    ./mvnw -Dtest='AppAddressServiceMySqlConcurrencyTest' test
 
-Expected GREEN: all address ownership/default cases pass with zero failures.
+Expected GREEN: all address ownership/default cases pass with zero failures, including barrier-controlled races on a real MySQL 8 Testcontainers database.
 
 - [ ] **Step 6: Review, fix, re-review, and commit**
 
@@ -1005,7 +1010,7 @@ Spec review must confirm every endpoint and default invariant. Code review must 
 
 Commit:
 
-    git add backend/shop-server/src/main/java/org/muybaby/shopserver/user/address backend/shop-server/src/test/java/org/muybaby/shopserver/user/address
+    git add docs/superpowers/plans/2026-07-09-shop-mini-program-commerce-fulfillment-implementation-plan.md backend/shop-server/src/main/java/org/muybaby/shopserver/user/mapper/AppUserMapper.java backend/shop-server/src/main/java/org/muybaby/shopserver/user/address backend/shop-server/src/test/java/org/muybaby/shopserver/user/address
     git commit -m "feat: add app address book"
 
 ---
