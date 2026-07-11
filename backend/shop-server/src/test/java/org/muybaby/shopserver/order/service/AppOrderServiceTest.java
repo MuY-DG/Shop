@@ -8,6 +8,9 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.logistics.LogisticsType;
+import org.muybaby.shopserver.logistics.WechatProviderMode;
+import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.order.CheckoutSource;
 import org.muybaby.shopserver.order.OrderStatusGroup;
 import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
@@ -163,7 +166,14 @@ class AppOrderServiceTest {
         assertThat(detail.refundingAt()).isEqualTo(refundingAt);
         assertThat(detail.refundedAt()).isEqualTo(refundedAt);
         assertThat(detail.shipment()).isNotNull();
+        assertThat(detail.shipment().logisticsType()).isEqualTo(LogisticsType.EXPRESS);
+        assertThat(detail.shipment().itemDesc()).isEqualTo("Persisted shipment item");
+        assertThat(detail.shipment().expressCompanyCode()).isEqualTo("SF");
         assertThat(detail.shipment().trackingNo()).isEqualTo("TRACK-" + orderId);
+        assertThat(detail.shipment().wechatProviderMode()).isEqualTo(WechatProviderMode.REAL);
+        assertThat(detail.shipment().wechatUploadStatus()).isEqualTo(WechatShippingUploadStatus.UPLOADED);
+        assertThat(detail.shipment().wechatUploadMessage())
+                .isEqualTo("WeChat has accepted the shipping information");
         assertThat(detail.latestAfterSale()).isNotNull();
         assertThat(detail.latestAfterSale().id()).isEqualTo(latestAfterSale).isNotEqualTo(olderAfterSale);
     }
@@ -599,11 +609,15 @@ class AppOrderServiceTest {
     private void insertShipment(long orderId, LocalDateTime shippedAt) {
         jdbcClient.sql("""
                         insert into order_shipment
-                            (order_id, express_company_name, tracking_no, shipment_note,
-                             status, wechat_upload_status, shipped_at)
+                            (order_id, logistics_type, delivery_mode, item_desc,
+                             express_company_code, express_company_name, tracking_no, shipment_note,
+                             status, wechat_provider_mode, wechat_upload_status,
+                             upload_time, wechat_uploaded_at, shipped_at)
                         values
-                            (:orderId, 'Test Express', :trackingNo, 'left warehouse',
-                             'SHIPPED', 'SUCCESS', :shippedAt)
+                            (:orderId, 1, 1, 'Persisted shipment item',
+                             'SF', 'Test Express', :trackingNo, 'left warehouse',
+                             'SHIPPED', 'REAL', 'UPLOADED',
+                             '2026-07-09T10:00:00Z', :shippedAt, :shippedAt)
                         """)
                 .param("orderId", orderId)
                 .param("trackingNo", "TRACK-" + orderId)

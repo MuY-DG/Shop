@@ -4,7 +4,12 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.logistics.DeliveryMode;
+import org.muybaby.shopserver.logistics.LogisticsType;
+import org.muybaby.shopserver.logistics.WechatProviderMode;
+import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
+import org.muybaby.shopserver.logistics.service.WechatShippingUploadRecovery;
 import org.muybaby.shopserver.order.dto.AdminOrderQueryRequest;
 import org.muybaby.shopserver.order.dto.OrderDetailResponse;
 import org.muybaby.shopserver.order.dto.OrderItemResponse;
@@ -27,10 +32,16 @@ public class AdminOrderService {
 
     private final JdbcClient jdbcClient;
     private final OrderCloseService orderCloseService;
+    private final WechatShippingUploadRecovery shippingUploadRecovery;
 
-    public AdminOrderService(JdbcClient jdbcClient, OrderCloseService orderCloseService) {
+    public AdminOrderService(
+            JdbcClient jdbcClient,
+            OrderCloseService orderCloseService,
+            WechatShippingUploadRecovery shippingUploadRecovery
+    ) {
         this.jdbcClient = jdbcClient;
         this.orderCloseService = orderCloseService;
+        this.shippingUploadRecovery = shippingUploadRecovery;
     }
 
     public PageResult<OrderSummaryResponse> page(AuthenticatedPrincipal principal, AdminOrderQueryRequest query) {
@@ -95,6 +106,7 @@ public class AdminOrderService {
 
     public OrderDetailResponse detail(AuthenticatedPrincipal principal, Long orderId) {
         requireAdminUser(principal);
+        shippingUploadRecovery.reconcileOrder(orderId);
         OrderDetailHeader header = jdbcClient.sql("""
                         select id as order_id,
                                order_no,
@@ -302,16 +314,23 @@ public class AdminOrderService {
         return jdbcClient.sql("""
                         select id as shipment_id,
                                order_id,
-                               express_company_name as express_company,
+                               logistics_type,
+                               delivery_mode,
+                               item_desc,
+                               express_company_code,
+                               express_company_name,
                                tracking_no,
                                shipment_note,
-                               status,
+                               status as local_shipment_status,
+                               wechat_provider_mode,
                                wechat_upload_status,
                                wechat_error_code,
                                wechat_error_message,
                                retry_count,
                                shipped_at,
-                               wechat_uploaded_at
+                               upload_time,
+                               wechat_uploaded_at,
+                               last_attempt_at
                         from order_shipment
                         where order_id = :orderId
                         """)
@@ -325,17 +344,44 @@ public class AdminOrderService {
         return new OrderShipmentResponse(
                 rs.getLong("shipment_id"),
                 rs.getLong("order_id"),
-                rs.getString("express_company"),
+                LogisticsType.fromValue(rs.getInt("logistics_type")),
+                DeliveryMode.fromValue(rs.getInt("delivery_mode")),
+                rs.getString("item_desc"),
+                rs.getString("express_company_code"),
+                rs.getString("express_company_name"),
                 rs.getString("tracking_no"),
-                rs.getString("shipment_note"),
-                rs.getString("status"),
-                rs.getString("wechat_upload_status"),
-                rs.getString("wechat_error_code"),
-                rs.getString("wechat_error_message"),
+                blankToNull(rs.getString("shipment_note")),
+                rs.getString("local_shipment_status"),
+                providerMode(rs.getString("wechat_provider_mode")),
+                uploadStatus(rs.getString("wechat_upload_status")),
+                blankToNull(rs.getString("wechat_error_code")),
+                blankToNull(rs.getString("wechat_error_message")),
                 rs.getInt("retry_count"),
                 rs.getObject("shipped_at", LocalDateTime.class),
-                rs.getObject("wechat_uploaded_at", LocalDateTime.class)
+                rs.getString("upload_time"),
+                rs.getObject("wechat_uploaded_at", LocalDateTime.class),
+                rs.getObject("last_attempt_at", LocalDateTime.class)
         );
+    }
+
+    private WechatProviderMode providerMode(String value) {
+        try {
+            return WechatProviderMode.valueOf(value);
+        } catch (RuntimeException ex) {
+            return WechatProviderMode.UNKNOWN;
+        }
+    }
+
+    private WechatShippingUploadStatus uploadStatus(String value) {
+        try {
+            return WechatShippingUploadStatus.valueOf(value);
+        } catch (RuntimeException ex) {
+            return WechatShippingUploadStatus.UNKNOWN;
+        }
+    }
+
+    private String blankToNull(String value) {
+        return StringUtils.hasText(value) ? value : null;
     }
 
     private record OrderDetailHeader(

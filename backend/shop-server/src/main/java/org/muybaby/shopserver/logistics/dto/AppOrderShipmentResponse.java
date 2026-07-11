@@ -7,17 +7,16 @@ import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 
 import java.time.LocalDateTime;
 
-public record OrderShipmentResponse(
+public record AppOrderShipmentResponse(
         Long shipmentId, Long orderId,
         LogisticsType logisticsType, DeliveryMode deliveryMode,
         String itemDesc,
         String expressCompanyCode, String expressCompanyName, String trackingNo,
-        String shipmentNote, String localShipmentStatus,
+        String localShipmentStatus,
         WechatProviderMode wechatProviderMode,
         WechatShippingUploadStatus wechatUploadStatus,
-        String wechatErrorCode, String wechatErrorMessage,
-        int retryCount,
+        String wechatUploadMessage,
         LocalDateTime shippedAt, String uploadTime,
-        LocalDateTime wechatUploadedAt, LocalDateTime lastAttemptAt
+        LocalDateTime wechatUploadedAt
 ) {
 }

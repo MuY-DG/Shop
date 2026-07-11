@@ -73,6 +73,11 @@ class AdminShipmentControllerTest {
         jdbcClient.sql("delete from user_coupon").update();
         jdbcClient.sql("delete from coupon_claim_record").update();
         jdbcClient.sql("delete from coupon_template").update();
+        jdbcClient.sql("delete from wechat_delivery_company").update();
+        jdbcClient.sql("""
+                        insert into wechat_delivery_company(delivery_id, delivery_name, enabled, synced_at)
+                        values ('SF', '顺丰速运', true, timestamp '2026-07-08 09:00:00')
+                        """).update();
         shippingProperties.setUploadEnabled(false);
         wechatShippingProvider.reset();
     }
@@ -133,10 +138,15 @@ class AdminShipmentControllerTest {
                         .content(shipRequest()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.orderId").value(orderId))
-                .andExpect(jsonPath("$.data.expressCompany").value("顺丰速运"))
+                .andExpect(jsonPath("$.data.logisticsType").value(1))
+                .andExpect(jsonPath("$.data.deliveryMode").value(1))
+                .andExpect(jsonPath("$.data.itemDesc").value("Shipment Item x1"))
+                .andExpect(jsonPath("$.data.expressCompanyCode").value("SF"))
+                .andExpect(jsonPath("$.data.expressCompanyName").value("顺丰速运"))
                 .andExpect(jsonPath("$.data.trackingNo").value("SF1234567890"))
                 .andExpect(jsonPath("$.data.shipmentNote").value("front desk pickup"))
-                .andExpect(jsonPath("$.data.status").value("SHIPPED"))
+                .andExpect(jsonPath("$.data.localShipmentStatus").value("SHIPPED"))
+                .andExpect(jsonPath("$.data.wechatProviderMode").value("DISABLED"))
                 .andExpect(jsonPath("$.data.wechatUploadStatus").value("SKIPPED"))
                 .andExpect(jsonPath("$.data.shippedAt").isNotEmpty());
 
@@ -150,6 +160,44 @@ class AdminShipmentControllerTest {
                 .single()).isEqualTo("SHIPPED");
 
         assertShipmentDetail(adminToken, session.token(), orderId, "SKIPPED");
+    }
+
+    @Test
+    void adminAndAppShipmentResponsesExposeExactlyTheirPublicContracts() throws Exception {
+        shippingProperties.setUploadEnabled(true);
+        String adminToken = adminLoginAndExtractToken();
+        AppLoginSession session = appLogin("ship-exact-contract-user");
+        long orderId = insertPaidOrder(session, "SHIP-EXACT-CONTRACT", "wx-exact-contract");
+
+        JsonNode createShipment = objectMapper.readTree(mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString()).path("data");
+        assertExactAdminShipmentFields(createShipment);
+
+        JsonNode adminShipment = objectMapper.readTree(mockMvc.perform(get("/admin/orders/{orderId}", orderId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString()).path("data").path("shipment");
+        assertExactAdminShipmentFields(adminShipment);
+
+        JsonNode appShipment = objectMapper.readTree(mockMvc.perform(get("/app/orders/{orderId}", orderId)
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString()).path("data").path("shipment");
+        assertExactFields(appShipment,
+                "shipmentId", "orderId", "logisticsType", "deliveryMode", "itemDesc",
+                "expressCompanyCode", "expressCompanyName", "trackingNo", "localShipmentStatus",
+                "wechatProviderMode", "wechatUploadStatus", "wechatUploadMessage", "shippedAt",
+                "uploadTime", "wechatUploadedAt");
     }
 
     @Test
@@ -188,9 +236,9 @@ class AdminShipmentControllerTest {
         assertThat(wechatShippingProvider.uploadRequests().getFirst().shippingList().getFirst().trackingNo())
                 .isEqualTo("SF1234567890");
         assertThat(wechatShippingProvider.uploadRequests().getFirst().shippingList().getFirst().expressCompany())
-                .isNull();
+                .isEqualTo("SF");
         assertThat(wechatShippingProvider.uploadRequests().getFirst().shippingList().getFirst().itemDesc())
-                .isEqualTo("历史订单商品")
+                .isEqualTo("Shipment Item x1")
                 .isNotEqualTo("front desk pickup");
         assertShipmentRow(orderId, "UPLOADED", "", "", 0);
     }
@@ -207,17 +255,17 @@ class AdminShipmentControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(shipRequest()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("SHIPPED"))
-                .andExpect(jsonPath("$.data.wechatUploadStatus").value("FAILED"))
-                .andExpect(jsonPath("$.data.wechatErrorCode").value("WECHAT_SHIPPING_UPLOAD_FAILED"))
-                .andExpect(jsonPath("$.data.wechatErrorMessage").value("WeChat shipping upload failed"))
-                .andExpect(jsonPath("$.data.retryCount").value(1));
+                .andExpect(jsonPath("$.data.localShipmentStatus").value("SHIPPED"))
+                .andExpect(jsonPath("$.data.wechatUploadStatus").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.wechatErrorCode").value("UPLOAD_RESULT_UNKNOWN"))
+                .andExpect(jsonPath("$.data.wechatErrorMessage").value("WeChat shipping upload outcome is unknown"))
+                .andExpect(jsonPath("$.data.retryCount").value(0));
 
         assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
                 .param("orderId", orderId)
                 .query(String.class)
                 .single()).isEqualTo("SHIPPED");
-        assertShipmentRow(orderId, "FAILED", "WECHAT_SHIPPING_UPLOAD_FAILED", "WeChat shipping upload failed", 1);
+        assertShipmentRow(orderId, "UNKNOWN", "UPLOAD_RESULT_UNKNOWN", "WeChat shipping upload outcome is unknown", 0);
     }
 
     @Test
@@ -235,11 +283,11 @@ class AdminShipmentControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(shipRequest()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("SHIPPED"))
-                .andExpect(jsonPath("$.data.wechatUploadStatus").value("FAILED"))
-                .andExpect(jsonPath("$.data.wechatErrorCode").value("WECHAT_SHIPPING_UPLOAD_FAILED"))
-                .andExpect(jsonPath("$.data.wechatErrorMessage").value("WeChat shipping upload failed"))
-                .andExpect(jsonPath("$.data.retryCount").value(1));
+                .andExpect(jsonPath("$.data.localShipmentStatus").value("SHIPPED"))
+                .andExpect(jsonPath("$.data.wechatUploadStatus").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.wechatErrorCode").value("UPLOAD_RESULT_UNKNOWN"))
+                .andExpect(jsonPath("$.data.wechatErrorMessage").value("WeChat shipping upload outcome is unknown"))
+                .andExpect(jsonPath("$.data.retryCount").value(0));
 
         assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
                 .param("orderId", orderId)
@@ -254,12 +302,12 @@ class AdminShipmentControllerTest {
                 .query(String.class)
                 .single();
         assertThat(recordedMessage)
-                .isEqualTo("WeChat shipping upload failed")
+                .isEqualTo("WeChat shipping upload outcome is unknown")
                 .doesNotContain("sensitive-token")
                 .doesNotContain(session.openid())
                 .doesNotContain("SF1234567890")
                 .doesNotContain("payload");
-        assertShipmentRow(orderId, "FAILED", "WECHAT_SHIPPING_UPLOAD_FAILED", "WeChat shipping upload failed", 1);
+        assertShipmentRow(orderId, "UNKNOWN", "UPLOAD_RESULT_UNKNOWN", "WeChat shipping upload outcome is unknown", 0);
     }
 
     @Test
@@ -284,7 +332,7 @@ class AdminShipmentControllerTest {
                 "UNAVAILABLE",
                 "TRADE_NOT_MANAGED",
                 "WeChat shipping capability is unavailable",
-                1
+                0
         );
     }
 
@@ -311,7 +359,7 @@ class AdminShipmentControllerTest {
                 "UNKNOWN",
                 "REQUEST_AMBIGUOUS",
                 "WeChat shipping upload result is unknown",
-                1
+                0
         );
     }
 
@@ -326,17 +374,17 @@ class AdminShipmentControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(shipRequest()))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("SHIPPED"))
+                .andExpect(jsonPath("$.data.localShipmentStatus").value("SHIPPED"))
                 .andExpect(jsonPath("$.data.wechatUploadStatus").value("FAILED"))
                 .andExpect(jsonPath("$.data.wechatErrorCode").value("MISSING_TRANSACTION_ID"))
                 .andExpect(jsonPath("$.data.wechatErrorMessage").value("WeChat payment transaction id is required"))
-                .andExpect(jsonPath("$.data.retryCount").value(1));
+                .andExpect(jsonPath("$.data.retryCount").value(0));
 
         assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
                 .param("orderId", orderId)
                 .query(String.class)
                 .single()).isEqualTo("SHIPPED");
-        assertShipmentRow(orderId, "FAILED", "MISSING_TRANSACTION_ID", "WeChat payment transaction id is required", 1);
+        assertShipmentRow(orderId, "FAILED", "MISSING_TRANSACTION_ID", "WeChat payment transaction id is required", 0);
     }
 
     @Test
@@ -351,41 +399,221 @@ class AdminShipmentControllerTest {
                         .content(shipRequest()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.wechatUploadStatus").value("FAILED"))
-                .andExpect(jsonPath("$.data.retryCount").value(1));
+                .andExpect(jsonPath("$.data.retryCount").value(0));
 
         mockMvc.perform(post("/admin/orders/{orderId}/shipping/retry-wechat-upload", orderId)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.wechatUploadStatus").value("FAILED"))
-                .andExpect(jsonPath("$.data.retryCount").value(2));
+                .andExpect(jsonPath("$.data.retryCount").value(1));
 
         assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
                 .param("orderId", orderId)
                 .query(Integer.class)
                 .single()).isEqualTo(1);
-        assertShipmentRow(orderId, "FAILED", "MISSING_TRANSACTION_ID", "WeChat payment transaction id is required", 2);
+        assertShipmentRow(orderId, "FAILED", "MISSING_TRANSACTION_ID", "WeChat payment transaction id is required", 1);
+    }
+
+    @Test
+    void requestValidationRejectsBlankItemDescriptionAndOverLimitOptionalFields() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(appLogin("ship-validation-user"), "SHIP-VALIDATION", "wx-validation");
+
+        for (int logisticsType = 1; logisticsType <= 4; logisticsType++) {
+            mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"logisticsType":%d,"itemDesc":"   "}
+                                    """.formatted(logisticsType)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(100400));
+        }
+
+        List<String> invalidRequests = List.of(
+                """
+                {"logisticsType":1,"itemDesc":"item","expressCompanyCode":"%s","trackingNo":"T"}
+                """.formatted("C".repeat(129)),
+                """
+                {"logisticsType":1,"itemDesc":"item","expressCompanyCode":"SF","trackingNo":"%s"}
+                """.formatted("T".repeat(81)),
+                """
+                {"logisticsType":1,"itemDesc":"item","expressCompanyCode":"SF","trackingNo":"T","consignorContact":"%s"}
+                """.formatted("1".repeat(129)),
+                """
+                {"logisticsType":4,"itemDesc":"item","shipmentNote":"%s"}
+                """.formatted("N".repeat(256))
+        );
+        for (String invalidRequest : invalidRequests) {
+            mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(invalidRequest))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(100400));
+        }
+        assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id=:orderId")
+                .param("orderId", orderId).query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void clientCannotOverrideDeliveryModeOrDerivedReceiverContact() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(appLogin("ship-derived-fields-user"), "SHIP-DERIVED", "wx-derived");
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "logisticsType": 1,
+                                  "deliveryMode": 999,
+                                  "itemDesc": "derived fields",
+                                  "expressCompanyCode": "SF",
+                                  "trackingNo": "SF-DERIVED",
+                                  "receiverContact": "malicious-full-phone"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deliveryMode").value(1));
+
+        var row = jdbcClient.sql("""
+                        select delivery_mode, receiver_contact from order_shipment where order_id=:orderId
+                        """).param("orderId", orderId).query().singleRow();
+        assertThat(row.get("delivery_mode")).isEqualTo(1);
+        assertThat(row.get("receiver_contact")).isEqualTo("*******0000");
+        assertThat(row.get("receiver_contact")).isNotEqualTo("malicious-full-phone");
+    }
+
+    @Test
+    void nonExpressResponsesAndAppDetailsOmitEveryExpressOnlyField() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        AppLoginSession session = appLogin("ship-non-express-user");
+        for (int logisticsType = 2; logisticsType <= 4; logisticsType++) {
+            long orderId = insertPaidOrder(
+                    session, "SHIP-NON-EXPRESS-" + logisticsType, "wx-non-express-" + logisticsType
+            );
+            mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"logisticsType":%d,"itemDesc":"mode %d item"}
+                                    """.formatted(logisticsType, logisticsType)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.logisticsType").value(logisticsType))
+                    .andExpect(jsonPath("$.data.expressCompanyCode").doesNotExist())
+                    .andExpect(jsonPath("$.data.expressCompanyName").doesNotExist())
+                    .andExpect(jsonPath("$.data.trackingNo").doesNotExist());
+
+            mockMvc.perform(get("/app/orders/{orderId}", orderId)
+                            .header("Authorization", "Bearer " + session.token()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.shipment.logisticsType").value(logisticsType))
+                    .andExpect(jsonPath("$.data.shipment.expressCompanyCode").doesNotExist())
+                    .andExpect(jsonPath("$.data.shipment.expressCompanyName").doesNotExist())
+                    .andExpect(jsonPath("$.data.shipment.trackingNo").doesNotExist())
+                    .andExpect(jsonPath("$.data.shipment.wechatUploadMessage").value(
+                            "Shipping information is pending platform upload"
+                    ));
+        }
+    }
+
+    @Test
+    void adminAndAppDetailPreflightReconcileStaleUploadingWithoutProviderCall() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        AppLoginSession adminDetailUser = appLogin("ship-stale-admin-detail-user");
+        long adminOrderId = insertPaidOrder(adminDetailUser, "SHIP-STALE-ADMIN", "wx-stale-admin");
+        shippingProperties.setUploadEnabled(false);
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", adminOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isOk());
+        markShipmentStaleUploading(adminOrderId);
+        int callsBeforeAdminDetail = wechatShippingProvider.uploadRequests().size();
+
+        mockMvc.perform(get("/admin/orders/{orderId}", adminOrderId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shipment.wechatUploadStatus").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.shipment.wechatErrorCode").value("ATTEMPT_OUTCOME_UNKNOWN"));
+        assertThat(wechatShippingProvider.uploadRequests()).hasSize(callsBeforeAdminDetail);
+
+        AppLoginSession appDetailUser = appLogin("ship-stale-app-detail-user");
+        long appOrderId = insertPaidOrder(appDetailUser, "SHIP-STALE-APP", "wx-stale-app");
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", appOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isOk());
+        markShipmentStaleUploading(appOrderId);
+        int callsBeforeAppDetail = wechatShippingProvider.uploadRequests().size();
+
+        mockMvc.perform(get("/app/orders/{orderId}", appOrderId)
+                        .header("Authorization", "Bearer " + appDetailUser.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shipment.wechatUploadStatus").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.shipment.wechatUploadMessage").value(
+                        "Platform upload status is being confirmed"
+                ))
+                .andExpect(jsonPath("$.data.shipment.wechatErrorCode").doesNotExist())
+                .andExpect(jsonPath("$.data.shipment.wechatErrorMessage").doesNotExist());
+        assertThat(wechatShippingProvider.uploadRequests()).hasSize(callsBeforeAppDetail);
+    }
+
+    private void markShipmentStaleUploading(long orderId) {
+        jdbcClient.sql("""
+                        update order_shipment
+                        set wechat_upload_status='UPLOADING',
+                            last_attempt_at=:attempt,
+                            updated_at=:attempt
+                        where order_id=:orderId
+                        """)
+                .param("attempt", LocalDateTime.now().minusMinutes(11))
+                .param("orderId", orderId)
+                .update();
     }
 
     private void assertShipmentDetail(String adminToken, String appToken, long orderId, String uploadStatus) throws Exception {
         mockMvc.perform(get("/admin/orders/{orderId}", orderId)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.shipment.expressCompany").value("顺丰速运"))
+                .andExpect(jsonPath("$.data.shipment.expressCompanyCode").value("SF"))
+                .andExpect(jsonPath("$.data.shipment.expressCompanyName").value("顺丰速运"))
                 .andExpect(jsonPath("$.data.shipment.trackingNo").value("SF1234567890"))
                 .andExpect(jsonPath("$.data.shipment.shipmentNote").value("front desk pickup"))
-                .andExpect(jsonPath("$.data.shipment.status").value("SHIPPED"))
+                .andExpect(jsonPath("$.data.shipment.localShipmentStatus").value("SHIPPED"))
                 .andExpect(jsonPath("$.data.shipment.wechatUploadStatus").value(uploadStatus))
                 .andExpect(jsonPath("$.data.shipment.shippedAt").isNotEmpty());
 
         mockMvc.perform(get("/app/orders/{orderId}", orderId)
                         .header("Authorization", "Bearer " + appToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.shipment.expressCompany").value("顺丰速运"))
+                .andExpect(jsonPath("$.data.shipment.expressCompanyCode").value("SF"))
+                .andExpect(jsonPath("$.data.shipment.expressCompanyName").value("顺丰速运"))
                 .andExpect(jsonPath("$.data.shipment.trackingNo").value("SF1234567890"))
-                .andExpect(jsonPath("$.data.shipment.shipmentNote").value("front desk pickup"))
-                .andExpect(jsonPath("$.data.shipment.status").value("SHIPPED"))
+                .andExpect(jsonPath("$.data.shipment.shipmentNote").doesNotExist())
+                .andExpect(jsonPath("$.data.shipment.wechatErrorCode").doesNotExist())
+                .andExpect(jsonPath("$.data.shipment.wechatErrorMessage").doesNotExist())
+                .andExpect(jsonPath("$.data.shipment.retryCount").doesNotExist())
+                .andExpect(jsonPath("$.data.shipment.lastAttemptAt").doesNotExist())
+                .andExpect(jsonPath("$.data.shipment.localShipmentStatus").value("SHIPPED"))
                 .andExpect(jsonPath("$.data.shipment.wechatUploadStatus").value(uploadStatus))
                 .andExpect(jsonPath("$.data.shipment.shippedAt").isNotEmpty());
+    }
+
+    private void assertExactAdminShipmentFields(JsonNode shipment) {
+        assertExactFields(shipment,
+                "shipmentId", "orderId", "logisticsType", "deliveryMode", "itemDesc",
+                "expressCompanyCode", "expressCompanyName", "trackingNo", "shipmentNote",
+                "localShipmentStatus", "wechatProviderMode", "wechatUploadStatus", "retryCount",
+                "shippedAt", "uploadTime", "wechatUploadedAt", "lastAttemptAt");
+    }
+
+    private void assertExactFields(JsonNode object, String... expected) {
+        List<String> actual = new ArrayList<>();
+        object.fieldNames().forEachRemaining(actual::add);
+        assertThat(actual).containsExactlyInAnyOrder(expected);
     }
 
     private void assertShipmentRow(long orderId, String uploadStatus, String errorCode, String errorMessage, int retryCount) {
@@ -394,11 +622,12 @@ class AdminShipmentControllerTest {
                         from order_shipment
                         where order_id = :orderId
                           and express_company_name = '顺丰速运'
+                          and express_company_code = 'SF'
                           and tracking_no = 'SF1234567890'
                           and shipment_note = 'front desk pickup'
                           and logistics_type = 1
                           and delivery_mode = 1
-                          and item_desc = '历史订单商品'
+                          and item_desc = 'Shipment Item x1'
                           and status = 'SHIPPED'
                           and wechat_upload_status = :uploadStatus
                           and wechat_error_code = :errorCode
@@ -489,7 +718,9 @@ class AdminShipmentControllerTest {
     private String shipRequest() {
         return """
                 {
-                  "expressCompany": "顺丰速运",
+                  "logisticsType": 1,
+                  "itemDesc": "Shipment Item x1",
+                  "expressCompanyCode": "SF",
                   "trackingNo": "SF1234567890",
                   "shipmentNote": "front desk pickup"
                 }

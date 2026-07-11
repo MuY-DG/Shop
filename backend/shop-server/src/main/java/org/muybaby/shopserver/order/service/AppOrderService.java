@@ -7,7 +7,12 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.coupon.UserCouponStatus;
-import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
+import org.muybaby.shopserver.logistics.DeliveryMode;
+import org.muybaby.shopserver.logistics.LogisticsType;
+import org.muybaby.shopserver.logistics.WechatProviderMode;
+import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
+import org.muybaby.shopserver.logistics.dto.AppOrderShipmentResponse;
+import org.muybaby.shopserver.logistics.service.WechatShippingUploadRecovery;
 import org.muybaby.shopserver.order.CheckoutSource;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.OrderStatusGroup;
@@ -67,6 +72,7 @@ public class AppOrderService {
     private final CheckoutSelectionService checkoutSelectionService;
     private final AppAddressService appAddressService;
     private final AppAfterSaleService appAfterSaleService;
+    private final WechatShippingUploadRecovery shippingUploadRecovery;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
     public AppOrderService(
@@ -75,7 +81,8 @@ public class AppOrderService {
             StorageUsageService storageUsageService,
             CheckoutSelectionService checkoutSelectionService,
             AppAddressService appAddressService,
-            AppAfterSaleService appAfterSaleService
+            AppAfterSaleService appAfterSaleService,
+            WechatShippingUploadRecovery shippingUploadRecovery
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -83,6 +90,7 @@ public class AppOrderService {
         this.checkoutSelectionService = checkoutSelectionService;
         this.appAddressService = appAddressService;
         this.appAfterSaleService = appAfterSaleService;
+        this.shippingUploadRecovery = shippingUploadRecovery;
     }
 
     public OrderPreviewResponse preview(AuthenticatedPrincipal principal, AppOrderPreviewRequest request) {
@@ -273,6 +281,7 @@ public class AppOrderService {
                 .query(this::mapOrderDetailHeader)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        shippingUploadRecovery.reconcileOrder(orderId);
 
         List<OrderItemResponse> items = jdbcClient.sql("""
                         select id as order_item_id,
@@ -942,19 +951,21 @@ public class AppOrderService {
         return StringUtils.hasText(primary) ? primary : fallback;
     }
 
-    private OrderShipmentResponse findShipment(Long orderId) {
+    private AppOrderShipmentResponse findShipment(Long orderId) {
         return jdbcClient.sql("""
                         select id as shipment_id,
                                order_id,
-                               express_company_name as express_company,
+                               logistics_type,
+                               delivery_mode,
+                               item_desc,
+                               express_company_code,
+                               express_company_name,
                                tracking_no,
-                               shipment_note,
-                               status,
+                               status as local_shipment_status,
+                               wechat_provider_mode,
                                wechat_upload_status,
-                               wechat_error_code,
-                               wechat_error_message,
-                               retry_count,
                                shipped_at,
+                               upload_time,
                                wechat_uploaded_at
                         from order_shipment
                         where order_id = :orderId
@@ -965,21 +976,56 @@ public class AppOrderService {
                 .orElse(null);
     }
 
-    private OrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {
-        return new OrderShipmentResponse(
+    private AppOrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {
+        WechatProviderMode providerMode = providerMode(rs.getString("wechat_provider_mode"));
+        WechatShippingUploadStatus uploadStatus = uploadStatus(rs.getString("wechat_upload_status"));
+        return new AppOrderShipmentResponse(
                 rs.getLong("shipment_id"),
                 rs.getLong("order_id"),
-                rs.getString("express_company"),
+                LogisticsType.fromValue(rs.getInt("logistics_type")),
+                DeliveryMode.fromValue(rs.getInt("delivery_mode")),
+                rs.getString("item_desc"),
+                rs.getString("express_company_code"),
+                rs.getString("express_company_name"),
                 rs.getString("tracking_no"),
-                rs.getString("shipment_note"),
-                rs.getString("status"),
-                rs.getString("wechat_upload_status"),
-                rs.getString("wechat_error_code"),
-                rs.getString("wechat_error_message"),
-                rs.getInt("retry_count"),
+                rs.getString("local_shipment_status"),
+                providerMode,
+                uploadStatus,
+                uploadMessage(providerMode, uploadStatus),
                 rs.getObject("shipped_at", LocalDateTime.class),
+                rs.getString("upload_time"),
                 rs.getObject("wechat_uploaded_at", LocalDateTime.class)
         );
+    }
+
+    private WechatProviderMode providerMode(String value) {
+        try {
+            return WechatProviderMode.valueOf(value);
+        } catch (RuntimeException ex) {
+            return WechatProviderMode.UNKNOWN;
+        }
+    }
+
+    private WechatShippingUploadStatus uploadStatus(String value) {
+        try {
+            return WechatShippingUploadStatus.valueOf(value);
+        } catch (RuntimeException ex) {
+            return WechatShippingUploadStatus.UNKNOWN;
+        }
+    }
+
+    private String uploadMessage(WechatProviderMode mode, WechatShippingUploadStatus status) {
+        if (mode == WechatProviderMode.REAL && status == WechatShippingUploadStatus.UPLOADED) {
+            return "WeChat has accepted the shipping information";
+        }
+        return switch (status) {
+            case SKIPPED -> "Shipping information is pending platform upload";
+            case UPLOADING -> "Shipping information is being uploaded";
+            case FAILED -> "Shipping information has not been uploaded yet";
+            case UNAVAILABLE -> "Platform shipping service is currently unavailable";
+            case UNKNOWN -> "Platform upload status is being confirmed";
+            case UPLOADED -> "Shipping information was saved locally";
+        };
     }
 
     private UserCouponRow mapUserCoupon(ResultSet rs, int rowNum) throws SQLException {
