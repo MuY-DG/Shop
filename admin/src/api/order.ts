@@ -23,14 +23,12 @@ export function closeOrder(orderId: number) {
 export function shipOrder(orderId: number, data: Api.Order.ShipOrderForm) {
   return request.post<Api.Order.Shipment>({
     url: `/admin/orders/${orderId}/ship`,
-    data,
-    showSuccessMessage: true
+    data
   })
 }
 
 export function retryOrderShippingUpload(orderId: number) {
   return request.post<Api.Order.Shipment>({
-    url: `/admin/orders/${orderId}/shipping/retry-wechat-upload`,
-    showSuccessMessage: true
+    url: `/admin/orders/${orderId}/shipping/retry-wechat-upload`
   })
 }

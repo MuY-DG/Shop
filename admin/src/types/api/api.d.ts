@@ -487,9 +487,19 @@ declare namespace Api {
       | 'CLOSED'
       | 'REFUNDING'
       | 'REFUNDED'
-    type OrderSource = 'MINI_PROGRAM'
+    type OrderSource = 'CART' | 'DIRECT' | 'MINI_PROGRAM'
+    type LogisticsType = 1 | 2 | 3 | 4
+    type DeliveryMode = 1
     type ShipmentStatus = 'SHIPPED'
-    type WechatShippingUploadStatus = 'SKIPPED' | 'UPLOADED' | 'FAILED'
+    type WechatShippingUploadStatus =
+      | 'SKIPPED'
+      | 'UPLOADING'
+      | 'UPLOADED'
+      | 'FAILED'
+      | 'UNAVAILABLE'
+      | 'UNKNOWN'
+    type WechatProviderMode = 'REAL' | 'MOCK' | 'DISABLED' | 'UNKNOWN'
+    type WechatShippingCapabilityState = 'AVAILABLE' | 'UNAVAILABLE' | 'UNKNOWN'
 
     type OrderList = Api.Common.PaginatedResponse<OrderListItem>
 
@@ -554,7 +564,7 @@ declare namespace Api {
       transactionId?: string | null
       paymentStatus?: string | null
       paidAt?: string | null
-      shipment: Shipment | null
+      shipment?: Shipment | null
       closeReason: string | null
       closedAt: string | null
       createdAt: string
@@ -564,22 +574,48 @@ declare namespace Api {
     interface Shipment {
       shipmentId: number
       orderId: number
-      expressCompany: string
-      trackingNo: string
+      logisticsType: LogisticsType
+      deliveryMode: DeliveryMode
+      itemDesc: string
+      expressCompanyCode?: string | null
+      expressCompanyName?: string | null
+      trackingNo?: string | null
       shipmentNote?: string | null
-      status: ShipmentStatus | string
-      wechatUploadStatus: WechatShippingUploadStatus | string
+      localShipmentStatus: ShipmentStatus
+      wechatProviderMode: WechatProviderMode
+      wechatUploadStatus: WechatShippingUploadStatus
       wechatErrorCode?: string | null
       wechatErrorMessage?: string | null
       retryCount: number
       shippedAt?: string | null
+      uploadTime?: string | null
       wechatUploadedAt?: string | null
+      lastAttemptAt?: string | null
     }
 
     interface ShipOrderForm {
-      expressCompany: string
-      trackingNo: string
+      logisticsType: LogisticsType
+      itemDesc: string
+      expressCompanyCode?: string
+      trackingNo?: string
+      consignorContact?: string
       shipmentNote?: string
+    }
+
+    interface WechatShippingCapability {
+      uploadEnabled: boolean
+      providerMode: WechatProviderMode
+      state: WechatShippingCapabilityState
+      tradeManaged?: boolean | null
+      errorCode?: string | null
+      errorMessage?: string | null
+      checkedAt: string
+    }
+
+    interface WechatDeliveryCompany {
+      deliveryId: string
+      deliveryName: string
+      syncedAt: string
     }
   }
 
