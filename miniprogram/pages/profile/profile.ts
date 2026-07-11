@@ -69,6 +69,10 @@ export function createProfilePageDefinition(
       phoneAuthorizing: false,
       actionItems: [
         {
+          title: "我的订单",
+          path: "/pages/order/list/list"
+        },
+        {
           title: "领券中心",
           path: "/pages/coupon/list/list"
         },

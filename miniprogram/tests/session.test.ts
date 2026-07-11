@@ -741,6 +741,41 @@ test("profile page keeps cached masked data on non-auth refresh failure", async 
   assert.equal(page.data.profileWarning, "资料刷新失败，请稍后重试");
 });
 
+test("profile page exposes the order center entry", async () => {
+  const module = await loadProfileModule();
+  const definition = module.createProfilePageDefinition({
+    restoreSession: () => ({
+      version: 1,
+      accessToken: "",
+      refreshToken: "",
+      accessExpiresAt: 0,
+      profile: null
+    }),
+    ensureSession: async () => ({
+      version: 1,
+      accessToken: "",
+      refreshToken: "",
+      accessExpiresAt: 0,
+      profile: null
+    }),
+    getCurrentUser: async () => profile(),
+    updateProfile: () => undefined,
+    getSessionState: () => ({
+      version: 1,
+      accessToken: "",
+      refreshToken: "",
+      accessExpiresAt: 0,
+      profile: null
+    }),
+    authorizePhone: async () => profile()
+  });
+
+  assert.deepEqual(definition.data.actionItems[0], {
+    title: "我的订单",
+    path: "/pages/order/list/list"
+  });
+});
+
 test("profile page renders logged out only after auth state is fully cleared", async () => {
   const module = await loadProfileModule();
   const emptyState = {
