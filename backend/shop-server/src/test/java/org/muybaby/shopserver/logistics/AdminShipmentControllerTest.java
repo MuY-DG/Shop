@@ -10,6 +10,8 @@ import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.logistics.provider.WechatShippingProvider;
+import org.muybaby.shopserver.logistics.provider.WechatDeliveryCompanyResult;
+import org.muybaby.shopserver.logistics.provider.WechatShippingCapabilityResult;
 import org.muybaby.shopserver.logistics.provider.WechatShippingUploadRequest;
 import org.muybaby.shopserver.logistics.provider.WechatShippingUploadResult;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -183,7 +185,13 @@ class AdminShipmentControllerTest {
         assertThat(wechatShippingProvider.uploadRequests()).hasSize(1);
         assertThat(wechatShippingProvider.uploadRequests().getFirst().transactionId()).isEqualTo("wx-ship-uploaded");
         assertThat(wechatShippingProvider.uploadRequests().getFirst().openid()).isEqualTo(session.openid());
-        assertThat(wechatShippingProvider.uploadRequests().getFirst().trackingNo()).isEqualTo("SF1234567890");
+        assertThat(wechatShippingProvider.uploadRequests().getFirst().shippingList().getFirst().trackingNo())
+                .isEqualTo("SF1234567890");
+        assertThat(wechatShippingProvider.uploadRequests().getFirst().shippingList().getFirst().expressCompany())
+                .isNull();
+        assertThat(wechatShippingProvider.uploadRequests().getFirst().shippingList().getFirst().itemDesc())
+                .isEqualTo("历史订单商品")
+                .isNotEqualTo("front desk pickup");
         assertShipmentRow(orderId, "UPLOADED", "", "", 0);
     }
 
@@ -252,6 +260,59 @@ class AdminShipmentControllerTest {
                 .doesNotContain("SF1234567890")
                 .doesNotContain("payload");
         assertShipmentRow(orderId, "FAILED", "WECHAT_SHIPPING_UPLOAD_FAILED", "WeChat shipping upload failed", 1);
+    }
+
+    @Test
+    void unavailableProviderResultIsNotCollapsedIntoFailed() throws Exception {
+        shippingProperties.setUploadEnabled(true);
+        wechatShippingProvider.respondWith(WechatShippingUploadResult.unavailable(
+                "TRADE_NOT_MANAGED", "WeChat shipping capability is unavailable"
+        ));
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(appLogin("ship-provider-unavailable-user"), "SHIP-UNAVAILABLE", "wx-unavailable");
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.wechatUploadStatus").value("UNAVAILABLE"))
+                .andExpect(jsonPath("$.data.wechatErrorCode").value("TRADE_NOT_MANAGED"));
+
+        assertShipmentRow(
+                orderId,
+                "UNAVAILABLE",
+                "TRADE_NOT_MANAGED",
+                "WeChat shipping capability is unavailable",
+                1
+        );
+    }
+
+    @Test
+    void unknownProviderResultIsNotCollapsedIntoFailedOrMarkedUploaded() throws Exception {
+        shippingProperties.setUploadEnabled(true);
+        wechatShippingProvider.respondWith(WechatShippingUploadResult.unknown(
+                "REQUEST_AMBIGUOUS", "WeChat shipping upload result is unknown"
+        ));
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(appLogin("ship-provider-unknown-user"), "SHIP-UNKNOWN", "wx-unknown");
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.wechatUploadStatus").value("UNKNOWN"))
+                .andExpect(jsonPath("$.data.wechatErrorCode").value("REQUEST_AMBIGUOUS"))
+                .andExpect(jsonPath("$.data.wechatUploadedAt").doesNotExist());
+
+        assertShipmentRow(
+                orderId,
+                "UNKNOWN",
+                "REQUEST_AMBIGUOUS",
+                "WeChat shipping upload result is unknown",
+                1
+        );
     }
 
     @Test
@@ -486,6 +547,12 @@ class AdminShipmentControllerTest {
 
         private final List<WechatShippingUploadRequest> uploadRequests = new ArrayList<>();
         private RuntimeException exception;
+        private WechatShippingUploadResult result = WechatShippingUploadResult.uploaded();
+
+        @Override
+        public WechatProviderMode mode() {
+            return WechatProviderMode.REAL;
+        }
 
         @Override
         public WechatShippingUploadResult upload(WechatShippingUploadRequest request) {
@@ -493,7 +560,17 @@ class AdminShipmentControllerTest {
             if (exception != null) {
                 throw exception;
             }
-            return WechatShippingUploadResult.uploaded();
+            return result;
+        }
+
+        @Override
+        public WechatShippingCapabilityResult queryCapability() {
+            return WechatShippingCapabilityResult.available();
+        }
+
+        @Override
+        public List<WechatDeliveryCompanyResult> getDeliveryCompanies() {
+            return List.of();
         }
 
         List<WechatShippingUploadRequest> uploadRequests() {
@@ -504,9 +581,14 @@ class AdminShipmentControllerTest {
             this.exception = exception;
         }
 
+        void respondWith(WechatShippingUploadResult result) {
+            this.result = result;
+        }
+
         void reset() {
             uploadRequests.clear();
             exception = null;
+            result = WechatShippingUploadResult.uploaded();
         }
     }
 }

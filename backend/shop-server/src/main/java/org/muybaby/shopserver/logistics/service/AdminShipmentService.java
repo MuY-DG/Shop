@@ -5,11 +5,14 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.logistics.ShipmentStatus;
 import org.muybaby.shopserver.logistics.ShippingProperties;
+import org.muybaby.shopserver.logistics.DeliveryMode;
+import org.muybaby.shopserver.logistics.LogisticsType;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.AdminShipOrderRequest;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
 import org.muybaby.shopserver.logistics.provider.RealWechatShippingProvider;
 import org.muybaby.shopserver.logistics.provider.WechatShippingProvider;
+import org.muybaby.shopserver.logistics.provider.WechatShippingItem;
 import org.muybaby.shopserver.logistics.provider.WechatShippingUploadRequest;
 import org.muybaby.shopserver.logistics.provider.WechatShippingUploadResult;
 import org.muybaby.shopserver.order.OrderStatus;
@@ -25,6 +28,10 @@ import org.springframework.util.StringUtils;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 @Service
 public class AdminShipmentService {
@@ -127,14 +134,15 @@ public class AdminShipmentService {
                     RealWechatShippingProvider.MISSING_TRANSACTION_ID_MESSAGE
             );
         } else {
+            WechatShippingItem shippingItem = findWechatShippingItem(orderId);
             uploadResult = uploadSafely(new WechatShippingUploadRequest(
                     orderId,
                     context.transactionId(),
-                    context.outTradeNo(),
                     context.openid(),
-                    shipment.expressCompany(),
-                    shipment.trackingNo(),
-                    shipment.shipmentNote()
+                    LogisticsType.EXPRESS,
+                    DeliveryMode.UNIFIED,
+                    OffsetDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+                    List.of(shippingItem)
             ));
         }
 
@@ -150,9 +158,7 @@ public class AdminShipmentService {
                             updated_at = :updatedAt
                         where order_id = :orderId
                         """)
-                .param("status", uploadResult.success()
-                        ? WechatShippingUploadStatus.UPLOADED.name()
-                        : WechatShippingUploadStatus.FAILED.name())
+                .param("status", uploadResult.status().name())
                 .param("errorCode", uploadResult.success() ? "" : uploadResult.errorCode())
                 .param("errorMessage", uploadResult.success() ? "" : truncate(uploadResult.errorMessage(), 255))
                 .param("retryCount", nextRetryCount)
@@ -237,6 +243,28 @@ public class AdminShipmentService {
                         """)
                 .param("orderId", orderId)
                 .query(this::mapShipment)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+    }
+
+    private WechatShippingItem findWechatShippingItem(Long orderId) {
+        return jdbcClient.sql("""
+                        select tracking_no,
+                               nullif(express_company_code, '') as express_company,
+                               item_desc,
+                               consignor_contact,
+                               receiver_contact
+                        from order_shipment
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new WechatShippingItem(
+                        rs.getString("tracking_no"),
+                        rs.getString("express_company"),
+                        rs.getString("item_desc"),
+                        rs.getString("consignor_contact"),
+                        rs.getString("receiver_contact")
+                ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
     }
