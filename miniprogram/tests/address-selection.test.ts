@@ -9,7 +9,7 @@ import {
 } from "../features/checkout";
 
 function address(
-  id: number,
+  id: string,
   isDefault = false,
   overrides: Partial<AddressResponse> = {}
 ): AddressResponse {
@@ -30,8 +30,8 @@ function address(
 }
 
 test("resolves the default address when no selection exists", () => {
-  const first = address(1);
-  const defaultAddress = address(2, true);
+  const first = address("2075761422822531073");
+  const defaultAddress = address("2075761422822531074", true);
   assert.deepEqual(
     resolveAddressSelection([first, defaultAddress], null),
     defaultAddress
@@ -39,8 +39,8 @@ test("resolves the default address when no selection exists", () => {
 });
 
 test("eventChannel selection replaces the complete current address", () => {
-  const current = address(1);
-  const selected = address(2, false, {
+  const current = address("2075761422822531073");
+  const selected = address("2075761422822531074", false, {
     receiverName: "新收货人",
     receiverPhone: "13912345678",
     formattedAddress: "四川省成都市锦江区新地址"
@@ -49,17 +49,17 @@ test("eventChannel selection replaces the complete current address", () => {
 });
 
 test("a deleted selection falls back to the current default", () => {
-  const deleted = address(9);
-  const fallback = address(2, true);
+  const deleted = address("2075761422822531079");
+  const fallback = address("2075761422822531074", true);
   assert.deepEqual(
-    resolveAddressSelection([address(1), fallback], deleted),
+    resolveAddressSelection([address("2075761422822531073"), fallback], deleted),
     fallback
   );
   assert.equal(resolveAddressSelection([], deleted), null);
 });
 
 test("submit stays disabled without an address or preview", () => {
-  const selected = address(1, true);
+  const selected = address("2075761422822531073", true);
   assert.equal(isCheckoutSubmitDisabled(false, selected, false), true);
   assert.equal(isCheckoutSubmitDisabled(true, null, false), true);
   assert.equal(isCheckoutSubmitDisabled(true, selected, true), true);

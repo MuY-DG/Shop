@@ -113,7 +113,7 @@ export interface ProductSku {
 }
 
 export interface AddressResponse {
-  id: number;
+  id: string;
   receiverName: string;
   receiverPhone: string;
   province: string;
@@ -309,7 +309,7 @@ export interface AfterSaleResponse {
   id: number;
   orderId: number;
   orderNo: string;
-  userId: number;
+  userId: string;
   afterSaleType: AfterSaleType;
   status: AfterSaleStatus;
   reason: string;
@@ -317,7 +317,7 @@ export interface AfterSaleResponse {
   requestedAmountCent: number;
   approvedAmountCent: number | null;
   auditNote: string | null;
-  reviewedBy: number | null;
+  reviewedBy: string | null;
   reviewedAt: string | null;
   createdAt: string;
   evidenceFileIds: number[];
@@ -355,12 +355,12 @@ export type CheckoutQuery =
     };
 
 export type OrderPreviewRequest = CheckoutQuery & {
-  addressId?: number;
+  addressId?: string;
   userCouponId?: number | null;
 };
 
 export type OrderSubmitRequest = CheckoutQuery & {
-  addressId: number;
+  addressId: string;
   userCouponId?: number | null;
   idempotencyKey: string;
 };

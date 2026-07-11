@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.storage.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import org.muybaby.shopserver.common.api.JsonStringId;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,6 +22,7 @@ public record StorageFileResponse(
         Integer height,
         String status,
         String uploadedByType,
+        @JsonStringId
         Long uploadedById,
         String url,
         String publicUrl,

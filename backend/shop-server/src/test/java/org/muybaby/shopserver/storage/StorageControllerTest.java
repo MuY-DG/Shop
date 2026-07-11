@@ -241,6 +241,16 @@ class StorageControllerTest {
                 .query(String.class)
                 .single();
         assertThat(uploadedByType).isEqualTo("APP");
+        Long uploadedById = jdbcClient.sql("select uploaded_by_id from storage_file where id = :fileId")
+                .param("fileId", fileId)
+                .query(Long.class)
+                .single();
+        mockMvc.perform(get("/admin/files/{fileId}", fileId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.uploadedById").isString())
+                .andExpect(jsonPath("$.data.uploadedById").value(Long.toString(uploadedById)))
+                .andExpect(jsonPath("$.data.sizeBytes").isNumber());
     }
 
     @Test

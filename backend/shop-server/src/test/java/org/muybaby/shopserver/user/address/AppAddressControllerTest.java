@@ -87,6 +87,7 @@ class AppAddressControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").isString())
                 .andExpect(jsonPath("$.data.receiverName").value("张三"))
                 .andExpect(jsonPath("$.data.receiverPhone").value("13800138000"))
                 .andExpect(jsonPath("$.data.province").value("北京市"))
@@ -126,15 +127,15 @@ class AppAddressControllerTest {
         mockMvc.perform(get("/app/addresses")
                         .header(AUTHORIZATION, bearer(user.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].id").value(third))
+                .andExpect(jsonPath("$.data[0].id").value(Long.toString(third)))
                 .andExpect(jsonPath("$.data[0].isDefault").value(true))
-                .andExpect(jsonPath("$.data[1].id").value(second))
-                .andExpect(jsonPath("$.data[2].id").value(first));
+                .andExpect(jsonPath("$.data[1].id").value(Long.toString(second)))
+                .andExpect(jsonPath("$.data[2].id").value(Long.toString(first)));
 
         mockMvc.perform(post("/app/addresses/{id}/default", second)
                         .header(AUTHORIZATION, bearer(user.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").value(second))
+                .andExpect(jsonPath("$.data.id").value(Long.toString(second)))
                 .andExpect(jsonPath("$.data.isDefault").value(true));
 
         getAddress(user.token(), first)
@@ -144,9 +145,9 @@ class AppAddressControllerTest {
         mockMvc.perform(get("/app/addresses")
                         .header(AUTHORIZATION, bearer(user.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].id").value(second))
-                .andExpect(jsonPath("$.data[1].id").value(third))
-                .andExpect(jsonPath("$.data[2].id").value(first));
+                .andExpect(jsonPath("$.data[0].id").value(Long.toString(second)))
+                .andExpect(jsonPath("$.data[1].id").value(Long.toString(third)))
+                .andExpect(jsonPath("$.data[2].id").value(Long.toString(first)));
     }
 
     @Test
@@ -182,7 +183,7 @@ class AppAddressControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").value(second))
+                .andExpect(jsonPath("$.data.id").value(Long.toString(second)))
                 .andExpect(jsonPath("$.data.receiverName").value("李四更新"))
                 .andExpect(jsonPath("$.data.detailAddress").value("火锅路99号"))
                 .andExpect(jsonPath("$.data.isDefault").value(true));
@@ -192,11 +193,11 @@ class AppAddressControllerTest {
         mockMvc.perform(get("/app/addresses")
                         .header(AUTHORIZATION, bearer(user.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].id").value(second))
+                .andExpect(jsonPath("$.data[0].id").value(Long.toString(second)))
                 .andExpect(jsonPath("$.data[0].receiverName").value("李四更新"))
                 .andExpect(jsonPath("$.data[0].detailAddress").value("火锅路99号"))
                 .andExpect(jsonPath("$.data[0].isDefault").value(true))
-                .andExpect(jsonPath("$.data[1].id").value(first))
+                .andExpect(jsonPath("$.data[1].id").value(Long.toString(first)))
                 .andExpect(jsonPath("$.data[1].isDefault").value(false));
         assertExactlyOneDefault(user.userId(), second);
     }

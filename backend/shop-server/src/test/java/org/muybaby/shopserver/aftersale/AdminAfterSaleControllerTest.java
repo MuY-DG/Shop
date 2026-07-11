@@ -61,6 +61,9 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.records[0].id").value(afterSaleId))
                 .andExpect(jsonPath("$.data.records[0].orderId").value(order.orderId()))
+                .andExpect(jsonPath("$.data.records[0].userId").isString())
+                .andExpect(jsonPath("$.data.records[0].userId").value(Long.toString(appUser.userId())))
+                .andExpect(jsonPath("$.data.records[0].requestedAmountCent").isNumber())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.current").value(1))
                 .andExpect(jsonPath("$.data.size").value(10));
@@ -95,7 +98,9 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("REJECTED"))
-                .andExpect(jsonPath("$.data.auditNote").value("凭证不足，暂不退款"));
+                .andExpect(jsonPath("$.data.auditNote").value("凭证不足，暂不退款"))
+                .andExpect(jsonPath("$.data.reviewedBy").isString())
+                .andExpect(jsonPath("$.data.reviewedBy").value("1"));
 
         assertThat(jdbcClient.sql("""
                         select count(*)

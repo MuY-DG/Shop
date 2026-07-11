@@ -30,7 +30,7 @@ interface SwitchEvent {
 }
 
 interface AddressEditData extends AddressUpsertRequest {
-  addressId: number;
+  addressId: string;
   loading: boolean;
   submitting: boolean;
   errorText: string;
@@ -45,14 +45,13 @@ const TEXT_FIELDS = new Set<AddressTextField>([
   "detailAddress"
 ]);
 
-function positiveId(value: string | undefined): number {
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;
+function positiveId(value: string | undefined): string {
+  return value && /^[1-9]\d*$/.test(value) ? value : "";
 }
 
 Page<AddressEditData, WechatMiniprogram.Page.CustomOption>({
   data: {
-    addressId: 0,
+    addressId: "",
     receiverName: "",
     receiverPhone: "",
     province: "",
@@ -67,13 +66,13 @@ Page<AddressEditData, WechatMiniprogram.Page.CustomOption>({
   async onLoad(options: Record<string, string | undefined>) {
     const addressId = positiveId(options.id);
     this.setData({ addressId });
-    if (addressId > 0) {
+    if (addressId !== "") {
       wx.setNavigationBarTitle({ title: "编辑收货地址" });
       await this.loadAddress();
     }
   },
   async loadAddress() {
-    if (this.data.addressId <= 0) {
+    if (this.data.addressId === "") {
       return;
     }
     this.setData({ loading: true, errorText: "" });
@@ -138,7 +137,7 @@ Page<AddressEditData, WechatMiniprogram.Page.CustomOption>({
     this.setData({ submitting: true, errorText: "", ...payload });
     try {
       await ensureAppLogin();
-      if (this.data.addressId > 0) {
+      if (this.data.addressId !== "") {
         await updateAddress(this.data.addressId, payload);
       } else {
         await createAddress(payload);

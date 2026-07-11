@@ -135,7 +135,7 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + session.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"source":"DIRECT","skuId":%d,"quantity":2,"addressId":%d}
+                                {"source":"DIRECT","skuId":%d,"quantity":2,"addressId":"%d"}
                                 """.formatted(skuId, addressId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items.length()").value(1))

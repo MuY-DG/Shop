@@ -174,7 +174,7 @@ export function parseCheckoutQuery(input: QueryInput): CheckoutQuery {
 
 export function buildPreviewRequest(
   selection: CheckoutQuery,
-  addressId: number | null,
+  addressId: string | null,
   userCouponId: number | null
 ): OrderPreviewRequest {
   const common = {
@@ -193,7 +193,7 @@ export function buildPreviewRequest(
 
 export function buildSubmitRequest(
   selection: CheckoutQuery,
-  addressId: number,
+  addressId: string,
   userCouponId: number | null,
   idempotencyKey: string
 ): OrderSubmitRequest {
@@ -261,9 +261,8 @@ export function isAddressResponse(value: unknown): value is AddressResponse {
   }
   const address = value as Partial<AddressResponse>;
   return (
-    typeof address.id === "number" &&
-    Number.isSafeInteger(address.id) &&
-    address.id > 0 &&
+    typeof address.id === "string" &&
+    /^[1-9]\d*$/.test(address.id) &&
     typeof address.receiverName === "string" &&
     typeof address.receiverPhone === "string" &&
     typeof address.province === "string" &&

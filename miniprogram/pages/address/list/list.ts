@@ -21,8 +21,8 @@ interface AddressListData {
   loading: boolean;
   errorText: string;
   addresses: AddressResponse[];
-  settingDefaultId: number;
-  deletingId: number;
+  settingDefaultId: string;
+  deletingId: string;
 }
 
 Page<AddressListData, WechatMiniprogram.Page.CustomOption>({
@@ -32,8 +32,8 @@ Page<AddressListData, WechatMiniprogram.Page.CustomOption>({
     loading: false,
     errorText: "",
     addresses: [] as AddressResponse[],
-    settingDefaultId: 0,
-    deletingId: 0
+    settingDefaultId: "",
+    deletingId: ""
   },
   onLoad(options: Record<string, string | undefined>) {
     this.addressLoadTracker = createLatestRequestTracker();
@@ -102,7 +102,7 @@ Page<AddressListData, WechatMiniprogram.Page.CustomOption>({
   },
   async onDefaultTap(event: DatasetEvent) {
     const selected = this.findAddress(event);
-    if (!selected || selected.isDefault || this.data.settingDefaultId > 0) {
+    if (!selected || selected.isDefault || this.data.settingDefaultId !== "") {
       return;
     }
     this.setData({ settingDefaultId: selected.id });
@@ -117,12 +117,12 @@ Page<AddressListData, WechatMiniprogram.Page.CustomOption>({
         icon: "none"
       });
     } finally {
-      this.setData({ settingDefaultId: 0 });
+      this.setData({ settingDefaultId: "" });
     }
   },
   onDeleteTap(event: DatasetEvent) {
     const selected = this.findAddress(event);
-    if (!selected || this.data.deletingId > 0) {
+    if (!selected || this.data.deletingId !== "") {
       return;
     }
     wx.showModal({
@@ -136,8 +136,8 @@ Page<AddressListData, WechatMiniprogram.Page.CustomOption>({
       }
     });
   },
-  async deleteConfirmed(addressId: number) {
-    if (this.data.deletingId > 0) {
+  async deleteConfirmed(addressId: string) {
+    if (this.data.deletingId !== "") {
       return;
     }
     this.setData({ deletingId: addressId });
@@ -152,12 +152,12 @@ Page<AddressListData, WechatMiniprogram.Page.CustomOption>({
         icon: "none"
       });
     } finally {
-      this.setData({ deletingId: 0 });
+      this.setData({ deletingId: "" });
     }
   },
   findAddress(event: DatasetEvent): AddressResponse | undefined {
-    const addressId = Number(event.currentTarget.dataset.id);
-    if (!Number.isSafeInteger(addressId) || addressId <= 0) {
+    const addressId = String(event.currentTarget.dataset.id ?? "");
+    if (!/^[1-9]\d*$/.test(addressId)) {
       return undefined;
     }
     return this.data.addresses.find((address) => address.id === addressId);

@@ -1,8 +1,11 @@
 package org.muybaby.shopserver.auth.dto;
 
+import org.muybaby.shopserver.common.api.JsonStringId;
+
 import java.util.List;
 
 public record CurrentAdminUserResponse(
+        @JsonStringId
         Long userId,
         String userName,
         String email,

@@ -34,7 +34,7 @@
           size="mini"
           data-id="{{item.id}}"
           loading="{{settingDefaultId === item.id}}"
-          disabled="{{item.isDefault || settingDefaultId > 0}}"
+          disabled="{{item.isDefault || settingDefaultId !== ''}}"
           catchtap="onDefaultTap"
         >设为默认</button>
         <button
@@ -42,7 +42,7 @@
           size="mini"
           data-id="{{item.id}}"
           loading="{{deletingId === item.id}}"
-          disabled="{{deletingId > 0}}"
+          disabled="{{deletingId !== ''}}"
           catchtap="onDeleteTap"
         >删除</button>
       </view>

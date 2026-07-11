@@ -7,7 +7,7 @@ export function getAddresses(): Promise<AddressResponse[]> {
   });
 }
 
-export function getAddress(addressId: number): Promise<AddressResponse> {
+export function getAddress(addressId: string): Promise<AddressResponse> {
   return request<AddressResponse>({
     url: `/app/addresses/${addressId}`
   });
@@ -24,7 +24,7 @@ export function createAddress(
 }
 
 export function updateAddress(
-  addressId: number,
+  addressId: string,
   payload: AddressUpsertRequest
 ): Promise<AddressResponse> {
   return request<AddressResponse>({
@@ -34,14 +34,14 @@ export function updateAddress(
   });
 }
 
-export function deleteAddress(addressId: number): Promise<void> {
+export function deleteAddress(addressId: string): Promise<void> {
   return request<void>({
     url: `/app/addresses/${addressId}`,
     method: "DELETE"
   });
 }
 
-export function setDefaultAddress(addressId: number): Promise<AddressResponse> {
+export function setDefaultAddress(addressId: string): Promise<AddressResponse> {
   return request<AddressResponse>({
     url: `/app/addresses/${addressId}/default`,
     method: "POST"

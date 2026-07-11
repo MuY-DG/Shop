@@ -84,7 +84,7 @@ declare namespace Api {
     interface UserInfo {
       buttons: string[]
       roles: string[]
-      userId: number
+      userId: string
       userName: string
       email: string
       avatar?: string
@@ -321,7 +321,7 @@ declare namespace Api {
       height?: number | null
       status: FileStatus
       uploadedByType: UploadedByType
-      uploadedById?: number | null
+      uploadedById?: string | null
       url?: string | null
       publicUrl?: string | null
       createdAt: string
@@ -699,7 +699,7 @@ declare namespace Api {
       id: number
       orderId: number
       orderNo: string
-      userId: number
+      userId: string
       afterSaleType: AfterSaleType | string
       status: AfterSaleStatus | string
       reason: string
@@ -707,7 +707,7 @@ declare namespace Api {
       requestedAmountCent: number
       approvedAmountCent?: number | null
       auditNote?: string | null
-      reviewedBy?: number | null
+      reviewedBy?: string | null
       reviewedAt?: string | null
       createdAt: string
       evidenceFileIds: number[]

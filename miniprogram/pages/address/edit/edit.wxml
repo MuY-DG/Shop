@@ -1,6 +1,6 @@
 <view class="page address-edit-page">
   <view wx:if="{{loading}}" class="empty-state">地址加载中...</view>
-  <view wx:elif="{{errorText && addressId > 0 && !receiverName}}" class="empty-state">
+  <view wx:elif="{{errorText && addressId && !receiverName}}" class="empty-state">
     <view>{{errorText}}</view>
     <button class="retry-button" size="mini" bindtap="onRetryTap">重试</button>
   </view>

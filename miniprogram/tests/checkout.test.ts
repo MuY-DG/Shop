@@ -132,14 +132,19 @@ test("only the latest delayed request may commit or clear loading", async () => 
 });
 
 test("direct submit body contains no cartItemIds", () => {
-  const body = buildSubmitRequest(directSelection(18, 2), 7, null, "idem-1");
+  const body = buildSubmitRequest(
+    directSelection(18, 2),
+    "2075761422822531074",
+    null,
+    "idem-1"
+  );
   assert.equal(body.source, "DIRECT");
   assert.equal("cartItemIds" in body, false);
   assert.deepEqual(body, {
     source: "DIRECT",
     skuId: 18,
     quantity: 2,
-    addressId: 7,
+    addressId: "2075761422822531074",
     userCouponId: null,
     idempotencyKey: "idem-1"
   });
@@ -154,10 +159,15 @@ test("preview and submit preserve one explicit source-specific selection", () =>
     userCouponId: null
   });
 
-  const first = buildSubmitRequest(selection, 7, null, "stable-key");
+  const first = buildSubmitRequest(
+    selection,
+    "2075761422822531074",
+    null,
+    "stable-key"
+  );
   const afterAddressSwitch = buildSubmitRequest(
     selection,
-    8,
+    "2075761422822531075",
     first.userCouponId ?? null,
     first.idempotencyKey
   );
