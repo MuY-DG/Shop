@@ -129,6 +129,30 @@ class StorageControllerTest {
     }
 
     @Test
+    void adminUploadWithoutExplicitCategoryUsesPurposeDefaultCategory() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+
+        String uploadResponse = mockMvc.perform(multipart("/admin/files/upload")
+                        .file(new MockMultipartFile("file", "home-banner.png", "image/png", TINY_PNG))
+                        .param("purpose", "HOME_BANNER")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.assetCategoryId").value(2))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long fileId = objectMapper.readTree(uploadResponse).path("data").path("id").asLong();
+
+        mockMvc.perform(get("/admin/files")
+                        .param("assetCategoryId", "2")
+                        .param("status", "ACTIVE")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].id").value(fileId));
+    }
+
+    @Test
     void adminFileApisRequireSpecificAuthorities() throws Exception {
         String readToken = limitedAdminToken(List.of("file:read"));
         String uploadOnlyToken = limitedAdminToken(List.of("file:upload"));

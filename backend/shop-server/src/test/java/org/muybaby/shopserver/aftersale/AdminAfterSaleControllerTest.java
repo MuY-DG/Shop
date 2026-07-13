@@ -4,7 +4,9 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.payment.PaymentTestSupport;
 import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatRefundRequest;
+import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.mockito.ArgumentCaptor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -12,6 +14,8 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -25,6 +29,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -36,6 +41,9 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
 
     @MockitoSpyBean
     private MockWechatPayProvider refundProvider;
+
+    @Autowired
+    private StorageProvider storageProvider;
 
     @Test
     void adminListAndDetailReturnPagedEnvelopeAndRequireReadAuthority() throws Exception {
@@ -80,6 +88,43 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.data.evidenceFiles[0].visibility").value("PRIVATE"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].purpose").value("AFTER_SALE_IMAGE"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].status").value("ACTIVE"));
+    }
+
+    @Test
+    void adminCanReadOnlyEvidenceAttachedToTheRequestedAfterSale() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-evidence-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-evidence");
+        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long evidenceFileId = firstEvidenceFileId(afterSaleId);
+        jdbcClient.sql("update storage_file set purpose = 'REFUND_EVIDENCE' where id = :fileId")
+                .param("fileId", evidenceFileId)
+                .update();
+        byte[] evidenceContent = "private-evidence-image".getBytes(StandardCharsets.UTF_8);
+        storageProvider.put(
+                "private/after-sale-flow/" + evidenceFileId + ".png",
+                "image/png",
+                new ByteArrayInputStream(evidenceContent),
+                evidenceContent.length
+        );
+        long unrelatedFileId = insertAppEvidenceFile(appUser.userId(), "REFUND_EVIDENCE");
+        String readToken = limitedAdminToken(List.of("aftersale:read"));
+        String auditOnlyToken = limitedAdminToken(List.of("aftersale:audit"));
+
+        mockMvc.perform(get("/admin/after-sales/{afterSaleId}/evidence/{fileId}", afterSaleId, evidenceFileId)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("image/png"))
+                .andExpect(content().bytes(evidenceContent));
+
+        mockMvc.perform(get("/admin/after-sales/{afterSaleId}/evidence/{fileId}", afterSaleId, evidenceFileId)
+                        .header("Authorization", "Bearer " + auditOnlyToken))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/admin/after-sales/{afterSaleId}/evidence/{fileId}", afterSaleId, unrelatedFileId)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(800001));
     }
 
     @Test

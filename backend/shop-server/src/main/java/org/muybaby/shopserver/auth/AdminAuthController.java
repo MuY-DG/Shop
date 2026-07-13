@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.muybaby.shopserver.auth.dto.AdminLoginRequest;
 import org.muybaby.shopserver.auth.dto.CurrentAdminUserResponse;
 import org.muybaby.shopserver.auth.dto.LoginTokenResponse;
+import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
 import org.muybaby.shopserver.auth.service.AdminAuthService;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
@@ -27,6 +28,11 @@ public class AdminAuthController {
     @PostMapping("/login")
     public ApiResponse<LoginTokenResponse> login(@Valid @RequestBody AdminLoginRequest request) {
         return ApiResponse.success(adminAuthService.login(request));
+    }
+
+    @PostMapping("/refresh")
+    public ApiResponse<LoginTokenResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        return ApiResponse.success(adminAuthService.refresh(request));
     }
 
     @GetMapping("/current-user")

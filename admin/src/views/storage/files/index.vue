@@ -543,20 +543,20 @@
   }
 
   const confirmDelete = async (row: Api.Storage.FileItem) => {
-    await ElMessageBox.confirm(`确定删除文件“${row.originalFilename}”吗？`, '删除确认', {
-      type: 'warning',
-      confirmButtonText: '删除',
-      cancelButtonText: '取消'
-    })
-
     try {
+      await ElMessageBox.confirm(`确定删除文件“${row.originalFilename}”吗？`, '删除确认', {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      })
       await deleteStorageFile(row.id)
       await loadFiles()
       if (detailFile.value?.id === row.id) {
         detailDrawerVisible.value = false
       }
-    } catch (error: any) {
-      ElMessage.error(error?.message || '删除失败，文件可能仍被业务引用')
+    } catch (error) {
+      if (error === 'cancel' || error === 'close') return
+      // HTTP 层统一展示业务错误和未授权提示，避免同一错误重复弹出。
     }
   }
 

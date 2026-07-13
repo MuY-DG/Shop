@@ -70,6 +70,7 @@ function isTabPath(path: string): boolean {
 Page({
   data: {
     healthText: "后端诊断: 正在连接...",
+    showBanners: false,
     banners: [] as HomeBanner[],
     categories: [] as CategoryView[],
     products: [] as ProductCardView[],

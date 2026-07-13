@@ -5,6 +5,7 @@ import org.muybaby.shopserver.admin.rbac.service.AdminMenuRouteService;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,5 +25,11 @@ public class AdminMenuController {
     @GetMapping("/menus")
     public ApiResponse<List<AdminRouteResponse>> menus(@AuthenticationPrincipal AuthenticatedPrincipal principal) {
         return ApiResponse.success(menuRouteService.routesForUser(principal.subjectId()));
+    }
+
+    @GetMapping("/access-catalog")
+    @PreAuthorize("hasAnyAuthority('system:role:read', 'system:role:update', 'system:role:assign')")
+    public ApiResponse<List<AdminRouteResponse>> accessCatalog() {
+        return ApiResponse.success(menuRouteService.allRoutes());
     }
 }

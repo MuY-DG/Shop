@@ -120,14 +120,45 @@ class AdminAuthControllerTest {
                         "content:banner:create",
                         "content:banner:update",
                         "content:banner:publish",
+                        "system:user:read",
                         "system:user:create",
                         "system:user:update",
                         "system:user:disable",
+                        "system:role:read",
                         "system:role:create",
                         "system:role:update",
                         "system:role:assign",
+                        "system:role:delete",
                         "system:menu:update"
                 )));
+    }
+
+    @Test
+    void refreshRotatesAdminTokenPairAndInvalidatesTheOldAccessToken() throws Exception {
+        String loginResponse = mockMvc.perform(post("/admin/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"userName":"Super","password":"123456"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String oldAccessToken = objectMapper.readTree(loginResponse).path("data").path("token").asText();
+        String refreshToken = objectMapper.readTree(loginResponse).path("data").path("refreshToken").asText();
+
+        mockMvc.perform(post("/admin/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new java.util.HashMap<>(java.util.Map.of(
+                                "refreshToken", refreshToken
+                        )))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.token", startsWith("adm_")))
+                .andExpect(jsonPath("$.data.refreshToken", startsWith("adr_")));
+
+        mockMvc.perform(get("/admin/auth/current-user")
+                        .header("Authorization", "Bearer " + oldAccessToken))
+                .andExpect(status().isUnauthorized());
     }
 
     private String loginAndExtractToken() throws Exception {

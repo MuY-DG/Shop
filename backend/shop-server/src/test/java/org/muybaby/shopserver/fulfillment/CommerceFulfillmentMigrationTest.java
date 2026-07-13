@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CommerceFulfillmentMigrationTest {
 
     @Test
-    void populatedH2SchemaMigratesFromV9ToV10WithoutLosingShipmentEvidence() throws SQLException {
+    void populatedH2SchemaMigratesFromV9ToLatestWithoutLosingShipmentEvidence() throws SQLException {
         String databaseName = "fulfillment_" + UUID.randomUUID().toString().replace("-", "");
         String jdbcUrl = "jdbc:h2:mem:" + databaseName
                 + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";

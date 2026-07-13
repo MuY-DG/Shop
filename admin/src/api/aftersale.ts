@@ -13,6 +13,13 @@ export function fetchAfterSaleDetail(afterSaleId: number) {
   })
 }
 
+export function fetchAfterSaleEvidence(afterSaleId: number, fileId: number) {
+  return request.get<Blob>({
+    url: `/admin/after-sales/${afterSaleId}/evidence/${fileId}`,
+    responseType: 'blob'
+  })
+}
+
 export function approveAfterSale(afterSaleId: number, data: Api.AfterSale.AuditPayload) {
   return request.post<Api.AfterSale.Item>({
     url: `/admin/after-sales/${afterSaleId}/approve`,

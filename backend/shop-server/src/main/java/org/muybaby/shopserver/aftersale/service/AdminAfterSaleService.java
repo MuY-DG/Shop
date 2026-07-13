@@ -18,6 +18,14 @@ import org.muybaby.shopserver.payment.provider.WechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatRefundRequest;
 import org.muybaby.shopserver.payment.provider.WechatRefundResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.provider.StorageProvider;
+import org.muybaby.shopserver.storage.provider.StoredObject;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.CacheControl;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -25,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -44,17 +53,20 @@ public class AdminAfterSaleService {
     private final JdbcClient jdbcClient;
     private final PaymentConfigResolver paymentConfigResolver;
     private final WechatPayProvider wechatPayProvider;
+    private final StorageProvider storageProvider;
     private final TransactionTemplate transactionTemplate;
 
     public AdminAfterSaleService(
             JdbcClient jdbcClient,
             PaymentConfigResolver paymentConfigResolver,
             WechatPayProvider wechatPayProvider,
+            StorageProvider storageProvider,
             PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentConfigResolver = paymentConfigResolver;
         this.wechatPayProvider = wechatPayProvider;
+        this.storageProvider = storageProvider;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -119,6 +131,56 @@ public class AdminAfterSaleService {
     public AfterSaleResponse detail(AuthenticatedPrincipal principal, Long afterSaleId) {
         requireAdminUser(principal);
         return requireResponse(afterSaleId);
+    }
+
+    public ResponseEntity<InputStreamResource> evidence(
+            AuthenticatedPrincipal principal,
+            Long afterSaleId,
+            Long fileId
+    ) {
+        requireAdminUser(principal);
+        EvidenceResourceRow row = jdbcClient.sql("""
+                        select sf.object_key,
+                               sf.original_filename,
+                               sf.content_type
+                        from after_sale_evidence ase
+                        join storage_file sf on sf.id = ase.file_id
+                        where ase.after_sale_id = :afterSaleId
+                          and ase.file_id = :fileId
+                          and sf.visibility = 'PRIVATE'
+                          and sf.status = 'ACTIVE'
+                          and sf.purpose in ('AFTER_SALE_IMAGE', 'REFUND_EVIDENCE')
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .param("fileId", fileId)
+                .query((rs, rowNum) -> new EvidenceResourceRow(
+                        rs.getString("object_key"),
+                        rs.getString("original_filename"),
+                        rs.getString("content_type")
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+
+        try {
+            StoredObject storedObject = storageProvider.open(row.objectKey());
+            MediaType contentType = MediaType.parseMediaType(
+                    StringUtils.hasText(row.contentType())
+                            ? row.contentType()
+                            : MediaType.APPLICATION_OCTET_STREAM_VALUE
+            );
+            String contentDisposition = ContentDisposition.inline()
+                    .filename(row.originalFilename(), StandardCharsets.UTF_8)
+                    .build()
+                    .toString();
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.noStore())
+                    .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition)
+                    .contentType(contentType)
+                    .contentLength(storedObject.sizeBytes())
+                    .body(new InputStreamResource(storedObject.inputStream()));
+        } catch (RuntimeException ex) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
     }
 
     @Transactional
@@ -653,6 +715,9 @@ public class AdminAfterSaleService {
     }
 
     private record PaymentOrderRow(Long id, Long orderId, String outTradeNo, String transactionId, String status, long amountCent) {
+    }
+
+    private record EvidenceResourceRow(String objectKey, String originalFilename, String contentType) {
     }
 
     private record RefundRequestContext(

@@ -122,6 +122,19 @@
             <div class="detail-section__title">凭证文件</div>
             <div v-if="currentDetail.evidenceFiles?.length" class="evidence-list">
               <div v-for="file in currentDetail.evidenceFiles" :key="file.fileId" class="evidence-file">
+                <ElImage
+                  v-if="evidencePreviewUrls[file.fileId]"
+                  class="evidence-file__preview"
+                  :src="evidencePreviewUrls[file.fileId]"
+                  :preview-src-list="evidencePreviewList"
+                  :initial-index="evidencePreviewIndex(file.fileId)"
+                  fit="cover"
+                  preview-teleported
+                />
+                <div v-else-if="isPreviewableImage(file)" class="evidence-file__preview-state">
+                  <span v-if="evidencePreviewLoading">图片加载中...</span>
+                  <span v-else>图片加载失败</span>
+                </div>
                 <div class="evidence-file__header">
                   <span>{{ formatText(file.originalFilename) }}</span>
                   <ElTag size="small" :type="file.visibility === 'PRIVATE' ? 'warning' : 'success'">
@@ -250,12 +263,13 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onMounted, reactive, ref } from 'vue'
+  import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
   import {
     approveAfterSale,
     fetchAfterSaleDetail,
+    fetchAfterSaleEvidence,
     fetchAfterSales,
     rejectAfterSale
   } from '@/api/aftersale'
@@ -273,10 +287,12 @@
   const loading = ref(false)
   const detailLoading = ref(false)
   const detailDrawerVisible = ref(false)
+  const evidencePreviewLoading = ref(false)
   const auditDialogVisible = ref(false)
   const auditing = ref(false)
   const afterSales = ref<Api.AfterSale.Item[]>([])
   const currentDetail = ref<Api.AfterSale.Item | null>(null)
+  const evidencePreviewUrls = ref<Record<number, string>>({})
   const auditTarget = ref<Api.AfterSale.Item | null>(null)
   const auditMode = ref<AuditMode>('approve')
   const detailRequestSeq = ref(0)
@@ -346,6 +362,8 @@
     }
   ])
 
+  const evidencePreviewList = computed(() => Object.values(evidencePreviewUrls.value))
+
   const auditRules = computed<FormRules<AuditForm>>(() => ({
     approvedAmountYuan: [
       {
@@ -380,6 +398,47 @@
     const message = refundOrder.lastErrorMessage || ''
     if (!code && !message) return '-'
     return [code, message].filter(Boolean).join(' / ')
+  }
+
+  const isPreviewableImage = (file: Api.AfterSale.EvidenceFile) =>
+    file.status === 'ACTIVE' && file.contentType?.toLowerCase().startsWith('image/')
+
+  const evidencePreviewIndex = (fileId: number) => {
+    const url = evidencePreviewUrls.value[fileId]
+    return url ? evidencePreviewList.value.indexOf(url) : 0
+  }
+
+  const clearEvidencePreviews = () => {
+    Object.values(evidencePreviewUrls.value).forEach((url) => URL.revokeObjectURL(url))
+    evidencePreviewUrls.value = {}
+    evidencePreviewLoading.value = false
+  }
+
+  const loadEvidencePreviews = async (detail: Api.AfterSale.Item, requestId: number) => {
+    const files = (detail.evidenceFiles || []).filter(isPreviewableImage)
+    if (!files.length) return
+
+    evidencePreviewLoading.value = true
+    const previews = await Promise.all(
+      files.map(async (file) => {
+        try {
+          const blob = await fetchAfterSaleEvidence(detail.id, file.fileId)
+          return [file.fileId, URL.createObjectURL(blob)] as const
+        } catch {
+          return null
+        }
+      })
+    )
+
+    if (requestId !== detailRequestSeq.value) {
+      previews.forEach((preview) => preview && URL.revokeObjectURL(preview[1]))
+      return
+    }
+
+    evidencePreviewUrls.value = Object.fromEntries(
+      previews.filter((preview): preview is readonly [number, string] => preview !== null)
+    )
+    evidencePreviewLoading.value = false
   }
 
   const loadAfterSales = async () => {
@@ -433,17 +492,27 @@
     detailDrawerVisible.value = true
     const requestId = ++detailRequestSeq.value
     detailLoading.value = true
+    clearEvidencePreviews()
     currentDetail.value = null
     try {
       const detail = await fetchAfterSaleDetail(afterSaleId)
       if (requestId !== detailRequestSeq.value) return
       currentDetail.value = detail
+      await loadEvidencePreviews(detail, requestId)
     } finally {
       if (requestId === detailRequestSeq.value) {
         detailLoading.value = false
       }
     }
   }
+
+  watch(detailDrawerVisible, (visible) => {
+    if (!visible) {
+      detailRequestSeq.value += 1
+      clearEvidencePreviews()
+      currentDetail.value = null
+    }
+  })
 
   const openAuditDialog = (mode: AuditMode, row: Api.AfterSale.Item) => {
     auditMode.value = mode
@@ -489,6 +558,7 @@
   }
 
   onMounted(loadAfterSales)
+  onBeforeUnmount(clearEvidencePreviews)
 </script>
 
 <style scoped lang="scss">
@@ -559,6 +629,22 @@
     border: 1px solid var(--el-border-color);
     border-radius: 6px;
     background: var(--el-fill-color-blank);
+  }
+
+  .evidence-file__preview,
+  .evidence-file__preview-state {
+    width: 144px;
+    height: 144px;
+    border-radius: 6px;
+  }
+
+  .evidence-file__preview-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-light);
+    border: 1px dashed var(--el-border-color);
   }
 
   .evidence-file__header,

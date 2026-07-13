@@ -9,7 +9,7 @@ import java.util.Optional;
 public class PathTokenKindResolver {
 
     public Optional<TokenKind> resolve(String path) {
-        if ("/admin/auth/login".equals(path)
+        if (("/admin/auth/login".equals(path) || "/admin/auth/refresh".equals(path))
                 || "/app/auth/login".equals(path)
                 || "/app/auth/refresh".equals(path)) {
             return Optional.empty();

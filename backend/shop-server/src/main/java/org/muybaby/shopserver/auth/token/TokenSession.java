@@ -40,8 +40,19 @@ public record TokenSession(
     }
 
     public static TokenSession admin(Long userId, String username, List<String> roles, List<String> permissions, Instant issuedAt) {
+        return admin(UUID.randomUUID().toString(), userId, username, roles, permissions, issuedAt);
+    }
+
+    public static TokenSession admin(
+            String sessionId,
+            Long userId,
+            String username,
+            List<String> roles,
+            List<String> permissions,
+            Instant issuedAt
+    ) {
         return new TokenSession(
-                UUID.randomUUID().toString(),
+                sessionId,
                 UUID.randomUUID().toString(),
                 TokenKind.ADMIN,
                 userId,

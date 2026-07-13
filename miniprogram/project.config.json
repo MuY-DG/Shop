@@ -1,5 +1,5 @@
 {
-  "description": "Hotpot Shop Mini Program",
+  "description": "MuYbaby Mini Program",
   "packOptions": {
     "ignore": [],
     "include": []
@@ -35,7 +35,7 @@
   "compileType": "miniprogram",
   "libVersion": "latest",
   "appid": "wx2c59f00275b9057a",
-  "projectname": "hotpot-shop-miniprogram",
+  "projectname": "MuYbaby",
   "condition": {},
   "simulatorPluginLibVersion": {},
   "editorSetting": {}

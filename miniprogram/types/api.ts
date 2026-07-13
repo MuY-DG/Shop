@@ -73,7 +73,7 @@ export interface StorageFileUploadResponse {
   height?: number | null;
   status: string;
   uploadedByType: string;
-  uploadedById?: number | null;
+  uploadedById?: string | null;
   url?: string | null;
   publicUrl?: string | null;
   createdAt: string;

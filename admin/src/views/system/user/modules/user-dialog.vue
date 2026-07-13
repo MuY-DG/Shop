@@ -1,143 +1,185 @@
 <template>
   <ElDialog
     v-model="dialogVisible"
-    :title="dialogType === 'add' ? '添加用户' : '编辑用户'"
-    width="30%"
+    :title="type === 'add' ? '新增管理员' : '编辑管理员'"
+    width="520px"
     align-center
+    destroy-on-close
   >
-    <ElForm ref="formRef" :model="formData" :rules="rules" label-width="80px">
+    <ElForm ref="formRef" :model="form" :rules="rules" label-width="96px">
       <ElFormItem label="用户名" prop="username">
-        <ElInput v-model="formData.username" placeholder="请输入用户名" />
+        <ElInput
+          v-model="form.username"
+          :disabled="type === 'edit'"
+          placeholder="请输入登录用户名"
+        />
       </ElFormItem>
-      <ElFormItem label="手机号" prop="phone">
-        <ElInput v-model="formData.phone" placeholder="请输入手机号" />
+      <ElFormItem label="显示名称" prop="displayName">
+        <ElInput v-model="form.displayName" placeholder="请输入显示名称" />
       </ElFormItem>
-      <ElFormItem label="性别" prop="gender">
-        <ElSelect v-model="formData.gender">
-          <ElOption label="男" value="男" />
-          <ElOption label="女" value="女" />
-        </ElSelect>
+      <ElFormItem label="邮箱" prop="email">
+        <ElInput v-model="form.email" placeholder="请输入邮箱" />
       </ElFormItem>
-      <ElFormItem label="角色" prop="role">
-        <ElSelect v-model="formData.role" multiple>
+      <ElFormItem :label="type === 'add' ? '登录密码' : '重置密码'" prop="password">
+        <ElInput
+          v-model="form.password"
+          type="password"
+          show-password
+          :placeholder="type === 'add' ? '至少 6 位' : '留空则不修改'"
+        />
+      </ElFormItem>
+      <ElFormItem label="头像地址" prop="avatar">
+        <ElInput v-model="form.avatar" placeholder="可选" />
+      </ElFormItem>
+      <ElFormItem label="角色" prop="roleIds">
+        <ElSelect
+          v-model="form.roleIds"
+          multiple
+          filterable
+          style="width: 100%"
+          placeholder="请选择角色"
+        >
           <ElOption
-            v-for="role in roleList"
-            :key="role.roleCode"
-            :value="role.roleCode"
-            :label="role.roleName"
+            v-for="role in roleOptions"
+            :key="role.id"
+            :label="`${role.name} (${role.code})`"
+            :value="role.id"
           />
         </ElSelect>
       </ElFormItem>
+      <ElFormItem v-if="type === 'edit'" label="状态" prop="status">
+        <ElRadioGroup v-model="form.status">
+          <ElRadio value="ENABLED">启用</ElRadio>
+          <ElRadio value="DISABLED">停用</ElRadio>
+        </ElRadioGroup>
+      </ElFormItem>
     </ElForm>
+
     <template #footer>
-      <div class="dialog-footer">
-        <ElButton @click="dialogVisible = false">取消</ElButton>
-        <ElButton type="primary" @click="handleSubmit">提交</ElButton>
-      </div>
+      <ElButton @click="dialogVisible = false">取消</ElButton>
+      <ElButton type="primary" :loading="submitting" @click="handleSubmit">保存</ElButton>
     </template>
   </ElDialog>
 </template>
 
 <script setup lang="ts">
-  import { ROLE_LIST_DATA } from '@/mock/temp/formData'
   import type { FormInstance, FormRules } from 'element-plus'
+  import { ElMessage } from 'element-plus'
+  import { createAdminUser, fetchGetRoleList, updateAdminUser } from '@/api/system-manage'
+  import type { DialogType } from '@/types'
 
   interface Props {
     visible: boolean
-    type: string
-    userData?: Partial<Api.SystemManage.UserListItem>
-  }
-
-  interface Emits {
-    (e: 'update:visible', value: boolean): void
-    (e: 'submit'): void
+    type: DialogType
+    userData?: Api.SystemManage.UserListItem
   }
 
   const props = defineProps<Props>()
-  const emit = defineEmits<Emits>()
+  const emit = defineEmits<{
+    (e: 'update:visible', value: boolean): void
+    (e: 'success'): void
+  }>()
 
-  // 角色列表数据
-  const roleList = ref(ROLE_LIST_DATA)
-
-  // 对话框显示控制
   const dialogVisible = computed({
     get: () => props.visible,
     set: (value) => emit('update:visible', value)
   })
 
-  const dialogType = computed(() => props.type)
-
-  // 表单实例
   const formRef = ref<FormInstance>()
-
-  // 表单数据
-  const formData = reactive({
+  const submitting = ref(false)
+  const roleOptions = ref<Api.SystemManage.RoleListItem[]>([])
+  const form = reactive({
     username: '',
-    phone: '',
-    gender: '男',
-    role: [] as string[]
+    displayName: '',
+    email: '',
+    password: '',
+    avatar: '',
+    status: 'ENABLED' as Api.SystemManage.AdminUserStatus,
+    roleIds: [] as number[]
   })
 
-  // 表单验证规则
+  const validatePassword = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+    if (props.type === 'add' && !value) {
+      callback(new Error('请输入登录密码'))
+      return
+    }
+    if (value && value.length < 6) {
+      callback(new Error('密码至少 6 位'))
+      return
+    }
+    callback()
+  }
+
   const rules: FormRules = {
-    username: [
-      { required: true, message: '请输入用户名', trigger: 'blur' },
-      { min: 2, max: 20, message: '长度在 2 到 20 个字符', trigger: 'blur' }
+    username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+    displayName: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
+    email: [
+      { required: true, message: '请输入邮箱', trigger: 'blur' },
+      { type: 'email', message: '邮箱格式不正确', trigger: 'blur' }
     ],
-    phone: [
-      { required: true, message: '请输入手机号', trigger: 'blur' },
-      { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号格式', trigger: 'blur' }
-    ],
-    gender: [{ required: true, message: '请选择性别', trigger: 'blur' }],
-    role: [{ required: true, message: '请选择角色', trigger: 'blur' }]
+    password: [{ validator: validatePassword, trigger: 'blur' }],
+    roleIds: [
+      { type: 'array', required: true, min: 1, message: '请至少选择一个角色', trigger: 'change' }
+    ]
   }
 
-  /**
-   * 初始化表单数据
-   * 根据对话框类型（新增/编辑）填充表单
-   */
-  const initFormData = () => {
-    const isEdit = props.type === 'edit' && props.userData
-    const row = props.userData
-
-    Object.assign(formData, {
-      username: isEdit && row ? row.userName || '' : '',
-      phone: isEdit && row ? row.userPhone || '' : '',
-      gender: isEdit && row ? row.userGender || '男' : '男',
-      role: isEdit && row ? (Array.isArray(row.userRoles) ? row.userRoles : []) : []
+  const resetForm = () => {
+    Object.assign(form, {
+      username: props.userData?.username || '',
+      displayName: props.userData?.displayName || '',
+      email: props.userData?.email || '',
+      password: '',
+      avatar: props.userData?.avatar || '',
+      status: props.userData?.status || 'ENABLED',
+      roleIds: props.userData?.roleIds ? [...props.userData.roleIds] : []
     })
+    nextTick(() => formRef.value?.clearValidate())
   }
 
-  /**
-   * 监听对话框状态变化
-   * 当对话框打开时初始化表单数据并清除验证状态
-   */
+  const loadRoles = async () => {
+    const response = await fetchGetRoleList({ current: 1, size: 100, enabled: true })
+    roleOptions.value = response.records
+  }
+
   watch(
-    () => [props.visible, props.type, props.userData],
-    ([visible]) => {
-      if (visible) {
-        initFormData()
-        nextTick(() => {
-          formRef.value?.clearValidate()
-        })
-      }
-    },
-    { immediate: true }
+    () => props.visible,
+    async (visible) => {
+      if (!visible) return
+      resetForm()
+      await loadRoles()
+    }
   )
 
-  /**
-   * 提交表单
-   * 验证通过后触发提交事件
-   */
   const handleSubmit = async () => {
     if (!formRef.value) return
-
-    await formRef.value.validate((valid) => {
-      if (valid) {
-        ElMessage.success(dialogType.value === 'add' ? '添加成功' : '更新成功')
-        dialogVisible.value = false
-        emit('submit')
+    await formRef.value.validate()
+    submitting.value = true
+    try {
+      if (props.type === 'add') {
+        await createAdminUser({
+          username: form.username,
+          displayName: form.displayName,
+          email: form.email,
+          password: form.password,
+          avatar: form.avatar,
+          roleIds: form.roleIds
+        })
+        ElMessage.success('管理员创建成功')
+      } else if (props.userData) {
+        await updateAdminUser(props.userData.id, {
+          displayName: form.displayName,
+          email: form.email,
+          password: form.password || undefined,
+          avatar: form.avatar,
+          status: form.status,
+          roleIds: form.roleIds
+        })
+        ElMessage.success('管理员更新成功')
       }
-    })
+      dialogVisible.value = false
+      emit('success')
+    } finally {
+      submitting.value = false
+    }
   }
 </script>

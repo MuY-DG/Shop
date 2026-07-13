@@ -1,5 +1,5 @@
 <view class="page home-page">
-  <view wx:if="{{banners.length > 0}}" class="banner-shell">
+  <view wx:if="{{showBanners && banners.length > 0}}" class="banner-shell">
     <swiper
       class="banner-swiper"
       circular="true"
@@ -15,7 +15,7 @@
           <image class="banner-image" src="{{item.imageUrl}}" mode="aspectFill" />
           <view class="banner-overlay"></view>
           <view class="banner-content">
-            <view class="banner-eyebrow">Hotpot Shop</view>
+            <view class="banner-eyebrow">MuYbaby</view>
             <view class="banner-title">{{item.title}}</view>
             <view wx:if="{{item.subtitle}}" class="banner-subtitle">{{item.subtitle}}</view>
           </view>
@@ -26,10 +26,7 @@
   </view>
 
   <view wx:else class="hero">
-    <view class="eyebrow">Hotpot Shop</view>
-    <view class="title">火锅底料商城</view>
-    <view class="subtitle">精选牛油、清油、番茄和菌汤锅底</view>
-    <view class="health-line">{{healthText}}</view>
+    <view class="title">测试</view>
   </view>
 
   <view class="section-block">

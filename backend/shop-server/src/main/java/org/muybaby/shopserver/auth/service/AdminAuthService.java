@@ -5,6 +5,7 @@ import org.muybaby.shopserver.admin.rbac.service.AdminRbacService;
 import org.muybaby.shopserver.auth.dto.AdminLoginRequest;
 import org.muybaby.shopserver.auth.dto.CurrentAdminUserResponse;
 import org.muybaby.shopserver.auth.dto.LoginTokenResponse;
+import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenPair;
@@ -46,10 +47,22 @@ public class AdminAuthService {
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
 
-        AdminUser user = userResult.get();
+        return issueSession(userResult.get(), null);
+    }
+
+    public LoginTokenResponse refresh(RefreshTokenRequest request) {
+        TokenSession oldSession = opaqueTokenService.consumeRefreshToken(request.refreshToken(), TokenKind.ADMIN);
+        AdminUser user = adminRbacService.findEnabledUserById(oldSession.subjectId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+        return issueSession(user, oldSession.sessionId());
+    }
+
+    private LoginTokenResponse issueSession(AdminUser user, String sessionId) {
         List<String> roles = adminRbacService.roleCodesByUserId(user.id());
         List<String> permissions = adminRbacService.permissionMarksByUserId(user.id());
-        TokenSession session = TokenSession.admin(user.id(), user.username(), roles, permissions, Instant.now());
+        TokenSession session = sessionId == null
+                ? TokenSession.admin(user.id(), user.username(), roles, permissions, Instant.now())
+                : TokenSession.admin(sessionId, user.id(), user.username(), roles, permissions, Instant.now());
         TokenPair tokenPair = opaqueTokenService.issue(TokenKind.ADMIN, session);
 
         return new LoginTokenResponse(tokenPair.accessToken(), tokenPair.refreshToken(), tokenPair.expiresIn());

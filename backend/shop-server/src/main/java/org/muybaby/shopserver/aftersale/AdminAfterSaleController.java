@@ -7,6 +7,8 @@ import org.muybaby.shopserver.aftersale.service.AdminAfterSaleService;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,6 +44,16 @@ public class AdminAfterSaleController {
             @PathVariable Long afterSaleId
     ) {
         return ApiResponse.success(adminAfterSaleService.detail(principal, afterSaleId));
+    }
+
+    @GetMapping("/{afterSaleId}/evidence/{fileId}")
+    @PreAuthorize("hasAuthority('aftersale:read')")
+    public ResponseEntity<InputStreamResource> evidence(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId,
+            @PathVariable Long fileId
+    ) {
+        return adminAfterSaleService.evidence(principal, afterSaleId, fileId);
     }
 
     @PostMapping("/{afterSaleId}/approve")

@@ -24,9 +24,27 @@ public class AdminMenuRouteService {
 
     public List<AdminRouteResponse> routesForUser(Long userId) {
         List<MenuRow> menuRows = menuRowsForUser(userId);
+        return buildRoutes(menuRows, menuId -> authListForMenu(userId, menuId));
+    }
+
+    public List<AdminRouteResponse> allRoutes() {
+        List<MenuRow> menuRows = jdbcClient.sql("""
+                        select * from admin_menu
+                        where enabled = true
+                        order by sort_order, id
+                        """)
+                .query(this::mapMenuRow)
+                .list();
+        return buildRoutes(menuRows, this::allAuthListForMenu);
+    }
+
+    private List<AdminRouteResponse> buildRoutes(
+            List<MenuRow> menuRows,
+            java.util.function.Function<Long, List<AdminRouteAuthResponse>> authProvider
+    ) {
         Map<Long, MutableRoute> routesById = new LinkedHashMap<>();
         for (MenuRow menuRow : menuRows) {
-            routesById.put(menuRow.id(), MutableRoute.from(menuRow, authListForMenu(userId, menuRow.id())));
+            routesById.put(menuRow.id(), MutableRoute.from(menuRow, authProvider.apply(menuRow.id())));
         }
 
         List<MutableRoute> roots = new ArrayList<>();
@@ -43,6 +61,23 @@ public class AdminMenuRouteService {
         return roots.stream()
                 .map(MutableRoute::toResponse)
                 .toList();
+    }
+
+    private List<AdminRouteAuthResponse> allAuthListForMenu(Long menuId) {
+        return jdbcClient.sql("""
+                        select distinct p.id, p.title, p.auth_mark
+                        from admin_permission p
+                        join admin_menu_permission mp on mp.permission_id = p.id
+                        where mp.menu_id = :menuId
+                        order by p.id
+                        """)
+                .param("menuId", menuId)
+                .query((rs, rowNum) -> new AdminRouteAuthResponse(
+                        rs.getLong("id"),
+                        rs.getString("title"),
+                        rs.getString("auth_mark")
+                ))
+                .list();
     }
 
     private List<MenuRow> menuRowsForUser(Long userId) {

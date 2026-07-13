@@ -451,7 +451,7 @@ function uploadResponse(): StorageFileUploadResponse {
     sizeBytes: 1024,
     status: "ACTIVE",
     uploadedByType: "APP",
-    uploadedById: 7,
+    uploadedById: "7",
     url: null,
     publicUrl: null,
     createdAt: "2026-07-10T00:00:00Z",
@@ -486,6 +486,26 @@ test("uploadEvidenceFile shares one recovery and retries one upload once", async
   assert.equal(refreshCalls, 1);
   assert.equal(uploadCalls, 2);
   assert.deepEqual(tokens, ["app_old", "app_rotated"]);
+});
+
+test("uploadEvidenceFile accepts the backend string uploadedById contract", async () => {
+  const manager = createAuthenticatedManager();
+  const backendResponse = {
+    ...uploadResponse(),
+    uploadedById: "7"
+  };
+  const uploadEvidenceFile = createEvidenceUploader({
+    session: manager,
+    upload: async (_filePath, _purpose, authToken) =>
+      response(200, authToken, backendResponse)
+  });
+
+  const uploaded = await uploadEvidenceFile(
+    "/tmp/evidence.jpg",
+    "REFUND_EVIDENCE"
+  );
+
+  assert.equal(uploaded.uploadedById, "7");
 });
 
 test("uploadEvidenceFile stops after a second 401", async () => {

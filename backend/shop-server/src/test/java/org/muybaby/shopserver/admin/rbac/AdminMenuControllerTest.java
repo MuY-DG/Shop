@@ -105,9 +105,17 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[8].path").value("/system"))
                 .andExpect(jsonPath("$.data[8].children[0].path").value("user"))
                 .andExpect(jsonPath("$.data[8].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                        "system:user:read",
                         "system:user:create",
                         "system:user:update",
                         "system:user:disable"
+                )))
+                .andExpect(jsonPath("$.data[8].children[1].meta.authList[*].authMark", containsInAnyOrder(
+                        "system:role:read",
+                        "system:role:create",
+                        "system:role:update",
+                        "system:role:assign",
+                        "system:role:delete"
                 )))
                 .andExpect(jsonPath("$.data[8].children[2].path").value("menu"))
                 .andExpect(jsonPath("$.data[8].children[2].meta.authList[*].authMark", containsInAnyOrder(

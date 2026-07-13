@@ -342,7 +342,7 @@ public class StorageService {
             MultipartFile file,
             UploadedByType uploadedByType
     ) {
-        requireCategoryIfPresent(assetCategoryId);
+        Long resolvedAssetCategoryId = resolveAssetCategoryId(purpose, assetCategoryId);
         String originalFilename = sanitizeFilename(file.getOriginalFilename());
         String contentType = defaultContentType(file.getContentType());
         UploadPolicy.UploadDecision decision = uploadPolicy.requireAllowed(
@@ -377,7 +377,7 @@ public class StorageService {
                              :publicUrl, 'ACTIVE', :uploadedByType, :uploadedById)
                         """)
                 .param("purpose", purpose.name())
-                .param("assetCategoryId", assetCategoryId)
+                .param("assetCategoryId", resolvedAssetCategoryId)
                 .param("visibility", decision.visibility().name())
                 .param("provider", storageProperties.provider().name())
                 .param("objectKey", objectKey)
@@ -401,10 +401,21 @@ public class StorageService {
         return detail(fileId);
     }
 
-    private void requireCategoryIfPresent(Long assetCategoryId) {
+    private Long resolveAssetCategoryId(StoragePurpose purpose, Long assetCategoryId) {
         if (assetCategoryId != null) {
             requireCategoryExists(assetCategoryId);
+            return assetCategoryId;
         }
+
+        return jdbcClient.sql("""
+                        select id
+                        from storage_asset_category
+                        where code = :code
+                        """)
+                .param("code", purpose.defaultAssetCategoryCode())
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_ASSET_CATEGORY_UNAVAILABLE));
     }
 
     private void requireParentExists(Long parentId) {

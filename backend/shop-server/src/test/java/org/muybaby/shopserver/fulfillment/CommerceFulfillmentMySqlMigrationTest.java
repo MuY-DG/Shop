@@ -24,14 +24,14 @@ class CommerceFulfillmentMySqlMigrationTest {
     private static final MySQLContainer<?> UPGRADE_MYSQL = mysql("fulfillment_upgrade");
 
     @Test
-    void cleanMySqlSchemaMigratesFromV1ToV10() throws SQLException {
+    void cleanMySqlSchemaMigratesFromV1ToLatest() throws SQLException {
         CommerceFulfillmentMigrationTest.migrateToLatest(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
 
         Flyway flyway = Flyway.configure()
                 .dataSource(CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("10");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("12");
 
         try (Connection connection = DriverManager.getConnection(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
@@ -54,7 +54,7 @@ class CommerceFulfillmentMySqlMigrationTest {
     }
 
     @Test
-    void populatedMySqlSchemaMigratesFromV9ToV10WithoutLosingShipmentEvidence() throws SQLException {
+    void populatedMySqlSchemaMigratesFromV9ToLatestWithoutLosingShipmentEvidence() throws SQLException {
         String jdbcUrl = UPGRADE_MYSQL.getJdbcUrl();
         String username = UPGRADE_MYSQL.getUsername();
         String password = UPGRADE_MYSQL.getPassword();

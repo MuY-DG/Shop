@@ -36,6 +36,8 @@ let unauthorizedTimer: NodeJS.Timeout | null = null
 interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
   showErrorMessage?: boolean
   showSuccessMessage?: boolean
+  _retryAuth?: boolean
+  _skipAuthRefresh?: boolean
 }
 
 const { VITE_API_URL, VITE_WITH_CREDENTIALS } = import.meta.env
@@ -61,6 +63,8 @@ const axiosInstance = axios.create({
   ]
 })
 
+let refreshPromise: Promise<string> | null = null
+
 /** 请求拦截器 */
 axiosInstance.interceptors.request.use(
   (request: InternalAxiosRequestConfig) => {
@@ -83,16 +87,60 @@ axiosInstance.interceptors.request.use(
 /** 响应拦截器 */
 axiosInstance.interceptors.response.use(
   (response: AxiosResponse<BaseResponse>) => {
+    if (response.config.responseType === 'blob') return response
     const { code, msg } = response.data
     if (code === ApiStatus.success) return response
     if (code === ApiStatus.unauthorized) handleUnauthorizedError(msg)
     throw createHttpError(msg || $t('httpMsg.requestFailed'), code)
   },
-  (error) => {
-    if (error.response?.status === ApiStatus.unauthorized) handleUnauthorizedError()
+  async (error) => {
+    const config = error.config as ExtendedAxiosRequestConfig | undefined
+    if (error.response?.status === ApiStatus.unauthorized) {
+      const userStore = useUserStore()
+      if (config && !config._skipAuthRefresh && !config._retryAuth && userStore.refreshToken) {
+        try {
+          const accessToken = await refreshAdminAccessToken()
+          config._retryAuth = true
+          config.headers = config.headers || {}
+          config.headers.Authorization = `Bearer ${accessToken}`
+          return axiosInstance.request(config)
+        } catch {
+          handleUnauthorizedError()
+        }
+      }
+      handleUnauthorizedError()
+    }
     return Promise.reject(handleError(error))
   }
 )
+
+async function refreshAdminAccessToken(): Promise<string> {
+  if (refreshPromise) return refreshPromise
+
+  const userStore = useUserStore()
+  const refreshToken = userStore.refreshToken
+  if (!refreshToken) {
+    throw createHttpError($t('httpMsg.unauthorized'), ApiStatus.unauthorized)
+  }
+
+  refreshPromise = axiosInstance
+    .request<BaseResponse<Api.Auth.LoginResponse>>({
+      url: '/admin/auth/refresh',
+      method: 'POST',
+      data: { refreshToken },
+      _skipAuthRefresh: true
+    } as ExtendedAxiosRequestConfig)
+    .then((response) => {
+      const session = response.data.data
+      userStore.setToken(session.token, session.refreshToken)
+      return session.token
+    })
+    .finally(() => {
+      refreshPromise = null
+    })
+
+  return refreshPromise
+}
 
 /** 统一创建HttpError */
 function createHttpError(message: string, code: number) {
@@ -176,6 +224,10 @@ async function request<T = any>(config: ExtendedAxiosRequestConfig): Promise<T> 
 
   try {
     const res = await axiosInstance.request<BaseResponse<T>>(config)
+
+    if (config.responseType === 'blob') {
+      return res.data as unknown as T
+    }
 
     // 显示成功消息
     if (config.showSuccessMessage && res.data.msg) {

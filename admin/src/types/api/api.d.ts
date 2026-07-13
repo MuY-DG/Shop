@@ -93,53 +93,101 @@ declare namespace Api {
 
   /** 系统管理类型 */
   namespace SystemManage {
+    type AdminUserStatus = 'ENABLED' | 'DISABLED'
+
     /** 用户列表 */
     type UserList = Api.Common.PaginatedResponse<UserListItem>
 
     /** 用户列表项 */
     interface UserListItem {
       id: number
+      username: string
+      displayName: string
+      email: string
       avatar: string
       status: string
-      userName: string
-      userGender: string
-      nickName: string
-      userPhone: string
-      userEmail: string
-      userRoles: string[]
-      createBy: string
-      createTime: string
-      updateBy: string
-      updateTime: string
+      roleIds: number[]
+      roleCodes: string[]
+      lastLoginAt?: string | null
+      createdAt: string
+      updatedAt: string
+      /** Legacy template fields retained for the example table pages. */
+      userName?: string
+      userGender?: string
+      nickName?: string
+      userPhone?: string
+      userEmail?: string
+      userRoles?: string[]
+      createBy?: string
+      createTime?: string
+      updateBy?: string
+      updateTime?: string
     }
 
     /** 用户搜索参数 */
     type UserSearchParams = Partial<
-      Pick<UserListItem, 'id' | 'userName' | 'userGender' | 'userPhone' | 'userEmail' | 'status'> &
+      Pick<UserListItem, 'username' | 'email' | 'status' | 'userName' | 'userGender' | 'userPhone' | 'userEmail'> &
         Api.Common.CommonSearchParams
     >
+
+    interface UserCreateForm {
+      username: string
+      displayName: string
+      email: string
+      password: string
+      avatar: string
+      roleIds: number[]
+    }
+
+    interface UserUpdateForm {
+      displayName: string
+      email: string
+      password?: string
+      avatar: string
+      status: AdminUserStatus
+      roleIds: number[]
+    }
 
     /** 角色列表 */
     type RoleList = Api.Common.PaginatedResponse<RoleListItem>
 
     /** 角色列表项 */
     interface RoleListItem {
-      roleId: number
-      roleName: string
-      roleCode: string
+      id: number
+      name: string
+      code: string
       description: string
       enabled: boolean
-      createTime: string
+      createdAt: string
+      updatedAt: string
     }
 
     /** 角色搜索参数 */
     type RoleSearchParams = Partial<
-      Pick<RoleListItem, 'roleId' | 'roleName' | 'roleCode' | 'description' | 'enabled'> &
+      Pick<RoleListItem, 'name' | 'code' | 'enabled'> &
         Api.Common.CommonSearchParams & {
           startTime: string | null
           endTime: string | null
         }
     >
+
+    interface RoleForm {
+      name: string
+      code: string
+      description: string
+      enabled: boolean
+    }
+
+    interface RoleGrants {
+      roleId: number
+      menuIds: number[]
+      permissionIds: number[]
+    }
+
+    interface RoleGrantForm {
+      menuIds: number[]
+      permissionIds: number[]
+    }
   }
 
   namespace Product {

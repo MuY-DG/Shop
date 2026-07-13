@@ -68,6 +68,14 @@ function isOptionalPositiveFiniteNumber(value: unknown): boolean {
   return value === undefined || value === null || isPositiveFiniteNumber(value);
 }
 
+function isOptionalPositiveStringId(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    (typeof value === "string" && /^[1-9]\d*$/.test(value))
+  );
+}
+
 function isStorageFileUploadResponse(
   data: unknown,
   purpose: EvidenceUploadPurpose
@@ -88,7 +96,7 @@ function isStorageFileUploadResponse(
     isNonEmptyString(data.createdAt) &&
     isNonEmptyString(data.updatedAt) &&
     isPositiveFiniteNumber(data.sizeBytes) &&
-    isOptionalPositiveFiniteNumber(data.uploadedById) &&
+    isOptionalPositiveStringId(data.uploadedById) &&
     isOptionalPositiveFiniteNumber(data.assetCategoryId) &&
     isOptionalPositiveFiniteNumber(data.width) &&
     isOptionalPositiveFiniteNumber(data.height) &&
