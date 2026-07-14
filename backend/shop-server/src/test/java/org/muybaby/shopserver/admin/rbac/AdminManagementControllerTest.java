@@ -49,14 +49,14 @@ class AdminManagementControllerTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"menuIds":[100,101],"permissionIds":[1000]}
+                                {"menuIds":[100,101,200,201],"permissionIds":[1000]}
                                 """))
                 .andExpect(status().isOk());
 
         mockMvc.perform(get("/admin/system/roles/{roleId}/grants", roleId)
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.menuIds", containsInAnyOrder(100, 101)))
+                .andExpect(jsonPath("$.data.menuIds", containsInAnyOrder(100, 101, 200, 201)))
                 .andExpect(jsonPath("$.data.permissionIds", containsInAnyOrder(1000)));
 
         String createUserResponse = mockMvc.perform(post("/admin/system/users")
@@ -106,6 +106,44 @@ class AdminManagementControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(110006));
+    }
+
+    @Test
+    void roleGrantRejectsMissingParentMenusAndPermissionsWithoutOwningMenus() throws Exception {
+        String token = loginAndExtractToken();
+        long roleId = createRole(token, "R_GRANT_VALIDATION");
+
+        mockMvc.perform(put("/admin/system/roles/{roleId}/grants", roleId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"menuIds":[100,101],"permissionIds":[]}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/admin/system/roles/{roleId}/grants", roleId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"menuIds":[101],"permissionIds":[]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(110007));
+
+        mockMvc.perform(put("/admin/system/roles/{roleId}/grants", roleId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"menuIds":[100,101],"permissionIds":[1000]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(110007));
+
+        mockMvc.perform(get("/admin/system/roles/{roleId}/grants", roleId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.menuIds", containsInAnyOrder(100, 101)))
+                .andExpect(jsonPath("$.data.permissionIds").isEmpty());
     }
 
     private long createRole(String token, String code) throws Exception {

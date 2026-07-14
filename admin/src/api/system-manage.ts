@@ -82,3 +82,9 @@ export function fetchAdminAccessCatalog() {
     url: '/admin/system/access-catalog'
   })
 }
+
+export function fetchGetMenuResourceCatalog() {
+  return request.get<AppRouteRecord[]>({
+    url: '/admin/system/access-catalog'
+  })
+}

@@ -12,6 +12,7 @@ public enum ErrorCode {
     ADMIN_ROLE_CODE_CONFLICT(110004, "Admin role code already exists"),
     ADMIN_ROLE_IN_USE(110005, "Admin role is assigned to users"),
     CURRENT_ADMIN_DISABLE_FORBIDDEN(110006, "Current admin user cannot be disabled"),
+    ADMIN_ROLE_GRANT_INVALID(110007, "Role grant must include parent and owning menus"),
     WECHAT_LOGIN_FAILED(100101, "WeChat login failed"),
     WECHAT_PHONE_FAILED(100102, "WeChat phone authorization failed"),
     PRODUCT_CATEGORY_UNAVAILABLE(200000, "Product category unavailable"),

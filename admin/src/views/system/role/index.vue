@@ -122,7 +122,7 @@
               list: [
                 {
                   key: 'permission',
-                  label: '菜单权限',
+                  label: '授权配置',
                   icon: 'ri:shield-keyhole-line',
                   auth: 'system:role:assign'
                 },

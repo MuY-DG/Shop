@@ -356,6 +356,7 @@ public class AdminManagementService {
         List<Long> permissionIds = distinctIds(request.permissionIds());
         requireIdsExist("admin_menu", menuIds, ErrorCode.ADMIN_ROLE_UNAVAILABLE);
         requireIdsExist("admin_permission", permissionIds, ErrorCode.ADMIN_ROLE_UNAVAILABLE);
+        validateRoleGrantConsistency(menuIds, permissionIds);
 
         jdbcClient.sql("DELETE FROM admin_role_menu WHERE role_id = :roleId")
                 .param("roleId", roleId)
@@ -378,6 +379,47 @@ public class AdminManagementService {
                     .param("roleId", roleId)
                     .param("permissionId", permissionId)
                     .update();
+        }
+    }
+
+    private void validateRoleGrantConsistency(List<Long> menuIds, List<Long> permissionIds) {
+        if (menuIds.isEmpty()) {
+            if (!permissionIds.isEmpty()) {
+                throw new BusinessException(ErrorCode.ADMIN_ROLE_GRANT_INVALID);
+            }
+            return;
+        }
+
+        Integer menusMissingParents = namedParameterJdbcTemplate.queryForObject("""
+                        SELECT COUNT(*)
+                        FROM admin_menu menu_item
+                        WHERE menu_item.id IN (:menuIds)
+                          AND menu_item.parent_id IS NOT NULL
+                          AND menu_item.parent_id NOT IN (:menuIds)
+                        """,
+                new MapSqlParameterSource("menuIds", menuIds),
+                Integer.class
+        );
+        if (menusMissingParents == null || menusMissingParents > 0) {
+            throw new BusinessException(ErrorCode.ADMIN_ROLE_GRANT_INVALID);
+        }
+
+        if (permissionIds.isEmpty()) {
+            return;
+        }
+        Integer permissionsWithOwningMenus = namedParameterJdbcTemplate.queryForObject("""
+                        SELECT COUNT(DISTINCT menu_permission.permission_id)
+                        FROM admin_menu_permission menu_permission
+                        WHERE menu_permission.permission_id IN (:permissionIds)
+                          AND menu_permission.menu_id IN (:menuIds)
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("permissionIds", permissionIds)
+                        .addValue("menuIds", menuIds),
+                Integer.class
+        );
+        if (permissionsWithOwningMenus == null || permissionsWithOwningMenus != permissionIds.size()) {
+            throw new BusinessException(ErrorCode.ADMIN_ROLE_GRANT_INVALID);
         }
     }
 

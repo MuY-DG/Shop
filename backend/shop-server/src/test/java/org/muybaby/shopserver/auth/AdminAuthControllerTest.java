@@ -92,7 +92,7 @@ class AdminAuthControllerTest {
                 .andExpect(jsonPath("$.data.userName").value("Super"))
                 .andExpect(jsonPath("$.data.roles", containsInAnyOrder("R_SUPER")))
                 .andExpect(jsonPath("$.data.buttons", containsInAnyOrder(
-                        "add",
+                        "system:menu:read",
                         "product:category:create",
                         "product:category:update",
                         "product:spu:create",
@@ -143,8 +143,7 @@ class AdminAuthControllerTest {
                         "system:role:create",
                         "system:role:update",
                         "system:role:assign",
-                        "system:role:delete",
-                        "system:menu:update"
+                        "system:role:delete"
                 )));
     }
 

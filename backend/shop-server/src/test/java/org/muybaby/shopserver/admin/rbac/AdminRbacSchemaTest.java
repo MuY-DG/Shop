@@ -42,10 +42,26 @@ class AdminRbacSchemaTest {
                         """)
                 .query(Integer.class)
                 .single();
+        Integer menuReadPermissionCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission
+                        where auth_mark = 'system:menu:read'
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer obsoleteMenuPermissionCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission
+                        where auth_mark in ('add', 'system:menu:update')
+                        """)
+                .query(Integer.class)
+                .single();
 
         assertThat(passwordEncoder.matches("123456", passwordHash)).isTrue();
         assertThat(menuCount).isGreaterThanOrEqualTo(5);
         assertThat(storagePermissionCount).isEqualTo(4);
         assertThat(storageRouteCount).isEqualTo(1);
+        assertThat(menuReadPermissionCount).isEqualTo(1);
+        assertThat(obsoleteMenuPermissionCount).isZero();
     }
 }

@@ -6,8 +6,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.annotation.Transactional;
+import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.support.AdminTokenTestSupport;
+
+import java.util.List;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -19,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Transactional
 class AdminMenuControllerTest {
 
     @Autowired
@@ -26,6 +33,12 @@ class AdminMenuControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private JdbcClient jdbcClient;
+
+    @Autowired
+    private OpaqueTokenService opaqueTokenService;
 
     @Test
     void menuApiReturnsArtDesignProRouteTreeWithAuthList() throws Exception {
@@ -146,8 +159,31 @@ class AdminMenuControllerTest {
                 )))
                 .andExpect(jsonPath("$.data[8].children[2].path").value("menu"))
                 .andExpect(jsonPath("$.data[8].children[2].meta.authList[*].authMark", containsInAnyOrder(
-                        "system:menu:update",
-                        "add"
+                        "system:menu:read"
+                )));
+    }
+
+    @Test
+    void menuReadPermissionCanLoadTheFullAccessCatalog() throws Exception {
+        String token = AdminTokenTestSupport.issueAdminToken(
+                jdbcClient,
+                opaqueTokenService,
+                List.of("system:menu:read")
+        );
+
+        mockMvc.perform(get("/admin/system/access-catalog")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[*].path", contains(
+                        "/dashboard",
+                        "/product",
+                        "/marketing",
+                        "/order",
+                        "/storage/files",
+                        "/content/banner",
+                        "/development",
+                        "/aftersale",
+                        "/system"
                 )));
     }
 

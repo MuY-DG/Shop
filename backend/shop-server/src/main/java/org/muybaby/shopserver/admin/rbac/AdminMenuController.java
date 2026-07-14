@@ -28,7 +28,7 @@ public class AdminMenuController {
     }
 
     @GetMapping("/access-catalog")
-    @PreAuthorize("hasAnyAuthority('system:role:read', 'system:role:update', 'system:role:assign')")
+    @PreAuthorize("hasAnyAuthority('system:role:read', 'system:role:update', 'system:role:assign', 'system:menu:read')")
     public ApiResponse<List<AdminRouteResponse>> accessCatalog() {
         return ApiResponse.success(menuRouteService.allRoutes());
     }
