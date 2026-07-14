@@ -132,6 +132,78 @@ class StorageControllerTest {
     }
 
     @Test
+    void renameChangesOnlyDisplayFilenameAndKeepsStoredObjectAndUrlStable() throws Exception {
+        String token = adminToken();
+        UploadedAsset asset = uploadImage(token, "original-cover.png", 0);
+        String objectKeyBefore = jdbcClient.sql("select object_key from storage_asset where id = :assetId")
+                .param("assetId", asset.id())
+                .query(String.class)
+                .single();
+
+        mockMvc.perform(put("/admin/assets/{assetId}/display-name", asset.id())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayName\":\"菌汤锅底主图\"}")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(asset.id()))
+                .andExpect(jsonPath("$.data.originalFilename").value("菌汤锅底主图.png"))
+                .andExpect(jsonPath("$.data.publicUrl").value(asset.publicUrl()));
+
+        assertThat(jdbcClient.sql("select original_filename from storage_asset where id = :assetId")
+                .param("assetId", asset.id())
+                .query(String.class)
+                .single()).isEqualTo("菌汤锅底主图.png");
+        assertThat(jdbcClient.sql("select object_key from storage_asset where id = :assetId")
+                .param("assetId", asset.id())
+                .query(String.class)
+                .single()).isEqualTo(objectKeyBefore);
+
+        mockMvc.perform(get(URI.create(asset.publicUrl()).getPath()))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.IMAGE_PNG));
+    }
+
+    @Test
+    void batchMoveNormalizesDuplicateIdsAndMovesAllSelectedAssets() throws Exception {
+        String token = adminToken();
+        long sourceFolderId = createFolder(token, 0, "待整理", "ENABLED");
+        long targetFolderId = createFolder(token, 0, "商品轮播图", "ENABLED");
+        UploadedAsset first = uploadImage(token, "gallery-1.png", sourceFolderId);
+        UploadedAsset second = uploadImage(token, "gallery-2.png", sourceFolderId);
+
+        mockMvc.perform(post("/admin/assets/batch-move")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"assetIds":[%d,%d,%d],"folderId":%d}
+                                """.formatted(first.id(), first.id(), second.id(), targetFolderId))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk());
+
+        assertThat(folderId(first.id())).isEqualTo(targetFolderId);
+        assertThat(folderId(second.id())).isEqualTo(targetFolderId);
+    }
+
+    @Test
+    void batchMoveRollsBackWhenAnySelectedAssetIsUnavailable() throws Exception {
+        String token = adminToken();
+        long sourceFolderId = createFolder(token, 0, "待整理", "ENABLED");
+        long targetFolderId = createFolder(token, 0, "商品素材", "ENABLED");
+        UploadedAsset validAsset = uploadImage(token, "valid.png", sourceFolderId);
+        long privateAssetId = insertPrivateSecret();
+
+        mockMvc.perform(post("/admin/assets/batch-move")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"assetIds":[%d,%d],"folderId":%d}
+                                """.formatted(validAsset.id(), privateAssetId, targetFolderId))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
+
+        assertThat(folderId(validAsset.id())).isEqualTo(sourceFolderId);
+    }
+
+    @Test
     void listSupportsDescendantReferenceKeywordAndDateFilters() throws Exception {
         String token = adminToken();
         long rootId = createFolder(token, 0, "根分组", "ENABLED");
@@ -256,6 +328,12 @@ class StorageControllerTest {
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
+        mockMvc.perform(put("/admin/assets/{assetId}/display-name", secretId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayName\":\"renamed-secret\"}")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
         mockMvc.perform(delete("/admin/assets/{assetId}", secretId)
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isBadRequest())
@@ -324,6 +402,14 @@ class StorageControllerTest {
                         """)
                 .param("assetId", assetId)
                 .update();
+    }
+
+    private Long folderId(long assetId) {
+        return jdbcClient.sql("select folder_id from storage_asset where id = :assetId")
+                .param("assetId", assetId)
+                .query(Long.class)
+                .optional()
+                .orElse(null);
     }
 
     private long insertPrivateSecret() {

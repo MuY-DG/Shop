@@ -1,7 +1,58 @@
 <template>
   <div class="asset-picker" :class="{ 'asset-picker--compact': compact }">
     <template v-if="compact">
+      <AssetBatchUploadButton
+        v-if="multiple"
+        class="asset-picker__compact-upload"
+        :class="{ 'is-small': compactSize === 'small' }"
+        :media-kind="mediaKind"
+        :max-files="maxSelection"
+        :default-folder-id="defaultFolderId"
+        :disabled="disabled"
+        @uploaded="appendAssets"
+      >
+        <template #default="{ uploading: batchUploading }">
+          <div
+            class="asset-picker__compact-target"
+            :class="{ 'is-empty': !previewUrl, 'is-disabled': disabled }"
+            role="button"
+            :aria-label="`上传一个或多个${mediaKindLabel}`"
+          >
+            <video
+              v-if="mediaKind === 'VIDEO' && previewUrl"
+              :src="previewUrl"
+              muted
+              preload="metadata"
+            />
+            <ElImage
+              v-else-if="mediaKind === 'IMAGE' && previewUrl"
+              :src="previewUrl"
+              fit="cover"
+            />
+            <div v-else class="asset-picker__compact-placeholder">
+              <ElIcon :size="compactSize === 'small' ? 20 : 24">
+                <VideoCamera v-if="mediaKind === 'VIDEO'" />
+                <Plus v-else />
+              </ElIcon>
+              <span>{{ batchUploading ? '上传中' : `上传${mediaKindLabel}` }}</span>
+            </div>
+            <button
+              v-if="!disabled && !batchUploading"
+              type="button"
+              class="asset-picker__compact-library"
+              :title="`从素材库选择一个或多个${mediaKindLabel}`"
+              :aria-label="`从素材库选择一个或多个${mediaKindLabel}`"
+              @mousedown.stop.prevent
+              @click.stop.prevent="openBrowser"
+            >
+              <ElIcon size="14"><FolderOpened /></ElIcon>
+              <span v-if="compactSize !== 'small'">素材库</span>
+            </button>
+          </div>
+        </template>
+      </AssetBatchUploadButton>
       <ElUpload
+        v-else
         class="asset-picker__compact-upload"
         :class="{ 'is-small': compactSize === 'small' }"
         :accept="uploadAccept"
@@ -123,7 +174,17 @@
       </div>
     </template>
 
+    <AssetMultiPickerDialog
+      v-if="multiple"
+      v-model="dialogVisible"
+      :media-kind="mediaKind"
+      :max-selection="maxSelection"
+      :exclude-file-ids="excludeFileIds"
+      @confirm="appendAssets"
+    />
+
     <ElDialog
+      v-else
       v-model="dialogVisible"
       :title="`选择${mediaKindLabel}`"
       width="1080px"
@@ -223,6 +284,8 @@
     VideoCamera
   } from '@element-plus/icons-vue'
   import { fetchAssetDetail, fetchAssetFolders, fetchAssets, uploadAsset } from '@/api/assets'
+  import AssetBatchUploadButton from './asset-batch-upload-button.vue'
+  import AssetMultiPickerDialog from './asset-multi-picker-dialog.vue'
 
   defineOptions({ name: 'AssetPicker' })
 
@@ -241,11 +304,15 @@
     allowClear?: boolean
     compact?: boolean
     compactSize?: 'default' | 'small'
+    multiple?: boolean
+    maxSelection?: number
+    excludeFileIds?: number[]
   }
 
   interface Emits {
     (event: 'update:modelValue', value: Api.Common.AssetValue): void
     (event: 'change', value: Api.Common.AssetValue): void
+    (event: 'append', value: Api.Common.AssetValue[]): void
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -253,7 +320,10 @@
     disabled: false,
     allowClear: true,
     compact: false,
-    compactSize: 'default'
+    compactSize: 'default',
+    multiple: false,
+    maxSelection: 1,
+    excludeFileIds: () => []
   })
   const emit = defineEmits<Emits>()
 
@@ -311,6 +381,10 @@
     emit('change', value)
   }
 
+  const appendAssets = (values: Api.Common.AssetValue[]) => {
+    emit('append', values)
+  }
+
   const syncSelectedAsset = async () => {
     if (!modelValue.value.fileId) {
       selectedAsset.value = null
@@ -351,6 +425,7 @@
   const openBrowser = async () => {
     dialogVisible.value = true
     pagination.current = 1
+    if (props.multiple) return
     await Promise.all([loadFolders(), loadAssets()])
   }
 

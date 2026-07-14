@@ -128,6 +128,112 @@ class StorageUsageServiceTest {
         });
     }
 
+    @Test
+    void replaceOwnerUsagesKeepsUnchangedLocationWithoutCreatingHistory() {
+        long assetId = insertStorageAsset("stable-image.png", "ACTIVE");
+
+        storageUsageService.replaceOwnerUsages(
+                StorageUsageOwnerType.PRODUCT_SPU,
+                103L,
+                "原商品名",
+                List.of(new StorageUsageService.UsageAssignment(
+                        assetId,
+                        StorageFileUsageType.PRODUCT_SPU_MAIN,
+                        "old-snapshot-url",
+                        1,
+                        false
+                ))
+        );
+        long originalUsageId = storageUsageService.usages(assetId).getFirst().id();
+
+        storageUsageService.replaceOwnerUsages(
+                StorageUsageOwnerType.PRODUCT_SPU,
+                103L,
+                "新商品名",
+                List.of(new StorageUsageService.UsageAssignment(
+                        assetId,
+                        StorageFileUsageType.PRODUCT_SPU_MAIN,
+                        "new-snapshot-url",
+                        2,
+                        true
+                ))
+        );
+
+        assertThat(storageUsageService.usages(assetId)).singleElement().satisfies(usage -> {
+            assertThat(usage.id()).isEqualTo(originalUsageId);
+            assertThat(usage.status()).isEqualTo("ACTIVE");
+            assertThat(usage.ownerLabel()).isEqualTo("新商品名");
+            assertThat(usage.snapshotUrl()).isEqualTo("new-snapshot-url");
+            assertThat(usage.sortOrder()).isEqualTo(2);
+            assertThat(usage.protectedUsage()).isTrue();
+        });
+    }
+
+    @Test
+    void replaceOwnerUsagesOnlyRemovesLocationsMissingFromTheNewAssignmentSet() {
+        long retainedAssetId = insertStorageAsset("retained-image.png", "ACTIVE");
+        long removedAssetId = insertStorageAsset("removed-image.png", "ACTIVE");
+        long addedAssetId = insertStorageAsset("added-image.png", "ACTIVE");
+
+        storageUsageService.replaceOwnerUsages(
+                StorageUsageOwnerType.PRODUCT_SPU,
+                104L,
+                "测试商品",
+                List.of(
+                        new StorageUsageService.UsageAssignment(
+                                retainedAssetId,
+                                StorageFileUsageType.PRODUCT_SPU_MAIN,
+                                "retained-url",
+                                1,
+                                false
+                        ),
+                        new StorageUsageService.UsageAssignment(
+                                removedAssetId,
+                                StorageFileUsageType.PRODUCT_SPU_GALLERY,
+                                "removed-url",
+                                2,
+                                false
+                        )
+                )
+        );
+
+        storageUsageService.replaceOwnerUsages(
+                StorageUsageOwnerType.PRODUCT_SPU,
+                104L,
+                "测试商品",
+                List.of(
+                        new StorageUsageService.UsageAssignment(
+                                retainedAssetId,
+                                StorageFileUsageType.PRODUCT_SPU_MAIN,
+                                "retained-url",
+                                1,
+                                false
+                        ),
+                        new StorageUsageService.UsageAssignment(
+                                addedAssetId,
+                                StorageFileUsageType.PRODUCT_DETAIL_HTML,
+                                "added-url",
+                                3,
+                                false
+                        )
+                )
+        );
+
+        assertThat(storageUsageService.usages(retainedAssetId))
+                .singleElement()
+                .extracting(usage -> usage.status())
+                .isEqualTo("ACTIVE");
+        assertThat(storageUsageService.usages(removedAssetId))
+                .singleElement()
+                .extracting(usage -> usage.status())
+                .isEqualTo("REMOVED");
+        assertThat(storageUsageService.usages(addedAssetId))
+                .singleElement()
+                .extracting(usage -> usage.status())
+                .isEqualTo("ACTIVE");
+        assertThat(activeUsageCount(StorageUsageOwnerType.PRODUCT_SPU, 104L)).isEqualTo(2);
+    }
+
     private int activeUsageCount(StorageUsageOwnerType ownerType, Long ownerId) {
         Integer count = jdbcClient.sql("""
                         select count(*)

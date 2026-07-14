@@ -13,7 +13,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 public class StorageUsageService {
@@ -83,20 +88,62 @@ public class StorageUsageService {
             String ownerLabel,
             List<UsageAssignment> usages
     ) {
-        jdbcClient.sql("""
-                        update storage_asset_usage
-                        set status = 'REMOVED',
-                            updated_at = current_timestamp
+        Map<UsageKey, UsageAssignment> desiredUsages = new LinkedHashMap<>();
+        for (UsageAssignment usage : usages == null ? List.<UsageAssignment>of() : usages) {
+            if (usage == null || usage.fileId() == null || usage.usageType() == null) {
+                throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+            }
+            desiredUsages.putIfAbsent(UsageKey.from(usage), usage);
+        }
+
+        desiredUsages.values().stream()
+                .sorted(Comparator.comparing(UsageAssignment::fileId)
+                        .thenComparing(usage -> usage.usageType().name()))
+                .forEach(usage -> requireActiveAsset(usage.fileId()));
+
+        List<ActiveUsageRow> activeUsages = jdbcClient.sql("""
+                        select id, asset_id, usage_type
+                        from storage_asset_usage
                         where owner_type = :ownerType
                           and owner_id = :ownerId
                           and status = 'ACTIVE'
+                        order by id
+                        for update
                         """)
                 .param("ownerType", ownerType.name())
                 .param("ownerId", ownerId)
-                .update();
+                .query((rs, rowNum) -> new ActiveUsageRow(
+                        rs.getLong("id"),
+                        rs.getLong("asset_id"),
+                        rs.getString("usage_type")
+                ))
+                .list();
 
-        for (UsageAssignment usage : usages) {
-            insertUsage(usage.fileId(), usage.usageType(), ownerType, ownerId, ownerLabel, usage.snapshotUrl(), usage.sortOrder(), usage.protectedUsage());
+        Set<UsageKey> retainedUsages = new HashSet<>();
+        for (ActiveUsageRow activeUsage : activeUsages) {
+            UsageKey key = activeUsage.key();
+            UsageAssignment desiredUsage = desiredUsages.get(key);
+            if (desiredUsage == null || !retainedUsages.add(key)) {
+                removeUsage(activeUsage.id());
+                continue;
+            }
+            updateUsage(activeUsage.id(), ownerLabel, desiredUsage);
+        }
+
+        for (Map.Entry<UsageKey, UsageAssignment> entry : desiredUsages.entrySet()) {
+            if (!retainedUsages.contains(entry.getKey())) {
+                UsageAssignment usage = entry.getValue();
+                insertUsageRow(
+                        usage.fileId(),
+                        usage.usageType(),
+                        ownerType,
+                        ownerId,
+                        ownerLabel,
+                        usage.snapshotUrl(),
+                        usage.sortOrder(),
+                        usage.protectedUsage()
+                );
+            }
         }
     }
 
@@ -195,6 +242,19 @@ public class StorageUsageService {
             boolean protectedUsage
     ) {
         requireActiveAsset(fileId);
+        insertUsageRow(fileId, usageType, ownerType, ownerId, ownerLabel, snapshotUrl, sortOrder, protectedUsage);
+    }
+
+    private void insertUsageRow(
+            Long fileId,
+            StorageFileUsageType usageType,
+            StorageUsageOwnerType ownerType,
+            Long ownerId,
+            String ownerLabel,
+            String snapshotUrl,
+            Integer sortOrder,
+            boolean protectedUsage
+    ) {
         jdbcClient.sql("""
                         insert into storage_asset_usage
                             (asset_id, usage_type, owner_type, owner_id, owner_label, snapshot_url, sort_order, protected, status)
@@ -209,6 +269,37 @@ public class StorageUsageService {
                 .param("snapshotUrl", snapshotUrl == null ? "" : snapshotUrl)
                 .param("sortOrder", sortOrder == null ? 0 : sortOrder)
                 .param("protectedUsage", protectedUsage)
+                .update();
+    }
+
+    private void updateUsage(Long usageId, String ownerLabel, UsageAssignment usage) {
+        jdbcClient.sql("""
+                        update storage_asset_usage
+                        set owner_label = :ownerLabel,
+                            snapshot_url = :snapshotUrl,
+                            sort_order = :sortOrder,
+                            protected = :protectedUsage,
+                            updated_at = current_timestamp
+                        where id = :usageId
+                          and status = 'ACTIVE'
+                        """)
+                .param("ownerLabel", ownerLabel == null ? "" : ownerLabel)
+                .param("snapshotUrl", usage.snapshotUrl() == null ? "" : usage.snapshotUrl())
+                .param("sortOrder", usage.sortOrder() == null ? 0 : usage.sortOrder())
+                .param("protectedUsage", usage.protectedUsage())
+                .param("usageId", usageId)
+                .update();
+    }
+
+    private void removeUsage(Long usageId) {
+        jdbcClient.sql("""
+                        update storage_asset_usage
+                        set status = 'REMOVED',
+                            updated_at = current_timestamp
+                        where id = :usageId
+                          and status = 'ACTIVE'
+                        """)
+                .param("usageId", usageId)
                 .update();
     }
 
@@ -250,6 +341,18 @@ public class StorageUsageService {
             Integer sortOrder,
             boolean protectedUsage
     ) {
+    }
+
+    private record UsageKey(Long fileId, String usageType) {
+        private static UsageKey from(UsageAssignment usage) {
+            return new UsageKey(usage.fileId(), usage.usageType().name());
+        }
+    }
+
+    private record ActiveUsageRow(Long id, Long fileId, String usageType) {
+        private UsageKey key() {
+            return new UsageKey(fileId, usageType);
+        }
     }
 
     private record ActiveAssetRow(String scope, String mediaKind, String visibility, String status) {

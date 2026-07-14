@@ -15,6 +15,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -277,6 +279,29 @@ class AdminProductSpuControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("OFF_SALE"));
+    }
+
+    @Test
+    void adminRejectsMoreThanNineGalleryImages() throws Exception {
+        String token = loginAndExtractToken();
+        String images = IntStream.rangeClosed(1, 10)
+                .mapToObj(index -> "{\"url\":\"https://example.test/gallery-%d.png\"}".formatted(index))
+                .collect(Collectors.joining(","));
+
+        mockMvc.perform(post("/admin/product/spus")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": 1,
+                                  "title": "Too many gallery images",
+                                  "mainImage": "https://example.test/main.png",
+                                  "images": [%s],
+                                  "skus": []
+                                }
+                                """.formatted(images)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
     }
 
     @Test

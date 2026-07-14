@@ -277,6 +277,45 @@ public class StorageService {
     }
 
     @Transactional
+    public void moveBatch(List<Long> assetIds, Long folderId) {
+        if (assetIds == null || assetIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        List<Long> normalizedAssetIds = assetIds.stream().distinct().sorted().toList();
+        Long normalizedFolderId = normalizeFolderId(folderId);
+        lockFolderTree();
+        if (normalizedFolderId != null) {
+            requireEnabledFolderChain(normalizedFolderId, true);
+        }
+        normalizedAssetIds.forEach(assetId -> findLibraryAssetRow(assetId, true));
+        namedParameterJdbcTemplate.update("""
+                        update storage_asset
+                        set folder_id = :folderId,
+                            updated_at = current_timestamp
+                        where id in (:assetIds)
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("folderId", normalizedFolderId)
+                        .addValue("assetIds", normalizedAssetIds));
+    }
+
+    @Transactional
+    public StorageAssetResponse updateDisplayName(Long assetId, String displayName) {
+        AssetRow row = findLibraryAssetRow(assetId, true);
+        String originalFilename = displayFilename(displayName, row.extension());
+        jdbcClient.sql("""
+                        update storage_asset
+                        set original_filename = :originalFilename,
+                            updated_at = current_timestamp
+                        where id = :assetId
+                        """)
+                .param("originalFilename", originalFilename)
+                .param("assetId", row.id())
+                .update();
+        return detail(assetId);
+    }
+
+    @Transactional
     public void delete(Long assetId) {
         AssetRow row = findLibraryAssetRow(assetId, true);
         if (storageUsageService.hasActiveUsages(assetId) || hasLocalPublicUrlReferences(row.publicUrl())) {
@@ -922,6 +961,26 @@ public class StorageService {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
         return trimmed;
+    }
+
+    private String displayFilename(String displayName, String extension) {
+        if (!StringUtils.hasText(displayName)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        String normalizedName = displayName.trim();
+        if (".".equals(normalizedName)
+                || "..".equals(normalizedName)
+                || normalizedName.contains("/")
+                || normalizedName.contains("\\")
+                || normalizedName.chars().anyMatch(Character::isISOControl)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        String suffix = StringUtils.hasText(extension) ? "." + extension : "";
+        String filename = normalizedName + suffix;
+        if (filename.length() > 255) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return filename;
     }
 
     private String defaultContentType(String contentType) {

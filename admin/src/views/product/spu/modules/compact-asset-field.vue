@@ -7,7 +7,11 @@
       :disabled="disabled"
       compact
       :compact-size="small ? 'small' : 'default'"
+      :multiple="multiple"
+      :max-selection="maxSelection"
+      :exclude-file-ids="excludeFileIds"
       @change="handleAssetChange"
+      @append="handleAssetsAppend"
     />
     <ElInput
       v-else
@@ -42,17 +46,24 @@
     disabled?: boolean
     allowUrl?: boolean
     small?: boolean
+    multiple?: boolean
+    maxSelection?: number
+    excludeFileIds?: number[]
   }
 
   interface Emits {
     (event: 'update:modelValue', value: Api.Common.AssetValue): void
     (event: 'change', value: Api.Common.AssetValue): void
+    (event: 'append', value: Api.Common.AssetValue[]): void
   }
 
   const props = withDefaults(defineProps<Props>(), {
     disabled: false,
     allowUrl: true,
-    small: false
+    small: false,
+    multiple: false,
+    maxSelection: 1,
+    excludeFileIds: () => []
   })
   const emit = defineEmits<Emits>()
 
@@ -69,6 +80,12 @@
     sourceModeTouched.value = true
     sourceMode.value = 'upload'
     emitValue(value)
+  }
+
+  const handleAssetsAppend = (values: Api.Common.AssetValue[]) => {
+    sourceModeTouched.value = true
+    sourceMode.value = 'upload'
+    emit('append', values)
   }
 
   const updateUrl = (url: string) => {

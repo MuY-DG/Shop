@@ -78,6 +78,16 @@
               <ElButton v-auth="'asset:upload'" type="primary" @click="openUploadDialog">
                 上传素材
               </ElButton>
+              <ElButton
+                v-if="selectedAssetIds.length"
+                v-auth="'asset:folder'"
+                @click="openBatchMoveDialog"
+              >
+                移动分组（{{ selectedAssetIds.length }}）
+              </ElButton>
+              <ElButton v-if="selectedAssetIds.length" text @click="clearAssetSelection">
+                取消选择
+              </ElButton>
             </template>
             <template #right>
               <div class="asset-library__toolbar">
@@ -99,13 +109,24 @@
 
           <div v-if="viewMode === 'grid'" v-loading="loading" class="asset-library__grid-wrap">
             <div class="asset-library__grid">
-              <button
+              <div
                 v-for="asset in assets"
                 :key="asset.id"
-                type="button"
                 class="asset-card"
+                :class="{ 'is-selected': isAssetSelected(asset.id) }"
+                role="button"
+                tabindex="0"
                 @click="openDetail(asset.id)"
+                @keydown.enter="openDetail(asset.id)"
+                @keydown.space.prevent="openDetail(asset.id)"
               >
+                <ElCheckbox
+                  class="asset-card__select"
+                  :model-value="isAssetSelected(asset.id)"
+                  :aria-label="`选择素材 ${asset.originalFilename}`"
+                  @click.stop
+                  @change="toggleAssetSelection(asset.id, Boolean($event))"
+                />
                 <div class="asset-card__preview">
                   <video
                     v-if="asset.mediaKind === 'VIDEO' && resolveAssetUrl(asset)"
@@ -134,10 +155,10 @@
                   </div>
                   <div class="asset-card__meta">
                     <span>{{ formatFileSize(asset.sizeBytes) }}</span>
-                    <span>引用 {{ asset.usageCount || 0 }} 次</span>
+                    <span>当前引用 {{ asset.usageCount || 0 }} 处</span>
                   </div>
                 </div>
-              </button>
+              </div>
             </div>
 
             <ElEmpty v-if="!loading && !assets.length" description="暂无素材" />
@@ -157,10 +178,13 @@
 
           <ArtTable
             v-else
+            ref="assetTableRef"
             :loading="loading"
             :data="assets"
             :columns="columns"
             :pagination="pagination"
+            row-key="id"
+            @selection-change="handleTableSelectionChange"
             @pagination:current-change="handleCurrentChange"
             @pagination:size-change="handleSizeChange"
           />
@@ -192,17 +216,27 @@
           <ElUpload
             accept="image/*,video/mp4,video/webm,.mp4,.webm"
             :auto-upload="false"
-            :limit="1"
+            multiple
+            :limit="50"
+            :disabled="uploading"
             :file-list="uploadFileList"
             @change="handleUploadChange"
             @remove="handleUploadRemove"
+            @exceed="handleUploadExceed"
           >
-            <ElButton>选择图片或视频</ElButton>
+            <ElButton :disabled="uploading">批量选择图片或视频</ElButton>
           </ElUpload>
         </ElFormItem>
         <ElAlert
           title="图片和视频类型由服务端自动识别；视频仅支持 MP4、WebM，最大 50 MB。"
           type="info"
+          :closable="false"
+        />
+        <ElAlert
+          v-if="uploadSummary"
+          class="asset-library__upload-summary"
+          :title="`本次上传成功 ${uploadSummary.succeeded} 个，失败 ${uploadSummary.failed} 个`"
+          :type="uploadSummary.failed ? 'warning' : 'success'"
           :closable="false"
         />
       </ElForm>
@@ -213,7 +247,12 @@
       </template>
     </ElDialog>
 
-    <ElDialog v-model="moveDialogVisible" title="移动分组" width="440px" align-center>
+    <ElDialog
+      v-model="moveDialogVisible"
+      :title="movingAssetIds.length > 1 ? `批量移动 ${movingAssetIds.length} 个素材` : '移动分组'"
+      width="440px"
+      align-center
+    >
       <ElTreeSelect
         v-model="moveTargetFolderId"
         :data="folderOptions"
@@ -273,7 +312,13 @@
       </template>
     </ElDialog>
 
-    <ElDrawer v-model="detailDrawerVisible" title="素材详情" size="560px" destroy-on-close>
+    <ElDrawer
+      v-model="detailDrawerVisible"
+      title="素材详情"
+      size="50%"
+      destroy-on-close
+      @closed="cancelDisplayNameEdit"
+    >
       <div v-if="detailAsset" v-loading="detailLoading" class="asset-detail">
         <div class="asset-detail__hero">
           <video
@@ -292,9 +337,55 @@
           <div v-else class="asset-detail__empty">无预览</div>
         </div>
 
-        <ElDescriptions :column="1" border>
+        <ElDescriptions class="asset-detail__descriptions" :column="2" border size="small">
           <ElDescriptionsItem label="素材 ID">{{ detailAsset.id }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="文件名">{{ detailAsset.originalFilename }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="文件名">
+            <div class="asset-detail__filename">
+              <template v-if="displayNameEditing">
+                <ElInput
+                  v-model="displayNameDraft"
+                  size="small"
+                  :maxlength="displayNameMaxLength"
+                  show-word-limit
+                  autofocus
+                  @keyup.enter="submitDisplayName"
+                >
+                  <template #append>{{ displayNameExtension }}</template>
+                </ElInput>
+                <ElButton
+                  type="primary"
+                  link
+                  size="small"
+                  :loading="displayNameSaving"
+                  @click="submitDisplayName"
+                >
+                  保存
+                </ElButton>
+                <ElButton
+                  link
+                  size="small"
+                  :disabled="displayNameSaving"
+                  @click="cancelDisplayNameEdit"
+                >
+                  取消
+                </ElButton>
+              </template>
+              <template v-else>
+                <span :title="detailAsset.originalFilename">{{
+                  detailAsset.originalFilename
+                }}</span>
+                <ElButton
+                  v-auth="'asset:folder'"
+                  type="primary"
+                  link
+                  size="small"
+                  @click="startDisplayNameEdit"
+                >
+                  修改
+                </ElButton>
+              </template>
+            </div>
+          </ElDescriptionsItem>
           <ElDescriptionsItem label="媒体类型">
             {{ formatMediaKind(detailAsset.mediaKind) }}
           </ElDescriptionsItem>
@@ -315,29 +406,41 @@
           <ElDescriptionsItem v-if="detailAsset.mediaKind === 'VIDEO'" label="时长">
             {{ formatDuration(detailAsset.durationSeconds) }}
           </ElDescriptionsItem>
-          <ElDescriptionsItem label="引用次数">{{
+          <ElDescriptionsItem label="当前引用数">{{
             detailAsset.usageCount || 0
           }}</ElDescriptionsItem>
           <ElDescriptionsItem label="存储提供商">{{ detailAsset.provider }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="URL">{{
-            resolveAssetUrl(detailAsset) || '-'
-          }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="创建时间">
+          <ElDescriptionsItem label="创建时间" :span="detailAsset.mediaKind === 'VIDEO' ? 2 : 1">
             {{ formatDateTime(detailAsset.createdAt) }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="URL" :span="2">
+            <div class="asset-detail__url">
+              <span :title="resolveAssetUrl(detailAsset)">{{
+                resolveAssetUrl(detailAsset) || '-'
+              }}</span>
+              <ElButton
+                type="primary"
+                link
+                size="small"
+                :icon="CopyDocument"
+                :disabled="!resolveAssetUrl(detailAsset)"
+                @click="copyAssetUrl"
+              >
+                复制
+              </ElButton>
+            </div>
           </ElDescriptionsItem>
         </ElDescriptions>
 
         <div class="asset-detail__usage">
-          <div class="asset-detail__usage-title">引用位置</div>
-          <ElTable :data="detailAsset.usages || []" border>
+          <div class="asset-detail__usage-title">当前引用位置</div>
+          <ElTable v-if="currentUsages.length" :data="currentUsages" border size="small">
             <ElTableColumn prop="usageType" label="引用角色" min-width="150" />
             <ElTableColumn prop="ownerType" label="对象类型" min-width="130" />
             <ElTableColumn prop="ownerLabel" label="归属对象" min-width="180" />
-            <ElTableColumn prop="status" label="状态" width="90">
+            <ElTableColumn prop="createdAt" label="引用时间" width="170">
               <template #default="{ row }">
-                <ElTag size="small" :type="row.status === 'ACTIVE' ? 'success' : 'info'">
-                  {{ row.status === 'ACTIVE' ? '当前' : '历史' }}
-                </ElTag>
+                {{ formatDateTime(row.createdAt) }}
               </template>
             </ElTableColumn>
             <ElTableColumn prop="protected" label="保护" width="80">
@@ -348,11 +451,22 @@
               </template>
             </ElTableColumn>
           </ElTable>
-          <ElEmpty
-            v-if="!(detailAsset.usages || []).length"
-            description="暂无引用"
-            :image-size="64"
-          />
+          <ElEmpty v-else description="当前未被引用" :image-size="64" />
+
+          <ElCollapse v-if="historicalUsages.length" class="asset-detail__history">
+            <ElCollapseItem :title="`历史引用记录（${historicalUsages.length}）`" name="history">
+              <ElTable :data="historicalUsages" border size="small">
+                <ElTableColumn prop="usageType" label="引用角色" min-width="150" />
+                <ElTableColumn prop="ownerType" label="对象类型" min-width="130" />
+                <ElTableColumn prop="ownerLabel" label="归属对象" min-width="180" />
+                <ElTableColumn prop="updatedAt" label="取消时间" width="170">
+                  <template #default="{ row }">
+                    {{ formatDateTime(row.updatedAt) }}
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+            </ElCollapseItem>
+          </ElCollapse>
         </div>
       </div>
     </ElDrawer>
@@ -360,22 +474,32 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, h, onMounted, reactive, ref } from 'vue'
-  import { MoreFilled, Picture, VideoCamera } from '@element-plus/icons-vue'
-  import { ElImage, ElMessage, ElMessageBox, ElTag, type UploadUserFile } from 'element-plus'
+  import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
+  import { CopyDocument, MoreFilled, Picture, VideoCamera } from '@element-plus/icons-vue'
+  import {
+    ElImage,
+    ElMessage,
+    ElMessageBox,
+    ElTag,
+    type TableInstance,
+    type UploadUserFile
+  } from 'element-plus'
+  import { useClipboard } from '@vueuse/core'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
   import { useTableColumns } from '@/hooks/core/useTableColumns'
   import type { ColumnOption } from '@/types'
+  import { settleWithConcurrency } from '@/utils/asset-batch'
   import {
+    batchMoveAssets,
     createAssetFolder,
     deleteAsset,
     deleteAssetFolder,
     fetchAssetDetail,
     fetchAssetFolders,
     fetchAssets,
-    moveAsset,
+    updateAssetDisplayName,
     updateAssetFolder,
     uploadAsset
   } from '@/api/assets'
@@ -398,6 +522,15 @@
 
   type FolderDialogMode = 'create' | 'edit'
 
+  interface AssetTableExpose {
+    elTableRef: TableInstance | null
+  }
+
+  interface UploadSummary {
+    succeeded: number
+    failed: number
+  }
+
   const loading = ref(false)
   const uploading = ref(false)
   const moving = ref(false)
@@ -405,20 +538,39 @@
   const assets = ref<Api.Storage.AssetItem[]>([])
   const folders = ref<Api.Storage.AssetFolder[]>([])
   const selectedFolderId = ref<number | undefined>()
-  const viewMode = ref<'grid' | 'list'>('grid')
+  const viewMode = ref<'grid' | 'list'>('list')
   const uploadDialogVisible = ref(false)
   const moveDialogVisible = ref(false)
   const folderDialogVisible = ref(false)
   const detailDrawerVisible = ref(false)
   const detailLoading = ref(false)
+  const displayNameEditing = ref(false)
+  const displayNameSaving = ref(false)
+  const displayNameDraft = ref('')
   const detailAsset = ref<Api.Storage.AssetItem | null>(null)
-  const movingAssetId = ref<number | null>(null)
+  const movingAssetIds = ref<number[]>([])
   const moveTargetFolderId = ref<number>(0)
   const uploadFolderId = ref<number>(0)
   const uploadFileList = ref<UploadUserFile[]>([])
-  const uploadRawFile = ref<File | null>(null)
+  const uploadSummary = ref<UploadSummary | null>(null)
   const folderDialogMode = ref<FolderDialogMode>('create')
   const editingFolderId = ref<number | null>(null)
+  const selectedAssetIds = ref<number[]>([])
+  const assetTableRef = ref<AssetTableExpose | null>(null)
+  const syncingTableSelection = ref(false)
+
+  const currentUsages = computed(() =>
+    (detailAsset.value?.usages || []).filter((usage) => usage.status === 'ACTIVE')
+  )
+  const historicalUsages = computed(() =>
+    (detailAsset.value?.usages || []).filter((usage) => usage.status !== 'ACTIVE')
+  )
+  const { copy } = useClipboard({ legacy: true })
+  const selectedAssetIdSet = computed(() => new Set(selectedAssetIds.value))
+  const displayNameExtension = computed(() =>
+    detailAsset.value?.extension ? `.${detailAsset.value.extension}` : ''
+  )
+  const displayNameMaxLength = computed(() => Math.max(1, 255 - displayNameExtension.value.length))
 
   const pagination = reactive<Api.Common.PaginationParams>({ current: 1, size: 20, total: 0 })
   const searchForm = ref<AssetSearchForm>({
@@ -562,8 +714,64 @@
     asset?.publicUrl || asset?.url || ''
   const folderName = (folderId?: number | null) => folderNameMap.value[folderId || 0] || '未分组'
 
+  const copyAssetUrl = async () => {
+    const url = resolveAssetUrl(detailAsset.value)
+    if (!url) return
+    try {
+      await copy(url)
+      ElMessage.success('URL 已复制')
+    } catch {
+      ElMessage.error('复制失败，请手动复制')
+    }
+  }
+
+  const displayNameFromFilename = (filename: string, extension?: string | null) => {
+    const suffix = extension ? `.${extension}` : ''
+    return suffix && filename.toLowerCase().endsWith(suffix.toLowerCase())
+      ? filename.slice(0, -suffix.length)
+      : filename
+  }
+
+  const startDisplayNameEdit = () => {
+    if (!detailAsset.value) return
+    displayNameDraft.value = displayNameFromFilename(
+      detailAsset.value.originalFilename,
+      detailAsset.value.extension
+    )
+    displayNameEditing.value = true
+  }
+
+  const cancelDisplayNameEdit = () => {
+    if (displayNameSaving.value) return
+    displayNameEditing.value = false
+    displayNameDraft.value = ''
+  }
+
+  const submitDisplayName = async () => {
+    if (!detailAsset.value || displayNameSaving.value) return
+    const displayName = displayNameDraft.value.trim()
+    if (!displayName || displayName === '.' || displayName === '..') {
+      ElMessage.warning('请输入有效的文件名')
+      return
+    }
+    if (/[\\/\u0000-\u001f\u007f]/.test(displayName)) {
+      ElMessage.warning('文件名不能包含斜杠、反斜杠或控制字符')
+      return
+    }
+    displayNameSaving.value = true
+    try {
+      detailAsset.value = await updateAssetDisplayName(detailAsset.value.id, { displayName })
+      displayNameEditing.value = false
+      displayNameDraft.value = ''
+      await loadAssets()
+    } finally {
+      displayNameSaving.value = false
+    }
+  }
+
   const { columns, columnChecks } = useTableColumns<Api.Storage.AssetItem>(() => {
     const tableColumns: ColumnOption<Api.Storage.AssetItem>[] = [
+      { type: 'selection', width: 48, fixed: 'left' },
       {
         prop: 'preview',
         label: '预览',
@@ -612,8 +820,8 @@
       },
       {
         prop: 'usageCount',
-        label: '引用次数',
-        width: 100,
+        label: '当前引用数',
+        width: 110,
         formatter: (asset) => String(asset.usageCount || 0)
       },
       {
@@ -676,7 +884,45 @@
     }
   }
 
+  const isAssetSelected = (assetId: number) => selectedAssetIdSet.value.has(assetId)
+
+  const syncTableSelection = async () => {
+    if (viewMode.value !== 'list') return
+    await nextTick()
+    const table = assetTableRef.value?.elTableRef
+    if (!table) return
+    syncingTableSelection.value = true
+    table.clearSelection()
+    assets.value
+      .filter((asset) => selectedAssetIdSet.value.has(asset.id))
+      .forEach((asset) => table.toggleRowSelection(asset, true))
+    await nextTick()
+    syncingTableSelection.value = false
+  }
+
+  const clearAssetSelection = () => {
+    selectedAssetIds.value = []
+    assetTableRef.value?.elTableRef?.clearSelection()
+  }
+
+  const toggleAssetSelection = (assetId: number, selected: boolean) => {
+    if (selected) {
+      selectedAssetIds.value = Array.from(new Set([...selectedAssetIds.value, assetId]))
+    } else {
+      selectedAssetIds.value = selectedAssetIds.value.filter((id) => id !== assetId)
+    }
+  }
+
+  const handleTableSelectionChange = (selection: Api.Storage.AssetItem[]) => {
+    if (syncingTableSelection.value) return
+    selectedAssetIds.value = selection.map((asset) => asset.id)
+  }
+
+  watch(viewMode, () => syncTableSelection())
+
   const openDetail = async (assetId: number) => {
+    displayNameEditing.value = false
+    displayNameDraft.value = ''
     detailDrawerVisible.value = true
     detailLoading.value = true
     try {
@@ -701,7 +947,7 @@
   const handleAssetAction = (item: ButtonMoreItem, asset: Api.Storage.AssetItem) => {
     if (item.key === 'detail') openDetail(asset.id)
     if (item.key === 'move') {
-      movingAssetId.value = asset.id
+      movingAssetIds.value = [asset.id]
       moveTargetFolderId.value = asset.folderId || 0
       moveDialogVisible.value = true
     }
@@ -716,6 +962,7 @@
         cancelButtonText: '取消'
       })
       await deleteAsset(asset.id)
+      toggleAssetSelection(asset.id, false)
       if (detailAsset.value?.id === asset.id) detailDrawerVisible.value = false
       await loadAssets()
     } catch (error) {
@@ -724,11 +971,13 @@
   }
 
   const handleSearch = () => {
+    clearAssetSelection()
     pagination.current = 1
     loadAssets()
   }
 
   const handleReset = () => {
+    clearAssetSelection()
     searchForm.value = {
       keyword: undefined,
       mediaKind: undefined,
@@ -741,16 +990,19 @@
   }
 
   const selectFolder = (folderId?: number) => {
+    clearAssetSelection()
     selectedFolderId.value = folderId
     pagination.current = 1
     loadAssets()
   }
   const handleFolderSelect = (folder: Api.Storage.AssetFolder) => selectFolder(folder.id)
   const handleCurrentChange = (current: number) => {
+    clearAssetSelection()
     pagination.current = current
     loadAssets()
   }
   const handleSizeChange = (size: number) => {
+    clearAssetSelection()
     pagination.size = size
     pagination.current = 1
     loadAssets()
@@ -763,37 +1015,75 @@
     uploadFolderId.value = currentFolder?.status === 'ENABLED' ? currentFolder.id : 0
     uploadDialogVisible.value = true
   }
-  const handleUploadChange = (file: UploadUserFile) => {
-    uploadFileList.value = file.raw ? [file] : []
-    uploadRawFile.value = file.raw || null
+  const handleUploadChange = (_file: UploadUserFile, fileList: UploadUserFile[]) => {
+    uploadFileList.value = fileList.filter((file) => file.raw)
+    uploadSummary.value = null
   }
-  const handleUploadRemove = () => resetUpload()
+  const handleUploadRemove = (_file: UploadUserFile, fileList: UploadUserFile[]) => {
+    uploadFileList.value = fileList.filter((file) => file.raw)
+  }
+  const handleUploadExceed = () => ElMessage.warning('单次最多选择 50 个文件')
   const resetUpload = () => {
     uploadFileList.value = []
-    uploadRawFile.value = null
+    uploadSummary.value = null
   }
   const submitUpload = async () => {
-    if (!uploadRawFile.value) {
-      ElMessage.warning('请先选择文件')
+    const pendingFiles = uploadFileList.value.filter((file) => file.raw)
+    if (!pendingFiles.length) {
+      ElMessage.warning('请先选择一个或多个文件')
       return
     }
     uploading.value = true
     try {
-      await uploadAsset({ file: uploadRawFile.value, folderId: uploadFolderId.value })
-      uploadDialogVisible.value = false
-      resetUpload()
+      const results = await settleWithConcurrency(pendingFiles, 3, async (file) => {
+        file.status = 'uploading'
+        const asset = await uploadAsset(
+          { file: file.raw!, folderId: uploadFolderId.value },
+          { showSuccessMessage: false }
+        )
+        file.status = 'success'
+        return asset
+      })
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') pendingFiles[index].status = 'fail'
+      })
+      const succeeded = results.filter((result) => result.status === 'fulfilled').length
+      const failed = results.length - succeeded
+      uploadSummary.value = { succeeded, failed }
       await Promise.all([loadAssets(), loadFolders()])
+      if (failed) {
+        uploadFileList.value = pendingFiles.filter((file) => file.status === 'fail')
+        ElMessage.warning(`上传完成：成功 ${succeeded} 个，失败 ${failed} 个，可重试失败项`)
+      } else {
+        ElMessage.success(`成功上传 ${succeeded} 个素材`)
+        uploadDialogVisible.value = false
+        resetUpload()
+      }
     } finally {
       uploading.value = false
     }
   }
 
+  const openBatchMoveDialog = () => {
+    if (!selectedAssetIds.value.length) return
+    movingAssetIds.value = [...selectedAssetIds.value]
+    const selectedAssets = assets.value.filter((asset) => selectedAssetIdSet.value.has(asset.id))
+    const currentFolders = new Set(selectedAssets.map((asset) => asset.folderId || 0))
+    moveTargetFolderId.value = currentFolders.size === 1 ? [...currentFolders][0] : 0
+    moveDialogVisible.value = true
+  }
+
   const submitMove = async () => {
-    if (!movingAssetId.value) return
+    if (!movingAssetIds.value.length) return
     moving.value = true
     try {
-      await moveAsset(movingAssetId.value, { folderId: moveTargetFolderId.value })
+      await batchMoveAssets({
+        assetIds: movingAssetIds.value,
+        folderId: moveTargetFolderId.value
+      })
       moveDialogVisible.value = false
+      movingAssetIds.value = []
+      clearAssetSelection()
       await Promise.all([loadAssets(), loadFolders()])
     } finally {
       moving.value = false
@@ -951,11 +1241,19 @@
     gap: 8px;
   }
 
-  .asset-library__grid-wrap,
-  .asset-detail,
-  .asset-detail__usage {
+  .asset-library__grid-wrap {
     display: grid;
     gap: 16px;
+  }
+
+  .asset-detail {
+    display: grid;
+    gap: 10px;
+  }
+
+  .asset-detail__usage {
+    display: grid;
+    gap: 8px;
   }
 
   .asset-library__grid {
@@ -965,10 +1263,12 @@
   }
 
   .asset-card {
+    position: relative;
     display: grid;
     gap: 10px;
     padding: 12px;
     text-align: left;
+    cursor: pointer;
     background: var(--el-fill-color-blank);
     border: 1px solid var(--el-border-color);
     border-radius: 8px;
@@ -980,6 +1280,22 @@
       border-color: var(--el-color-primary);
       box-shadow: 0 0 0 1px rgb(64 158 255 / 15%);
     }
+
+    &.is-selected {
+      border-color: var(--el-color-primary);
+      box-shadow: 0 0 0 2px var(--el-color-primary-light-7);
+    }
+  }
+
+  .asset-card__select {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+    padding: 4px;
+    margin: 0;
+    background: rgb(255 255 255 / 90%);
+    border-radius: 6px;
   }
 
   .asset-card__preview {
@@ -1035,10 +1351,14 @@
     justify-content: flex-end;
   }
 
+  .asset-library__upload-summary {
+    margin-top: 10px;
+  }
+
   .asset-detail__hero {
     width: 100%;
-    min-height: 240px;
-    max-height: 360px;
+    min-height: 180px;
+    max-height: 260px;
     overflow: hidden;
     background: var(--el-fill-color-light);
     border-radius: 10px;
@@ -1047,13 +1367,55 @@
     video {
       width: 100%;
       height: 100%;
-      max-height: 360px;
+      max-height: 260px;
       object-fit: contain;
+    }
+  }
+
+  .asset-detail__descriptions :deep(.el-descriptions__cell) {
+    padding: 6px 10px !important;
+  }
+
+  .asset-detail__filename {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+
+    > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    :deep(.el-input) {
+      flex: 1;
+      min-width: 160px;
+    }
+  }
+
+  .asset-detail__url {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    min-width: 0;
+
+    span {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   }
 
   .asset-detail__usage-title {
     font-weight: 600;
+  }
+
+  .asset-detail__history {
+    margin-top: 4px;
   }
 
   :deep(.asset-library__file-cell) {

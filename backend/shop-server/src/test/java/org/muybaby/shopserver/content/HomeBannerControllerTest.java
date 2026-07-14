@@ -143,8 +143,8 @@ class HomeBannerControllerTest {
         assertThat(updatedUsage.ownerLabel()).isEqualTo("首页热卖更新");
         assertThat(updatedUsage.snapshotUrl()).isEqualTo(uploadedFile.url());
         assertThat(updatedUsage.sortOrder()).isEqualTo(5);
-        assertThat(totalUsageCount(bannerId)).isEqualTo(2);
-        assertThat(removedUsageCount(bannerId)).isEqualTo(1);
+        assertThat(totalUsageCount(bannerId)).isEqualTo(1);
+        assertThat(removedUsageCount(bannerId)).isZero();
 
         mockMvc.perform(get("/admin/home/banners")
                         .param("current", "1")

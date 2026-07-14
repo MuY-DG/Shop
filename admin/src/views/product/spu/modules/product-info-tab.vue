@@ -54,30 +54,49 @@
             </ElTooltip>
           </span>
         </template>
-        <div class="media-strip">
-          <div
-            v-for="(image, index) in galleryItems"
-            :key="`gallery-${index}`"
-            class="media-strip__item"
-          >
-            <span class="media-strip__index">{{ index + 1 }}</span>
-            <CompactAssetField
-              :model-value="{ fileId: image.fileId, url: image.url }"
-              media-kind="IMAGE"
-              :disabled="disabled"
-              @change="updateGallery(index, $event)"
-            />
+        <div class="media-strip-field">
+          <div class="media-strip__hint">
+            已添加 {{ galleryImageCount }} /
+            {{ MAX_GALLERY_IMAGES }}；“上传图片”和“素材库”均支持一次选择多张
           </div>
-          <button
-            type="button"
-            class="media-strip__add"
-            :disabled="disabled"
-            aria-label="添加轮播图"
-            @click="addGallery"
-          >
-            <ElIcon size="24"><Plus /></ElIcon>
-            <span>添加</span>
-          </button>
+
+          <div class="media-strip">
+            <VueDraggable
+              v-if="galleryItems.length"
+              class="media-strip__items"
+              :model-value="galleryItems"
+              :animation="150"
+              @update:model-value="reorderGallery"
+            >
+              <div
+                v-for="(image, index) in galleryItems"
+                :key="image.fileId || image.url || `gallery-${index}`"
+                class="media-strip__item"
+              >
+                <span class="media-strip__index">{{ index + 1 }}</span>
+                <CompactAssetField
+                  :model-value="{ fileId: image.fileId, url: image.url }"
+                  media-kind="IMAGE"
+                  :disabled="disabled"
+                  @change="updateGallery(index, $event)"
+                />
+              </div>
+            </VueDraggable>
+
+            <div v-if="remainingGallerySlots > 0" class="media-strip__item media-strip__item--add">
+              <span class="media-strip__index">{{ galleryImageCount + 1 }}</span>
+              <CompactAssetField
+                :model-value="createEmptyImage()"
+                media-kind="IMAGE"
+                :disabled="disabled"
+                :allow-url="false"
+                multiple
+                :max-selection="remainingGallerySlots"
+                :exclude-file-ids="galleryFileIds"
+                @append="appendGalleryAssets"
+              />
+            </div>
+          </div>
         </div>
       </ElFormItem>
 
@@ -276,8 +295,10 @@
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
   import { ElMessage } from 'element-plus'
-  import { Plus, WarningFilled } from '@element-plus/icons-vue'
+  import { WarningFilled } from '@element-plus/icons-vue'
+  import { VueDraggable } from 'vue-draggable-plus'
   import AssetPicker from '@/components/business/asset-picker/index.vue'
+  import { appendUniqueAssetValues } from '@/utils/asset-batch'
   import {
     createProductFreightTemplate,
     createProductGuaranteeService,
@@ -326,6 +347,8 @@
   const freightDialogVisible = ref(false)
   const freightEditingId = ref<number | null>(null)
 
+  const MAX_GALLERY_IMAGES = 9
+
   const guaranteeForm = reactive({
     termsName: '',
     contentDescription: '',
@@ -367,8 +390,15 @@
   const selectedFreightTemplate = computed(() =>
     freightTemplates.value.find((item) => item.id === props.modelValue.freightTemplateId)
   )
-  const galleryItems = computed(() =>
-    props.modelValue.images.length ? props.modelValue.images : [createEmptyImage()]
+  const galleryItems = computed(() => props.modelValue.images)
+  const galleryImageCount = computed(
+    () => props.modelValue.images.filter((image) => image.fileId || image.url).length
+  )
+  const remainingGallerySlots = computed(() =>
+    Math.max(0, MAX_GALLERY_IMAGES - galleryImageCount.value)
+  )
+  const galleryFileIds = computed(() =>
+    props.modelValue.images.flatMap((image) => (image.fileId ? [image.fileId] : []))
   )
 
   const patchForm = (patch: Partial<ProductEditorForm>) => {
@@ -383,9 +413,17 @@
     patchForm({ mainVideo: asset.url, mainVideoFileId: asset.fileId })
   }
 
-  const addGallery = () => {
-    const images = props.modelValue.images.length ? props.modelValue.images : [createEmptyImage()]
-    patchForm({ images: [...images, createEmptyImage()] })
+  const appendGalleryAssets = (assets: Api.Common.AssetValue[]) => {
+    const images = appendUniqueAssetValues(props.modelValue.images, assets, MAX_GALLERY_IMAGES)
+    const added = images.length - galleryImageCount.value
+    patchForm({ images })
+    if (added < assets.length) {
+      ElMessage.info('已自动忽略重复素材或超过数量上限的图片')
+    }
+  }
+
+  const reorderGallery = (images: ProductEditorForm['images']) => {
+    patchForm({ images: [...images] })
   }
 
   const removeGallery = (index: number) => {
@@ -600,17 +638,42 @@
     cursor: help;
   }
 
-  .media-strip {
+  .media-strip-field {
+    display: grid;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .media-strip__hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .media-strip,
+  .media-strip__items {
     display: flex;
     flex-wrap: wrap;
     gap: 14px;
     align-items: flex-start;
+  }
+
+  .media-strip {
     width: 100%;
   }
 
   .media-strip__item {
     position: relative;
     flex: none;
+    cursor: grab;
+
+    &:active {
+      cursor: grabbing;
+    }
+  }
+
+  .media-strip__item--add,
+  .media-strip__item--add:active {
+    cursor: pointer;
   }
 
   .media-strip__index {
@@ -628,40 +691,6 @@
     pointer-events: none;
     background: rgb(0 0 0 / 42%);
     border-radius: 50%;
-  }
-
-  .media-strip__add {
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    gap: 6px;
-    align-items: center;
-    justify-content: center;
-    width: 112px;
-    aspect-ratio: 1;
-    padding: 0;
-    color: var(--el-text-color-secondary);
-    cursor: pointer;
-    background: var(--el-fill-color-lighter);
-    border: 1px dashed var(--el-border-color);
-    border-radius: 8px;
-    transition:
-      color 0.2s ease,
-      border-color 0.2s ease;
-
-    span {
-      font-size: 12px;
-    }
-
-    &:hover:not(:disabled) {
-      color: var(--el-color-primary);
-      border-color: var(--el-color-primary);
-    }
-
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.6;
-    }
   }
 
   .relation-field__toolbar {

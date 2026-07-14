@@ -644,6 +644,15 @@ declare namespace Api {
       /** 0 means move to ungrouped. */
       folderId: number
     }
+
+    interface AssetBatchMovePayload extends AssetMovePayload {
+      assetIds: number[]
+    }
+
+    interface AssetDisplayNamePayload {
+      /** Filename without the immutable extension. */
+      displayName: string
+    }
   }
 
   namespace Content {

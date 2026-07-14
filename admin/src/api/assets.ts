@@ -1,6 +1,9 @@
 import request from '@/utils/http'
 
-export function uploadAsset(data: Api.Storage.AssetUploadPayload) {
+export function uploadAsset(
+  data: Api.Storage.AssetUploadPayload,
+  options: { showSuccessMessage?: boolean } = {}
+) {
   const formData = new FormData()
   formData.append('file', data.file)
 
@@ -11,7 +14,7 @@ export function uploadAsset(data: Api.Storage.AssetUploadPayload) {
   return request.post<Api.Storage.Asset>({
     url: '/admin/assets/upload',
     data: formData,
-    showSuccessMessage: true
+    showSuccessMessage: options.showSuccessMessage ?? true
   })
 }
 
@@ -31,6 +34,22 @@ export function fetchAssetDetail(assetId: number) {
 export function moveAsset(assetId: number, data: Api.Storage.AssetMovePayload) {
   return request.post<void>({
     url: `/admin/assets/${assetId}/move`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function batchMoveAssets(data: Api.Storage.AssetBatchMovePayload) {
+  return request.post<void>({
+    url: '/admin/assets/batch-move',
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function updateAssetDisplayName(assetId: number, data: Api.Storage.AssetDisplayNamePayload) {
+  return request.put<Api.Storage.Asset>({
+    url: `/admin/assets/${assetId}/display-name`,
     data,
     showSuccessMessage: true
   })

@@ -75,7 +75,7 @@ class AdminProductGuaranteeServiceControllerTest {
                         .content(updateWithoutRepeatedFileId))
                 .andExpect(status().isOk());
         assertThat(activeIconUsageCount(serviceId)).isEqualTo(1);
-        assertThat(totalIconUsageCount(serviceId)).isEqualTo(2);
+        assertThat(totalIconUsageCount(serviceId)).isEqualTo(1);
         assertThat(iconFileId(serviceId)).isEqualTo(ICON_FILE_ID);
 
         mockMvc.perform(post("/admin/product/guarantee-services/{serviceId}/visibility", serviceId)
@@ -104,7 +104,7 @@ class AdminProductGuaranteeServiceControllerTest {
         assertThat(serviceDeletedAt(serviceId)).isNotNull();
         assertThat(serviceVisible(serviceId)).isFalse();
         assertThat(activeIconUsageCount(serviceId)).isZero();
-        assertThat(removedIconUsageCount(serviceId)).isEqualTo(2);
+        assertThat(removedIconUsageCount(serviceId)).isEqualTo(1);
         assertThat(activeOrderSnapshotUsageCount()).isEqualTo(1);
         mockMvc.perform(get("/admin/product/guarantee-services")
                         .header("Authorization", "Bearer " + token)
