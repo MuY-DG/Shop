@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.health;
 
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.admin.rbac.service.AdminRbacService;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.security.PathTokenKindResolver;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +27,9 @@ class HealthControllerTest {
 
     @MockitoBean
     private OpaqueTokenService opaqueTokenService;
+
+    @MockitoBean
+    private AdminRbacService adminRbacService;
 
     @Test
     void appHealthReturnsStandardEnvelope() throws Exception {

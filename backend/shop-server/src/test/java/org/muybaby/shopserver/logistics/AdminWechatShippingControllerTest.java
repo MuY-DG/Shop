@@ -25,6 +25,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -37,6 +38,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AdminWechatShippingControllerTest {
+
+    private static final AtomicLong LIMITED_ADMIN_ID = new AtomicLong(992_000L);
 
     @Autowired
     private MockMvc mockMvc;
@@ -125,10 +128,56 @@ class AdminWechatShippingControllerTest {
     }
 
     private String adminToken(List<String> permissions) {
+        long userId = LIMITED_ADMIN_ID.incrementAndGet();
+        long roleId = userId;
+        String username = "ShippingCatalogAdmin" + userId;
+        insertLimitedAdmin(userId, roleId, username, permissions);
+
         return opaqueTokenService.issue(
                 TokenKind.ADMIN,
-                TokenSession.admin(1L, "shipping-admin", List.of("R_SUPER"), permissions, Instant.now())
+                TokenSession.admin(userId, username, List.of(), List.of(), Instant.now())
         ).accessToken();
+    }
+
+    private void insertLimitedAdmin(long userId, long roleId, String username, List<String> permissions) {
+        String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = 1")
+                .query(String.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user
+                            (id, username, password_hash, display_name, email, status)
+                        values
+                            (:userId, :username, :passwordHash, 'Shipping Catalog Admin',
+                             :email, 'ENABLED')
+                        """)
+                .param("userId", userId)
+                .param("username", username)
+                .param("passwordHash", passwordHash)
+                .param("email", username.toLowerCase() + "@shop.local")
+                .update();
+        jdbcClient.sql("""
+                        insert into admin_role (id, code, name, description, enabled)
+                        values (:roleId, :code, 'Shipping Catalog Role', '', true)
+                        """)
+                .param("roleId", roleId)
+                .param("code", "R_SHIPPING_CATALOG_" + roleId)
+                .update();
+        jdbcClient.sql("insert into admin_user_role (user_id, role_id) values (:userId, :roleId)")
+                .param("userId", userId)
+                .param("roleId", roleId)
+                .update();
+        for (String permission : permissions) {
+            int inserted = jdbcClient.sql("""
+                            insert into admin_role_permission (role_id, permission_id)
+                            select :roleId, id from admin_permission where auth_mark = :permission
+                            """)
+                    .param("roleId", roleId)
+                    .param("permission", permission)
+                    .update();
+            if (inserted != 1) {
+                throw new IllegalArgumentException("Unknown test permission: " + permission);
+            }
+        }
     }
 
     @TestConfiguration(proxyBeanMethods = false)

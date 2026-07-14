@@ -31,7 +31,7 @@ class CommerceFulfillmentMySqlMigrationTest {
         Flyway flyway = Flyway.configure()
                 .dataSource(CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("12");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("16");
 
         try (Connection connection = DriverManager.getConnection(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
@@ -64,6 +64,7 @@ class CommerceFulfillmentMySqlMigrationTest {
         CommerceFulfillmentMigrationTest.migrateToLatest(jdbcUrl, username, password);
 
         CommerceFulfillmentMigrationTest.assertMigratedLegacyShipment(jdbcUrl, username, password);
+        CommerceFulfillmentMigrationTest.assertMigratedLegacyProduct(jdbcUrl, username, password);
     }
 
     private static MySQLContainer<?> mysql(String databaseName) {

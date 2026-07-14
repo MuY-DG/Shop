@@ -126,7 +126,10 @@ declare namespace Api {
 
     /** 用户搜索参数 */
     type UserSearchParams = Partial<
-      Pick<UserListItem, 'username' | 'email' | 'status' | 'userName' | 'userGender' | 'userPhone' | 'userEmail'> &
+      Pick<
+        UserListItem,
+        'username' | 'email' | 'status' | 'userName' | 'userGender' | 'userPhone' | 'userEmail'
+      > &
         Api.Common.CommonSearchParams
     >
 
@@ -194,6 +197,10 @@ declare namespace Api {
     type ProductStatus = 'DRAFT' | 'ON_SALE' | 'OFF_SALE'
     type CategoryStatus = 'ENABLED' | 'DISABLED'
     type SkuStatus = 'ENABLED' | 'DISABLED'
+    type SpecType = 'SINGLE' | 'MULTI'
+    type ProductTag = 'PROMOTION' | 'HOT_SALE' | 'HOT_RANK' | 'PREMIUM' | 'NEW_ARRIVAL'
+    type FreightChargeMode = 'FREE' | 'FIXED'
+    type FreightTemplateStatus = 'ENABLED' | 'DISABLED'
 
     interface Category {
       id: number
@@ -231,8 +238,12 @@ declare namespace Api {
       maxPriceCent?: number | null
       totalStock: number
       skuCount: number
+      actualSales: number
+      virtualSales: number
+      displaySales: number
       createdAt: string
       updatedAt: string
+      deletedAt?: string | null
     }
 
     type SpuSearchParams = Partial<
@@ -240,8 +251,13 @@ declare namespace Api {
         categoryId: number
         title: string
         status: ProductStatus
+        recycled: boolean
       }
     >
+
+    interface SpuPurgeForm {
+      confirmationTitle: string
+    }
 
     interface ProductImage {
       id: number
@@ -261,13 +277,54 @@ declare namespace Api {
       specJson: string
       specText: string
       priceCent: number
-      originalPriceCent: number
+      originalPriceCent?: number | null
+      costPriceCent?: number | null
       stockAvailable: number
-      weightGram: number
+      weightGram?: number | null
+      volumeCubicMeter?: number | null
       image: string
       imageFileId?: number | null
       status: SkuStatus
+      defaultSelected: boolean
+      combinationKey: string
+      specValueKeys: string[]
       sortOrder: number
+    }
+
+    interface SpecValue {
+      id?: number
+      valueKey: string
+      valueName: string
+      image: string
+      imageFileId?: number | null
+      sortOrder: number
+    }
+
+    interface SpecValueForm {
+      id?: number
+      valueKey: string
+      valueName: string
+      image: string
+      imageFileId?: number | null
+      sortOrder: number
+    }
+
+    interface SpecGroup {
+      id?: number
+      groupKey: string
+      name: string
+      imageEnabled: boolean
+      sortOrder: number
+      values: SpecValue[]
+    }
+
+    interface SpecGroupForm {
+      id?: number
+      groupKey: string
+      name: string
+      imageEnabled: boolean
+      sortOrder: number
+      values: SpecValueForm[]
     }
 
     interface SpuDetail {
@@ -278,12 +335,21 @@ declare namespace Api {
       subtitle: string
       mainImage: string
       mainImageFileId?: number | null
+      mainVideo: string
+      mainVideoFileId?: number | null
+      specType: SpecType
+      freightTemplateId: number
+      virtualSales: number
       sellingPoints: string
       detailHtml: string
       sortOrder: number
       status: ProductStatus
       images: ProductImage[]
       skus: Sku[]
+      specGroups: SpecGroup[]
+      tags: ProductTag[]
+      guaranteeServiceIds: number[]
+      couponTemplateIds: number[]
       createdAt: string
       updatedAt: string
     }
@@ -294,23 +360,175 @@ declare namespace Api {
       subtitle: string
       mainImage: string
       mainImageFileId?: number | null
+      mainVideo: string
+      mainVideoFileId?: number | null
+      specType: SpecType
+      freightTemplateId: number
+      virtualSales: number
       sellingPoints: string
       detailHtml: string
       sortOrder: number
       images: ProductImageForm[]
       skus: Sku[]
+      specGroups: SpecGroupForm[]
+      tags: ProductTag[]
+      guaranteeServiceIds: number[]
     }
 
     interface StockAdjustmentForm {
       quantityDelta: number
       reason: string
     }
+
+    interface SpecTemplateValue {
+      id?: number
+      valueKey: string
+      valueName: string
+      sortOrder: number
+    }
+
+    interface SpecTemplateGroup {
+      id?: number
+      groupKey: string
+      name: string
+      imageEnabled: boolean
+      sortOrder: number
+      values: SpecTemplateValue[]
+    }
+
+    interface SpecTemplateSummary {
+      id: number
+      name: string
+      groupCount: number
+      valueCount: number
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface SpecTemplateDetail {
+      id: number
+      name: string
+      groups: SpecTemplateGroup[]
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface SpecTemplateForm {
+      name: string
+      groups: SpecTemplateGroup[]
+    }
+
+    interface SpecTemplateSaveForm {
+      name: string
+    }
+
+    type GuaranteeServiceList = Api.Common.PaginatedResponse<GuaranteeService>
+
+    interface GuaranteeService {
+      id: number
+      termsName: string
+      contentDescription: string
+      icon: string
+      iconFileId?: number | null
+      sortOrder: number
+      visible: boolean
+      createdAt: string
+      updatedAt: string
+    }
+
+    type GuaranteeServiceSearchParams = Partial<
+      Api.Common.CommonSearchParams & {
+        name: string
+        visible: boolean
+      }
+    >
+
+    interface GuaranteeServiceForm {
+      termsName: string
+      contentDescription: string
+      icon: string
+      iconFileId?: number | null
+      sortOrder: number
+      visible: boolean
+    }
+
+    interface GuaranteeServiceVisibilityForm {
+      visible: boolean
+    }
+
+    interface FreightTemplate {
+      id: number
+      name: string
+      chargeMode: FreightChargeMode
+      fixedAmountCent?: number | null
+      status: FreightTemplateStatus
+      sortOrder: number
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface FreightTemplateForm {
+      name: string
+      chargeMode: FreightChargeMode
+      fixedAmountCent?: number | null
+      status: FreightTemplateStatus
+      sortOrder: number
+    }
+
+    interface ProductCouponBindingForm {
+      couponTemplateIds: number[]
+    }
+
+    interface ProductCouponCreateForm {
+      name: string
+      description?: string
+      couponType: Api.Marketing.CouponType
+      discountType: Api.Marketing.DiscountType
+      thresholdCent: number
+      discountCent: number
+      scopeType?: 'PRODUCT'
+      scopeValue?: string
+      strategyKey?: string
+      totalStock: number
+      perUserLimit: number
+      validStartAt: string
+      validEndAt: string
+      status: Api.Marketing.CouponTemplateStatus
+      sortOrder?: number
+    }
   }
 
   namespace Storage {
+    type Provider = 'LOCAL' | 'TENCENT_COS'
+
+    interface Config {
+      provider: Provider
+      persisted: boolean
+      defaultProvider: Provider
+      publicBaseUrl: string
+      localRoot: string
+      cosRegion: string
+      cosBucket: string
+      cosSecretIdMasked: string
+      cosSecretKeyConfigured: boolean
+    }
+
+    interface ConfigForm {
+      provider: Provider
+      publicBaseUrl: string
+      localRoot: string
+      cosRegion: string
+      cosBucket: string
+      cosSecretId?: string
+      cosSecretKey?: string
+    }
+
     type Purpose =
       | 'PRODUCT_IMAGE'
       | 'PRODUCT_SKU_IMAGE'
+      | 'SPEC_VALUE_IMAGE'
+      | 'GUARANTEE_SERVICE_ICON'
+      | 'PRODUCT_VIDEO'
       | 'CATEGORY_ICON'
       | 'HOME_BANNER'
       | 'MARKETING_IMAGE'
@@ -330,6 +548,10 @@ declare namespace Api {
       | 'PRODUCT_SPU_MAIN'
       | 'PRODUCT_SPU_GALLERY'
       | 'PRODUCT_SKU_IMAGE'
+      | 'PRODUCT_SPU_VIDEO'
+      | 'PRODUCT_SPEC_VALUE_IMAGE'
+      | 'GUARANTEE_SERVICE_ICON'
+      | 'RICH_TEXT_IMAGE'
       | 'PRODUCT_DETAIL_HTML'
       | 'HOME_BANNER'
       | 'ORDER_ITEM_SNAPSHOT'
@@ -340,6 +562,8 @@ declare namespace Api {
       | 'PRODUCT_CATEGORY'
       | 'PRODUCT_SPU'
       | 'PRODUCT_SKU'
+      | 'PRODUCT_SPEC_VALUE'
+      | 'GUARANTEE_SERVICE'
       | 'HOME_BANNER'
       | 'ORDER_ITEM'
       | 'AFTER_SALE'
@@ -707,7 +931,7 @@ declare namespace Api {
       source: ConfigSource
     }
 
-    interface ConfigSearchParams extends Partial<Api.Common.CommonSearchParams> {}
+    type ConfigSearchParams = Partial<Api.Common.CommonSearchParams>
 
     interface ConfigForm {
       configName: string

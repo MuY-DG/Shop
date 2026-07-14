@@ -71,6 +71,7 @@ class AppOrderServiceTest {
         jdbcClient.sql("delete from product_spu_image").update();
         jdbcClient.sql("delete from product_spu").update();
         jdbcClient.sql("delete from product_category").update();
+        jdbcClient.sql("delete from freight_template where id <> 1").update();
     }
 
     @ParameterizedTest
@@ -328,6 +329,101 @@ class AppOrderServiceTest {
     }
 
     @Test
+    void previewAndSubmitUseMaximumFreightPersistItAndDigestTheCalculatedAmount() {
+        long userId = insertUser("order-freight");
+        long addressId = insertAddress(
+                userId,
+                "运费用户",
+                "13800138001",
+                "江苏省",
+                "南京市",
+                "鼓楼区",
+                "运费路8号"
+        );
+        long lowerTemplateId = insertFreightTemplate("订单低固定运费", 600L);
+        long higherTemplateId = insertFreightTemplate("订单高固定运费", 1_200L);
+        long lowerSkuA = insertSku("ORDER-FREIGHT-LOW-A", 2_000L, 2_200L, 10);
+        long lowerSkuB = insertSku("ORDER-FREIGHT-LOW-B", 3_000L, 3_200L, 10);
+        long higherSku = insertSku("ORDER-FREIGHT-HIGH", 4_000L, 4_200L, 10);
+        bindFreightTemplate(lowerSkuA, lowerTemplateId);
+        bindFreightTemplate(lowerSkuB, lowerTemplateId);
+        bindFreightTemplate(higherSku, higherTemplateId);
+
+        OrderPreviewResponse directPreview = appOrderService.preview(
+                appPrincipal(userId),
+                new AppOrderPreviewRequest(
+                        CheckoutSource.DIRECT,
+                        List.of(),
+                        lowerSkuA,
+                        1,
+                        addressId,
+                        null
+                )
+        );
+        assertThat(directPreview.freightCent()).isEqualTo(600L);
+        assertThat(directPreview.payableAmountCent()).isEqualTo(2_600L);
+
+        long lowerCartA = insertCartItem(userId, lowerSkuA, 1);
+        long lowerCartB = insertCartItem(userId, lowerSkuB, 1);
+        long higherCart = insertCartItem(userId, higherSku, 1);
+        AppOrderPreviewRequest previewRequest = new AppOrderPreviewRequest(
+                CheckoutSource.CART,
+                List.of(lowerCartA, lowerCartB, higherCart),
+                null,
+                null,
+                addressId,
+                null
+        );
+        OrderPreviewResponse preview = appOrderService.preview(appPrincipal(userId), previewRequest);
+        assertThat(preview.productAmountCent()).isEqualTo(9_000L);
+        assertThat(preview.freightCent()).isEqualTo(1_200L);
+        assertThat(preview.payableAmountCent()).isEqualTo(10_200L);
+
+        AppOrderSubmitRequest submitRequest = new AppOrderSubmitRequest(
+                CheckoutSource.CART,
+                List.of(lowerCartA, lowerCartB, higherCart),
+                null,
+                null,
+                addressId,
+                null,
+                "order-freight-max"
+        );
+        OrderSubmitResponse submitted = appOrderService.submit(appPrincipal(userId), submitRequest);
+        assertThat(submitted.payableAmountCent()).isEqualTo(preview.payableAmountCent());
+
+        Map<String, Object> persisted = jdbcClient.sql("""
+                        select freight_cent, payable_amount_cent, checkout_request_digest
+                        from shop_order
+                        where id = :orderId
+                        """)
+                .param("orderId", submitted.orderId())
+                .query((rs, rowNum) -> Map.<String, Object>of(
+                        "freight", rs.getLong("freight_cent"),
+                        "payable", rs.getLong("payable_amount_cent"),
+                        "digest", rs.getString("checkout_request_digest")
+                ))
+                .single();
+        assertThat(persisted)
+                .containsEntry("freight", 1_200L)
+                .containsEntry("payable", 10_200L)
+                .containsEntry(
+                        "digest",
+                        CheckoutRequestDigest.digest(CheckoutRequest.from(submitRequest), 1_200L)
+                );
+
+        jdbcClient.sql("""
+                        update freight_template
+                        set fixed_amount_cent = 1_500
+                        where id = :templateId
+                        """)
+                .param("templateId", higherTemplateId)
+                .update();
+        OrderSubmitResponse replay = appOrderService.submit(appPrincipal(userId), submitRequest);
+        assertThat(replay.orderId()).isEqualTo(submitted.orderId());
+        assertThat(replay.payableAmountCent()).isEqualTo(10_200L);
+    }
+
+    @Test
     void anotherUsersAddressRejectsAndRollsBackOwnershipStockAndOrderItems() {
         long userId = insertUser("address-owner-a");
         long otherUserId = insertUser("address-owner-b");
@@ -457,6 +553,28 @@ class AppOrderServiceTest {
                 .param("userId", userId).param("skuId", skuId).param("quantity", quantity).update();
         return jdbcClient.sql("select id from cart_item where user_id = :userId and sku_id = :skuId")
                 .param("userId", userId).param("skuId", skuId).query(Long.class).single();
+    }
+
+    private long insertFreightTemplate(String name, long fixedAmountCent) {
+        jdbcClient.sql("""
+                        insert into freight_template (name, charge_mode, fixed_amount_cent, status, sort_order)
+                        values (:name, 'FIXED', :fixedAmountCent, 'ENABLED', 0)
+                        """)
+                .param("name", name)
+                .param("fixedAmountCent", fixedAmountCent)
+                .update();
+        return jdbcClient.sql("select max(id) from freight_template").query(Long.class).single();
+    }
+
+    private void bindFreightTemplate(long skuId, long templateId) {
+        jdbcClient.sql("""
+                        update product_spu
+                        set freight_template_id = :templateId
+                        where id = (select spu_id from product_sku where id = :skuId)
+                        """)
+                .param("templateId", templateId)
+                .param("skuId", skuId)
+                .update();
     }
 
     private long insertCoupon(long userId, String name, long discountCent) {

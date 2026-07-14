@@ -53,6 +53,7 @@ public class AppProductService {
                         FROM product_spu s
                         JOIN product_category c ON c.id = s.category_id
                         WHERE s.status = :status
+                          AND s.deleted_at IS NULL
                           AND c.status = :categoryStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
                           AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
@@ -71,8 +72,10 @@ public class AppProductService {
                                coalesce(sum(k.stock_available), 0) AS total_stock
                         FROM product_spu s
                         JOIN product_category c ON c.id = s.category_id
-                        LEFT JOIN product_sku k ON k.spu_id = s.id AND k.status = :skuStatus
+                        LEFT JOIN product_sku k ON k.spu_id = s.id
+                            AND k.status = :skuStatus AND k.deleted_at IS NULL
                         WHERE s.status = :spuStatus
+                          AND s.deleted_at IS NULL
                           AND c.status = :categoryStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
                           AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
@@ -102,6 +105,7 @@ public class AppProductService {
                         JOIN product_category c ON c.id = s.category_id
                         WHERE s.id = :spuId
                           AND s.status = :status
+                          AND s.deleted_at IS NULL
                           AND c.status = :categoryStatus
                         """)
                 .param("spuId", spuId)
@@ -120,6 +124,9 @@ public class AppProductService {
                 .param("spuId", spuId)
                 .query(this::mapProductImage)
                 .list();
+        if (images.isEmpty() && StringUtils.hasText(spu.mainImage())) {
+            images = List.of(new ProductImageResponse(null, spu.mainImage(), spu.mainImageFileId(), 1));
+        }
 
         List<AppSkuResponse> skus = jdbcClient.sql("""
                         SELECT id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
@@ -127,6 +134,7 @@ public class AppProductService {
                         FROM product_sku
                         WHERE spu_id = :spuId
                           AND status = :status
+                          AND deleted_at IS NULL
                         ORDER BY sort_order ASC, id ASC
                         """)
                 .param("spuId", spuId)
@@ -207,7 +215,7 @@ public class AppProductService {
                 rs.getLong("price_cent"),
                 rs.getLong("original_price_cent"),
                 rs.getInt("stock_available"),
-                rs.getInt("weight_gram"),
+                rs.getObject("weight_gram", Integer.class),
                 rs.getString("image"),
                 rs.getObject("image_file_id", Long.class),
                 rs.getString("status")

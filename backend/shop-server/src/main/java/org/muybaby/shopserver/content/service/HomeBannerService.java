@@ -87,6 +87,7 @@ public class HomeBannerService {
 
     @Transactional
     public Long create(AdminHomeBannerRequest request) {
+        lockRequestedProductTarget(request);
         ValidatedBanner validated = validateRequest(request, null);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
@@ -118,6 +119,7 @@ public class HomeBannerService {
 
     @Transactional
     public void update(Long bannerId, AdminHomeBannerRequest request) {
+        lockRequestedProductTarget(request);
         BannerRow existing = requireBanner(bannerId);
         ValidatedBanner validated = validateRequest(request, existing);
         int updatedRows = jdbcClient.sql("""
@@ -173,6 +175,17 @@ public class HomeBannerService {
                         where status = 'ENABLED'
                           and (start_at is null or start_at <= :now)
                           and (end_at is null or end_at >= :now)
+                          and (
+                            jump_type <> 'PRODUCT'
+                            or exists (
+                                select 1
+                                from product_spu s
+                                where s.id = home_banner.jump_target_id
+                                  and s.status = 'ON_SALE'
+                                  and s.deleted_at is null
+                                  and s.purged_at is null
+                            )
+                          )
                         order by sort_order asc, id desc
                         """)
                 .param("now", now)
@@ -204,18 +217,73 @@ public class HomeBannerService {
     }
 
     private void updateStatus(Long bannerId, HomeBannerStatus status) {
+        BannerTargetSnapshot target = findBannerTarget(bannerId);
+        if (status == HomeBannerStatus.ENABLED && target.jumpType() == HomeBannerJumpType.PRODUCT) {
+            lockActiveProductTarget(target.jumpTargetId());
+        }
         int updatedRows = jdbcClient.sql("""
                         update home_banner
                         set status = :status,
                             updated_at = current_timestamp
                         where id = :bannerId
+                          and jump_type = :jumpType
+                          and ((jump_target_id is null and :jumpTargetId is null) or jump_target_id = :jumpTargetId)
+                          and jump_path = :jumpPath
                         """)
                 .param("status", status.name())
                 .param("bannerId", bannerId)
+                .param("jumpType", target.jumpType().name())
+                .param("jumpTargetId", target.jumpTargetId())
+                .param("jumpPath", target.jumpPath())
                 .update();
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
+    }
+
+    private void lockRequestedProductTarget(AdminHomeBannerRequest request) {
+        if (request == null) {
+            return;
+        }
+        HomeBannerJumpType jumpType = parseEnum(request.jumpType(), HomeBannerJumpType.class);
+        if (jumpType != HomeBannerJumpType.PRODUCT) {
+            return;
+        }
+        if (request.jumpTargetId() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        lockActiveProductTarget(request.jumpTargetId());
+    }
+
+    private void lockActiveProductTarget(Long spuId) {
+        jdbcClient.sql("""
+                        select id
+                        from product_spu
+                        where id = :spuId
+                          and deleted_at is null
+                          and purged_at is null
+                        for update
+                        """)
+                .param("spuId", spuId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE));
+    }
+
+    private BannerTargetSnapshot findBannerTarget(Long bannerId) {
+        return jdbcClient.sql("""
+                        select jump_type, jump_target_id, jump_path
+                        from home_banner
+                        where id = :bannerId
+                        """)
+                .param("bannerId", bannerId)
+                .query((rs, rowNum) -> new BannerTargetSnapshot(
+                        parseEnum(rs.getString("jump_type"), HomeBannerJumpType.class),
+                        rs.getObject("jump_target_id", Long.class),
+                        rs.getString("jump_path")
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
     }
 
     private ValidatedBanner validateRequest(AdminHomeBannerRequest request, BannerRow existing) {
@@ -312,6 +380,7 @@ public class HomeBannerService {
                                status, sort_order, start_at, end_at, created_at, updated_at
                         from home_banner
                         where id = :bannerId
+                        for update
                         """)
                 .param("bannerId", bannerId)
                 .query(this::mapBannerRow)
@@ -424,6 +493,13 @@ public class HomeBannerService {
             LocalDateTime endAt,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
+    ) {
+    }
+
+    private record BannerTargetSnapshot(
+            HomeBannerJumpType jumpType,
+            Long jumpTargetId,
+            String jumpPath
     ) {
     }
 }

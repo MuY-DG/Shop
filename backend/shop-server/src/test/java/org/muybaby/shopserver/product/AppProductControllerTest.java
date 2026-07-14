@@ -111,18 +111,11 @@ class AppProductControllerTest {
                 List.of(new AdminSkuUpsertRequest(null, "EDGE-SKU-1", "{\"规格\":\"大份\"}", "大份", 5990L, 6990L, 4, 400, "https://example.test/edge-sku.jpg", null, "ENABLED", 1))
         ));
         adminProductService.publishSpu(hiddenSkuSpuId);
-        adminProductService.updateSpu(hiddenSkuSpuId, new AdminSpuUpsertRequest(
-                categoryId,
-                "Disabled SKU SPU",
-                "Edge subtitle",
-                "https://example.test/disabled-main.jpg",
-                null,
-                " Fresh , , Spicy  ",
-                "<p>edge detail</p>",
-                1,
-                List.of(new AdminProductImageUpsertRequest("https://example.test/disabled-gallery.jpg", null)),
-                List.of(new AdminSkuUpsertRequest(null, "EDGE-SKU-1", "{\"规格\":\"大份\"}", "大份", 5990L, 6990L, 4, 400, "https://example.test/edge-sku.jpg", null, "DISABLED", 1))
-        ));
+        // The admin write path now rejects disabling the last enabled SKU of an on-sale product.
+        // Keep this read-side regression by simulating legacy data that predates that invariant.
+        jdbcClient.sql("update product_sku set status = 'DISABLED' where spu_id = :spuId")
+                .param("spuId", hiddenSkuSpuId)
+                .update();
 
         Long mixedSkuSpuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,

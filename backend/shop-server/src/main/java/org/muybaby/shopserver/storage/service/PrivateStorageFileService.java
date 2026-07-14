@@ -4,6 +4,7 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.storage.FileVisibility;
 import org.muybaby.shopserver.storage.StorageFileStatus;
+import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.StoragePurpose;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -32,7 +33,7 @@ public class PrivateStorageFileService {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
         PrivateFileRow row = jdbcClient.sql("""
-                        select purpose, visibility, status, object_key
+                        select purpose, visibility, status, provider, object_key
                         from storage_file
                         where id = :fileId
                         """)
@@ -47,7 +48,7 @@ public class PrivateStorageFileService {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
 
-        try (InputStream inputStream = storageProvider.open(row.objectKey()).inputStream()) {
+        try (InputStream inputStream = storageProvider.open(parseProvider(row.provider()), row.objectKey()).inputStream()) {
             return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException ex) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
@@ -67,10 +68,19 @@ public class PrivateStorageFileService {
                 rs.getString("purpose"),
                 rs.getString("visibility"),
                 rs.getString("status"),
+                rs.getString("provider"),
                 rs.getString("object_key")
         );
     }
 
-    private record PrivateFileRow(String purpose, String visibility, String status, String objectKey) {
+    private StorageProviderKind parseProvider(String provider) {
+        try {
+            return StorageProviderKind.valueOf(provider);
+        } catch (IllegalArgumentException | NullPointerException ex) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+    }
+
+    private record PrivateFileRow(String purpose, String visibility, String status, String provider, String objectKey) {
     }
 }

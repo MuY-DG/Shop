@@ -2,6 +2,10 @@ package org.muybaby.shopserver.coupon;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.auth.token.TokenSession;
+import org.muybaby.shopserver.common.error.ErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -10,6 +14,10 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
@@ -25,6 +33,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class AdminCouponTemplateControllerTest {
 
+    private static final AtomicLong LIMITED_ADMIN_ID = new AtomicLong(994_000L);
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -33,6 +43,56 @@ class AdminCouponTemplateControllerTest {
 
     @Autowired
     private JdbcClient jdbcClient;
+
+    @Autowired
+    private OpaqueTokenService opaqueTokenService;
+
+    @Test
+    void genericCouponTemplateMutationsRequireTheirDedicatedAuthorities() throws Exception {
+        long templateId = seedTemplate("RBAC template", 10, 0, "DISABLED");
+        String unrelatedToken = limitedAdminToken(List.of("product:sku:stock"));
+        String createToken = limitedAdminToken(List.of("coupon:template:create"));
+        String updateToken = limitedAdminToken(List.of("coupon:template:update"));
+        String enableToken = limitedAdminToken(List.of("coupon:template:enable"));
+        String disableToken = limitedAdminToken(List.of("coupon:template:disable"));
+
+        mockMvc.perform(post("/admin/marketing/coupons/templates")
+                        .header("Authorization", "Bearer " + unrelatedToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(templateJson("Forbidden create", "ALL", "")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
+        mockMvc.perform(post("/admin/marketing/coupons/templates")
+                        .header("Authorization", "Bearer " + createToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(templateJson("Allowed create", "ALL", "")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/admin/marketing/coupons/templates/{templateId}", templateId)
+                        .header("Authorization", "Bearer " + createToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(templateJson("Forbidden update", "ALL", "")))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(put("/admin/marketing/coupons/templates/{templateId}", templateId)
+                        .header("Authorization", "Bearer " + updateToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(templateJson("Allowed update", "ALL", "")))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/admin/marketing/coupons/templates/{templateId}/enable", templateId)
+                        .header("Authorization", "Bearer " + updateToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/admin/marketing/coupons/templates/{templateId}/enable", templateId)
+                        .header("Authorization", "Bearer " + enableToken))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/admin/marketing/coupons/templates/{templateId}/disable", templateId)
+                        .header("Authorization", "Bearer " + enableToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/admin/marketing/coupons/templates/{templateId}/disable", templateId)
+                        .header("Authorization", "Bearer " + disableToken))
+                .andExpect(status().isOk());
+    }
 
     @Test
     void adminTokenSeparationAndCouponTemplateCrudFlow() throws Exception {
@@ -216,13 +276,17 @@ class AdminCouponTemplateControllerTest {
     }
 
     private String validTemplateJson() {
+        return templateJson("新人满减券", "ALL", "");
+    }
+
+    private String templateJson(String name, String scopeType, String scopeValue) {
         return """
-                {"name":"新人满减券","description":"new user coupon","couponType":"MIN_SPEND","discountType":"AMOUNT_OFF",
-                 "thresholdCent":2000,"discountCent":500,"scopeType":"ALL","scopeValue":"",
+                {"name":"%s","description":"new user coupon","couponType":"MIN_SPEND","discountType":"AMOUNT_OFF",
+                 "thresholdCent":2000,"discountCent":500,"scopeType":"%s","scopeValue":"%s",
                  "strategyKey":"","totalStock":100,"perUserLimit":1,
                  "validStartAt":"2026-07-07T00:00:00","validEndAt":"2026-08-07T23:59:59",
                  "status":"DISABLED","sortOrder":1}
-                """;
+                """.formatted(name, scopeType, scopeValue);
     }
 
     private String adminLoginAndExtractToken() throws Exception {
@@ -251,5 +315,62 @@ class AdminCouponTemplateControllerTest {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(response).path("data").path("token").asText();
+    }
+
+    private String limitedAdminToken(List<String> permissions) {
+        long userId = LIMITED_ADMIN_ID.incrementAndGet();
+        long roleId = userId;
+        String username = "CouponLimited" + userId;
+        insertLimitedAdmin(userId, roleId, username, permissions);
+
+        TokenSession session = TokenSession.admin(
+                userId,
+                username,
+                List.of(),
+                List.of(),
+                Instant.now()
+        );
+        return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
+    }
+
+    private void insertLimitedAdmin(long userId, long roleId, String username, List<String> permissions) {
+        String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = 1")
+                .query(String.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user
+                            (id, username, password_hash, display_name, email, status)
+                        values
+                            (:userId, :username, :passwordHash, 'Coupon Limited Admin',
+                             :email, 'ENABLED')
+                        """)
+                .param("userId", userId)
+                .param("username", username)
+                .param("passwordHash", passwordHash)
+                .param("email", username.toLowerCase() + "@shop.local")
+                .update();
+        jdbcClient.sql("""
+                        insert into admin_role (id, code, name, description, enabled)
+                        values (:roleId, :code, 'Coupon Limited Role', '', true)
+                        """)
+                .param("roleId", roleId)
+                .param("code", "R_COUPON_LIMITED_" + roleId)
+                .update();
+        jdbcClient.sql("insert into admin_user_role (user_id, role_id) values (:userId, :roleId)")
+                .param("userId", userId)
+                .param("roleId", roleId)
+                .update();
+        for (String permission : permissions) {
+            int inserted = jdbcClient.sql("""
+                            insert into admin_role_permission (role_id, permission_id)
+                            select :roleId, id from admin_permission where auth_mark = :permission
+                            """)
+                    .param("roleId", roleId)
+                    .param("permission", permission)
+                    .update();
+            if (inserted != 1) {
+                throw new IllegalArgumentException("Unknown test permission: " + permission);
+            }
+        }
     }
 }

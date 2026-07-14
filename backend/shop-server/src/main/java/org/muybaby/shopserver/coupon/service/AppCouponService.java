@@ -33,6 +33,7 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -69,6 +70,8 @@ public class AppCouponService {
                         where t.status = :status
                           and t.valid_start_at <= :now
                           and t.valid_end_at >= :now
+                          and t.scope_type = :scopeType
+                          and t.scope_value = ''
                         order by
                           case
                             when t.claimed_count < t.total_stock
@@ -80,6 +83,64 @@ public class AppCouponService {
                         """)
                 .param("userId", userId)
                 .param("status", CouponTemplateStatus.ENABLED.name())
+                .param("scopeType", CouponScopeType.ALL.name())
+                .param("now", now)
+                .query(this::mapClaimableCoupon)
+                .list();
+    }
+
+    public List<AppClaimableCouponResponse> claimableForProduct(
+            AuthenticatedPrincipal principal,
+            Long spuId
+    ) {
+        Long userId = requireAppUser(principal);
+        requireProduct(spuId);
+        LocalDateTime now = LocalDateTime.now();
+        return jdbcClient.sql("""
+                        select t.id,
+                               t.name,
+                               t.description,
+                               t.coupon_type,
+                               t.threshold_cent,
+                               t.discount_cent,
+                               t.valid_start_at,
+                               t.valid_end_at,
+                               t.total_stock,
+                               t.claimed_count,
+                               t.per_user_limit,
+                               (select count(*) from user_coupon uc where uc.user_id = :userId and uc.template_id = t.id) as user_claim_count
+                        from product_spu_coupon pc
+                        join coupon_template t on t.id = pc.coupon_template_id
+                        where pc.spu_id = :spuId
+                          and exists (
+                            select 1
+                            from product_spu s
+                            where s.id = :spuId
+                              and s.deleted_at is null
+                              and s.purged_at is null
+                          )
+                          and t.status = :status
+                          and t.valid_start_at <= :now
+                          and t.valid_end_at >= :now
+                          and (
+                            (t.scope_type = :allScopeType and t.scope_value = '')
+                            or (t.scope_type = :productScopeType and t.scope_value = :scopeValue)
+                          )
+                        order by
+                          case
+                            when t.claimed_count < t.total_stock
+                             and (select count(*) from user_coupon uc where uc.user_id = :userId and uc.template_id = t.id) < t.per_user_limit
+                            then 0 else 1
+                          end,
+                          t.sort_order asc,
+                          t.id desc
+                        """)
+                .param("userId", userId)
+                .param("spuId", spuId)
+                .param("scopeValue", Long.toString(spuId))
+                .param("status", CouponTemplateStatus.ENABLED.name())
+                .param("allScopeType", CouponScopeType.ALL.name())
+                .param("productScopeType", CouponScopeType.PRODUCT.name())
                 .param("now", now)
                 .query(this::mapClaimableCoupon)
                 .list();
@@ -88,7 +149,13 @@ public class AppCouponService {
     @Transactional
     public AppUserCouponResponse claim(AuthenticatedPrincipal principal, Long templateId) {
         Long userId = requireAppUser(principal);
-        CouponTemplateRow template = findActiveTemplateForUpdate(templateId, LocalDateTime.now())
+        LocalDateTime now = LocalDateTime.now();
+        CouponTemplateRow preview = findActiveTemplate(templateId, now)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_UNAVAILABLE));
+        lockClaimScope(preview);
+        CouponTemplateRow template = findActiveTemplateForUpdate(templateId, now)
+                .filter(locked -> Objects.equals(locked.scopeType(), preview.scopeType())
+                        && Objects.equals(locked.scopeValue(), preview.scopeValue()))
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_UNAVAILABLE));
 
         Integer userClaimCount = jdbcClient.sql("""
@@ -224,6 +291,25 @@ public class AppCouponService {
                 .optional();
     }
 
+    private Optional<CouponTemplateRow> findActiveTemplate(Long templateId, LocalDateTime now) {
+        return jdbcClient.sql("""
+                        select id, name, coupon_type, discount_type, threshold_cent, discount_cent,
+                               scope_type, scope_value, total_stock, claimed_count, per_user_limit,
+                               valid_start_at, valid_end_at
+                        from coupon_template
+                        where id = :templateId
+                          and status = :status
+                          and valid_start_at <= :now
+                          and valid_end_at >= :now
+                          and claimed_count < total_stock
+                        """)
+                .param("templateId", templateId)
+                .param("status", CouponTemplateStatus.ENABLED.name())
+                .param("now", now)
+                .query(this::mapCouponTemplate)
+                .optional();
+    }
+
     private Long insertUserCoupon(Long userId, CouponTemplateRow template) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
@@ -300,7 +386,10 @@ public class AppCouponService {
                         join product_category c on c.id = s.category_id
                         where ci.user_id = :userId
                           and k.status = 'ENABLED'
+                          and k.deleted_at is null
                           and s.status = 'ON_SALE'
+                          and s.deleted_at is null
+                          and s.purged_at is null
                           and c.status = 'ENABLED'
                           and k.stock_available >= ci.quantity
                         """ + filterSql,
@@ -317,14 +406,82 @@ public class AppCouponService {
                           and status = :status
                           and valid_start_at <= :now
                           and valid_end_at >= :now
-                          and scope_type = :scopeType
+                          and (scope_type = :allScopeType or scope_type = :productScopeType)
                         """)
                 .param("userId", userId)
                 .param("status", UserCouponStatus.CLAIMED.name())
                 .param("now", now)
-                .param("scopeType", CouponScopeType.ALL.name())
+                .param("allScopeType", CouponScopeType.ALL.name())
+                .param("productScopeType", CouponScopeType.PRODUCT.name())
                 .query(this::mapUserCouponAvailableRow)
                 .list();
+    }
+
+    private void lockClaimScope(CouponTemplateRow template) {
+        if (CouponScopeType.ALL.name().equals(template.scopeType())) {
+            if (!StringUtils.hasText(template.scopeValue())) {
+                return;
+            }
+            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE);
+        }
+        if (!CouponScopeType.PRODUCT.name().equals(template.scopeType())
+                || !StringUtils.hasText(template.scopeValue())) {
+            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE);
+        }
+
+        long spuId;
+        try {
+            spuId = Long.parseLong(template.scopeValue().trim());
+        } catch (NumberFormatException ex) {
+            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE);
+        }
+        boolean activeProduct = jdbcClient.sql("""
+                        select id
+                        from product_spu
+                        where id = :spuId
+                          and deleted_at is null
+                          and purged_at is null
+                        for update
+                        """)
+                .param("spuId", spuId)
+                .query(Long.class)
+                .optional()
+                .isPresent();
+        if (spuId <= 0L || !activeProduct) {
+            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE);
+        }
+        Integer bindingCount = jdbcClient.sql("""
+                        select count(*)
+                        from product_spu_coupon
+                        where spu_id = :spuId
+                          and coupon_template_id = :templateId
+                        """)
+                .param("spuId", spuId)
+                .param("templateId", template.id())
+                .query(Integer.class)
+                .single();
+        if (bindingCount == null || bindingCount != 1) {
+            throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE);
+        }
+    }
+
+    private void requireProduct(Long spuId) {
+        if (spuId == null || spuId <= 0L) {
+            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+        }
+        Integer count = jdbcClient.sql("""
+                        select count(*)
+                        from product_spu
+                        where id = :spuId
+                          and deleted_at is null
+                          and purged_at is null
+                        """)
+                .param("spuId", spuId)
+                .query(Integer.class)
+                .single();
+        if (count == null || count != 1) {
+            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+        }
     }
 
     private AppClaimableCouponResponse mapClaimableCoupon(ResultSet rs, int rowNum) throws SQLException {

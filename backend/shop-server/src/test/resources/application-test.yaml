@@ -11,6 +11,10 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 51MB
 
 shop:
   auth:
@@ -24,8 +28,15 @@ shop:
     public-base-url: http://localhost:8080
     local:
       root: ${java.io.tmpdir}/shop-server-test-uploads
+    tencent-cos:
+      region:
+      bucket:
+      secret-id:
+      secret-key:
+      public-base-url:
     limits:
       image-max-size: 5MB
+      video-max-size: 50MB
       private-file-max-size: 1MB
   wechat:
     mini-program:

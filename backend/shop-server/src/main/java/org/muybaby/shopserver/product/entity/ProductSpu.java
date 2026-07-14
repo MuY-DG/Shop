@@ -14,10 +14,17 @@ public record ProductSpu(
         String subtitle,
         String mainImage,
         Long mainImageFileId,
+        String mainVideo,
+        Long mainVideoFileId,
+        String specType,
+        Long freightTemplateId,
+        Long virtualSales,
         String sellingPoints,
         String detailHtml,
         Integer sortOrder,
         String status,
+        LocalDateTime deletedAt,
+        LocalDateTime purgedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {

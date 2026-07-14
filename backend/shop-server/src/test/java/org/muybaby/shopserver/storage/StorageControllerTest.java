@@ -22,6 +22,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.util.Base64;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
@@ -44,6 +45,7 @@ class StorageControllerTest {
     private static final byte[] TINY_PNG = Base64.getDecoder().decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4x8AAAAASUVORK5CYII="
     );
+    private static final AtomicLong LIMITED_ADMIN_ID = new AtomicLong(991_000L);
 
     @Autowired
     private MockMvc mockMvc;
@@ -150,6 +152,36 @@ class StorageControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.records[0].id").value(fileId));
+    }
+
+    @Test
+    void adminCanUploadAndDownloadPublicProductVideo() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        byte[] videoBytes = "test-mp4-video".getBytes();
+
+        String uploadResponse = mockMvc.perform(multipart("/admin/files/upload")
+                        .file(new MockMultipartFile("file", "product-demo.mp4", "video/mp4", videoBytes))
+                        .param("purpose", "PRODUCT_VIDEO")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.purpose").value("PRODUCT_VIDEO"))
+                .andExpect(jsonPath("$.data.assetCategoryId").value(1))
+                .andExpect(jsonPath("$.data.visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$.data.contentType").value("video/mp4"))
+                .andExpect(jsonPath("$.data.width").doesNotExist())
+                .andExpect(jsonPath("$.data.height").doesNotExist())
+                .andExpect(jsonPath("$.data.url").value(startsWith("http://localhost:8080/files/public/product-video/")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode file = objectMapper.readTree(uploadResponse).path("data");
+        String path = UriComponentsBuilder.fromUriString(file.path("url").asText()).build().getPath();
+
+        mockMvc.perform(get(path))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType("video/mp4"))
+                .andExpect(content().bytes(videoBytes));
     }
 
     @Test
@@ -468,6 +500,98 @@ class StorageControllerTest {
     }
 
     @Test
+    void localUrlFallbackCoversV2MediaProtectsRecycledProductsAndReleasesPurgedMedia() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        UploadedFile videoFile = uploadPublicFile(adminToken, "url-only-main-video.png");
+        UploadedFile specFile = uploadPublicFile(adminToken, "url-only-spec-value.png");
+        UploadedFile guaranteeFile = uploadPublicFile(adminToken, "url-only-guarantee.png");
+        UploadedFile deletedProductFile = uploadPublicFile(adminToken, "url-only-deleted-product.png");
+
+        jdbcClient.sql("""
+                        insert into product_spu
+                            (category_id, title, subtitle, main_image, main_video, selling_points,
+                             detail_html, sort_order, status)
+                        values
+                            (1, 'V2 URL fallback SPU', '', '', :mainVideo, '', '', 1, 'DRAFT')
+                        """)
+                .param("mainVideo", videoFile.publicUrl())
+                .update();
+        Long activeSpuId = jdbcClient.sql("select id from product_spu where title = 'V2 URL fallback SPU'")
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into product_spu_spec_group
+                            (spu_id, group_key, name, image_enabled, sort_order)
+                        values (:spuId, 'v2-url-color', '颜色', true, 0)
+                        """)
+                .param("spuId", activeSpuId)
+                .update();
+        Long groupId = jdbcClient.sql("""
+                        select id from product_spu_spec_group
+                        where spu_id = :spuId and group_key = 'v2-url-color'
+                        """)
+                .param("spuId", activeSpuId)
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into product_spu_spec_value
+                            (group_id, value_key, value_name, image, image_file_id, sort_order)
+                        values (:groupId, 'v2-url-red', '红色', :image, null, 0)
+                        """)
+                .param("groupId", groupId)
+                .param("image", specFile.publicUrl())
+                .update();
+        jdbcClient.sql("""
+                        insert into product_guarantee_service
+                            (terms_name, content_description, icon, icon_file_id, sort_order, visible)
+                        values ('V2 URL fallback guarantee', '', :icon, null, 0, true)
+                        """)
+                .param("icon", guaranteeFile.publicUrl())
+                .update();
+
+        jdbcClient.sql("""
+                        insert into product_spu
+                            (category_id, title, subtitle, main_image, selling_points, detail_html,
+                             sort_order, status, deleted_at)
+                        values
+                            (1, 'Deleted URL fallback SPU', '', :image, '', '', 2, 'OFF_SALE', current_timestamp)
+                        """)
+                .param("image", deletedProductFile.publicUrl())
+                .update();
+        Long deletedSpuId = jdbcClient.sql("select id from product_spu where title = 'Deleted URL fallback SPU'")
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into product_spu_image (spu_id, url, file_id, sort_order)
+                        values (:spuId, :image, null, 1)
+                        """)
+                .param("spuId", deletedSpuId)
+                .param("image", deletedProductFile.publicUrl())
+                .update();
+
+        for (UploadedFile referencedFile : List.of(videoFile, specFile, guaranteeFile)) {
+            mockMvc.perform(delete("/admin/files/{fileId}", referencedFile.id())
+                            .header("Authorization", "Bearer " + adminToken))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_IN_USE.code()));
+        }
+
+        mockMvc.perform(delete("/admin/files/{fileId}", deletedProductFile.id())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_IN_USE.code()));
+
+        jdbcClient.sql("update product_spu set purged_at = current_timestamp where id = :spuId")
+                .param("spuId", deletedSpuId)
+                .update();
+
+        mockMvc.perform(delete("/admin/files/{fileId}", deletedProductFile.id())
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+    }
+
+    @Test
     void uploadRejectsUnsupportedExtensionOversizeEmptyCorruptedImageAndPathTraversal() throws Exception {
         String adminToken = adminLoginAndExtractToken();
 
@@ -600,8 +724,54 @@ class StorageControllerTest {
     }
 
     private String limitedAdminToken(List<String> permissions) {
-        TokenSession session = TokenSession.admin(99L, "limited-admin", List.of("R_LIMITED"), permissions, Instant.now());
+        long userId = LIMITED_ADMIN_ID.incrementAndGet();
+        long roleId = userId;
+        String username = "StorageLimited" + userId;
+        insertLimitedAdmin(userId, roleId, username, permissions);
+
+        TokenSession session = TokenSession.admin(userId, username, List.of(), List.of(), Instant.now());
         return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
+    }
+
+    private void insertLimitedAdmin(long userId, long roleId, String username, List<String> permissions) {
+        String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = 1")
+                .query(String.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user
+                            (id, username, password_hash, display_name, email, status)
+                        values
+                            (:userId, :username, :passwordHash, 'Storage Limited Admin',
+                             :email, 'ENABLED')
+                        """)
+                .param("userId", userId)
+                .param("username", username)
+                .param("passwordHash", passwordHash)
+                .param("email", username.toLowerCase() + "@shop.local")
+                .update();
+        jdbcClient.sql("""
+                        insert into admin_role (id, code, name, description, enabled)
+                        values (:roleId, :code, 'Storage Limited Role', '', true)
+                        """)
+                .param("roleId", roleId)
+                .param("code", "R_STORAGE_LIMITED_" + roleId)
+                .update();
+        jdbcClient.sql("insert into admin_user_role (user_id, role_id) values (:userId, :roleId)")
+                .param("userId", userId)
+                .param("roleId", roleId)
+                .update();
+        for (String permission : permissions) {
+            int inserted = jdbcClient.sql("""
+                            insert into admin_role_permission (role_id, permission_id)
+                            select :roleId, id from admin_permission where auth_mark = :permission
+                            """)
+                    .param("roleId", roleId)
+                    .param("permission", permission)
+                    .update();
+            if (inserted != 1) {
+                throw new IllegalArgumentException("Unknown test permission: " + permission);
+            }
+        }
     }
 
     private record UploadedFile(Long id, String publicUrl) {

@@ -16,6 +16,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class StorageCategoryMigrationTest {
 
+    private static final Map<String, Long> LEGACY_CATEGORY_IDS_BY_PURPOSE = Map.of(
+            "PRODUCT_IMAGE", 1L,
+            "PRODUCT_SKU_IMAGE", 1L,
+            "HOME_BANNER", 2L,
+            "CATEGORY_ICON", 3L,
+            "APP_ICON", 4L,
+            "RICH_TEXT_IMAGE", 5L,
+            "MARKETING_IMAGE", 6L,
+            "AFTER_SALE_IMAGE", 7L,
+            "REFUND_EVIDENCE", 7L,
+            "PAYMENT_CERTIFICATE", 8L
+    );
+
     @Test
     void unclassifiedFilesAreBackfilledFromTheirPurpose() throws SQLException {
         String databaseName = "storage_category_" + UUID.randomUUID().toString().replace("-", "");
@@ -34,25 +47,15 @@ class StorageCategoryMigrationTest {
                 .load()
                 .migrate();
 
-        assertThat(categoryIdsByPurpose(jdbcUrl)).containsExactlyInAnyOrderEntriesOf(Map.of(
-                "PRODUCT_IMAGE", 1L,
-                "PRODUCT_SKU_IMAGE", 1L,
-                "HOME_BANNER", 2L,
-                "CATEGORY_ICON", 3L,
-                "APP_ICON", 4L,
-                "RICH_TEXT_IMAGE", 5L,
-                "MARKETING_IMAGE", 6L,
-                "AFTER_SALE_IMAGE", 7L,
-                "REFUND_EVIDENCE", 7L,
-                "PAYMENT_CERTIFICATE", 8L
-        ));
+        assertThat(categoryIdsByPurpose(jdbcUrl))
+                .containsExactlyInAnyOrderEntriesOf(LEGACY_CATEGORY_IDS_BY_PURPOSE);
     }
 
     private void seedUnclassifiedFiles(String jdbcUrl) throws SQLException {
         try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
              Statement statement = connection.createStatement()) {
             int index = 0;
-            for (StoragePurpose purpose : StoragePurpose.values()) {
+            for (String purpose : LEGACY_CATEGORY_IDS_BY_PURPOSE.keySet()) {
                 index++;
                 statement.executeUpdate("""
                         insert into storage_file
@@ -63,7 +66,12 @@ class StorageCategoryMigrationTest {
                             ('%s', null, '%s', 'LOCAL', '', 'test/%d.png',
                              'test-%d.png', 'image/png', 'png', 1, '',
                              '', 'ACTIVE', 'ADMIN', 1)
-                        """.formatted(purpose.name(), purpose.visibility().name(), index, index));
+                        """.formatted(
+                                purpose,
+                                StoragePurpose.valueOf(purpose).visibility().name(),
+                                index,
+                                index
+                        ));
             }
         }
     }

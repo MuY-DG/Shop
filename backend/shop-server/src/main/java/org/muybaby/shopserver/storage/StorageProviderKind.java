@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.storage;
 
 public enum StorageProviderKind {
-    LOCAL
+    LOCAL,
+    TENCENT_COS
 }

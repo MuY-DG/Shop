@@ -6,8 +6,10 @@ import org.springframework.stereotype.Service;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class AdminRbacService {
@@ -72,6 +74,52 @@ public class AdminRbacService {
                 .list();
     }
 
+    public Optional<AdminAuthorization> findEnabledAuthorizationByUserId(Long userId) {
+        List<AuthorizationRow> rows = jdbcClient.sql("""
+                        select u.id as user_id,
+                               u.username,
+                               r.code as role_code,
+                               p.auth_mark
+                        from admin_user u
+                        left join admin_user_role ur on ur.user_id = u.id
+                        left join admin_role r on r.id = ur.role_id and r.enabled = true
+                        left join admin_role_permission rp on rp.role_id = r.id
+                        left join admin_permission p on p.id = rp.permission_id
+                        where u.id = :userId and u.status = 'ENABLED'
+                        order by r.id, p.auth_mark
+                        """)
+                .param("userId", userId)
+                .query((rs, rowNum) -> new AuthorizationRow(
+                        rs.getLong("user_id"),
+                        rs.getString("username"),
+                        rs.getString("role_code"),
+                        rs.getString("auth_mark")
+                ))
+                .list();
+        if (rows.isEmpty()) {
+            return Optional.empty();
+        }
+
+        Set<String> roles = new LinkedHashSet<>();
+        Set<String> permissions = new LinkedHashSet<>();
+        for (AuthorizationRow row : rows) {
+            if (row.roleCode() != null) {
+                roles.add(row.roleCode());
+            }
+            if (row.authMark() != null) {
+                permissions.add(row.authMark());
+            }
+        }
+
+        AuthorizationRow first = rows.getFirst();
+        return Optional.of(new AdminAuthorization(
+                first.userId(),
+                first.username(),
+                List.copyOf(roles),
+                List.copyOf(permissions)
+        ));
+    }
+
     private AdminUser mapAdminUser(ResultSet rs, int rowNum) throws SQLException {
         return new AdminUser(
                 rs.getLong("id"),
@@ -85,5 +133,13 @@ public class AdminRbacService {
                 rs.getTimestamp("created_at").toLocalDateTime(),
                 rs.getTimestamp("updated_at").toLocalDateTime()
         );
+    }
+
+    private record AuthorizationRow(
+            Long userId,
+            String username,
+            String roleCode,
+            String authMark
+    ) {
     }
 }

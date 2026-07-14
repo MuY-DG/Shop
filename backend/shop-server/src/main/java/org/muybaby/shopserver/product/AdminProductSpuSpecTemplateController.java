@@ -1,0 +1,32 @@
+package org.muybaby.shopserver.product;
+
+import jakarta.validation.Valid;
+import org.muybaby.shopserver.common.api.ApiResponse;
+import org.muybaby.shopserver.product.dto.AdminSpecTemplateSaveRequest;
+import org.muybaby.shopserver.product.service.ProductSpecTemplateService;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/admin/product/spus/{spuId}/spec-template")
+public class AdminProductSpuSpecTemplateController {
+
+    private final ProductSpecTemplateService templateService;
+
+    public AdminProductSpuSpecTemplateController(ProductSpecTemplateService templateService) {
+        this.templateService = templateService;
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAuthority('product:spec-template:create')")
+    public ApiResponse<Long> saveAsTemplate(
+            @PathVariable Long spuId,
+            @Valid @RequestBody AdminSpecTemplateSaveRequest request
+    ) {
+        return ApiResponse.success(templateService.createFromSpu(spuId, request.name()));
+    }
+}

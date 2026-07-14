@@ -46,7 +46,7 @@ class StorageUsageServiceTest {
         )).isInstanceOfSatisfying(BusinessException.class, ex ->
                 assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
-        assertThat(activeUsageCount()).isZero();
+        assertThat(activeUsageCount(StorageUsageOwnerType.ORDER_ITEM, 9001L)).isZero();
     }
 
     @Test
@@ -67,33 +67,73 @@ class StorageUsageServiceTest {
         )).isInstanceOfSatisfying(BusinessException.class, ex ->
                 assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
-        assertThat(activeUsageCount()).isZero();
+        assertThat(activeUsageCount(StorageUsageOwnerType.PRODUCT_SPU, 101L)).isZero();
     }
 
-    private int activeUsageCount() {
+    @Test
+    void activePublicMediaValidationRejectsWrongKindAndPrivateFiles() {
+        long imageFileId = insertStorageFile(
+                "media-image.png", "ACTIVE", "PRODUCT_IMAGE", "PUBLIC", "image/png", "png");
+        long videoFileId = insertStorageFile(
+                "media-video.mp4", "ACTIVE", "PRODUCT_VIDEO", "PUBLIC", "video/mp4", "mp4");
+        long privateFileId = insertStorageFile(
+                "private-cert.pem", "ACTIVE", "PAYMENT_CERTIFICATE", "PRIVATE", "application/x-pem-file", "pem");
+
+        storageUsageService.requireActivePublicMedia(imageFileId, StorageMediaKind.IMAGE);
+        storageUsageService.requireActivePublicMedia(videoFileId, StorageMediaKind.VIDEO);
+
+        assertThatThrownBy(() -> storageUsageService.requireActivePublicMedia(imageFileId, StorageMediaKind.VIDEO))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+        assertThatThrownBy(() -> storageUsageService.requireActivePublicMedia(privateFileId, StorageMediaKind.IMAGE))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+    }
+
+    private int activeUsageCount(StorageUsageOwnerType ownerType, Long ownerId) {
         Integer count = jdbcClient.sql("""
                         select count(*)
                         from storage_file_usage
                         where status = 'ACTIVE'
+                          and owner_type = :ownerType
+                          and owner_id = :ownerId
                         """)
+                .param("ownerType", ownerType.name())
+                .param("ownerId", ownerId)
                 .query(Integer.class)
                 .single();
         return count == null ? 0 : count;
     }
 
     private long insertStorageFile(String originalFilename, String status) {
+        return insertStorageFile(
+                originalFilename, status, "PRODUCT_IMAGE", "PUBLIC", "image/png", "png");
+    }
+
+    private long insertStorageFile(
+            String originalFilename,
+            String status,
+            String purpose,
+            String visibility,
+            String contentType,
+            String extension
+    ) {
         jdbcClient.sql("""
                         insert into storage_file
                             (purpose, asset_category_id, visibility, provider, bucket, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
                              public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            ('PRODUCT_IMAGE', 1, 'PUBLIC', 'LOCAL', '', :objectKey, :originalFilename,
-                             'image/png', 'png', 68, 'abc123', 1, 1, '', null,
+                            (:purpose, 1, :visibility, 'LOCAL', '', :objectKey, :originalFilename,
+                             :contentType, :extension, 68, 'abc123', 1, 1, '', null,
                              'http://localhost:8080/files/public/test.png', :status, 'ADMIN', 1)
                         """)
                 .param("objectKey", "public/test/" + status.toLowerCase() + "/" + System.nanoTime() + ".png")
                 .param("originalFilename", originalFilename)
+                .param("purpose", purpose)
+                .param("visibility", visibility)
+                .param("contentType", contentType)
+                .param("extension", extension)
                 .param("status", status)
                 .update();
 

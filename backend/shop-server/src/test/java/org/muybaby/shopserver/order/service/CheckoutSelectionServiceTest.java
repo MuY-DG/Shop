@@ -43,6 +43,7 @@ class CheckoutSelectionServiceTest {
         jdbcClient.sql("delete from product_spu_image").update();
         jdbcClient.sql("delete from product_spu").update();
         jdbcClient.sql("delete from product_category").update();
+        jdbcClient.sql("delete from freight_template where id <> 1").update();
         jdbcClient.sql("delete from user_address").update();
     }
 
@@ -115,6 +116,54 @@ class CheckoutSelectionServiceTest {
     }
 
     @Test
+    void previewAndSubmitRejectSoftDeletedSkuEvenWhenItsStatusRemainsEnabled() {
+        long userId = insertUser("selection-deleted-sku");
+        long skuId = insertSku("SELECTION-DELETED-SKU", 3990L, 4990L, 5, "ENABLED", "ON_SALE", "ENABLED");
+        long cartItemId = insertCartItem(userId, skuId, 1);
+        CheckoutRequest cart = new CheckoutRequest(CheckoutSource.CART, List.of(cartItemId), null, null, null, null);
+        CheckoutRequest direct = new CheckoutRequest(CheckoutSource.DIRECT, List.of(), skuId, 1, null, null);
+
+        jdbcClient.sql("""
+                        update product_sku
+                        set status = 'ENABLED', deleted_at = current_timestamp
+                        where id = :skuId
+                        """)
+                .param("skuId", skuId)
+                .update();
+
+        assertBusiness(ErrorCode.CART_ITEM_NOT_FOUND, () -> checkoutSelectionService.preview(userId, cart));
+        assertBusiness(ErrorCode.SKU_UNAVAILABLE, () -> checkoutSelectionService.preview(userId, direct));
+        assertBusiness(ErrorCode.SKU_UNAVAILABLE, () -> checkoutSelectionService.lockForSubmit(userId, cart));
+        assertBusiness(ErrorCode.SKU_UNAVAILABLE, () -> checkoutSelectionService.lockForSubmit(userId, direct));
+    }
+
+    @Test
+    void previewAndSubmitRejectSoftDeletedSpuEvenWhenItsStatusRemainsOnSale() {
+        long userId = insertUser("selection-deleted-spu");
+        long skuId = insertSku("SELECTION-DELETED-SPU", 3990L, 4990L, 5, "ENABLED", "ON_SALE", "ENABLED");
+        long cartItemId = insertCartItem(userId, skuId, 1);
+        CheckoutRequest cart = new CheckoutRequest(CheckoutSource.CART, List.of(cartItemId), null, null, null, null);
+        CheckoutRequest direct = new CheckoutRequest(CheckoutSource.DIRECT, List.of(), skuId, 1, null, null);
+        long spuId = jdbcClient.sql("select spu_id from product_sku where id = :skuId")
+                .param("skuId", skuId)
+                .query(Long.class)
+                .single();
+
+        jdbcClient.sql("""
+                        update product_spu
+                        set status = 'ON_SALE', deleted_at = current_timestamp
+                        where id = :spuId
+                        """)
+                .param("spuId", spuId)
+                .update();
+
+        assertBusiness(ErrorCode.CART_ITEM_NOT_FOUND, () -> checkoutSelectionService.preview(userId, cart));
+        assertBusiness(ErrorCode.SKU_UNAVAILABLE, () -> checkoutSelectionService.preview(userId, direct));
+        assertBusiness(ErrorCode.PRODUCT_UNAVAILABLE, () -> checkoutSelectionService.lockForSubmit(userId, cart));
+        assertBusiness(ErrorCode.PRODUCT_UNAVAILABLE, () -> checkoutSelectionService.lockForSubmit(userId, direct));
+    }
+
+    @Test
     void cartSelectionRequiresEveryRequestedRowToBelongToTheUser() {
         long ownerId = insertUser("selection-owner");
         long otherId = insertUser("selection-other");
@@ -123,6 +172,73 @@ class CheckoutSelectionServiceTest {
 
         assertBusiness(ErrorCode.CART_ITEM_NOT_FOUND, () -> checkoutSelectionService.lockForSubmit(otherId,
                 new CheckoutRequest(CheckoutSource.CART, List.of(cartItemId), null, null, null, null)));
+    }
+
+    @Test
+    void directAndMultiProductCartResolveDistinctTemplateMaximumFreight() {
+        long userId = insertUser("selection-freight");
+        long lowerTemplateId = insertFreightTemplate("低固定运费", "FIXED", 700L, "ENABLED");
+        long higherTemplateId = insertFreightTemplate("高固定运费", "FIXED", 1_200L, "ENABLED");
+        long lowerSkuA = insertSku("FREIGHT-LOW-A", 2_000L, 2_200L, 10, "ENABLED", "ON_SALE", "ENABLED");
+        long lowerSkuB = insertSku("FREIGHT-LOW-B", 3_000L, 3_200L, 10, "ENABLED", "ON_SALE", "ENABLED");
+        long higherSku = insertSku("FREIGHT-HIGH", 4_000L, 4_200L, 10, "ENABLED", "ON_SALE", "ENABLED");
+        bindFreightTemplate(lowerSkuA, lowerTemplateId);
+        bindFreightTemplate(lowerSkuB, lowerTemplateId);
+        bindFreightTemplate(higherSku, higherTemplateId);
+
+        CheckoutSelection direct = checkoutSelectionService.preview(userId,
+                new CheckoutRequest(CheckoutSource.DIRECT, List.of(), lowerSkuA, 1, null, null));
+        long lowerCartA = insertCartItem(userId, lowerSkuA, 1);
+        long lowerCartB = insertCartItem(userId, lowerSkuB, 1);
+        long higherCart = insertCartItem(userId, higherSku, 1);
+        CheckoutSelection cart = checkoutSelectionService.preview(userId,
+                new CheckoutRequest(
+                        CheckoutSource.CART,
+                        List.of(lowerCartA, lowerCartB, higherCart),
+                        null,
+                        null,
+                        null,
+                        null
+                ));
+
+        assertThat(direct.freightCent()).isEqualTo(700L);
+        assertThat(cart.freightCent()).isEqualTo(1_200L);
+        assertThat(checkoutSelectionService.lockForSubmit(userId,
+                new CheckoutRequest(
+                        CheckoutSource.CART,
+                        List.of(lowerCartA, lowerCartB, higherCart),
+                        null,
+                        null,
+                        null,
+                        null
+                )).freightCent()).isEqualTo(cart.freightCent());
+    }
+
+    @Test
+    void checkoutRejectsDisabledOrDeletedFreightTemplate() {
+        long userId = insertUser("selection-freight-unavailable");
+        long templateId = insertFreightTemplate("不可用运费", "FIXED", 600L, "DISABLED");
+        long skuId = insertSku(
+                "FREIGHT-UNAVAILABLE",
+                2_000L,
+                2_200L,
+                10,
+                "ENABLED",
+                "ON_SALE",
+                "ENABLED"
+        );
+        bindFreightTemplate(skuId, templateId);
+        CheckoutRequest direct = new CheckoutRequest(CheckoutSource.DIRECT, List.of(), skuId, 1, null, null);
+
+        assertBusiness(ErrorCode.PRODUCT_UNAVAILABLE, () -> checkoutSelectionService.preview(userId, direct));
+        jdbcClient.sql("""
+                        update freight_template
+                        set status = 'ENABLED', deleted_at = current_timestamp
+                        where id = :templateId
+                        """)
+                .param("templateId", templateId)
+                .update();
+        assertBusiness(ErrorCode.PRODUCT_UNAVAILABLE, () -> checkoutSelectionService.lockForSubmit(userId, direct));
     }
 
     private void assertBusiness(ErrorCode expected, Runnable action) {
@@ -211,6 +327,30 @@ class CheckoutSelectionServiceTest {
                 .param("skuId", skuId)
                 .query(Long.class)
                 .single();
+    }
+
+    private long insertFreightTemplate(String name, String chargeMode, long fixedAmountCent, String status) {
+        jdbcClient.sql("""
+                        insert into freight_template (name, charge_mode, fixed_amount_cent, status, sort_order)
+                        values (:name, :chargeMode, :fixedAmountCent, :status, 0)
+                        """)
+                .param("name", name)
+                .param("chargeMode", chargeMode)
+                .param("fixedAmountCent", fixedAmountCent)
+                .param("status", status)
+                .update();
+        return jdbcClient.sql("select max(id) from freight_template").query(Long.class).single();
+    }
+
+    private void bindFreightTemplate(long skuId, long templateId) {
+        jdbcClient.sql("""
+                        update product_spu
+                        set freight_template_id = :templateId
+                        where id = (select spu_id from product_sku where id = :skuId)
+                        """)
+                .param("templateId", templateId)
+                .param("skuId", skuId)
+                .update();
     }
 
     private Map<Long, Integer> cartQuantities(long userId) {

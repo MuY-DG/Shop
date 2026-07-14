@@ -41,14 +41,19 @@ class AdminMenuControllerTest {
                         "/order",
                         "/storage/files",
                         "/content/banner",
-                        "/payment",
+                        "/development",
                         "/aftersale",
                         "/system"
                 )))
                 .andExpect(jsonPath("$.data[0].path").value("/dashboard"))
                 .andExpect(jsonPath("$.data[0].component").value("/index/index"))
                 .andExpect(jsonPath("$.data[1].path").value("/product"))
-                .andExpect(jsonPath("$.data[1].children[*].path", contains("category", "spu")))
+                .andExpect(jsonPath("$.data[1].children[*].path", contains(
+                        "category",
+                        "spu",
+                        "spec-template",
+                        "guarantee-service"
+                )))
                 .andExpect(jsonPath("$.data[1].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "product:category:create",
                         "product:category:update"
@@ -57,7 +62,24 @@ class AdminMenuControllerTest {
                         "product:spu:create",
                         "product:spu:update",
                         "product:spu:publish",
-                        "product:sku:stock"
+                        "product:sku:stock",
+                        "product:spu:delete",
+                        "product:spu:restore",
+                        "product:spu:purge",
+                        "product:freight:create",
+                        "product:freight:update",
+                        "product:coupon:bind",
+                        "product:coupon:create"
+                )))
+                .andExpect(jsonPath("$.data[1].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                        "product:spec-template:create",
+                        "product:spec-template:update"
+                )))
+                .andExpect(jsonPath("$.data[1].children[3].meta.authList[*].authMark", containsInAnyOrder(
+                        "product:guarantee:create",
+                        "product:guarantee:update",
+                        "product:guarantee:delete",
+                        "product:guarantee:visibility"
                 )))
                 .andExpect(jsonPath("$.data[2].path").value("/marketing"))
                 .andExpect(jsonPath("$.data[2].children[*].path", contains("coupon")))
@@ -89,9 +111,14 @@ class AdminMenuControllerTest {
                         "content:banner:update",
                         "content:banner:publish"
                 )))
-                .andExpect(jsonPath("$.data[6].path").value("/payment"))
-                .andExpect(jsonPath("$.data[6].children[*].path", contains("config")))
+                .andExpect(jsonPath("$.data[6].path").value("/development"))
+                .andExpect(jsonPath("$.data[6].component").value("/index/index"))
+                .andExpect(jsonPath("$.data[6].children[*].path", contains("storage", "payment")))
                 .andExpect(jsonPath("$.data[6].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                        "storage:config:read",
+                        "storage:config:write"
+                )))
+                .andExpect(jsonPath("$.data[6].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "payment:config:read",
                         "payment:config:write",
                         "payment:config:enable"

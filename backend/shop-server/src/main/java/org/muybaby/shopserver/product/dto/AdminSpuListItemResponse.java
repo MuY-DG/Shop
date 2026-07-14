@@ -15,7 +15,11 @@ public record AdminSpuListItemResponse(
         Long maxPriceCent,
         Integer totalStock,
         Integer skuCount,
+        Long actualSales,
+        Long virtualSales,
+        Long displaySales,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        LocalDateTime deletedAt
 ) {
 }

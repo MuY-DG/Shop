@@ -4,6 +4,8 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.CheckoutSource;
 import org.muybaby.shopserver.order.dto.OrderPreviewItemResponse;
+import org.muybaby.shopserver.product.FreightChargeMode;
+import org.muybaby.shopserver.product.FreightTemplateStatus;
 import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.promotion.CheckoutContext;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -65,14 +68,14 @@ public class CheckoutSelectionService {
     }
 
     private CheckoutSelection loadCart(long userId, CheckoutRequest request, boolean forUpdate) {
-        List<CartSelectionRow> selectedRows = findOwnedCartRows(userId, request.cartItemIds(), forUpdate);
+        List<CartSelectionRow> selectedRows = findOwnedCartRows(userId, request.cartItemIds(), false);
         if (selectedRows.size() != request.cartItemIds().size()) {
             throw new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND);
         }
 
         List<Long> selectedIds = selectedRows.stream().map(CartSelectionRow::cartItemId).toList();
         List<CheckoutRow> checkoutRows = forUpdate
-                ? lockCartCheckoutRows(selectedRows)
+                ? lockCartCheckoutRows(userId, selectedIds, selectedRows)
                 : findCheckoutRowsByCartIds(userId, selectedIds);
         if (checkoutRows.size() != selectedRows.size()) {
             throw new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND);
@@ -98,10 +101,19 @@ public class CheckoutSelectionService {
     ) {
         List<OrderPreviewItemResponse> previewItems = new ArrayList<>(checkoutRows.size());
         List<CheckoutItem> checkoutItems = new ArrayList<>(checkoutRows.size());
+        Map<Long, Long> freightAmountsByTemplate = new HashMap<>();
         long productOriginalAmountCent = 0L;
         long productAmountCent = 0L;
         for (CheckoutRow row : checkoutRows) {
             validateCheckoutRow(row);
+            long templateFreightCent = resolveFreightCent(row);
+            Long previousFreightCent = freightAmountsByTemplate.putIfAbsent(
+                    row.freightTemplateId(),
+                    templateFreightCent
+            );
+            if (previousFreightCent != null && previousFreightCent != templateFreightCent) {
+                throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+            }
             long lineOriginalAmountCent = Math.multiplyExact(row.originalPriceCent(), row.quantity().longValue());
             long lineAmountCent = Math.multiplyExact(row.unitPriceCent(), row.quantity().longValue());
             productOriginalAmountCent = Math.addExact(productOriginalAmountCent, lineOriginalAmountCent);
@@ -128,6 +140,10 @@ public class CheckoutSelectionService {
             ));
             checkoutItems.add(new CheckoutItem(row.skuId(), row.spuId(), lineAmountCent, row.quantity()));
         }
+        long freightCent = freightAmountsByTemplate.values().stream()
+                .mapToLong(Long::longValue)
+                .max()
+                .orElse(0L);
         return new CheckoutSelection(
                 source,
                 previewItems,
@@ -135,6 +151,7 @@ public class CheckoutSelectionService {
                 selectedCartItemIds,
                 productOriginalAmountCent,
                 productAmountCent,
+                freightCent,
                 new CheckoutContext(userId, checkoutItems)
         );
     }
@@ -154,11 +171,19 @@ public class CheckoutSelectionService {
                 mapCartSelectionRow());
     }
 
-    private List<CheckoutRow> lockCartCheckoutRows(List<CartSelectionRow> selectedRows) {
+    private List<CheckoutRow> lockCartCheckoutRows(
+            long userId,
+            List<Long> selectedIds,
+            List<CartSelectionRow> selectionHints
+    ) {
         ProductLockState productState = lockProductState(
-                selectedRows.stream().map(CartSelectionRow::skuId).toList());
-        List<CheckoutRow> checkoutRows = new ArrayList<>(selectedRows.size());
-        for (CartSelectionRow selectedRow : selectedRows) {
+                selectionHints.stream().map(CartSelectionRow::skuId).toList());
+        List<CartSelectionRow> lockedRows = findOwnedCartRows(userId, selectedIds, true);
+        if (!sameCartSelectionIdentity(selectionHints, lockedRows)) {
+            throw new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND);
+        }
+        List<CheckoutRow> checkoutRows = new ArrayList<>(lockedRows.size());
+        for (CartSelectionRow selectedRow : lockedRows) {
             checkoutRows.add(toCheckoutRow(
                     selectedRow.cartItemId(),
                     selectedRow.quantity(),
@@ -167,6 +192,24 @@ public class CheckoutSelectionService {
             ));
         }
         return checkoutRows;
+    }
+
+    private boolean sameCartSelectionIdentity(
+            List<CartSelectionRow> selectionHints,
+            List<CartSelectionRow> lockedRows
+    ) {
+        if (selectionHints.size() != lockedRows.size()) {
+            return false;
+        }
+        for (int index = 0; index < selectionHints.size(); index++) {
+            CartSelectionRow hint = selectionHints.get(index);
+            CartSelectionRow locked = lockedRows.get(index);
+            if (!hint.cartItemId().equals(locked.cartItemId())
+                    || !hint.skuId().equals(locked.skuId())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private List<CheckoutRow> lockDirectCheckoutRow(long skuId, int quantity) {
@@ -181,7 +224,7 @@ public class CheckoutSelectionService {
             throw new BusinessException(ErrorCode.SKU_UNAVAILABLE);
         }
 
-        // Global lock order: optional cart_item -> product_spu -> product_category -> product_sku.
+        // Global lock order: product_spu -> product_category -> freight_template -> product_sku -> cart_item.
         List<Long> spuIds = parentHints.stream().map(SkuParentRow::spuId).distinct().sorted().toList();
         List<LockedSpuRow> lockedSpus = lockSpuRows(spuIds);
         if (lockedSpus.size() != spuIds.size()) {
@@ -196,6 +239,15 @@ public class CheckoutSelectionService {
         if (lockedCategories.size() != categoryIds.size()) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
+        List<Long> freightTemplateIds = lockedSpus.stream()
+                .map(LockedSpuRow::freightTemplateId)
+                .distinct()
+                .sorted()
+                .toList();
+        List<LockedFreightTemplateRow> lockedFreightTemplates = lockFreightTemplateRows(freightTemplateIds);
+        if (lockedFreightTemplates.size() != freightTemplateIds.size()) {
+            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+        }
         List<LockedSkuRow> lockedSkus = lockSkuRows(normalizedSkuIds);
         if (lockedSkus.size() != normalizedSkuIds.size()) {
             throw new BusinessException(ErrorCode.SKU_UNAVAILABLE);
@@ -207,6 +259,8 @@ public class CheckoutSelectionService {
         lockedSpus.forEach(row -> spusById.put(row.spuId(), row));
         Map<Long, LockedCategoryRow> categoriesById = new HashMap<>();
         lockedCategories.forEach(row -> categoriesById.put(row.categoryId(), row));
+        Map<Long, LockedFreightTemplateRow> freightTemplatesById = new HashMap<>();
+        lockedFreightTemplates.forEach(row -> freightTemplatesById.put(row.freightTemplateId(), row));
         Map<Long, LockedSkuRow> skusById = new HashMap<>();
         lockedSkus.forEach(row -> skusById.put(row.skuId(), row));
         for (LockedSkuRow sku : lockedSkus) {
@@ -217,7 +271,7 @@ public class CheckoutSelectionService {
                 throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
             }
         }
-        return new ProductLockState(spusById, categoriesById, skusById);
+        return new ProductLockState(spusById, categoriesById, freightTemplatesById, skusById);
     }
 
     private List<SkuParentRow> findSkuParentRows(List<Long> skuIds) {
@@ -225,6 +279,7 @@ public class CheckoutSelectionService {
                         select id as sku_id, spu_id
                         from product_sku
                         where id in (:skuIds)
+                          and deleted_at is null
                         order by id asc
                         """,
                 new MapSqlParameterSource().addValue("skuIds", skuIds),
@@ -239,9 +294,12 @@ public class CheckoutSelectionService {
                                subtitle,
                                main_image,
                                main_image_file_id,
+                               freight_template_id,
                                status as spu_status
                         from product_spu
                         where id in (:spuIds)
+                          and deleted_at is null
+                          and purged_at is null
                         order by id asc
                         for update
                         """,
@@ -253,6 +311,7 @@ public class CheckoutSelectionService {
                         rs.getString("subtitle"),
                         rs.getString("main_image"),
                         rs.getObject("main_image_file_id", Long.class),
+                        rs.getLong("freight_template_id"),
                         rs.getString("spu_status")
                 ));
     }
@@ -272,6 +331,28 @@ public class CheckoutSelectionService {
                 ));
     }
 
+    private List<LockedFreightTemplateRow> lockFreightTemplateRows(List<Long> freightTemplateIds) {
+        return jdbcTemplate.query("""
+                        select id as freight_template_id,
+                               charge_mode,
+                               fixed_amount_cent,
+                               status as freight_status,
+                               deleted_at as freight_deleted_at
+                        from freight_template
+                        where id in (:freightTemplateIds)
+                        order by id asc
+                        for update
+                        """,
+                new MapSqlParameterSource().addValue("freightTemplateIds", freightTemplateIds),
+                (rs, rowNum) -> new LockedFreightTemplateRow(
+                        rs.getLong("freight_template_id"),
+                        rs.getString("charge_mode"),
+                        rs.getLong("fixed_amount_cent"),
+                        rs.getString("freight_status"),
+                        rs.getObject("freight_deleted_at", LocalDateTime.class)
+                ));
+    }
+
     private List<LockedSkuRow> lockSkuRows(List<Long> skuIds) {
         return jdbcTemplate.query("""
                         select id as sku_id,
@@ -286,6 +367,7 @@ public class CheckoutSelectionService {
                                status as sku_status
                         from product_sku
                         where id in (:skuIds)
+                          and deleted_at is null
                         order by id asc
                         for update
                         """,
@@ -322,6 +404,11 @@ public class CheckoutSelectionService {
         if (category == null) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
+        LockedFreightTemplateRow freightTemplate = productState.freightTemplatesById()
+                .get(spu.freightTemplateId());
+        if (freightTemplate == null) {
+            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+        }
         boolean useMainImage = sku.skuImage() == null || sku.skuImage().isEmpty();
         return new CheckoutRow(
                 cartItemId,
@@ -343,7 +430,12 @@ public class CheckoutSelectionService {
                 sku.stockAvailable(),
                 sku.skuStatus(),
                 spu.spuStatus(),
-                category.categoryStatus()
+                category.categoryStatus(),
+                freightTemplate.freightTemplateId(),
+                freightTemplate.chargeMode(),
+                freightTemplate.fixedAmountCent(),
+                freightTemplate.freightStatus(),
+                freightTemplate.deletedAt()
         );
     }
 
@@ -368,11 +460,20 @@ public class CheckoutSelectionService {
                                k.stock_available,
                                k.status as sku_status,
                                s.status as spu_status,
-                               pc.status as category_status
+                               pc.status as category_status,
+                               s.freight_template_id,
+                               ft.charge_mode,
+                               ft.fixed_amount_cent,
+                               ft.status as freight_status,
+                               ft.deleted_at as freight_deleted_at
                         from cart_item c
                         join product_sku k on k.id = c.sku_id
+                                                  and k.deleted_at is null
                         join product_spu s on s.id = k.spu_id
+                                                 and s.deleted_at is null
+                                                 and s.purged_at is null
                         join product_category pc on pc.id = s.category_id
+                        left join freight_template ft on ft.id = s.freight_template_id
                         where c.user_id = :userId
                           and c.id in (:cartItemIds)
                         order by c.id asc
@@ -402,11 +503,20 @@ public class CheckoutSelectionService {
                        k.stock_available,
                        k.status as sku_status,
                        s.status as spu_status,
-                       pc.status as category_status
+                       pc.status as category_status,
+                       s.freight_template_id,
+                       ft.charge_mode,
+                       ft.fixed_amount_cent,
+                       ft.status as freight_status,
+                       ft.deleted_at as freight_deleted_at
                 from product_sku k
                 join product_spu s on s.id = k.spu_id
+                                         and s.deleted_at is null
+                                         and s.purged_at is null
                 join product_category pc on pc.id = s.category_id
+                left join freight_template ft on ft.id = s.freight_template_id
                 where k.id = :skuId
+                  and k.deleted_at is null
                 """,
                 new MapSqlParameterSource().addValue("skuId", skuId),
                 (rs, rowNum) -> mapDirectCheckoutRow(rs, quantity));
@@ -422,6 +532,33 @@ public class CheckoutSelectionService {
         if (row.stockAvailable() < row.quantity()) {
             throw new BusinessException(ErrorCode.STOCK_SHORTAGE);
         }
+        resolveFreightCent(row);
+    }
+
+    private long resolveFreightCent(CheckoutRow row) {
+        if (row.freightTemplateId() == null
+                || !FreightTemplateStatus.ENABLED.name().equals(row.freightStatus())
+                || row.freightDeletedAt() != null
+                || row.freightChargeMode() == null
+                || row.freightFixedAmountCent() == null) {
+            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+        }
+        FreightChargeMode chargeMode;
+        try {
+            chargeMode = FreightChargeMode.valueOf(row.freightChargeMode());
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+        }
+        if (chargeMode == FreightChargeMode.FREE) {
+            if (row.freightFixedAmountCent() != 0L) {
+                throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+            }
+            return 0L;
+        }
+        if (row.freightFixedAmountCent() <= 0L) {
+            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+        }
+        return row.freightFixedAmountCent();
     }
 
     private CheckoutRow mapCheckoutRow(ResultSet rs, int rowNum) throws SQLException {
@@ -453,7 +590,12 @@ public class CheckoutSelectionService {
                 rs.getInt("stock_available"),
                 rs.getString("sku_status"),
                 rs.getString("spu_status"),
-                rs.getString("category_status")
+                rs.getString("category_status"),
+                rs.getObject("freight_template_id", Long.class),
+                rs.getString("charge_mode"),
+                rs.getObject("fixed_amount_cent", Long.class),
+                rs.getString("freight_status"),
+                rs.getObject("freight_deleted_at", LocalDateTime.class)
         );
     }
 
@@ -482,11 +624,21 @@ public class CheckoutSelectionService {
             String productSubtitle,
             String mainImage,
             Long mainImageFileId,
+            Long freightTemplateId,
             String spuStatus
     ) {
     }
 
     private record LockedCategoryRow(Long categoryId, String categoryStatus) {
+    }
+
+    private record LockedFreightTemplateRow(
+            Long freightTemplateId,
+            String chargeMode,
+            Long fixedAmountCent,
+            String freightStatus,
+            LocalDateTime deletedAt
+    ) {
     }
 
     private record LockedSkuRow(
@@ -506,11 +658,13 @@ public class CheckoutSelectionService {
     private record ProductLockState(
             Map<Long, LockedSpuRow> spusById,
             Map<Long, LockedCategoryRow> categoriesById,
+            Map<Long, LockedFreightTemplateRow> freightTemplatesById,
             Map<Long, LockedSkuRow> skusById
     ) {
         private ProductLockState {
             spusById = Map.copyOf(spusById);
             categoriesById = Map.copyOf(categoriesById);
+            freightTemplatesById = Map.copyOf(freightTemplatesById);
             skusById = Map.copyOf(skusById);
         }
     }
@@ -535,7 +689,12 @@ public class CheckoutSelectionService {
             Integer stockAvailable,
             String skuStatus,
             String spuStatus,
-            String categoryStatus
+            String categoryStatus,
+            Long freightTemplateId,
+            String freightChargeMode,
+            Long freightFixedAmountCent,
+            String freightStatus,
+            LocalDateTime freightDeletedAt
     ) {
     }
 }

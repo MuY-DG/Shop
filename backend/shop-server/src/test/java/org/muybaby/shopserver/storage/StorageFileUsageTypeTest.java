@@ -13,4 +13,12 @@ class StorageFileUsageTypeTest {
         assertThat(Arrays.stream(StorageFileUsageType.values()).map(Enum::name))
                 .contains("PRODUCT_DETAIL_HTML", "RICH_TEXT_IMAGE");
     }
+
+    @Test
+    void productV2MediaUsageAndOwnerTypesAreAvailable() {
+        assertThat(Arrays.stream(StorageFileUsageType.values()).map(Enum::name))
+                .contains("PRODUCT_SPU_VIDEO", "PRODUCT_SPEC_VALUE_IMAGE", "GUARANTEE_SERVICE_ICON");
+        assertThat(Arrays.stream(StorageUsageOwnerType.values()).map(Enum::name))
+                .contains("PRODUCT_SPEC_VALUE", "GUARANTEE_SERVICE");
+    }
 }

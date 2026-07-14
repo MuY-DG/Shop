@@ -1,5 +1,8 @@
 package org.muybaby.shopserver.product.dto;
 
+import java.math.BigDecimal;
+import java.util.List;
+
 public record AdminSkuResponse(
         Long id,
         String skuCode,
@@ -7,11 +10,16 @@ public record AdminSkuResponse(
         String specText,
         Long priceCent,
         Long originalPriceCent,
+        Long costPriceCent,
         Integer stockAvailable,
         Integer weightGram,
+        BigDecimal volumeCubicMeter,
         String image,
         Long imageFileId,
         String status,
+        Boolean defaultSelected,
+        String combinationKey,
+        List<String> specValueKeys,
         Integer sortOrder
 ) {
 }

@@ -21,7 +21,11 @@
       <div class="asset-picker__meta">
         <div class="asset-picker__title">
           <span>{{ selectedFile?.originalFilename || '未绑定素材' }}</span>
-          <ElTag v-if="selectedFile" size="small" :type="selectedFile.visibility === 'PRIVATE' ? 'warning' : 'success'">
+          <ElTag
+            v-if="selectedFile"
+            size="small"
+            :type="selectedFile.visibility === 'PRIVATE' ? 'warning' : 'success'"
+          >
             {{ selectedFile.visibility === 'PRIVATE' ? 'PRIVATE' : 'PUBLIC' }}
           </ElTag>
         </div>
@@ -56,13 +60,7 @@
       <ElButton v-if="allowClear" :disabled="disabled" @click="clearValue">清空</ElButton>
     </div>
 
-    <ElDialog
-      v-model="dialogVisible"
-      title="选择素材"
-      width="1080px"
-      destroy-on-close
-      align-center
-    >
+    <ElDialog v-model="dialogVisible" title="选择素材" width="1080px" destroy-on-close align-center>
       <div class="asset-picker__dialog">
         <div class="asset-picker__toolbar">
           <ElSelect
@@ -204,6 +202,9 @@
   const purposeLabelMap: Record<Api.Storage.Purpose, string> = {
     PRODUCT_IMAGE: '商品主图',
     PRODUCT_SKU_IMAGE: 'SKU 图片',
+    SPEC_VALUE_IMAGE: '规格值图片',
+    GUARANTEE_SERVICE_ICON: '保障服务图标',
+    PRODUCT_VIDEO: '商品视频',
     CATEGORY_ICON: '分类图标',
     HOME_BANNER: '首页轮播',
     MARKETING_IMAGE: '运营活动',
@@ -405,17 +406,17 @@
     gap: 12px;
     align-items: center;
     padding: 12px;
+    background: var(--el-fill-color-blank);
     border: 1px solid var(--el-border-color);
     border-radius: 8px;
-    background: var(--el-fill-color-blank);
   }
 
   .asset-picker__preview {
     width: 88px;
     height: 88px;
-    border-radius: 8px;
     overflow: hidden;
     background: var(--el-fill-color-light);
+    border-radius: 8px;
 
     :deep(img) {
       width: 100%;
@@ -425,30 +426,30 @@
 
   .asset-picker__placeholder,
   .asset-card__private {
-    width: 100%;
-    height: 100%;
     display: flex;
     flex-direction: column;
+    gap: 6px;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    color: var(--el-text-color-secondary);
+    width: 100%;
+    height: 100%;
     font-size: 12px;
+    color: var(--el-text-color-secondary);
     text-align: center;
   }
 
   .asset-picker__meta {
-    min-width: 0;
     display: grid;
     gap: 8px;
+    min-width: 0;
   }
 
   .asset-picker__title {
     display: flex;
-    align-items: center;
     gap: 8px;
-    font-weight: 500;
+    align-items: center;
     min-width: 0;
+    font-weight: 500;
 
     > span:first-child {
       min-width: 0;
@@ -462,9 +463,9 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px 12px;
-    color: var(--el-text-color-secondary);
     font-size: 12px;
     line-height: 1.4;
+    color: var(--el-text-color-secondary);
   }
 
   .asset-picker__url {
@@ -492,35 +493,37 @@
   }
 
   .asset-picker__grid {
-    min-height: 280px;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 12px;
+    min-height: 280px;
   }
 
   .asset-card {
     display: grid;
     gap: 10px;
     padding: 12px;
+    text-align: left;
+    background: var(--el-fill-color-blank);
     border: 1px solid var(--el-border-color);
     border-radius: 8px;
-    background: var(--el-fill-color-blank);
-    text-align: left;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
   }
 
   .asset-card:hover,
   .asset-card.is-active {
     border-color: var(--el-color-primary);
-    box-shadow: 0 0 0 1px rgb(from var(--el-color-primary) r g b / 0.15);
+    box-shadow: 0 0 0 1px rgb(from var(--el-color-primary) r g b / 15%);
   }
 
   .asset-card__preview {
     width: 100%;
     aspect-ratio: 1;
     overflow: hidden;
-    border-radius: 8px;
     background: var(--el-fill-color-light);
+    border-radius: 8px;
 
     :deep(img) {
       width: 100%;
@@ -536,8 +539,8 @@
   .asset-card__name {
     font-size: 13px;
     font-weight: 500;
-    color: var(--el-text-color-primary);
     line-height: 1.4;
+    color: var(--el-text-color-primary);
     word-break: break-word;
   }
 

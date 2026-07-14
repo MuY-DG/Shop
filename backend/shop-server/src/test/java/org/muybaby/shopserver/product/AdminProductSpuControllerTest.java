@@ -3,6 +3,8 @@ package org.muybaby.shopserver.product;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.common.error.ErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,10 +14,15 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.startsWith;
+import static org.muybaby.shopserver.support.AdminTokenTestSupport.issueAdminToken;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -35,6 +42,9 @@ class AdminProductSpuControllerTest {
 
     @Autowired
     private JdbcClient jdbcClient;
+
+    @Autowired
+    private OpaqueTokenService opaqueTokenService;
 
     @AfterEach
     void cleanStorageTables() {
@@ -68,6 +78,7 @@ class AdminProductSpuControllerTest {
                                   "sellingPoints": "A,B",
                                   "detailHtml": "<p><img src=\\"%s\\"/></p>",
                                   "sortOrder": 1,
+                                  "virtualSales": 5,
                                   "images": [
                                     {"url": "%s", "fileId": %d}
                                   ],
@@ -114,7 +125,14 @@ class AdminProductSpuControllerTest {
                 .andExpect(jsonPath("$.data.current").value(1))
                 .andExpect(jsonPath("$.data.size").value(20))
                 .andExpect(jsonPath("$.data.total", greaterThanOrEqualTo(1)))
-                .andExpect(jsonPath("$.data.records[0].status").value("ON_SALE"));
+                .andExpect(jsonPath("$.data.records[?(@.id == %d)].status".formatted(spuId))
+                        .value(contains("ON_SALE")))
+                .andExpect(jsonPath("$.data.records[?(@.id == %d)].actualSales".formatted(spuId))
+                        .value(contains(0)))
+                .andExpect(jsonPath("$.data.records[?(@.id == %d)].virtualSales".formatted(spuId))
+                        .value(contains(5)))
+                .andExpect(jsonPath("$.data.records[?(@.id == %d)].displaySales".formatted(spuId))
+                        .value(contains(5)));
 
         String detailResponse = mockMvc.perform(get("/admin/product/spus/" + spuId)
                         .header("Authorization", "Bearer " + token))
@@ -129,10 +147,37 @@ class AdminProductSpuControllerTest {
                 .getContentAsString();
         long skuId = objectMapper.readTree(detailResponse).path("data").path("skus").get(0).path("id").asLong();
 
+        long paidOrderId = insertSalesOrder("PAID", true);
+        long refundedOrderId = insertSalesOrder("REFUNDED", true);
+        long unpaidOrderId = insertSalesOrder("PENDING_PAYMENT", false);
+        insertSalesOrderItem(paidOrderId, spuId, skuId, 2);
+        insertSalesOrderItem(refundedOrderId, spuId, skuId, 3);
+        insertSalesOrderItem(unpaidOrderId, spuId, skuId, 7);
+
+        mockMvc.perform(get("/admin/product/spus")
+                        .header("Authorization", "Bearer " + token)
+                        .param("title", "Controller SPU"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[?(@.id == %d)].actualSales".formatted(spuId))
+                        .value(contains(5)))
+                .andExpect(jsonPath("$.data.records[?(@.id == %d)].virtualSales".formatted(spuId))
+                        .value(contains(5)))
+                .andExpect(jsonPath("$.data.records[?(@.id == %d)].displaySales".formatted(spuId))
+                        .value(contains(10)));
+
         assertThat(activeUsageCount(mainFile.id(), "PRODUCT_SPU_MAIN", "PRODUCT_SPU", spuId)).isEqualTo(1);
         assertThat(activeUsageCount(galleryFile.id(), "PRODUCT_SPU_GALLERY", "PRODUCT_SPU", spuId)).isEqualTo(1);
         assertThat(activeUsageCount(detailFile.id(), "PRODUCT_DETAIL_HTML", "PRODUCT_SPU", spuId)).isEqualTo(1);
         assertThat(activeUsageCount(skuFile.id(), "PRODUCT_SKU_IMAGE", "PRODUCT_SKU", skuId)).isEqualTo(1);
+
+        mockMvc.perform(post("/admin/product/skus/" + skuId + "/stock-adjustments")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason": "missing quantity"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
 
         mockMvc.perform(post("/admin/product/skus/" + skuId + "/stock-adjustments")
                         .header("Authorization", "Bearer " + token)
@@ -281,6 +326,59 @@ class AdminProductSpuControllerTest {
     }
 
     @Test
+    void deleteSpuRequiresDeleteAuthorityAndMovesOnlySpuToRecycleBin() throws Exception {
+        String token = loginAndExtractToken();
+        long categoryId = createCategory(token);
+        String createResponse = mockMvc.perform(post("/admin/product/spus")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Delete Controller SPU",
+                                  "mainImage": "https://example.test/delete-main.jpg",
+                                  "detailHtml": "<p>delete</p>",
+                                  "sortOrder": 0,
+                                  "skus": [{
+                                    "skuCode": "DELETE-CTRL-SKU",
+                                    "priceCent": 1990,
+                                    "stockAvailable": 3,
+                                    "status": "ENABLED",
+                                    "sortOrder": 0
+                                  }]
+                                }
+                                """.formatted(categoryId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long spuId = objectMapper.readTree(createResponse).path("data").asLong();
+        String updateOnlyToken = limitedAdminToken(List.of("product:spu:update"));
+
+        mockMvc.perform(delete("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + updateOnlyToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        mockMvc.perform(delete("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200001));
+        assertThat(jdbcClient.sql("select count(*) from product_spu where id = :spuId and deleted_at is not null")
+                .param("spuId", spuId)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select count(*) from product_sku where spu_id = :spuId and deleted_at is null and status = 'ENABLED'")
+                .param("spuId", spuId)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    @Test
     void legacySpuUpdatePreservesMainGalleryAndSkuFileIdsWhenUrlsAreUnchanged() throws Exception {
         String token = loginAndExtractToken();
         long categoryId = createCategory(token);
@@ -414,6 +512,188 @@ class AdminProductSpuControllerTest {
         assertThat(activeUsageCount(mainFile.id(), "PRODUCT_SPU_MAIN", "PRODUCT_SPU", spuId)).isEqualTo(1);
         assertThat(activeUsageCount(galleryFile.id(), "PRODUCT_SPU_GALLERY", "PRODUCT_SPU", spuId)).isEqualTo(1);
         assertThat(activeUsageCount(skuFile.id(), "PRODUCT_SKU_IMAGE", "PRODUCT_SKU", skuId)).isEqualTo(1);
+    }
+
+    @Test
+    void legacyPutPreservesOmittedV2CollectionsAndExplicitEmptyArraysClearThem() throws Exception {
+        String token = loginAndExtractToken();
+        long categoryId = createCategory(token);
+        jdbcClient.sql("""
+                        insert into product_guarantee_service
+                            (terms_name, content_description, icon, sort_order, visible)
+                        values ('Controller Legacy Guarantee', 'legacy guarantee', '', 0, true)
+                        """)
+                .update();
+        long guaranteeServiceId = jdbcClient.sql("""
+                        select id from product_guarantee_service
+                        where terms_name = 'Controller Legacy Guarantee'
+                        """)
+                .query(Long.class)
+                .single();
+
+        String createResponse = mockMvc.perform(post("/admin/product/spus")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Controller Legacy V2 SPU",
+                                  "mainImage": "https://example.test/controller-legacy-v2-main.jpg",
+                                  "specType": "MULTI",
+                                  "sortOrder": 0,
+                                  "specGroups": [{
+                                    "groupKey": "controller-color",
+                                    "name": "颜色",
+                                    "imageEnabled": true,
+                                    "sortOrder": 0,
+                                    "values": [
+                                      {"valueKey": "controller-red", "valueName": "红色", "sortOrder": 0},
+                                      {"valueKey": "controller-blue", "valueName": "蓝色", "sortOrder": 1}
+                                    ]
+                                  }],
+                                  "tags": ["HOT_SALE"],
+                                  "guaranteeServiceIds": [%d],
+                                  "skus": [
+                                    {
+                                      "skuCode": "CTRL-LEGACY-V2-RED",
+                                      "priceCent": 1990,
+                                      "costPriceCent": 1200,
+                                      "stockAvailable": 2,
+                                      "volumeCubicMeter": 0.001200,
+                                      "status": "ENABLED",
+                                      "defaultSelected": false,
+                                      "sortOrder": 0,
+                                      "specValueKeys": ["controller-red"]
+                                    },
+                                    {
+                                      "skuCode": "CTRL-LEGACY-V2-BLUE",
+                                      "priceCent": 2090,
+                                      "costPriceCent": 1300,
+                                      "stockAvailable": 3,
+                                      "volumeCubicMeter": 0.002300,
+                                      "status": "ENABLED",
+                                      "defaultSelected": true,
+                                      "sortOrder": 1,
+                                      "specValueKeys": ["controller-blue"]
+                                    }
+                                  ]
+                                }
+                                """.formatted(categoryId, guaranteeServiceId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long spuId = objectMapper.readTree(createResponse).path("data").asLong();
+        long redSkuId = jdbcClient.sql("select id from product_sku where sku_code = 'CTRL-LEGACY-V2-RED'")
+                .query(Long.class)
+                .single();
+        long blueSkuId = jdbcClient.sql("select id from product_sku where sku_code = 'CTRL-LEGACY-V2-BLUE'")
+                .query(Long.class)
+                .single();
+
+        mockMvc.perform(put("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Controller Legacy V2 SPU Updated",
+                                  "mainImage": "https://example.test/controller-legacy-v2-main.jpg",
+                                  "sortOrder": 0,
+                                  "skus": [
+                                    {
+                                      "id": %d,
+                                      "skuCode": "CTRL-LEGACY-V2-RED",
+                                      "specJson": "{\\"颜色\\":\\"红色\\"}",
+                                      "specText": "红色",
+                                      "priceCent": 1990,
+                                      "stockAvailable": 2,
+                                      "status": "ENABLED",
+                                      "sortOrder": 0
+                                    },
+                                    {
+                                      "id": %d,
+                                      "skuCode": "CTRL-LEGACY-V2-BLUE",
+                                      "specJson": "{\\"颜色\\":\\"蓝色\\"}",
+                                      "specText": "蓝色",
+                                      "priceCent": 2090,
+                                      "stockAvailable": 3,
+                                      "status": "ENABLED",
+                                      "sortOrder": 1
+                                    }
+                                  ]
+                                }
+                                """.formatted(categoryId, redSkuId, blueSkuId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value("Controller Legacy V2 SPU Updated"))
+                .andExpect(jsonPath("$.data.specGroups.length()").value(1))
+                .andExpect(jsonPath("$.data.specGroups[0].values.length()").value(2))
+                .andExpect(jsonPath("$.data.tags[0]").value("HOT_SALE"))
+                .andExpect(jsonPath("$.data.guaranteeServiceIds[0]").value(guaranteeServiceId))
+                .andExpect(jsonPath("$.data.skus[0].specValueKeys[0]").value("controller-red"))
+                .andExpect(jsonPath("$.data.skus[0].costPriceCent").value(1200))
+                .andExpect(jsonPath("$.data.skus[0].volumeCubicMeter").value(0.001200))
+                .andExpect(jsonPath("$.data.skus[0].defaultSelected").value(false))
+                .andExpect(jsonPath("$.data.skus[0].combinationKey").value("controller-red"))
+                .andExpect(jsonPath("$.data.skus[1].specValueKeys[0]").value("controller-blue"))
+                .andExpect(jsonPath("$.data.skus[1].costPriceCent").value(1300))
+                .andExpect(jsonPath("$.data.skus[1].volumeCubicMeter").value(0.002300))
+                .andExpect(jsonPath("$.data.skus[1].defaultSelected").value(true))
+                .andExpect(jsonPath("$.data.skus[1].combinationKey").value("controller-blue"));
+
+        mockMvc.perform(put("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Controller Legacy V2 SPU Updated",
+                                  "mainImage": "https://example.test/controller-legacy-v2-main.jpg",
+                                  "specType": "MULTI",
+                                  "sortOrder": 0,
+                                  "specGroups": [],
+                                  "tags": [],
+                                  "guaranteeServiceIds": [],
+                                  "skus": [
+                                    {
+                                      "id": %d,
+                                      "skuCode": "CTRL-LEGACY-V2-RED",
+                                      "specJson": "{\\"颜色\\":\\"红色\\"}",
+                                      "specText": "红色",
+                                      "priceCent": 1990,
+                                      "stockAvailable": 2,
+                                      "status": "ENABLED",
+                                      "sortOrder": 0,
+                                      "specValueKeys": []
+                                    },
+                                    {
+                                      "id": %d,
+                                      "skuCode": "CTRL-LEGACY-V2-BLUE",
+                                      "specJson": "{\\"颜色\\":\\"蓝色\\"}",
+                                      "specText": "蓝色",
+                                      "priceCent": 2090,
+                                      "stockAvailable": 3,
+                                      "status": "ENABLED",
+                                      "sortOrder": 1,
+                                      "specValueKeys": []
+                                    }
+                                  ]
+                                }
+                                """.formatted(categoryId, redSkuId, blueSkuId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.specGroups.length()").value(0))
+                .andExpect(jsonPath("$.data.tags.length()").value(0))
+                .andExpect(jsonPath("$.data.guaranteeServiceIds.length()").value(0))
+                .andExpect(jsonPath("$.data.skus[0].specValueKeys.length()").value(0))
+                .andExpect(jsonPath("$.data.skus[1].specValueKeys.length()").value(0));
     }
 
     @Test
@@ -556,6 +836,51 @@ class AdminProductSpuControllerTest {
         assertThat(removedUsageCount(skuFile.id(), "PRODUCT_SKU_IMAGE", "PRODUCT_SKU", skuId)).isEqualTo(1);
     }
 
+    @Test
+    void createDefaultsOptionalProductSortAndVirtualSalesToZero() throws Exception {
+        String token = loginAndExtractToken();
+        long categoryId = createCategory(token);
+
+        String response = mockMvc.perform(post("/admin/product/spus")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "categoryId": %d,
+                                  "title": "Optional defaults SPU",
+                                  "mainImage": "https://example.test/optional-defaults.jpg",
+                                  "specType": "SINGLE",
+                                  "skus": [
+                                    {
+                                      "skuCode": "OPTIONAL-DEFAULTS-SKU",
+                                      "specJson": "{}",
+                                      "specText": "默认",
+                                      "priceCent": 1990,
+                                      "originalPriceCent": 0,
+                                      "stockAvailable": 0,
+                                      "status": "ENABLED",
+                                      "sortOrder": 0,
+                                      "defaultSelected": true
+                                    }
+                                  ]
+                                }
+                                """.formatted(categoryId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long spuId = objectMapper.readTree(response).path("data").asLong();
+
+        assertThat(jdbcClient.sql("select sort_order from product_spu where id = :spuId")
+                .param("spuId", spuId)
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("select virtual_sales from product_spu where id = :spuId")
+                .param("spuId", spuId)
+                .query(Long.class)
+                .single()).isZero();
+    }
+
     private long createCategory(String token) throws Exception {
         String response = mockMvc.perform(post("/admin/product/categories")
                         .header("Authorization", "Bearer " + token)
@@ -582,6 +907,56 @@ class AdminProductSpuControllerTest {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(response).path("data").path("token").asText();
+    }
+
+    private String limitedAdminToken(List<String> permissions) {
+        return issueAdminToken(jdbcClient, opaqueTokenService, permissions);
+    }
+
+    private long insertSalesOrder(String orderStatus, boolean paid) {
+        String orderNo = "SALE" + System.nanoTime();
+        String idempotencyKey = "sale-" + System.nanoTime();
+        if (paid) {
+            jdbcClient.sql("""
+                            insert into shop_order
+                                (order_no, user_id, status, source, idempotency_key, paid_at)
+                            values
+                                (:orderNo, 1, :status, 'DIRECT', :idempotencyKey, current_timestamp)
+                            """)
+                    .param("orderNo", orderNo)
+                    .param("status", orderStatus)
+                    .param("idempotencyKey", idempotencyKey)
+                    .update();
+        } else {
+            jdbcClient.sql("""
+                            insert into shop_order
+                                (order_no, user_id, status, source, idempotency_key)
+                            values
+                                (:orderNo, 1, :status, 'DIRECT', :idempotencyKey)
+                            """)
+                    .param("orderNo", orderNo)
+                    .param("status", orderStatus)
+                    .param("idempotencyKey", idempotencyKey)
+                    .update();
+        }
+        return jdbcClient.sql("select id from shop_order where order_no = :orderNo")
+                .param("orderNo", orderNo)
+                .query(Long.class)
+                .single();
+    }
+
+    private void insertSalesOrderItem(long orderId, long spuId, long skuId, int quantity) {
+        jdbcClient.sql("""
+                        insert into order_item
+                            (order_id, sku_id, spu_id, product_title, sku_code, quantity)
+                        values
+                            (:orderId, :skuId, :spuId, 'Sales Product', 'SALES-SKU', :quantity)
+                        """)
+                .param("orderId", orderId)
+                .param("skuId", skuId)
+                .param("spuId", spuId)
+                .param("quantity", quantity)
+                .update();
     }
 
     private int activeUsageCount(long fileId, String usageType, String ownerType, long ownerId) {

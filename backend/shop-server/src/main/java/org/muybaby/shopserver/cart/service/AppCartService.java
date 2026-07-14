@@ -61,7 +61,7 @@ public class AppCartService {
     public CartItemResponse add(AuthenticatedPrincipal principal, AddCartItemRequest request) {
         Long userId = requireAppUser(principal);
         int requestQuantity = requireQuantity(request.quantity());
-        SellableSkuRow sku = findSellableSku(request.skuId())
+        SellableSkuRow sku = lockSellableSku(request.skuId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SKU_UNAVAILABLE));
         Optional<CartQuantityRow> existingItem = findCartItemBySkuForUpdate(userId, request.skuId());
         int targetQuantity = requireQuantity(existingItem
@@ -83,10 +83,13 @@ public class AppCartService {
     public CartItemResponse updateQuantity(AuthenticatedPrincipal principal, Long cartItemId, UpdateCartQuantityRequest request) {
         Long userId = requireAppUser(principal);
         int targetQuantity = requireQuantity(request.quantity());
-        CartQuantityRow item = findCartItemByIdForUpdate(userId, cartItemId)
+        CartQuantityRow preview = findCartItemById(userId, cartItemId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND));
-        SellableSkuRow sku = findSellableSku(item.skuId())
+        SellableSkuRow sku = lockSellableSku(preview.skuId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.SKU_UNAVAILABLE));
+        CartQuantityRow item = findCartItemByIdForUpdate(userId, cartItemId)
+                .filter(lockedItem -> lockedItem.skuId().equals(preview.skuId()))
+                .orElseThrow(() -> new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND));
         requireSellable(sku, targetQuantity);
         updateQuantityById(cartItemId, targetQuantity);
         return findCartItem(userId, cartItemId)
@@ -146,20 +149,61 @@ public class AppCartService {
         }
     }
 
-    private Optional<SellableSkuRow> findSellableSku(Long skuId) {
+    private Optional<SellableSkuRow> lockSellableSku(Long skuId) {
+        Optional<Long> spuId = jdbcClient.sql("select spu_id from product_sku where id = :skuId")
+                .param("skuId", skuId)
+                .query(Long.class)
+                .optional();
+        if (spuId.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<LockedProductRow> product = jdbcClient.sql("""
+                        select category_id, status as spu_status
+                        from product_spu
+                        where id = :spuId
+                          and deleted_at is null
+                          and purged_at is null
+                        for update
+                        """)
+                .param("spuId", spuId.get())
+                .query((rs, rowNum) -> new LockedProductRow(
+                        rs.getLong("category_id"),
+                        rs.getString("spu_status")
+                ))
+                .optional();
+        if (product.isEmpty()) {
+            return Optional.empty();
+        }
+        LockedProductRow productRow = product.get();
+        Optional<String> categoryStatus = jdbcClient.sql("""
+                        select status
+                        from product_category
+                        where id = :categoryId
+                        for update
+                        """)
+                .param("categoryId", productRow.categoryId())
+                .query(String.class)
+                .optional();
+        if (categoryStatus.isEmpty()) {
+            return Optional.empty();
+        }
         return jdbcClient.sql("""
-                        SELECT k.id AS sku_id,
-                               k.stock_available,
-                               k.status AS sku_status,
-                               s.status AS spu_status,
-                               c.status AS category_status
-                        FROM product_sku k
-                        JOIN product_spu s ON s.id = k.spu_id
-                        JOIN product_category c ON c.id = s.category_id
-                        WHERE k.id = :skuId
+                        select id as sku_id, stock_available, status as sku_status
+                        from product_sku
+                        where id = :skuId
+                          and spu_id = :spuId
+                          and deleted_at is null
+                        for update
                         """)
                 .param("skuId", skuId)
-                .query(this::mapSellableSku)
+                .param("spuId", spuId.get())
+                .query((rs, rowNum) -> new SellableSkuRow(
+                        rs.getLong("sku_id"),
+                        rs.getInt("stock_available"),
+                        rs.getString("sku_status"),
+                        productRow.spuStatus(),
+                        categoryStatus.get()
+                ))
                 .optional();
     }
 
@@ -184,6 +228,19 @@ public class AppCartService {
                         WHERE user_id = :userId
                           AND id = :cartItemId
                         FOR UPDATE
+                        """)
+                .param("userId", userId)
+                .param("cartItemId", cartItemId)
+                .query(this::mapCartQuantity)
+                .optional();
+    }
+
+    private Optional<CartQuantityRow> findCartItemById(Long userId, Long cartItemId) {
+        return jdbcClient.sql("""
+                        select id, sku_id, quantity
+                        from cart_item
+                        where user_id = :userId
+                          and id = :cartItemId
                         """)
                 .param("userId", userId)
                 .param("cartItemId", cartItemId)
@@ -276,9 +333,12 @@ public class AppCartService {
                        s.status AS spu_status,
                        c.status AS category_status
                 FROM cart_item ci
-                LEFT JOIN product_sku k ON k.id = ci.sku_id
-                LEFT JOIN product_spu s ON s.id = k.spu_id
-                LEFT JOIN product_category c ON c.id = s.category_id
+                JOIN product_sku k ON k.id = ci.sku_id
+                                      AND k.deleted_at IS NULL
+                JOIN product_spu s ON s.id = k.spu_id
+                                      AND s.deleted_at IS NULL
+                                      AND s.purged_at IS NULL
+                JOIN product_category c ON c.id = s.category_id
                 """;
     }
 
@@ -358,16 +418,6 @@ public class AppCartService {
         return value == null ? "" : value;
     }
 
-    private SellableSkuRow mapSellableSku(ResultSet rs, int rowNum) throws SQLException {
-        return new SellableSkuRow(
-                rs.getLong("sku_id"),
-                rs.getInt("stock_available"),
-                rs.getString("sku_status"),
-                rs.getString("spu_status"),
-                rs.getString("category_status")
-        );
-    }
-
     private CartQuantityRow mapCartQuantity(ResultSet rs, int rowNum) throws SQLException {
         return new CartQuantityRow(
                 rs.getLong("id"),
@@ -390,5 +440,8 @@ public class AppCartService {
             Long skuId,
             Integer quantity
     ) {
+    }
+
+    private record LockedProductRow(Long categoryId, String spuStatus) {
     }
 }

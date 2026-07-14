@@ -6,6 +6,7 @@ import org.muybaby.shopserver.product.dto.AdminStockAdjustmentRequest;
 import org.muybaby.shopserver.product.service.AdminProductService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,6 +24,7 @@ public class AdminProductSkuController {
     }
 
     @PostMapping("/{skuId}/stock-adjustments")
+    @PreAuthorize("hasAuthority('product:sku:stock')")
     public ApiResponse<Void> adjustStock(
             @PathVariable Long skuId,
             @AuthenticationPrincipal AuthenticatedPrincipal principal,

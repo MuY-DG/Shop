@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -27,6 +28,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 public abstract class PaymentTestSupport {
+
+    private static final AtomicLong LIMITED_ADMIN_IDS = new AtomicLong(9_920_000L);
 
     @Autowired
     protected MockMvc mockMvc;
@@ -51,12 +54,14 @@ public abstract class PaymentTestSupport {
 
     @BeforeEach
     void clearPaymentFlowState() {
+        clearLimitedAdmins();
         clearSeededPaymentFlowState();
     }
 
     @AfterEach
     void cleanupPaymentFlowState() {
         clearSeededPaymentFlowState();
+        clearLimitedAdmins();
     }
 
     private void clearSeededPaymentFlowState() {
@@ -309,8 +314,60 @@ public abstract class PaymentTestSupport {
     }
 
     protected String limitedAdminToken(List<String> permissions) {
-        TokenSession session = TokenSession.admin(99L, "limited-after-sale-admin", List.of("R_AFTER_SALE_LIMITED"), permissions, Instant.now());
+        long adminId = LIMITED_ADMIN_IDS.incrementAndGet();
+        String username = "LimitedAfterSaleAdmin" + adminId;
+        String roleCode = "R_AFTER_SALE_LIMITED_" + adminId;
+        insertLimitedAdmin(adminId, username, roleCode, permissions);
+        TokenSession session = TokenSession.admin(adminId, username, List.of(roleCode), permissions, Instant.now());
         return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
+    }
+
+    private void insertLimitedAdmin(long adminId, String username, String roleCode, List<String> permissions) {
+        String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = 1")
+                .query(String.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user
+                            (id, username, password_hash, display_name, email, status)
+                        values
+                            (:adminId, :username, :passwordHash, :username, :email, 'ENABLED')
+                        """)
+                .param("adminId", adminId)
+                .param("username", username)
+                .param("passwordHash", passwordHash)
+                .param("email", "limited-after-sale-" + adminId + "@shop.test")
+                .update();
+        jdbcClient.sql("""
+                        insert into admin_role (id, code, name, description, enabled)
+                        values (:roleId, :roleCode, :roleCode, '', true)
+                        """)
+                .param("roleId", adminId)
+                .param("roleCode", roleCode)
+                .update();
+        jdbcClient.sql("insert into admin_user_role (user_id, role_id) values (:adminId, :roleId)")
+                .param("adminId", adminId)
+                .param("roleId", adminId)
+                .update();
+        for (String permission : permissions) {
+            Long permissionId = jdbcClient.sql("select id from admin_permission where auth_mark = :permission")
+                    .param("permission", permission)
+                    .query(Long.class)
+                    .single();
+            jdbcClient.sql("""
+                            insert into admin_role_permission (role_id, permission_id)
+                            values (:roleId, :permissionId)
+                            """)
+                    .param("roleId", adminId)
+                    .param("permissionId", permissionId)
+                    .update();
+        }
+    }
+
+    private void clearLimitedAdmins() {
+        jdbcClient.sql("delete from admin_role_permission where role_id between 9920001 and 9929999").update();
+        jdbcClient.sql("delete from admin_user_role where role_id between 9920001 and 9929999").update();
+        jdbcClient.sql("delete from admin_role where id between 9920001 and 9929999").update();
+        jdbcClient.sql("delete from admin_user where id between 9920001 and 9929999").update();
     }
 
     protected String pay(String token, long orderId) throws Exception {

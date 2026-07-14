@@ -3,16 +3,22 @@ package org.muybaby.shopserver.storage.service;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.storage.FileVisibility;
+import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageProperties;
 import org.muybaby.shopserver.storage.StoragePurpose;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 public class UploadPolicy {
 
     private static final Set<String> IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp", "gif");
     private static final Set<String> CERTIFICATE_EXTENSIONS = Set.of("pem", "crt", "cer", "txt");
+    private static final Map<String, String> VIDEO_CONTENT_TYPES = Map.of(
+            "mp4", "video/mp4",
+            "webm", "video/webm"
+    );
     private static final Set<String> IMAGE_CONTENT_TYPES = Set.of(
             "image/jpeg",
             "image/png",
@@ -44,20 +50,13 @@ public class UploadPolicy {
         }
 
         String extension = extensionOf(originalFilename);
-        if (purpose.image()) {
-            if (!IMAGE_EXTENSIONS.contains(extension) || !IMAGE_CONTENT_TYPES.contains(normalizeContentType(contentType)) || !imageReadable) {
-                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
-            }
-            if (sizeBytes > storageProperties.limits().imageMaxSize().toBytes()) {
-                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
-            }
+        String normalizedContentType = normalizeContentType(contentType);
+        if (purpose.mediaKind() == StorageMediaKind.IMAGE) {
+            requireAllowedImage(extension, normalizedContentType, sizeBytes, imageReadable);
+        } else if (purpose.mediaKind() == StorageMediaKind.VIDEO) {
+            requireAllowedVideo(extension, normalizedContentType, sizeBytes);
         } else {
-            if (!CERTIFICATE_EXTENSIONS.contains(extension) || !CERTIFICATE_CONTENT_TYPES.contains(normalizeContentType(contentType))) {
-                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
-            }
-            if (sizeBytes > storageProperties.limits().privateFileMaxSize().toBytes()) {
-                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
-            }
+            requireAllowedCertificate(extension, normalizedContentType, sizeBytes);
         }
 
         FileVisibility visibility = purpose == StoragePurpose.PAYMENT_CERTIFICATE
@@ -65,6 +64,33 @@ public class UploadPolicy {
                 : purpose.visibility();
 
         return new UploadDecision(purpose, visibility, extension, contentType);
+    }
+
+    private void requireAllowedImage(String extension, String contentType, long sizeBytes, boolean imageReadable) {
+        if (!IMAGE_EXTENSIONS.contains(extension) || !IMAGE_CONTENT_TYPES.contains(contentType) || !imageReadable) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        if (sizeBytes > storageProperties.limits().imageMaxSize().toBytes()) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+    }
+
+    private void requireAllowedVideo(String extension, String contentType, long sizeBytes) {
+        if (!contentType.equals(VIDEO_CONTENT_TYPES.get(extension))) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        if (sizeBytes > storageProperties.limits().videoMaxSize().toBytes()) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+    }
+
+    private void requireAllowedCertificate(String extension, String contentType, long sizeBytes) {
+        if (!CERTIFICATE_EXTENSIONS.contains(extension) || !CERTIFICATE_CONTENT_TYPES.contains(contentType)) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        if (sizeBytes > storageProperties.limits().privateFileMaxSize().toBytes()) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
     }
 
     private String extensionOf(String originalFilename) {

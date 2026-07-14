@@ -2,6 +2,7 @@ package org.muybaby.shopserver.payment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
@@ -42,6 +44,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class AdminPaymentConfigControllerTest {
+
+    private static final AtomicLong LIMITED_ADMIN_IDS = new AtomicLong(9_910_000L);
 
     private static final String PRIVATE_KEY_PEM = """
             -----BEGIN PRIVATE KEY-----
@@ -102,10 +106,16 @@ class AdminPaymentConfigControllerTest {
 
     @BeforeEach
     void clearPaymentConfigState() {
+        clearLimitedAdmins();
         jdbcClient.sql("delete from storage_file_usage").update();
         jdbcClient.sql("delete from payment_config").update();
         jdbcClient.sql("delete from payment_runtime_setting").update();
         jdbcClient.sql("delete from storage_file").update();
+    }
+
+    @AfterEach
+    void clearLimitedAdminState() {
+        clearLimitedAdmins();
     }
 
     @Test
@@ -626,8 +636,60 @@ class AdminPaymentConfigControllerTest {
     }
 
     private String limitedAdminToken(List<String> permissions) {
-        TokenSession session = TokenSession.admin(99L, "limited-payment-admin", List.of("R_PAYMENT_LIMITED"), permissions, Instant.now());
+        long adminId = LIMITED_ADMIN_IDS.incrementAndGet();
+        String username = "LimitedPaymentAdmin" + adminId;
+        String roleCode = "R_PAYMENT_LIMITED_" + adminId;
+        insertLimitedAdmin(adminId, username, roleCode, permissions);
+        TokenSession session = TokenSession.admin(adminId, username, List.of(roleCode), permissions, Instant.now());
         return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
+    }
+
+    private void insertLimitedAdmin(long adminId, String username, String roleCode, List<String> permissions) {
+        String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = 1")
+                .query(String.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user
+                            (id, username, password_hash, display_name, email, status)
+                        values
+                            (:adminId, :username, :passwordHash, :username, :email, 'ENABLED')
+                        """)
+                .param("adminId", adminId)
+                .param("username", username)
+                .param("passwordHash", passwordHash)
+                .param("email", "limited-payment-" + adminId + "@shop.test")
+                .update();
+        jdbcClient.sql("""
+                        insert into admin_role (id, code, name, description, enabled)
+                        values (:roleId, :roleCode, :roleCode, '', true)
+                        """)
+                .param("roleId", adminId)
+                .param("roleCode", roleCode)
+                .update();
+        jdbcClient.sql("insert into admin_user_role (user_id, role_id) values (:adminId, :roleId)")
+                .param("adminId", adminId)
+                .param("roleId", adminId)
+                .update();
+        for (String permission : permissions) {
+            Long permissionId = jdbcClient.sql("select id from admin_permission where auth_mark = :permission")
+                    .param("permission", permission)
+                    .query(Long.class)
+                    .single();
+            jdbcClient.sql("""
+                            insert into admin_role_permission (role_id, permission_id)
+                            values (:roleId, :permissionId)
+                            """)
+                    .param("roleId", adminId)
+                    .param("permissionId", permissionId)
+                    .update();
+        }
+    }
+
+    private void clearLimitedAdmins() {
+        jdbcClient.sql("delete from admin_role_permission where role_id between 9910001 and 9919999").update();
+        jdbcClient.sql("delete from admin_user_role where role_id between 9910001 and 9919999").update();
+        jdbcClient.sql("delete from admin_role where id between 9910001 and 9919999").update();
+        jdbcClient.sql("delete from admin_user where id between 9910001 and 9919999").update();
     }
 
     private String appLoginAndExtractToken() throws Exception {

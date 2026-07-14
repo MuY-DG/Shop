@@ -100,27 +100,41 @@ class PaymentSchemaTest {
     }
 
     @Test
-    void paymentConfigMenuAndPermissionsAreSeeded() {
-        Integer menuCount = jdbcClient.sql("""
+    void developerConfigMenuHasSeparateStorageAndPaymentChildren() {
+        Integer parentMenuCount = jdbcClient.sql("""
                         select count(*)
                         from admin_menu
-                        where id in (800, 801)
-                          and path in ('/payment', 'config')
-                          and component in ('/index/index', '/payment/config')
+                        where id = 800
+                          and name = 'DeveloperConfig'
+                          and path = '/development'
+                          and component = '/index/index'
+                          and title = '开发配置'
                         """)
                 .query(Integer.class)
                 .single();
-        Integer permissionCount = jdbcClient.sql("""
+        Integer childMenuCount = jdbcClient.sql("""
                         select count(*)
-                        from admin_permission
-                        where id in (8001, 8002, 8003)
-                          and auth_mark in ('payment:config:read', 'payment:config:write', 'payment:config:enable')
+                        from admin_menu
+                        where parent_id = 800
+                          and (
+                            (id = 801 and path = 'storage' and component = '/development/storage' and title = '对象存储配置')
+                            or (id = 802 and path = 'payment' and component = '/payment/config' and title = '支付配置')
+                          )
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer childPermissionCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu_permission
+                        where (menu_id = 801 and permission_id in (15001, 15002))
+                           or (menu_id = 802 and permission_id in (8001, 8002, 8003))
                         """)
                 .query(Integer.class)
                 .single();
 
-        assertThat(menuCount).isEqualTo(2);
-        assertThat(permissionCount).isEqualTo(3);
+        assertThat(parentMenuCount).isEqualTo(1);
+        assertThat(childMenuCount).isEqualTo(2);
+        assertThat(childPermissionCount).isEqualTo(5);
     }
 
     @Test

@@ -6,9 +6,12 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.FileVisibility;
 import org.muybaby.shopserver.storage.StorageFileStatus;
-import org.muybaby.shopserver.storage.StorageProperties;
+import org.muybaby.shopserver.storage.StorageMediaKind;
+import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.StoragePurpose;
 import org.muybaby.shopserver.storage.UploadedByType;
+import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
+import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
 import org.muybaby.shopserver.storage.dto.StorageAssetCategoryRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetCategoryResponse;
 import org.muybaby.shopserver.storage.dto.StorageFileQueryRequest;
@@ -56,7 +59,7 @@ public class StorageService {
     private final UploadPolicy uploadPolicy;
     private final StorageObjectKeyGenerator storageObjectKeyGenerator;
     private final StorageUsageService storageUsageService;
-    private final StorageProperties storageProperties;
+    private final StorageRuntimeConfigService storageRuntimeConfigService;
 
     public StorageService(
             JdbcClient jdbcClient,
@@ -65,7 +68,7 @@ public class StorageService {
             UploadPolicy uploadPolicy,
             StorageObjectKeyGenerator storageObjectKeyGenerator,
             StorageUsageService storageUsageService,
-            StorageProperties storageProperties
+            StorageRuntimeConfigService storageRuntimeConfigService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -73,7 +76,7 @@ public class StorageService {
         this.uploadPolicy = uploadPolicy;
         this.storageObjectKeyGenerator = storageObjectKeyGenerator;
         this.storageUsageService = storageUsageService;
-        this.storageProperties = storageProperties;
+        this.storageRuntimeConfigService = storageRuntimeConfigService;
     }
 
     @Transactional
@@ -171,7 +174,7 @@ public class StorageService {
 
     @Transactional
     public void delete(Long fileId) {
-        FileRow row = findFileRow(fileId);
+        FileRow row = findFileRowForUpdate(fileId);
         if (StorageFileStatus.DELETED.name().equals(row.status())) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
@@ -190,7 +193,7 @@ public class StorageService {
                 .param("fileId", fileId)
                 .update();
         try {
-            storageProvider.delete(row.objectKey());
+            storageProvider.delete(parseProvider(row.provider()), row.objectKey());
         } catch (RuntimeException ignored) {
             // Metadata soft-delete is authoritative; best-effort provider cleanup happens after status update.
         }
@@ -206,12 +209,37 @@ public class StorageService {
                             select id from product_category where icon = :publicUrl
                             union all
                             select id from product_spu
-                            where main_image = :publicUrl
+                            where purged_at is null
+                              and (main_image = :publicUrl
+                               or main_video = :publicUrl
                                or detail_html like :detailPattern escape '\\'
+                              )
                             union all
-                            select id from product_spu_image where url = :publicUrl
+                            select image.id
+                            from product_spu_image image
+                            join product_spu spu on spu.id = image.spu_id and spu.purged_at is null
+                            where image.url = :publicUrl
                             union all
-                            select id from product_sku where image = :publicUrl
+                            select sku.id
+                            from product_sku sku
+                            join product_spu spu on spu.id = sku.spu_id and spu.purged_at is null
+                            where (sku.deleted_at is null
+                                   or (spu.deleted_at is not null and sku.deleted_at >= spu.deleted_at))
+                              and sku.image = :publicUrl
+                            union all
+                            select spec_value.id
+                            from product_spu_spec_value spec_value
+                            join product_spu_spec_group spec_group
+                              on spec_group.id = spec_value.group_id
+                            join product_spu spu on spu.id = spec_group.spu_id and spu.purged_at is null
+                            where (spec_group.deleted_at is null
+                                   or (spu.deleted_at is not null and spec_group.deleted_at >= spu.deleted_at))
+                              and (spec_value.deleted_at is null
+                                   or (spu.deleted_at is not null and spec_value.deleted_at >= spu.deleted_at))
+                              and spec_value.image = :publicUrl
+                            union all
+                            select id from product_guarantee_service
+                            where deleted_at is null and icon = :publicUrl
                             union all
                             select id from home_banner where image_url = :publicUrl
                             union all
@@ -245,7 +273,7 @@ public class StorageService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
         try {
-            StoredObject storedObject = storageProvider.open(row.objectKey());
+            StoredObject storedObject = storageProvider.open(parseProvider(row.provider()), row.objectKey());
             MediaType mediaType = MediaType.parseMediaType(
                     StringUtils.hasText(storedObject.contentType()) ? storedObject.contentType() : row.contentType()
             );
@@ -359,27 +387,35 @@ public class StorageService {
                 originalFilename,
                 contentType,
                 bytes.length,
-                !purpose.image() || image != null
+                purpose.mediaKind() != StorageMediaKind.IMAGE || image != null
         );
 
         String objectKey = storageObjectKeyGenerator.nextKey(purpose, decision.extension(), LocalDate.now());
-        storageProvider.put(objectKey, decision.contentType(), new ByteArrayInputStream(bytes), bytes.length);
+        ResolvedStorageConfig storageConfig = storageRuntimeConfigService.effective();
+        storageProvider.put(
+                storageConfig.provider(),
+                objectKey,
+                decision.contentType(),
+                new ByteArrayInputStream(bytes),
+                bytes.length
+        );
 
-        String publicUrl = decision.visibility() == FileVisibility.PUBLIC ? publicUrl(objectKey) : null;
+        String publicUrl = decision.visibility() == FileVisibility.PUBLIC ? publicUrl(storageConfig, objectKey) : null;
         jdbcClient.sql("""
                         insert into storage_file
                             (purpose, asset_category_id, visibility, provider, bucket, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
                              public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (:purpose, :assetCategoryId, :visibility, :provider, '', :objectKey, :originalFilename,
+                            (:purpose, :assetCategoryId, :visibility, :provider, :bucket, :objectKey, :originalFilename,
                              :contentType, :extension, :sizeBytes, :sha256, :width, :height, '', null,
                              :publicUrl, 'ACTIVE', :uploadedByType, :uploadedById)
                         """)
                 .param("purpose", purpose.name())
                 .param("assetCategoryId", resolvedAssetCategoryId)
                 .param("visibility", decision.visibility().name())
-                .param("provider", storageProperties.provider().name())
+                .param("provider", storageConfig.provider().name())
+                .param("bucket", storageConfig.provider() == StorageProviderKind.TENCENT_COS ? storageConfig.cosBucket() : "")
                 .param("objectKey", objectKey)
                 .param("originalFilename", originalFilename)
                 .param("contentType", decision.contentType())
@@ -452,13 +488,21 @@ public class StorageService {
     }
 
     private FileRow findFileRow(Long fileId) {
+        return findFileRow(fileId, false);
+    }
+
+    private FileRow findFileRowForUpdate(Long fileId) {
+        return findFileRow(fileId, true);
+    }
+
+    private FileRow findFileRow(Long fileId, boolean forUpdate) {
         return jdbcClient.sql("""
                         select id, purpose, asset_category_id, visibility, provider, object_key, original_filename, content_type,
                                extension, size_bytes, sha256, width, height, status, uploaded_by_type, uploaded_by_id,
                                public_url, created_at, updated_at, deleted_at
                         from storage_file
                         where id = :fileId
-                        """)
+                        """ + (forUpdate ? " for update" : ""))
                 .param("fileId", fileId)
                 .query(this::mapFileRow)
                 .optional()
@@ -552,7 +596,7 @@ public class StorageService {
     }
 
     private BufferedImage readImageIfNeeded(byte[] bytes, StoragePurpose purpose) {
-        if (!purpose.image()) {
+        if (purpose.mediaKind() != StorageMediaKind.IMAGE) {
             return null;
         }
         try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
@@ -600,13 +644,24 @@ public class StorageService {
         return normalized;
     }
 
-    private String publicUrl(String objectKey) {
-        String baseUrl = storageProperties.publicBaseUrl();
+    private String publicUrl(ResolvedStorageConfig config, String objectKey) {
+        String baseUrl = config.publicBaseUrl();
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
+        if (config.provider() == StorageProviderKind.TENCENT_COS) {
+            return baseUrl + "/" + objectKey;
+        }
         String relativePath = objectKey.startsWith("public/") ? objectKey.substring("public/".length()) : objectKey;
         return baseUrl + "/files/public/" + relativePath;
+    }
+
+    private StorageProviderKind parseProvider(String provider) {
+        try {
+            return StorageProviderKind.valueOf(provider);
+        } catch (IllegalArgumentException | NullPointerException ex) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
     }
 
     private String sha256(byte[] bytes) {

@@ -2,6 +2,7 @@ package org.muybaby.shopserver.content;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
@@ -22,6 +23,7 @@ import java.time.LocalDateTime;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -39,6 +41,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class HomeBannerControllerTest {
+
+    private static final AtomicLong LIMITED_ADMIN_IDS = new AtomicLong(9_930_000L);
 
     private static final byte[] TINY_PNG = Base64.getDecoder().decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4x8AAAAASUVORK5CYII="
@@ -58,15 +62,22 @@ class HomeBannerControllerTest {
 
     @BeforeEach
     void clearTables() {
+        clearLimitedAdmins();
         jdbcClient.sql("delete from home_banner").update();
         jdbcClient.sql("delete from storage_file_usage").update();
         jdbcClient.sql("delete from storage_file").update();
+    }
+
+    @AfterEach
+    void clearLimitedAdminState() {
+        clearLimitedAdmins();
     }
 
     @Test
     void adminCrudListEnableDisableAndUsageSnapshotsWork() throws Exception {
         String adminToken = adminLoginAndExtractToken();
         UploadedFile uploadedFile = uploadBannerFile(adminToken, "banner-home-main.png");
+        insertProductTarget(101L, "ON_SALE");
 
         String createResponse = mockMvc.perform(post("/admin/home/banners")
                         .header("Authorization", "Bearer " + adminToken)
@@ -293,6 +304,7 @@ class HomeBannerControllerTest {
 
     @Test
     void appFeedIsPublicAndReturnsOnlyEnabledCurrentBannersInDeterministicOrder() throws Exception {
+        insertProductTarget(201L, "ON_SALE");
         UploadedFile slowBanner = insertPublicStorageFile("banner-slow.png", "http://localhost:8080/files/public/banner-slow.png");
         UploadedFile oldTopBanner = insertPublicStorageFile("banner-old-top.png", "http://localhost:8080/files/public/banner-old-top.png");
         UploadedFile newTopBanner = insertPublicStorageFile("banner-new-top.png", "http://localhost:8080/files/public/banner-new-top.png");
@@ -318,6 +330,55 @@ class HomeBannerControllerTest {
                 .andExpect(jsonPath("$.data[0].jumpType").value("APP_PATH"))
                 .andExpect(jsonPath("$.data[1].jumpType").value("PRODUCT"))
                 .andExpect(jsonPath("$.data[2].jumpType").value("NONE"));
+    }
+
+    @Test
+    void recycledProductTargetsCannotBeCreatedOrEnabledAndAreHiddenFromAppFeed() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        UploadedFile uploadedFile = uploadBannerFile(adminToken, "banner-recycled-product.png");
+        insertProductTarget(301L, "ON_SALE");
+
+        String createResponse = mockMvc.perform(post("/admin/home/banners")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"回收商品入口","subtitle":"","imageFileId":%d,
+                                 "jumpType":"PRODUCT","jumpTargetId":301,
+                                 "status":"DISABLED","sortOrder":1}
+                                """.formatted(uploadedFile.id())))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long bannerId = objectMapper.readTree(createResponse).path("data").asLong();
+
+        jdbcClient.sql("""
+                        update product_spu
+                        set status = 'OFF_SALE', deleted_at = current_timestamp
+                        where id = 301
+                        """)
+                .update();
+        jdbcClient.sql("update home_banner set status = 'ENABLED' where id = :bannerId")
+                .param("bannerId", bannerId)
+                .update();
+
+        mockMvc.perform(get("/app/home/banners"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[*].title", not(hasItem("回收商品入口"))));
+        mockMvc.perform(post("/admin/home/banners/{bannerId}/enable", bannerId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PRODUCT_UNAVAILABLE.code()));
+        mockMvc.perform(post("/admin/home/banners")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"新的回收商品入口","subtitle":"","imageFileId":%d,
+                                 "jumpType":"PRODUCT","jumpTargetId":301,
+                                 "status":"DISABLED","sortOrder":2}
+                                """.formatted(uploadedFile.id())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PRODUCT_UNAVAILABLE.code()));
     }
 
     private UploadedFile uploadBannerFile(String adminToken, String filename) throws Exception {
@@ -358,6 +419,47 @@ class HomeBannerControllerTest {
                 .query(Long.class)
                 .single();
         return new UploadedFile(fileId, publicUrl);
+    }
+
+    private void insertProductTarget(long spuId, String status) {
+        Integer existingCount = jdbcClient.sql("select count(*) from product_spu where id = :spuId")
+                .param("spuId", spuId)
+                .query(Integer.class)
+                .single();
+        if (existingCount != null && existingCount > 0) {
+            jdbcClient.sql("""
+                            update product_spu
+                            set status = :status, deleted_at = null, purged_at = null
+                            where id = :spuId
+                            """)
+                    .param("status", status)
+                    .param("spuId", spuId)
+                    .update();
+            return;
+        }
+        String categoryName = "Banner target category " + spuId;
+        jdbcClient.sql("""
+                        insert into product_category (parent_id, name, icon, sort_order, status)
+                        values (0, :name, '', 0, 'ENABLED')
+                        """)
+                .param("name", categoryName)
+                .update();
+        Long categoryId = jdbcClient.sql("select id from product_category where name = :name")
+                .param("name", categoryName)
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into product_spu
+                            (id, category_id, title, subtitle, main_image, selling_points, detail_html,
+                             sort_order, status, spec_type, freight_template_id, virtual_sales)
+                        values
+                            (:spuId, :categoryId, :title, '', '', '', '', 0, :status, 'SINGLE', 1, 0)
+                        """)
+                .param("spuId", spuId)
+                .param("categoryId", categoryId)
+                .param("title", "Banner target product " + spuId)
+                .param("status", status)
+                .update();
     }
 
     private void insertBanner(
@@ -490,8 +592,60 @@ class HomeBannerControllerTest {
     }
 
     private String limitedAdminToken(List<String> permissions) {
-        TokenSession session = TokenSession.admin(99L, "limited-admin", List.of("R_LIMITED"), permissions, Instant.now());
+        long adminId = LIMITED_ADMIN_IDS.incrementAndGet();
+        String username = "LimitedBannerAdmin" + adminId;
+        String roleCode = "R_BANNER_LIMITED_" + adminId;
+        insertLimitedAdmin(adminId, username, roleCode, permissions);
+        TokenSession session = TokenSession.admin(adminId, username, List.of(roleCode), permissions, Instant.now());
         return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
+    }
+
+    private void insertLimitedAdmin(long adminId, String username, String roleCode, List<String> permissions) {
+        String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = 1")
+                .query(String.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user
+                            (id, username, password_hash, display_name, email, status)
+                        values
+                            (:adminId, :username, :passwordHash, :username, :email, 'ENABLED')
+                        """)
+                .param("adminId", adminId)
+                .param("username", username)
+                .param("passwordHash", passwordHash)
+                .param("email", "limited-banner-" + adminId + "@shop.test")
+                .update();
+        jdbcClient.sql("""
+                        insert into admin_role (id, code, name, description, enabled)
+                        values (:roleId, :roleCode, :roleCode, '', true)
+                        """)
+                .param("roleId", adminId)
+                .param("roleCode", roleCode)
+                .update();
+        jdbcClient.sql("insert into admin_user_role (user_id, role_id) values (:adminId, :roleId)")
+                .param("adminId", adminId)
+                .param("roleId", adminId)
+                .update();
+        for (String permission : permissions) {
+            Long permissionId = jdbcClient.sql("select id from admin_permission where auth_mark = :permission")
+                    .param("permission", permission)
+                    .query(Long.class)
+                    .single();
+            jdbcClient.sql("""
+                            insert into admin_role_permission (role_id, permission_id)
+                            values (:roleId, :permissionId)
+                            """)
+                    .param("roleId", adminId)
+                    .param("permissionId", permissionId)
+                    .update();
+        }
+    }
+
+    private void clearLimitedAdmins() {
+        jdbcClient.sql("delete from admin_role_permission where role_id between 9930001 and 9939999").update();
+        jdbcClient.sql("delete from admin_user_role where role_id between 9930001 and 9939999").update();
+        jdbcClient.sql("delete from admin_role where id between 9930001 and 9939999").update();
+        jdbcClient.sql("delete from admin_user where id between 9930001 and 9939999").update();
     }
 
     private record UploadedFile(Long id, String url) {

@@ -24,7 +24,12 @@ class UploadPolicyTest {
                 StorageProviderKind.LOCAL,
                 "http://localhost:8080",
                 new StorageProperties.Local("var/uploads"),
-                new StorageProperties.Limits(DataSize.ofMegabytes(5), DataSize.ofMegabytes(1))
+                new StorageProperties.TencentCos("", "", "", "", ""),
+                new StorageProperties.Limits(
+                        DataSize.ofMegabytes(5),
+                        DataSize.ofMegabytes(50),
+                        DataSize.ofMegabytes(1)
+                )
         ));
         keyGenerator = new StorageObjectKeyGenerator();
     }
@@ -45,6 +50,16 @@ class UploadPolicyTest {
     }
 
     @Test
+    void legacyTwoLimitConfigurationKeepsFiftyMegabyteVideoDefault() {
+        StorageProperties.Limits limits = new StorageProperties.Limits(
+                DataSize.ofMegabytes(5),
+                DataSize.ofMegabytes(1)
+        );
+
+        assertThat(limits.videoMaxSize()).isEqualTo(DataSize.ofMegabytes(50));
+    }
+
+    @Test
     void publicImagePurposesAllReturnPublicVisibility() {
         assertThat(uploadPolicy.requireAllowed(StoragePurpose.PRODUCT_IMAGE, "product.jpg", "image/jpeg", 1024, true).visibility())
                 .isEqualTo(FileVisibility.PUBLIC);
@@ -60,6 +75,96 @@ class UploadPolicyTest {
                 .isEqualTo(FileVisibility.PUBLIC);
         assertThat(uploadPolicy.requireAllowed(StoragePurpose.RICH_TEXT_IMAGE, "rich-text.png", "image/png", 1024, true).visibility())
                 .isEqualTo(FileVisibility.PUBLIC);
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.SPEC_VALUE_IMAGE, "spec-value.png", "image/png", 1024, true).visibility())
+                .isEqualTo(FileVisibility.PUBLIC);
+        assertThat(uploadPolicy.requireAllowed(StoragePurpose.GUARANTEE_SERVICE_ICON, "guarantee-icon.webp", "image/webp", 1024, true).visibility())
+                .isEqualTo(FileVisibility.PUBLIC);
+    }
+
+    @Test
+    void productVideoAllowsMatchingMp4AndWebmAsPublicFiles() {
+        UploadPolicy.UploadDecision mp4 = uploadPolicy.requireAllowed(
+                StoragePurpose.PRODUCT_VIDEO,
+                "product-demo.MP4",
+                "video/mp4; charset=binary",
+                DataSize.ofMegabytes(10).toBytes(),
+                false
+        );
+        UploadPolicy.UploadDecision webm = uploadPolicy.requireAllowed(
+                StoragePurpose.PRODUCT_VIDEO,
+                "product-demo.webm",
+                "video/webm",
+                DataSize.ofMegabytes(10).toBytes(),
+                false
+        );
+
+        assertThat(mp4.visibility()).isEqualTo(FileVisibility.PUBLIC);
+        assertThat(mp4.extension()).isEqualTo("mp4");
+        assertThat(webm.visibility()).isEqualTo(FileVisibility.PUBLIC);
+        assertThat(webm.extension()).isEqualTo("webm");
+        assertThat(StoragePurpose.PRODUCT_VIDEO.image()).isFalse();
+        assertThat(StoragePurpose.PRODUCT_VIDEO.mediaKind()).isEqualTo(StorageMediaKind.VIDEO);
+    }
+
+    @Test
+    void productVideoUsesIndependentFiftyMegabyteLimit() {
+        long imageLimitExceeded = DataSize.ofMegabytes(6).toBytes();
+        long videoLimit = DataSize.ofMegabytes(50).toBytes();
+
+        assertThat(uploadPolicy.requireAllowed(
+                StoragePurpose.PRODUCT_VIDEO,
+                "product-demo.mp4",
+                "video/mp4",
+                imageLimitExceeded,
+                false
+        ).extension()).isEqualTo("mp4");
+        assertThat(uploadPolicy.requireAllowed(
+                StoragePurpose.PRODUCT_VIDEO,
+                "product-demo.webm",
+                "video/webm",
+                videoLimit,
+                false
+        ).extension()).isEqualTo("webm");
+
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(
+                StoragePurpose.PRODUCT_VIDEO,
+                "too-large.mp4",
+                "video/mp4",
+                videoLimit + 1,
+                false
+        ));
+    }
+
+    @Test
+    void productVideoRejectsUnsupportedAndMismatchedExtensionContentTypePairs() {
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(
+                StoragePurpose.PRODUCT_VIDEO,
+                "product-demo.mov",
+                "video/quicktime",
+                1024,
+                false
+        ));
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(
+                StoragePurpose.PRODUCT_VIDEO,
+                "product-demo.mp4",
+                "video/webm",
+                1024,
+                false
+        ));
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(
+                StoragePurpose.PRODUCT_VIDEO,
+                "product-demo.webm",
+                "video/mp4",
+                1024,
+                false
+        ));
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(
+                StoragePurpose.PRODUCT_VIDEO,
+                "product-demo.mp4",
+                "application/octet-stream",
+                1024,
+                false
+        ));
     }
 
     @Test

@@ -31,14 +31,50 @@ class CouponDiscountCalculatorTest {
     }
 
     @Test
-    void unsupportedScopeReturnsUnavailableReason() {
+    void categoryScopeRemainsUnsupported() {
         CouponDiscountCalculator calculator = new CouponDiscountCalculator();
         CheckoutContext context = new CheckoutContext(1L, List.of(new CheckoutItem(1000L, 100L, 3990L, 1)));
 
-        DiscountResult result = calculator.calculate(context, coupon(7001L, "PRODUCT", 0L, 500L));
+        DiscountResult result = calculator.calculate(context, coupon(7001L, "CATEGORY", "100", 0L, 500L));
 
         assertThat(result.available()).isFalse();
         assertThat(result.unavailableReason()).isEqualTo("SCOPE_UNSUPPORTED");
+    }
+
+    @Test
+    void productCouponUsesOnlyMatchingSpuAmountForThresholdAndDiscountCap() {
+        CouponDiscountCalculator calculator = new CouponDiscountCalculator();
+        CheckoutContext context = new CheckoutContext(1L, List.of(
+                new CheckoutItem(1000L, 100L, 300L, 1),
+                new CheckoutItem(2000L, 200L, 700L, 1)
+        ));
+
+        DiscountResult result = calculator.calculate(context, coupon(7001L, "PRODUCT", "100", 300L, 500L));
+
+        assertThat(result.available()).isTrue();
+        assertThat(result.discountAmountCent()).isEqualTo(300L);
+    }
+
+    @Test
+    void productCouponIsUnavailableWithoutMatchingSpu() {
+        CouponDiscountCalculator calculator = new CouponDiscountCalculator();
+        CheckoutContext context = new CheckoutContext(1L, List.of(new CheckoutItem(1000L, 200L, 3990L, 1)));
+
+        DiscountResult result = calculator.calculate(context, coupon(7001L, "PRODUCT", "100", 0L, 500L));
+
+        assertThat(result.available()).isFalse();
+        assertThat(result.unavailableReason()).isEqualTo("SCOPE_NOT_APPLICABLE");
+    }
+
+    @Test
+    void productCouponStillLeavesPositivePayableAmountWhenItCoversTheOnlyLine() {
+        CouponDiscountCalculator calculator = new CouponDiscountCalculator();
+        CheckoutContext context = new CheckoutContext(1L, List.of(new CheckoutItem(1000L, 100L, 300L, 1)));
+
+        DiscountResult result = calculator.calculate(context, coupon(7001L, "PRODUCT", "100", 0L, 500L));
+
+        assertThat(result.available()).isTrue();
+        assertThat(result.discountAmountCent()).isEqualTo(299L);
     }
 
     @Test
@@ -65,6 +101,16 @@ class CouponDiscountCalculatorTest {
     }
 
     private CouponCandidate coupon(Long userCouponId, String scopeType, Long thresholdCent, Long discountCent) {
+        return coupon(userCouponId, scopeType, "", thresholdCent, discountCent);
+    }
+
+    private CouponCandidate coupon(
+            Long userCouponId,
+            String scopeType,
+            String scopeValue,
+            Long thresholdCent,
+            Long discountCent
+    ) {
         return new CouponCandidate(
                 userCouponId,
                 5001L,
@@ -74,7 +120,7 @@ class CouponDiscountCalculatorTest {
                 thresholdCent,
                 discountCent,
                 scopeType,
-                ""
+                scopeValue
         );
     }
 }

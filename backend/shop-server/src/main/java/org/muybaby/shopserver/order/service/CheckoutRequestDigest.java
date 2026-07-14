@@ -16,9 +16,20 @@ public final class CheckoutRequestDigest {
     }
 
     public static String digest(CheckoutRequest request) {
+        return digestCanonical(canonical(request));
+    }
+
+    public static String digest(CheckoutRequest request, long freightCent) {
+        if (freightCent < 0L) {
+            throw new IllegalArgumentException("freightCent must not be negative");
+        }
+        return digestCanonical(canonical(request) + "|freightCent=" + freightCent);
+    }
+
+    private static String digestCanonical(String canonical) {
         try {
             MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(messageDigest.digest(canonical(request).getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of().formatHex(messageDigest.digest(canonical.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }

@@ -4,6 +4,7 @@ public record AdminSpuQueryRequest(
         Long categoryId,
         String title,
         String status,
+        Boolean recycled,
         Long current,
         Long size
 ) {

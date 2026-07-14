@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
@@ -42,6 +43,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class AdminShipmentControllerTest {
+
+    private static final AtomicLong LIMITED_ADMIN_ID = new AtomicLong(993_000L);
 
     @Autowired
     private org.springframework.test.web.servlet.MockMvc mockMvc;
@@ -645,10 +648,44 @@ class AdminShipmentControllerTest {
     }
 
     private String adminTokenWithoutPermissions() {
+        long userId = LIMITED_ADMIN_ID.incrementAndGet();
+        long roleId = userId;
+        String username = "ShipmentLimited" + userId;
+        insertLimitedAdmin(userId, roleId, username);
+
         return opaqueTokenService.issue(
                 TokenKind.ADMIN,
-                TokenSession.admin(1L, "Super", List.of("R_SUPER"), List.of(), Instant.now())
+                TokenSession.admin(userId, username, List.of(), List.of(), Instant.now())
         ).accessToken();
+    }
+
+    private void insertLimitedAdmin(long userId, long roleId, String username) {
+        String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = 1")
+                .query(String.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user
+                            (id, username, password_hash, display_name, email, status)
+                        values
+                            (:userId, :username, :passwordHash, 'Shipment Limited Admin',
+                             :email, 'ENABLED')
+                        """)
+                .param("userId", userId)
+                .param("username", username)
+                .param("passwordHash", passwordHash)
+                .param("email", username.toLowerCase() + "@shop.local")
+                .update();
+        jdbcClient.sql("""
+                        insert into admin_role (id, code, name, description, enabled)
+                        values (:roleId, :code, 'Shipment Limited Role', '', true)
+                        """)
+                .param("roleId", roleId)
+                .param("code", "R_SHIPMENT_LIMITED_" + roleId)
+                .update();
+        jdbcClient.sql("insert into admin_user_role (user_id, role_id) values (:userId, :roleId)")
+                .param("userId", userId)
+                .param("roleId", roleId)
+                .update();
     }
 
     private long insertPaidOrder(AppLoginSession session, String orderNo, String transactionId) {

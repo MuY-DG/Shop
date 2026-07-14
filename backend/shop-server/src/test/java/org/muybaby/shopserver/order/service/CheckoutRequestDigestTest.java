@@ -62,4 +62,15 @@ class CheckoutRequestDigestTest {
         assertThat(CheckoutRequestDigest.digest(new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 2, 4L, 6L)))
                 .isNotEqualTo(CheckoutRequestDigest.digest(base));
     }
+
+    @Test
+    void freightAwareDigestChangesWithCalculatedFreightAndKeepsLegacyDigestStable() {
+        CheckoutRequest request = new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 2, 4L, null);
+
+        assertThat(CheckoutRequestDigest.digest(request, 0L))
+                .isNotEqualTo(CheckoutRequestDigest.digest(request));
+        assertThat(CheckoutRequestDigest.digest(request, 800L))
+                .isNotEqualTo(CheckoutRequestDigest.digest(request, 1_200L));
+        assertThat(CheckoutRequestDigest.digest(request, 800L)).hasSize(64);
+    }
 }

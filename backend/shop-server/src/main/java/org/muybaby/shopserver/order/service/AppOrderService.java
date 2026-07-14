@@ -110,11 +110,10 @@ public class AppOrderService {
         CheckoutRequest checkoutRequest = CheckoutRequest.from(request);
         checkoutSelectionService.validate(checkoutRequest);
         validateSubmitRequest(request, checkoutRequest);
-        String requestDigest = CheckoutRequestDigest.digest(checkoutRequest);
 
         Optional<ExistingOrder> existing = findExistingOrder(userId, request.idempotencyKey(), false);
         if (existing.isPresent()) {
-            return replayExisting(existing.get(), requestDigest);
+            return replayExisting(existing.get(), checkoutRequest);
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -126,20 +125,24 @@ public class AppOrderService {
                     orderNo,
                     checkoutRequest.source(),
                     request.idempotencyKey(),
-                    requestDigest,
+                    CheckoutRequestDigest.digest(checkoutRequest),
                     now
             );
         } catch (DuplicateKeyException ex) {
             ExistingOrder winner = findExistingOrder(userId, request.idempotencyKey(), true)
                     .orElseThrow(() -> ex);
-            return replayExisting(winner, requestDigest);
+            return replayExisting(winner, checkoutRequest);
         }
 
         CheckoutSelection selection = checkoutSelectionService.lockForSubmit(userId, checkoutRequest);
         OwnedAddress receiver = appAddressService.requireOwnedForUpdate(userId, checkoutRequest.addressId());
         AppliedCoupon coupon = resolveCoupon(userId, checkoutRequest.userCouponId(), selection.context(), true);
-        long payableAmountCent = Math.max(selection.productAmountCent() - coupon.discountCent(), 0L);
-        updateOrderAmounts(orderId, selection, coupon, receiver, payableAmountCent, now);
+        long payableAmountCent = Math.addExact(
+                Math.max(selection.productAmountCent() - coupon.discountCent(), 0L),
+                selection.freightCent()
+        );
+        String requestDigest = CheckoutRequestDigest.digest(checkoutRequest, selection.freightCent());
+        updateOrderAmounts(orderId, selection, coupon, receiver, payableAmountCent, requestDigest, now);
         List<Long> orderItemIds = insertOrderItems(orderId, selection.previewItems(), now);
         applyStockLocks(userId, orderId, orderItemIds, selection.previewItems(), now);
         if (coupon.userCouponId() != null) {
@@ -476,6 +479,7 @@ public class AppOrderService {
                                status,
                                payable_amount_cent,
                                coupon_discount_cent,
+                               freight_cent,
                                checkout_request_digest,
                                created_at
                         from shop_order
@@ -489,9 +493,12 @@ public class AppOrderService {
                 .optional();
     }
 
-    private OrderSubmitResponse replayExisting(ExistingOrder existing, String requestDigest) {
+    private OrderSubmitResponse replayExisting(ExistingOrder existing, CheckoutRequest request) {
+        String freightAwareDigest = CheckoutRequestDigest.digest(request, existing.freightCent());
+        String legacyDigest = CheckoutRequestDigest.digest(request);
         if (!StringUtils.hasText(existing.checkoutRequestDigest())
-                || existing.checkoutRequestDigest().equals(requestDigest)) {
+                || existing.checkoutRequestDigest().equals(freightAwareDigest)
+                || existing.checkoutRequestDigest().equals(legacyDigest)) {
             return existing.response();
         }
         throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
@@ -536,6 +543,7 @@ public class AppOrderService {
             AppliedCoupon coupon,
             OwnedAddress receiver,
             long payableAmountCent,
+            String checkoutRequestDigest,
             LocalDateTime now
     ) {
         int updatedRows = jdbcClient.sql("""
@@ -547,6 +555,7 @@ public class AppOrderService {
                             coupon_discount_cent = :couponDiscountCent,
                             freight_cent = :freightCent,
                             payable_amount_cent = :payableAmountCent,
+                            checkout_request_digest = :checkoutRequestDigest,
                             receiver_name = :receiverName,
                             receiver_phone = :receiverPhone,
                             receiver_address = :receiverAddress,
@@ -558,8 +567,9 @@ public class AppOrderService {
                 .param("userCouponId", coupon.userCouponId())
                 .param("couponName", defaultString(coupon.couponName()))
                 .param("couponDiscountCent", coupon.discountCent())
-                .param("freightCent", 0L)
+                .param("freightCent", selection.freightCent())
                 .param("payableAmountCent", payableAmountCent)
+                .param("checkoutRequestDigest", checkoutRequestDigest)
                 .param("receiverName", receiver.receiverName())
                 .param("receiverPhone", receiver.receiverPhone())
                 .param("receiverAddress", receiver.formattedAddress())
@@ -803,7 +813,10 @@ public class AppOrderService {
     }
 
     private OrderPreviewResponse toPreviewResponse(CheckoutSelection selection, AppliedCoupon coupon) {
-        long payableAmountCent = Math.max(selection.productAmountCent() - coupon.discountCent(), 0L);
+        long payableAmountCent = Math.addExact(
+                Math.max(selection.productAmountCent() - coupon.discountCent(), 0L),
+                selection.freightCent()
+        );
         return new OrderPreviewResponse(
                 selection.previewItems(),
                 selection.productOriginalAmountCent(),
@@ -811,7 +824,7 @@ public class AppOrderService {
                 coupon.userCouponId(),
                 defaultString(coupon.couponName()),
                 coupon.discountCent(),
-                0L,
+                selection.freightCent(),
                 payableAmountCent
         );
     }
@@ -853,7 +866,7 @@ public class AppOrderService {
                 rs.getLong("payable_amount_cent"),
                 rs.getLong("coupon_discount_cent"),
                 rs.getObject("created_at", LocalDateTime.class)
-        ), rs.getString("checkout_request_digest"));
+        ), rs.getString("checkout_request_digest"), rs.getLong("freight_cent"));
     }
 
     private OrderSummaryResponse mapOrderSummary(ResultSet rs, int rowNum) throws SQLException {
@@ -1126,7 +1139,11 @@ public class AppOrderService {
     ) {
     }
 
-    private record ExistingOrder(OrderSubmitResponse response, String checkoutRequestDigest) {
+    private record ExistingOrder(
+            OrderSubmitResponse response,
+            String checkoutRequestDigest,
+            long freightCent
+    ) {
     }
 
     private record EvaluatedCoupon(UserCouponRow userCoupon, DiscountResult discountResult) {

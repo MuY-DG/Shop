@@ -2,8 +2,10 @@ package org.muybaby.shopserver.product.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @TableName("product_sku")
@@ -15,12 +17,17 @@ public record ProductSku(
         String specText,
         Long priceCent,
         Long originalPriceCent,
+        Long costPriceCent,
         Integer stockAvailable,
         Integer weightGram,
+        BigDecimal volumeCubicMeter,
         String image,
         Long imageFileId,
         String status,
+        @TableField("is_default") Boolean defaultSelected,
+        String combinationKey,
         Integer sortOrder,
+        LocalDateTime deletedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {

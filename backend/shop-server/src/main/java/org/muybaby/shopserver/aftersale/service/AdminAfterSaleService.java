@@ -18,6 +18,7 @@ import org.muybaby.shopserver.payment.provider.WechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatRefundRequest;
 import org.muybaby.shopserver.payment.provider.WechatRefundResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.muybaby.shopserver.storage.provider.StoredObject;
 import org.springframework.core.io.InputStreamResource;
@@ -141,6 +142,7 @@ public class AdminAfterSaleService {
         requireAdminUser(principal);
         EvidenceResourceRow row = jdbcClient.sql("""
                         select sf.object_key,
+                               sf.provider,
                                sf.original_filename,
                                sf.content_type
                         from after_sale_evidence ase
@@ -155,6 +157,7 @@ public class AdminAfterSaleService {
                 .param("fileId", fileId)
                 .query((rs, rowNum) -> new EvidenceResourceRow(
                         rs.getString("object_key"),
+                        rs.getString("provider"),
                         rs.getString("original_filename"),
                         rs.getString("content_type")
                 ))
@@ -162,7 +165,10 @@ public class AdminAfterSaleService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
         try {
-            StoredObject storedObject = storageProvider.open(row.objectKey());
+            StoredObject storedObject = storageProvider.open(
+                    StorageProviderKind.valueOf(row.provider()),
+                    row.objectKey()
+            );
             MediaType contentType = MediaType.parseMediaType(
                     StringUtils.hasText(row.contentType())
                             ? row.contentType()
@@ -717,7 +723,7 @@ public class AdminAfterSaleService {
     private record PaymentOrderRow(Long id, Long orderId, String outTradeNo, String transactionId, String status, long amountCent) {
     }
 
-    private record EvidenceResourceRow(String objectKey, String originalFilename, String contentType) {
+    private record EvidenceResourceRow(String objectKey, String provider, String originalFilename, String contentType) {
     }
 
     private record RefundRequestContext(

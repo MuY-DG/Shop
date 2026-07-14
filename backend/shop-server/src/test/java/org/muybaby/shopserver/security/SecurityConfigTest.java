@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.test.context.ActiveProfiles;
@@ -41,6 +42,9 @@ class SecurityConfigTest {
 
     @Autowired
     private OpaqueTokenService opaqueTokenService;
+
+    @Autowired
+    private JdbcClient jdbcClient;
 
     @Test
     void appHealthIsPublic() throws Exception {
@@ -175,7 +179,7 @@ class SecurityConfigTest {
 
     @Test
     void methodSecurityAccessDeniedReturnsJsonForbiddenEnvelope() throws Exception {
-        String token = adminToken(List.of("R_MANAGER"), List.of("product:read"));
+        String token = limitedAdminToken();
 
         mockMvc.perform(get("/admin/super-only")
                         .header("Authorization", "Bearer " + token))
@@ -218,6 +222,46 @@ class SecurityConfigTest {
     private String appToken() {
         TokenSession session = TokenSession.app(2L, "openid***", Instant.now());
         return opaqueTokenService.issue(TokenKind.APP, session).accessToken();
+    }
+
+    private String limitedAdminToken() {
+        long userId = 990_010L;
+        long roleId = 990_010L;
+        String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = 1")
+                .query(String.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user
+                            (id, username, password_hash, display_name, email, status)
+                        values
+                            (:userId, 'SecurityLimited', :passwordHash, 'Security Limited',
+                             'security-limited@shop.local', 'ENABLED')
+                        """)
+                .param("userId", userId)
+                .param("passwordHash", passwordHash)
+                .update();
+        jdbcClient.sql("""
+                        insert into admin_role (id, code, name, description, enabled)
+                        values (:roleId, 'R_MANAGER', 'Manager', '', true)
+                        """)
+                .param("roleId", roleId)
+                .update();
+        jdbcClient.sql("""
+                        insert into admin_user_role (user_id, role_id)
+                        values (:userId, :roleId)
+                        """)
+                .param("userId", userId)
+                .param("roleId", roleId)
+                .update();
+
+        TokenSession session = TokenSession.admin(
+                userId,
+                "SecurityLimited",
+                List.of("R_MANAGER"),
+                List.of(),
+                Instant.now()
+        );
+        return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
     }
 
     private void assertNotAuthenticationBlocked(String path) throws Exception {

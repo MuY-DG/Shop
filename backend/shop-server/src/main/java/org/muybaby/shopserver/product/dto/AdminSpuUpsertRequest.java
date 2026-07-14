@@ -22,11 +22,21 @@ public class AdminSpuUpsertRequest {
 
     private Long mainImageFileId;
 
+    private String mainVideo;
+
+    private Long mainVideoFileId;
+
+    private String specType;
+
+    private Long freightTemplateId;
+
+    @Min(0)
+    private Long virtualSales;
+
     private String sellingPoints;
 
     private String detailHtml;
 
-    @NotNull
     @Min(0)
     private Integer sortOrder;
 
@@ -36,7 +46,26 @@ public class AdminSpuUpsertRequest {
     @Valid
     private List<AdminSkuUpsertRequest> skus;
 
+    @Valid
+    private List<AdminSpuSpecGroupUpsertRequest> specGroups;
+
+    private List<String> tags;
+
+    private List<Long> guaranteeServiceIds;
+
+    private List<Long> couponTemplateIds;
+
     private boolean mainImageFileIdSpecified;
+
+    private boolean mainVideoFileIdSpecified;
+
+    private boolean specTypeSpecified;
+
+    private boolean specGroupsSpecified;
+
+    private boolean tagsSpecified;
+
+    private boolean guaranteeServiceIdsSpecified;
 
     public AdminSpuUpsertRequest() {
     }
@@ -83,6 +112,92 @@ public class AdminSpuUpsertRequest {
         this.mainImageFileIdSpecified = mainImageFileIdSpecified;
     }
 
+    public AdminSpuUpsertRequest(
+            Long categoryId,
+            String title,
+            String subtitle,
+            String mainImage,
+            Long mainImageFileId,
+            String mainVideo,
+            Long mainVideoFileId,
+            String specType,
+            Long freightTemplateId,
+            Long virtualSales,
+            String sellingPoints,
+            String detailHtml,
+            Integer sortOrder,
+            List<AdminProductImageUpsertRequest> images,
+            List<AdminSkuUpsertRequest> skus,
+            List<AdminSpuSpecGroupUpsertRequest> specGroups,
+            List<String> tags,
+            List<Long> guaranteeServiceIds,
+            List<Long> couponTemplateIds,
+            boolean mainImageFileIdSpecified,
+            boolean mainVideoFileIdSpecified,
+            boolean specTypeSpecified
+    ) {
+        this(
+                categoryId, title, subtitle, mainImage, mainImageFileId, mainVideo, mainVideoFileId, specType,
+                freightTemplateId, virtualSales, sellingPoints, detailHtml, sortOrder, images, skus, specGroups,
+                tags, guaranteeServiceIds, couponTemplateIds, mainImageFileIdSpecified, mainVideoFileIdSpecified,
+                specTypeSpecified, specGroups != null, tags != null, guaranteeServiceIds != null
+        );
+    }
+
+    public AdminSpuUpsertRequest(
+            Long categoryId,
+            String title,
+            String subtitle,
+            String mainImage,
+            Long mainImageFileId,
+            String mainVideo,
+            Long mainVideoFileId,
+            String specType,
+            Long freightTemplateId,
+            Long virtualSales,
+            String sellingPoints,
+            String detailHtml,
+            Integer sortOrder,
+            List<AdminProductImageUpsertRequest> images,
+            List<AdminSkuUpsertRequest> skus,
+            List<AdminSpuSpecGroupUpsertRequest> specGroups,
+            List<String> tags,
+            List<Long> guaranteeServiceIds,
+            List<Long> couponTemplateIds,
+            boolean mainImageFileIdSpecified,
+            boolean mainVideoFileIdSpecified,
+            boolean specTypeSpecified,
+            boolean specGroupsSpecified,
+            boolean tagsSpecified,
+            boolean guaranteeServiceIdsSpecified
+    ) {
+        this.categoryId = categoryId;
+        this.title = title;
+        this.subtitle = subtitle;
+        this.mainImage = mainImage;
+        this.mainImageFileId = mainImageFileId;
+        this.mainVideo = mainVideo;
+        this.mainVideoFileId = mainVideoFileId;
+        this.specType = specType;
+        this.freightTemplateId = freightTemplateId;
+        this.virtualSales = virtualSales;
+        this.sellingPoints = sellingPoints;
+        this.detailHtml = detailHtml;
+        this.sortOrder = sortOrder;
+        this.images = images;
+        this.skus = skus;
+        this.specGroups = specGroups;
+        this.tags = tags;
+        this.guaranteeServiceIds = guaranteeServiceIds;
+        this.couponTemplateIds = couponTemplateIds;
+        this.mainImageFileIdSpecified = mainImageFileIdSpecified;
+        this.mainVideoFileIdSpecified = mainVideoFileIdSpecified;
+        this.specTypeSpecified = specTypeSpecified;
+        this.specGroupsSpecified = specGroupsSpecified;
+        this.tagsSpecified = tagsSpecified;
+        this.guaranteeServiceIdsSpecified = guaranteeServiceIdsSpecified;
+    }
+
     public Long categoryId() {
         return categoryId;
     }
@@ -122,6 +237,48 @@ public class AdminSpuUpsertRequest {
     public void setMainImageFileId(Long mainImageFileId) {
         this.mainImageFileId = mainImageFileId;
         this.mainImageFileIdSpecified = true;
+    }
+
+    public String mainVideo() {
+        return mainVideo;
+    }
+
+    public void setMainVideo(String mainVideo) {
+        this.mainVideo = mainVideo;
+    }
+
+    public Long mainVideoFileId() {
+        return mainVideoFileId;
+    }
+
+    public void setMainVideoFileId(Long mainVideoFileId) {
+        this.mainVideoFileId = mainVideoFileId;
+        this.mainVideoFileIdSpecified = true;
+    }
+
+    public String specType() {
+        return specType;
+    }
+
+    public void setSpecType(String specType) {
+        this.specType = specType;
+        this.specTypeSpecified = true;
+    }
+
+    public Long freightTemplateId() {
+        return freightTemplateId;
+    }
+
+    public void setFreightTemplateId(Long freightTemplateId) {
+        this.freightTemplateId = freightTemplateId;
+    }
+
+    public Long virtualSales() {
+        return virtualSales;
+    }
+
+    public void setVirtualSales(Long virtualSales) {
+        this.virtualSales = virtualSales;
     }
 
     public String sellingPoints() {
@@ -164,7 +321,62 @@ public class AdminSpuUpsertRequest {
         this.skus = skus;
     }
 
+    public List<AdminSpuSpecGroupUpsertRequest> specGroups() {
+        return specGroups == null ? List.of() : specGroups;
+    }
+
+    public void setSpecGroups(List<AdminSpuSpecGroupUpsertRequest> specGroups) {
+        this.specGroups = specGroups;
+        this.specGroupsSpecified = true;
+    }
+
+    public List<String> tags() {
+        return tags == null ? List.of() : tags;
+    }
+
+    public void setTags(List<String> tags) {
+        this.tags = tags;
+        this.tagsSpecified = true;
+    }
+
+    public List<Long> guaranteeServiceIds() {
+        return guaranteeServiceIds == null ? List.of() : guaranteeServiceIds;
+    }
+
+    public void setGuaranteeServiceIds(List<Long> guaranteeServiceIds) {
+        this.guaranteeServiceIds = guaranteeServiceIds;
+        this.guaranteeServiceIdsSpecified = true;
+    }
+
+    public List<Long> couponTemplateIds() {
+        return couponTemplateIds == null ? List.of() : couponTemplateIds;
+    }
+
+    public void setCouponTemplateIds(List<Long> couponTemplateIds) {
+        this.couponTemplateIds = couponTemplateIds;
+    }
+
     public boolean mainImageFileIdSpecified() {
         return mainImageFileIdSpecified;
+    }
+
+    public boolean mainVideoFileIdSpecified() {
+        return mainVideoFileIdSpecified;
+    }
+
+    public boolean specTypeSpecified() {
+        return specTypeSpecified;
+    }
+
+    public boolean specGroupsSpecified() {
+        return specGroupsSpecified;
+    }
+
+    public boolean tagsSpecified() {
+        return tagsSpecified;
+    }
+
+    public boolean guaranteeServiceIdsSpecified() {
+        return guaranteeServiceIdsSpecified;
     }
 }

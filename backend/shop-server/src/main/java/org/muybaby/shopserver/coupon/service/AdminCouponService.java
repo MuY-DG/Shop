@@ -36,6 +36,18 @@ public class AdminCouponService {
     @Transactional
     public Long create(AdminCouponTemplateRequest request) {
         ValidatedTemplate validated = validateRequest(request, null);
+        requireScope(validated, CouponScopeType.ALL);
+        return insert(validated);
+    }
+
+    @Transactional
+    public Long createProductScoped(AdminCouponTemplateRequest request) {
+        ValidatedTemplate validated = validateRequest(request, null);
+        requireScope(validated, CouponScopeType.PRODUCT);
+        return insert(validated);
+    }
+
+    private Long insert(ValidatedTemplate validated) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into coupon_template (
@@ -67,13 +79,20 @@ public class AdminCouponService {
                         .addValue("sortOrder", validated.sortOrder()),
                 keyHolder,
                 new String[]{"id"});
-        return requireGeneratedId(keyHolder);
+        Long templateId = requireGeneratedId(keyHolder);
+        syncProductBinding(templateId, validated);
+        return templateId;
     }
 
     @Transactional
     public void update(Long templateId, AdminCouponTemplateRequest request) {
-        Integer claimedCount = findClaimedCount(templateId).orElseThrow(() -> new BusinessException(ErrorCode.COUPON_UNAVAILABLE));
-        ValidatedTemplate validated = validateRequest(request, claimedCount);
+        TemplateState existing = findTemplateState(templateId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_UNAVAILABLE));
+        ValidatedTemplate validated = validateRequest(request, existing.claimedCount());
+        if (existing.scopeType() != CouponScopeType.ALL) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        requireScope(validated, CouponScopeType.ALL);
         int updatedRows = jdbcClient.sql("""
                         update coupon_template
                         set name = :name,
@@ -115,6 +134,7 @@ public class AdminCouponService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE);
         }
+        syncProductBinding(templateId, validated);
     }
 
     @Transactional
@@ -143,15 +163,24 @@ public class AdminCouponService {
         }
     }
 
-    private Optional<Integer> findClaimedCount(Long templateId) {
+    private Optional<TemplateState> findTemplateState(Long templateId) {
         return jdbcClient.sql("""
-                        select claimed_count
+                        select claimed_count, scope_type
                         from coupon_template
                         where id = :templateId
                         """)
                 .param("templateId", templateId)
-                .query(Integer.class)
+                .query((rs, rowNum) -> new TemplateState(
+                        rs.getInt("claimed_count"),
+                        parseEnum(rs.getString("scope_type"), CouponScopeType.class)
+                ))
                 .optional();
+    }
+
+    private void requireScope(ValidatedTemplate template, CouponScopeType requiredScope) {
+        if (template.scopeType() != requiredScope) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
     }
 
     private ValidatedTemplate validateRequest(AdminCouponTemplateRequest request, Integer claimedCount) {
@@ -173,12 +202,7 @@ public class AdminCouponService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
 
-        if (scopeType != CouponScopeType.ALL) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        if (StringUtils.hasText(request.scopeValue())) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
+        String scopeValue = validateScope(scopeType, request.scopeValue());
 
         Long thresholdCent = request.thresholdCent();
         if (thresholdCent == null) {
@@ -226,7 +250,7 @@ public class AdminCouponService {
                 thresholdCent,
                 discountCent,
                 scopeType,
-                "",
+                scopeValue,
                 defaultStrategyKey(request.strategyKey()),
                 totalStock,
                 perUserLimit,
@@ -235,6 +259,64 @@ public class AdminCouponService {
                 status,
                 request.sortOrder() == null ? 0 : request.sortOrder()
         );
+    }
+
+    private String validateScope(CouponScopeType scopeType, String requestedScopeValue) {
+        if (scopeType == CouponScopeType.ALL) {
+            if (StringUtils.hasText(requestedScopeValue)) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            return "";
+        }
+        if (scopeType != CouponScopeType.PRODUCT || !StringUtils.hasText(requestedScopeValue)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        long spuId;
+        try {
+            spuId = Long.parseLong(requestedScopeValue.trim());
+        } catch (NumberFormatException ex) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (spuId <= 0L || !productExists(spuId)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return Long.toString(spuId);
+    }
+
+    private boolean productExists(long spuId) {
+        return jdbcClient.sql("""
+                        select id
+                        from product_spu
+                        where id = :spuId
+                          and deleted_at is null
+                          and purged_at is null
+                        for update
+                        """)
+                .param("spuId", spuId)
+                .query(Long.class)
+                .optional()
+                .isPresent();
+    }
+
+    private void syncProductBinding(Long templateId, ValidatedTemplate template) {
+        if (template.scopeType() != CouponScopeType.PRODUCT) {
+            return;
+        }
+        long spuId = Long.parseLong(template.scopeValue());
+        jdbcClient.sql("""
+                        delete from product_spu_coupon
+                        where coupon_template_id = :templateId
+                        """)
+                .param("templateId", templateId)
+                .update();
+        jdbcClient.sql("""
+                        insert into product_spu_coupon (spu_id, coupon_template_id)
+                        values (:spuId, :templateId)
+                        """)
+                .param("spuId", spuId)
+                .param("templateId", templateId)
+                .update();
     }
 
     private String defaultString(String value) {
@@ -282,5 +364,8 @@ public class AdminCouponService {
             CouponTemplateStatus status,
             Integer sortOrder
     ) {
+    }
+
+    private record TemplateState(Integer claimedCount, CouponScopeType scopeType) {
     }
 }

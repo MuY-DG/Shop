@@ -7,9 +7,11 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.web.servlet.MultipartProperties;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.util.unit.DataSize;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
@@ -27,6 +29,23 @@ class StorageServiceTest {
 
     @Autowired
     private StorageService storageService;
+
+    @Autowired
+    private StorageProperties storageProperties;
+
+    @Autowired
+    private MultipartProperties multipartProperties;
+
+    @Test
+    void testProfileConfiguresIndependentFiftyMegabyteVideoLimit() {
+        assertThat(storageProperties.limits().videoMaxSize()).isEqualTo(DataSize.ofMegabytes(50));
+        assertThat(storageProperties.limits().videoMaxSize())
+                .isGreaterThan(storageProperties.limits().imageMaxSize());
+        assertThat(multipartProperties.getMaxFileSize())
+                .isGreaterThanOrEqualTo(storageProperties.limits().videoMaxSize());
+        assertThat(multipartProperties.getMaxRequestSize())
+                .isGreaterThan(multipartProperties.getMaxFileSize());
+    }
 
     @Test
     void unsupportedExtensionIsRejectedBeforeReadingBytes() {
@@ -59,6 +78,40 @@ class StorageServiceTest {
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
 
         assertThat(file.bytesRead()).isTrue();
+    }
+
+    @Test
+    void productVideoDoesNotRequireImageDecoding() {
+        TrackingMultipartFile file = TrackingMultipartFile.withBytes(
+                "product-demo.mp4",
+                "video/mp4",
+                "test-video-bytes".getBytes()
+        );
+
+        var response = storageService.uploadAdmin(adminPrincipal(), StoragePurpose.PRODUCT_VIDEO, null, file);
+
+        assertThat(file.bytesRead()).isTrue();
+        assertThat(response.purpose()).isEqualTo("PRODUCT_VIDEO");
+        assertThat(response.visibility()).isEqualTo("PUBLIC");
+        assertThat(response.contentType()).isEqualTo("video/mp4");
+        assertThat(response.width()).isNull();
+        assertThat(response.height()).isNull();
+        assertThat(response.publicUrl()).contains("/files/public/product-video/");
+    }
+
+    @Test
+    void oversizedProductVideoIsRejectedBeforeReadingBytes() {
+        TrackingMultipartFile file = TrackingMultipartFile.rejectIfRead(
+                "too-large.mp4",
+                "video/mp4",
+                DataSize.ofMegabytes(50).toBytes() + 1
+        );
+
+        assertThatThrownBy(() -> storageService.uploadAdmin(adminPrincipal(), StoragePurpose.PRODUCT_VIDEO, null, file))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
+
+        assertThat(file.bytesRead()).isFalse();
     }
 
     private AuthenticatedPrincipal adminPrincipal() {

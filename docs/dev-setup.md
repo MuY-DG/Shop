@@ -96,25 +96,39 @@ Payment callbacks are handled by `/wxpay/pay/notify`; refund callbacks are handl
 
 `WECHAT_PAY_CONFIG_SOURCE=AUTO` is the startup/default source: it uses complete environment credentials first and otherwise falls back to the enabled database payment config. Use `ENV` when the local `.env.local` values should be mandatory, or `DB` when payment credentials are managed through `/admin/pay/configs`.
 
-The admin payment configuration page has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from `.env.local`. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
+The `开发配置 -> 支付配置` menu has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from `.env.local`. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
 
 For DB config, upload merchant private key, merchant certificate, and WeChat Pay public key files as private payment files through admin storage; do not commit the uploaded files or the local upload directory.
 
 Never commit `.env.local`, merchant certificates, private keys, APIv3 keys, public-key files, local upload roots, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
 
-## Local File Storage
+## Object Storage
 
-The file upload phase uses local storage first and leaves OSS/COS for a later provider implementation. Local settings should stay in `backend/shop-server/.env.local` when they are environment-specific:
+The admin `开发配置 -> 对象存储配置` page selects the active provider at runtime. Its database setting takes effect without restarting the backend; when no database row exists, the backend falls back to `backend/shop-server/.env.local`.
+
+Local storage defaults can be configured with:
 
 ```properties
-SHOP_STORAGE_PROVIDER=local
+SHOP_STORAGE_PROVIDER=LOCAL
 SHOP_STORAGE_LOCAL_ROOT=var/uploads
 SHOP_STORAGE_PUBLIC_BASE_URL=http://localhost:8080
 SHOP_STORAGE_IMAGE_MAX_SIZE=5MB
+SHOP_STORAGE_VIDEO_MAX_SIZE=50MB
 SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE=1MB
 ```
 
-`SHOP_STORAGE_LOCAL_ROOT` should point to a writable local directory and should not be committed to Git. Public files are served by the backend through the controlled `/files/public/**` route. Private files, including payment certificates and keys, do not have a public URL and are referenced by `fileId` metadata only.
+Tencent Cloud COS can also be supplied through environment defaults:
+
+```properties
+SHOP_STORAGE_PROVIDER=TENCENT_COS
+SHOP_STORAGE_TENCENT_COS_REGION=ap-guangzhou
+SHOP_STORAGE_TENCENT_COS_BUCKET=<bucket-name-appid>
+SHOP_STORAGE_TENCENT_COS_SECRET_ID=<secret-id>
+SHOP_STORAGE_TENCENT_COS_SECRET_KEY=<secret-key>
+SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL=https://<bucket-name-appid>.cos.ap-guangzhou.myqcloud.com
+```
+
+`SHOP_STORAGE_LOCAL_ROOT` should point to a writable local directory and should not be committed to Git. Local public files are served by the backend through `/files/public/**`; COS public files return the configured COS default or custom source domain directly. Private files, including payment certificates and keys, never receive a public URL and are read through their recorded provider. COS credentials saved from the admin page are encrypted in the database and are never returned in full.
 
 File storage and home banner smoke checks are documented in `docs/smoke-checks.md#file-storage-and-home-banner-smoke-checks`.
 

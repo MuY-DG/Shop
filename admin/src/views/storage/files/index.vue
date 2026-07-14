@@ -38,10 +38,16 @@
             </template>
             <template #right>
               <div class="storage-files__toolbar">
-                <ElButton :type="viewMode === 'grid' ? 'primary' : 'default'" @click="viewMode = 'grid'">
+                <ElButton
+                  :type="viewMode === 'grid' ? 'primary' : 'default'"
+                  @click="viewMode = 'grid'"
+                >
                   网格
                 </ElButton>
-                <ElButton :type="viewMode === 'list' ? 'primary' : 'default'" @click="viewMode = 'list'">
+                <ElButton
+                  :type="viewMode === 'list' ? 'primary' : 'default'"
+                  @click="viewMode = 'list'"
+                >
                   列表
                 </ElButton>
               </div>
@@ -114,7 +120,12 @@
       <ElForm label-width="92px">
         <ElFormItem label="素材用途">
           <ElSelect v-model="uploadForm.purpose" placeholder="请选择用途">
-            <ElOption v-for="item in purposeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            <ElOption
+              v-for="item in purposeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
           </ElSelect>
         </ElFormItem>
         <ElFormItem label="素材分类">
@@ -190,20 +201,30 @@
         <ElDescriptions :column="1" border>
           <ElDescriptionsItem label="文件 ID">{{ detailFile.id }}</ElDescriptionsItem>
           <ElDescriptionsItem label="文件名">{{ detailFile.originalFilename }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="用途">{{ formatPurpose(detailFile.purpose) }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="用途">{{
+            formatPurpose(detailFile.purpose)
+          }}</ElDescriptionsItem>
           <ElDescriptionsItem label="分类">
             {{ categoryNameMap[detailFile.assetCategoryId || 0] || '未分类' }}
           </ElDescriptionsItem>
           <ElDescriptionsItem label="可见性">{{ detailFile.visibility }}</ElDescriptionsItem>
           <ElDescriptionsItem label="状态">{{ detailFile.status }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="大小">{{ formatFileSize(detailFile.sizeBytes) }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="大小">{{
+            formatFileSize(detailFile.sizeBytes)
+          }}</ElDescriptionsItem>
           <ElDescriptionsItem label="尺寸">
-            {{ detailFile.width && detailFile.height ? `${detailFile.width} × ${detailFile.height}` : '-' }}
+            {{
+              detailFile.width && detailFile.height
+                ? `${detailFile.width} × ${detailFile.height}`
+                : '-'
+            }}
           </ElDescriptionsItem>
           <ElDescriptionsItem label="URL">
             {{ detailFile.visibility === 'PRIVATE' ? '-' : resolveFileUrl(detailFile) || '-' }}
           </ElDescriptionsItem>
-          <ElDescriptionsItem label="创建时间">{{ formatDateTime(detailFile.createdAt) }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="创建时间">{{
+            formatDateTime(detailFile.createdAt)
+          }}</ElDescriptionsItem>
         </ElDescriptions>
 
         <div class="storage-detail__usage">
@@ -242,7 +263,14 @@
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
   import { useTableColumns } from '@/hooks/core/useTableColumns'
   import type { ColumnOption } from '@/types'
-  import { deleteStorageFile, fetchStorageCategories, fetchStorageFileDetail, fetchStorageFiles, moveStorageFile, uploadStorageFile } from '@/api/storage'
+  import {
+    deleteStorageFile,
+    fetchStorageCategories,
+    fetchStorageFileDetail,
+    fetchStorageFiles,
+    moveStorageFile,
+    uploadStorageFile
+  } from '@/api/storage'
 
   defineOptions({ name: 'StorageFiles' })
 
@@ -255,6 +283,9 @@
   const purposeLabelMap: Record<Api.Storage.Purpose, string> = {
     PRODUCT_IMAGE: '商品主图',
     PRODUCT_SKU_IMAGE: 'SKU 图片',
+    SPEC_VALUE_IMAGE: '规格值图片',
+    GUARANTEE_SERVICE_ICON: '保障服务图标',
+    PRODUCT_VIDEO: '商品视频',
     CATEGORY_ICON: '分类图标',
     HOME_BANNER: '首页轮播',
     MARKETING_IMAGE: '运营活动',
@@ -435,7 +466,11 @@
         label: '可见性',
         width: 100,
         formatter: (row) =>
-          h(ElTag, { type: row.visibility === 'PRIVATE' ? 'warning' : 'success' }, () => row.visibility)
+          h(
+            ElTag,
+            { type: row.visibility === 'PRIVATE' ? 'warning' : 'success' },
+            () => row.visibility
+          )
       },
       {
         prop: 'sizeBytes',
@@ -447,7 +482,8 @@
         prop: 'status',
         label: '状态',
         width: 100,
-        formatter: (row) => h(ElTag, { type: row.status === 'ACTIVE' ? 'success' : 'info' }, () => row.status)
+        formatter: (row) =>
+          h(ElTag, { type: row.status === 'ACTIVE' ? 'success' : 'info' }, () => row.status)
       },
       {
         prop: 'createdAt',
@@ -462,7 +498,7 @@
         fixed: 'right',
         formatter: (row) =>
           h(ArtButtonMore, {
-            list: buildActions(row),
+            list: buildActions(),
             onClick: (item: ButtonMoreItem) => handleAction(item, row)
           })
       }
@@ -504,7 +540,7 @@
     }
   }
 
-  const buildActions = (row: Api.Storage.FileItem): ButtonMoreItem[] => [
+  const buildActions = (): ButtonMoreItem[] => [
     {
       key: 'detail',
       label: '详情',
@@ -669,9 +705,9 @@
 
   .storage-files__sidebar {
     padding: 16px;
+    background: var(--el-fill-color-blank);
     border: 1px solid var(--el-border-color-light);
     border-radius: 8px;
-    background: var(--el-fill-color-blank);
   }
 
   .storage-files__sidebar-header {
@@ -706,11 +742,13 @@
     display: grid;
     gap: 10px;
     padding: 12px;
+    text-align: left;
+    background: var(--el-fill-color-blank);
     border: 1px solid var(--el-border-color);
     border-radius: 8px;
-    background: var(--el-fill-color-blank);
-    text-align: left;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
   }
 
   .file-card:hover {
@@ -721,9 +759,9 @@
   .file-card__preview {
     width: 100%;
     aspect-ratio: 1;
-    border-radius: 8px;
     overflow: hidden;
     background: var(--el-fill-color-light);
+    border-radius: 8px;
 
     :deep(img) {
       width: 100%;
@@ -733,15 +771,15 @@
 
   .file-card__private,
   .storage-detail__private {
-    width: 100%;
-    min-height: 100%;
     display: flex;
     flex-direction: column;
+    gap: 6px;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    color: var(--el-text-color-secondary);
+    width: 100%;
+    min-height: 100%;
     font-size: 12px;
+    color: var(--el-text-color-secondary);
     text-align: center;
     background: var(--el-fill-color-light);
   }
@@ -773,15 +811,15 @@
   }
 
   .storage-files__private-cell {
-    width: 48px;
-    height: 48px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 6px;
-    background: var(--el-fill-color-light);
-    color: var(--el-text-color-secondary);
+    width: 48px;
+    height: 48px;
     font-size: 11px;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
   }
 
   .storage-files__file-cell {
@@ -794,23 +832,23 @@
     }
 
     .subtitle {
-      color: var(--el-text-color-secondary);
       font-size: 12px;
+      color: var(--el-text-color-secondary);
     }
   }
 
   .dialog-footer {
     display: flex;
-    justify-content: flex-end;
     gap: 12px;
+    justify-content: flex-end;
   }
 
   .storage-detail__hero {
     width: 100%;
     aspect-ratio: 16 / 9;
     overflow: hidden;
-    border-radius: 8px;
     background: var(--el-fill-color-light);
+    border-radius: 8px;
 
     :deep(img) {
       width: 100%;
@@ -828,7 +866,7 @@
     font-weight: 600;
   }
 
-  @media (max-width: 960px) {
+  @media (width <= 960px) {
     .storage-files__layout {
       grid-template-columns: 1fr;
     }

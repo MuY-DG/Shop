@@ -14,6 +14,7 @@ public record CheckoutSelection(
         List<Long> selectedCartItemIds,
         long productOriginalAmountCent,
         long productAmountCent,
+        long freightCent,
         CheckoutContext context
 ) {
 

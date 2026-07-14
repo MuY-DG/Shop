@@ -494,9 +494,13 @@ class AppOrderControllerTest {
                 "ENABLED",
                 mainFile.publicUrl(),
                 mainFile.id(),
-                "",
+                skuFile.publicUrl(),
                 skuFile.id()
         );
+        // V2 writes normalize a blank SKU image to the main image, so simulate the legacy row explicitly.
+        jdbcClient.sql("update product_sku set image = '' where id = :skuId")
+                .param("skuId", product.skuId())
+                .update();
 
         long cartItemId = cartItemId(addCartItem(appToken, product.skuId(), 1));
 

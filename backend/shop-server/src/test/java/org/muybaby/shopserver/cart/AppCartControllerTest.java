@@ -3,7 +3,6 @@ package org.muybaby.shopserver.cart;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.muybaby.shopserver.cart.dto.CartItemResponse;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
 import org.muybaby.shopserver.product.dto.AdminProductImageUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
@@ -323,6 +322,139 @@ class AppCartControllerTest {
     }
 
     @Test
+    void recycledProductCartRowIsHiddenButRestoresWithTheProduct() throws Exception {
+        String appToken = appLoginAndExtractToken("test-login-code");
+        long skuId = createPublishedSku("CART-DELETED-PRODUCT", 4590L, 5590L, 6, "ENABLED");
+        long spuId = jdbcClient.sql("select spu_id from product_sku where id = :skuId")
+                .param("skuId", skuId)
+                .query(Long.class)
+                .single();
+
+        mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":2}
+                                """.formatted(skuId)))
+                .andExpect(status().isOk());
+
+        adminProductService.deleteSpu(spuId);
+
+        mockMvc.perform(get("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(0))
+                .andExpect(jsonPath("$.data.totalQuantity").value(0))
+                .andExpect(jsonPath("$.data.totalAmountCent").value(0))
+                .andExpect(jsonPath("$.data.unavailableCount").value(0));
+        assertThat(jdbcClient.sql("select count(*) from cart_item where sku_id = :skuId")
+                .param("skuId", skuId)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":1}
+                                """.formatted(skuId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200002));
+
+        adminProductService.restoreSpu(spuId);
+        adminProductService.publishSpu(spuId);
+        mockMvc.perform(get("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].available").value(true))
+                .andExpect(jsonPath("$.data.items[0].quantity").value(2));
+    }
+
+    @Test
+    void softDeletedSkuAndSpuRemainInDatabaseButAreHiddenFromCartApi() throws Exception {
+        String appToken = appLoginAndExtractToken("test-login-code");
+        long skuId = createPublishedSku("CART-DELETED-FLAGS", 4590L, 5590L, 6, "ENABLED");
+        long spuId = jdbcClient.sql("select spu_id from product_sku where id = :skuId")
+                .param("skuId", skuId)
+                .query(Long.class)
+                .single();
+
+        mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":2}
+                                """.formatted(skuId)))
+                .andExpect(status().isOk());
+        long cartItemId = jdbcClient.sql("select id from cart_item where sku_id = :skuId")
+                .param("skuId", skuId)
+                .query(Long.class)
+                .single();
+
+        jdbcClient.sql("""
+                        update product_sku
+                        set status = 'ENABLED', deleted_at = current_timestamp
+                        where id = :skuId
+                        """)
+                .param("skuId", skuId)
+                .update();
+
+        mockMvc.perform(get("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(0))
+                .andExpect(jsonPath("$.data.totalQuantity").value(0))
+                .andExpect(jsonPath("$.data.unavailableCount").value(0));
+        mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":1}
+                                """.formatted(skuId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200002));
+        mockMvc.perform(put("/app/cart/items/{cartItemId}/quantity", cartItemId)
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"quantity":3}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200002));
+
+        jdbcClient.sql("update product_sku set deleted_at = null where id = :skuId")
+                .param("skuId", skuId)
+                .update();
+        jdbcClient.sql("""
+                        update product_spu
+                        set status = 'ON_SALE', deleted_at = current_timestamp
+                        where id = :spuId
+                        """)
+                .param("spuId", spuId)
+                .update();
+
+        mockMvc.perform(get("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(0))
+                .andExpect(jsonPath("$.data.totalQuantity").value(0))
+                .andExpect(jsonPath("$.data.unavailableCount").value(0));
+        mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":1}
+                                """.formatted(skuId)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200002));
+        assertThat(jdbcClient.sql("select count(*) from cart_item where id = :cartItemId")
+                .param("cartItemId", cartItemId)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    @Test
     void cartRowsAreIsolatedByAppUser() throws Exception {
         String firstUserToken = appLoginAndExtractToken("test-login-code");
         String secondUserToken = appLoginAndExtractToken("second-login-code");
@@ -343,7 +475,7 @@ class AppCartControllerTest {
     }
 
     @Test
-    void listKeepsCartRowWhenReferencedSkuRowIsMissing() throws Exception {
+    void listHidesCartRowWhenReferencedSkuRowIsMissing() throws Exception {
         String appToken = appLoginAndExtractToken("test-login-code");
         long skuId = createPublishedSku("CART-MISSING-SKU", 4590L, 5590L, 6, "ENABLED");
 
@@ -362,25 +494,17 @@ class AppCartControllerTest {
                 .param("skuId", skuId)
                 .update();
 
-        String response = mockMvc.perform(get("/app/cart/items")
+        mockMvc.perform(get("/app/cart/items")
                         .header("Authorization", "Bearer " + appToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items.length()").value(1))
-                .andExpect(jsonPath("$.data.items[0].available").value(false))
-                .andExpect(jsonPath("$.data.items[0].unavailableReason").value("SKU_UNAVAILABLE"))
-                .andExpect(jsonPath("$.data.items[0].priceCent").value(0))
-                .andExpect(jsonPath("$.data.items[0].lineAmountCent").value(0))
-                .andExpect(jsonPath("$.data.items[0].stockAvailable").value(0))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
-        CartItemResponse item = objectMapper.treeToValue(
-                objectMapper.readTree(response).path("data").path("items").get(0),
-                CartItemResponse.class
-        );
-        assertThat(item.skuStatus()).isNull();
-        assertThat(item.spuStatus()).isNull();
+                .andExpect(jsonPath("$.data.items.length()").value(0))
+                .andExpect(jsonPath("$.data.totalQuantity").value(0))
+                .andExpect(jsonPath("$.data.totalAmountCent").value(0))
+                .andExpect(jsonPath("$.data.unavailableCount").value(0));
+        assertThat(jdbcClient.sql("select count(*) from cart_item where sku_id = :skuId")
+                .param("skuId", skuId)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
     }
 
     private String appLoginAndExtractToken(String code) throws Exception {

@@ -1,5 +1,14 @@
 <template>
-  <div class="art-full-height">
+  <SpuEditor
+    v-if="editorMode"
+    :key="editorSpuId ?? 'create'"
+    :spu-id="editorSpuId"
+    :categories="categories"
+    @success="handleEditorSuccess"
+    @cancel="returnToList"
+  />
+
+  <div v-else class="product-spu-list art-full-height">
     <ArtSearchBar
       v-model="searchForm"
       :items="searchItems"
@@ -8,29 +17,123 @@
       @reset="handleReset"
     />
 
-    <ElCard class="art-table-card" :style="{ marginTop: '12px' }">
+    <ElCard class="status-filter-card" shadow="never">
+      <div class="status-filter-row">
+        <span class="status-filter-label">商品状态</span>
+        <ElSegmented
+          v-model="selectedStatus"
+          :options="statusOptions"
+          @change="handleStatusChange"
+        />
+      </div>
+    </ElCard>
+
+    <ElCard class="art-table-card product-table-card">
       <ArtTableHeader v-model:columns="columnChecks" :loading="loading" @refresh="refreshData">
         <template #left>
-          <ElButton @click="openEditor()" v-ripple>新增商品</ElButton>
+          <ElButton
+            v-if="!isRecycleBin"
+            v-auth="'product:spu:create'"
+            @click="openEditor()"
+            v-ripple
+          >
+            新增商品
+          </ElButton>
         </template>
       </ArtTableHeader>
 
       <ArtTable
         :loading="loading"
         :data="data"
-        :columns="columns"
+        :columns="displayedColumns"
         :pagination="pagination"
         @pagination:size-change="handleSizeChange"
         @pagination:current-change="handleCurrentChange"
-      />
-    </ElCard>
+      >
+        <template #sales="{ row }">
+          <ElTooltip
+            :content="`实际销量 ${row.actualSales ?? 0} + 虚拟销量 ${row.virtualSales ?? 0}`"
+            placement="top"
+          >
+            <span class="sales-value">{{ row.displaySales ?? 0 }}</span>
+          </ElTooltip>
+        </template>
 
-    <SpuEditor
-      v-model:visible="editorVisible"
-      :spu-id="currentSpuId"
-      :categories="categories"
-      @success="handleEditorSuccess"
-    />
+        <template #status="{ row }">
+          <div v-if="isRecycleBin" class="status-cell">
+            <ElTag type="danger" size="small">回收站</ElTag>
+          </div>
+          <div v-else class="status-cell">
+            <ElSwitch
+              v-auth="'product:spu:publish'"
+              :model-value="row.status === 'ON_SALE'"
+              :loading="statusUpdatingIds.has(row.id)"
+              :disabled="statusUpdatingIds.has(row.id)"
+              :before-change="() => requestProductStatus(row, row.status !== 'ON_SALE')"
+            />
+            <ElTag :type="getStatusConfig(row).type" size="small">
+              {{ getStatusConfig(row).text }}
+            </ElTag>
+          </div>
+        </template>
+
+        <template #operation="{ row }">
+          <div v-if="isRecycleBin" class="table-actions recycle-actions">
+            <ElButton
+              v-auth="'product:spu:restore'"
+              type="success"
+              :loading="restoringIds.has(row.id)"
+              :disabled="isRecycleActionPending(row.id)"
+              link
+              @click="restoreSpu(row)"
+            >
+              恢复
+            </ElButton>
+            <ElButton
+              v-auth="'product:spu:purge'"
+              type="danger"
+              :loading="purgingIds.has(row.id)"
+              :disabled="isRecycleActionPending(row.id)"
+              link
+              @click="purgeSpu(row)"
+            >
+              永久删除
+            </ElButton>
+          </div>
+          <div v-else class="table-actions">
+            <ElButton v-auth="'product:spu:update'" type="primary" link @click="openEditor(row.id)">
+              编辑
+            </ElButton>
+            <ElButton
+              v-auth="'product:sku:stock'"
+              type="primary"
+              link
+              @click="openStockDialog(row.id)"
+            >
+              调库存
+            </ElButton>
+            <ElButton
+              v-auth="'product:spu:publish'"
+              :type="row.status === 'ON_SALE' ? 'warning' : 'success'"
+              :loading="statusUpdatingIds.has(row.id)"
+              link
+              @click="requestProductStatus(row, row.status !== 'ON_SALE')"
+            >
+              {{ row.status === 'ON_SALE' ? '下架' : '上架' }}
+            </ElButton>
+            <ElButton
+              v-auth="'product:spu:delete'"
+              type="danger"
+              :loading="deletingIds.has(row.id)"
+              link
+              @click="deleteSpu(row)"
+            >
+              删除
+            </ElButton>
+          </div>
+        </template>
+      </ArtTable>
+    </ElCard>
 
     <ElDialog v-model="stockDialogVisible" title="调整库存" width="860px" align-center>
       <div v-loading="stockDialogLoading">
@@ -78,31 +181,54 @@
 
 <script setup lang="ts">
   import { computed, h, onMounted, reactive, ref } from 'vue'
+  import { useRoute, useRouter } from 'vue-router'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
-  import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
-  import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
+  import type { ColumnOption } from '@/types/component'
   import { useTable } from '@/hooks/core/useTable'
   import {
     adjustSkuStock,
+    deleteProductSpu,
     fetchProductCategories,
     fetchProductSpuDetail,
     fetchProductSpus,
     publishProductSpu,
+    purgeProductSpu,
+    restoreProductSpu,
     unpublishProductSpu
   } from '@/api/product'
   import SpuEditor from './modules/spu-editor.vue'
-  import { ElImage, ElTag, ElMessage, ElMessageBox } from 'element-plus'
+  import { ElImage, ElMessage, ElMessageBox } from 'element-plus'
 
   defineOptions({ name: 'ProductSpu' })
+
+  type StatusFilter = 'ALL' | 'RECYCLED' | Api.Product.ProductStatus
 
   interface CategoryOption {
     label: string
     value: number
   }
 
+  const route = useRoute()
+  const router = useRouter()
   const categories = ref<Api.Product.Category[]>([])
-  const editorVisible = ref(false)
-  const currentSpuId = ref<number | null>(null)
+  const selectedStatus = ref<StatusFilter>('ALL')
+  const statusUpdatingIds = ref(new Set<number>())
+  const deletingIds = ref(new Set<number>())
+  const restoringIds = ref(new Set<number>())
+  const purgingIds = ref(new Set<number>())
+  const isRecycleBin = computed(() => selectedStatus.value === 'RECYCLED')
+
+  const editorSpuId = computed<number | null>(() => {
+    if (route.query.mode !== 'edit') return null
+    const value = Array.isArray(route.query.id) ? route.query.id[0] : route.query.id
+    const parsed = Number(value)
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
+  })
+
+  const editorMode = computed(() => {
+    if (route.query.mode === 'create') return true
+    return route.query.mode === 'edit' && editorSpuId.value !== null
+  })
 
   const stockDialogVisible = ref(false)
   const stockDialogLoading = ref(false)
@@ -114,11 +240,32 @@
   const searchForm = ref<{
     title?: string
     categoryId?: number
-    status?: Api.Product.ProductStatus
   }>({
     title: undefined,
-    categoryId: undefined,
-    status: undefined
+    categoryId: undefined
+  })
+
+  const canAccessRecycleBin = computed(() => {
+    const authList = (route.meta.authList as Array<{ authMark: string }> | undefined) || []
+    const recyclePermissions = new Set([
+      'product:spu:delete',
+      'product:spu:restore',
+      'product:spu:purge'
+    ])
+    return authList.some((permission) => recyclePermissions.has(permission.authMark))
+  })
+
+  const statusOptions = computed<Array<{ label: string; value: StatusFilter }>>(() => {
+    const options: Array<{ label: string; value: StatusFilter }> = [
+      { label: '全部', value: 'ALL' },
+      { label: '草稿', value: 'DRAFT' },
+      { label: '销售中', value: 'ON_SALE' },
+      { label: '已下架', value: 'OFF_SALE' }
+    ]
+    if (canAccessRecycleBin.value) {
+      options.push({ label: '回收站', value: 'RECYCLED' })
+    }
+    return options
   })
 
   const statusMap: Record<
@@ -126,19 +273,19 @@
     { type: 'info' | 'warning' | 'success'; text: string }
   > = {
     DRAFT: { type: 'info', text: '草稿' },
-    ON_SALE: { type: 'success', text: '上架' },
-    OFF_SALE: { type: 'warning', text: '下架' }
+    ON_SALE: { type: 'success', text: '销售中' },
+    OFF_SALE: { type: 'warning', text: '已下架' }
   }
+
+  const getStatusConfig = (row: Api.Product.SpuListItem) => statusMap[row.status]
 
   const categoryOptions = computed<CategoryOption[]>(() => {
     const result: CategoryOption[] = []
     const walk = (nodes: Api.Product.Category[], prefix = '') => {
       nodes.forEach((item) => {
-        result.push({
-          label: prefix ? `${prefix} / ${item.name}` : item.name,
-          value: item.id
-        })
-        walk(item.children || [], prefix ? `${prefix} / ${item.name}` : item.name)
+        const label = prefix ? `${prefix} / ${item.name}` : item.name
+        result.push({ label, value: item.id })
+        walk(item.children || [], label)
       })
     }
     walk(categories.value)
@@ -147,12 +294,12 @@
 
   const searchItems = computed<SearchFormItem[]>(() => [
     {
-      label: '商品标题',
+      label: '商品名称',
       key: 'title',
       type: 'input',
       props: {
         clearable: true,
-        placeholder: '请输入商品标题'
+        placeholder: '请输入商品名称'
       }
     },
     {
@@ -163,20 +310,6 @@
         clearable: true,
         placeholder: '请选择分类',
         options: categoryOptions.value
-      }
-    },
-    {
-      label: '商品状态',
-      key: 'status',
-      type: 'select',
-      props: {
-        clearable: true,
-        placeholder: '请选择状态',
-        options: [
-          { label: '草稿', value: 'DRAFT' },
-          { label: '上架', value: 'ON_SALE' },
-          { label: '下架', value: 'OFF_SALE' }
-        ]
       }
     }
   ])
@@ -193,6 +326,11 @@
     return row.minPriceCent === row.maxPriceCent ? `¥${min}` : `¥${min} - ¥${max}`
   }
 
+  const formatDateTime = (value: string | null | undefined) => {
+    if (!value) return '-'
+    return value.replace('T', ' ')
+  }
+
   const {
     columns,
     columnChecks,
@@ -204,7 +342,8 @@
     resetSearchParams,
     handleSizeChange,
     handleCurrentChange,
-    refreshData
+    refreshData,
+    refreshRemove
   } = useTable({
     core: {
       apiFn: fetchProductSpus,
@@ -214,9 +353,14 @@
       },
       columnsFactory: () => [
         {
+          prop: 'id',
+          label: '商品 ID',
+          width: 100
+        },
+        {
           prop: 'mainImage',
-          label: '主图',
-          width: 90,
+          label: '商品主图',
+          width: 100,
           formatter: (row) =>
             h(ElImage, {
               src: row.mainImage,
@@ -224,8 +368,8 @@
               previewSrcList: row.mainImage ? [row.mainImage] : [],
               previewTeleported: true,
               style: {
-                width: '48px',
-                height: '48px',
+                width: '52px',
+                height: '52px',
                 borderRadius: '6px',
                 backgroundColor: 'var(--el-fill-color-light)'
               }
@@ -238,145 +382,243 @@
           formatter: (row) =>
             h('div', { class: 'spu-title-cell' }, [
               h('div', { class: 'title' }, row.title),
-              h('div', { class: 'subtitle' }, row.subtitle || '-')
+              h('div', { class: 'subtitle' }, `${row.skuCount ?? 0} 个规格`)
             ])
         },
         {
           prop: 'categoryName',
           label: '分类',
-          minWidth: 120
+          minWidth: 130
         },
         {
           prop: 'priceRange',
           label: '价格区间',
-          width: 140,
+          width: 160,
           formatter: (row) => formatPriceRange(row)
         },
         {
+          prop: 'sales',
+          label: '销量',
+          width: 100,
+          useSlot: true
+        },
+        {
           prop: 'totalStock',
-          label: '总库存',
+          label: '库存',
           width: 100
         },
         {
           prop: 'status',
           label: '状态',
-          width: 100,
-          formatter: (row) => {
-            const config = statusMap[row.status]
-            return h(ElTag, { type: config.type }, () => config.text)
-          }
+          width: 160,
+          useSlot: true
+        },
+        {
+          prop: 'sortOrder',
+          label: '排序',
+          width: 90
+        },
+        {
+          prop: 'createdAt',
+          label: '添加时间',
+          width: 180,
+          formatter: (row) => formatDateTime(row.createdAt)
         },
         {
           prop: 'updatedAt',
-          label: '更新时间',
-          width: 180
+          label: '修改时间',
+          width: 180,
+          formatter: (row) => formatDateTime(row.updatedAt)
+        },
+        {
+          prop: 'deletedAt',
+          label: '删除时间',
+          width: 180,
+          formatter: (row) => formatDateTime(row.deletedAt)
         },
         {
           prop: 'operation',
           label: '操作',
-          width: 170,
+          width: 270,
           fixed: 'right',
-          formatter: (row) =>
-            h(ArtButtonMore, {
-              list: buildMoreActions(row),
-              onClick: (item: ButtonMoreItem) => handleMoreAction(item, row)
-            })
+          useSlot: true
         }
       ]
     }
   })
 
-  const buildMoreActions = (row: Api.Product.SpuListItem): ButtonMoreItem[] => {
-    const actions: ButtonMoreItem[] = [
-      {
-        key: 'edit',
-        label: '编辑',
-        icon: 'ri:edit-2-line'
-      },
-      {
-        key: 'stock',
-        label: '调库存',
-        icon: 'ri:archive-stack-line'
-      }
-    ]
+  const displayedColumns = computed(() =>
+    columns.value.filter(
+      (column: ColumnOption<Api.Product.SpuListItem>) =>
+        column.prop !== 'deletedAt' || isRecycleBin.value
+    )
+  )
 
-    if (row.status === 'ON_SALE') {
-      actions.push({
-        key: 'unpublish',
-        label: '下架',
-        icon: 'ri:close-circle-line',
-        color: '#e6a23c'
-      })
-    } else {
-      actions.push({
-        key: 'publish',
-        label: '上架',
-        icon: 'ri:check-double-line',
-        color: '#67c23a'
-      })
-    }
-
-    return actions
-  }
+  const currentStatusParams = () => ({
+    ...searchForm.value,
+    status:
+      selectedStatus.value === 'ALL' || selectedStatus.value === 'RECYCLED'
+        ? undefined
+        : selectedStatus.value,
+    recycled: isRecycleBin.value ? true : undefined
+  })
 
   const loadCategories = async () => {
     categories.value = await fetchProductCategories()
   }
 
-  const handleSearch = (params: Record<string, any>) => {
-    replaceSearchParams(params)
+  const handleSearch = (params: Record<string, unknown>) => {
+    replaceSearchParams({
+      ...params,
+      status:
+        selectedStatus.value === 'ALL' || selectedStatus.value === 'RECYCLED'
+          ? undefined
+          : selectedStatus.value,
+      recycled: isRecycleBin.value ? true : undefined
+    })
     getData()
   }
 
-  const handleReset = () => {
+  const handleReset = async () => {
     searchForm.value = {
       title: undefined,
-      categoryId: undefined,
-      status: undefined
+      categoryId: undefined
     }
-    resetSearchParams()
+    selectedStatus.value = 'ALL'
+    await resetSearchParams()
+  }
+
+  const handleStatusChange = () => {
+    replaceSearchParams(currentStatusParams())
     getData()
   }
 
   const openEditor = (spuId?: number) => {
-    currentSpuId.value = spuId ?? null
-    editorVisible.value = true
+    router.push({
+      path: '/product/spu',
+      query: spuId ? { mode: 'edit', id: String(spuId) } : { mode: 'create' }
+    })
   }
 
-  const handleEditorSuccess = async () => {
+  const returnToList = () => router.replace({ path: '/product/spu' })
+
+  const handleEditorSuccess = async (spuId?: number) => {
+    if (spuId) {
+      await router.replace({
+        path: '/product/spu',
+        query: { mode: 'edit', id: String(spuId) }
+      })
+    }
     await Promise.all([refreshData(), loadCategories()])
   }
 
-  const handleMoreAction = (item: ButtonMoreItem, row: Api.Product.SpuListItem) => {
-    switch (item.key) {
-      case 'edit':
-        openEditor(row.id)
-        break
-      case 'publish':
-        confirmPublish(row, true)
-        break
-      case 'unpublish':
-        confirmPublish(row, false)
-        break
-      case 'stock':
-        openStockDialog(row.id)
-        break
+  const isMessageBoxCancel = (error: unknown) => error === 'cancel' || error === 'close'
+
+  const requestProductStatus = async (
+    row: Api.Product.SpuListItem,
+    publish: boolean
+  ): Promise<boolean> => {
+    if (statusUpdatingIds.value.has(row.id)) return false
+    const actionText = publish ? '上架' : '下架'
+    let apiSucceeded = false
+
+    try {
+      await ElMessageBox.confirm(`确定${actionText}商品“${row.title}”吗？`, `${actionText}确认`, {
+        type: 'warning',
+        confirmButtonText: `确定${actionText}`,
+        cancelButtonText: '取消'
+      })
+
+      statusUpdatingIds.value.add(row.id)
+      if (publish) {
+        await publishProductSpu(row.id)
+      } else {
+        await unpublishProductSpu(row.id)
+      }
+      apiSucceeded = true
+      row.status = publish ? 'ON_SALE' : 'OFF_SALE'
+      await refreshData()
+      return true
+    } catch (error) {
+      if (apiSucceeded) return true
+      if (!isMessageBoxCancel(error)) {
+        ElMessage.error(`${actionText}失败，商品状态未变更`)
+      }
+      return false
+    } finally {
+      statusUpdatingIds.value.delete(row.id)
     }
   }
 
-  const confirmPublish = async (row: Api.Product.SpuListItem, publish: boolean) => {
-    const actionText = publish ? '上架' : '下架'
-    await ElMessageBox.confirm(`确定${actionText}商品“${row.title}”吗？`, `${actionText}确认`, {
-      type: 'warning',
-      confirmButtonText: '确定',
-      cancelButtonText: '取消'
-    })
-    if (publish) {
-      await publishProductSpu(row.id)
-    } else {
-      await unpublishProductSpu(row.id)
+  const deleteSpu = async (row: Api.Product.SpuListItem) => {
+    if (deletingIds.value.has(row.id)) return
+    deletingIds.value.add(row.id)
+    try {
+      await ElMessageBox.confirm(
+        `商品“${row.title}”将移入回收站并从前台隐藏，之后仍可恢复。确定继续吗？`,
+        '移入回收站',
+        {
+          type: 'warning',
+          confirmButtonText: '移入回收站',
+          cancelButtonText: '取消'
+        }
+      )
+      await deleteProductSpu(row.id)
+      await refreshRemove()
+    } catch {
+      // 取消确认时静默返回；接口错误由统一 HTTP 层展示，避免重复提示。
+    } finally {
+      deletingIds.value.delete(row.id)
     }
-    refreshData()
+  }
+
+  const isRecycleActionPending = (spuId: number) =>
+    restoringIds.value.has(spuId) || purgingIds.value.has(spuId)
+
+  const restoreSpu = async (row: Api.Product.SpuListItem) => {
+    if (isRecycleActionPending(row.id)) return
+    restoringIds.value.add(row.id)
+    try {
+      await ElMessageBox.confirm(
+        `确定恢复商品“${row.title}”吗？恢复后商品保持下架，不会自动上架。`,
+        '恢复商品',
+        {
+          type: 'warning',
+          confirmButtonText: '确定恢复',
+          cancelButtonText: '取消'
+        }
+      )
+      await restoreProductSpu(row.id)
+      await refreshRemove()
+    } catch {
+      // 取消确认时静默返回；接口错误由统一 HTTP 层展示，避免重复提示。
+    } finally {
+      restoringIds.value.delete(row.id)
+    }
+  }
+
+  const purgeSpu = async (row: Api.Product.SpuListItem) => {
+    if (isRecycleActionPending(row.id)) return
+    purgingIds.value.add(row.id)
+    try {
+      const { value } = await ElMessageBox.prompt(
+        `永久删除后商品不可恢复。商品规格、轮播图关系及标签/保障/优惠券绑定会被清除；历史订单和订单图片会保留，分类、模板、保障服务主数据、优惠券模板及素材文件不会被删除。请输入商品名称“${row.title}”确认永久删除。`,
+        '永久删除商品',
+        {
+          type: 'error',
+          confirmButtonText: '永久删除',
+          cancelButtonText: '取消',
+          inputPlaceholder: '请输入完整商品名称',
+          inputValidator: (input) => input === row.title || `请输入完整商品名称“${row.title}”`
+        }
+      )
+      await purgeProductSpu(row.id, { confirmationTitle: value })
+      await refreshRemove()
+    } catch {
+      // 取消确认时静默返回；接口错误由统一 HTTP 层展示，避免重复提示。
+    } finally {
+      purgingIds.value.delete(row.id)
+    }
   }
 
   const openStockDialog = async (spuId: number) => {
@@ -423,18 +665,41 @@
       if (!stockSpuId.value) return
       const detail = await fetchProductSpuDetail(stockSpuId.value)
       stockSkus.value = detail.skus || []
-      refreshData()
+      await refreshData()
     } finally {
       stockSubmittingSkuId.value = null
     }
   }
 
-  onMounted(async () => {
-    await loadCategories()
-  })
+  onMounted(loadCategories)
 </script>
 
 <style scoped lang="scss">
+  .status-filter-card {
+    margin-top: 12px;
+
+    :deep(.el-card__body) {
+      padding: 14px 20px;
+    }
+  }
+
+  .status-filter-row {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+  }
+
+  .status-filter-label {
+    flex: 0 0 auto;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--el-text-color-regular);
+  }
+
+  .product-table-card {
+    margin-top: 12px;
+  }
+
   .spu-title-cell {
     display: flex;
     flex-direction: column;
@@ -449,6 +714,43 @@
       font-size: 12px;
       line-height: 18px;
       color: var(--el-text-color-secondary);
+    }
+  }
+
+  .sales-value {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    cursor: help;
+  }
+
+  .status-cell,
+  .table-actions {
+    display: flex;
+    align-items: center;
+  }
+
+  .recycle-actions {
+    gap: 8px;
+  }
+
+  .status-cell {
+    gap: 10px;
+  }
+
+  .table-actions {
+    flex-wrap: nowrap;
+    gap: 2px;
+
+    :deep(.el-button + .el-button) {
+      margin-left: 4px;
+    }
+  }
+
+  @media (width <= 768px) {
+    .status-filter-row {
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-start;
     }
   }
 </style>

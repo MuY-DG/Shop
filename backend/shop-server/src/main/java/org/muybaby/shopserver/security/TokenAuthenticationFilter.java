@@ -4,6 +4,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.muybaby.shopserver.admin.rbac.service.AdminAuthorization;
+import org.muybaby.shopserver.admin.rbac.service.AdminRbacService;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenSession;
@@ -21,10 +23,16 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
 
     private final PathTokenKindResolver pathTokenKindResolver;
     private final OpaqueTokenService opaqueTokenService;
+    private final AdminRbacService adminRbacService;
 
-    public TokenAuthenticationFilter(PathTokenKindResolver pathTokenKindResolver, OpaqueTokenService opaqueTokenService) {
+    public TokenAuthenticationFilter(
+            PathTokenKindResolver pathTokenKindResolver,
+            OpaqueTokenService opaqueTokenService,
+            AdminRbacService adminRbacService
+    ) {
         this.pathTokenKindResolver = pathTokenKindResolver;
         this.opaqueTokenService = opaqueTokenService;
+        this.adminRbacService = adminRbacService;
     }
 
     @Override
@@ -37,7 +45,8 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.clearContext();
                 String token = bearerToken(request);
                 if (token != null) {
-                    Optional<TokenSession> session = opaqueTokenService.lookupAccessToken(token, requiredKind.get());
+                    Optional<TokenSession> session = opaqueTokenService.lookupAccessToken(token, requiredKind.get())
+                            .flatMap(this::withLiveAdminAuthorization);
                     if (session.isPresent()) {
                         SecurityContextHolder.getContext().setAuthentication(new TokenAuthentication(session.get()));
                         authenticationSet = true;
@@ -50,6 +59,28 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.clearContext();
             }
         }
+    }
+
+    private Optional<TokenSession> withLiveAdminAuthorization(TokenSession storedSession) {
+        if (storedSession.kind() != TokenKind.ADMIN) {
+            return Optional.of(storedSession);
+        }
+
+        return adminRbacService.findEnabledAuthorizationByUserId(storedSession.subjectId())
+                .map(authorization -> liveAdminSession(storedSession, authorization));
+    }
+
+    private TokenSession liveAdminSession(TokenSession storedSession, AdminAuthorization authorization) {
+        return new TokenSession(
+                storedSession.sessionId(),
+                storedSession.generationId(),
+                storedSession.kind(),
+                authorization.userId(),
+                authorization.username(),
+                authorization.roles(),
+                authorization.permissions(),
+                storedSession.issuedAt()
+        );
     }
 
     private String requestPath(HttpServletRequest request) {

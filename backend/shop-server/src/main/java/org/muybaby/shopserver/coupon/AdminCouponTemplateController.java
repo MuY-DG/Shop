@@ -8,6 +8,7 @@ import org.muybaby.shopserver.coupon.dto.AdminCouponTemplateRequest;
 import org.muybaby.shopserver.coupon.dto.AdminCouponTemplateResponse;
 import org.muybaby.shopserver.coupon.service.AdminCouponService;
 import org.muybaby.shopserver.coupon.service.CouponReadMapper;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -37,23 +38,27 @@ public class AdminCouponTemplateController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAuthority('coupon:template:create')")
     public ApiResponse<Long> create(@Valid @RequestBody AdminCouponTemplateRequest request) {
         return ApiResponse.success(adminCouponService.create(request));
     }
 
     @PutMapping("/{templateId}")
+    @PreAuthorize("hasAuthority('coupon:template:update')")
     public ApiResponse<Void> update(@PathVariable Long templateId, @Valid @RequestBody AdminCouponTemplateRequest request) {
         adminCouponService.update(templateId, request);
         return ApiResponse.success();
     }
 
     @PostMapping("/{templateId}/enable")
+    @PreAuthorize("hasAuthority('coupon:template:enable')")
     public ApiResponse<Void> enable(@PathVariable Long templateId) {
         adminCouponService.enable(templateId);
         return ApiResponse.success();
     }
 
     @PostMapping("/{templateId}/disable")
+    @PreAuthorize("hasAuthority('coupon:template:disable')")
     public ApiResponse<Void> disable(@PathVariable Long templateId) {
         adminCouponService.disable(templateId);
         return ApiResponse.success();
