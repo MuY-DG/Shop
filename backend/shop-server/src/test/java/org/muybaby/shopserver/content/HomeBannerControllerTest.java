@@ -64,8 +64,8 @@ class HomeBannerControllerTest {
     void clearTables() {
         clearLimitedAdmins();
         jdbcClient.sql("delete from home_banner").update();
-        jdbcClient.sql("delete from storage_file_usage").update();
-        jdbcClient.sql("delete from storage_file").update();
+        jdbcClient.sql("delete from storage_asset_usage").update();
+        jdbcClient.sql("delete from storage_asset").update();
     }
 
     @AfterEach
@@ -104,7 +104,7 @@ class HomeBannerControllerTest {
         assertThat(created.status()).isEqualTo("DISABLED");
 
         UsageRow createdUsage = findActiveUsage(bannerId);
-        assertThat(createdUsage.fileId()).isEqualTo(uploadedFile.id());
+        assertThat(createdUsage.assetId()).isEqualTo(uploadedFile.id());
         assertThat(createdUsage.usageType()).isEqualTo("HOME_BANNER");
         assertThat(createdUsage.ownerType()).isEqualTo("HOME_BANNER");
         assertThat(createdUsage.ownerLabel()).isEqualTo("首页热卖");
@@ -112,7 +112,7 @@ class HomeBannerControllerTest {
         assertThat(createdUsage.sortOrder()).isEqualTo(20);
 
         jdbcClient.sql("""
-                        update storage_file
+                        update storage_asset
                         set public_url = 'http://localhost:8080/files/public/mutated/banner-home-main.png'
                         where id = :fileId
                         """)
@@ -382,9 +382,8 @@ class HomeBannerControllerTest {
     }
 
     private UploadedFile uploadBannerFile(String adminToken, String filename) throws Exception {
-        String response = mockMvc.perform(multipart("/admin/files/upload")
+        String response = mockMvc.perform(multipart("/admin/assets/upload")
                         .file(new MockMultipartFile("file", filename, "image/png", TINY_PNG))
-                        .param("purpose", "HOME_BANNER")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andReturn()
@@ -397,12 +396,12 @@ class HomeBannerControllerTest {
     private UploadedFile insertPublicStorageFile(String originalFilename, String publicUrl) {
         String objectKey = "public/test/banner/" + System.nanoTime() + ".png";
         jdbcClient.sql("""
-                        insert into storage_file
-                            (purpose, asset_category_id, visibility, provider, bucket, object_key, original_filename,
+                        insert into storage_asset
+                            (scope, media_kind, folder_id, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
                              public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            ('HOME_BANNER', 2, 'PUBLIC', 'LOCAL', '', :objectKey, :originalFilename,
+                            ('LIBRARY', 'IMAGE', null, 'PUBLIC', 'LOCAL', '', :objectKey, :originalFilename,
                              'image/png', 'png', 68, 'abc123', 1, 1, '', null,
                              :publicUrl, 'ACTIVE', 'ADMIN', 1)
                         """)
@@ -412,7 +411,7 @@ class HomeBannerControllerTest {
                 .update();
         Long fileId = jdbcClient.sql("""
                         select id
-                        from storage_file
+                        from storage_asset
                         where object_key = :objectKey
                         """)
                 .param("objectKey", objectKey)
@@ -517,8 +516,8 @@ class HomeBannerControllerTest {
 
     private UsageRow findActiveUsage(long bannerId) {
         return jdbcClient.sql("""
-                        select file_id, usage_type, owner_type, owner_label, snapshot_url, sort_order
-                        from storage_file_usage
+                        select asset_id, usage_type, owner_type, owner_label, snapshot_url, sort_order
+                        from storage_asset_usage
                         where owner_type = 'HOME_BANNER'
                           and owner_id = :bannerId
                           and status = 'ACTIVE'
@@ -527,7 +526,7 @@ class HomeBannerControllerTest {
                         """)
                 .param("bannerId", bannerId)
                 .query((rs, rowNum) -> new UsageRow(
-                        rs.getLong("file_id"),
+                        rs.getLong("asset_id"),
                         rs.getString("usage_type"),
                         rs.getString("owner_type"),
                         rs.getString("owner_label"),
@@ -540,7 +539,7 @@ class HomeBannerControllerTest {
     private int activeUsageCount(long bannerId) {
         Integer count = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where owner_type = 'HOME_BANNER'
                           and owner_id = :bannerId
                           and status = 'ACTIVE'
@@ -554,7 +553,7 @@ class HomeBannerControllerTest {
     private int removedUsageCount(long bannerId) {
         Integer count = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where owner_type = 'HOME_BANNER'
                           and owner_id = :bannerId
                           and status = 'REMOVED'
@@ -568,7 +567,7 @@ class HomeBannerControllerTest {
     private int totalUsageCount(long bannerId) {
         Integer count = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where owner_type = 'HOME_BANNER'
                           and owner_id = :bannerId
                         """)
@@ -664,7 +663,7 @@ class HomeBannerControllerTest {
     }
 
     private record UsageRow(
-            Long fileId,
+            Long assetId,
             String usageType,
             String ownerType,
             String ownerLabel,

@@ -1,144 +1,199 @@
 <template>
-  <div class="asset-picker">
-    <div class="asset-picker__value">
-      <div class="asset-picker__preview">
-        <ElImage
-          v-if="canPreviewSelected"
-          :src="previewUrl"
-          fit="cover"
-          :preview-src-list="[previewUrl]"
-          preview-teleported
-        />
-        <div v-else class="asset-picker__placeholder">
-          <ElIcon size="20">
-            <Lock v-if="selectedFile?.visibility === 'PRIVATE'" />
-            <Picture v-else />
-          </ElIcon>
-          <span>{{ selectedFile?.visibility === 'PRIVATE' ? '私有文件' : '未选择' }}</span>
-        </div>
-      </div>
-
-      <div class="asset-picker__meta">
-        <div class="asset-picker__title">
-          <span>{{ selectedFile?.originalFilename || '未绑定素材' }}</span>
-          <ElTag
-            v-if="selectedFile"
-            size="small"
-            :type="selectedFile.visibility === 'PRIVATE' ? 'warning' : 'success'"
-          >
-            {{ selectedFile.visibility === 'PRIVATE' ? 'PRIVATE' : 'PUBLIC' }}
-          </ElTag>
-        </div>
-        <div class="asset-picker__hint">
-          <template v-if="selectedFile">
-            <span>ID {{ selectedFile.id }}</span>
-            <span>{{ formatPurpose(selectedFile.purpose) }}</span>
-            <span>{{ formatFileSize(selectedFile.sizeBytes) }}</span>
-          </template>
-          <template v-else-if="modelValue.url">
-            <span>URL</span>
-            <span class="asset-picker__url">{{ modelValue.url }}</span>
-          </template>
-          <template v-else>
-            <span>{{ purpose ? `${formatPurpose(purpose)} 素材` : '请选择素材' }}</span>
-          </template>
-        </div>
-      </div>
-    </div>
-
-    <div class="asset-picker__actions">
+  <div class="asset-picker" :class="{ 'asset-picker--compact': compact }">
+    <template v-if="compact">
       <ElUpload
+        class="asset-picker__compact-upload"
+        :class="{ 'is-small': compactSize === 'small' }"
+        :accept="uploadAccept"
         :show-file-list="false"
-        :disabled="disabled || !purpose"
+        :disabled="disabled"
         :http-request="handleUploadRequest"
       >
-        <ElButton :disabled="disabled || !purpose" :loading="uploading" type="primary" plain>
-          上传
-        </ElButton>
+        <div
+          class="asset-picker__compact-target"
+          :class="{ 'is-empty': !previewUrl, 'is-disabled': disabled }"
+          role="button"
+          :aria-label="previewUrl ? `更换${mediaKindLabel}` : `上传${mediaKindLabel}`"
+        >
+          <video
+            v-if="mediaKind === 'VIDEO' && previewUrl"
+            :src="previewUrl"
+            muted
+            preload="metadata"
+          />
+          <ElImage v-else-if="mediaKind === 'IMAGE' && previewUrl" :src="previewUrl" fit="cover" />
+          <div v-else class="asset-picker__compact-placeholder">
+            <ElIcon :size="compactSize === 'small' ? 20 : 24">
+              <VideoCamera v-if="mediaKind === 'VIDEO'" />
+              <Plus v-else />
+            </ElIcon>
+            <span>{{ uploading ? '上传中' : `上传${mediaKindLabel}` }}</span>
+          </div>
+          <div v-if="uploading && previewUrl" class="asset-picker__compact-loading">
+            <ElIcon class="is-loading" size="20"><Loading /></ElIcon>
+          </div>
+          <button
+            v-if="!disabled && !uploading"
+            type="button"
+            class="asset-picker__compact-library"
+            title="从素材库选择"
+            aria-label="从素材库选择"
+            @mousedown.stop.prevent
+            @click.stop.prevent="openBrowser"
+          >
+            <ElIcon size="14"><FolderOpened /></ElIcon>
+            <span v-if="compactSize !== 'small'">素材库</span>
+          </button>
+          <button
+            v-if="allowClear && previewUrl && !disabled && !uploading"
+            type="button"
+            class="asset-picker__compact-clear"
+            :aria-label="`清除${mediaKindLabel}`"
+            @mousedown.stop.prevent
+            @click.stop.prevent="clearValue"
+          >
+            <ElIcon size="18"><CircleCloseFilled /></ElIcon>
+          </button>
+        </div>
       </ElUpload>
-      <ElButton :disabled="disabled" @click="openBrowser">选择素材</ElButton>
-      <ElButton v-if="allowClear" :disabled="disabled" @click="clearValue">清空</ElButton>
-    </div>
+    </template>
 
-    <ElDialog v-model="dialogVisible" title="选择素材" width="1080px" destroy-on-close align-center>
+    <template v-else>
+      <div class="asset-picker__value">
+        <div class="asset-picker__preview">
+          <video
+            v-if="mediaKind === 'VIDEO' && previewUrl"
+            :src="previewUrl"
+            controls
+            preload="metadata"
+          />
+          <ElImage
+            v-else-if="mediaKind === 'IMAGE' && previewUrl"
+            :src="previewUrl"
+            fit="cover"
+            :preview-src-list="[previewUrl]"
+            preview-teleported
+          />
+          <div v-else class="asset-picker__placeholder">
+            <ElIcon size="22">
+              <VideoCamera v-if="mediaKind === 'VIDEO'" />
+              <Picture v-else />
+            </ElIcon>
+            <span>未选择{{ mediaKindLabel }}</span>
+          </div>
+        </div>
+
+        <div class="asset-picker__meta">
+          <div class="asset-picker__title">
+            <span>{{ selectedAsset?.originalFilename || `未绑定${mediaKindLabel}` }}</span>
+            <ElTag v-if="selectedAsset" size="small" type="success">
+              {{ selectedAsset.mediaKind }}
+            </ElTag>
+          </div>
+          <div class="asset-picker__hint">
+            <template v-if="selectedAsset">
+              <span>ID {{ selectedAsset.id }}</span>
+              <span>{{ formatFileSize(selectedAsset.sizeBytes) }}</span>
+              <span>引用 {{ selectedAsset.usageCount || 0 }} 次</span>
+            </template>
+            <template v-else-if="modelValue.url">
+              <span>外部 URL</span>
+              <span class="asset-picker__url">{{ modelValue.url }}</span>
+            </template>
+            <template v-else>
+              <span>{{ mediaKindHint }}</span>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <div class="asset-picker__actions">
+        <ElUpload
+          :accept="uploadAccept"
+          :show-file-list="false"
+          :disabled="disabled"
+          :http-request="handleUploadRequest"
+        >
+          <ElButton :disabled="disabled" :loading="uploading" type="primary" plain>
+            上传{{ mediaKindLabel }}
+          </ElButton>
+        </ElUpload>
+        <ElButton :disabled="disabled" @click="openBrowser">选择素材</ElButton>
+        <ElButton v-if="allowClear" :disabled="disabled" @click="clearValue">清空</ElButton>
+      </div>
+    </template>
+
+    <ElDialog
+      v-model="dialogVisible"
+      :title="`选择${mediaKindLabel}`"
+      width="1080px"
+      destroy-on-close
+      align-center
+    >
       <div class="asset-picker__dialog">
         <div class="asset-picker__toolbar">
-          <ElSelect
-            v-model="filters.purpose"
-            :disabled="!!purpose"
+          <ElInput
+            v-model="filters.keyword"
             clearable
-            placeholder="用途"
-            style="width: 180px"
-          >
-            <ElOption
-              v-for="item in purposeOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </ElSelect>
+            placeholder="搜索文件名"
+            style="width: 240px"
+            @keyup.enter="handleSearch"
+          />
           <ElTreeSelect
-            v-model="filters.assetCategoryId"
-            :data="categoryOptions"
+            v-model="filters.folderId"
+            :data="folderOptions"
             node-key="value"
             check-strictly
             clearable
             default-expand-all
             :render-after-expand="false"
-            placeholder="分类"
-            style="width: 220px"
+            placeholder="全部分组"
+            style="width: 240px"
           />
-          <ElSelect
-            v-model="filters.visibility"
-            :disabled="!!visibility"
-            clearable
-            placeholder="可见性"
-            style="width: 140px"
-          >
-            <ElOption label="PUBLIC" value="PUBLIC" />
-            <ElOption label="PRIVATE" value="PRIVATE" />
-          </ElSelect>
-          <ElSelect v-model="filters.status" clearable placeholder="状态" style="width: 140px">
-            <ElOption label="ACTIVE" value="ACTIVE" />
-            <ElOption label="DELETED" value="DELETED" />
-          </ElSelect>
           <ElButton type="primary" @click="handleSearch">筛选</ElButton>
           <ElButton @click="handleReset">重置</ElButton>
         </div>
 
         <div v-loading="loading" class="asset-picker__grid">
           <button
-            v-for="file in files"
-            :key="file.id"
+            v-for="asset in assets"
+            :key="asset.id"
             type="button"
             class="asset-card"
-            :class="{ 'is-active': file.id === modelValue.fileId }"
-            @click="selectFile(file)"
+            :class="{ 'is-active': asset.id === modelValue.fileId }"
+            @click="selectAsset(asset)"
           >
             <div class="asset-card__preview">
+              <video
+                v-if="asset.mediaKind === 'VIDEO' && resolveAssetUrl(asset)"
+                :src="resolveAssetUrl(asset)"
+                muted
+                preload="metadata"
+              />
               <ElImage
-                v-if="file.visibility !== 'PRIVATE' && resolveFileUrl(file)"
-                :src="resolveFileUrl(file)"
+                v-else-if="asset.mediaKind === 'IMAGE' && resolveAssetUrl(asset)"
+                :src="resolveAssetUrl(asset)"
                 fit="cover"
               />
-              <div v-else class="asset-card__private">
-                <ElIcon size="20">
-                  <Lock v-if="file.visibility === 'PRIVATE'" />
+              <div v-else class="asset-card__empty">
+                <ElIcon size="22">
+                  <VideoCamera v-if="asset.mediaKind === 'VIDEO'" />
                   <Picture v-else />
                 </ElIcon>
-                <span>{{ file.visibility === 'PRIVATE' ? '私有文件' : '无预览' }}</span>
+                <span>无预览</span>
               </div>
             </div>
             <div class="asset-card__body">
-              <div class="asset-card__name">{{ file.originalFilename }}</div>
+              <div class="asset-card__name">{{ asset.originalFilename }}</div>
               <div class="asset-card__meta">
-                <span>ID {{ file.id }}</span>
-                <span>{{ formatPurpose(file.purpose) }}</span>
+                <span>ID {{ asset.id }}</span>
+                <span>{{ formatFileSize(asset.sizeBytes) }}</span>
+                <span>引用 {{ asset.usageCount || 0 }} 次</span>
               </div>
             </div>
           </button>
 
-          <ElEmpty v-if="!loading && !files.length" description="暂无素材" />
+          <ElEmpty v-if="!loading && !assets.length" :description="`暂无${mediaKindLabel}素材`" />
         </div>
 
         <div class="asset-picker__pagination">
@@ -159,119 +214,90 @@
 <script setup lang="ts">
   import { computed, reactive, ref, watch } from 'vue'
   import { ElMessage, type UploadRequestOptions } from 'element-plus'
-  import { Lock, Picture } from '@element-plus/icons-vue'
   import {
-    fetchStorageCategories,
-    fetchStorageFileDetail,
-    fetchStorageFiles,
-    uploadStorageFile
-  } from '@/api/storage'
+    CircleCloseFilled,
+    FolderOpened,
+    Loading,
+    Picture,
+    Plus,
+    VideoCamera
+  } from '@element-plus/icons-vue'
+  import { fetchAssetDetail, fetchAssetFolders, fetchAssets, uploadAsset } from '@/api/assets'
 
   defineOptions({ name: 'AssetPicker' })
 
   interface TreeOption {
     value: number
     label: string
+    disabled?: boolean
     children?: TreeOption[]
   }
 
   interface Props {
     modelValue: Api.Common.AssetValue
-    purpose?: Api.Storage.Purpose
-    visibility?: Api.Storage.Visibility
-    assetCategoryId?: number | null
+    mediaKind: Exclude<Api.Storage.MediaKind, 'DOCUMENT'>
+    defaultFolderId?: number | null
     disabled?: boolean
     allowClear?: boolean
+    compact?: boolean
+    compactSize?: 'default' | 'small'
   }
 
   interface Emits {
-    (e: 'update:modelValue', value: Api.Common.AssetValue): void
-    (e: 'change', value: Api.Common.AssetValue): void
+    (event: 'update:modelValue', value: Api.Common.AssetValue): void
+    (event: 'change', value: Api.Common.AssetValue): void
   }
 
   const props = withDefaults(defineProps<Props>(), {
-    purpose: undefined,
-    visibility: undefined,
-    assetCategoryId: null,
+    defaultFolderId: null,
     disabled: false,
-    allowClear: true
+    allowClear: true,
+    compact: false,
+    compactSize: 'default'
   })
-
   const emit = defineEmits<Emits>()
-
-  const purposeLabelMap: Record<Api.Storage.Purpose, string> = {
-    PRODUCT_IMAGE: '商品主图',
-    PRODUCT_SKU_IMAGE: 'SKU 图片',
-    SPEC_VALUE_IMAGE: '规格值图片',
-    GUARANTEE_SERVICE_ICON: '保障服务图标',
-    PRODUCT_VIDEO: '商品视频',
-    CATEGORY_ICON: '分类图标',
-    HOME_BANNER: '首页轮播',
-    MARKETING_IMAGE: '运营活动',
-    APP_ICON: '小程序图标',
-    RICH_TEXT_IMAGE: '富文本图片',
-    PAYMENT_CERTIFICATE: '支付证书',
-    AFTER_SALE_IMAGE: '售后凭证',
-    REFUND_EVIDENCE: '退款凭证'
-  }
-
-  const purposeOptions = Object.entries(purposeLabelMap).map(([value, label]) => ({
-    value: value as Api.Storage.Purpose,
-    label
-  }))
 
   const dialogVisible = ref(false)
   const loading = ref(false)
   const uploading = ref(false)
-  const selectedFile = ref<Api.Storage.FileItem | null>(null)
-  const categories = ref<Api.Storage.AssetCategory[]>([])
-  const files = ref<Api.Storage.FileItem[]>([])
-  const pagination = reactive({
-    current: 1,
-    size: 12,
-    total: 0
-  })
+  const selectedAsset = ref<Api.Storage.AssetItem | null>(null)
+  const folders = ref<Api.Storage.AssetFolder[]>([])
+  const assets = ref<Api.Storage.AssetItem[]>([])
+  const pagination = reactive({ current: 1, size: 12, total: 0 })
 
   const defaultFilters = () => ({
-    purpose: props.purpose,
-    assetCategoryId: props.assetCategoryId ?? undefined,
-    visibility: props.visibility,
-    status: 'ACTIVE' as Api.Storage.FileStatus
+    keyword: '',
+    folderId: props.defaultFolderId ?? undefined
   })
+  const filters = reactive<{ keyword: string; folderId?: number }>(defaultFilters())
 
-  const filters = reactive(defaultFilters())
+  const mediaKind = computed(() => props.mediaKind)
+  const mediaKindLabel = computed(() => (mediaKind.value === 'VIDEO' ? '视频' : '图片'))
+  const mediaKindHint = computed(() =>
+    mediaKind.value === 'VIDEO'
+      ? '支持 MP4、WebM，最大 50 MB'
+      : '支持 JPG、PNG、WebP、GIF，最大 5 MB'
+  )
+  const uploadAccept = computed(() =>
+    mediaKind.value === 'VIDEO' ? 'video/mp4,video/webm,.mp4,.webm' : 'image/*'
+  )
+  const modelValue = computed(() => props.modelValue || { fileId: null, url: '' })
+  const previewUrl = computed(() => modelValue.value.url || resolveAssetUrl(selectedAsset.value))
 
-  const categoryOptions = computed<TreeOption[]>(() => {
-    const walk = (items: Api.Storage.AssetCategory[]): TreeOption[] =>
+  const folderOptions = computed<TreeOption[]>(() => {
+    const walk = (items: Api.Storage.AssetFolder[]): TreeOption[] =>
       items.map((item) => ({
         value: item.id,
-        label: item.name,
+        label: item.status === 'DISABLED' ? `${item.name}（已停用）` : item.name,
+        disabled: item.status === 'DISABLED',
         children: walk(item.children || [])
       }))
 
-    return walk(categories.value)
+    return [{ value: 0, label: '未分组' }, ...walk(folders.value)]
   })
 
-  const previewUrl = computed(() => modelValue.value.url || resolveFileUrl(selectedFile.value))
-
-  const canPreviewSelected = computed(() => {
-    if (selectedFile.value?.visibility === 'PRIVATE') {
-      return false
-    }
-    return Boolean(previewUrl.value)
-  })
-
-  const modelValue = computed(() => props.modelValue || { fileId: null, url: '' })
-
-  const emitValue = (value: Api.Common.AssetValue) => {
-    emit('update:modelValue', value)
-    emit('change', value)
-  }
-
-  const resolveFileUrl = (file?: Api.Storage.FileItem | null) => file?.publicUrl || file?.url || ''
-
-  const formatPurpose = (purpose?: Api.Storage.Purpose | string | null) =>
-    (purpose && purposeLabelMap[purpose as Api.Storage.Purpose]) || purpose || '-'
+  const resolveAssetUrl = (asset?: Api.Storage.AssetItem | null) =>
+    asset?.publicUrl || asset?.url || ''
 
   const formatFileSize = (sizeBytes?: number) => {
     if (!sizeBytes) return '0 B'
@@ -280,35 +306,40 @@
     return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`
   }
 
-  const syncSelectedFile = async () => {
+  const emitValue = (value: Api.Common.AssetValue) => {
+    emit('update:modelValue', value)
+    emit('change', value)
+  }
+
+  const syncSelectedAsset = async () => {
     if (!modelValue.value.fileId) {
-      selectedFile.value = null
+      selectedAsset.value = null
       return
     }
 
     try {
-      selectedFile.value = await fetchStorageFileDetail(modelValue.value.fileId)
+      const asset = await fetchAssetDetail(modelValue.value.fileId)
+      selectedAsset.value = asset.mediaKind === props.mediaKind ? asset : null
     } catch {
-      selectedFile.value = null
+      selectedAsset.value = null
     }
   }
 
-  const loadCategories = async () => {
-    categories.value = await fetchStorageCategories()
+  const loadFolders = async () => {
+    folders.value = await fetchAssetFolders()
   }
 
-  const loadFiles = async () => {
+  const loadAssets = async () => {
     loading.value = true
     try {
-      const response = await fetchStorageFiles({
+      const response = await fetchAssets({
         current: pagination.current,
         size: pagination.size,
-        purpose: props.purpose || filters.purpose,
-        assetCategoryId: filters.assetCategoryId,
-        visibility: props.visibility || filters.visibility,
-        status: filters.status
+        keyword: filters.keyword.trim() || undefined,
+        mediaKind: props.mediaKind,
+        folderId: filters.folderId
       })
-      files.value = response.records
+      assets.value = response.records
       pagination.current = response.current
       pagination.size = response.size
       pagination.total = response.total
@@ -320,64 +351,85 @@
   const openBrowser = async () => {
     dialogVisible.value = true
     pagination.current = 1
-    await Promise.all([loadCategories(), loadFiles()])
-  }
-
-  const selectFile = (file: Api.Storage.FileItem) => {
-    selectedFile.value = file
-    emitValue({
-      fileId: file.id,
-      url: file.visibility === 'PRIVATE' ? '' : resolveFileUrl(file)
-    })
-    dialogVisible.value = false
-  }
-
-  const clearValue = () => {
-    selectedFile.value = null
-    emitValue({
-      fileId: null,
-      url: ''
-    })
+    await Promise.all([loadFolders(), loadAssets()])
   }
 
   const handleSearch = () => {
     pagination.current = 1
-    loadFiles()
+    loadAssets()
   }
 
   const handleReset = () => {
     Object.assign(filters, defaultFilters())
     pagination.current = 1
-    loadFiles()
+    loadAssets()
   }
 
   const handleCurrentChange = (page: number) => {
     pagination.current = page
-    loadFiles()
+    loadAssets()
+  }
+
+  const selectAsset = (asset: Api.Storage.AssetItem) => {
+    if (asset.mediaKind !== props.mediaKind) return
+    selectedAsset.value = asset
+    emitValue({ fileId: asset.id, url: resolveAssetUrl(asset) })
+    dialogVisible.value = false
+  }
+
+  const clearValue = () => {
+    selectedAsset.value = null
+    emitValue({ fileId: null, url: '' })
+  }
+
+  const validateUpload = (file: File) => {
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    if (props.mediaKind === 'VIDEO') {
+      if (!['mp4', 'webm'].includes(extension || '')) {
+        ElMessage.error('视频仅支持 MP4 或 WebM')
+        return false
+      }
+      if (file.size > 50 * 1024 * 1024) {
+        ElMessage.error('视频不能超过 50 MB')
+        return false
+      }
+      return true
+    }
+
+    if (!file.type.startsWith('image/')) {
+      ElMessage.error('请选择图片文件')
+      return false
+    }
+    if (!['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(extension || '')) {
+      ElMessage.error('图片仅支持 JPG、PNG、WebP 或 GIF')
+      return false
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      ElMessage.error('图片不能超过 5 MB')
+      return false
+    }
+    return true
   }
 
   const handleUploadRequest = async (options: UploadRequestOptions) => {
-    if (!props.purpose) {
-      ElMessage.error('请先指定素材用途')
+    if (!validateUpload(options.file)) {
+      options.onError?.(new Error(`Invalid ${props.mediaKind.toLowerCase()} asset`) as any)
       return
     }
 
     uploading.value = true
     try {
-      const file = await uploadStorageFile({
-        purpose: props.purpose,
-        assetCategoryId: props.assetCategoryId,
+      const asset = await uploadAsset({
+        folderId: props.defaultFolderId ?? 0,
         file: options.file
       })
-      selectedFile.value = file
-      emitValue({
-        fileId: file.id,
-        url: file.visibility === 'PRIVATE' ? '' : resolveFileUrl(file)
-      })
-      options.onSuccess?.(file)
-      if (dialogVisible.value) {
-        await loadFiles()
+      if (asset.mediaKind !== props.mediaKind) {
+        throw new Error(`上传文件不是${mediaKindLabel.value}`)
       }
+      selectedAsset.value = asset
+      emitValue({ fileId: asset.id, url: resolveAssetUrl(asset) })
+      options.onSuccess?.(asset)
+      if (dialogVisible.value) await loadAssets()
     } catch (error) {
       options.onError?.(error as any)
     } finally {
@@ -386,10 +438,8 @@
   }
 
   watch(
-    () => props.modelValue.fileId,
-    () => {
-      syncSelectedFile()
-    },
+    () => [props.modelValue.fileId, props.mediaKind] as const,
+    () => syncSelectedAsset(),
     { immediate: true }
   )
 </script>
@@ -400,9 +450,144 @@
     gap: 12px;
   }
 
+  .asset-picker--compact {
+    display: inline-flex;
+    gap: 0;
+    line-height: 1;
+  }
+
+  .asset-picker__compact-upload {
+    display: inline-flex;
+
+    :deep(.el-upload) {
+      display: block;
+    }
+  }
+
+  .asset-picker__compact-target {
+    position: relative;
+    width: 112px;
+    aspect-ratio: 1;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--el-fill-color-light);
+    border: 1px dashed var(--el-border-color);
+    border-radius: 8px;
+    transition:
+      border-color 0.2s ease,
+      background-color 0.2s ease;
+
+    &:hover {
+      border-color: var(--el-color-primary);
+    }
+
+    &.is-disabled {
+      cursor: not-allowed;
+      opacity: 0.65;
+    }
+
+    :deep(img),
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  .asset-picker__compact-upload.is-small .asset-picker__compact-target {
+    width: 72px;
+    border-radius: 6px;
+  }
+
+  .asset-picker__compact-placeholder,
+  .asset-picker__compact-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    align-items: center;
+    justify-content: center;
+    color: var(--el-text-color-secondary);
+  }
+
+  .asset-picker__compact-placeholder span {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .asset-picker__compact-upload.is-small .asset-picker__compact-placeholder {
+    gap: 3px;
+
+    span {
+      font-size: 11px;
+    }
+  }
+
+  .asset-picker__compact-loading {
+    color: #fff;
+    background: rgb(0 0 0 / 35%);
+  }
+
+  .asset-picker__compact-library {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    z-index: 2;
+    display: inline-flex;
+    gap: 3px;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 6px;
+    font-size: 11px;
+    line-height: 1;
+    color: #fff;
+    cursor: pointer;
+    background: rgb(0 0 0 / 48%);
+    border: 0;
+    border-radius: 5px;
+    transition: background-color 0.2s ease;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--el-color-primary);
+      outline: none;
+    }
+  }
+
+  .asset-picker__compact-upload.is-small .asset-picker__compact-library {
+    min-width: 22px;
+    padding: 0 4px;
+  }
+
+  .asset-picker__compact-clear {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    color: var(--el-color-danger);
+    cursor: pointer;
+    visibility: hidden;
+    background: #fff;
+    border: 0;
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
+
+  .asset-picker__compact-target:hover .asset-picker__compact-clear,
+  .asset-picker__compact-clear:focus-visible {
+    visibility: visible;
+    opacity: 1;
+  }
+
   .asset-picker__value {
     display: grid;
-    grid-template-columns: 88px minmax(0, 1fr);
+    grid-template-columns: 104px minmax(0, 1fr);
     gap: 12px;
     align-items: center;
     padding: 12px;
@@ -412,20 +597,22 @@
   }
 
   .asset-picker__preview {
-    width: 88px;
-    height: 88px;
+    width: 104px;
+    aspect-ratio: 1;
     overflow: hidden;
     background: var(--el-fill-color-light);
     border-radius: 8px;
 
-    :deep(img) {
+    :deep(img),
+    video {
       width: 100%;
       height: 100%;
+      object-fit: cover;
     }
   }
 
   .asset-picker__placeholder,
-  .asset-card__private {
+  .asset-card__empty {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -435,10 +622,10 @@
     height: 100%;
     font-size: 12px;
     color: var(--el-text-color-secondary);
-    text-align: center;
   }
 
-  .asset-picker__meta {
+  .asset-picker__meta,
+  .asset-card__body {
     display: grid;
     gap: 8px;
     min-width: 0;
@@ -459,7 +646,8 @@
     }
   }
 
-  .asset-picker__hint {
+  .asset-picker__hint,
+  .asset-card__meta {
     display: flex;
     flex-wrap: wrap;
     gap: 6px 12px;
@@ -468,14 +656,15 @@
     color: var(--el-text-color-secondary);
   }
 
-  .asset-picker__url {
-    max-width: 100%;
+  .asset-picker__url,
+  .asset-card__name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .asset-picker__actions {
+  .asset-picker__actions,
+  .asset-picker__toolbar {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
@@ -484,12 +673,6 @@
   .asset-picker__dialog {
     display: grid;
     gap: 16px;
-  }
-
-  .asset-picker__toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
   }
 
   .asset-picker__grid {
@@ -515,7 +698,7 @@
   .asset-card:hover,
   .asset-card.is-active {
     border-color: var(--el-color-primary);
-    box-shadow: 0 0 0 1px rgb(from var(--el-color-primary) r g b / 15%);
+    box-shadow: 0 0 0 1px rgb(64 158 255 / 15%);
   }
 
   .asset-card__preview {
@@ -525,31 +708,17 @@
     background: var(--el-fill-color-light);
     border-radius: 8px;
 
-    :deep(img) {
+    :deep(img),
+    video {
       width: 100%;
       height: 100%;
+      object-fit: cover;
     }
-  }
-
-  .asset-card__body {
-    display: grid;
-    gap: 6px;
   }
 
   .asset-card__name {
     font-size: 13px;
     font-weight: 500;
-    line-height: 1.4;
-    color: var(--el-text-color-primary);
-    word-break: break-word;
-  }
-
-  .asset-card__meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 10px;
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
   }
 
   .asset-picker__pagination {

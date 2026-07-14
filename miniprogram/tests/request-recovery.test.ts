@@ -5,7 +5,7 @@ import type {
   ApiResponse,
   AppSessionResponse,
   AppUserProfile,
-  StorageFileUploadResponse
+  StorageAssetUploadResponse
 } from "../types/api";
 import { rawRequest, type RawHttpResult } from "../utils/http";
 import { withAuthRecovery } from "../utils/request";
@@ -407,8 +407,15 @@ test("upload preserves an error envelope whose null data field is omitted", asyn
   globals.getApp = () => ({ globalData: { apiBaseUrl: "https://example.test" } });
   globals.wx = {
     uploadFile(options: {
+      url: string;
+      formData?: Record<string, unknown>;
       success(response: { statusCode: number; data: string }): void;
     }) {
+      assert.equal(
+        options.url,
+        "https://example.test/app/orders/42/after-sale-evidence"
+      );
+      assert.equal("formData" in options, false);
       options.success({
         statusCode: 412,
         data: JSON.stringify({
@@ -421,7 +428,7 @@ test("upload preserves an error envelope whose null data field is omitted", asyn
 
   try {
     await assert.rejects(
-      uploadEvidenceFile("/tmp/evidence.jpg", "REFUND_EVIDENCE"),
+      uploadEvidenceFile("/tmp/evidence.jpg", 42),
       /上传能力暂不可用/
     );
   } finally {
@@ -438,11 +445,12 @@ test("upload preserves an error envelope whose null data field is omitted", asyn
   }
 });
 
-function uploadResponse(): StorageFileUploadResponse {
+function uploadResponse(): StorageAssetUploadResponse {
   return {
     id: 99,
-    purpose: "REFUND_EVIDENCE",
-    assetCategoryId: null,
+    scope: "ATTACHMENT",
+    mediaKind: "IMAGE",
+    folderId: null,
     visibility: "PRIVATE",
     provider: "local",
     originalFilename: "evidence.jpg",
@@ -472,15 +480,15 @@ test("uploadEvidenceFile shares one recovery and retries one upload once", async
   });
   const uploadEvidenceFile = createEvidenceUploader({
     session: manager,
-    upload: async (_filePath, purpose, authToken) => {
+    upload: async (_filePath, orderId, authToken) => {
       uploadCalls += 1;
       tokens.push(authToken);
-      assert.equal(purpose, "REFUND_EVIDENCE");
+      assert.equal(orderId, 42);
       return response(uploadCalls === 1 ? 401 : 200, authToken, uploadResponse());
     }
   });
 
-  const uploaded = await uploadEvidenceFile("/tmp/evidence.jpg", "REFUND_EVIDENCE");
+  const uploaded = await uploadEvidenceFile("/tmp/evidence.jpg", 42);
 
   assert.equal(uploaded.id, 99);
   assert.equal(refreshCalls, 1);
@@ -496,16 +504,36 @@ test("uploadEvidenceFile accepts the backend string uploadedById contract", asyn
   };
   const uploadEvidenceFile = createEvidenceUploader({
     session: manager,
-    upload: async (_filePath, _purpose, authToken) =>
+    upload: async (_filePath, _orderId, authToken) =>
       response(200, authToken, backendResponse)
   });
 
-  const uploaded = await uploadEvidenceFile(
-    "/tmp/evidence.jpg",
-    "REFUND_EVIDENCE"
-  );
+  const uploaded = await uploadEvidenceFile("/tmp/evidence.jpg", 42);
 
   assert.equal(uploaded.uploadedById, "7");
+});
+
+test("uploadEvidenceFile rejects assets outside the after-sale attachment contract", async () => {
+  const manager = createAuthenticatedManager();
+  const invalidResponses: StorageAssetUploadResponse[] = [
+    { ...uploadResponse(), scope: "LIBRARY" },
+    { ...uploadResponse(), mediaKind: "VIDEO" },
+    { ...uploadResponse(), visibility: "PUBLIC" },
+    { ...uploadResponse(), uploadedByType: "ADMIN" }
+  ];
+
+  for (const invalidResponse of invalidResponses) {
+    const uploadEvidenceFile = createEvidenceUploader({
+      session: manager,
+      upload: async (_filePath, _orderId, authToken) =>
+        response(200, authToken, invalidResponse)
+    });
+
+    await assert.rejects(
+      uploadEvidenceFile("/tmp/evidence.jpg", 42),
+      /上传响应格式错误/
+    );
+  }
 });
 
 test("uploadEvidenceFile stops after a second 401", async () => {
@@ -513,14 +541,14 @@ test("uploadEvidenceFile stops after a second 401", async () => {
   const manager = createAuthenticatedManager();
   const uploadEvidenceFile = createEvidenceUploader({
     session: manager,
-    upload: async (_filePath, _purpose, authToken) => {
+    upload: async (_filePath, _orderId, authToken) => {
       uploadCalls += 1;
       return response(401, authToken);
     }
   });
 
   await assert.rejects(
-    uploadEvidenceFile("/tmp/evidence.jpg", "REFUND_EVIDENCE"),
+    uploadEvidenceFile("/tmp/evidence.jpg", 42),
     /authentication required/
   );
 
@@ -529,7 +557,7 @@ test("uploadEvidenceFile stops after a second 401", async () => {
 });
 
 test("late upload second 401 cannot clear a newer session", async () => {
-  const secondAttempt = deferred<RawHttpResult<StorageFileUploadResponse>>();
+  const secondAttempt = deferred<RawHttpResult<StorageAssetUploadResponse>>();
   const secondStarted = deferred<string | null>();
   const manager = createAuthenticatedManager({
     login: async () => sessionResponse("app_newer", "apr_newer")
@@ -537,7 +565,7 @@ test("late upload second 401 cannot clear a newer session", async () => {
   let uploadCalls = 0;
   const uploadEvidenceFile = createEvidenceUploader({
     session: manager,
-    upload: async (_filePath, _purpose, authToken) => {
+    upload: async (_filePath, _orderId, authToken) => {
       uploadCalls += 1;
       if (uploadCalls === 1) {
         return response(401, authToken);
@@ -547,7 +575,7 @@ test("late upload second 401 cannot clear a newer session", async () => {
     }
   });
 
-  const pending = uploadEvidenceFile("/tmp/evidence.jpg", "REFUND_EVIDENCE");
+  const pending = uploadEvidenceFile("/tmp/evidence.jpg", 42);
   const secondToken = await secondStarted.promise;
   assert.equal(secondToken, "app_rotated");
   await manager.silentLogin();

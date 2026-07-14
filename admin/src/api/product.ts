@@ -40,16 +40,14 @@ export function fetchProductSpuDetail(spuId: number) {
 export function createProductSpu(data: Api.Product.SpuForm) {
   return request.post<number>({
     url: '/admin/product/spus',
-    data,
-    showSuccessMessage: true
+    data
   })
 }
 
 export function updateProductSpu(spuId: number, data: Api.Product.SpuForm) {
   return request.put<void>({
     url: `/admin/product/spus/${spuId}`,
-    data,
-    showSuccessMessage: true
+    data
   })
 }
 
@@ -213,8 +211,7 @@ export function fetchProductSpuCoupons(spuId: number) {
 export function bindProductSpuCoupons(spuId: number, data: Api.Product.ProductCouponBindingForm) {
   return request.put<void>({
     url: `/admin/product/spus/${spuId}/coupons`,
-    data,
-    showSuccessMessage: true
+    data
   })
 }
 

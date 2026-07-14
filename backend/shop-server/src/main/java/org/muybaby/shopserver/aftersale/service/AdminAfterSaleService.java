@@ -21,6 +21,7 @@ import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.muybaby.shopserver.storage.provider.StoredObject;
+import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
@@ -143,21 +144,26 @@ public class AdminAfterSaleService {
         EvidenceResourceRow row = jdbcClient.sql("""
                         select sf.object_key,
                                sf.provider,
+                               sf.storage_container,
+                               sf.storage_region,
                                sf.original_filename,
                                sf.content_type
                         from after_sale_evidence ase
-                        join storage_file sf on sf.id = ase.file_id
+                        join storage_asset sf on sf.id = ase.file_id
                         where ase.after_sale_id = :afterSaleId
                           and ase.file_id = :fileId
                           and sf.visibility = 'PRIVATE'
                           and sf.status = 'ACTIVE'
-                          and sf.purpose in ('AFTER_SALE_IMAGE', 'REFUND_EVIDENCE')
+                          and sf.scope = 'ATTACHMENT'
+                          and sf.media_kind = 'IMAGE'
                         """)
                 .param("afterSaleId", afterSaleId)
                 .param("fileId", fileId)
                 .query((rs, rowNum) -> new EvidenceResourceRow(
                         rs.getString("object_key"),
                         rs.getString("provider"),
+                        rs.getString("storage_container"),
+                        rs.getString("storage_region"),
                         rs.getString("original_filename"),
                         rs.getString("content_type")
                 ))
@@ -165,10 +171,7 @@ public class AdminAfterSaleService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
         try {
-            StoredObject storedObject = storageProvider.open(
-                    StorageProviderKind.valueOf(row.provider()),
-                    row.objectKey()
-            );
+            StoredObject storedObject = storageProvider.open(row.objectLocation());
             MediaType contentType = MediaType.parseMediaType(
                     StringUtils.hasText(row.contentType())
                             ? row.contentType()
@@ -561,11 +564,12 @@ public class AdminAfterSaleService {
                                sf.original_filename,
                                sf.content_type,
                                sf.size_bytes,
+                               sf.scope,
+                               sf.media_kind,
                                sf.visibility,
-                               sf.purpose,
                                sf.status
                         from after_sale_evidence ase
-                        join storage_file sf on sf.id = ase.file_id
+                        join storage_asset sf on sf.id = ase.file_id
                         where ase.after_sale_id = :afterSaleId
                         order by ase.sort_order asc, ase.id asc
                         """)
@@ -580,8 +584,9 @@ public class AdminAfterSaleService {
                 rs.getString("original_filename"),
                 rs.getString("content_type"),
                 rs.getLong("size_bytes"),
+                rs.getString("scope"),
+                rs.getString("media_kind"),
                 rs.getString("visibility"),
-                rs.getString("purpose"),
                 rs.getString("status")
         );
     }
@@ -723,7 +728,22 @@ public class AdminAfterSaleService {
     private record PaymentOrderRow(Long id, Long orderId, String outTradeNo, String transactionId, String status, long amountCent) {
     }
 
-    private record EvidenceResourceRow(String objectKey, String provider, String originalFilename, String contentType) {
+    private record EvidenceResourceRow(
+            String objectKey,
+            String provider,
+            String storageContainer,
+            String storageRegion,
+            String originalFilename,
+            String contentType
+    ) {
+        private StorageObjectLocation objectLocation() {
+            return new StorageObjectLocation(
+                    StorageProviderKind.valueOf(provider),
+                    storageContainer,
+                    storageRegion,
+                    objectKey
+            );
+        }
     }
 
     private record RefundRequestContext(

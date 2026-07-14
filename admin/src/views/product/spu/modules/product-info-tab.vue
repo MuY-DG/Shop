@@ -1,6 +1,6 @@
 <template>
   <div class="product-info-tab">
-    <ElForm label-position="top" class="product-info-form">
+    <ElForm label-position="left" label-width="136px" class="product-info-form">
       <ElFormItem label="商品名称" required>
         <ElInput
           :model-value="modelValue.title"
@@ -28,108 +28,115 @@
         />
       </ElFormItem>
 
-      <ElFormItem label="商品封面图" required>
-        <div class="asset-field">
-          <AssetPicker
-            :model-value="{ fileId: modelValue.mainImageFileId, url: modelValue.mainImage }"
-            purpose="PRODUCT_IMAGE"
-            :disabled="disabled"
-            @change="updateCover"
-          />
-          <ElInput
-            :model-value="modelValue.mainImage"
-            placeholder="也可以直接填写公开图片 URL"
-            :disabled="disabled"
-            @update:model-value="updateCoverUrl"
-          />
-        </div>
+      <ElFormItem required>
+        <template #label>
+          <span class="field-label">
+            商品封面图
+            <ElTooltip content="支持 JPG、PNG、WebP、GIF，单张最大 5 MB" placement="top">
+              <ElIcon class="field-label__help"><WarningFilled /></ElIcon>
+            </ElTooltip>
+          </span>
+        </template>
+        <CompactAssetField
+          :model-value="{ fileId: modelValue.mainImageFileId, url: modelValue.mainImage }"
+          media-kind="IMAGE"
+          :disabled="disabled"
+          @change="updateCover"
+        />
       </ElFormItem>
 
-      <ElFormItem label="商品轮播图（可选）">
-        <div class="gallery-field">
-          <ElAlert
-            v-if="!modelValue.images.length"
-            type="info"
-            :closable="false"
-            title="未配置轮播图，商品端将自动使用商品封面图，不会重复保存封面。"
-          />
+      <ElFormItem>
+        <template #label>
+          <span class="field-label">
+            商品轮播图
+            <ElTooltip content="横向按顺序展示；留空时商品端使用封面图" placement="top">
+              <ElIcon class="field-label__help"><WarningFilled /></ElIcon>
+            </ElTooltip>
+          </span>
+        </template>
+        <div class="media-strip">
           <div
-            v-for="(image, index) in modelValue.images"
-            :key="`gallery-${index}-${image.fileId || image.url}`"
-            class="gallery-field__item"
+            v-for="(image, index) in galleryItems"
+            :key="`gallery-${index}`"
+            class="media-strip__item"
           >
-            <div class="gallery-field__order">{{ index + 1 }}</div>
-            <div class="asset-field">
-              <AssetPicker
-                :model-value="{ fileId: image.fileId, url: image.url }"
-                purpose="PRODUCT_IMAGE"
-                :disabled="disabled"
-                @change="updateGallery(index, $event)"
-              />
-              <ElInput
-                :model-value="image.url"
-                placeholder="图片 URL"
-                :disabled="disabled"
-                @update:model-value="updateGalleryUrl(index, $event)"
-              />
-            </div>
-            <ElButton type="danger" text :disabled="disabled" @click="removeGallery(index)">
-              删除
-            </ElButton>
+            <span class="media-strip__index">{{ index + 1 }}</span>
+            <CompactAssetField
+              :model-value="{ fileId: image.fileId, url: image.url }"
+              media-kind="IMAGE"
+              :disabled="disabled"
+              @change="updateGallery(index, $event)"
+            />
           </div>
-          <ElButton plain :disabled="disabled" @click="addGallery">+ 添加轮播图</ElButton>
+          <button
+            type="button"
+            class="media-strip__add"
+            :disabled="disabled"
+            aria-label="添加轮播图"
+            @click="addGallery"
+          >
+            <ElIcon size="24"><Plus /></ElIcon>
+            <span>添加</span>
+          </button>
         </div>
       </ElFormItem>
 
-      <ElFormItem label="保障服务（可选）">
-        <div class="relation-field">
-          <div class="relation-field__toolbar">
-            <ElSelect
-              :model-value="modelValue.guaranteeServiceIds"
-              multiple
-              filterable
-              collapse-tags
-              collapse-tags-tooltip
-              placeholder="请选择保障服务"
-              :loading="guaranteeLoading"
-              :disabled="disabled"
-              style="width: min(620px, 100%)"
-              @update:model-value="patchForm({ guaranteeServiceIds: $event })"
-            >
-              <ElOption
-                v-for="service in visibleGuarantees"
-                :key="service.id"
-                :label="service.termsName"
-                :value="service.id"
-              >
-                <div class="relation-option">
-                  <span>{{ service.termsName }}</span>
-                  <small>{{ service.contentDescription }}</small>
-                </div>
-              </ElOption>
-            </ElSelect>
-            <ElButton :loading="guaranteeLoading" :disabled="disabled" @click="loadGuarantees">
-              刷新
-            </ElButton>
-            <ElButton
-              v-auth="'product:guarantee:create'"
-              type="primary"
-              plain
-              :disabled="disabled"
-              @click="openGuaranteeDialog"
-            >
-              添加保障服务
-            </ElButton>
-          </div>
-        </div>
-      </ElFormItem>
-
-      <ElFormItem label="主图视频（可选）">
-        <VideoAssetPicker
+      <ElFormItem>
+        <template #label>
+          <span class="field-label">
+            主图视频
+            <ElTooltip content="支持 MP4、WebM，单个最大 50 MB" placement="top">
+              <ElIcon class="field-label__help"><WarningFilled /></ElIcon>
+            </ElTooltip>
+          </span>
+        </template>
+        <CompactAssetField
           :model-value="{ fileId: modelValue.mainVideoFileId, url: modelValue.mainVideo }"
+          media-kind="VIDEO"
           :disabled="disabled"
           @change="updateVideo"
         />
+      </ElFormItem>
+
+      <ElFormItem label="保障服务">
+        <div class="relation-field__toolbar">
+          <ElSelect
+            :model-value="modelValue.guaranteeServiceIds"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择保障服务（可选）"
+            :loading="guaranteeLoading"
+            :disabled="disabled"
+            style="width: min(620px, 100%)"
+            @update:model-value="patchForm({ guaranteeServiceIds: $event })"
+          >
+            <ElOption
+              v-for="service in visibleGuarantees"
+              :key="service.id"
+              :label="service.termsName"
+              :value="service.id"
+            >
+              <div class="relation-option">
+                <span>{{ service.termsName }}</span>
+                <small>{{ service.contentDescription }}</small>
+              </div>
+            </ElOption>
+          </ElSelect>
+          <ElButton :loading="guaranteeLoading" :disabled="disabled" @click="loadGuarantees">
+            刷新
+          </ElButton>
+          <ElButton
+            v-auth="'product:guarantee:create'"
+            type="primary"
+            plain
+            :disabled="disabled"
+            @click="openGuaranteeDialog"
+          >
+            添加保障服务
+          </ElButton>
+        </div>
       </ElFormItem>
 
       <ElFormItem label="运费模板" required>
@@ -192,7 +199,7 @@
         <ElFormItem label="服务条款图标" required>
           <AssetPicker
             :model-value="{ fileId: guaranteeForm.iconFileId, url: guaranteeForm.icon }"
-            purpose="GUARANTEE_SERVICE_ICON"
+            media-kind="IMAGE"
             @change="updateGuaranteeIcon"
           />
         </ElFormItem>
@@ -269,6 +276,7 @@
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
   import { ElMessage } from 'element-plus'
+  import { Plus, WarningFilled } from '@element-plus/icons-vue'
   import AssetPicker from '@/components/business/asset-picker/index.vue'
   import {
     createProductFreightTemplate,
@@ -283,7 +291,7 @@
     ProductEditorGuaranteeService
   } from './editor-model'
   import { createEmptyImage, yuanToCent } from './editor-model'
-  import VideoAssetPicker from './video-asset-picker.vue'
+  import CompactAssetField from './compact-asset-field.vue'
 
   interface TreeOption {
     value: number
@@ -359,6 +367,9 @@
   const selectedFreightTemplate = computed(() =>
     freightTemplates.value.find((item) => item.id === props.modelValue.freightTemplateId)
   )
+  const galleryItems = computed(() =>
+    props.modelValue.images.length ? props.modelValue.images : [createEmptyImage()]
+  )
 
   const patchForm = (patch: Partial<ProductEditorForm>) => {
     emit('update:modelValue', { ...props.modelValue, ...patch })
@@ -368,15 +379,14 @@
     patchForm({ mainImage: asset.url, mainImageFileId: asset.fileId })
   }
 
-  const updateCoverUrl = (url: string) => {
-    patchForm({ mainImage: url, mainImageFileId: null })
-  }
-
   const updateVideo = (asset: Api.Common.AssetValue) => {
     patchForm({ mainVideo: asset.url, mainVideoFileId: asset.fileId })
   }
 
-  const addGallery = () => patchForm({ images: [...props.modelValue.images, createEmptyImage()] })
+  const addGallery = () => {
+    const images = props.modelValue.images.length ? props.modelValue.images : [createEmptyImage()]
+    patchForm({ images: [...images, createEmptyImage()] })
+  }
 
   const removeGallery = (index: number) => {
     const images = props.modelValue.images.filter((_, imageIndex) => imageIndex !== index)
@@ -384,15 +394,13 @@
   }
 
   const updateGallery = (index: number, asset: Api.Common.AssetValue) => {
-    const images = props.modelValue.images.map((image, imageIndex) =>
+    if (!asset.url && !asset.fileId && props.modelValue.images.length > 1) {
+      removeGallery(index)
+      return
+    }
+    const source = props.modelValue.images.length ? props.modelValue.images : [createEmptyImage()]
+    const images = source.map((image, imageIndex) =>
       imageIndex === index ? { url: asset.url, fileId: asset.fileId } : image
-    )
-    patchForm({ images })
-  }
-
-  const updateGalleryUrl = (index: number, url: string) => {
-    const images = props.modelValue.images.map((image, imageIndex) =>
-      imageIndex === index ? { ...image, url, fileId: null } : image
     )
     patchForm({ images })
   }
@@ -560,43 +568,100 @@
 
 <style scoped lang="scss">
   .product-info-tab {
-    max-width: 940px;
+    max-width: 1120px;
     margin: 0 auto;
   }
 
   .product-info-form :deep(.el-form-item) {
-    margin-bottom: 28px;
+    padding: 12px 0;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--el-border-color-lighter);
   }
 
-  .asset-field,
-  .gallery-field,
-  .relation-field {
-    display: grid;
-    gap: 12px;
+  .product-info-form :deep(.el-form-item__label) {
+    height: auto;
+    min-height: 32px;
+    line-height: 1.4;
+  }
+
+  .product-info-form :deep(.el-form-item__content) {
+    min-width: 0;
+    line-height: normal;
+  }
+
+  .field-label {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+  }
+
+  .field-label__help {
+    color: var(--el-color-warning);
+    cursor: help;
+  }
+
+  .media-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: flex-start;
     width: 100%;
   }
 
-  .gallery-field__item {
-    display: grid;
-    grid-template-columns: 32px minmax(0, 1fr) auto;
-    gap: 12px;
-    align-items: start;
-    padding: 14px;
-    background: var(--el-fill-color-lighter);
-    border: 1px solid var(--el-border-color-lighter);
-    border-radius: 10px;
+  .media-strip__item {
+    position: relative;
+    flex: none;
   }
 
-  .gallery-field__order {
-    display: flex;
+  .media-strip__index {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    z-index: 3;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    font-weight: 600;
-    color: var(--el-color-primary);
-    background: var(--el-color-primary-light-9);
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+    color: #fff;
+    pointer-events: none;
+    background: rgb(0 0 0 / 42%);
     border-radius: 50%;
+  }
+
+  .media-strip__add {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    width: 112px;
+    aspect-ratio: 1;
+    padding: 0;
+    color: var(--el-text-color-secondary);
+    cursor: pointer;
+    background: var(--el-fill-color-lighter);
+    border: 1px dashed var(--el-border-color);
+    border-radius: 8px;
+    transition:
+      color 0.2s ease,
+      border-color 0.2s ease;
+
+    span {
+      font-size: 12px;
+    }
+
+    &:hover:not(:disabled) {
+      color: var(--el-color-primary);
+      border-color: var(--el-color-primary);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
   }
 
   .relation-field__toolbar {
@@ -627,12 +692,19 @@
   }
 
   @media (width <= 640px) {
-    .gallery-field__item {
-      grid-template-columns: minmax(0, 1fr) auto;
+    .product-info-form :deep(.el-form-item) {
+      display: block;
     }
 
-    .gallery-field__order {
-      display: none;
+    .product-info-form :deep(.el-form-item__label) {
+      justify-content: flex-start;
+      width: auto !important;
+      margin-bottom: 8px;
+      text-align: left;
+    }
+
+    .product-info-form :deep(.el-form-item__content) {
+      margin-left: 0 !important;
     }
 
     .dialog-grid {

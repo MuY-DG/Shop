@@ -3,7 +3,6 @@ package org.muybaby.shopserver.payment.config;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.PaymentProperties;
-import org.muybaby.shopserver.storage.StoragePurpose;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -15,12 +14,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Set;
 
 @Service
 public class PaymentConfigResolver {
 
-    private static final Set<StoragePurpose> PAYMENT_FILE_PURPOSES = Set.of(StoragePurpose.PAYMENT_CERTIFICATE);
 
     private final PaymentProperties properties;
     private final JdbcClient jdbcClient;
@@ -148,14 +145,14 @@ public class PaymentConfigResolver {
         if (fileId == null) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        return privateStorageFileService.readPrivateText(fileId, PAYMENT_FILE_PURPOSES);
+        return privateStorageFileService.readSecretText(fileId);
     }
 
     private String readOptionalPrivateFile(Long fileId) {
         if (fileId == null) {
             return "";
         }
-        return privateStorageFileService.readPrivateText(fileId, PAYMENT_FILE_PURPOSES);
+        return privateStorageFileService.readSecretText(fileId);
     }
 
     private boolean isCompleteVerifyMaterial(PaymentProperties candidate) {

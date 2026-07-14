@@ -243,6 +243,7 @@ declare namespace Api {
       displaySales: number
       createdAt: string
       updatedAt: string
+      expiresAt?: string | null
       deletedAt?: string | null
     }
 
@@ -523,25 +524,13 @@ declare namespace Api {
       cosSecretKey?: string
     }
 
-    type Purpose =
-      | 'PRODUCT_IMAGE'
-      | 'PRODUCT_SKU_IMAGE'
-      | 'SPEC_VALUE_IMAGE'
-      | 'GUARANTEE_SERVICE_ICON'
-      | 'PRODUCT_VIDEO'
-      | 'CATEGORY_ICON'
-      | 'HOME_BANNER'
-      | 'MARKETING_IMAGE'
-      | 'APP_ICON'
-      | 'RICH_TEXT_IMAGE'
-      | 'PAYMENT_CERTIFICATE'
-      | 'AFTER_SALE_IMAGE'
-      | 'REFUND_EVIDENCE'
-
+    type AssetScope = 'LIBRARY' | 'ATTACHMENT' | 'SECRET'
+    type MediaKind = 'IMAGE' | 'VIDEO' | 'DOCUMENT'
     type Visibility = 'PUBLIC' | 'PRIVATE'
-    type FileStatus = 'ACTIVE' | 'DELETED'
+    type AssetStatus = 'ACTIVE' | 'DELETE_PENDING' | 'DELETED'
     type UploadedByType = 'ADMIN' | 'APP'
-    type CategoryStatus = 'ENABLED' | 'DISABLED'
+    type FolderStatus = 'ENABLED' | 'DISABLED'
+    type ReferenceStatus = 'REFERENCED' | 'UNREFERENCED'
 
     type UsageType =
       | 'PRODUCT_CATEGORY_ICON'
@@ -569,19 +558,23 @@ declare namespace Api {
       | 'AFTER_SALE'
       | 'PAYMENT_CONFIG'
 
-    type FileList = Api.Common.PaginatedResponse<FileItem>
+    type AssetList = Api.Common.PaginatedResponse<Asset>
 
-    interface FileQueryParams extends Partial<Api.Common.CommonSearchParams> {
-      purpose?: Purpose
-      assetCategoryId?: number
-      visibility?: Visibility
-      status?: FileStatus
+    interface AssetQueryParams extends Partial<Api.Common.CommonSearchParams> {
+      keyword?: string
+      mediaKind?: Exclude<MediaKind, 'DOCUMENT'>
+      /** 0 means ungrouped; omitted means all folders. */
+      folderId?: number
+      referenceStatus?: ReferenceStatus
+      createdFrom?: string
+      createdTo?: string
     }
 
-    interface FileItem {
+    interface Asset {
       id: number
-      purpose: Purpose
-      assetCategoryId?: number | null
+      scope: AssetScope
+      mediaKind: MediaKind
+      folderId?: number | null
       visibility: Visibility
       provider: string
       originalFilename: string
@@ -591,20 +584,26 @@ declare namespace Api {
       sha256?: string
       width?: number | null
       height?: number | null
-      status: FileStatus
+      durationSeconds?: number | null
+      altText?: string | null
+      tags?: string[]
+      status: AssetStatus
       uploadedByType: UploadedByType
       uploadedById?: string | null
       url?: string | null
       publicUrl?: string | null
+      usageCount: number
       createdAt: string
       updatedAt: string
       deletedAt?: string | null
-      usages?: FileUsage[]
+      usages?: AssetUsage[]
     }
 
-    interface FileUsage {
+    type AssetItem = Asset
+
+    interface AssetUsage {
       id: number
-      fileId: number
+      assetId: number
       usageType: UsageType | string
       ownerType: UsageOwnerType | string
       ownerId?: number | null
@@ -617,36 +616,33 @@ declare namespace Api {
       updatedAt: string
     }
 
-    interface AssetCategory {
+    interface AssetFolder {
       id: number
       parentId: number
       name: string
-      code: string
-      description?: string | null
       sortOrder: number
-      status: CategoryStatus
+      status: FolderStatus
       createdAt: string
       updatedAt: string
-      children: AssetCategory[]
+      children: AssetFolder[]
     }
 
-    interface AssetCategoryForm {
+    interface AssetFolderForm {
       parentId: number
       name: string
-      code: string
-      description?: string
       sortOrder: number
-      status: CategoryStatus
+      status: FolderStatus
     }
 
-    interface UploadPayload {
-      purpose: Purpose
+    interface AssetUploadPayload {
       file: File
-      assetCategoryId?: number | null
+      /** 0 or omitted means ungrouped. */
+      folderId?: number | null
     }
 
-    interface MovePayload {
-      assetCategoryId: number
+    interface AssetMovePayload {
+      /** 0 means move to ungrouped. */
+      folderId: number
     }
   }
 
@@ -907,7 +903,7 @@ declare namespace Api {
       merchantSerialNoMasked: string
       apiV3KeyConfigured: boolean
       privateKeyFileId?: number | null
-      merchantCertificateFileId?: number | null
+      merchantCertificateFileId: number | null
       verifyMode: VerifyMode | string
       wechatPublicKeyIdMasked?: string | null
       wechatPublicKeyFileId?: number | null
@@ -940,7 +936,7 @@ declare namespace Api {
       merchantSerialNo: string
       apiV3Key?: string
       privateKeyFileId: number | null
-      merchantCertificateFileId?: number | null
+      merchantCertificateFileId: number | null
       verifyMode: VerifyMode
       wechatPublicKeyId?: string
       wechatPublicKeyFileId?: number | null
@@ -992,9 +988,10 @@ declare namespace Api {
       originalFilename: string
       contentType: string
       sizeBytes: number
+      scope: Api.Storage.AssetScope | string
+      mediaKind: Api.Storage.MediaKind | string
       visibility: Api.Storage.Visibility | string
-      purpose: Api.Storage.Purpose | string
-      status: Api.Storage.FileStatus | string
+      status: Api.Storage.AssetStatus | string
     }
 
     interface RefundOrder {

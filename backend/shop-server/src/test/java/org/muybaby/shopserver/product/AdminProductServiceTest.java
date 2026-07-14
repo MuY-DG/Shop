@@ -797,8 +797,8 @@ class AdminProductServiceTest {
                 .containsEntry("IMAGE_FILE_ID", specImage.id());
         assertThat(jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
-                        where file_id = :fileId
+                        from storage_asset_usage
+                        where asset_id = :fileId
                           and usage_type = 'PRODUCT_SKU_IMAGE'
                           and owner_type = 'PRODUCT_SKU'
                           and owner_id = :skuId
@@ -814,12 +814,12 @@ class AdminProductServiceTest {
         String objectKey = "public/test/product-service/" + System.nanoTime() + "-" + originalFilename;
         String publicUrl = "http://localhost:8080/files/" + objectKey;
         jdbcClient.sql("""
-                        insert into storage_file
-                            (purpose, asset_category_id, visibility, provider, bucket, object_key, original_filename,
+                        insert into storage_asset
+                            (scope, media_kind, folder_id, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
                              public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            ('PRODUCT_IMAGE', 1, 'PUBLIC', 'LOCAL', '', :objectKey, :originalFilename,
+                            ('LIBRARY', 'IMAGE', null, 'PUBLIC', 'LOCAL', '', :objectKey, :originalFilename,
                              'image/png', 'png', 68, :sha256, 1, 1, '', null,
                              :publicUrl, 'ACTIVE', 'ADMIN', 1)
                         """)
@@ -828,7 +828,7 @@ class AdminProductServiceTest {
                 .param("sha256", Long.toHexString(System.nanoTime()))
                 .param("publicUrl", publicUrl)
                 .update();
-        Long id = jdbcClient.sql("select id from storage_file where object_key = :objectKey")
+        Long id = jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
                 .param("objectKey", objectKey)
                 .query(Long.class)
                 .single();

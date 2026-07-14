@@ -5,6 +5,7 @@
     :spu-id="editorSpuId"
     :categories="categories"
     @success="handleEditorSuccess"
+    @success-and-close="handleEditorSuccessAndClose"
     @cancel="returnToList"
   />
 
@@ -509,6 +510,11 @@
         query: { mode: 'edit', id: String(spuId) }
       })
     }
+    await Promise.all([refreshData(), loadCategories()])
+  }
+
+  const handleEditorSuccessAndClose = async () => {
+    await returnToList()
     await Promise.all([refreshData(), loadCategories()])
   }
 

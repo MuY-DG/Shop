@@ -65,7 +65,7 @@ public abstract class PaymentTestSupport {
     }
 
     private void clearSeededPaymentFlowState() {
-        jdbcClient.sql("delete from storage_file_usage").update();
+        jdbcClient.sql("delete from storage_asset_usage").update();
         jdbcClient.sql("delete from refund_order").update();
         jdbcClient.sql("delete from after_sale_evidence").update();
         jdbcClient.sql("delete from after_sale_request").update();
@@ -80,8 +80,8 @@ public abstract class PaymentTestSupport {
         jdbcClient.sql("delete from coupon_claim_record").update();
         jdbcClient.sql("delete from coupon_template").update();
         jdbcClient.sql("delete from payment_config").update();
-        jdbcClient.sql("delete from storage_file where object_key like 'private/payment-flow/%'").update();
-        jdbcClient.sql("delete from storage_file where object_key like 'private/after-sale-flow/%'").update();
+        jdbcClient.sql("delete from storage_asset where object_key like 'private/payment-flow/%'").update();
+        jdbcClient.sql("delete from storage_asset where object_key like 'private/after-sale-flow/%'").update();
         jdbcClient.sql("delete from product_sku").update();
         jdbcClient.sql("delete from product_spu_image").update();
         jdbcClient.sql("delete from product_spu").update();
@@ -272,29 +272,42 @@ public abstract class PaymentTestSupport {
         return new SeedPaidOrder(order.orderId(), order.orderNo(), outTradeNo, transactionId, paidAmountCent);
     }
 
-    protected long insertAppEvidenceFile(long userId, String purpose) {
-        return insertStorageFile(userId, purpose, "PRIVATE", "ACTIVE");
+    protected long insertAppEvidenceFile(long userId, long orderId) {
+        return insertStorageAsset(userId, "ATTACHMENT", "IMAGE", "PRIVATE", "ACTIVE", orderId);
     }
 
-    protected long insertStorageFile(long uploadedById, String purpose, String visibility, String status) {
+    protected long insertStorageAsset(
+            long uploadedById,
+            String scope,
+            String mediaKind,
+            String visibility,
+            String status,
+            Long contextOrderId
+    ) {
         long fileId = System.nanoTime();
         jdbcClient.sql("""
-                        insert into storage_file
-                            (id, purpose, visibility, provider, bucket, object_key, original_filename,
+                        insert into storage_asset
+                            (id, scope, media_kind, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
-                             public_url, status, uploaded_by_type, uploaded_by_id)
+                             public_url, status, uploaded_by_type, uploaded_by_id,
+                             upload_context_type, upload_context_id, expires_at)
                         values
-                            (:fileId, :purpose, :visibility, 'LOCAL', '', :objectKey, :originalFilename,
-                             'image/png', 'png', 68, :sha256, 1, 1, '', null, null, :status, 'APP', :uploadedById)
+                            (:fileId, :scope, :mediaKind, :visibility, 'LOCAL', '', :objectKey, :originalFilename,
+                             'image/png', 'png', 68, :sha256, 1, 1, '', null, null, :status, 'APP', :uploadedById,
+                             :uploadContextType, :uploadContextId, :expiresAt)
                         """)
                 .param("fileId", fileId)
-                .param("purpose", purpose)
+                .param("scope", scope)
+                .param("mediaKind", mediaKind)
                 .param("visibility", visibility)
                 .param("objectKey", "private/after-sale-flow/" + fileId + ".png")
                 .param("originalFilename", "after-sale-" + fileId + ".png")
                 .param("sha256", "after-sale-sha256-" + fileId)
                 .param("status", status)
                 .param("uploadedById", uploadedById)
+                .param("uploadContextType", contextOrderId == null ? null : "ORDER")
+                .param("uploadContextId", contextOrderId)
+                .param("expiresAt", contextOrderId == null ? null : LocalDateTime.now().plusHours(1))
                 .update();
         return fileId;
     }
@@ -425,11 +438,11 @@ public abstract class PaymentTestSupport {
         byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
         storageProvider.put(objectKey, "text/plain", new ByteArrayInputStream(bytes), bytes.length);
         jdbcClient.sql("""
-                        insert into storage_file
-                            (id, purpose, visibility, provider, bucket, object_key, original_filename,
+                        insert into storage_asset
+                            (id, scope, media_kind, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (:id, 'PAYMENT_CERTIFICATE', 'PRIVATE', 'LOCAL', '', :objectKey, :originalFilename,
+                            (:id, 'SECRET', 'DOCUMENT', 'PRIVATE', 'LOCAL', '', :objectKey, :originalFilename,
                              'text/plain', 'pem', :sizeBytes, '', 'ACTIVE', 'ADMIN', 1)
                         """)
                 .param("id", fileId)

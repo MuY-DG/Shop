@@ -82,7 +82,10 @@
         >
           下一步
         </ElButton>
-        <ElButton type="primary" :loading="submitting" @click="handleSubmit">提交</ElButton>
+        <ElButton type="primary" :loading="submitting" @click="handleSubmit()">提交</ElButton>
+        <ElButton type="primary" plain :loading="submitting" @click="handleSubmit(true)">
+          提交并返回商品列表
+        </ElButton>
       </div>
     </div>
   </div>
@@ -135,6 +138,7 @@
 
   interface Emits {
     (event: 'success', spuId: number): void
+    (event: 'success-and-close', spuId: number): void
     (event: 'cancel'): void
   }
 
@@ -509,7 +513,7 @@
     } as Api.Product.SpuForm
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (returnToListAfterSave = false) => {
     if (!(await validateAll())) return
     submitting.value = true
     try {
@@ -526,8 +530,13 @@
         })
       }
       await rememberSavedState()
-      ElMessage.success('商品已保存，可继续编辑或返回列表管理上下架')
-      emit('success', localSpuId.value)
+      if (returnToListAfterSave) {
+        ElMessage.success('商品已保存，正在返回商品列表')
+        emit('success-and-close', localSpuId.value)
+      } else {
+        ElMessage.success('商品已保存，可继续编辑或返回列表管理上下架')
+        emit('success', localSpuId.value)
+      }
     } finally {
       submitting.value = false
     }

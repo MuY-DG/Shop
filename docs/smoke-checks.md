@@ -725,20 +725,13 @@ cd backend/shop-server
   spring-boot:run
 ```
 
-Admin login and mini program login:
+Admin login:
 
 ```bash
 ADMIN_TOKEN=$(
   curl -s -X POST http://localhost:8080/admin/auth/login \
     -H 'Content-Type: application/json' \
     -d '{"userName":"Super","password":"123456"}' \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
-)
-
-APP_TOKEN=$(
-  curl -s -X POST http://localhost:8080/app/auth/login \
-    -H 'Content-Type: application/json' \
-    -d '{"code":"test-login-code"}' \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
 )
 ```
@@ -754,6 +747,16 @@ png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4
 with open(sys.argv[1], "wb") as f:
     f.write(base64.b64decode(png))
 PY
+python3 - <<'PY' "${SMOKE_DIR}/tiny.mp4"
+import sys
+# Minimal non-empty ISO BMFF container used to exercise MP4 upload policy.
+payload = bytes.fromhex(
+    "000000186674797069736f6d0000020069736f6d69736f32"
+    "000000086d646174"
+)
+with open(sys.argv[1], "wb") as f:
+    f.write(payload)
+PY
 printf '%s\n' '-----BEGIN CERTIFICATE-----' 'smoke-only' '-----END CERTIFICATE-----' > "${SMOKE_DIR}/smoke.pem"
 printf 'not an allowed file' > "${SMOKE_DIR}/bad.exe"
 : > "${SMOKE_DIR}/empty.png"
@@ -765,66 +768,74 @@ with open(sys.argv[1], "wb") as f:
 PY
 ```
 
-Upload a product image, category icon, home banner image, private payment certificate, and app evidence image:
+Create a library folder, upload reusable public image/video assets, and upload one staged payment-owned secret document. The image asset is deliberately reused below as product cover, category icon, gallery/SKU image, rich-text image, and home banner:
 
 ```bash
-PRODUCT_FILE_ID=$(
-  curl -s -X POST http://localhost:8080/admin/files/upload \
+ASSET_FOLDER_ID=$(
+  curl -s -X POST http://localhost:8080/admin/asset-folders \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -F purpose=PRODUCT_IMAGE \
-    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.visibility !== "PUBLIC" || !body.data.url) process.exit(1); console.error(body.data.url); console.log(body.data.id); });'
+    -H 'Content-Type: application/json' \
+    -d '{"parentId":0,"name":"本地 smoke 素材","sortOrder":10,"status":"ENABLED"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.parentId !== 0) process.exit(1); console.log(body.data.id); });'
 )
 
-PRODUCT_IMAGE_URL=$(
-  curl -s "http://localhost:8080/admin/files/${PRODUCT_FILE_ID}" \
+SHARED_ASSET_JSON=$(
+  curl -s -X POST http://localhost:8080/admin/assets/upload \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -F folderId="${ASSET_FOLDER_ID}" \
+    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png"
+)
+
+SHARED_ASSET_ID=$(
+  printf '%s' "${SHARED_ASSET_JSON}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.scope !== "LIBRARY" || body.data.mediaKind !== "IMAGE" || body.data.visibility !== "PUBLIC" || !body.data.url) process.exit(1); console.log(body.data.id); });'
+)
+
+SHARED_ASSET_URL=$(
+  printf '%s' "${SHARED_ASSET_JSON}" \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.url));'
 )
 
-CATEGORY_ICON_FILE_ID=$(
-  curl -s -X POST http://localhost:8080/admin/files/upload \
+LIBRARY_VIDEO_ID=$(
+  curl -s -X POST http://localhost:8080/admin/assets/upload \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -F purpose=CATEGORY_ICON \
-    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.id));'
+    -F folderId="${ASSET_FOLDER_ID}" \
+    -F file=@"${SMOKE_DIR}/tiny.mp4;type=video/mp4" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.scope !== "LIBRARY" || body.data.mediaKind !== "VIDEO" || body.data.visibility !== "PUBLIC" || !body.data.url) process.exit(1); console.log(body.data.id); });'
 )
 
-CATEGORY_ICON_URL=$(
-  curl -s "http://localhost:8080/admin/files/${CATEGORY_ICON_FILE_ID}" \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.url));'
-)
-
-BANNER_FILE_ID=$(
-  curl -s -X POST http://localhost:8080/admin/files/upload \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -F purpose=HOME_BANNER \
-    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.id));'
-)
-
-BANNER_IMAGE_URL=$(
-  curl -s "http://localhost:8080/admin/files/${BANNER_FILE_ID}" \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.url));'
-)
+PRODUCT_FILE_ID="${SHARED_ASSET_ID}"
+CATEGORY_ICON_FILE_ID="${SHARED_ASSET_ID}"
+BANNER_FILE_ID="${SHARED_ASSET_ID}"
+PRODUCT_IMAGE_URL="${SHARED_ASSET_URL}"
+CATEGORY_ICON_URL="${SHARED_ASSET_URL}"
+BANNER_IMAGE_URL="${SHARED_ASSET_URL}"
 
 PRIVATE_CERT_ID=$(
-  curl -s -X POST http://localhost:8080/admin/files/upload \
+  curl -s -X POST http://localhost:8080/admin/pay/configs/secret-files \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -F purpose=PAYMENT_CERTIFICATE \
     -F file=@"${SMOKE_DIR}/smoke.pem;type=application/x-pem-file" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.visibility !== "PRIVATE" || body.data.url || body.data.publicUrl) process.exit(1); console.log(body.data.id); });'
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.scope !== "SECRET" || body.data.mediaKind !== "DOCUMENT" || body.data.visibility !== "PRIVATE" || body.data.url || body.data.publicUrl || !body.data.expiresAt) process.exit(1); console.log(body.data.id); });'
 )
 
-APP_EVIDENCE_ID=$(
-  curl -s -X POST http://localhost:8080/app/files/upload \
-    -H "Authorization: Bearer ${APP_TOKEN}" \
-    -F purpose=AFTER_SALE_IMAGE \
-    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.visibility !== "PRIVATE" || body.data.uploadedByType !== "APP") process.exit(1); console.log(body.data.id); });'
-)
+curl -s "http://localhost:8080/admin/assets?folderId=${ASSET_FOLDER_ID}&mediaKind=IMAGE" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.total !== 1 || body.data.records[0].id !== Number(process.argv[1])) process.exit(1); console.log("library asset listed"); });' "${SHARED_ASSET_ID}"
+
+curl -s "http://localhost:8080/admin/assets?keyword=smoke.pem" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.total !== 0) process.exit(1); console.log("private scopes hidden"); });'
+
+curl -s "http://localhost:8080/admin/assets/${PRIVATE_CERT_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log("secret detail rejected"); });'
+```
+
+Focused tests cover recorded-location routing, database-clock TTLs, the staged/claimed/replaced-or-cleared payment-secret lifecycle, and token-leased retryable cleanup:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest='RoutingStorageProviderTest,StorageAssetTimezoneTest,PrivateStorageFileServiceTest,AdminPaymentConfigControllerTest,StorageAssetCleanupServiceTest' test
 ```
 
 Create a category and product using uploaded file ids, then publish the product:
@@ -866,18 +877,18 @@ curl -s http://localhost:8080/app/home/banners \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const banner = body.data.find(item => item.id === Number(process.argv[1])); if (!banner || banner.imageUrl !== process.argv[2]) process.exit(1); console.log(banner.title); });' "${BANNER_ID}" "${BANNER_IMAGE_URL}"
 ```
 
-Verify product/category/banner usages appear in file detail:
+Verify every role appears as an actual usage on the same asset detail:
 
 ```bash
-curl -s "http://localhost:8080/admin/files/${PRODUCT_FILE_ID}" \
+curl -s "http://localhost:8080/admin/assets/${PRODUCT_FILE_ID}" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const types = body.data.usages.map(item => item.usageType); if (!types.includes("PRODUCT_SPU_MAIN") || !types.includes("PRODUCT_SPU_GALLERY") || !types.includes("PRODUCT_SKU_IMAGE") || !types.includes("PRODUCT_DETAIL_HTML")) process.exit(1); console.log(types.join(",")); });'
 
-curl -s "http://localhost:8080/admin/files/${CATEGORY_ICON_FILE_ID}" \
+curl -s "http://localhost:8080/admin/assets/${CATEGORY_ICON_FILE_ID}" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (!body.data.usages.some(item => item.usageType === "PRODUCT_CATEGORY_ICON" && item.status === "ACTIVE")) process.exit(1); console.log("category icon usage"); });'
 
-curl -s "http://localhost:8080/admin/files/${BANNER_FILE_ID}" \
+curl -s "http://localhost:8080/admin/assets/${BANNER_FILE_ID}" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (!body.data.usages.some(item => item.usageType === "HOME_BANNER" && item.status === "ACTIVE")) process.exit(1); console.log("banner usage"); });'
 ```
@@ -885,11 +896,11 @@ curl -s "http://localhost:8080/admin/files/${BANNER_FILE_ID}" \
 Verify in-use product/banner files cannot be deleted:
 
 ```bash
-curl -s -X DELETE "http://localhost:8080/admin/files/${PRODUCT_FILE_ID}" \
+curl -s -X DELETE "http://localhost:8080/admin/assets/${PRODUCT_FILE_ID}" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
 
-curl -s -X DELETE "http://localhost:8080/admin/files/${BANNER_FILE_ID}" \
+curl -s -X DELETE "http://localhost:8080/admin/assets/${BANNER_FILE_ID}" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
 ```
@@ -897,40 +908,35 @@ curl -s -X DELETE "http://localhost:8080/admin/files/${BANNER_FILE_ID}" \
 Verify invalid uploads are rejected:
 
 ```bash
-curl -s -X POST http://localhost:8080/admin/files/upload \
+curl -s -X POST http://localhost:8080/admin/assets/upload \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -F purpose=PRODUCT_IMAGE \
   -F file=@"${SMOKE_DIR}/bad.exe;type=application/octet-stream" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
 
-curl -s -X POST http://localhost:8080/admin/files/upload \
+curl -s -X POST http://localhost:8080/admin/assets/upload \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -F purpose=PRODUCT_IMAGE \
   -F file=@"${SMOKE_DIR}/empty.png;type=image/png" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
 
-curl -s -X POST http://localhost:8080/admin/files/upload \
+curl -s -X POST http://localhost:8080/admin/assets/upload \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -F purpose=PRODUCT_IMAGE \
   -F file=@"${SMOKE_DIR}/large.png;type=image/png" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
 
-curl -s -X POST http://localhost:8080/admin/files/upload \
+curl -s -X POST http://localhost:8080/admin/assets/upload \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -F purpose=PRODUCT_IMAGE \
   -F 'file=@"'"${SMOKE_DIR}"'/tiny.png";filename=../tiny.png;type=image/png' \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
 ```
 
 UI smoke checklist after starting the admin dev server and opening the mini program in WeChat DevTools:
 
-- Admin uploads a product image from `/storage/files`, then uses it in product editing.
-- Admin uploads and categorizes a home banner image; mini program home swiper displays it.
-- Admin uploads a category icon; mini program home/category entry displays the image.
-- Admin file detail shows product and banner usage locations, including ACTIVE/REMOVED state.
-- Files referenced by product, banner, order snapshots, or later payment configuration cannot be deleted.
-- Admin uploads a private `.pem` file and sees metadata but no public URL or preview.
-- Mini program app-token upload succeeds for AFTER_SALE_IMAGE/REFUND_EVIDENCE helper use.
+- Admin uploads one image from `/storage/files` and reuses it as product, SKU, specification value, category icon, guarantee icon, banner, or rich-text media without any purpose restriction.
+- Admin creates, renames, disables, and deletes empty folders; disabled folders reject uploads and moves.
+- Admin asset detail shows every actual usage location and the referenced/unreferenced filter follows active usages.
+- Assets referenced by product, banner, order snapshots, or other active usages cannot be deleted.
+- Payment configuration uploads a `.pem` only through `/admin/pay/configs/secret-files`; the secret never appears in the asset library and has no public URL or preview.
+- Mini program after-sale evidence uploads only through `/app/orders/{orderId}/after-sale-evidence`; it never appears in the asset library.
 - Illegal extension, oversized file, empty file, and path traversal filename are rejected.
 
 ## Mock Payment Automated Smoke Checks
@@ -1004,7 +1010,7 @@ https://<public-tunnel-domain>/wxpay/pay/notify
 https://<public-tunnel-domain>/wxpay/refund/notify
 ```
 
-4. If using DB-managed credentials, upload payment private files through admin storage, configure `/admin/pay/configs` with those private file IDs, set that DB config as the DB candidate, and save the admin runtime source as `DB`. Confirm `/admin/pay/configs/source` returns `DB` with `persisted=true`, and `/admin/pay/configs/effective` returns masked values and the same callback URLs.
+4. If using DB-managed credentials, upload each private key or certificate through `POST /admin/pay/configs/secret-files`, configure `/admin/pay/configs` with the returned secret asset IDs, set that DB config as the DB candidate, and save the admin runtime source as `DB`. Confirm `/admin/pay/configs/source` returns `DB` with `persisted=true`, and `/admin/pay/configs/effective` returns masked values and the same callback URLs.
 5. In a real mini program session, create an order and tap payment.
 6. Complete WeChat payment with the real payer account.
 7. Verify the backend receives `POST /wxpay/pay/notify`, the callback log reaches `SUCCESS`, and the order becomes `PAID`.
@@ -1051,7 +1057,28 @@ cd backend/shop-server
 
 Mini program and admin smoke:
 
-- Mini program uploads evidence through `/app/files/upload` with purpose `REFUND_EVIDENCE`.
+Before uploading evidence, set these values explicitly:
+
+- `APP_TOKEN`: token for the owner of the target order.
+- `ADMIN_TOKEN`: admin token with `asset:read`, used only to prove the private asset is rejected by generic library detail.
+- `AFTER_SALE_ORDER_ID`: an order owned by `APP_TOKEN` whose status is `PAID`, `SHIPPED`, or `COMPLETED`. Do not reuse the `CREATED`/`CLOSED` order from the Order Smoke Checks.
+- `AFTER_SALE_IMAGE`: path to a non-empty, valid PNG image.
+
+```bash
+AFTER_SALE_EVIDENCE_ID=$(
+  curl -s -X POST "http://localhost:8080/app/orders/${AFTER_SALE_ORDER_ID}/after-sale-evidence" \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+    -F file=@"${AFTER_SALE_IMAGE};type=image/png" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.scope !== "ATTACHMENT" || body.data.mediaKind !== "IMAGE" || body.data.visibility !== "PRIVATE" || body.data.url || body.data.publicUrl || !body.data.expiresAt) process.exit(1); console.log(body.data.id); });'
+)
+
+curl -s "http://localhost:8080/admin/assets/${AFTER_SALE_EVIDENCE_ID}" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log("attachment detail rejected"); });'
+```
+
+- The server fixes the evidence contract to `ATTACHMENT + IMAGE + PRIVATE`, binds it to `AFTER_SALE_ORDER_ID`, and returns a 24-hour staging expiry.
+- In MySQL, verify `TIMESTAMPDIFF(MINUTE, CURRENT_TIMESTAMP, expires_at)` is about `120` for the staged secret and `1440` for the staged evidence. A negative value indicates a JVM/database clock regression and must block cutover.
 - Mini program applies refund-only through `POST /app/orders/{orderId}/after-sales` with `afterSaleType=REFUND_ONLY`, `requestedAmountCent`, `reason`, and `evidenceFileIds`.
 - Mini program applies return-refund through the same endpoint with `afterSaleType=RETURN_REFUND` against a shipped order.
 - Admin rejects one request through `POST /admin/after-sales/{afterSaleId}/reject` and verifies status `REJECTED` while the order remains paid or shipped.
@@ -1062,7 +1089,7 @@ Real local WeChat refund smoke:
 
 - Start from a real paid or shipped order created through the real payment smoke.
 - Use HTTPS tunnel callback URL `https://<public-tunnel-domain>/wxpay/refund/notify`.
-- Apply refund-only or return-refund from the mini program with `REFUND_EVIDENCE`.
+- Upload order-scoped evidence, then apply refund-only or return-refund from the mini program with the returned evidence asset IDs.
 - Approve the after-sale in admin and verify WeChat accepts the refund request.
 - Wait for `POST /wxpay/refund/notify`.
 - Verify refund callback log reaches `SUCCESS`, `refund_order.status` becomes `SUCCESS`, after-sale status becomes `REFUNDED`, and order status becomes `REFUNDED`.

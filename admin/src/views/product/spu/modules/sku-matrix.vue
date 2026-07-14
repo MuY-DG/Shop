@@ -14,9 +14,9 @@
 
     <ElTable :data="modelValue" border row-key="combinationKey" max-height="560">
       <ElTableColumn
-        v-for="group in groups"
+        v-for="(group, groupIndex) in groups"
         :key="group.groupKey"
-        :label="group.name || '未命名规格'"
+        :label="group.name || `规格 ${groupIndex + 1}`"
         min-width="110"
         fixed="left"
       >
@@ -37,7 +37,7 @@
               class="sku-image-cell__preview"
             />
             <div v-else class="sku-image-cell__placeholder">暂无图片</div>
-            <ElPopover placement="right" :width="440" trigger="click">
+            <ElPopover placement="right" :width="150" trigger="click">
               <template #reference>
                 <ElButton size="small" text type="primary" :disabled="disabled">
                   {{ row.image ? '更换' : '选择' }}
@@ -45,8 +45,9 @@
               </template>
               <AssetPicker
                 :model-value="{ fileId: row.imageFileId, url: row.image }"
-                purpose="PRODUCT_SKU_IMAGE"
+                media-kind="IMAGE"
                 :disabled="disabled"
+                compact
                 @change="updateImage($index, $event)"
               />
             </ElPopover>
@@ -54,7 +55,8 @@
         </template>
       </ElTableColumn>
 
-      <ElTableColumn label="售价（元）" width="150">
+      <ElTableColumn width="150">
+        <template #header><span class="sku-matrix__required">*</span> 售价（元）</template>
         <template #default="{ row, $index }">
           <ElInputNumber
             :model-value="centToYuan(row.priceCent)"
@@ -301,6 +303,10 @@
 
   .sku-matrix__number {
     width: 100%;
+  }
+
+  .sku-matrix__required {
+    color: var(--el-color-danger);
   }
 
   .sku-image-cell {

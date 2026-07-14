@@ -5,14 +5,24 @@
         <div class="section-header">
           <div>
             <div class="section-header__title">有效支付配置</div>
-            <div class="section-header__subtitle">运行时实际使用的微信支付配置，只展示 masked 元数据</div>
+            <div class="section-header__subtitle"
+              >运行时实际使用的微信支付配置，只展示 masked 元数据</div
+            >
           </div>
           <div class="effective-header__aside">
             <ElTag v-if="effectiveConfig" :type="sourceTagType(effectiveConfig.source)">
               {{ formatSource(effectiveConfig.source) }}
             </ElTag>
-            <ElTag v-if="sourceSetting" size="small" :type="sourceSetting.persisted ? 'success' : 'info'">
-              {{ sourceSetting.persisted ? '后台设置' : `${formatSource(sourceSetting.defaultSource)} 默认` }}
+            <ElTag
+              v-if="sourceSetting"
+              size="small"
+              :type="sourceSetting.persisted ? 'success' : 'info'"
+            >
+              {{
+                sourceSetting.persisted
+                  ? '后台设置'
+                  : `${formatSource(sourceSetting.defaultSource)} 默认`
+              }}
             </ElTag>
           </div>
         </div>
@@ -21,7 +31,11 @@
       <div v-loading="effectiveLoading">
         <div class="source-switch" v-loading="sourceLoading">
           <span class="source-switch__label">运行来源</span>
-          <ElSegmented v-model="sourceSelection" :options="sourceOptions" :disabled="sourceLoading || sourceSaving" />
+          <ElSegmented
+            v-model="sourceSelection"
+            :options="sourceOptions"
+            :disabled="sourceLoading || sourceSaving"
+          />
           <ElButton
             type="primary"
             v-auth="'payment:config:enable'"
@@ -34,9 +48,15 @@
         </div>
         <ElEmpty v-if="!effectiveLoading && !effectiveConfig" description="暂无有效配置" />
         <ElDescriptions v-else-if="effectiveConfig" :column="3" border>
-          <ElDescriptionsItem label="配置名">{{ formatText(effectiveConfig.configName) }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="App ID">{{ formatText(effectiveConfig.appIdMasked) }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="商户号">{{ formatText(effectiveConfig.mchIdMasked) }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="配置名">{{
+            formatText(effectiveConfig.configName)
+          }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="App ID">{{
+            formatText(effectiveConfig.appIdMasked)
+          }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="商户号">{{
+            formatText(effectiveConfig.mchIdMasked)
+          }}</ElDescriptionsItem>
           <ElDescriptionsItem label="商户证书序列号">
             {{ formatText(effectiveConfig.merchantSerialNoMasked) }}
           </ElDescriptionsItem>
@@ -75,7 +95,9 @@
         <div class="section-header">
           <div>
             <div class="section-header__title">DB 配置</div>
-            <div class="section-header__subtitle">DB 配置在运行来源为 DB，或 AUTO 回退 DB 时使用</div>
+            <div class="section-header__subtitle"
+              >DB 配置在运行来源为 DB，或 AUTO 回退 DB 时使用</div
+            >
           </div>
           <div class="section-header__actions">
             <ElButton @click="loadConfigs">刷新</ElButton>
@@ -128,7 +150,12 @@
         <ElTableColumn label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
-              <ElButton type="primary" link v-auth="'payment:config:write'" @click="openEditDrawer(row)">
+              <ElButton
+                type="primary"
+                link
+                v-auth="'payment:config:write'"
+                @click="openEditDrawer(row)"
+              >
                 编辑
               </ElButton>
               <ElButton
@@ -171,10 +198,18 @@
           <ElInput v-model="formData.configName" maxlength="80" placeholder="例如：生产微信支付" />
         </ElFormItem>
         <ElFormItem label="App ID" prop="appId">
-          <ElInput v-model="formData.appId" maxlength="64" :placeholder="maskedPlaceholder(editingConfig?.appIdMasked)" />
+          <ElInput
+            v-model="formData.appId"
+            maxlength="64"
+            :placeholder="maskedPlaceholder(editingConfig?.appIdMasked)"
+          />
         </ElFormItem>
         <ElFormItem label="商户号" prop="mchId">
-          <ElInput v-model="formData.mchId" maxlength="32" :placeholder="maskedPlaceholder(editingConfig?.mchIdMasked)" />
+          <ElInput
+            v-model="formData.mchId"
+            maxlength="32"
+            :placeholder="maskedPlaceholder(editingConfig?.mchIdMasked)"
+          />
         </ElFormItem>
         <ElFormItem label="商户证书序列号" prop="merchantSerialNo">
           <ElInput
@@ -189,14 +224,24 @@
             maxlength="128"
             show-password
             autocomplete="new-password"
-            :placeholder="editingConfig?.apiV3KeyConfigured ? '已配置，留空不修改' : '请输入 APIv3 Key'"
+            :placeholder="
+              editingConfig?.apiV3KeyConfigured ? '已配置，留空不修改' : '请输入 APIv3 Key'
+            "
           />
         </ElFormItem>
         <ElFormItem label="支付回调 URL" prop="notifyUrl">
-          <ElInput v-model="formData.notifyUrl" maxlength="255" placeholder="https://域名/wxpay/pay/notify" />
+          <ElInput
+            v-model="formData.notifyUrl"
+            maxlength="255"
+            placeholder="https://域名/wxpay/pay/notify"
+          />
         </ElFormItem>
         <ElFormItem label="退款回调 URL" prop="refundNotifyUrl">
-          <ElInput v-model="formData.refundNotifyUrl" maxlength="255" placeholder="https://域名/wxpay/refund/notify" />
+          <ElInput
+            v-model="formData.refundNotifyUrl"
+            maxlength="255"
+            placeholder="https://域名/wxpay/refund/notify"
+          />
         </ElFormItem>
         <ElFormItem label="验签模式" prop="verifyMode">
           <ElSegmented v-model="formData.verifyMode" :options="verifyModeOptions" />
@@ -210,27 +255,21 @@
           />
         </ElFormItem>
         <ElFormItem label="私钥文件" prop="privateKeyFileId">
-          <AssetPicker
-            :model-value="assetValue(formData.privateKeyFileId)"
-            purpose="PAYMENT_CERTIFICATE"
-            visibility="PRIVATE"
-            @change="handleFileChange('privateKeyFileId', $event)"
+          <PaymentSecretFileField
+            :model-value="formData.privateKeyFileId"
+            @change="handleSecretFileChange('privateKeyFileId', $event)"
           />
         </ElFormItem>
         <ElFormItem label="商户证书文件" prop="merchantCertificateFileId">
-          <AssetPicker
-            :model-value="assetValue(formData.merchantCertificateFileId || null)"
-            purpose="PAYMENT_CERTIFICATE"
-            visibility="PRIVATE"
-            @change="handleFileChange('merchantCertificateFileId', $event)"
+          <PaymentSecretFileField
+            :model-value="formData.merchantCertificateFileId || null"
+            @change="handleSecretFileChange('merchantCertificateFileId', $event)"
           />
         </ElFormItem>
         <ElFormItem label="微信公钥文件" prop="wechatPublicKeyFileId">
-          <AssetPicker
-            :model-value="assetValue(formData.wechatPublicKeyFileId || null)"
-            purpose="PAYMENT_CERTIFICATE"
-            visibility="PRIVATE"
-            @change="handleFileChange('wechatPublicKeyFileId', $event)"
+          <PaymentSecretFileField
+            :model-value="formData.wechatPublicKeyFileId || null"
+            @change="handleSecretFileChange('wechatPublicKeyFileId', $event)"
           />
         </ElFormItem>
       </ElForm>
@@ -248,7 +287,7 @@
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
   import { ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-  import AssetPicker from '@/components/business/asset-picker/index.vue'
+  import PaymentSecretFileField from '@/components/business/payment-secret-file-field/index.vue'
   import {
     createPaymentConfig,
     enablePaymentConfig,
@@ -298,9 +337,7 @@
 
   const formData = reactive<Api.Payment.ConfigForm>(createDefaultForm())
 
-  const verifyModeOptions = [
-    { label: '微信公钥', value: 'PUBLIC_KEY' }
-  ]
+  const verifyModeOptions = [{ label: '微信公钥', value: 'PUBLIC_KEY' }]
 
   const sourceOptions: Array<{ label: string; value: Api.Payment.ConfigSource }> = [
     { label: 'AUTO', value: 'AUTO' },
@@ -322,9 +359,13 @@
     trigger: 'blur'
   })
 
-  const preserveableFileRule = (message: string, existingFileId?: number | null) => ({
-    validator: (_rule: unknown, value: number | null | undefined, callback: (error?: Error) => void) => {
-      if (hasNumber(value) || (editingConfig.value && hasNumber(existingFileId))) {
+  const requiredFileRule = (message: string) => ({
+    validator: (
+      _rule: unknown,
+      value: number | null | undefined,
+      callback: (error?: Error) => void
+    ) => {
+      if (hasNumber(value)) {
         callback()
         return
       }
@@ -337,7 +378,9 @@
     configName: [{ required: true, message: '请输入配置名', trigger: 'blur' }],
     appId: [preserveableTextRule('请输入完整 App ID', editingConfig.value?.appIdMasked)],
     mchId: [preserveableTextRule('请输入完整商户号', editingConfig.value?.mchIdMasked)],
-    merchantSerialNo: [preserveableTextRule('请输入完整商户证书序列号', editingConfig.value?.merchantSerialNoMasked)],
+    merchantSerialNo: [
+      preserveableTextRule('请输入完整商户证书序列号', editingConfig.value?.merchantSerialNoMasked)
+    ],
     apiV3Key: [
       {
         validator: (_rule, value, callback) => {
@@ -353,9 +396,7 @@
     notifyUrl: [{ required: true, message: '请输入支付回调 URL', trigger: 'blur' }],
     refundNotifyUrl: [{ required: true, message: '请输入退款回调 URL', trigger: 'blur' }],
     verifyMode: [{ required: true, message: '请选择验签模式', trigger: 'change' }],
-    privateKeyFileId: [
-      preserveableFileRule('请选择私钥文件', editingConfig.value?.privateKeyFileId)
-    ],
+    privateKeyFileId: [requiredFileRule('请选择私钥文件')],
     merchantCertificateFileId: [
       {
         validator: (_rule, value, callback) => {
@@ -385,8 +426,7 @@
         validator: (_rule, value, callback) => {
           if (
             formData.verifyMode === 'PUBLIC_KEY' &&
-            !hasNumber(value) &&
-            !(editingConfig.value && hasNumber(editingConfig.value.wechatPublicKeyFileId))
+            !hasNumber(value)
           ) {
             callback(new Error('请选择微信公钥文件'))
             return
@@ -399,7 +439,8 @@
   }))
 
   const trimText = (value?: string) => String(value || '').trim()
-  const formatText = (value?: string | number | null) => (value === null || value === undefined || value === '' ? '-' : String(value))
+  const formatText = (value?: string | number | null) =>
+    value === null || value === undefined || value === '' ? '-' : String(value)
   const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
   const formatSource = (source?: string) => {
     if (source === 'ENV') return 'ENV 配置'
@@ -411,20 +452,20 @@
     if (source === 'DB') return 'success'
     return 'info'
   }
-  const formatVerifyMode = (value?: string) => (value === 'CERTIFICATE' ? '平台证书（暂不支持）' : '微信公钥')
-  const maskedPlaceholder = (value?: string | null) => (value ? `当前：${value}，留空不修改` : '请输入完整值')
-  const assetValue = (fileId: number | null): Api.Common.AssetValue => ({ fileId, url: '' })
-
+  const formatVerifyMode = (value?: string) =>
+    value === 'CERTIFICATE' ? '平台证书（暂不支持）' : '微信公钥'
+  const maskedPlaceholder = (value?: string | null) =>
+    value ? `当前：${value}，留空不修改` : '请输入完整值'
   const resetForm = () => {
     Object.assign(formData, createDefaultForm())
     formRef.value?.clearValidate()
   }
 
-  const handleFileChange = (
+  const handleSecretFileChange = (
     field: 'privateKeyFileId' | 'merchantCertificateFileId' | 'wechatPublicKeyFileId',
-    value: Api.Common.AssetValue
+    value: number | null
   ) => {
-    formData[field] = value.fileId
+    formData[field] = value
     formRef.value?.validateField(field)
   }
 
@@ -508,8 +549,10 @@
       privateKeyFileId: formData.privateKeyFileId,
       merchantCertificateFileId: formData.merchantCertificateFileId || null,
       verifyMode: formData.verifyMode,
-      wechatPublicKeyId: formData.verifyMode === 'PUBLIC_KEY' ? trimText(formData.wechatPublicKeyId) : '',
-      wechatPublicKeyFileId: formData.verifyMode === 'PUBLIC_KEY' ? formData.wechatPublicKeyFileId || null : null,
+      wechatPublicKeyId:
+        formData.verifyMode === 'PUBLIC_KEY' ? trimText(formData.wechatPublicKeyId) : '',
+      wechatPublicKeyFileId:
+        formData.verifyMode === 'PUBLIC_KEY' ? formData.wechatPublicKeyFileId || null : null,
       notifyUrl: trimText(formData.notifyUrl),
       refundNotifyUrl: trimText(formData.refundNotifyUrl)
     }

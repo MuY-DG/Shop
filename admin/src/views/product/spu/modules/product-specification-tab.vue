@@ -1,11 +1,17 @@
 <template>
   <div class="specification-tab">
-    <section class="editor-section">
-      <div class="editor-section__heading">
-        <div>
-          <h3>规格类型</h3>
-          <p>单规格适合只有一个销售属性的商品，多规格会根据规格值自动生成组合。</p>
-        </div>
+    <section class="editor-section editor-section--type">
+      <div class="spec-type-row">
+        <span class="spec-type-row__label">规格类型</span>
+        <ElRadioGroup
+          :model-value="modelValue.specType"
+          :disabled="disabled"
+          @update:model-value="changeSpecType"
+        >
+          <ElRadioButton value="SINGLE">单规格</ElRadioButton>
+          <ElRadioButton value="MULTI">多规格</ElRadioButton>
+        </ElRadioGroup>
+
         <div v-if="modelValue.specType === 'MULTI'" class="template-actions">
           <ElSelect
             v-model="selectedTemplateId"
@@ -24,45 +30,33 @@
               :value="template.id"
             />
           </ElSelect>
-          <ElButton :loading="templateLoading" :disabled="disabled" @click="loadTemplates">
-            刷新
-          </ElButton>
+          <ElButton :loading="templateLoading" :disabled="disabled" @click="loadTemplates"
+            >刷新</ElButton
+          >
         </div>
       </div>
-
-      <ElRadioGroup
-        :model-value="modelValue.specType"
-        :disabled="disabled"
-        @update:model-value="changeSpecType"
-      >
-        <ElRadioButton value="SINGLE">单规格</ElRadioButton>
-        <ElRadioButton value="MULTI">多规格</ElRadioButton>
-      </ElRadioGroup>
     </section>
 
     <section v-if="modelValue.specType === 'SINGLE'" class="editor-section">
       <div class="editor-section__heading">
-        <div>
-          <h3>商品规格</h3>
-          <p>商品编码可留空，由后端保存时自动生成；库存不填按 0 保存。</p>
-        </div>
+        <h3>商品规格</h3>
+        <span class="editor-section__hint">商品编码留空自动生成，图片留空使用商品封面图</span>
       </div>
 
       <ElForm label-position="top" class="single-sku-form">
-        <ElFormItem label="图片">
-          <div class="single-sku-form__image">
-            <AssetPicker
+        <div class="single-sku-form__row">
+          <div class="single-sku-form__media">
+            <span>规格图</span>
+            <CompactAssetField
               :model-value="{ fileId: singleSku.imageFileId, url: singleSku.image }"
-              purpose="PRODUCT_SKU_IMAGE"
+              media-kind="IMAGE"
               :disabled="disabled"
+              :allow-url="false"
+              small
               @change="updateSingleSkuImage"
             />
-            <span>可选；不上传时使用商品封面图。</span>
           </div>
-        </ElFormItem>
-
-        <div class="single-sku-form__grid">
-          <ElFormItem label="售价（元）" required>
+          <ElFormItem class="single-sku-form__money" label="售价（元）" required>
             <ElInputNumber
               :model-value="centToYuan(singleSku.priceCent)"
               :min="0.01"
@@ -73,7 +67,7 @@
               @update:model-value="updateSingleMoney('priceCent', $event)"
             />
           </ElFormItem>
-          <ElFormItem label="成本价（元）">
+          <ElFormItem class="single-sku-form__money" label="成本价（元）">
             <ElInputNumber
               :model-value="centToYuan(singleSku.costPriceCent)"
               :min="0"
@@ -84,7 +78,7 @@
               @update:model-value="updateSingleMoney('costPriceCent', $event)"
             />
           </ElFormItem>
-          <ElFormItem label="划线价（元）">
+          <ElFormItem class="single-sku-form__money" label="划线价（元）">
             <ElInputNumber
               :model-value="centToYuan(singleSku.originalPriceCent)"
               :min="0"
@@ -95,7 +89,7 @@
               @update:model-value="updateSingleMoney('originalPriceCent', $event)"
             />
           </ElFormItem>
-          <ElFormItem label="库存">
+          <ElFormItem class="single-sku-form__number" label="库存">
             <ElInputNumber
               :model-value="singleSku.stockAvailable"
               :min="0"
@@ -105,7 +99,7 @@
               @update:model-value="updateSingleSku({ stockAvailable: $event ?? 0 })"
             />
           </ElFormItem>
-          <ElFormItem label="商品编码">
+          <ElFormItem class="single-sku-form__code" label="商品编码">
             <ElInput
               :model-value="singleSku.skuCode"
               maxlength="64"
@@ -114,7 +108,7 @@
               @update:model-value="updateSingleSku({ skuCode: $event })"
             />
           </ElFormItem>
-          <ElFormItem label="重量（g）">
+          <ElFormItem class="single-sku-form__number" label="重量（g）">
             <ElInputNumber
               :model-value="singleSku.weightGram"
               :min="0"
@@ -125,7 +119,7 @@
               @update:model-value="updateSingleSku({ weightGram: $event ?? null })"
             />
           </ElFormItem>
-          <ElFormItem label="体积（m³）">
+          <ElFormItem class="single-sku-form__number" label="体积（m³）">
             <ElInputNumber
               :model-value="singleSku.volumeCubicMeter"
               :min="0"
@@ -144,25 +138,37 @@
     <template v-else>
       <section class="editor-section">
         <div class="editor-section__heading">
-          <div>
-            <h3>商品规格</h3>
-            <p>规格名称最多 30 字；必须且只能选择一个规格名称添加规格图。</p>
-          </div>
+          <h3>商品规格</h3>
+          <span class="editor-section__hint"
+            >规格图默认不选；请选择一个规格后再为规格值上传图片</span
+          >
+        </div>
+
+        <SpecTreeEditor
+          ref="specTreeEditorRef"
+          :model-value="modelValue.specGroups"
+          :disabled="disabled"
+          :show-add-button="false"
+          @update:model-value="handleGroupsChange"
+        />
+
+        <div class="spec-tree-actions">
           <ElButton
-            v-auth="'product:spec-template:create'"
+            class="spec-tree-actions__add"
+            :disabled="disabled || modelValue.specGroups.length >= 10"
+            @click="addSpecGroup"
+          >
+            + 添加新规格
+          </ElButton>
+          <ElButton
+            type="primary"
             plain
             :disabled="disabled || !modelValue.specGroups.length"
             @click="openSaveDialog"
           >
-            另存为模板
+            另存为规格模板
           </ElButton>
         </div>
-
-        <SpecTreeEditor
-          :model-value="modelValue.specGroups"
-          :disabled="disabled"
-          @update:model-value="handleGroupsChange"
-        />
 
         <ElAlert
           v-if="combinationDescription"
@@ -193,20 +199,20 @@
             v-model="templateName"
             maxlength="64"
             show-word-limit
-            placeholder="请输入模板名称"
+            placeholder="请输入规格模板名称"
             @keyup.enter="saveAsTemplate"
           />
         </ElFormItem>
         <ElAlert
           type="info"
           :closable="false"
-          title="模板保存规格名称、规格值与规格图开关，不保存当前 SKU 的价格和库存。"
+          title="规格模板保存规格名称、规格值与规格图开关，不保存当前 SKU 的价格和库存。"
         />
       </ElForm>
       <template #footer>
         <ElButton @click="saveDialogVisible = false">取消</ElButton>
         <ElButton type="primary" :loading="templateSaving" @click="saveAsTemplate">
-          保存模板
+          保存规格模板
         </ElButton>
       </template>
     </ElDialog>
@@ -216,7 +222,6 @@
 <script setup lang="ts">
   import { computed, onMounted, ref } from 'vue'
   import { ElMessage, ElMessageBox } from 'element-plus'
-  import AssetPicker from '@/components/business/asset-picker/index.vue'
   import {
     createProductSpecTemplate,
     fetchProductSpecTemplateDetail,
@@ -232,6 +237,7 @@
   import { centToYuan, yuanToCent } from './editor-model'
   import SpecTreeEditor from './spec-tree-editor.vue'
   import SkuMatrix from './sku-matrix.vue'
+  import CompactAssetField from './compact-asset-field.vue'
   import {
     MAX_SKU_COMBINATIONS,
     cloneTemplateGroups,
@@ -266,6 +272,7 @@
   const templateSaving = ref(false)
   const saveDialogVisible = ref(false)
   const templateName = ref('')
+  const specTreeEditorRef = ref<InstanceType<typeof SpecTreeEditor>>()
   const singleSnapshot = ref<ProductEditorSku | null>(null)
   const multiGroupSnapshot = ref<ProductEditorSpecGroup[] | null>(null)
   const multiSkuSnapshot = ref<ProductEditorSku[] | null>(null)
@@ -281,6 +288,8 @@
   const patchForm = (patch: Partial<ProductEditorForm>) => {
     emit('update:modelValue', { ...props.modelValue, ...patch })
   }
+
+  const addSpecGroup = () => specTreeEditorRef.value?.addGroup()
 
   const updateSingleSku = (patch: Partial<ProductEditorSku>) => {
     const next = {
@@ -471,80 +480,144 @@
 <style scoped lang="scss">
   .specification-tab {
     display: grid;
-    gap: 18px;
+    gap: 12px;
+    max-width: 1400px;
+    margin: 0 auto;
   }
 
   .editor-section {
-    padding: 20px;
+    padding: 14px;
     background: var(--el-bg-color);
     border: 1px solid var(--el-border-color-lighter);
-    border-radius: 12px;
+    border-radius: 8px;
+  }
+
+  .editor-section--type {
+    padding: 10px 14px;
+  }
+
+  .spec-type-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .spec-type-row__label {
+    min-width: 70px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
   }
 
   .editor-section__heading {
     display: flex;
-    gap: 20px;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 18px;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
 
     h3 {
       margin: 0;
       font-size: 16px;
       color: var(--el-text-color-primary);
     }
+  }
 
-    p {
-      margin: 6px 0 0;
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
+  .editor-section__hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 
   .template-actions {
     display: flex;
+    flex: 1;
+    flex-wrap: wrap;
     gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
   }
 
-  .single-sku-form__image {
-    width: min(620px, 100%);
+  .spec-tree-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-left: 12px;
+    margin-top: 12px;
+  }
+
+  .spec-tree-actions__add {
+    background: transparent;
+
+    &:hover,
+    &:focus,
+    &:active {
+      background: transparent;
+    }
+  }
+
+  .single-sku-form__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .single-sku-form__media {
+    display: grid;
+    gap: 8px;
+    width: 72px;
 
     > span {
-      display: block;
-      margin-top: 6px;
-      font-size: 12px;
-      color: var(--el-text-color-secondary);
+      min-height: 22px;
+      font-size: 14px;
+      line-height: 22px;
+      color: var(--el-text-color-regular);
     }
   }
 
-  .single-sku-form__grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0 18px;
+  .single-sku-form :deep(.el-form-item) {
+    margin-bottom: 0;
+  }
 
-    :deep(.el-input-number) {
-      width: 100%;
-    }
+  .single-sku-form :deep(.el-input-number) {
+    width: 100%;
+  }
+
+  .single-sku-form__money {
+    width: 142px;
+  }
+
+  .single-sku-form__number {
+    width: 118px;
+  }
+
+  .single-sku-form__code {
+    width: 180px;
   }
 
   .combination-alert {
-    margin-top: 16px;
-  }
-
-  @media (width <= 960px) {
-    .single-sku-form__grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
+    margin-top: 10px;
   }
 
   @media (width <= 640px) {
-    .editor-section__heading,
     .template-actions {
-      flex-direction: column;
+      flex-basis: 100%;
+      justify-content: flex-start;
     }
 
-    .single-sku-form__grid {
-      grid-template-columns: minmax(0, 1fr);
+    .template-actions :deep(.el-select) {
+      width: 100% !important;
+    }
+
+    .editor-section__heading {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .single-sku-form__money,
+    .single-sku-form__number,
+    .single-sku-form__code {
+      flex: 1 1 140px;
+      width: auto;
     }
   }
 </style>

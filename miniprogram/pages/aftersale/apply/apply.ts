@@ -177,6 +177,13 @@ Page<AfterSaleApplyPageData, WechatMiniprogram.Page.CustomOption>({
     if (this.data.uploading || this.data.submitting) {
       return;
     }
+    if (!this.data.orderId) {
+      wx.showToast({
+        title: "订单不存在",
+        icon: "none"
+      });
+      return;
+    }
 
     const remainingCount = MAX_EVIDENCE_COUNT - this.data.evidenceFiles.length;
     if (remainingCount <= 0) {
@@ -199,7 +206,7 @@ Page<AfterSaleApplyPageData, WechatMiniprogram.Page.CustomOption>({
 
       const evidenceFiles = this.data.evidenceFiles.slice();
       for (const filePath of filePaths) {
-        const uploaded = await uploadEvidenceFile(filePath, "REFUND_EVIDENCE");
+        const uploaded = await uploadEvidenceFile(filePath, this.data.orderId);
         evidenceFiles.push({
           fileId: uploaded.id,
           tempFilePath: filePath,

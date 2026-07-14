@@ -302,7 +302,7 @@ class AdminProductRecycleBinControllerTest {
                 .containsEntry("QUANTITY", 2);
         assertThat(jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where owner_type = 'ORDER_ITEM'
                           and owner_id = :orderItemId
                           and protected = true
@@ -311,7 +311,7 @@ class AdminProductRecycleBinControllerTest {
                 .param("orderItemId", order.orderItemId())
                 .query(Integer.class)
                 .single()).isEqualTo(1);
-        assertThat(jdbcClient.sql("select status from storage_file where id = :fileId")
+        assertThat(jdbcClient.sql("select status from storage_asset where id = :fileId")
                 .param("fileId", fixture.fileId())
                 .query(String.class)
                 .single()).isEqualTo("ACTIVE");
@@ -409,7 +409,7 @@ class AdminProductRecycleBinControllerTest {
         long categoryId = insertCategory("Recycle category " + suffix);
         long freightTemplateId = insertFreightTemplate("Recycle freight " + suffix);
         long fileId = insertStorageFile("recycle-" + suffix + ".png");
-        String fileUrl = jdbcClient.sql("select public_url from storage_file where id = :fileId")
+        String fileUrl = jdbcClient.sql("select public_url from storage_asset where id = :fileId")
                 .param("fileId", fileId)
                 .query(String.class)
                 .single();
@@ -635,12 +635,12 @@ class AdminProductRecycleBinControllerTest {
         String objectKey = "public/test/recycle/" + System.nanoTime() + "-" + originalFilename;
         String publicUrl = "http://localhost:8080/files/" + objectKey;
         jdbcClient.sql("""
-                        insert into storage_file
-                            (purpose, asset_category_id, visibility, provider, bucket, object_key,
+                        insert into storage_asset
+                            (scope, media_kind, folder_id, visibility, provider, storage_container, object_key,
                              original_filename, content_type, extension, size_bytes, sha256,
                              width, height, alt_text, public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            ('PRODUCT_IMAGE', 1, 'PUBLIC', 'LOCAL', '', :objectKey,
+                            ('LIBRARY', 'IMAGE', null, 'PUBLIC', 'LOCAL', '', :objectKey,
                              :originalFilename, 'image/png', 'png', 68, :sha256,
                              1, 1, '', :publicUrl, 'ACTIVE', 'ADMIN', 1)
                         """)
@@ -649,7 +649,7 @@ class AdminProductRecycleBinControllerTest {
                 .param("sha256", "sha-" + System.nanoTime())
                 .param("publicUrl", publicUrl)
                 .update();
-        return jdbcClient.sql("select id from storage_file where object_key = :objectKey")
+        return jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
                 .param("objectKey", objectKey)
                 .query(Long.class)
                 .single();
@@ -741,8 +741,8 @@ class AdminProductRecycleBinControllerTest {
             boolean protectedUsage
     ) {
         jdbcClient.sql("""
-                        insert into storage_file_usage
-                            (file_id, usage_type, owner_type, owner_id, owner_label,
+                        insert into storage_asset_usage
+                            (asset_id, usage_type, owner_type, owner_id, owner_label,
                              snapshot_url, sort_order, protected, status)
                         values
                             (:fileId, :usageType, :ownerType, :ownerId, :ownerLabel,
@@ -794,7 +794,7 @@ class AdminProductRecycleBinControllerTest {
     private int activeProductUsageCount(long spuId, long skuId, long specValueId) {
         return jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where status = 'ACTIVE'
                           and (
                             (owner_type = 'PRODUCT_SPU' and owner_id = :spuId)

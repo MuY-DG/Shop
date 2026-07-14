@@ -5,8 +5,9 @@ public record AfterSaleEvidenceFileResponse(
         String originalFilename,
         String contentType,
         Long sizeBytes,
+        String scope,
+        String mediaKind,
         String visibility,
-        String purpose,
         String status
 ) {
 }

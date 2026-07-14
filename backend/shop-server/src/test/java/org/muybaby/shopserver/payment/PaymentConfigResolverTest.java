@@ -24,7 +24,6 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -70,7 +69,7 @@ class PaymentConfigResolverTest {
     void clearPaymentConfigState() {
         jdbcClient.sql("delete from payment_runtime_setting").update();
         jdbcClient.sql("delete from payment_config").update();
-        jdbcClient.sql("delete from storage_file where object_key like 'test/%'").update();
+        jdbcClient.sql("delete from storage_asset where object_key like 'test/%'").update();
     }
 
     @Test
@@ -311,11 +310,11 @@ class PaymentConfigResolverTest {
         byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
         storageProvider.put(uniqueObjectKey, "text/plain", new ByteArrayInputStream(bytes), bytes.length);
         jdbcClient.sql("""
-                        insert into storage_file
-                            (id, purpose, visibility, provider, bucket, object_key, original_filename,
+                        insert into storage_asset
+                            (id, scope, media_kind, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (:id, 'PAYMENT_CERTIFICATE', 'PRIVATE', 'LOCAL', '', :objectKey, 'key.pem',
+                            (:id, 'SECRET', 'DOCUMENT', 'PRIVATE', 'LOCAL', '', :objectKey, 'key.pem',
                              'text/plain', 'pem', :sizeBytes, '', 'ACTIVE', 'ADMIN', 1)
                         """)
                 .param("id", id)

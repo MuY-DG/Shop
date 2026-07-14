@@ -19,8 +19,15 @@
         class="edit-alert"
       />
 
-      <ElForm ref="formRef" :model="formData" label-position="top">
+      <ElForm
+        ref="formRef"
+        :model="formData"
+        label-position="left"
+        label-width="128px"
+        class="template-form"
+      >
         <ElFormItem
+          class="template-name-item"
           label="规格模板名称"
           prop="name"
           :rules="[
@@ -43,15 +50,6 @@
               最多 10 个规格，每个规格最多 50 个规格值；必须且只能选择一个图片规格。
             </div>
           </div>
-          <ElButton
-            v-if="!isEdit"
-            type="primary"
-            plain
-            :disabled="formData.groups.length >= 10"
-            @click="addGroup"
-          >
-            添加新规格
-          </ElButton>
         </div>
 
         <div class="spec-tree">
@@ -60,6 +58,17 @@
             :key="group.clientKey"
             class="spec-group-card"
           >
+            <button
+              v-if="!isEdit"
+              type="button"
+              class="group-remove"
+              aria-label="删除规格"
+              title="删除规格"
+              @click="removeGroup(groupIndex)"
+            >
+              <ElIcon size="14"><Close /></ElIcon>
+            </button>
+
             <div class="group-header">
               <div class="group-number">规格 {{ groupIndex + 1 }}</div>
               <div class="group-actions">
@@ -68,16 +77,14 @@
                   :disabled="isEdit"
                   @change="setImageGroup(groupIndex, Boolean($event))"
                 >
-                  作为图片规格
+                  设为规格图
                 </ElCheckbox>
-                <ElButton v-if="!isEdit" type="danger" link @click="removeGroup(groupIndex)">
-                  删除规格
-                </ElButton>
               </div>
             </div>
 
             <div class="group-body">
               <ElFormItem
+                class="group-name-item"
                 label="规格名称"
                 :prop="`groups.${groupIndex}.name`"
                 :rules="[
@@ -93,57 +100,69 @@
                 />
               </ElFormItem>
 
-              <div class="value-heading">
-                <div>
+              <div class="value-field">
+                <div class="value-label">
                   <span class="value-title">规格值</span>
                   <span class="value-count">{{ group.values.length }}/50</span>
                 </div>
-                <ElButton
-                  v-if="!isEdit"
-                  type="primary"
-                  link
-                  :disabled="group.values.length >= 50"
-                  @click="addValue(groupIndex)"
-                >
-                  添加规格值
-                </ElButton>
-              </div>
-
-              <div class="value-list">
-                <div
-                  v-for="(value, valueIndex) in group.values"
-                  :key="value.clientKey"
-                  class="value-row"
-                >
-                  <span class="value-index">{{ valueIndex + 1 }}</span>
-                  <ElFormItem
-                    class="value-form-item"
-                    :prop="`groups.${groupIndex}.values.${valueIndex}.valueName`"
-                    :rules="[
-                      { required: true, message: '请输入规格值', trigger: 'blur' },
-                      { max: 30, message: '规格值不能超过 30 个字符', trigger: 'blur' }
-                    ]"
+                <div class="value-list">
+                  <div
+                    v-for="(value, valueIndex) in group.values"
+                    :key="value.clientKey"
+                    class="value-row"
                   >
-                    <ElInput
-                      v-model="value.valueName"
-                      maxlength="30"
-                      show-word-limit
-                      placeholder="例如：红色"
-                    />
-                  </ElFormItem>
+                    <button
+                      v-if="!isEdit"
+                      type="button"
+                      class="value-remove"
+                      aria-label="删除规格值"
+                      title="删除规格值"
+                      @click="removeValue(groupIndex, valueIndex)"
+                    >
+                      <ElIcon size="14"><Close /></ElIcon>
+                    </button>
+                    <ElFormItem
+                      class="value-form-item"
+                      label-width="0"
+                      :prop="`groups.${groupIndex}.values.${valueIndex}.valueName`"
+                      :rules="[
+                        { required: true, message: '请输入规格值', trigger: 'blur' },
+                        { max: 30, message: '规格值不能超过 30 个字符', trigger: 'blur' }
+                      ]"
+                    >
+                      <ElInput
+                        v-model="value.valueName"
+                        maxlength="30"
+                        show-word-limit
+                        placeholder="例如：红色"
+                      />
+                    </ElFormItem>
+                  </div>
                   <ElButton
                     v-if="!isEdit"
-                    type="danger"
-                    link
-                    @click="removeValue(groupIndex, valueIndex)"
+                    class="value-add"
+                    type="primary"
+                    plain
+                    :disabled="group.values.length >= 50"
+                    @click="addValue(groupIndex)"
                   >
-                    删除
+                    + 添加规格值
                   </ElButton>
                 </div>
               </div>
             </div>
           </section>
         </div>
+
+        <ElButton
+          v-if="!isEdit"
+          class="group-add"
+          plain
+          :disabled="formData.groups.length >= 10"
+          @click="addGroup"
+        >
+          + 添加新规格
+        </ElButton>
       </ElForm>
     </div>
 
@@ -160,6 +179,7 @@
 
 <script setup lang="ts">
   import { computed, nextTick, reactive, ref, watch } from 'vue'
+  import { Close } from '@element-plus/icons-vue'
   import { ElMessage, type FormInstance } from 'element-plus'
   import {
     createProductSpecTemplate,
@@ -399,21 +419,38 @@
   }
 
   .edit-alert {
-    margin-bottom: 20px;
+    margin-bottom: 14px;
   }
 
+  .template-form,
   .section-heading,
   .group-header,
-  .value-heading,
-  .value-row {
+  .value-field {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+  }
+
+  .template-form {
+    display: block;
+
+    :deep(.el-form-item__label) {
+      justify-content: flex-start;
+      text-align: left;
+      white-space: nowrap;
+    }
+  }
+
+  .template-name-item {
+    margin-bottom: 14px;
+
+    :deep(.el-form-item__content) {
+      max-width: 520px;
+    }
   }
 
   .section-heading {
-    gap: 16px;
-    margin: 24px 0 14px;
+    justify-content: space-between;
+    margin: 14px 0 10px;
   }
 
   .section-title {
@@ -430,27 +467,33 @@
 
   .spec-tree {
     display: grid;
-    gap: 16px;
+    gap: 12px;
   }
 
   .spec-group-card {
-    overflow: hidden;
+    position: relative;
     background: var(--el-fill-color-blank);
     border: 1px solid var(--el-border-color);
-    border-radius: 10px;
+    border-radius: 8px;
   }
 
   .group-header {
-    min-height: 48px;
-    padding: 0 16px;
+    justify-content: space-between;
+    min-height: 42px;
+    padding: 0 12px;
     background: var(--el-fill-color-light);
     border-bottom: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px 8px 0 0;
   }
 
-  .group-number,
-  .value-title {
+  .group-number {
     font-weight: 600;
     color: var(--el-text-color-primary);
+  }
+
+  .value-title {
+    font-weight: 400;
+    color: var(--el-text-color-regular);
   }
 
   .group-actions {
@@ -460,40 +503,116 @@
   }
 
   .group-body {
-    padding: 16px;
+    padding: 12px 12px 12px 0;
   }
 
-  .value-heading {
-    margin: 2px 0 10px;
+  .group-name-item {
+    margin-bottom: 10px;
+
+    :deep(.el-form-item__content) {
+      max-width: 520px;
+    }
+  }
+
+  .value-field {
+    align-items: flex-start;
+  }
+
+  .value-label {
+    box-sizing: border-box;
+    flex: 0 0 128px;
+    padding-right: 12px;
+    line-height: 32px;
+    text-align: left;
+
+    &::before {
+      margin-right: 4px;
+      color: transparent;
+      content: '*';
+    }
   }
 
   .value-count {
-    margin-left: 8px;
+    margin-left: 4px;
     font-size: 12px;
     color: var(--el-text-color-secondary);
   }
 
   .value-list {
-    display: grid;
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
     gap: 10px;
+    min-width: 0;
   }
 
   .value-row {
-    gap: 12px;
-    padding: 10px 12px;
-    background: var(--el-fill-color-lighter);
-    border-radius: 8px;
-  }
-
-  .value-index {
-    flex: 0 0 24px;
-    color: var(--el-text-color-secondary);
-    text-align: center;
+    position: relative;
+    flex: 0 0 190px;
+    min-width: 0;
   }
 
   .value-form-item {
-    flex: 1;
+    width: 100%;
     margin-bottom: 0;
+  }
+
+  .group-remove,
+  .value-remove {
+    position: absolute;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    color: #fff;
+    cursor: pointer;
+    visibility: hidden;
+    background: var(--el-color-danger);
+    border: 2px solid var(--el-bg-color);
+    border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+
+    &:focus-visible {
+      visibility: visible;
+      outline: none;
+      opacity: 1;
+    }
+  }
+
+  .group-remove {
+    top: -8px;
+    right: -8px;
+  }
+
+  .value-remove {
+    top: -8px;
+    right: -8px;
+  }
+
+  .spec-group-card:hover > .group-remove,
+  .value-row:hover > .value-remove {
+    visibility: visible;
+    opacity: 1;
+  }
+
+  .value-add,
+  .group-add {
+    height: 32px;
+    background: transparent;
+
+    &:hover,
+    &:focus,
+    &:active {
+      background: transparent;
+    }
+  }
+
+  .group-add {
+    margin: 12px 0 0 128px;
   }
 
   .dialog-footer {
@@ -503,18 +622,50 @@
   }
 
   @media (width <= 768px) {
-    .section-heading,
     .group-header {
       flex-direction: column;
       align-items: flex-start;
-    }
-
-    .group-header {
       padding: 12px 16px;
     }
 
+    .template-form {
+      :deep(.el-form-item) {
+        display: block;
+      }
+
+      :deep(.el-form-item__label) {
+        display: block;
+        width: auto !important;
+        margin-bottom: 6px;
+        text-align: left;
+      }
+    }
+
+    .value-field {
+      display: block;
+    }
+
+    .value-label {
+      width: auto;
+      padding-right: 0;
+      margin-bottom: 6px;
+      text-align: left;
+    }
+
     .value-row {
-      align-items: flex-start;
+      flex-basis: min(190px, 100%);
+    }
+
+    .group-add {
+      margin-left: 0;
+    }
+  }
+
+  @media (hover: none) {
+    .group-remove,
+    .value-remove {
+      visibility: visible;
+      opacity: 1;
     }
   }
 </style>

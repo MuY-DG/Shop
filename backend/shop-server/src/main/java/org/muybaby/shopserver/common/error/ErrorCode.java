@@ -33,7 +33,9 @@ public enum ErrorCode {
     STORAGE_FILE_UNAVAILABLE(800001, "Storage file unavailable"),
     STORAGE_UPLOAD_POLICY_REJECTED(800002, "Storage upload policy rejected"),
     STORAGE_FILE_IN_USE(800003, "Storage file in use"),
-    STORAGE_ASSET_CATEGORY_UNAVAILABLE(800004, "Storage asset category unavailable");
+    STORAGE_ASSET_FOLDER_UNAVAILABLE(800004, "Storage asset folder unavailable"),
+    STORAGE_ASSET_FOLDER_IN_USE(800005, "Storage asset folder is not empty"),
+    STORAGE_ASSET_FOLDER_CYCLE(800006, "Storage asset folder cycle is not allowed");
 
     private final int code;
     private final String message;

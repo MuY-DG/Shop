@@ -143,7 +143,7 @@
                 </div>
                 <div class="evidence-file__meta">
                   <span>ID {{ file.fileId }}</span>
-                  <span>{{ formatText(file.purpose) }}</span>
+                  <span>售后凭证 · {{ formatMediaKind(file.mediaKind) }}</span>
                   <span>{{ formatText(file.contentType) }}</span>
                   <span>{{ formatFileSize(file.sizeBytes) }}</span>
                   <span>{{ formatText(file.status) }}</span>
@@ -386,6 +386,12 @@
   const formatStatus = (value?: string) => (value ? statusMap[value]?.text || value : '-')
   const formatRefundStatus = (value?: string) => (value ? refundStatusMap[value]?.text || value : '-')
   const formatAfterSaleType = (value?: string) => (value ? typeMap[value] || value : '-')
+  const formatMediaKind = (value?: string) => {
+    if (value === 'IMAGE') return '图片'
+    if (value === 'VIDEO') return '视频'
+    if (value === 'DOCUMENT') return '文档'
+    return value || '-'
+  }
   const formatFileSize = (sizeBytes?: number | null) => {
     if (!sizeBytes) return '0 B'
     if (sizeBytes < 1024) return `${sizeBytes} B`

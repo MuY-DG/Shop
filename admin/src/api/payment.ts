@@ -1,5 +1,16 @@
 import request from '@/utils/http'
 
+export function uploadPaymentSecretFile(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  return request.post<Api.Storage.Asset>({
+    url: '/admin/pay/configs/secret-files',
+    data: formData,
+    showSuccessMessage: true
+  })
+}
+
 export function fetchEffectivePaymentConfig() {
   return request.get<Api.Payment.EffectiveConfig>({
     url: '/admin/pay/configs/effective'

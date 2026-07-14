@@ -35,14 +35,16 @@ class AfterSaleSchemaTest {
                         """)
                 .update();
         jdbcClient.sql("""
-                        insert into storage_file
-                            (id, purpose, asset_category_id, visibility, provider, bucket, object_key, original_filename,
-                             content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
-                             public_url, status, uploaded_by_type, uploaded_by_id)
+                        insert into storage_asset
+                            (id, scope, media_kind, folder_id, visibility, provider, storage_container, object_key,
+                             original_filename, content_type, extension, size_bytes, sha256, width, height,
+                             alt_text, tags_json, public_url, status, uploaded_by_type, uploaded_by_id,
+                             upload_context_type, upload_context_id, expires_at)
                         values
-                            (19302, 'REFUND_EVIDENCE', 7, 'PRIVATE', 'LOCAL', '', 'private/schema/refund.png',
-                             'refund.png', 'image/png', 'png', 68, 'refund-evidence-schema', 1, 1, '',
-                             null, null, 'ACTIVE', 'APP_USER', 1)
+                            (19302, 'ATTACHMENT', 'IMAGE', null, 'PRIVATE', 'LOCAL', '',
+                             'private/schema/refund.png', 'refund.png', 'image/png', 'png', 68,
+                             'refund-evidence-schema', 1, 1, '', null, null, 'ACTIVE', 'APP', 1,
+                             'ORDER', 19301, dateadd('HOUR', 24, current_timestamp))
                         """)
                 .update();
         jdbcClient.sql("""

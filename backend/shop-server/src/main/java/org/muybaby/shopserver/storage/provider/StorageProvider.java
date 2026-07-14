@@ -18,15 +18,32 @@ public interface StorageProvider {
         return put(objectKey, contentType, inputStream, sizeBytes);
     }
 
+    default StoredObject put(
+            StorageObjectLocation location,
+            String contentType,
+            InputStream inputStream,
+            long sizeBytes
+    ) {
+        return put(location.provider(), location.objectKey(), contentType, inputStream, sizeBytes);
+    }
+
     StoredObject open(String objectKey);
 
     default StoredObject open(StorageProviderKind provider, String objectKey) {
         return open(objectKey);
     }
 
+    default StoredObject open(StorageObjectLocation location) {
+        return open(location.provider(), location.objectKey());
+    }
+
     void delete(String objectKey);
 
     default void delete(StorageProviderKind provider, String objectKey) {
         delete(objectKey);
+    }
+
+    default void delete(StorageObjectLocation location) {
+        delete(location.provider(), location.objectKey());
     }
 }

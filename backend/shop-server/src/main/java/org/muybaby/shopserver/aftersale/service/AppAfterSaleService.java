@@ -12,8 +12,12 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.StorageAssetScope;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
+import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
+import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
+import org.muybaby.shopserver.storage.service.StorageService;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -23,6 +27,7 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -48,20 +53,36 @@ public class AppAfterSaleService {
             OrderStatus.SHIPPED.name(),
             OrderStatus.COMPLETED.name()
     );
-    private static final Set<String> ALLOWED_EVIDENCE_PURPOSES = Set.of("AFTER_SALE_IMAGE", "REFUND_EVIDENCE");
-
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
+    private final StorageService storageService;
     private final StorageUsageService storageUsageService;
 
     public AppAfterSaleService(
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
+            StorageService storageService,
             StorageUsageService storageUsageService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
+        this.storageService = storageService;
         this.storageUsageService = storageUsageService;
+    }
+
+    @Transactional
+    public StorageAssetResponse uploadEvidence(
+            AuthenticatedPrincipal principal,
+            Long orderId,
+            MultipartFile file
+    ) {
+        Long userId = requireAppUser(principal);
+        OrderRow order = findOwnedOrderForUpdate(orderId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        if (!ALLOWED_ORDER_STATUSES.contains(order.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return storageService.uploadAfterSaleEvidence(principal, order.orderId(), file);
     }
 
     @Transactional
@@ -82,11 +103,12 @@ public class AppAfterSaleService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         rejectIfActiveAfterSaleExists(order.orderId());
-        validateEvidenceFiles(userId, evidenceFileIds);
+        validateEvidenceFiles(userId, order.orderId(), evidenceFileIds);
 
         Long afterSaleId = insertAfterSale(order, type, reason, description, requestedAmountCent);
         insertEvidence(afterSaleId, evidenceFileIds);
         addProtectedEvidenceUsage(afterSaleId, order.orderNo(), evidenceFileIds);
+        claimEvidenceFiles(evidenceFileIds);
         return requireResponseForUser(afterSaleId, userId);
     }
 
@@ -274,14 +296,29 @@ public class AppAfterSaleService {
         }
     }
 
-    private void validateEvidenceFiles(Long userId, List<Long> fileIds) {
+    private void validateEvidenceFiles(Long userId, Long orderId, List<Long> fileIds) {
         if (fileIds.isEmpty()) {
             return;
         }
         List<EvidenceFileRow> rows = jdbcClient.sql("""
-                        select id, purpose, visibility, status, uploaded_by_type, uploaded_by_id
-                        from storage_file
-                        where id in (:fileIds)
+                        select asset.id,
+                               asset.scope,
+                               asset.media_kind,
+                               asset.visibility,
+                               asset.status,
+                               asset.uploaded_by_type,
+                               asset.uploaded_by_id,
+                               asset.upload_context_type,
+                               asset.upload_context_id,
+                               exists(
+                                   select 1
+                                   from storage_asset_usage asset_usage
+                                   where asset_usage.asset_id = asset.id
+                                     and asset_usage.status = 'ACTIVE'
+                               ) as has_active_usage
+                        from storage_asset asset
+                        where asset.id in (:fileIds)
+                          and asset.expires_at > current_timestamp
                         """)
                 .param("fileIds", fileIds)
                 .query(this::mapEvidenceFile)
@@ -290,14 +327,32 @@ public class AppAfterSaleService {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
         for (EvidenceFileRow row : rows) {
-            if (!ALLOWED_EVIDENCE_PURPOSES.contains(row.purpose())
+            if (!StorageAssetScope.ATTACHMENT.name().equals(row.scope())
+                    || !StorageMediaKind.IMAGE.name().equals(row.mediaKind())
                     || !"PRIVATE".equals(row.visibility())
                     || !"ACTIVE".equals(row.status())
                     || !"APP".equals(row.uploadedByType())
-                    || !userId.equals(row.uploadedById())) {
+                    || !userId.equals(row.uploadedById())
+                    || !"ORDER".equals(row.uploadContextType())
+                    || !orderId.equals(row.uploadContextId())
+                    || row.hasActiveUsage()) {
                 throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
             }
         }
+    }
+
+    private void claimEvidenceFiles(List<Long> fileIds) {
+        if (fileIds.isEmpty()) {
+            return;
+        }
+        jdbcClient.sql("""
+                        update storage_asset
+                        set expires_at = null,
+                            updated_at = current_timestamp
+                        where id in (:fileIds)
+                        """)
+                .param("fileIds", fileIds)
+                .update();
     }
 
     private Long insertAfterSale(OrderRow order, AfterSaleType type, String reason, String description, long requestedAmountCent) {
@@ -426,14 +481,15 @@ public class AppAfterSaleService {
     private List<AfterSaleEvidenceFileResponse> evidenceFiles(Long afterSaleId) {
         return jdbcClient.sql("""
                         select ase.file_id,
-                               sf.original_filename,
-                               sf.content_type,
-                               sf.size_bytes,
-                               sf.visibility,
-                               sf.purpose,
-                               sf.status
+                               asset.original_filename,
+                               asset.content_type,
+                               asset.size_bytes,
+                               asset.scope,
+                               asset.media_kind,
+                               asset.visibility,
+                               asset.status
                         from after_sale_evidence ase
-                        join storage_file sf on sf.id = ase.file_id
+                        join storage_asset asset on asset.id = ase.file_id
                         where ase.after_sale_id = :afterSaleId
                         order by ase.sort_order asc, ase.id asc
                         """)
@@ -448,8 +504,9 @@ public class AppAfterSaleService {
                 rs.getString("original_filename"),
                 rs.getString("content_type"),
                 rs.getLong("size_bytes"),
+                rs.getString("scope"),
+                rs.getString("media_kind"),
                 rs.getString("visibility"),
-                rs.getString("purpose"),
                 rs.getString("status")
         );
     }
@@ -558,11 +615,15 @@ public class AppAfterSaleService {
     private EvidenceFileRow mapEvidenceFile(ResultSet rs, int rowNum) throws SQLException {
         return new EvidenceFileRow(
                 rs.getLong("id"),
-                rs.getString("purpose"),
+                rs.getString("scope"),
+                rs.getString("media_kind"),
                 rs.getString("visibility"),
                 rs.getString("status"),
                 rs.getString("uploaded_by_type"),
-                rs.getLong("uploaded_by_id")
+                rs.getLong("uploaded_by_id"),
+                rs.getString("upload_context_type"),
+                rs.getObject("upload_context_id", Long.class),
+                rs.getBoolean("has_active_usage")
         );
     }
 
@@ -611,7 +672,18 @@ public class AppAfterSaleService {
     private record OrderRow(Long orderId, String orderNo, Long userId, String status, long paidAmountCent) {
     }
 
-    private record EvidenceFileRow(Long id, String purpose, String visibility, String status, String uploadedByType, Long uploadedById) {
+    private record EvidenceFileRow(
+            Long id,
+            String scope,
+            String mediaKind,
+            String visibility,
+            String status,
+            String uploadedByType,
+            Long uploadedById,
+            String uploadContextType,
+            Long uploadContextId,
+            boolean hasActiveUsage
+    ) {
     }
 
     private record AfterSaleRow(

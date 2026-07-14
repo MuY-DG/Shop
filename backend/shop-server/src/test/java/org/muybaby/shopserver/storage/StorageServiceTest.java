@@ -48,10 +48,10 @@ class StorageServiceTest {
     }
 
     @Test
-    void unsupportedExtensionIsRejectedBeforeReadingBytes() {
+    void unsupportedLibraryTypeIsRejectedBeforeReadingBytes() {
         TrackingMultipartFile file = TrackingMultipartFile.rejectIfRead("not-image.svg", "image/svg+xml", 512);
 
-        assertThatThrownBy(() -> storageService.uploadAdmin(adminPrincipal(), StoragePurpose.PRODUCT_IMAGE, null, file))
+        assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
 
@@ -62,7 +62,7 @@ class StorageServiceTest {
     void oversizedImageIsRejectedBeforeReadingBytes() {
         TrackingMultipartFile file = TrackingMultipartFile.rejectIfRead("too-large.png", "image/png", 6L * 1024 * 1024);
 
-        assertThatThrownBy(() -> storageService.uploadAdmin(adminPrincipal(), StoragePurpose.PRODUCT_IMAGE, null, file))
+        assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
 
@@ -70,10 +70,10 @@ class StorageServiceTest {
     }
 
     @Test
-    void corruptedImageStillReadsBytesBeforeRejecting() {
+    void corruptedImageReadsBytesBeforeRejecting() {
         TrackingMultipartFile file = TrackingMultipartFile.withBytes("corrupted.png", "image/png", "broken-image".getBytes());
 
-        assertThatThrownBy(() -> storageService.uploadAdmin(adminPrincipal(), StoragePurpose.PRODUCT_IMAGE, null, file))
+        assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
 
@@ -81,41 +81,44 @@ class StorageServiceTest {
     }
 
     @Test
-    void productVideoDoesNotRequireImageDecoding() {
+    void libraryVideoIsDetectedWithoutImageDecoding() {
         TrackingMultipartFile file = TrackingMultipartFile.withBytes(
                 "product-demo.mp4",
                 "video/mp4",
                 "test-video-bytes".getBytes()
         );
 
-        var response = storageService.uploadAdmin(adminPrincipal(), StoragePurpose.PRODUCT_VIDEO, null, file);
+        var response = storageService.uploadLibrary(adminPrincipal(), null, file);
 
         assertThat(file.bytesRead()).isTrue();
-        assertThat(response.purpose()).isEqualTo("PRODUCT_VIDEO");
+        assertThat(response.scope()).isEqualTo("LIBRARY");
+        assertThat(response.mediaKind()).isEqualTo("VIDEO");
         assertThat(response.visibility()).isEqualTo("PUBLIC");
         assertThat(response.contentType()).isEqualTo("video/mp4");
         assertThat(response.width()).isNull();
         assertThat(response.height()).isNull();
-        assertThat(response.publicUrl()).contains("/files/public/product-video/");
+        assertThat(response.publicUrl()).contains("/files/public/library/video/");
     }
 
     @Test
-    void oversizedProductVideoIsRejectedBeforeReadingBytes() {
-        TrackingMultipartFile file = TrackingMultipartFile.rejectIfRead(
-                "too-large.mp4",
-                "video/mp4",
-                DataSize.ofMegabytes(50).toBytes() + 1
+    void paymentSecretUsesPrivateDocumentProfileAndNoPublicUrl() {
+        TrackingMultipartFile file = TrackingMultipartFile.withBytes(
+                "merchant.pem",
+                "application/x-pem-file",
+                "-----BEGIN PRIVATE KEY-----".getBytes()
         );
 
-        assertThatThrownBy(() -> storageService.uploadAdmin(adminPrincipal(), StoragePurpose.PRODUCT_VIDEO, null, file))
-                .isInstanceOfSatisfying(BusinessException.class, ex ->
-                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
+        var response = storageService.uploadPaymentSecret(adminPrincipal(), file);
 
-        assertThat(file.bytesRead()).isFalse();
+        assertThat(response.scope()).isEqualTo("SECRET");
+        assertThat(response.mediaKind()).isEqualTo("DOCUMENT");
+        assertThat(response.visibility()).isEqualTo("PRIVATE");
+        assertThat(response.url()).isNull();
+        assertThat(response.publicUrl()).isNull();
     }
 
     private AuthenticatedPrincipal adminPrincipal() {
-        return new AuthenticatedPrincipal(TokenKind.ADMIN, 1L, "Super", List.of("SUPER_ADMIN"), List.of("file:upload"));
+        return new AuthenticatedPrincipal(TokenKind.ADMIN, 1L, "Super", List.of("SUPER_ADMIN"), List.of("asset:upload"));
     }
 
     private static final class TrackingMultipartFile implements MultipartFile {

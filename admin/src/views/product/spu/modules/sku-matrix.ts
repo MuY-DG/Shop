@@ -24,7 +24,7 @@ export const createEmptySpecValue = (sortOrder = 0): ProductEditorSpecValue => (
 export const createEmptySpecGroup = (sortOrder = 0): ProductEditorSpecGroup => ({
   groupKey: createEditorKey('group'),
   name: '',
-  imageEnabled: sortOrder === 0,
+  imageEnabled: false,
   sortOrder,
   values: [createEmptySpecValue(0)]
 })
@@ -186,7 +186,8 @@ export const reconcileSkuMatrix = (
 
 export const describeCombinationCount = (groups: ProductEditorSpecGroup[]) => {
   const factors = groups.map(
-    (group) => `${group.name.trim() || '未命名规格'} ${group.values.length}项`
+    (group, groupIndex) =>
+      `${group.name.trim() || `规格 ${groupIndex + 1}`} ${group.values.length}项`
   )
   return `${factors.join(' × ')} = ${combinationCount(groups)} 个组合`
 }

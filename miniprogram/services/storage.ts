@@ -1,8 +1,4 @@
-import type {
-  ApiResponse,
-  EvidenceUploadPurpose,
-  StorageFileUploadResponse
-} from "../types/api";
+import type { ApiResponse, StorageAssetUploadResponse } from "../types/api";
 import type { RawHttpResult } from "../utils/http";
 import { withAuthRecovery } from "../utils/request";
 import {
@@ -22,7 +18,7 @@ function getApiBaseUrl(): string {
 
 function parseUploadEnvelope(
   rawData: unknown
-): ApiResponse<StorageFileUploadResponse> | null {
+): ApiResponse<StorageAssetUploadResponse> | null {
   if (typeof rawData !== "string") {
     return null;
   }
@@ -31,7 +27,7 @@ function parseUploadEnvelope(
     if (!parsed || typeof parsed !== "object") {
       return null;
     }
-    const candidate = parsed as Partial<ApiResponse<StorageFileUploadResponse>>;
+    const candidate = parsed as Partial<ApiResponse<StorageAssetUploadResponse>>;
     if (
       typeof candidate.code !== "number" ||
       typeof candidate.msg !== "string"
@@ -41,7 +37,7 @@ function parseUploadEnvelope(
     return {
       code: candidate.code,
       msg: candidate.msg,
-      data: ("data" in candidate ? candidate.data : null) as StorageFileUploadResponse
+      data: ("data" in candidate ? candidate.data : null) as StorageAssetUploadResponse
     };
   } catch {
     return null;
@@ -76,16 +72,14 @@ function isOptionalPositiveStringId(value: unknown): boolean {
   );
 }
 
-function isStorageFileUploadResponse(
-  data: unknown,
-  purpose: EvidenceUploadPurpose
-): data is StorageFileUploadResponse {
+function isStorageAssetUploadResponse(data: unknown): data is StorageAssetUploadResponse {
   if (!isRecord(data)) {
     return false;
   }
   return (
     isPositiveFiniteNumber(data.id) &&
-    data.purpose === purpose &&
+    data.scope === "ATTACHMENT" &&
+    data.mediaKind === "IMAGE" &&
     data.visibility === "PRIVATE" &&
     data.uploadedByType === "APP" &&
     isNonEmptyString(data.provider) &&
@@ -97,7 +91,7 @@ function isStorageFileUploadResponse(
     isNonEmptyString(data.updatedAt) &&
     isPositiveFiniteNumber(data.sizeBytes) &&
     isOptionalPositiveStringId(data.uploadedById) &&
-    isOptionalPositiveFiniteNumber(data.assetCategoryId) &&
+    (data.folderId === undefined || data.folderId === null) &&
     isOptionalPositiveFiniteNumber(data.width) &&
     isOptionalPositiveFiniteNumber(data.height) &&
     (!("url" in data) || typeof data.url === "string" || data.url === null) &&
@@ -111,20 +105,20 @@ export interface EvidenceUploaderDependencies {
   session: SessionManager;
   upload(
     filePath: string,
-    purpose: EvidenceUploadPurpose,
+    orderId: number,
     authToken: string | null
-  ): Promise<RawHttpResult<StorageFileUploadResponse>>;
+  ): Promise<RawHttpResult<StorageAssetUploadResponse>>;
 }
 
 export function createEvidenceUploader(
   dependencies: EvidenceUploaderDependencies
-): (
-  filePath: string,
-  purpose: EvidenceUploadPurpose
-) => Promise<StorageFileUploadResponse> {
-  return async (filePath, purpose) => {
+): (filePath: string, orderId: number) => Promise<StorageAssetUploadResponse> {
+  return async (filePath, orderId) => {
+    if (!isPositiveFiniteNumber(orderId)) {
+      throw new Error("订单不存在");
+    }
     const result = await withAuthRecovery(
-      (authToken) => dependencies.upload(filePath, purpose, authToken),
+      (authToken) => dependencies.upload(filePath, orderId, authToken),
       {},
       dependencies.session
     );
@@ -134,7 +128,7 @@ export function createEvidenceUploader(
     if (result.body?.code !== SUCCESS_CODE || !result.body.data) {
       throw new Error(result.body?.msg || "上传响应格式错误");
     }
-    if (!isStorageFileUploadResponse(result.body.data, purpose)) {
+    if (!isStorageAssetUploadResponse(result.body.data)) {
       throw new Error("上传响应格式错误");
     }
     return result.body.data;
@@ -143,9 +137,9 @@ export function createEvidenceUploader(
 
 function rawUploadEvidenceFile(
   filePath: string,
-  purpose: EvidenceUploadPurpose,
+  orderId: number,
   authToken: string | null
-): Promise<RawHttpResult<StorageFileUploadResponse>> {
+): Promise<RawHttpResult<StorageAssetUploadResponse>> {
   const authTokenUsed = authToken || null;
   const header: Record<string, string> = {};
   if (authTokenUsed) {
@@ -154,10 +148,9 @@ function rawUploadEvidenceFile(
 
   return new Promise((resolve, reject) => {
     wx.uploadFile({
-      url: `${getApiBaseUrl()}/app/files/upload`,
+      url: `${getApiBaseUrl()}/app/orders/${orderId}/after-sale-evidence`,
       filePath,
       name: "file",
-      formData: { purpose },
       header,
       success: (response) => {
         resolve({
@@ -176,4 +169,4 @@ export const uploadEvidenceFile = createEvidenceUploader({
   upload: rawUploadEvidenceFile
 });
 
-export type StorageUploadEnvelope = ApiResponse<StorageFileUploadResponse>;
+export type StorageUploadEnvelope = ApiResponse<StorageAssetUploadResponse>;

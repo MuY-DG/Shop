@@ -15,7 +15,6 @@ import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
-import org.muybaby.shopserver.storage.StoragePurpose;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
@@ -33,14 +32,13 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Service
 public class AdminPaymentConfigService {
 
-    private static final Set<StoragePurpose> PAYMENT_FILE_PURPOSES = Set.of(StoragePurpose.PAYMENT_CERTIFICATE);
     private static final long DEFAULT_CURRENT = 1L;
     private static final long DEFAULT_SIZE = 20L;
     private static final long MAX_SIZE = 100L;
@@ -144,6 +142,8 @@ public class AdminPaymentConfigService {
     @Transactional
     public AdminPaymentConfigResponse create(AdminPaymentConfigRequest request) {
         ValidatedConfig validated = validateRequest(request, null);
+        List<Long> currentSecretIds = paymentSecretIds(validated);
+        privateStorageFileService.lockAndValidatePaymentSecrets(currentSecretIds, List.of());
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into payment_config
@@ -174,13 +174,17 @@ public class AdminPaymentConfigService {
                 new String[]{"id"});
         Long configId = requireGeneratedId(keyHolder);
         replaceProtectedUsages(configId, validated);
+        privateStorageFileService.reconcilePaymentSecretRetention(currentSecretIds, List.of());
         return requireConfig(configId);
     }
 
     @Transactional
     public AdminPaymentConfigResponse update(Long configId, AdminPaymentConfigRequest request) {
-        PaymentConfigRow existing = requireConfigRow(configId);
+        PaymentConfigRow existing = requireConfigRow(configId, true);
         ValidatedConfig validated = validateRequest(request, existing);
+        List<Long> currentSecretIds = paymentSecretIds(validated);
+        List<Long> previousSecretIds = paymentSecretIds(existing);
+        privateStorageFileService.lockAndValidatePaymentSecrets(currentSecretIds, previousSecretIds);
         int updatedRows = jdbcClient.sql("""
                         update payment_config
                         set config_name = :configName,
@@ -217,12 +221,13 @@ public class AdminPaymentConfigService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         replaceProtectedUsages(configId, validated);
+        privateStorageFileService.reconcilePaymentSecretRetention(currentSecretIds, previousSecretIds);
         return requireConfig(configId);
     }
 
     @Transactional
     public AdminPaymentConfigResponse enable(Long configId) {
-        requireConfigRow(configId);
+        requireConfigRow(configId, true);
         jdbcClient.sql("""
                         update payment_config
                         set enabled = false,
@@ -262,32 +267,19 @@ public class AdminPaymentConfigService {
         String notifyUrl = requireText(request.notifyUrl(), 255);
         String refundNotifyUrl = requireText(request.refundNotifyUrl(), 255);
         PaymentVerifyMode verifyMode = parseVerifyMode(request.verifyMode());
-        Long privateKeyFileId = requireFileIdOrExisting(
-                request.privateKeyFileId(),
-                existing == null ? null : existing.privateKeyFileId()
-        );
-        Long merchantCertificateFileId = fileIdOrExisting(
-                request.merchantCertificateFileId(),
-                existing == null ? null : existing.merchantCertificateFileId()
-        );
+        Long privateKeyFileId = requireFileId(request.privateKeyFileId());
+        Long merchantCertificateFileId = optionalFileId(request.merchantCertificateFileId());
         String wechatPublicKeyId = textOrExisting(
                 request.wechatPublicKeyId(),
                 128,
                 existing == null ? null : existing.wechatPublicKeyId()
         );
-        Long wechatPublicKeyFileId = fileIdOrExisting(
-                request.wechatPublicKeyFileId(),
-                existing == null ? null : existing.wechatPublicKeyFileId()
-        );
+        Long wechatPublicKeyFileId = optionalFileId(request.wechatPublicKeyFileId());
 
         if (verifyMode == PaymentVerifyMode.PUBLIC_KEY) {
             wechatPublicKeyId = requireText(wechatPublicKeyId, 128);
             wechatPublicKeyFileId = requireFileId(wechatPublicKeyFileId);
         }
-
-        validatePaymentFile(privateKeyFileId);
-        validatePaymentFile(merchantCertificateFileId);
-        validatePaymentFile(wechatPublicKeyFileId);
 
         String apiV3KeyCiphertext;
         String apiV3Key = trimToNull(request.apiV3Key());
@@ -316,12 +308,6 @@ public class AdminPaymentConfigService {
                 notifyUrl,
                 refundNotifyUrl
         );
-    }
-
-    private void validatePaymentFile(Long fileId) {
-        if (fileId != null) {
-            privateStorageFileService.readPrivateText(fileId, PAYMENT_FILE_PURPOSES);
-        }
     }
 
     private void replaceProtectedUsages(Long configId, ValidatedConfig validated) {
@@ -366,7 +352,7 @@ public class AdminPaymentConfigService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
     }
 
-    private PaymentConfigRow requireConfigRow(Long configId) {
+    private PaymentConfigRow requireConfigRow(Long configId, boolean forUpdate) {
         if (configId == null) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
@@ -377,7 +363,7 @@ public class AdminPaymentConfigService {
                         from payment_config
                         where id = :configId
                           and status = 'ACTIVE'
-                        """)
+                        """ + (forUpdate ? " for update" : ""))
                 .param("configId", configId)
                 .query((rs, rowNum) -> new PaymentConfigRow(
                         rs.getLong("id"),
@@ -392,6 +378,28 @@ public class AdminPaymentConfigService {
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+    }
+
+    private List<Long> paymentSecretIds(ValidatedConfig config) {
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        addIfPresent(ids, config.privateKeyFileId());
+        addIfPresent(ids, config.merchantCertificateFileId());
+        addIfPresent(ids, config.wechatPublicKeyFileId());
+        return new ArrayList<>(ids);
+    }
+
+    private List<Long> paymentSecretIds(PaymentConfigRow config) {
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        addIfPresent(ids, config.privateKeyFileId());
+        addIfPresent(ids, config.merchantCertificateFileId());
+        addIfPresent(ids, config.wechatPublicKeyFileId());
+        return new ArrayList<>(ids);
+    }
+
+    private void addIfPresent(LinkedHashSet<Long> ids, Long assetId) {
+        if (assetId != null) {
+            ids.add(assetId);
+        }
     }
 
     private AdminPaymentConfigResponse mapResponse(ResultSet rs, int rowNum) throws SQLException {
@@ -446,18 +454,17 @@ public class AdminPaymentConfigService {
     }
 
     private Long requireFileId(Long fileId) {
-        if (fileId == null) {
+        if (fileId == null || fileId <= 0) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return fileId;
     }
 
-    private Long requireFileIdOrExisting(Long fileId, Long existingFileId) {
-        return requireFileId(fileId == null ? existingFileId : fileId);
-    }
-
-    private Long fileIdOrExisting(Long fileId, Long existingFileId) {
-        return fileId == null ? existingFileId : fileId;
+    private Long optionalFileId(Long fileId) {
+        if (fileId != null && fileId <= 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return fileId;
     }
 
     private void rejectMaskedPlaceholder(String value) {

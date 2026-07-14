@@ -10,6 +10,7 @@ import org.muybaby.shopserver.content.dto.AdminHomeBannerRequest;
 import org.muybaby.shopserver.content.dto.AdminHomeBannerResponse;
 import org.muybaby.shopserver.content.dto.AppHomeBannerResponse;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
+import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -355,6 +356,7 @@ public class HomeBannerService {
     }
 
     private String resolveImageUrl(Long imageFileId, BannerRow existing) {
+        storageUsageService.requireActivePublicMedia(imageFileId, StorageMediaKind.IMAGE);
         if (existing != null
                 && Objects.equals(existing.imageFileId(), imageFileId)
                 && StringUtils.hasText(existing.imageUrl())) {
@@ -362,8 +364,10 @@ public class HomeBannerService {
         }
         return jdbcClient.sql("""
                         select public_url
-                        from storage_file
+                        from storage_asset
                         where id = :fileId
+                          and scope = 'LIBRARY'
+                          and media_kind = 'IMAGE'
                           and status = 'ACTIVE'
                           and visibility = 'PUBLIC'
                         """)

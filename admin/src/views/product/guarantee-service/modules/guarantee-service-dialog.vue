@@ -32,11 +32,7 @@
       </ElFormItem>
 
       <ElFormItem label="服务条款图标" prop="icon">
-        <AssetPicker
-          :model-value="iconAsset"
-          purpose="GUARANTEE_SERVICE_ICON"
-          @change="handleIconChange"
-        />
+        <AssetPicker :model-value="iconAsset" media-kind="IMAGE" @change="handleIconChange" />
       </ElFormItem>
 
       <ElFormItem label="排序" prop="sortOrder">

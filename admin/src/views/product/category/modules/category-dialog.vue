@@ -25,11 +25,7 @@
         <ElInput v-model="formData.name" maxlength="40" placeholder="请输入分类名称" />
       </ElFormItem>
       <ElFormItem label="分类图标">
-        <AssetPicker
-          v-model="iconAsset"
-          purpose="CATEGORY_ICON"
-          @change="handleIconChange"
-        />
+        <AssetPicker v-model="iconAsset" media-kind="IMAGE" @change="handleIconChange" />
       </ElFormItem>
       <ElFormItem label="图标地址" prop="icon">
         <ElInput v-model="formData.icon" placeholder="请输入图标 URL" />

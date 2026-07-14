@@ -56,13 +56,17 @@ export interface HomeBanner {
   jumpPath: string | null;
 }
 
-export type EvidenceUploadPurpose = "AFTER_SALE_IMAGE" | "REFUND_EVIDENCE";
+export type StorageAssetScope = "LIBRARY" | "ATTACHMENT" | "SECRET";
+export type StorageMediaKind = "IMAGE" | "VIDEO" | "DOCUMENT";
+export type StorageVisibility = "PUBLIC" | "PRIVATE";
+export type StorageAssetStatus = "ACTIVE" | "DELETE_PENDING" | "DELETED";
 
-export interface StorageFileUploadResponse {
+export interface StorageAssetUploadResponse {
   id: number;
-  purpose: EvidenceUploadPurpose;
-  assetCategoryId: number | null;
-  visibility: string;
+  scope: StorageAssetScope;
+  mediaKind: StorageMediaKind;
+  folderId?: number | null;
+  visibility: StorageVisibility;
   provider: string;
   originalFilename: string;
   contentType: string;
@@ -71,13 +75,14 @@ export interface StorageFileUploadResponse {
   sha256?: string | null;
   width?: number | null;
   height?: number | null;
-  status: string;
-  uploadedByType: string;
+  status: StorageAssetStatus;
+  uploadedByType: "ADMIN" | "APP";
   uploadedById?: string | null;
   url?: string | null;
   publicUrl?: string | null;
   createdAt: string;
   updatedAt: string;
+  expiresAt?: string | null;
   deletedAt?: string | null;
 }
 
@@ -284,9 +289,10 @@ export interface AfterSaleEvidenceFile {
   originalFilename: string;
   contentType: string;
   sizeBytes: number;
-  visibility: string;
-  purpose: EvidenceUploadPurpose;
-  status: string;
+  scope: StorageAssetScope;
+  mediaKind: StorageMediaKind;
+  visibility: StorageVisibility;
+  status: StorageAssetStatus;
 }
 
 export interface RefundOrder {

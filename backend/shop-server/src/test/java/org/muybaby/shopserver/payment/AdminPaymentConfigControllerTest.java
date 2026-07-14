@@ -16,6 +16,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -27,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
@@ -34,6 +36,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -107,15 +110,71 @@ class AdminPaymentConfigControllerTest {
     @BeforeEach
     void clearPaymentConfigState() {
         clearLimitedAdmins();
-        jdbcClient.sql("delete from storage_file_usage").update();
+        jdbcClient.sql("delete from storage_asset_usage").update();
         jdbcClient.sql("delete from payment_config").update();
         jdbcClient.sql("delete from payment_runtime_setting").update();
-        jdbcClient.sql("delete from storage_file").update();
+        jdbcClient.sql("delete from storage_asset").update();
     }
 
     @AfterEach
     void clearLimitedAdminState() {
         clearLimitedAdmins();
+    }
+
+    @Test
+    void paymentWriteAuthorityUploadsASecretDocumentOutsideTheAssetLibrary() throws Exception {
+        String readToken = limitedAdminToken(List.of("payment:config:read"));
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "merchant-private.pem",
+                "text/plain",
+                PRIVATE_KEY_PEM.getBytes(StandardCharsets.UTF_8)
+        );
+
+        mockMvc.perform(multipart("/admin/pay/configs/secret-files")
+                        .file(file)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
+
+        String response = mockMvc.perform(multipart("/admin/pay/configs/secret-files")
+                        .file(file)
+                        .header("Authorization", "Bearer " + writeToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.scope").value("SECRET"))
+                .andExpect(jsonPath("$.data.mediaKind").value("DOCUMENT"))
+                .andExpect(jsonPath("$.data.visibility").value("PRIVATE"))
+                .andExpect(jsonPath("$.data.uploadedByType").value("ADMIN"))
+                .andExpect(jsonPath("$.data.expiresAt").isString())
+                .andExpect(jsonPath("$.data.url").doesNotExist())
+                .andExpect(jsonPath("$.data.publicUrl").doesNotExist())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long assetId = objectMapper.readTree(response).path("data").path("id").asLong();
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from storage_asset
+                        where id = :assetId
+                          and scope = 'SECRET'
+                          and media_kind = 'DOCUMENT'
+                          and visibility = 'PRIVATE'
+                          and uploaded_by_type = 'ADMIN'
+                          and public_url is null
+                        """)
+                .param("assetId", assetId)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        LocalDateTime expiresAt = jdbcClient.sql("select expires_at from storage_asset where id = :assetId")
+                .param("assetId", assetId)
+                .query(LocalDateTime.class)
+                .single();
+        LocalDateTime databaseNow = databaseNow();
+        assertThat(expiresAt)
+                .isAfter(databaseNow.plusHours(1))
+                .isBefore(databaseNow.plusHours(3));
     }
 
     @Test
@@ -221,9 +280,9 @@ class AdminPaymentConfigControllerTest {
         String readToken = limitedAdminToken(List.of("payment:config:read"));
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
         String enableToken = limitedAdminToken(List.of("payment:config:enable"));
-        long privateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
         long configId = createConfig(writeToken, "Switchable DB Pay", privateKeyFileId, certFileId, publicKeyFileId);
 
         mockMvc.perform(post("/admin/pay/configs/{configId}/enable", configId)
@@ -260,9 +319,9 @@ class AdminPaymentConfigControllerTest {
     @Test
     void creatingDbConfigEncryptsApiV3KeyRegistersPrivateFileUsagesAndReturnsMaskedResponse() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long privateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
 
         String response = mockMvc.perform(post("/admin/pay/configs")
                         .header("Authorization", "Bearer " + writeToken)
@@ -307,7 +366,7 @@ class AdminPaymentConfigControllerTest {
 
         Integer activeProtectedUsageCount = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where owner_type = 'PAYMENT_CONFIG'
                           and owner_id = :configId
                           and usage_type = 'PAYMENT_CONFIG_CERT'
@@ -318,17 +377,18 @@ class AdminPaymentConfigControllerTest {
                 .query(Integer.class)
                 .single();
         assertThat(activeProtectedUsageCount).isEqualTo(3);
+        assertClaimed(privateKeyFileId, certFileId, publicKeyFileId);
     }
 
     @Test
     void updatingDbConfigWithBlankSensitiveFieldsPreservesExistingValuesAndAllowsCallbackAndFileChanges() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long privateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-        long replacementPrivateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private-v2.pem", PRIVATE_KEY_PEM);
-        long replacementCertFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert-v2.pem", CERTIFICATE_PEM);
-        long replacementPublicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public-v2.pem", PUBLIC_KEY_PEM);
+        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long replacementPrivateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private-v2.pem", PRIVATE_KEY_PEM);
+        long replacementCertFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert-v2.pem", CERTIFICATE_PEM);
+        long replacementPublicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public-v2.pem", PUBLIC_KEY_PEM);
 
         long configId = createConfig(writeToken, "Secret Preserve", privateKeyFileId, certFileId, publicKeyFileId);
         PaymentConfigSnapshot before = paymentConfigSnapshot(configId);
@@ -372,15 +432,87 @@ class AdminPaymentConfigControllerTest {
         assertThat(after.wechatPublicKeyFileId()).isEqualTo(replacementPublicKeyFileId);
         assertThat(after.notifyUrl()).isEqualTo("https://pay.example.test/wxpay/pay/notify/v2");
         assertThat(after.refundNotifyUrl()).isEqualTo("https://pay.example.test/wxpay/refund/notify/v2");
+        assertClaimed(replacementPrivateKeyFileId, replacementCertFileId, replacementPublicKeyFileId);
+        assertReleased(privateKeyFileId, certFileId, publicKeyFileId);
+    }
+
+    @Test
+    void updatingDbConfigCanExplicitlyClearOptionalMerchantCertificateAndReleaseIt() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long configId = createConfig(writeToken, "Clear Optional Cert", privateKeyFileId, certFileId, publicKeyFileId);
+
+        mockMvc.perform(put("/admin/pay/configs/{configId}", configId)
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(configJson(
+                                "Clear Optional Cert",
+                                " ",
+                                " ",
+                                " ",
+                                " ",
+                                privateKeyFileId,
+                                null,
+                                "PUBLIC_KEY",
+                                " ",
+                                publicKeyFileId,
+                                "https://pay.example.test/wxpay/pay/notify",
+                                "https://pay.example.test/wxpay/refund/notify")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.merchantCertificateFileId").doesNotExist());
+
+        assertThat(jdbcClient.sql("select merchant_certificate_file_id from payment_config where id = :configId")
+                .param("configId", configId)
+                .query(Long.class)
+                .optional()).isEmpty();
+        assertReleased(certFileId);
+        assertClaimed(privateKeyFileId, publicKeyFileId);
+    }
+
+    @Test
+    void expiredStagedSecretCannotBeClaimedByPaymentConfig() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "expired-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        jdbcClient.sql("update storage_asset set expires_at = :expiredAt where id = :assetId")
+                .param("expiredAt", LocalDateTime.now().minusMinutes(1))
+                .param("assetId", privateKeyFileId)
+                .update();
+
+        mockMvc.perform(post("/admin/pay/configs")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(configJson(
+                                "Expired Secret",
+                                "wx_db_app_123456",
+                                "mch_db_123456",
+                                "serial_db_123456",
+                                "synthetic_db_api_v3_key",
+                                privateKeyFileId,
+                                certFileId,
+                                "PUBLIC_KEY",
+                                "pub_key_db_123456",
+                                publicKeyFileId,
+                                "https://pay.example.test/wxpay/pay/notify",
+                                "https://pay.example.test/wxpay/refund/notify")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
+
+        assertThat(jdbcClient.sql("select count(*) from payment_config where config_name = 'Expired Secret'")
+                .query(Integer.class)
+                .single()).isZero();
     }
 
     @Test
     void enablingOneDbConfigDisablesOtherDbConfigs() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
         String enableToken = limitedAdminToken(List.of("payment:config:enable"));
-        long privateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
         long firstConfigId = createConfig(writeToken, "First Pay", privateKeyFileId, certFileId, publicKeyFileId);
         long secondConfigId = createConfig(writeToken, "Second Pay", privateKeyFileId, certFileId, publicKeyFileId);
 
@@ -398,12 +530,12 @@ class AdminPaymentConfigControllerTest {
     }
 
     @Test
-    void publicFilesOrWrongPurposeFilesCannotBeUsedForPaymentConfig() throws Exception {
+    void publicOrNonSecretAssetsCannotBeUsedForPaymentConfig() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long publicPaymentFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PUBLIC", "public-private.pem", PRIVATE_KEY_PEM);
-        long wrongPurposeFileId = insertStorageFile("AFTER_SALE_IMAGE", "PRIVATE", "after-sale-private.pem", PRIVATE_KEY_PEM);
-        long validCertFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long validPublicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long publicPaymentFileId = insertStorageAsset("LIBRARY", "DOCUMENT", "PUBLIC", "public-private.pem", PRIVATE_KEY_PEM);
+        long wrongScopeFileId = insertStorageAsset("ATTACHMENT", "IMAGE", "PRIVATE", "after-sale-private.pem", PRIVATE_KEY_PEM);
+        long validCertFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long validPublicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
 
         mockMvc.perform(post("/admin/pay/configs")
                         .header("Authorization", "Bearer " + writeToken)
@@ -428,12 +560,12 @@ class AdminPaymentConfigControllerTest {
                         .header("Authorization", "Bearer " + writeToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(configJson(
-                                "Bad Purpose File",
+                                "Bad Scope File",
                                 "wx_db_app_123456",
                                 "mch_db_123456",
                                 "serial_db_123456",
                                 "synthetic_db_api_v3_key",
-                                wrongPurposeFileId,
+                                wrongScopeFileId,
                                 validCertFileId,
                                 "PUBLIC_KEY",
                                 "pub_key_db_123456",
@@ -447,9 +579,9 @@ class AdminPaymentConfigControllerTest {
     @Test
     void certificateVerifyModeIsRejectedForCreateAndUpdate() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long privateKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageFile("PAYMENT_CERTIFICATE", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
 
         mockMvc.perform(post("/admin/pay/configs")
                         .header("Authorization", "Bearer " + writeToken)
@@ -523,25 +655,34 @@ class AdminPaymentConfigControllerTest {
         return objectMapper.readTree(response).path("data").path("id").asLong();
     }
 
-    private long insertStorageFile(String purpose, String visibility, String filename, String content) {
+    private long insertStorageAsset(
+            String scope,
+            String mediaKind,
+            String visibility,
+            String filename,
+            String content
+    ) {
         String objectKey = "test/" + UUID.randomUUID() + "/" + filename;
         byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
         storageProvider.put(objectKey, "text/plain", new ByteArrayInputStream(bytes), bytes.length);
         jdbcClient.sql("""
-                        insert into storage_file
-                            (purpose, visibility, provider, bucket, object_key, original_filename,
-                             content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id)
+                        insert into storage_asset
+                            (scope, media_kind, visibility, provider, storage_container, object_key, original_filename,
+                             content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id,
+                             expires_at)
                         values
-                            (:purpose, :visibility, 'LOCAL', '', :objectKey, :filename,
-                             'text/plain', 'pem', :sizeBytes, '', 'ACTIVE', 'ADMIN', 1)
+                            (:scope, :mediaKind, :visibility, 'LOCAL', '', :objectKey, :filename,
+                             'text/plain', 'pem', :sizeBytes, '', 'ACTIVE', 'ADMIN', 1, :expiresAt)
                         """)
-                .param("purpose", purpose)
+                .param("scope", scope)
+                .param("mediaKind", mediaKind)
                 .param("visibility", visibility)
                 .param("objectKey", objectKey)
                 .param("filename", filename)
                 .param("sizeBytes", bytes.length)
+                .param("expiresAt", LocalDateTime.now().plusHours(2))
                 .update();
-        return jdbcClient.sql("select id from storage_file where object_key = :objectKey")
+        return jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
                 .param("objectKey", objectKey)
                 .query(Long.class)
                 .single();
@@ -575,6 +716,34 @@ class AdminPaymentConfigControllerTest {
                         rs.getString("notify_url"),
                         rs.getString("refund_notify_url")
                 ))
+                .single();
+    }
+
+    private void assertClaimed(long... assetIds) {
+        for (long assetId : assetIds) {
+            assertThat(jdbcClient.sql("select count(*) from storage_asset where id = :id and expires_at is null")
+                    .param("id", assetId)
+                    .query(Integer.class)
+                    .single()).isEqualTo(1);
+        }
+    }
+
+    private void assertReleased(long... assetIds) {
+        LocalDateTime databaseNow = databaseNow();
+        for (long assetId : assetIds) {
+            LocalDateTime expiresAt = jdbcClient.sql("select expires_at from storage_asset where id = :id")
+                    .param("id", assetId)
+                    .query(LocalDateTime.class)
+                    .single();
+            assertThat(expiresAt)
+                    .isAfter(databaseNow.plusHours(23))
+                    .isBefore(databaseNow.plusHours(25));
+        }
+    }
+
+    private LocalDateTime databaseNow() {
+        return jdbcClient.sql("select current_timestamp")
+                .query(LocalDateTime.class)
                 .single();
     }
 

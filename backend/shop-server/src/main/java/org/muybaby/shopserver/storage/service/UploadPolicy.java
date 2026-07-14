@@ -3,9 +3,10 @@ package org.muybaby.shopserver.storage.service;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.storage.FileVisibility;
+import org.muybaby.shopserver.storage.StorageAssetScope;
 import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageProperties;
-import org.muybaby.shopserver.storage.StoragePurpose;
+import org.muybaby.shopserver.storage.StorageUploadProfile;
 
 import java.util.Locale;
 import java.util.Map;
@@ -14,7 +15,7 @@ import java.util.Set;
 public class UploadPolicy {
 
     private static final Set<String> IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp", "gif");
-    private static final Set<String> CERTIFICATE_EXTENSIONS = Set.of("pem", "crt", "cer", "txt");
+    private static final Set<String> DOCUMENT_EXTENSIONS = Set.of("pem", "crt", "cer", "txt");
     private static final Map<String, String> VIDEO_CONTENT_TYPES = Map.of(
             "mp4", "video/mp4",
             "webm", "video/webm"
@@ -25,7 +26,7 @@ public class UploadPolicy {
             "image/webp",
             "image/gif"
     );
-    private static final Set<String> CERTIFICATE_CONTENT_TYPES = Set.of(
+    private static final Set<String> DOCUMENT_CONTENT_TYPES = Set.of(
             "text/plain",
             "application/x-pem-file",
             "application/x-x509-ca-cert",
@@ -39,31 +40,51 @@ public class UploadPolicy {
     }
 
     public UploadDecision requireAllowed(
-            StoragePurpose purpose,
+            StorageUploadProfile profile,
             String originalFilename,
             String contentType,
             long sizeBytes,
             boolean imageReadable
     ) {
-        if (sizeBytes <= 0) {
+        if (profile == null || sizeBytes <= 0) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
 
         String extension = extensionOf(originalFilename);
         String normalizedContentType = normalizeContentType(contentType);
-        if (purpose.mediaKind() == StorageMediaKind.IMAGE) {
+        if (profile.mediaKind() == StorageMediaKind.IMAGE) {
             requireAllowedImage(extension, normalizedContentType, sizeBytes, imageReadable);
-        } else if (purpose.mediaKind() == StorageMediaKind.VIDEO) {
+        } else if (profile.mediaKind() == StorageMediaKind.VIDEO) {
             requireAllowedVideo(extension, normalizedContentType, sizeBytes);
         } else {
-            requireAllowedCertificate(extension, normalizedContentType, sizeBytes);
+            requireAllowedDocument(extension, normalizedContentType, sizeBytes);
         }
 
-        FileVisibility visibility = purpose == StoragePurpose.PAYMENT_CERTIFICATE
-                ? FileVisibility.PRIVATE
-                : purpose.visibility();
+        return new UploadDecision(
+                profile,
+                profile.scope(),
+                profile.mediaKind(),
+                profile.visibility(),
+                extension,
+                normalizedContentType
+        );
+    }
 
-        return new UploadDecision(purpose, visibility, extension, contentType);
+    /**
+     * Detects the only two profiles accepted by the generic asset-library
+     * endpoint. Private profiles must always be selected by their owning
+     * business endpoint.
+     */
+    public StorageUploadProfile detectLibraryProfile(String originalFilename, String contentType) {
+        String extension = extensionOf(originalFilename);
+        String normalizedContentType = normalizeContentType(contentType);
+        if (IMAGE_EXTENSIONS.contains(extension) && IMAGE_CONTENT_TYPES.contains(normalizedContentType)) {
+            return StorageUploadProfile.LIBRARY_IMAGE;
+        }
+        if (normalizedContentType.equals(VIDEO_CONTENT_TYPES.get(extension))) {
+            return StorageUploadProfile.LIBRARY_VIDEO;
+        }
+        throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
     }
 
     private void requireAllowedImage(String extension, String contentType, long sizeBytes, boolean imageReadable) {
@@ -84,8 +105,8 @@ public class UploadPolicy {
         }
     }
 
-    private void requireAllowedCertificate(String extension, String contentType, long sizeBytes) {
-        if (!CERTIFICATE_EXTENSIONS.contains(extension) || !CERTIFICATE_CONTENT_TYPES.contains(contentType)) {
+    private void requireAllowedDocument(String extension, String contentType, long sizeBytes) {
+        if (!DOCUMENT_EXTENSIONS.contains(extension) || !DOCUMENT_CONTENT_TYPES.contains(contentType)) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
         if (sizeBytes > storageProperties.limits().privateFileMaxSize().toBytes()) {
@@ -111,7 +132,9 @@ public class UploadPolicy {
     }
 
     public record UploadDecision(
-            StoragePurpose purpose,
+            StorageUploadProfile profile,
+            StorageAssetScope scope,
+            StorageMediaKind mediaKind,
             FileVisibility visibility,
             String extension,
             String contentType

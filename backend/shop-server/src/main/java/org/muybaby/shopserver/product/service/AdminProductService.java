@@ -645,7 +645,7 @@ public class AdminProductService {
 
     private void deleteProductOwnedFileUsages(Long spuId, List<ProductSku> skus) {
         jdbcClient.sql("""
-                        delete from storage_file_usage
+                        delete from storage_asset_usage
                         where owner_type = :ownerType
                           and owner_id = :spuId
                         """)
@@ -654,7 +654,7 @@ public class AdminProductService {
                 .update();
         for (ProductSku sku : skus) {
             jdbcClient.sql("""
-                            delete from storage_file_usage
+                            delete from storage_asset_usage
                             where owner_type = :ownerType
                               and owner_id = :skuId
                             """)
@@ -674,7 +674,7 @@ public class AdminProductService {
                 .list();
         for (Long specValueId : specValueIds) {
             jdbcClient.sql("""
-                            delete from storage_file_usage
+                            delete from storage_asset_usage
                             where owner_type = :ownerType
                               and owner_id = :specValueId
                             """)
@@ -2194,8 +2194,10 @@ public class AdminProductService {
         }
         return jdbcClient.sql("""
                         select id, public_url
-                        from storage_file
-                        where status = 'ACTIVE'
+                        from storage_asset
+                        where scope = 'LIBRARY'
+                          and media_kind = 'IMAGE'
+                          and status = 'ACTIVE'
                           and visibility = 'PUBLIC'
                           and public_url is not null
                           and public_url <> ''

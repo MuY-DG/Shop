@@ -99,10 +99,10 @@ class AdminMenuControllerTest {
                 )))
                 .andExpect(jsonPath("$.data[4].path").value("/storage/files"))
                 .andExpect(jsonPath("$.data[4].meta.authList[*].authMark", containsInAnyOrder(
-                        "file:upload",
-                        "file:read",
-                        "file:delete",
-                        "file:category"
+                        "asset:upload",
+                        "asset:read",
+                        "asset:delete",
+                        "asset:folder"
                 )))
                 .andExpect(jsonPath("$.data[5].path").value("/content/banner"))
                 .andExpect(jsonPath("$.data[5].meta.authList[*].authMark", containsInAnyOrder(

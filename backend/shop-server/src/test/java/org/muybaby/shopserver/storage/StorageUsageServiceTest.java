@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.storage;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
 import org.muybaby.shopserver.common.error.BusinessException;
@@ -27,14 +29,17 @@ class StorageUsageServiceTest {
     @Autowired
     private JdbcClient jdbcClient;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @AfterEach
     void cleanUp() {
-        jdbcClient.sql("delete from storage_file_usage").update();
-        jdbcClient.sql("delete from storage_file").update();
+        jdbcClient.sql("delete from storage_asset_usage").update();
+        jdbcClient.sql("delete from storage_asset").update();
     }
 
     @Test
-    void addProtectedUsageRejectsMissingFile() {
+    void addProtectedUsageRejectsMissingAsset() {
         assertThatThrownBy(() -> storageUsageService.addProtectedUsage(
                 999999L,
                 StorageFileUsageType.ORDER_ITEM_SNAPSHOT,
@@ -50,8 +55,8 @@ class StorageUsageServiceTest {
     }
 
     @Test
-    void replaceOwnerUsagesRejectsDeletedFiles() {
-        long deletedFileId = insertStorageFile("deleted-image.png", "DELETED");
+    void replaceOwnerUsagesRejectsDeletedAssets() {
+        long deletedFileId = insertStorageAsset("deleted-image.png", "DELETED");
 
         assertThatThrownBy(() -> storageUsageService.replaceOwnerUsages(
                 StorageUsageOwnerType.PRODUCT_SPU,
@@ -71,13 +76,15 @@ class StorageUsageServiceTest {
     }
 
     @Test
-    void activePublicMediaValidationRejectsWrongKindAndPrivateFiles() {
-        long imageFileId = insertStorageFile(
-                "media-image.png", "ACTIVE", "PRODUCT_IMAGE", "PUBLIC", "image/png", "png");
-        long videoFileId = insertStorageFile(
-                "media-video.mp4", "ACTIVE", "PRODUCT_VIDEO", "PUBLIC", "video/mp4", "mp4");
-        long privateFileId = insertStorageFile(
-                "private-cert.pem", "ACTIVE", "PAYMENT_CERTIFICATE", "PRIVATE", "application/x-pem-file", "pem");
+    void activePublicMediaValidationRequiresLibraryPublicActiveAndMatchingKind() {
+        long imageFileId = insertStorageAsset(
+                "media-image.png", "ACTIVE", "LIBRARY", "IMAGE", "PUBLIC", "image/png", "png");
+        long videoFileId = insertStorageAsset(
+                "media-video.mp4", "ACTIVE", "LIBRARY", "VIDEO", "PUBLIC", "video/mp4", "mp4");
+        long attachmentFileId = insertStorageAsset(
+                "private-evidence.png", "ACTIVE", "ATTACHMENT", "IMAGE", "PRIVATE", "image/png", "png");
+        long deletedImageFileId = insertStorageAsset(
+                "deleted-library.png", "DELETED", "LIBRARY", "IMAGE", "PUBLIC", "image/png", "png");
 
         storageUsageService.requireActivePublicMedia(imageFileId, StorageMediaKind.IMAGE);
         storageUsageService.requireActivePublicMedia(videoFileId, StorageMediaKind.VIDEO);
@@ -85,15 +92,46 @@ class StorageUsageServiceTest {
         assertThatThrownBy(() -> storageUsageService.requireActivePublicMedia(imageFileId, StorageMediaKind.VIDEO))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
-        assertThatThrownBy(() -> storageUsageService.requireActivePublicMedia(privateFileId, StorageMediaKind.IMAGE))
+        assertThatThrownBy(() -> storageUsageService.requireActivePublicMedia(attachmentFileId, StorageMediaKind.IMAGE))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+        assertThatThrownBy(() -> storageUsageService.requireActivePublicMedia(deletedImageFileId, StorageMediaKind.IMAGE))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+    }
+
+    @Test
+    void replaceOwnerUsagesPersistsAndReturnsAssetId() {
+        long assetId = insertStorageAsset("active-image.png", "ACTIVE");
+
+        storageUsageService.replaceOwnerUsages(
+                StorageUsageOwnerType.PRODUCT_SPU,
+                102L,
+                "清汤锅底",
+                List.of(new StorageUsageService.UsageAssignment(
+                        assetId,
+                        StorageFileUsageType.PRODUCT_SPU_MAIN,
+                        "snapshot-url",
+                        1,
+                        false
+                ))
+        );
+
+        assertThat(storageUsageService.hasActiveUsages(assetId)).isTrue();
+        assertThat(storageUsageService.usages(assetId)).singleElement().satisfies(usage -> {
+            assertThat(usage.assetId()).isEqualTo(assetId);
+            assertThat(usage.usageType()).isEqualTo("PRODUCT_SPU_MAIN");
+            assertThat(usage.ownerType()).isEqualTo("PRODUCT_SPU");
+            JsonNode json = objectMapper.valueToTree(usage);
+            assertThat(json.has("assetId")).isTrue();
+            assertThat(json.has("fileId")).isFalse();
+        });
     }
 
     private int activeUsageCount(StorageUsageOwnerType ownerType, Long ownerId) {
         Integer count = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where status = 'ACTIVE'
                           and owner_type = :ownerType
                           and owner_id = :ownerId
@@ -105,32 +143,34 @@ class StorageUsageServiceTest {
         return count == null ? 0 : count;
     }
 
-    private long insertStorageFile(String originalFilename, String status) {
-        return insertStorageFile(
-                originalFilename, status, "PRODUCT_IMAGE", "PUBLIC", "image/png", "png");
+    private long insertStorageAsset(String originalFilename, String status) {
+        return insertStorageAsset(
+                originalFilename, status, "LIBRARY", "IMAGE", "PUBLIC", "image/png", "png");
     }
 
-    private long insertStorageFile(
+    private long insertStorageAsset(
             String originalFilename,
             String status,
-            String purpose,
+            String scope,
+            String mediaKind,
             String visibility,
             String contentType,
             String extension
     ) {
         jdbcClient.sql("""
-                        insert into storage_file
-                            (purpose, asset_category_id, visibility, provider, bucket, object_key, original_filename,
+                        insert into storage_asset
+                            (scope, media_kind, folder_id, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
                              public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (:purpose, 1, :visibility, 'LOCAL', '', :objectKey, :originalFilename,
+                            (:scope, :mediaKind, null, :visibility, 'LOCAL', '', :objectKey, :originalFilename,
                              :contentType, :extension, 68, 'abc123', 1, 1, '', null,
                              'http://localhost:8080/files/public/test.png', :status, 'ADMIN', 1)
                         """)
                 .param("objectKey", "public/test/" + status.toLowerCase() + "/" + System.nanoTime() + ".png")
                 .param("originalFilename", originalFilename)
-                .param("purpose", purpose)
+                .param("scope", scope)
+                .param("mediaKind", mediaKind)
                 .param("visibility", visibility)
                 .param("contentType", contentType)
                 .param("extension", extension)
@@ -139,7 +179,7 @@ class StorageUsageServiceTest {
 
         Long fileId = jdbcClient.sql("""
                         select id
-                        from storage_file
+                        from storage_asset
                         where original_filename = :originalFilename
                         order by id desc
                         limit 1

@@ -7,10 +7,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record StorageFileResponse(
+public record StorageAssetResponse(
         Long id,
-        String purpose,
-        Long assetCategoryId,
+        String scope,
+        String mediaKind,
+        Long folderId,
         String visibility,
         String provider,
         String originalFilename,
@@ -20,15 +21,19 @@ public record StorageFileResponse(
         String sha256,
         Integer width,
         Integer height,
+        Integer durationSeconds,
+        String altText,
+        List<String> tags,
         String status,
         String uploadedByType,
-        @JsonStringId
-        Long uploadedById,
+        @JsonStringId Long uploadedById,
         String url,
         String publicUrl,
+        Long usageCount,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
+        LocalDateTime expiresAt,
         LocalDateTime deletedAt,
-        List<StorageFileUsageResponse> usages
+        List<StorageAssetUsageResponse> usages
 ) {
 }

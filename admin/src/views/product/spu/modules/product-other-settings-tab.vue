@@ -1,132 +1,111 @@
 <template>
   <div class="other-settings-tab">
-    <section class="settings-section">
-      <div class="settings-section__heading">
-        <h3>基础设置</h3>
-        <p>排序越小越靠前；展示销量 = 实际支付销量 + 虚拟销量。</p>
-      </div>
-      <div class="settings-grid">
-        <ElFormItem label="排序">
-          <ElInputNumber
-            :model-value="modelValue.sortOrder"
-            :min="0"
-            :precision="0"
-            :disabled="disabled"
-            controls-position="right"
-            style="width: 100%"
-            @update:model-value="patchForm({ sortOrder: $event ?? 0 })"
-          />
-          <div class="field-hint">可选，默认 0</div>
-        </ElFormItem>
-        <ElFormItem label="虚拟销量">
-          <ElInputNumber
-            :model-value="modelValue.virtualSales"
-            :min="0"
-            :precision="0"
-            :disabled="disabled"
-            controls-position="right"
-            style="width: 100%"
-            @update:model-value="patchForm({ virtualSales: $event ?? 0 })"
-          />
-          <div class="field-hint">为 0 时只展示实际支付销量</div>
-        </ElFormItem>
-      </div>
-    </section>
+    <ElForm label-position="left" label-width="120px" class="settings-form">
+      <ElFormItem>
+        <template #label>
+          <span class="settings-label">
+            排序
+            <ElTooltip content="数值越小越靠前，默认 0" placement="top">
+              <ElIcon><WarningFilled /></ElIcon>
+            </ElTooltip>
+          </span>
+        </template>
+        <ElInputNumber
+          :model-value="modelValue.sortOrder"
+          :min="0"
+          :precision="0"
+          :disabled="disabled"
+          controls-position="right"
+          class="settings-number"
+          @update:model-value="patchForm({ sortOrder: $event ?? 0 })"
+        />
+      </ElFormItem>
 
-    <section class="settings-section">
-      <div class="settings-section__heading">
-        <h3>商品标签</h3>
-        <p>可多选，标签用于后台运营标记和后续商品聚合展示。</p>
-      </div>
-      <ElCheckboxGroup
-        :model-value="modelValue.tags"
-        :disabled="disabled"
-        class="tag-options"
-        @update:model-value="updateTags"
-      >
-        <ElCheckboxButton
-          v-for="option in PRODUCT_TAG_OPTIONS"
-          :key="option.value"
-          :value="option.value"
+      <ElFormItem>
+        <template #label>
+          <span class="settings-label">
+            虚拟销量
+            <ElTooltip content="展示销量 = 实际支付销量 + 虚拟销量" placement="top">
+              <ElIcon><WarningFilled /></ElIcon>
+            </ElTooltip>
+          </span>
+        </template>
+        <ElInputNumber
+          :model-value="modelValue.virtualSales"
+          :min="0"
+          :precision="0"
+          :disabled="disabled"
+          controls-position="right"
+          class="settings-number"
+          @update:model-value="patchForm({ virtualSales: $event ?? 0 })"
+        />
+      </ElFormItem>
+
+      <ElFormItem label="商品标签">
+        <ElCheckboxGroup
+          :model-value="modelValue.tags"
+          :disabled="disabled"
+          class="tag-options"
+          @update:model-value="updateTags"
         >
-          {{ option.label }}
-        </ElCheckboxButton>
-      </ElCheckboxGroup>
-    </section>
-
-    <section class="settings-section">
-      <div class="settings-section__heading settings-section__heading--row">
-        <div>
-          <h3>优惠券</h3>
-          <p>可绑定全场券和当前商品专属券；专属商品券需先保存商品一次。</p>
-        </div>
-        <div class="coupon-actions">
-          <ElButton :loading="couponLoading" :disabled="disabled" @click="loadCoupons">
-            刷新
-          </ElButton>
-          <ElButton
-            v-auth="'product:coupon:create'"
-            type="primary"
-            plain
-            :disabled="disabled || !spuId"
-            @click="openCouponDialog"
+          <ElCheckboxButton
+            v-for="option in PRODUCT_TAG_OPTIONS"
+            :key="option.value"
+            :value="option.value"
           >
-            创建专属商品券
-          </ElButton>
-        </div>
-      </div>
+            {{ option.label }}
+          </ElCheckboxButton>
+        </ElCheckboxGroup>
+      </ElFormItem>
 
-      <ElAlert
-        v-if="!spuId"
-        type="info"
-        :closable="false"
-        title="新商品首次提交后会保留商品 ID，届时可以创建专属商品优惠券。"
-      />
-      <ElAlert
-        v-else-if="!canBindCoupons"
-        type="info"
-        :closable="false"
-        title="当前账号没有优惠券绑定权限，仅可查看已绑定优惠券。"
-      />
-
-      <ElSelect
-        :model-value="modelValue.couponTemplateIds"
-        multiple
-        filterable
-        collapse-tags
-        collapse-tags-tooltip
-        placeholder="请选择优惠券"
-        :loading="couponLoading"
-        :disabled="disabled || !canBindCoupons"
-        style="width: 100%; margin-top: 12px"
-        @update:model-value="patchForm({ couponTemplateIds: $event })"
-      >
-        <ElOption
-          v-for="coupon in coupons"
-          :key="coupon.id"
-          :value="coupon.id"
-          :label="coupon.name"
-        >
-          <div class="coupon-option">
-            <span>{{ coupon.name }}</span>
-            <ElTag size="small" :type="coupon.scopeType === 'PRODUCT' ? 'warning' : 'info'">
-              {{ coupon.scopeType === 'PRODUCT' ? '本商品专属' : '全场券' }}
-            </ElTag>
+      <ElFormItem label="优惠券">
+        <div class="coupon-field">
+          <div class="coupon-field__toolbar">
+            <ElSelect
+              :model-value="modelValue.couponTemplateIds"
+              multiple
+              filterable
+              collapse-tags
+              collapse-tags-tooltip
+              placeholder="请选择优惠券"
+              :loading="couponLoading"
+              :disabled="disabled || !canBindCoupons"
+              @update:model-value="patchForm({ couponTemplateIds: $event })"
+            >
+              <ElOption
+                v-for="coupon in coupons"
+                :key="coupon.id"
+                :value="coupon.id"
+                :label="coupon.name"
+              >
+                <div class="coupon-option">
+                  <span>{{ coupon.name }}</span>
+                  <ElTag size="small" :type="coupon.scopeType === 'PRODUCT' ? 'warning' : 'info'">
+                    {{ coupon.scopeType === 'PRODUCT' ? '本商品专属' : '全场券' }}
+                  </ElTag>
+                </div>
+              </ElOption>
+            </ElSelect>
+            <ElButton :loading="couponLoading" :disabled="disabled" @click="loadCoupons">
+              刷新
+            </ElButton>
+            <ElButton
+              v-auth="'product:coupon:create'"
+              type="primary"
+              plain
+              :disabled="disabled || !spuId"
+              @click="openCouponDialog"
+            >
+              创建专属商品券
+            </ElButton>
           </div>
-        </ElOption>
-      </ElSelect>
-    </section>
-
-    <section class="settings-section settings-section--summary">
-      <div class="settings-section__heading">
-        <h3>保障服务</h3>
-        <p>保障服务只在“商品信息”中维护，这里仅展示摘要，避免两处选择不一致。</p>
-      </div>
-      <ElTag v-if="modelValue.guaranteeServiceIds.length" type="success">
-        已选择 {{ modelValue.guaranteeServiceIds.length }} 项保障服务
-      </ElTag>
-      <span v-else class="empty-summary">未选择保障服务</span>
-    </section>
+          <div v-if="!spuId" class="coupon-field__hint">首次保存商品后可创建专属商品券</div>
+          <div v-else-if="!canBindCoupons" class="coupon-field__hint">
+            当前账号仅可查看已绑定优惠券
+          </div>
+        </div>
+      </ElFormItem>
+    </ElForm>
 
     <ElDialog v-model="couponDialogVisible" title="创建专属商品优惠券" width="680px" align-center>
       <ElForm label-position="top">
@@ -234,6 +213,7 @@
 <script setup lang="ts">
   import { onMounted, reactive, ref } from 'vue'
   import { ElMessage } from 'element-plus'
+  import { WarningFilled } from '@element-plus/icons-vue'
   import { fetchCouponTemplates } from '@/api/coupon'
   import { createProductSpuCoupon, fetchProductSpuCoupons } from '@/api/product'
   import type { ProductEditorCoupon, ProductEditorForm } from './editor-model'
@@ -408,52 +388,45 @@
 
 <style scoped lang="scss">
   .other-settings-tab {
-    display: grid;
-    gap: 18px;
-    max-width: 940px;
+    max-width: 1120px;
     margin: 0 auto;
   }
 
-  .settings-section {
-    padding: 20px;
-    background: var(--el-bg-color);
-    border: 1px solid var(--el-border-color-lighter);
-    border-radius: 12px;
+  .settings-form :deep(.el-form-item) {
+    padding: 12px 0;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--el-border-color-lighter);
   }
 
-  .settings-section__heading {
-    margin-bottom: 18px;
-
-    h3 {
-      margin: 0;
-      font-size: 16px;
-    }
-
-    p {
-      margin: 6px 0 0;
-      font-size: 13px;
-      color: var(--el-text-color-secondary);
-    }
+  .settings-form :deep(.el-form-item__label) {
+    height: auto;
+    min-height: 32px;
   }
 
-  .settings-section__heading--row {
-    display: flex;
-    gap: 20px;
-    align-items: flex-start;
-    justify-content: space-between;
+  .settings-form :deep(.el-form-item__content) {
+    min-width: 0;
+    line-height: normal;
   }
 
-  .settings-grid,
   .dialog-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
   }
 
-  .field-hint {
-    margin-top: 5px;
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
+  .settings-label {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+
+    .el-icon {
+      color: var(--el-color-warning);
+      cursor: help;
+    }
+  }
+
+  .settings-number {
+    width: 220px;
   }
 
   .tag-options {
@@ -468,9 +441,26 @@
     }
   }
 
-  .coupon-actions {
+  .coupon-field {
+    display: grid;
+    gap: 7px;
+    width: 100%;
+  }
+
+  .coupon-field__toolbar {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
+
+    :deep(.el-select) {
+      flex: 1 1 360px;
+      min-width: 240px;
+    }
+  }
+
+  .coupon-field__hint {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 
   .coupon-option {
@@ -480,32 +470,28 @@
     justify-content: space-between;
   }
 
-  .settings-section--summary {
-    display: flex;
-    gap: 20px;
-    align-items: center;
-    justify-content: space-between;
-
-    .settings-section__heading {
-      margin-bottom: 0;
-    }
-  }
-
-  .empty-summary {
-    font-size: 13px;
-    color: var(--el-text-color-secondary);
-  }
-
   @media (width <= 680px) {
-    .settings-grid,
     .dialog-grid {
       grid-template-columns: minmax(0, 1fr);
     }
 
-    .settings-section__heading--row,
-    .settings-section--summary {
-      flex-direction: column;
-      align-items: flex-start;
+    .settings-form :deep(.el-form-item) {
+      display: block;
+    }
+
+    .settings-form :deep(.el-form-item__label) {
+      justify-content: flex-start;
+      width: auto !important;
+      margin-bottom: 8px;
+      text-align: left;
+    }
+
+    .settings-form :deep(.el-form-item__content) {
+      margin-left: 0 !important;
+    }
+
+    .settings-number {
+      width: 100%;
     }
   }
 </style>

@@ -6,12 +6,15 @@ import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -31,6 +34,15 @@ public class AppAfterSaleController {
             @RequestBody AppAfterSaleApplyRequest request
     ) {
         return ApiResponse.success(appAfterSaleService.apply(principal, orderId, request));
+    }
+
+    @PostMapping("/app/orders/{orderId}/after-sale-evidence")
+    public ApiResponse<StorageAssetResponse> uploadEvidence(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @RequestParam("file") MultipartFile file
+    ) {
+        return ApiResponse.success(appAfterSaleService.uploadEvidence(principal, orderId, file));
     }
 
     @GetMapping("/app/orders/{orderId}/after-sales")

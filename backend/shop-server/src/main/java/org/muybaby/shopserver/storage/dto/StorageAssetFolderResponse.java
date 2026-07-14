@@ -3,16 +3,14 @@ package org.muybaby.shopserver.storage.dto;
 import java.time.LocalDateTime;
 import java.util.List;
 
-public record StorageAssetCategoryResponse(
+public record StorageAssetFolderResponse(
         Long id,
         Long parentId,
         String name,
-        String code,
-        String description,
         Integer sortOrder,
         String status,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        List<StorageAssetCategoryResponse> children
+        List<StorageAssetFolderResponse> children
 ) {
 }

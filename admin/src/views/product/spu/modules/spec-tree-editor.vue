@@ -1,7 +1,7 @@
 <template>
   <div class="spec-tree-editor">
     <div v-if="!modelValue.length" class="spec-tree-editor__empty">
-      <ElEmpty description="暂无规格，请添加规格名称" :image-size="72" />
+      暂无商品规格，请点击“添加新规格”
     </div>
 
     <div v-for="(group, groupIndex) in modelValue" :key="group.groupKey" class="spec-group">
@@ -18,14 +18,13 @@
           />
         </div>
         <div class="spec-group__actions">
-          <ElRadio
-            :model-value="imageGroupKey"
-            :value="group.groupKey"
+          <ElCheckbox
+            :model-value="group.imageEnabled"
             :disabled="disabled"
-            @change="selectImageGroup(group.groupKey)"
+            @change="toggleImageGroup(group.groupKey, Boolean($event))"
           >
-            添加规格图
-          </ElRadio>
+            设为规格图
+          </ElCheckbox>
           <ElButton type="danger" text :disabled="disabled" @click="removeGroup(groupIndex)">
             删除规格
           </ElButton>
@@ -39,8 +38,17 @@
           class="spec-value"
           :class="{ 'spec-value--image': group.imageEnabled }"
         >
+          <button
+            v-if="!disabled"
+            type="button"
+            class="spec-value__remove"
+            aria-label="删除规格值"
+            title="删除规格值"
+            @click="removeValue(groupIndex, valueIndex)"
+          >
+            <ElIcon size="14"><Close /></ElIcon>
+          </button>
           <div class="spec-value__field">
-            <span class="spec-value__dot" />
             <ElInput
               :model-value="value.valueName"
               maxlength="30"
@@ -48,30 +56,24 @@
               :disabled="disabled"
               @update:model-value="updateValueName(groupIndex, valueIndex, $event)"
             />
-            <ElButton
-              type="danger"
-              text
-              :disabled="disabled"
-              @click="removeValue(groupIndex, valueIndex)"
-            >
-              删除
-            </ElButton>
           </div>
 
           <div v-if="group.imageEnabled" class="spec-value__image">
-            <AssetPicker
+            <CompactAssetField
               :model-value="{ fileId: value.imageFileId, url: value.image }"
-              purpose="SPEC_VALUE_IMAGE"
+              media-kind="IMAGE"
               :disabled="disabled"
+              :allow-url="false"
+              small
               @change="updateValueImage(groupIndex, valueIndex, $event)"
             />
-            <div class="spec-value__image-hint">可选。不上传时，SKU 图片继续回退为商品封面图。</div>
           </div>
         </div>
 
         <ElButton
-          plain
+          class="spec-values__add"
           type="primary"
+          plain
           :disabled="disabled || group.values.length >= 50"
           @click="addValue(groupIndex)"
         >
@@ -81,6 +83,7 @@
     </div>
 
     <ElButton
+      v-if="showAddButton"
       class="spec-tree-editor__add"
       plain
       :disabled="disabled || modelValue.length >= 10"
@@ -92,14 +95,15 @@
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue'
-  import AssetPicker from '@/components/business/asset-picker/index.vue'
+  import { Close } from '@element-plus/icons-vue'
   import type { ProductEditorSpecGroup } from './editor-model'
   import { createEmptySpecGroup, createEmptySpecValue } from './sku-matrix'
+  import CompactAssetField from './compact-asset-field.vue'
 
   interface Props {
     modelValue: ProductEditorSpecGroup[]
     disabled?: boolean
+    showAddButton?: boolean
   }
 
   interface Emits {
@@ -107,13 +111,10 @@
   }
 
   const props = withDefaults(defineProps<Props>(), {
-    disabled: false
+    disabled: false,
+    showAddButton: true
   })
   const emit = defineEmits<Emits>()
-
-  const imageGroupKey = computed(
-    () => props.modelValue.find((group) => group.imageEnabled)?.groupKey || ''
-  )
 
   const copyGroups = () =>
     props.modelValue.map((group) => ({
@@ -134,16 +135,13 @@
   const addGroup = () => {
     const groups = copyGroups()
     const group = createEmptySpecGroup(groups.length)
-    group.imageEnabled = groups.length === 0
     groups.push(group)
     commit(groups)
   }
 
   const removeGroup = (groupIndex: number) => {
     const groups = copyGroups()
-    const removedImageGroup = groups[groupIndex]?.imageEnabled
     groups.splice(groupIndex, 1)
-    if (removedImageGroup && groups.length) groups[0].imageEnabled = true
     commit(groups)
   }
 
@@ -153,10 +151,10 @@
     commit(groups)
   }
 
-  const selectImageGroup = (groupKey: string) => {
+  const toggleImageGroup = (groupKey: string, enabled: boolean) => {
     const groups = copyGroups()
     groups.forEach((group) => {
-      group.imageEnabled = group.groupKey === groupKey
+      group.imageEnabled = enabled && group.groupKey === groupKey
     })
     commit(groups)
   }
@@ -189,6 +187,8 @@
     groups[groupIndex].values[valueIndex].imageFileId = asset.fileId
     commit(groups)
   }
+
+  defineExpose({ addGroup })
 </script>
 
 <style scoped lang="scss">
@@ -198,16 +198,19 @@
   }
 
   .spec-tree-editor__empty {
-    background: var(--el-fill-color-lighter);
+    padding: 16px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    text-align: center;
     border: 1px dashed var(--el-border-color);
-    border-radius: 10px;
+    border-radius: 8px;
   }
 
   .spec-group {
     overflow: hidden;
     background: var(--el-bg-color);
     border: 1px solid var(--el-border-color);
-    border-radius: 10px;
+    border-radius: 8px;
   }
 
   .spec-group__header {
@@ -215,7 +218,7 @@
     gap: 16px;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 16px;
+    padding: 10px 12px;
     background: var(--el-fill-color-light);
   }
 
@@ -246,46 +249,81 @@
   }
 
   .spec-values {
-    display: grid;
-    gap: 12px;
-    padding: 16px 18px 18px 54px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 12px;
   }
 
   .spec-value {
-    display: grid;
-    gap: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px dashed var(--el-border-color-lighter);
+    position: relative;
+    display: flex;
+    flex: 0 0 174px;
+    flex-direction: column;
+    gap: 7px;
+    align-items: center;
+    min-width: 0;
+    background: transparent;
   }
 
   .spec-value__field {
-    display: grid;
-    grid-template-columns: 8px minmax(200px, 400px) auto;
-    gap: 10px;
-    align-items: center;
-    justify-content: start;
+    width: 100%;
   }
 
-  .spec-value__dot {
-    width: 6px;
-    height: 6px;
-    background: var(--el-color-primary-light-3);
+  .spec-value__remove {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    color: #fff;
+    cursor: pointer;
+    visibility: hidden;
+    background: var(--el-color-danger);
+    border: 2px solid var(--el-bg-color);
     border-radius: 50%;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+
+    &:focus-visible {
+      visibility: visible;
+      outline: none;
+      opacity: 1;
+    }
+  }
+
+  .spec-value:hover .spec-value__remove {
+    visibility: visible;
+    opacity: 1;
   }
 
   .spec-value__image {
-    max-width: 620px;
-    padding-left: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 72px;
   }
 
-  .spec-value__image-hint {
-    margin-top: 6px;
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
+  .spec-values__add {
+    height: 32px;
+    background: transparent;
+
+    &:hover,
+    &:focus,
+    &:active {
+      background: transparent;
+    }
   }
 
   .spec-tree-editor__add {
-    justify-self: start;
+    align-self: flex-start;
   }
 
   @media (width <= 768px) {
@@ -301,11 +339,11 @@
     }
 
     .spec-values {
-      padding-left: 16px;
+      padding: 10px;
     }
 
-    .spec-value__field {
-      grid-template-columns: 8px minmax(0, 1fr) auto;
+    .spec-value {
+      flex-basis: 174px;
     }
   }
 </style>

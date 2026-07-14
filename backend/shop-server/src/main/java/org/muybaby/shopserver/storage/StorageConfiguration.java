@@ -7,8 +7,10 @@ import org.muybaby.shopserver.storage.service.StorageObjectKeyGenerator;
 import org.muybaby.shopserver.storage.service.UploadPolicy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
+@EnableScheduling
 public class StorageConfiguration {
 
     @Bean

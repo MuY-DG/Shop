@@ -85,8 +85,9 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.data.evidenceFiles[0].originalFilename").value("after-sale-" + evidenceFileId + ".png"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].contentType").value("image/png"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].sizeBytes").value(68))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].scope").value("ATTACHMENT"))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].mediaKind").value("IMAGE"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].visibility").value("PRIVATE"))
-                .andExpect(jsonPath("$.data.evidenceFiles[0].purpose").value("AFTER_SALE_IMAGE"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].status").value("ACTIVE"));
     }
 
@@ -97,9 +98,6 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-evidence");
         long afterSaleId = applyAfterSale(appUser, order, 3980L);
         long evidenceFileId = firstEvidenceFileId(afterSaleId);
-        jdbcClient.sql("update storage_file set purpose = 'REFUND_EVIDENCE' where id = :fileId")
-                .param("fileId", evidenceFileId)
-                .update();
         byte[] evidenceContent = "private-evidence-image".getBytes(StandardCharsets.UTF_8);
         storageProvider.put(
                 "private/after-sale-flow/" + evidenceFileId + ".png",
@@ -107,7 +105,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 new ByteArrayInputStream(evidenceContent),
                 evidenceContent.length
         );
-        long unrelatedFileId = insertAppEvidenceFile(appUser.userId(), "REFUND_EVIDENCE");
+        long unrelatedFileId = insertAppEvidenceFile(appUser.userId(), order.orderId());
         String readToken = limitedAdminToken(List.of("aftersale:read"));
         String auditOnlyToken = limitedAdminToken(List.of("aftersale:audit"));
 
@@ -356,7 +354,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     }
 
     private long applyAfterSale(AppLoginSession appUser, SeedPaidOrder order, long requestedAmountCent) throws Exception {
-        long evidenceFileId = insertAppEvidenceFile(appUser.userId(), "AFTER_SALE_IMAGE");
+        long evidenceFileId = insertAppEvidenceFile(appUser.userId(), order.orderId());
         String response = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
                         .header("Authorization", "Bearer " + appUser.token())
                         .contentType(MediaType.APPLICATION_JSON)

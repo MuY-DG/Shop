@@ -198,12 +198,12 @@ class AdminProductGuaranteeServiceControllerTest {
 
     private void insertStorageFile() {
         jdbcClient.sql("""
-                        insert into storage_file
-                            (id, purpose, visibility, provider, bucket, object_key, original_filename,
+                        insert into storage_asset
+                            (id, scope, media_kind, folder_id, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, public_url, status,
                              uploaded_by_type, uploaded_by_id)
                         values
-                            (:id, 'GUARANTEE_SERVICE_ICON', 'PUBLIC', 'LOCAL', '', 'guarantee/test-icon.png',
+                            (:id, 'LIBRARY', 'IMAGE', null, 'PUBLIC', 'LOCAL', '', 'guarantee/test-icon.png',
                              'test-icon.png', 'image/png', 'png', 128, '', :url, 'ACTIVE', 'ADMIN', 1)
                         """)
                 .param("id", ICON_FILE_ID)
@@ -238,8 +238,8 @@ class AdminProductGuaranteeServiceControllerTest {
 
     private void insertProtectedOrderSnapshotUsage() {
         jdbcClient.sql("""
-                        insert into storage_file_usage
-                            (file_id, usage_type, owner_type, owner_id, owner_label, snapshot_url,
+                        insert into storage_asset_usage
+                            (asset_id, usage_type, owner_type, owner_id, owner_label, snapshot_url,
                              sort_order, protected, status)
                         values
                             (:fileId, 'ORDER_ITEM_SNAPSHOT', 'ORDER_ITEM', 99021, '历史订单保障快照', :url,
@@ -261,7 +261,7 @@ class AdminProductGuaranteeServiceControllerTest {
     private int totalIconUsageCount(long serviceId) {
         Integer count = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where owner_type = 'GUARANTEE_SERVICE'
                           and owner_id = :serviceId
                           and usage_type = 'GUARANTEE_SERVICE_ICON'
@@ -275,7 +275,7 @@ class AdminProductGuaranteeServiceControllerTest {
     private int usageCount(long serviceId, String usageType, String ownerType, String status) {
         Integer count = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where owner_type = :ownerType
                           and owner_id = :serviceId
                           and usage_type = :usageType
@@ -350,7 +350,7 @@ class AdminProductGuaranteeServiceControllerTest {
     private int activeOrderSnapshotUsageCount() {
         Integer count = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
+                        from storage_asset_usage
                         where owner_type = 'ORDER_ITEM'
                           and owner_id = 99021
                           and usage_type = 'ORDER_ITEM_SNAPSHOT'

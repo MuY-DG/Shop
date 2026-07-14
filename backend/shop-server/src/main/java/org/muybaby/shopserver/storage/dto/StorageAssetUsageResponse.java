@@ -4,9 +4,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
 
-public record StorageFileUsageResponse(
+public record StorageAssetUsageResponse(
         Long id,
-        Long fileId,
+        Long assetId,
         String usageType,
         String ownerType,
         Long ownerId,

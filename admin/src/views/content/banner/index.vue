@@ -27,7 +27,12 @@
       />
     </ElCard>
 
-    <ElDrawer v-model="editorVisible" :title="currentBannerId ? '编辑轮播' : '新增轮播'" size="720px" destroy-on-close>
+    <ElDrawer
+      v-model="editorVisible"
+      :title="currentBannerId ? '编辑轮播' : '新增轮播'"
+      size="720px"
+      destroy-on-close
+    >
       <ElForm ref="formRef" :model="formData" :rules="rules" label-width="92px">
         <ElFormItem label="标题" prop="title">
           <ElInput v-model="formData.title" maxlength="128" placeholder="请输入标题" />
@@ -39,7 +44,7 @@
           <div class="asset-field">
             <AssetPicker
               :model-value="{ fileId: formData.imageFileId, url: formData.imageUrl }"
-              purpose="HOME_BANNER"
+              media-kind="IMAGE"
               @change="handleBannerImageChange"
             />
             <ElInput v-model="formData.imageUrl" readonly placeholder="已选素材地址" />
@@ -49,7 +54,12 @@
           <ElCol :xs="24" :md="12">
             <ElFormItem label="跳转类型" prop="jumpType">
               <ElSelect v-model="formData.jumpType" placeholder="请选择跳转类型">
-                <ElOption v-for="item in jumpTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+                <ElOption
+                  v-for="item in jumpTypeOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
               </ElSelect>
             </ElFormItem>
           </ElCol>
@@ -125,7 +135,14 @@
 
 <script setup lang="ts">
   import { computed, h, onMounted, reactive, ref } from 'vue'
-  import { ElImage, ElMessage, ElMessageBox, ElTag, type FormInstance, type FormRules } from 'element-plus'
+  import {
+    ElImage,
+    ElMessage,
+    ElMessageBox,
+    ElTag,
+    type FormInstance,
+    type FormRules
+  } from 'element-plus'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
@@ -141,7 +158,8 @@
 
   defineOptions({ name: 'ContentBanner' })
 
-  interface BannerEditorForm extends Omit<Api.Content.BannerForm, 'jumpPath' | 'startAt' | 'endAt'> {
+  interface BannerEditorForm
+    extends Omit<Api.Content.BannerForm, 'jumpPath' | 'startAt' | 'endAt'> {
     jumpPath: string
     startAt: string | null
     endAt: string | null
@@ -500,7 +518,7 @@
     imageFileId: formData.imageFileId,
     imageUrl: formData.imageUrl.trim(),
     jumpType: formData.jumpType,
-    jumpTargetId: requiresTargetId.value ? formData.jumpTargetId ?? null : null,
+    jumpTargetId: requiresTargetId.value ? (formData.jumpTargetId ?? null) : null,
     jumpPath: requiresPath.value ? formData.jumpPath.trim() : '',
     status: formData.status,
     sortOrder: formData.sortOrder,

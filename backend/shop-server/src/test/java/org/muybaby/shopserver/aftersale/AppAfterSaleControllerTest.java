@@ -5,14 +5,17 @@ import org.muybaby.shopserver.payment.PaymentTestSupport;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,12 +26,56 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class AppAfterSaleControllerTest extends PaymentTestSupport {
 
+    private static final byte[] TINY_PNG = Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4x8AAAAASUVORK5CYII="
+    );
+
+    @Test
+    void appUploadsOrderScopedPrivateEvidenceThroughTheAfterSaleEndpoint() throws Exception {
+        AppLoginSession session = appLogin("after-sale-evidence-upload");
+        SeedPaidOrder order = seedPaidOrder(session, 6980L, "PAID", "wx-evidence-upload");
+
+        String response = mockMvc.perform(multipart(
+                                "/app/orders/{orderId}/after-sale-evidence",
+                                order.orderId())
+                        .file(new MockMultipartFile("file", "evidence.png", "image/png", TINY_PNG))
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.scope").value("ATTACHMENT"))
+                .andExpect(jsonPath("$.data.mediaKind").value("IMAGE"))
+                .andExpect(jsonPath("$.data.visibility").value("PRIVATE"))
+                .andExpect(jsonPath("$.data.uploadedByType").value("APP"))
+                .andExpect(jsonPath("$.data.url").doesNotExist())
+                .andExpect(jsonPath("$.data.publicUrl").doesNotExist())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long assetId = objectMapper.readTree(response).path("data").path("id").asLong();
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from storage_asset
+                        where id = :assetId
+                          and scope = 'ATTACHMENT'
+                          and media_kind = 'IMAGE'
+                          and visibility = 'PRIVATE'
+                          and upload_context_type = 'ORDER'
+                          and upload_context_id = :orderId
+                          and expires_at > current_timestamp
+                          and public_url is null
+                        """)
+                .param("assetId", assetId)
+                .param("orderId", order.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
     @Test
     void appUserCanApplyRefundOnlyForOwnPaidOrderWithPrivateEvidenceAndReadItBack() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("after-sale-app-owner");
         SeedPaidOrder order = seedPaidOrder(session, 6980L, "PAID", "wx-refund-app-paid");
-        long evidenceFileId = insertAppEvidenceFile(session.userId(), "AFTER_SALE_IMAGE");
+        long evidenceFileId = insertAppEvidenceFile(session.userId(), order.orderId());
 
         String response = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
                         .header("Authorization", "Bearer " + session.token())
@@ -61,14 +108,14 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
         assertThat(jdbcClient.sql("""
                         select count(*)
                         from after_sale_evidence ase
-                        join storage_file_usage sfu on sfu.file_id = ase.file_id
+                        join storage_asset_usage sau on sau.asset_id = ase.file_id
                         where ase.after_sale_id = :afterSaleId
                           and ase.file_id = :fileId
-                          and sfu.usage_type = 'AFTER_SALE_EVIDENCE'
-                          and sfu.owner_type = 'AFTER_SALE'
-                          and sfu.owner_id = :afterSaleId
-                          and sfu.protected = true
-                          and sfu.status = 'ACTIVE'
+                          and sau.usage_type = 'AFTER_SALE_EVIDENCE'
+                          and sau.owner_type = 'AFTER_SALE'
+                          and sau.owner_id = :afterSaleId
+                          and sau.protected = true
+                          and sau.status = 'ACTIVE'
                         """)
                 .param("afterSaleId", afterSaleId)
                 .param("fileId", evidenceFileId)
@@ -83,11 +130,15 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
         AppLoginSession other = appLogin("after-sale-app-other-rules");
         SeedPaidOrder paidOrder = seedPaidOrder(owner, 6980L, "PAID", "wx-refund-app-rules");
         SeedOrder createdOrder = seedCreatedOrder(owner.userId(), 6980L, false);
-        long ownerEvidenceFileId = insertAppEvidenceFile(owner.userId(), "REFUND_EVIDENCE");
-        long otherEvidenceFileId = insertAppEvidenceFile(other.userId(), "AFTER_SALE_IMAGE");
-        long publicEvidenceFileId = insertStorageFile(owner.userId(), "AFTER_SALE_IMAGE", "PUBLIC", "ACTIVE");
-        long deletedEvidenceFileId = insertStorageFile(owner.userId(), "AFTER_SALE_IMAGE", "PRIVATE", "DELETED");
-        long wrongPurposeFileId = insertStorageFile(owner.userId(), "PRODUCT_IMAGE", "PRIVATE", "ACTIVE");
+        long ownerEvidenceFileId = insertAppEvidenceFile(owner.userId(), paidOrder.orderId());
+        long otherEvidenceFileId = insertStorageAsset(
+                other.userId(), "ATTACHMENT", "IMAGE", "PRIVATE", "ACTIVE", paidOrder.orderId());
+        long publicEvidenceFileId = insertStorageAsset(
+                owner.userId(), "LIBRARY", "IMAGE", "PUBLIC", "ACTIVE", null);
+        long deletedEvidenceFileId = insertStorageAsset(
+                owner.userId(), "ATTACHMENT", "IMAGE", "PRIVATE", "DELETED", paidOrder.orderId());
+        long wrongMediaFileId = insertStorageAsset(
+                owner.userId(), "ATTACHMENT", "DOCUMENT", "PRIVATE", "ACTIVE", paidOrder.orderId());
 
         mockMvc.perform(post("/app/orders/{orderId}/after-sales", paidOrder.orderId())
                         .header("Authorization", "Bearer " + other.token())
@@ -117,7 +168,7 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100400));
 
-        for (long invalidFileId : new long[]{otherEvidenceFileId, publicEvidenceFileId, deletedEvidenceFileId, wrongPurposeFileId}) {
+        for (long invalidFileId : new long[]{otherEvidenceFileId, publicEvidenceFileId, deletedEvidenceFileId, wrongMediaFileId}) {
             mockMvc.perform(post("/app/orders/{orderId}/after-sales", paidOrder.orderId())
                             .header("Authorization", "Bearer " + owner.token())
                             .contentType(MediaType.APPLICATION_JSON)
@@ -146,7 +197,7 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("after-sale-app-shipped");
         SeedPaidOrder order = seedPaidOrder(session, 8980L, "SHIPPED", "wx-refund-app-shipped");
-        long evidenceFileId = insertAppEvidenceFile(session.userId(), "REFUND_EVIDENCE");
+        long evidenceFileId = insertAppEvidenceFile(session.userId(), order.orderId());
 
         mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
                         .header("Authorization", "Bearer " + session.token())
@@ -172,8 +223,8 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
                         """)
                 .param("orderId", completedOrder.orderId())
                 .update();
-        long ownerFileId = insertAppEvidenceFile(owner.userId(), "AFTER_SALE_IMAGE");
-        long otherFileId = insertAppEvidenceFile(other.userId(), "AFTER_SALE_IMAGE");
+        long ownerFileId = insertAppEvidenceFile(owner.userId(), completedOrder.orderId());
+        long otherFileId = insertAppEvidenceFile(other.userId(), otherOrder.orderId());
 
         String ownerResponse = mockMvc.perform(post("/app/orders/{orderId}/after-sales", completedOrder.orderId())
                         .header("Authorization", "Bearer " + owner.token())

@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createEmptySku, hydrateSkuImageFallbacks, imageSpecFallback } from './sku-matrix'
+import {
+  createEmptySku,
+  createEmptySpecGroup,
+  describeCombinationCount,
+  hydrateSkuImageFallbacks,
+  imageSpecFallback
+} from './sku-matrix'
 import type { ProductEditorSpecGroup } from './editor-model'
 
 const createColorGroup = (image: string): ProductEditorSpecGroup => ({
@@ -59,4 +65,11 @@ test('preserves explicit managed and external SKU images', () => {
 
   assert.deepEqual(hydratedManaged, managed)
   assert.deepEqual(hydratedExternal, external)
+})
+
+test('keeps specification images opt-in and uses a neutral draft label', () => {
+  const group = createEmptySpecGroup()
+
+  assert.equal(group.imageEnabled, false)
+  assert.equal(describeCombinationCount([group]), '规格 1 1项 = 1 个组合')
 })

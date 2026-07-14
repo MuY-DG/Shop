@@ -24,7 +24,7 @@
   import EmojiText from '@/utils/ui/emojo'
   import { IDomEditor, IToolbarConfig, IEditorConfig } from '@wangeditor/editor'
   import request from '@/utils/http'
-  import { uploadStorageFile } from '@/api/storage'
+  import { uploadAsset } from '@/api/assets'
 
   defineOptions({ name: 'ArtWangEditor' })
 
@@ -49,8 +49,7 @@
       maxFileSize?: number
       maxNumberOfFiles?: number
       server?: string
-      purpose?: Api.Storage.Purpose
-      assetCategoryId?: number | null
+      defaultFolderId?: number | null
     }
   }
 
@@ -111,7 +110,7 @@
         maxFileSize: mergedUploadConfig.value.maxFileSize,
         maxNumberOfFiles: mergedUploadConfig.value.maxNumberOfFiles,
         allowedFileTypes: mergedUploadConfig.value.allowedFileTypes,
-        server: props.uploadConfig?.server || '/admin/files/upload',
+        server: props.uploadConfig?.server || '/admin/assets/upload',
         onSuccess() {
           ElMessage.success(`图片上传成功 ${EmojiText[200]}`)
         },
@@ -125,7 +124,10 @@
 
   // 统一走自定义上传，默认接入文件库接口；外部传 server 时仍保留可覆盖能力
   if (editorConfig.MENU_CONF) {
-    editorConfig.MENU_CONF.uploadImage.customUpload = async (file: File, insertFn: InsertFnType) => {
+    editorConfig.MENU_CONF.uploadImage.customUpload = async (
+      file: File,
+      insertFn: InsertFnType
+    ) => {
       try {
         let response: any
 
@@ -137,9 +139,8 @@
             data: formData
           })
         } else {
-          response = await uploadStorageFile({
-            purpose: props.uploadConfig?.purpose || 'RICH_TEXT_IMAGE',
-            assetCategoryId: props.uploadConfig?.assetCategoryId ?? null,
+          response = await uploadAsset({
+            folderId: props.uploadConfig?.defaultFolderId ?? 0,
             file
           })
         }

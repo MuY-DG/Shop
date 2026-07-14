@@ -8,7 +8,11 @@ import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.payment.service.AdminPaymentConfigService;
+import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
+import org.muybaby.shopserver.storage.service.StorageService;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,15 +21,30 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/admin/pay/configs")
 public class AdminPaymentConfigController {
 
     private final AdminPaymentConfigService adminPaymentConfigService;
+    private final StorageService storageService;
 
-    public AdminPaymentConfigController(AdminPaymentConfigService adminPaymentConfigService) {
+    public AdminPaymentConfigController(
+            AdminPaymentConfigService adminPaymentConfigService,
+            StorageService storageService
+    ) {
         this.adminPaymentConfigService = adminPaymentConfigService;
+        this.storageService = storageService;
+    }
+
+    @PostMapping("/secret-files")
+    @PreAuthorize("hasAuthority('payment:config:write')")
+    public ApiResponse<StorageAssetResponse> uploadSecretFile(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @RequestParam("file") MultipartFile file
+    ) {
+        return ApiResponse.success(storageService.uploadPaymentSecret(principal, file));
     }
 
     @GetMapping("/effective")

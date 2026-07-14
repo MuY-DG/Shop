@@ -2,6 +2,7 @@ package org.muybaby.shopserver.fulfillment;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.storage.AssetModelMigrationTest;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -31,7 +32,9 @@ class CommerceFulfillmentMySqlMigrationTest {
         Flyway flyway = Flyway.configure()
                 .dataSource(CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("16");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("17");
+        AssetModelMigrationTest.assertFinalAssetSchema(
+                CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
 
         try (Connection connection = DriverManager.getConnection(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
@@ -54,17 +57,21 @@ class CommerceFulfillmentMySqlMigrationTest {
     }
 
     @Test
-    void populatedMySqlSchemaMigratesFromV9ToLatestWithoutLosingShipmentEvidence() throws SQLException {
+    void populatedMySqlSchemaMigratesThroughV16AndTheV17StorageCleanBreak() throws SQLException {
         String jdbcUrl = UPGRADE_MYSQL.getJdbcUrl();
         String username = UPGRADE_MYSQL.getUsername();
         String password = UPGRADE_MYSQL.getPassword();
 
         CommerceFulfillmentMigrationTest.migrateToV9(jdbcUrl, username, password);
         CommerceFulfillmentMigrationTest.seedLegacyShipment(jdbcUrl, username, password);
-        CommerceFulfillmentMigrationTest.migrateToLatest(jdbcUrl, username, password);
+        AssetModelMigrationTest.migrateToV16(jdbcUrl, username, password);
+        AssetModelMigrationTest.seedLegacyStorageBindings(jdbcUrl, username, password);
+        AssetModelMigrationTest.migrateToLatest(jdbcUrl, username, password);
 
         CommerceFulfillmentMigrationTest.assertMigratedLegacyShipment(jdbcUrl, username, password);
         CommerceFulfillmentMigrationTest.assertMigratedLegacyProduct(jdbcUrl, username, password);
+        AssetModelMigrationTest.assertFinalAssetSchema(jdbcUrl, username, password);
+        AssetModelMigrationTest.assertLegacyBindingsWereCleared(jdbcUrl, username, password);
     }
 
     private static MySQLContainer<?> mysql(String databaseName) {

@@ -98,7 +98,7 @@ Payment callbacks are handled by `/wxpay/pay/notify`; refund callbacks are handl
 
 The `开发配置 -> 支付配置` menu has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from `.env.local`. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
 
-For DB config, upload merchant private key, merchant certificate, and WeChat Pay public key files as private payment files through admin storage; do not commit the uploaded files or the local upload directory.
+For DB config, upload the required merchant private key and WeChat Pay public key, plus the optional merchant certificate, only through the payment-owned `/admin/pay/configs/secret-files` endpoint. Updating a config with a null merchant-certificate ID explicitly clears that optional reference; the old secret enters its 24-hour release window after its final active reference is removed. These secret assets never appear in the reusable asset library; do not commit uploaded files or the local upload directory.
 
 Never commit `.env.local`, merchant certificates, private keys, APIv3 keys, public-key files, local upload roots, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
 
@@ -115,6 +115,9 @@ SHOP_STORAGE_PUBLIC_BASE_URL=http://localhost:8080
 SHOP_STORAGE_IMAGE_MAX_SIZE=5MB
 SHOP_STORAGE_VIDEO_MAX_SIZE=50MB
 SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE=1MB
+SHOP_STORAGE_CLEANUP_INITIAL_DELAY=10m
+SHOP_STORAGE_CLEANUP_FIXED_DELAY=10m
+SHOP_STORAGE_CLEANUP_BATCH_SIZE=100
 ```
 
 Tencent Cloud COS can also be supplied through environment defaults:
@@ -128,7 +131,7 @@ SHOP_STORAGE_TENCENT_COS_SECRET_KEY=<secret-key>
 SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL=https://<bucket-name-appid>.cos.ap-guangzhou.myqcloud.com
 ```
 
-`SHOP_STORAGE_LOCAL_ROOT` should point to a writable local directory and should not be committed to Git. Local public files are served by the backend through `/files/public/**`; COS public files return the configured COS default or custom source domain directly. Private files, including payment certificates and keys, never receive a public URL and are read through their recorded provider. COS credentials saved from the admin page are encrypted in the database and are never returned in full.
+`SHOP_STORAGE_LOCAL_ROOT` should point to a writable local directory and should not be committed to Git. Local public files are served by the backend through `/files/public/**`; COS public files return the configured COS default or custom source domain directly. Every asset records the LOCAL root or COS bucket/region used at upload time, so changing the active provider or location does not redirect existing objects. COS reads and deletes still use the currently configured credentials, which must retain access to each recorded bucket. Private files, including payment certificates and keys, never receive a public URL. Unclaimed after-sale evidence expires after 24 hours; staged payment secrets expire after two hours, and replaced secrets receive a 24-hour release window. These windows, their validation, and cleanup all use the database clock, so the JVM and database may safely run in different time zones. The cleanup job leases expired, unreferenced private assets and retries provider failures with bounded backoff; fresh expirations use a separate batch so failed deletions cannot block them. COS credentials saved from the admin page are encrypted in the database and are never returned in full.
 
 File storage and home banner smoke checks are documented in `docs/smoke-checks.md#file-storage-and-home-banner-smoke-checks`.
 

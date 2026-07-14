@@ -191,7 +191,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin(code + "-app");
         SeedPaidOrder order = seedPaidOrder(appUser, paidAmountCent, "PAID", "wx-refund-" + code);
-        long evidenceFileId = insertAppEvidenceFile(appUser.userId(), "AFTER_SALE_IMAGE");
+        long evidenceFileId = insertAppEvidenceFile(appUser.userId(), order.orderId());
         String applyResponse = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
                         .header("Authorization", "Bearer " + appUser.token())
                         .contentType(MediaType.APPLICATION_JSON)

@@ -4,9 +4,8 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageMediaKind;
-import org.muybaby.shopserver.storage.StoragePurpose;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
-import org.muybaby.shopserver.storage.dto.StorageFileUsageResponse;
+import org.muybaby.shopserver.storage.dto.StorageAssetUsageResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,12 +24,12 @@ public class StorageUsageService {
         this.jdbcClient = jdbcClient;
     }
 
-    public List<StorageFileUsageResponse> usages(Long fileId) {
+    public List<StorageAssetUsageResponse> usages(Long fileId) {
         return jdbcClient.sql("""
-                        select id, file_id, usage_type, owner_type, owner_id, owner_label, snapshot_url,
+                        select id, asset_id, usage_type, owner_type, owner_id, owner_label, snapshot_url,
                                sort_order, protected, status, created_at, updated_at
-                        from storage_file_usage
-                        where file_id = :fileId
+                        from storage_asset_usage
+                        where asset_id = :fileId
                         order by status asc, sort_order asc, id asc
                         """)
                 .param("fileId", fileId)
@@ -41,8 +40,8 @@ public class StorageUsageService {
     public boolean hasActiveUsages(Long fileId) {
         Integer count = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
-                        where file_id = :fileId
+                        from storage_asset_usage
+                        where asset_id = :fileId
                           and status = 'ACTIVE'
                         """)
                 .param("fileId", fileId)
@@ -53,28 +52,26 @@ public class StorageUsageService {
 
     @Transactional
     public void requireActivePublicMedia(Long fileId, StorageMediaKind mediaKind) {
-        ActiveFileRow file = jdbcClient.sql("""
-                        select purpose, visibility, status
-                        from storage_file
+        ActiveAssetRow asset = jdbcClient.sql("""
+                        select scope, media_kind, visibility, status
+                        from storage_asset
                         where id = :fileId
                         for update
                         """)
                 .param("fileId", fileId)
-                .query((rs, rowNum) -> new ActiveFileRow(
-                        rs.getString("purpose"),
+                .query((rs, rowNum) -> new ActiveAssetRow(
+                        rs.getString("scope"),
+                        rs.getString("media_kind"),
                         rs.getString("visibility"),
                         rs.getString("status")
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
-        try {
-            StoragePurpose purpose = StoragePurpose.valueOf(file.purpose());
-            if (!"ACTIVE".equals(file.status())
-                    || !"PUBLIC".equals(file.visibility())
-                    || purpose.mediaKind() != mediaKind) {
-                throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
-            }
-        } catch (IllegalArgumentException ex) {
+        if (!"LIBRARY".equals(asset.scope())
+                || !"ACTIVE".equals(asset.status())
+                || !"PUBLIC".equals(asset.visibility())
+                || mediaKind == null
+                || !mediaKind.name().equals(asset.mediaKind())) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
     }
@@ -87,7 +84,7 @@ public class StorageUsageService {
             List<UsageAssignment> usages
     ) {
         jdbcClient.sql("""
-                        update storage_file_usage
+                        update storage_asset_usage
                         set status = 'REMOVED',
                             updated_at = current_timestamp
                         where owner_type = :ownerType
@@ -119,7 +116,7 @@ public class StorageUsageService {
     @Transactional
     public void removeOwnerUsages(StorageUsageOwnerType ownerType, Long ownerId) {
         jdbcClient.sql("""
-                        update storage_file_usage
+                        update storage_asset_usage
                         set status = 'REMOVED',
                             updated_at = current_timestamp
                         where owner_type = :ownerType
@@ -138,10 +135,11 @@ public class StorageUsageService {
             String ownerLabel,
             UsageAssignment usage
     ) {
-        boolean activeFileExists = jdbcClient.sql("""
+        boolean activeAssetExists = jdbcClient.sql("""
                         select id
-                        from storage_file
+                        from storage_asset
                         where id = :fileId
+                          and scope = 'LIBRARY'
                           and status = 'ACTIVE'
                           and visibility = 'PUBLIC'
                         for update
@@ -150,14 +148,14 @@ public class StorageUsageService {
                 .query(Long.class)
                 .optional()
                 .isPresent();
-        if (!activeFileExists) {
+        if (!activeAssetExists) {
             return false;
         }
 
         Integer activeUsageCount = jdbcClient.sql("""
                         select count(*)
-                        from storage_file_usage
-                        where file_id = :fileId
+                        from storage_asset_usage
+                        where asset_id = :fileId
                           and usage_type = :usageType
                           and owner_type = :ownerType
                           and owner_id = :ownerId
@@ -196,10 +194,10 @@ public class StorageUsageService {
             Integer sortOrder,
             boolean protectedUsage
     ) {
-        requireActiveFile(fileId);
+        requireActiveAsset(fileId);
         jdbcClient.sql("""
-                        insert into storage_file_usage
-                            (file_id, usage_type, owner_type, owner_id, owner_label, snapshot_url, sort_order, protected, status)
+                        insert into storage_asset_usage
+                            (asset_id, usage_type, owner_type, owner_id, owner_label, snapshot_url, sort_order, protected, status)
                         values
                             (:fileId, :usageType, :ownerType, :ownerId, :ownerLabel, :snapshotUrl, :sortOrder, :protectedUsage, 'ACTIVE')
                         """)
@@ -214,10 +212,10 @@ public class StorageUsageService {
                 .update();
     }
 
-    private void requireActiveFile(Long fileId) {
+    private void requireActiveAsset(Long fileId) {
         jdbcClient.sql("""
                         select id
-                        from storage_file
+                        from storage_asset
                         where id = :fileId
                           and status = 'ACTIVE'
                         for update
@@ -228,10 +226,10 @@ public class StorageUsageService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
     }
 
-    private StorageFileUsageResponse mapUsage(ResultSet rs, int rowNum) throws SQLException {
-        return new StorageFileUsageResponse(
+    private StorageAssetUsageResponse mapUsage(ResultSet rs, int rowNum) throws SQLException {
+        return new StorageAssetUsageResponse(
                 rs.getLong("id"),
-                rs.getLong("file_id"),
+                rs.getLong("asset_id"),
                 rs.getString("usage_type"),
                 rs.getString("owner_type"),
                 rs.getLong("owner_id"),
@@ -254,6 +252,6 @@ public class StorageUsageService {
     ) {
     }
 
-    private record ActiveFileRow(String purpose, String visibility, String status) {
+    private record ActiveAssetRow(String scope, String mediaKind, String visibility, String status) {
     }
 }

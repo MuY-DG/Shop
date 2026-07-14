@@ -31,7 +31,7 @@ class AdminRbacSchemaTest {
         Integer storagePermissionCount = jdbcClient.sql("""
                         select count(*)
                         from admin_permission
-                        where auth_mark in ('file:upload', 'file:read', 'file:delete', 'file:category')
+                        where auth_mark in ('asset:upload', 'asset:read', 'asset:delete', 'asset:folder')
                         """)
                 .query(Integer.class)
                 .single();
