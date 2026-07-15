@@ -15,6 +15,7 @@ public enum ErrorCode {
     ADMIN_ROLE_GRANT_INVALID(110007, "Role grant must include parent and owning menus"),
     WECHAT_LOGIN_FAILED(100101, "WeChat login failed"),
     WECHAT_PHONE_FAILED(100102, "WeChat phone authorization failed"),
+    APP_USER_UNAVAILABLE(100103, "App user unavailable"),
     PRODUCT_CATEGORY_UNAVAILABLE(200000, "Product category unavailable"),
     PRODUCT_UNAVAILABLE(200001, "Product unavailable"),
     SKU_UNAVAILABLE(200002, "SKU unavailable"),

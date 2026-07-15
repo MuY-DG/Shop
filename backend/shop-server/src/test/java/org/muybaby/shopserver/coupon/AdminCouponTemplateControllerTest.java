@@ -178,6 +178,34 @@ class AdminCouponTemplateControllerTest {
     }
 
     @Test
+    void adminTemplatePageCanReadDirectCouponsWithTheirExclusiveAudience() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long userId = 993_101L;
+        jdbcClient.sql("""
+                        insert into app_user
+                            (id, openid, nickname, phone_number, phone_authorized, status)
+                        values
+                            (:userId, :openid, '专属券用户', '13800138101', true, 'ENABLED')
+                        """)
+                .param("userId", userId)
+                .param("openid", "coupon-direct-list-" + userId)
+                .update();
+        long templateId = seedDirectTemplate("仅此用户可用", userId);
+
+        mockMvc.perform(get("/admin/marketing/coupons/templates")
+                        .param("distributionMode", "DIRECT")
+                        .param("name", "仅此用户")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].id").value(templateId))
+                .andExpect(jsonPath("$.data.records[0].distributionMode").value("DIRECT"))
+                .andExpect(jsonPath("$.data.records[0].audienceUserId").value(userId))
+                .andExpect(jsonPath("$.data.records[0].audienceNickname").value("专属券用户"))
+                .andExpect(jsonPath("$.data.records[0].audiencePhoneNumber").value("13800138101"));
+    }
+
+    @Test
     void updateRejectsTotalStockLowerThanClaimedCount() throws Exception {
         String adminToken = adminLoginAndExtractToken();
         long templateId = seedTemplate("Stock validation", 10, 6, "DISABLED");
@@ -270,6 +298,28 @@ class AdminCouponTemplateControllerTest {
                         order by id desc
                         limit 1
                         """)
+                .param("name", name)
+                .query(Long.class)
+                .single();
+    }
+
+    private long seedDirectTemplate(String name, long userId) {
+        jdbcClient.sql("""
+                        insert into coupon_template
+                            (name, description, coupon_type, discount_type, threshold_cent, discount_cent,
+                             scope_type, scope_value, strategy_key, total_stock, claimed_count, per_user_limit,
+                             valid_start_at, valid_end_at, status, sort_order,
+                             distribution_mode, audience_user_id)
+                        values
+                            (:name, 'direct', 'NO_THRESHOLD', 'AMOUNT_OFF', 0, 300,
+                             'ALL', '', 'coupon.amount-off.v1', 1, 1, 1,
+                             timestamp '2026-07-01 00:00:00', timestamp '2026-08-01 00:00:00', 'DISABLED', 0,
+                             'DIRECT', :userId)
+                        """)
+                .param("name", name)
+                .param("userId", userId)
+                .update();
+        return jdbcClient.sql("select max(id) from coupon_template where name = :name")
                 .param("name", name)
                 .query(Long.class)
                 .single();

@@ -40,8 +40,40 @@
             </ElFormItem>
           </ElCol>
           <ElCol :xs="24" :md="12">
-            <ElFormItem label="适用范围">
-              <ElInput value="全场券" disabled />
+            <ElFormItem label="适用范围" prop="scopeType">
+              <ElSegmented
+                v-model="formData.scopeType"
+                :options="scopeTypeOptions"
+                :disabled="Boolean(props.template?.id)"
+                block
+              />
+            </ElFormItem>
+          </ElCol>
+          <ElCol v-if="formData.scopeType === 'PRODUCT'" :xs="24">
+            <ElFormItem label="适用商品" prop="scopeValue">
+              <ElSelect
+                v-model="formData.scopeValue"
+                filterable
+                remote
+                reserve-keyword
+                :remote-method="searchProducts"
+                :loading="productLoading"
+                placeholder="输入商品名称搜索"
+                style="width: 100%"
+                @visible-change="handleProductSelectorVisible"
+              >
+                <ElOption
+                  v-for="product in productOptions"
+                  :key="product.id"
+                  :label="
+                    product.categoryName
+                      ? `${product.title}（${product.categoryName}）`
+                      : product.title
+                  "
+                  :value="String(product.id)"
+                />
+              </ElSelect>
+              <div class="field-tip">创建后不能在全场券和指定商品券之间切换。</div>
             </ElFormItem>
           </ElCol>
           <ElCol :xs="24" :md="12">
@@ -135,6 +167,7 @@
   import { computed, nextTick, reactive, ref, watch } from 'vue'
   import type { FormInstance, FormRules } from 'element-plus'
   import { createCouponTemplate, updateCouponTemplate } from '@/api/coupon'
+  import { fetchProductSpus } from '@/api/product'
   import {
     buildCouponTemplatePayload,
     createDefaultCouponTemplateForm,
@@ -162,10 +195,17 @@
 
   const formRef = ref<FormInstance>()
   const submitting = ref(false)
+  const productLoading = ref(false)
+  const productOptions = ref<Api.Product.SpuListItem[]>([])
 
   const couponTypeOptions = [
     { label: '无门槛券', value: 'NO_THRESHOLD' },
     { label: '满减券', value: 'MIN_SPEND' }
+  ]
+
+  const scopeTypeOptions = [
+    { label: '全场券', value: 'ALL' },
+    { label: '指定商品', value: 'PRODUCT' }
   ]
 
   const formData = reactive<CouponTemplateFormState>(createDefaultCouponTemplateForm())
@@ -176,6 +216,19 @@
     name: [{ required: true, message: '请输入优惠券名称', trigger: 'blur' }],
     description: [{ max: 120, message: '描述长度不能超过 120 个字符', trigger: 'blur' }],
     couponType: [{ required: true, message: '请选择优惠券类型', trigger: 'change' }],
+    scopeType: [{ required: true, message: '请选择适用范围', trigger: 'change' }],
+    scopeValue: [
+      {
+        validator: (_rule, value: string, callback) => {
+          if (formData.scopeType !== 'PRODUCT' || /^\d+$/.test(value)) {
+            callback()
+            return
+          }
+          callback(new Error('请选择适用商品'))
+        },
+        trigger: 'change'
+      }
+    ],
     thresholdYuan: [
       {
         validator: (_rule, value: number, callback) => {
@@ -237,11 +290,61 @@
     Object.assign(formData, fillCouponTemplateForm(template))
   }
 
+  const preserveSelectedProduct = (products: Api.Product.SpuListItem[]) => {
+    const selectedId = Number(formData.scopeValue)
+    if (!Number.isSafeInteger(selectedId) || selectedId <= 0) return products
+    if (products.some((product) => product.id === selectedId)) return products
+
+    const existing = productOptions.value.find((product) => product.id === selectedId)
+    if (existing) return [existing, ...products]
+    const placeholder: Api.Product.SpuListItem = {
+      id: selectedId,
+      categoryId: 0,
+      categoryName: '',
+      title: `商品 #${selectedId}`,
+      subtitle: '',
+      mainImage: '',
+      status: 'DRAFT',
+      sortOrder: 0,
+      totalStock: 0,
+      skuCount: 0,
+      actualSales: 0,
+      virtualSales: 0,
+      displaySales: 0,
+      createdAt: '',
+      updatedAt: ''
+    }
+    return [placeholder, ...products]
+  }
+
+  const searchProducts = async (keyword = '') => {
+    productLoading.value = true
+    try {
+      const response = await fetchProductSpus({
+        current: 1,
+        size: 50,
+        title: keyword.trim(),
+        recycled: false
+      })
+      productOptions.value = preserveSelectedProduct(response.records)
+    } finally {
+      productLoading.value = false
+    }
+  }
+
+  const handleProductSelectorVisible = (visible: boolean) => {
+    if (visible && productOptions.value.length === 0) searchProducts()
+  }
+
   watch(
     () => props.visible,
-    (visible) => {
+    async (visible) => {
       if (!visible) return
       fillForm(props.template)
+      productOptions.value = []
+      if (formData.scopeType === 'PRODUCT') {
+        await searchProducts()
+      }
       nextTick(() => formRef.value?.clearValidate())
     },
     { immediate: true }
@@ -253,6 +356,18 @@
       if (couponType === 'NO_THRESHOLD') {
         formData.thresholdYuan = 0
       }
+    }
+  )
+
+  watch(
+    () => formData.scopeType,
+    (scopeType) => {
+      if (scopeType === 'ALL') {
+        formData.scopeValue = ''
+      } else if (productOptions.value.length === 0) {
+        searchProducts()
+      }
+      nextTick(() => formRef.value?.clearValidate('scopeValue'))
     }
   )
 
@@ -290,7 +405,14 @@
 
   .drawer-footer {
     display: flex;
-    justify-content: flex-end;
     gap: 12px;
+    justify-content: flex-end;
+  }
+
+  .field-tip {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--el-text-color-secondary);
   }
 </style>

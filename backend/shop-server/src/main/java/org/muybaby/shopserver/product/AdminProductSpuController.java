@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/admin/product/spus")
 public class AdminProductSpuController {
 
-    private static final String READ_AUTHORITIES = "hasAnyAuthority(" +
+    private static final String PRODUCT_READ_AUTHORITY_ARGUMENTS =
             "'product:spu:create', " +
             "'product:spu:update', " +
             "'product:spu:publish', " +
@@ -39,7 +39,13 @@ public class AdminProductSpuController {
             "'product:freight:create', " +
             "'product:freight:update', " +
             "'product:coupon:bind', " +
-            "'product:coupon:create')";
+            "'product:coupon:create'";
+    private static final String READ_AUTHORITIES =
+            "hasAnyAuthority(" + PRODUCT_READ_AUTHORITY_ARGUMENTS + ")";
+    private static final String PAGE_READ_AUTHORITIES =
+            "hasAnyAuthority(" + PRODUCT_READ_AUTHORITY_ARGUMENTS + ", " +
+            "'coupon:template:create', " +
+            "'coupon:template:update')";
 
     private final AdminProductService adminProductService;
     private final ProductReadMapper productReadMapper;
@@ -53,7 +59,7 @@ public class AdminProductSpuController {
     }
 
     @GetMapping
-    @PreAuthorize(READ_AUTHORITIES)
+    @PreAuthorize(PAGE_READ_AUTHORITIES)
     public ApiResponse<PageResult<AdminSpuListItemResponse>> page(
             AdminSpuQueryRequest query,
             @AuthenticationPrincipal AuthenticatedPrincipal principal

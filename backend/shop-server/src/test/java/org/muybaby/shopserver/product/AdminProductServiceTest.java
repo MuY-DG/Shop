@@ -523,7 +523,6 @@ class AdminProductServiceTest {
                 List.of(colorGroup),
                 List.of("HOT_SALE", "NEW_ARRIVAL"),
                 List.of(),
-                List.of(),
                 false,
                 false,
                 true
@@ -626,7 +625,7 @@ class AdminProductServiceTest {
                         new AdminSkuUpsertRequest(null, "LEGACY-V2-BLUE", null, null, 2090L, 0L, 3, null,
                                 null, null, "", null, "ENABLED", 1, false, null, List.of("legacy-blue"), false)
                 ),
-                List.of(colorGroup), List.of("HOT_SALE"), List.of(guaranteeServiceId), List.of(),
+                List.of(colorGroup), List.of("HOT_SALE"), List.of(guaranteeServiceId),
                 false, false, true
         ));
         var created = productReadMapper.adminSpuDetail(spuId);
@@ -676,7 +675,7 @@ class AdminProductServiceTest {
                                 sku.defaultSelected(), sku.combinationKey(), List.of(), true
                         ))
                         .toList(),
-                List.of(), List.of(), List.of(), List.of(), true, true, true
+                List.of(), List.of(), List.of(), true, true, true
         ));
 
         var cleared = productReadMapper.adminSpuDetail(spuId);
@@ -715,7 +714,7 @@ class AdminProductServiceTest {
                         new AdminSkuUpsertRequest(null, "REPLACE-SPEC-BLUE", null, null, 2090L, 0L, 1, null,
                                 null, null, "", null, "ENABLED", 1, false, null, List.of("old-blue"), false)
                 ),
-                List.of(originalGroup), List.of(), List.of(), List.of(), false, false, true
+                List.of(originalGroup), List.of(), List.of(), false, false, true
         ));
         Map<String, Object> originalIds = jdbcClient.sql("""
                         select max(case when spec_text = '红色' then id end) as red_id,
@@ -743,7 +742,7 @@ class AdminProductServiceTest {
                         new AdminSkuUpsertRequest(null, "REPLACE-SPEC-BLUE-V2", null, null, 2290L, 0L, 1, null,
                                 null, null, "", null, "ENABLED", 1, false, null, List.of("new-blue"), false)
                 ),
-                List.of(replacementGroup), List.of(), List.of(), List.of(), false, false, true
+                List.of(replacementGroup), List.of(), List.of(), false, false, true
         ));
 
         List<Map<String, Object>> updatedSkus = jdbcClient.sql("""
@@ -781,7 +780,7 @@ class AdminProductServiceTest {
                         null, "SPEC-IMAGE-FALLBACK-SKU", null, null, 1990L, 0L, 1, null,
                         null, null, "", null, "ENABLED", 0, true, null, List.of("fallback-red"), false
                 )),
-                List.of(group), List.of(), List.of(), List.of(), false, false, true
+                List.of(group), List.of(), List.of(), false, false, true
         ));
         Map<String, Object> sku = jdbcClient.sql("""
                         select id, image, image_file_id

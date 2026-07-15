@@ -7,6 +7,13 @@ export function fetchCouponTemplates(params: Api.Marketing.CouponTemplateSearchP
   })
 }
 
+export function fetchCouponClaims(params: Api.Marketing.CouponClaimSearchParams) {
+  return request.get<Api.Marketing.CouponClaimList>({
+    url: '/admin/marketing/coupons/claims',
+    params
+  })
+}
+
 export function createCouponTemplate(data: Api.Marketing.CouponTemplateForm) {
   return request.post<number>({
     url: '/admin/marketing/coupons/templates',
@@ -15,10 +22,7 @@ export function createCouponTemplate(data: Api.Marketing.CouponTemplateForm) {
   })
 }
 
-export function updateCouponTemplate(
-  templateId: number,
-  data: Api.Marketing.CouponTemplateForm
-) {
+export function updateCouponTemplate(templateId: number, data: Api.Marketing.CouponTemplateForm) {
   return request.put<void>({
     url: `/admin/marketing/coupons/templates/${templateId}`,
     data,

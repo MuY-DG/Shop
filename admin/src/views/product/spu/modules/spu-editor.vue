@@ -11,13 +11,13 @@
           <ElTag v-if="currentStatus" :type="statusMeta.type">{{ statusMeta.label }}</ElTag>
           <ElTag v-if="isDirty" type="warning" effect="plain">有未保存修改</ElTag>
         </div>
-        <p>依次完善商品信息、规格库存、商品详细和其他设置；提交只保存商品，不会自动上架。</p>
+        <p>可自由切换各步骤；提交时统一检查必填项，保存商品后不会自动上架。</p>
       </div>
       <ElButton :disabled="submitting" @click="requestClose">返回商品列表</ElButton>
     </div>
 
     <ElCard class="spu-editor-page__card" shadow="never">
-      <ElTabs v-model="activeTab" class="spu-editor-tabs" :before-leave="handleBeforeTabLeave">
+      <ElTabs v-model="activeTab" class="spu-editor-tabs">
         <ElTabPane name="info">
           <template #label>
             <span class="tab-label"><b>1</b> 商品信息</span>
@@ -101,7 +101,7 @@
     watch,
     type ComponentPublicInstance
   } from 'vue'
-  import { ElMessage, ElMessageBox, type TabPaneName } from 'element-plus'
+  import { ElMessage, ElMessageBox } from 'element-plus'
   import { onBeforeRouteLeave } from 'vue-router'
   import {
     bindProductSpuCoupons,
@@ -424,19 +424,11 @@
     return tab ? tab.validate() : true
   }
 
-  const handleBeforeTabLeave = async (nextName: TabPaneName, currentName: TabPaneName) => {
-    const nextIndex = tabs.indexOf(String(nextName) as TabName)
-    const currentIndex = tabs.indexOf(String(currentName) as TabName)
-    if (nextIndex <= currentIndex) return true
-    return validateTab(currentIndex)
-  }
-
   const goPrevious = () => {
     if (activeTabIndex.value > 0) activeTab.value = tabs[activeTabIndex.value - 1]
   }
 
-  const goNext = async () => {
-    if (!(await validateTab(activeTabIndex.value))) return
+  const goNext = () => {
     if (activeTabIndex.value < tabs.length - 1) {
       activeTab.value = tabs[activeTabIndex.value + 1]
     }

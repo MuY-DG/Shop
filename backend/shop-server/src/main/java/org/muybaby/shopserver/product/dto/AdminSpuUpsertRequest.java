@@ -55,8 +55,6 @@ public class AdminSpuUpsertRequest {
 
     private List<Long> guaranteeServiceIds;
 
-    private List<Long> couponTemplateIds;
-
     private boolean mainImageFileIdSpecified;
 
     private boolean mainVideoFileIdSpecified;
@@ -133,7 +131,6 @@ public class AdminSpuUpsertRequest {
             List<AdminSpuSpecGroupUpsertRequest> specGroups,
             List<String> tags,
             List<Long> guaranteeServiceIds,
-            List<Long> couponTemplateIds,
             boolean mainImageFileIdSpecified,
             boolean mainVideoFileIdSpecified,
             boolean specTypeSpecified
@@ -141,7 +138,7 @@ public class AdminSpuUpsertRequest {
         this(
                 categoryId, title, subtitle, mainImage, mainImageFileId, mainVideo, mainVideoFileId, specType,
                 freightTemplateId, virtualSales, sellingPoints, detailHtml, sortOrder, images, skus, specGroups,
-                tags, guaranteeServiceIds, couponTemplateIds, mainImageFileIdSpecified, mainVideoFileIdSpecified,
+                tags, guaranteeServiceIds, mainImageFileIdSpecified, mainVideoFileIdSpecified,
                 specTypeSpecified, specGroups != null, tags != null, guaranteeServiceIds != null
         );
     }
@@ -165,7 +162,6 @@ public class AdminSpuUpsertRequest {
             List<AdminSpuSpecGroupUpsertRequest> specGroups,
             List<String> tags,
             List<Long> guaranteeServiceIds,
-            List<Long> couponTemplateIds,
             boolean mainImageFileIdSpecified,
             boolean mainVideoFileIdSpecified,
             boolean specTypeSpecified,
@@ -191,7 +187,6 @@ public class AdminSpuUpsertRequest {
         this.specGroups = specGroups;
         this.tags = tags;
         this.guaranteeServiceIds = guaranteeServiceIds;
-        this.couponTemplateIds = couponTemplateIds;
         this.mainImageFileIdSpecified = mainImageFileIdSpecified;
         this.mainVideoFileIdSpecified = mainVideoFileIdSpecified;
         this.specTypeSpecified = specTypeSpecified;
@@ -348,14 +343,6 @@ public class AdminSpuUpsertRequest {
     public void setGuaranteeServiceIds(List<Long> guaranteeServiceIds) {
         this.guaranteeServiceIds = guaranteeServiceIds;
         this.guaranteeServiceIdsSpecified = true;
-    }
-
-    public List<Long> couponTemplateIds() {
-        return couponTemplateIds == null ? List.of() : couponTemplateIds;
-    }
-
-    public void setCouponTemplateIds(List<Long> couponTemplateIds) {
-        this.couponTemplateIds = couponTemplateIds;
     }
 
     public boolean mainImageFileIdSpecified() {

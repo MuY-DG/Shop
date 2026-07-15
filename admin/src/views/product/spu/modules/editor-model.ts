@@ -153,6 +153,19 @@ export const createDefaultForm = (): ProductEditorForm => ({
   couponTemplateIds: []
 })
 
+export const parseSellingPoints = (value: string): string[] =>
+  Array.from(
+    new Set(
+      value
+        .split(/[,，\n]/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  )
+
+export const serializeSellingPoints = (values: string[]): string =>
+  parseSellingPoints(values.join(',')).join(',')
+
 export const yuanToCent = (value: number | null | undefined): number | null => {
   if (value === null || value === undefined || !Number.isFinite(value)) return null
   return Math.round(value * 100)

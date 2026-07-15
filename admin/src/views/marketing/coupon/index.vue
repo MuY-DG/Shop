@@ -41,11 +41,7 @@
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
   import { useTable } from '@/hooks/core/useTable'
-  import {
-    disableCouponTemplate,
-    enableCouponTemplate,
-    fetchCouponTemplates
-  } from '@/api/coupon'
+  import { disableCouponTemplate, enableCouponTemplate, fetchCouponTemplates } from '@/api/coupon'
   import CouponTemplateDialog from './modules/coupon-template-dialog.vue'
   import { ElMessageBox, ElTag } from 'element-plus'
 
@@ -57,9 +53,11 @@
   const searchForm = ref<{
     name?: string
     status?: Api.Marketing.CouponTemplateStatus
+    distributionMode?: Api.Marketing.CouponDistributionMode
   }>({
     name: undefined,
-    status: undefined
+    status: undefined,
+    distributionMode: undefined
   })
 
   const statusMap: Record<
@@ -78,6 +76,19 @@
       props: {
         clearable: true,
         placeholder: '请输入模板名称'
+      }
+    },
+    {
+      label: '发放方式',
+      key: 'distributionMode',
+      type: 'select',
+      props: {
+        clearable: true,
+        placeholder: '请选择发放方式',
+        options: [
+          { label: '公开优惠券', value: 'PUBLIC' },
+          { label: '专属优惠券', value: 'DIRECT' }
+        ]
       }
     },
     {
@@ -123,6 +134,13 @@
     return formatMoney(row.discountCent)
   }
 
+  const formatScope = (row: Api.Marketing.CouponTemplate) => {
+    if (row.scopeType === 'PRODUCT') {
+      return `指定商品 #${row.scopeValue}`
+    }
+    return '全场'
+  }
+
   const {
     columns,
     columnChecks,
@@ -159,6 +177,33 @@
             ])
         },
         {
+          prop: 'distributionMode',
+          label: '发放方式',
+          width: 120,
+          formatter: (row) =>
+            h(
+              ElTag,
+              { type: row.distributionMode === 'DIRECT' ? 'warning' : 'success', effect: 'plain' },
+              () => (row.distributionMode === 'DIRECT' ? '专属券' : '公开券')
+            )
+        },
+        {
+          prop: 'audienceUserId',
+          label: '专属用户',
+          minWidth: 170,
+          formatter: (row) => {
+            if (row.distributionMode !== 'DIRECT' || !row.audienceUserId) return '-'
+            return h('div', { class: 'coupon-info-cell' }, [
+              h('div', { class: 'title' }, row.audienceNickname || `用户 ${row.audienceUserId}`),
+              h(
+                'div',
+                { class: 'subtitle' },
+                `ID ${row.audienceUserId}${row.audiencePhoneNumber ? ` · ${row.audiencePhoneNumber}` : ''}`
+              )
+            ])
+          }
+        },
+        {
           prop: 'couponType',
           label: '类型',
           width: 130,
@@ -175,6 +220,12 @@
           label: '优惠',
           width: 120,
           formatter: (row) => formatDiscount(row)
+        },
+        {
+          prop: 'scopeType',
+          label: '适用范围',
+          width: 150,
+          formatter: (row) => formatScope(row)
         },
         {
           prop: 'stock',
@@ -216,11 +267,15 @@
           label: '操作',
           width: 120,
           fixed: 'right',
-          formatter: (row) =>
-            h(ArtButtonMore, {
+          formatter: (row) => {
+            if (row.distributionMode === 'DIRECT') {
+              return h(ElTag, { type: 'info', effect: 'plain' }, () => '只读')
+            }
+            return h(ArtButtonMore, {
               list: buildMoreActions(row),
               onClick: (item: ButtonMoreItem) => handleMoreAction(item, row)
             })
+          }
         }
       ]
     }
@@ -265,7 +320,8 @@
   const handleReset = () => {
     searchForm.value = {
       name: undefined,
-      status: undefined
+      status: undefined,
+      distributionMode: undefined
     }
     resetSearchParams()
     getData()

@@ -24,6 +24,7 @@ import java.util.Optional;
 public class AdminCouponService {
 
     private static final String DEFAULT_STRATEGY_KEY = "coupon.amount-off.v1";
+    private static final String PUBLIC_DISTRIBUTION_MODE = "PUBLIC";
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -36,7 +37,6 @@ public class AdminCouponService {
     @Transactional
     public Long create(AdminCouponTemplateRequest request) {
         ValidatedTemplate validated = validateRequest(request, null);
-        requireScope(validated, CouponScopeType.ALL);
         return insert(validated);
     }
 
@@ -53,12 +53,14 @@ public class AdminCouponService {
                         insert into coupon_template (
                             name, description, coupon_type, discount_type, threshold_cent, discount_cent,
                             scope_type, scope_value, strategy_key, total_stock, claimed_count, per_user_limit,
-                            valid_start_at, valid_end_at, status, sort_order
+                            valid_start_at, valid_end_at, status, sort_order,
+                            distribution_mode, audience_user_id
                         )
                         values (
                             :name, :description, :couponType, :discountType, :thresholdCent, :discountCent,
                             :scopeType, :scopeValue, :strategyKey, :totalStock, 0, :perUserLimit,
-                            :validStartAt, :validEndAt, :status, :sortOrder
+                            :validStartAt, :validEndAt, :status, :sortOrder,
+                            :distributionMode, null
                         )
                         """,
                 new MapSqlParameterSource()
@@ -76,7 +78,8 @@ public class AdminCouponService {
                         .addValue("validStartAt", validated.validStartAt())
                         .addValue("validEndAt", validated.validEndAt())
                         .addValue("status", validated.status().name())
-                        .addValue("sortOrder", validated.sortOrder()),
+                        .addValue("sortOrder", validated.sortOrder())
+                        .addValue("distributionMode", PUBLIC_DISTRIBUTION_MODE),
                 keyHolder,
                 new String[]{"id"});
         Long templateId = requireGeneratedId(keyHolder);
@@ -89,10 +92,9 @@ public class AdminCouponService {
         TemplateState existing = findTemplateState(templateId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_UNAVAILABLE));
         ValidatedTemplate validated = validateRequest(request, existing.claimedCount());
-        if (existing.scopeType() != CouponScopeType.ALL) {
+        if (existing.scopeType() != validated.scopeType()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        requireScope(validated, CouponScopeType.ALL);
         int updatedRows = jdbcClient.sql("""
                         update coupon_template
                         set name = :name,
@@ -112,6 +114,7 @@ public class AdminCouponService {
                             sort_order = :sortOrder,
                             updated_at = :updatedAt
                         where id = :templateId
+                          and distribution_mode = :distributionMode
                         """)
                 .param("name", validated.name())
                 .param("description", validated.description())
@@ -130,6 +133,7 @@ public class AdminCouponService {
                 .param("sortOrder", validated.sortOrder())
                 .param("updatedAt", LocalDateTime.now())
                 .param("templateId", templateId)
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .update();
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE);
@@ -153,10 +157,12 @@ public class AdminCouponService {
                         set status = :status,
                             updated_at = :updatedAt
                         where id = :templateId
+                          and distribution_mode = :distributionMode
                         """)
                 .param("status", status.name())
                 .param("updatedAt", LocalDateTime.now())
                 .param("templateId", templateId)
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .update();
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.COUPON_UNAVAILABLE);
@@ -168,8 +174,10 @@ public class AdminCouponService {
                         select claimed_count, scope_type
                         from coupon_template
                         where id = :templateId
+                          and distribution_mode = :distributionMode
                         """)
                 .param("templateId", templateId)
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .query((rs, rowNum) -> new TemplateState(
                         rs.getInt("claimed_count"),
                         parseEnum(rs.getString("scope_type"), CouponScopeType.class)

@@ -21,6 +21,8 @@ import java.util.Set;
 @Service
 public class ProductCouponService {
 
+    private static final String PUBLIC_DISTRIBUTION_MODE = "PUBLIC";
+
     private final JdbcClient jdbcClient;
     private final AdminCouponService adminCouponService;
 
@@ -41,9 +43,11 @@ public class ProductCouponService {
                         from product_spu_coupon pc
                         join coupon_template t on t.id = pc.coupon_template_id
                         where pc.spu_id = :spuId
+                          and t.distribution_mode = :distributionMode
                         order by t.sort_order asc, t.id desc
                         """)
                 .param("spuId", spuId)
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .query(this::mapAdminCouponTemplate)
                 .list();
     }
@@ -112,8 +116,10 @@ public class ProductCouponService {
                         select scope_type, scope_value
                         from coupon_template
                         where id = :templateId
+                          and distribution_mode = :distributionMode
                         """)
                 .param("templateId", templateId)
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .query((rs, rowNum) -> new CouponScopeRow(
                         rs.getString("scope_type"),
                         rs.getString("scope_value")
@@ -139,10 +145,12 @@ public class ProductCouponService {
                         select id
                         from coupon_template
                         where scope_type = :scopeType
+                          and distribution_mode = :distributionMode
                           and scope_value = :scopeValue
                         order by id
                         """)
                 .param("scopeType", CouponScopeType.PRODUCT.name())
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .param("scopeValue", Long.toString(spuId))
                 .query(Long.class)
                 .list();
@@ -206,7 +214,11 @@ public class ProductCouponService {
                 rs.getString("status"),
                 rs.getInt("sort_order"),
                 rs.getObject("created_at", LocalDateTime.class),
-                rs.getObject("updated_at", LocalDateTime.class)
+                rs.getObject("updated_at", LocalDateTime.class),
+                "PUBLIC",
+                null,
+                null,
+                null
         );
     }
 

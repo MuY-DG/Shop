@@ -97,6 +97,22 @@ class AppCouponControllerTest {
     }
 
     @Test
+    void directTemplateCannotBeDiscoveredOrClaimedEvenIfEnabled() throws Exception {
+        String appToken = appLoginAndExtractToken("direct-template-isolation-user");
+        long templateId = seedDirectTemplate("Hidden direct coupon");
+
+        mockMvc.perform(get("/app/coupons/claimable")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(0));
+
+        mockMvc.perform(post("/app/coupons/templates/{templateId}/claim", templateId)
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(300001));
+    }
+
+    @Test
     void claimCreatesUserCouponSnapshotAndClaimRecord() throws Exception {
         String appToken = appLoginAndExtractToken("coupon-claim-user");
         long templateId = seedTemplate("Claim Coupon", "ENABLED", 10, 0, 2);
@@ -356,6 +372,27 @@ class AppCouponControllerTest {
                         """)
                 .param("name", name)
                 .update();
+    }
+
+    private long seedDirectTemplate(String name) {
+        jdbcClient.sql("""
+                        insert into coupon_template
+                            (name, description, coupon_type, discount_type, threshold_cent, discount_cent,
+                             scope_type, scope_value, strategy_key, total_stock, claimed_count, per_user_limit,
+                             valid_start_at, valid_end_at, status, sort_order,
+                             distribution_mode, audience_user_id)
+                        values
+                            (:name, 'direct', 'NO_THRESHOLD', 'AMOUNT_OFF', 0, 500,
+                             'ALL', '', 'coupon.amount-off.v1', 1, 0, 1,
+                             timestamp '2026-07-01 00:00:00', timestamp '2026-08-01 23:59:59', 'ENABLED', 1,
+                             'DIRECT', 999999)
+                        """)
+                .param("name", name)
+                .update();
+        return jdbcClient.sql("select id from coupon_template where name = :name order by id desc limit 1")
+                .param("name", name)
+                .query(Long.class)
+                .single();
     }
 
     private long seedUserCoupon(long userId, long templateId, String templateName, String status) {

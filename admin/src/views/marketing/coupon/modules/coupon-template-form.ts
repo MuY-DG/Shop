@@ -81,7 +81,10 @@ export const buildCouponTemplatePayload = (
     thresholdCent: formData.couponType === 'NO_THRESHOLD' ? 0 : toCent(formData.thresholdYuan),
     discountCent: toCent(formData.discountYuan),
     scopeType: formData.scopeType || fallbackState.scopeType,
-    scopeValue: formData.scopeValue ?? fallbackState.scopeValue,
+    scopeValue:
+      formData.scopeType === 'ALL'
+        ? ''
+        : String(formData.scopeValue ?? fallbackState.scopeValue).trim(),
     strategyKey: formData.strategyKey || fallbackState.strategyKey,
     totalStock: formData.totalStock,
     perUserLimit: formData.perUserLimit,

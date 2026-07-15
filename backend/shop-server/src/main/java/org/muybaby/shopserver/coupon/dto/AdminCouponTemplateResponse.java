@@ -22,6 +22,10 @@ public record AdminCouponTemplateResponse(
         String status,
         Integer sortOrder,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        String distributionMode,
+        Long audienceUserId,
+        String audienceNickname,
+        String audiencePhoneNumber
 ) {
 }

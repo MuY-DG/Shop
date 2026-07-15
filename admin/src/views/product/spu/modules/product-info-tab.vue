@@ -12,6 +12,36 @@
         />
       </ElFormItem>
 
+      <ElFormItem label="商品副标题">
+        <ElInput
+          :model-value="modelValue.subtitle"
+          maxlength="255"
+          show-word-limit
+          clearable
+          placeholder="补充商品特点或简短说明（可选）"
+          :disabled="disabled"
+          @update:model-value="patchForm({ subtitle: $event })"
+        />
+      </ElFormItem>
+
+      <ElFormItem label="商品卖点">
+        <div class="selling-points-field">
+          <ElSelect
+            :model-value="sellingPointValues"
+            multiple
+            filterable
+            allow-create
+            default-first-option
+            clearable
+            placeholder="输入卖点后按回车添加（可选）"
+            :disabled="disabled"
+            style="width: 100%"
+            @update:model-value="updateSellingPoints"
+          />
+          <div class="field-tip">多个卖点会在小程序商品列表和详情页中按标签展示。</div>
+        </div>
+      </ElFormItem>
+
       <ElFormItem label="商品分类" required>
         <ElTreeSelect
           :model-value="modelValue.categoryId"
@@ -311,7 +341,12 @@
     ProductEditorFreightTemplate,
     ProductEditorGuaranteeService
   } from './editor-model'
-  import { createEmptyImage, yuanToCent } from './editor-model'
+  import {
+    createEmptyImage,
+    parseSellingPoints,
+    serializeSellingPoints,
+    yuanToCent
+  } from './editor-model'
   import CompactAssetField from './compact-asset-field.vue'
 
   interface TreeOption {
@@ -400,9 +435,14 @@
   const galleryFileIds = computed(() =>
     props.modelValue.images.flatMap((image) => (image.fileId ? [image.fileId] : []))
   )
+  const sellingPointValues = computed(() => parseSellingPoints(props.modelValue.sellingPoints))
 
   const patchForm = (patch: Partial<ProductEditorForm>) => {
     emit('update:modelValue', { ...props.modelValue, ...patch })
+  }
+
+  const updateSellingPoints = (values: string[]) => {
+    patchForm({ sellingPoints: serializeSellingPoints(values) })
   }
 
   const updateCover = (asset: Api.Common.AssetValue) => {
@@ -636,6 +676,18 @@
   .field-label__help {
     color: var(--el-color-warning);
     cursor: help;
+  }
+
+  .selling-points-field {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .field-tip {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--el-text-color-secondary);
   }
 
   .media-strip-field {

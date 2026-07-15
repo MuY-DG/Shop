@@ -1,11 +1,13 @@
 package org.muybaby.shopserver.coupon.dto;
 
-public record AdminCouponTemplateQueryRequest(
+public record AdminCouponClaimQueryRequest(
         Long current,
         Long size,
-        String name,
-        String status,
-        String distributionMode
+        String templateName,
+        String userKeyword,
+        String distributionMode,
+        String issueSource,
+        String status
 ) {
     public long pageCurrent() {
         return current == null || current < 1 ? 1 : current;

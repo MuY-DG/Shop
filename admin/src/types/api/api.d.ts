@@ -780,8 +780,81 @@ declare namespace Api {
     }
   }
 
+  namespace Customer {
+    type CustomerStatus = 'ENABLED' | 'DISABLED'
+
+    type CustomerList = Api.Common.PaginatedResponse<CustomerListItem>
+
+    interface CustomerListItem {
+      id: string
+      nickname: string
+      phoneNumber?: string | null
+      phoneAuthorized: boolean
+      status: CustomerStatus
+      couponTotalCount: number
+      couponAvailableCount: number
+      couponUsedCount: number
+      lastLoginAt?: string | null
+      createdAt: string
+      updatedAt: string
+    }
+
+    type CustomerSearchParams = Partial<
+      Api.Common.CommonSearchParams & {
+        keyword: string
+        status: CustomerStatus
+      }
+    >
+
+    interface IssuableCouponTemplate {
+      id: number
+      name: string
+      description: string
+      couponType: Api.Marketing.CouponType
+      discountType: Api.Marketing.DiscountType
+      thresholdCent: number
+      discountCent: number
+      scopeType: Api.Marketing.CouponScopeType
+      scopeValue: string
+      stockRemaining: number
+      perUserLimit: number
+      userClaimCount: number
+      validStartAt: string
+      validEndAt: string
+    }
+
+    interface CouponIssueForm {
+      templateId: number
+      note?: string
+    }
+
+    interface DirectCouponIssueForm {
+      name: string
+      description?: string
+      couponType: Api.Marketing.CouponType
+      thresholdCent: number
+      discountCent: number
+      validStartAt: string
+      validEndAt: string
+      note?: string
+    }
+
+    interface CouponIssueResult {
+      userCouponId: string
+      templateId: number
+      templateName: string
+      status: 'CLAIMED'
+      validStartAt: string
+      validEndAt: string
+      issuedAt: string
+    }
+  }
+
   namespace Marketing {
     type CouponTemplateStatus = 'ENABLED' | 'DISABLED'
+    type CouponDistributionMode = 'PUBLIC' | 'DIRECT'
+    type CouponIssueSource = 'SELF_CLAIM' | 'ADMIN_ISSUE' | 'ADMIN_DIRECT'
+    type UserCouponStatus = 'CLAIMED' | 'LOCKED' | 'USED' | 'EXPIRED'
     type CouponType = 'NO_THRESHOLD' | 'MIN_SPEND'
     type DiscountType = 'AMOUNT_OFF' | 'PERCENT_OFF'
     type CouponScopeType = 'ALL' | 'PRODUCT' | 'CATEGORY'
@@ -809,6 +882,10 @@ declare namespace Api {
       sortOrder: number
       createdAt: string
       updatedAt: string
+      distributionMode: CouponDistributionMode
+      audienceUserId?: number | null
+      audienceNickname?: string | null
+      audiencePhoneNumber?: string | null
     }
 
     interface CouponTemplateForm {
@@ -833,6 +910,46 @@ declare namespace Api {
       Api.Common.CommonSearchParams & {
         name: string
         status: CouponTemplateStatus
+        distributionMode: CouponDistributionMode
+      }
+    >
+
+    type CouponClaimList = Api.Common.PaginatedResponse<CouponClaimRecord>
+
+    interface CouponClaimRecord {
+      id: number
+      templateId: number
+      templateName: string
+      distributionMode: CouponDistributionMode
+      userId: number
+      userNickname: string
+      userPhoneNumber?: string | null
+      userCouponId: number
+      couponType: CouponType
+      discountType: DiscountType
+      thresholdCent: number
+      discountCent: number
+      scopeType: CouponScopeType
+      scopeValue: string
+      status: UserCouponStatus
+      validStartAt: string
+      validEndAt: string
+      usedOrderId?: number | null
+      usedAt?: string | null
+      issueSource: CouponIssueSource
+      operatorAdminUserId?: number | null
+      operatorDisplayName?: string | null
+      issueNote: string
+      claimedAt: string
+    }
+
+    type CouponClaimSearchParams = Partial<
+      Api.Common.CommonSearchParams & {
+        templateName: string
+        userKeyword: string
+        distributionMode: CouponDistributionMode
+        issueSource: CouponIssueSource
+        status: UserCouponStatus
       }
     >
   }

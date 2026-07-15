@@ -78,17 +78,32 @@ class ProductCouponControllerTest {
                 .andExpect(jsonPath("$.data[0].scopeType").value("PRODUCT"))
                 .andExpect(jsonPath("$.data[0].scopeValue").value(Long.toString(spuId)));
 
-        mockMvc.perform(post("/admin/marketing/coupons/templates")
+        String genericCreateResponse = mockMvc.perform(post("/admin/marketing/coupons/templates")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(couponRequest("Generic product coupon", "PRODUCT", Long.toString(spuId))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        long genericTemplateId = objectMapper.readTree(genericCreateResponse).path("data").asLong();
+        assertThat(boundTemplateIds(spuId)).contains(templateId, genericTemplateId);
 
         mockMvc.perform(put("/admin/marketing/coupons/templates/{templateId}", templateId)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(couponRequest("Generic product update", "PRODUCT", Long.toString(spuId))))
+                .andExpect(status().isOk());
+        String updatedName = jdbcClient.sql("select name from coupon_template where id = :templateId")
+                .param("templateId", templateId)
+                .query(String.class)
+                .single();
+        assertThat(updatedName).isEqualTo("Generic product update");
+
+        mockMvc.perform(put("/admin/marketing/coupons/templates/{templateId}", templateId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(couponRequest("Scope transition", "ALL", "")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
 

@@ -40,6 +40,7 @@ import java.util.Optional;
 public class AppCouponService {
 
     private static final String CATEGORY_ENABLED = "ENABLED";
+    private static final String PUBLIC_DISTRIBUTION_MODE = "PUBLIC";
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -68,6 +69,7 @@ public class AppCouponService {
                                (select count(*) from user_coupon uc where uc.user_id = :userId and uc.template_id = t.id) as user_claim_count
                         from coupon_template t
                         where t.status = :status
+                          and t.distribution_mode = :distributionMode
                           and t.valid_start_at <= :now
                           and t.valid_end_at >= :now
                           and t.scope_type = :scopeType
@@ -83,6 +85,7 @@ public class AppCouponService {
                         """)
                 .param("userId", userId)
                 .param("status", CouponTemplateStatus.ENABLED.name())
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .param("scopeType", CouponScopeType.ALL.name())
                 .param("now", now)
                 .query(this::mapClaimableCoupon)
@@ -120,6 +123,7 @@ public class AppCouponService {
                               and s.purged_at is null
                           )
                           and t.status = :status
+                          and t.distribution_mode = :distributionMode
                           and t.valid_start_at <= :now
                           and t.valid_end_at >= :now
                           and (
@@ -139,6 +143,7 @@ public class AppCouponService {
                 .param("spuId", spuId)
                 .param("scopeValue", Long.toString(spuId))
                 .param("status", CouponTemplateStatus.ENABLED.name())
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .param("allScopeType", CouponScopeType.ALL.name())
                 .param("productScopeType", CouponScopeType.PRODUCT.name())
                 .param("now", now)
@@ -278,6 +283,7 @@ public class AppCouponService {
                                valid_start_at, valid_end_at
                         from coupon_template
                         where id = :templateId
+                          and distribution_mode = :distributionMode
                           and status = :status
                           and valid_start_at <= :now
                           and valid_end_at >= :now
@@ -285,6 +291,7 @@ public class AppCouponService {
                         for update
                         """)
                 .param("templateId", templateId)
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .param("status", CouponTemplateStatus.ENABLED.name())
                 .param("now", now)
                 .query(this::mapCouponTemplate)
@@ -298,12 +305,14 @@ public class AppCouponService {
                                valid_start_at, valid_end_at
                         from coupon_template
                         where id = :templateId
+                          and distribution_mode = :distributionMode
                           and status = :status
                           and valid_start_at <= :now
                           and valid_end_at >= :now
                           and claimed_count < total_stock
                         """)
                 .param("templateId", templateId)
+                .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .param("status", CouponTemplateStatus.ENABLED.name())
                 .param("now", now)
                 .query(this::mapCouponTemplate)

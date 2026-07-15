@@ -59,6 +59,41 @@ class AdminRbacSchemaTest {
                         """)
                 .query(Integer.class)
                 .single();
+        Integer customerPermissionCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission
+                        where auth_mark in ('customer:user:read', 'customer:coupon:issue')
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer customerMenuCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu
+                        where id = 450
+                          and path = '/customers'
+                          and component = '/customer/user'
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer couponCenterMenuCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu
+                        where (id = 401 and parent_id = 400 and path = 'coupon' and component = '')
+                           or (id = 402 and parent_id = 401 and path = 'templates' and component = '/marketing/coupon')
+                           or (id = 403 and parent_id = 401 and path = 'claim-records' and component = '/marketing/coupon-claim')
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer couponClaimReadGrantCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission rp
+                        join admin_permission p on p.id = rp.permission_id
+                        join admin_role r on r.id = rp.role_id
+                        where r.code = 'R_SUPER'
+                          and p.auth_mark = 'coupon:claim:read'
+                        """)
+                .query(Integer.class)
+                .single();
 
         assertThat(passwordEncoder.matches("123456", passwordHash)).isTrue();
         assertThat(menuCount).isGreaterThanOrEqualTo(5);
@@ -66,5 +101,9 @@ class AdminRbacSchemaTest {
         assertThat(storageRouteCount).isEqualTo(1);
         assertThat(menuReadPermissionCount).isEqualTo(1);
         assertThat(obsoleteMenuPermissionCount).isZero();
+        assertThat(customerPermissionCount).isEqualTo(2);
+        assertThat(customerMenuCount).isEqualTo(1);
+        assertThat(couponCenterMenuCount).isEqualTo(3);
+        assertThat(couponClaimReadGrantCount).isEqualTo(1);
     }
 }
