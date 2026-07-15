@@ -21,9 +21,11 @@ import java.util.Map;
 public class OrderCloseService {
 
     private final JdbcClient jdbcClient;
+    private final OrderStatusLogService orderStatusLogService;
 
-    public OrderCloseService(JdbcClient jdbcClient) {
+    public OrderCloseService(JdbcClient jdbcClient, OrderStatusLogService orderStatusLogService) {
         this.jdbcClient = jdbcClient;
+        this.orderStatusLogService = orderStatusLogService;
     }
 
     @Transactional
@@ -226,6 +228,10 @@ public class OrderCloseService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+        orderStatusLogService.record(
+                orderId, expectedOrderStatus.name(), OrderStatus.CLOSED.name(),
+                "ORDER_CLOSED", operatorType, operatorId, closeReason, now
+        );
     }
 
     private void insertStockLog(

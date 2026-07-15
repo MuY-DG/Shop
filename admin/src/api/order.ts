@@ -7,9 +7,22 @@ export function fetchOrders(params: Api.Order.OrderSearchParams) {
   })
 }
 
+export function fetchOrderStatusCounts(params: Api.Order.OrderSearchParams) {
+  return request.get<Api.Order.OrderStatusCounts>({
+    url: '/admin/orders/status-counts',
+    params
+  })
+}
+
 export function fetchOrderDetail(orderId: number) {
   return request.get<Api.Order.OrderDetail>({
     url: `/admin/orders/${orderId}`
+  })
+}
+
+export function fetchOrderStatusLogs(orderId: number) {
+  return request.get<Api.Order.OrderStatusLog[]>({
+    url: `/admin/orders/${orderId}/status-logs`
   })
 }
 

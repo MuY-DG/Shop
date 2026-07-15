@@ -1,9 +1,13 @@
 package org.muybaby.shopserver.aftersale.service;
 
+import org.muybaby.shopserver.aftersale.AdminAfterSaleStatusGroup;
 import org.muybaby.shopserver.aftersale.AfterSaleStatus;
+import org.muybaby.shopserver.aftersale.AfterSaleType;
 import org.muybaby.shopserver.aftersale.RefundOrderStatus;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleAuditRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleQueryRequest;
+import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleStatusCountsResponse;
+import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleSummaryResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleEvidenceFileResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.dto.RefundOrderResponse;
@@ -12,6 +16,7 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.provider.WechatPayProvider;
@@ -39,7 +44,11 @@ import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -57,45 +66,67 @@ public class AdminAfterSaleService {
     private final WechatPayProvider wechatPayProvider;
     private final StorageProvider storageProvider;
     private final TransactionTemplate transactionTemplate;
+    private final OrderStatusLogService orderStatusLogService;
 
     public AdminAfterSaleService(
             JdbcClient jdbcClient,
             PaymentConfigResolver paymentConfigResolver,
             WechatPayProvider wechatPayProvider,
             StorageProvider storageProvider,
-            PlatformTransactionManager transactionManager
+            PlatformTransactionManager transactionManager,
+            OrderStatusLogService orderStatusLogService
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentConfigResolver = paymentConfigResolver;
         this.wechatPayProvider = wechatPayProvider;
         this.storageProvider = storageProvider;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.orderStatusLogService = orderStatusLogService;
     }
 
-    public PageResult<AfterSaleResponse> page(AuthenticatedPrincipal principal, AdminAfterSaleQueryRequest query) {
+    public PageResult<AdminAfterSaleSummaryResponse> page(
+            AuthenticatedPrincipal principal,
+            AdminAfterSaleQueryRequest query
+    ) {
         requireAdminUser(principal);
-        AdminAfterSaleQueryRequest normalized = query == null
-                ? new AdminAfterSaleQueryRequest(null, null, null, null)
-                : query;
+        AdminAfterSaleQueryRequest normalized = normalizedQuery(query);
+        AfterSaleQueryFilters filters = normalizeFilters(normalized, true);
         long current = normalized.pageCurrent();
         long size = normalized.pageSize();
         long offset = (current - 1) * size;
-        String status = StringUtils.hasText(normalized.status()) ? normalized.status().trim() : null;
-        String orderNoLike = StringUtils.hasText(normalized.orderNo()) ? "%" + normalized.orderNo().trim() + "%" : null;
 
         Long total = jdbcClient.sql("""
                         select count(*)
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
-                        where (:status is null or asr.status = :status)
+                        left join app_user u on u.id = asr.user_id
+                        where asr.status in (:statuses)
+                          and (:afterSaleId is null or asr.id = :afterSaleId)
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
+                          and (:userId is null or asr.user_id = :userId)
+                          and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:afterSaleType is null or asr.after_sale_type = :afterSaleType)
+                          and (:createdStart is null or asr.created_at >= :createdStart)
+                          and (:createdEnd is null or asr.created_at <= :createdEnd)
+                          and (:refundNoLike is null or exists (
+                              select 1 from refund_order ro
+                              where ro.after_sale_id = asr.id
+                                and (ro.out_refund_no like :refundNoLike or ro.refund_id like :refundNoLike)
+                          ))
                         """)
-                .param("status", status)
-                .param("orderNoLike", orderNoLike)
+                .param("statuses", filters.statuses())
+                .param("afterSaleId", filters.afterSaleId())
+                .param("orderNoLike", filters.orderNoLike())
+                .param("userId", filters.userId())
+                .param("userPhone", filters.userPhone())
+                .param("afterSaleType", filters.afterSaleType())
+                .param("createdStart", filters.createdStart())
+                .param("createdEnd", filters.createdEnd())
+                .param("refundNoLike", filters.refundNoLike())
                 .query(Long.class)
                 .single();
 
-        List<AfterSaleResponse> records = jdbcClient.sql("""
+        List<AdminAfterSaleSummaryResponse> records = jdbcClient.sql("""
                         select asr.id,
                                asr.order_id,
                                o.order_no,
@@ -103,31 +134,90 @@ public class AdminAfterSaleService {
                                asr.after_sale_type,
                                asr.status,
                                asr.reason,
-                               asr.description,
                                asr.requested_amount_cent,
-                               asr.approved_amount_cent,
-                               asr.audit_note,
-                               asr.reviewed_by,
-                               asr.reviewed_at,
                                asr.created_at
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
-                        where (:status is null or asr.status = :status)
+                        left join app_user u on u.id = asr.user_id
+                        where asr.status in (:statuses)
+                          and (:afterSaleId is null or asr.id = :afterSaleId)
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
+                          and (:userId is null or asr.user_id = :userId)
+                          and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:afterSaleType is null or asr.after_sale_type = :afterSaleType)
+                          and (:createdStart is null or asr.created_at >= :createdStart)
+                          and (:createdEnd is null or asr.created_at <= :createdEnd)
+                          and (:refundNoLike is null or exists (
+                              select 1 from refund_order ro
+                              where ro.after_sale_id = asr.id
+                                and (ro.out_refund_no like :refundNoLike or ro.refund_id like :refundNoLike)
+                          ))
                         order by asr.created_at desc, asr.id desc
                         limit :limit offset :offset
                         """)
-                .param("status", status)
-                .param("orderNoLike", orderNoLike)
+                .param("statuses", filters.statuses())
+                .param("afterSaleId", filters.afterSaleId())
+                .param("orderNoLike", filters.orderNoLike())
+                .param("userId", filters.userId())
+                .param("userPhone", filters.userPhone())
+                .param("afterSaleType", filters.afterSaleType())
+                .param("createdStart", filters.createdStart())
+                .param("createdEnd", filters.createdEnd())
+                .param("refundNoLike", filters.refundNoLike())
                 .param("limit", size)
                 .param("offset", offset)
-                .query(this::mapAfterSale)
-                .list()
-                .stream()
-                .map(this::toResponse)
-                .toList();
+                .query(this::mapAfterSaleSummary)
+                .list();
 
         return PageResult.of(records, total == null ? 0L : total, current, size);
+    }
+
+    public AdminAfterSaleStatusCountsResponse statusCounts(
+            AuthenticatedPrincipal principal,
+            AdminAfterSaleQueryRequest query
+    ) {
+        requireAdminUser(principal);
+        AfterSaleQueryFilters filters = normalizeFilters(normalizedQuery(query), false);
+        Map<String, Long> counts = new HashMap<>();
+        jdbcClient.sql("""
+                        select asr.status, count(*) as status_count
+                        from after_sale_request asr
+                        join shop_order o on o.id = asr.order_id
+                        left join app_user u on u.id = asr.user_id
+                        where (:afterSaleId is null or asr.id = :afterSaleId)
+                          and (:orderNoLike is null or o.order_no like :orderNoLike)
+                          and (:userId is null or asr.user_id = :userId)
+                          and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:afterSaleType is null or asr.after_sale_type = :afterSaleType)
+                          and (:createdStart is null or asr.created_at >= :createdStart)
+                          and (:createdEnd is null or asr.created_at <= :createdEnd)
+                          and (:refundNoLike is null or exists (
+                              select 1 from refund_order ro
+                              where ro.after_sale_id = asr.id
+                                and (ro.out_refund_no like :refundNoLike or ro.refund_id like :refundNoLike)
+                          ))
+                        group by asr.status
+                        """)
+                .param("afterSaleId", filters.afterSaleId())
+                .param("orderNoLike", filters.orderNoLike())
+                .param("userId", filters.userId())
+                .param("userPhone", filters.userPhone())
+                .param("afterSaleType", filters.afterSaleType())
+                .param("createdStart", filters.createdStart())
+                .param("createdEnd", filters.createdEnd())
+                .param("refundNoLike", filters.refundNoLike())
+                .query((rs, rowNum) -> new StatusCountRow(rs.getString("status"), rs.getLong("status_count")))
+                .list()
+                .forEach(row -> counts.put(row.status(), row.count()));
+
+        return new AdminAfterSaleStatusCountsResponse(
+                countForGroup(counts, AdminAfterSaleStatusGroup.ALL),
+                countForGroup(counts, AdminAfterSaleStatusGroup.PENDING_REVIEW),
+                countForGroup(counts, AdminAfterSaleStatusGroup.REFUNDING),
+                countForGroup(counts, AdminAfterSaleStatusGroup.REFUNDED),
+                countForGroup(counts, AdminAfterSaleStatusGroup.REJECTED),
+                countForGroup(counts, AdminAfterSaleStatusGroup.REFUND_FAILED)
+        );
     }
 
     public AfterSaleResponse detail(AuthenticatedPrincipal principal, Long afterSaleId) {
@@ -346,6 +436,11 @@ public class AdminAfterSaleService {
                 .param("updatedAt", now)
                 .param("orderId", order.orderId())
                 .update();
+        orderStatusLogService.record(
+                order.orderId(), order.status(), OrderStatus.REFUNDING.name(),
+                "REFUND_STARTED", "ADMIN", adminUserId,
+                "售后审核通过，开始退款", now
+        );
         return new RefundRequestContext(
                 refundOrderId,
                 afterSaleId,
@@ -419,7 +514,102 @@ public class AdminAfterSaleService {
                     .param("updatedAt", now)
                     .param("orderId", refundContext.orderId())
                     .update();
+            orderStatusLogService.record(
+                    refundContext.orderId(), OrderStatus.REFUNDING.name(),
+                    refundContext.previousOrderStatus(), "REFUND_RESTORED", "SYSTEM", null,
+                    "退款请求失败，恢复订单状态", now
+            );
         });
+    }
+
+    private AdminAfterSaleQueryRequest normalizedQuery(AdminAfterSaleQueryRequest query) {
+        return query == null
+                ? new AdminAfterSaleQueryRequest(
+                        null, null, null, null, null, null,
+                        null, null, null, null, null, null
+                )
+                : query;
+    }
+
+    private AfterSaleQueryFilters normalizeFilters(AdminAfterSaleQueryRequest query, boolean includeStatus) {
+        List<String> statuses = Arrays.stream(AfterSaleStatus.values()).map(Enum::name).toList();
+        if (includeStatus && StringUtils.hasText(query.status())) {
+            try {
+                statuses = List.of(AfterSaleStatus.valueOf(
+                        query.status().trim().toUpperCase(Locale.ROOT)
+                ).name());
+            } catch (IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+        } else if (includeStatus && StringUtils.hasText(query.statusGroup())) {
+            try {
+                statuses = AdminAfterSaleStatusGroup.valueOf(
+                        query.statusGroup().trim().toUpperCase(Locale.ROOT)
+                ).statuses();
+            } catch (IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+        }
+
+        Long afterSaleId = query.afterSaleId();
+        if (afterSaleId != null && afterSaleId < 1) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        Long userId = null;
+        String userPhone = null;
+        if (StringUtils.hasText(query.userKeyword())) {
+            String keyword = query.userKeyword().trim();
+            String searchType = StringUtils.hasText(query.userSearchType())
+                    ? query.userSearchType().trim().toUpperCase(Locale.ROOT)
+                    : "";
+            if ("USER_ID".equals(searchType)) {
+                try {
+                    userId = Long.valueOf(keyword);
+                } catch (NumberFormatException ex) {
+                    throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+                }
+            } else if ("USER_PHONE".equals(searchType)) {
+                userPhone = keyword;
+            } else {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+        }
+
+        String afterSaleType = null;
+        if (StringUtils.hasText(query.afterSaleType())) {
+            try {
+                afterSaleType = AfterSaleType.valueOf(
+                        query.afterSaleType().trim().toUpperCase(Locale.ROOT)
+                ).name();
+            } catch (IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+        }
+        if (query.createdStart() != null && query.createdEnd() != null
+                && query.createdStart().isAfter(query.createdEnd())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        return new AfterSaleQueryFilters(
+                statuses,
+                afterSaleId,
+                like(query.orderNo()),
+                userId,
+                userPhone,
+                afterSaleType,
+                query.createdStart(),
+                query.createdEnd(),
+                like(query.refundNo())
+        );
+    }
+
+    private String like(String value) {
+        return StringUtils.hasText(value) ? "%" + value.trim() + "%" : null;
+    }
+
+    private long countForGroup(Map<String, Long> counts, AdminAfterSaleStatusGroup group) {
+        return group.statuses().stream().mapToLong(status -> counts.getOrDefault(status, 0L)).sum();
     }
 
     private Long requireAdminUser(AuthenticatedPrincipal principal) {
@@ -677,6 +867,20 @@ public class AdminAfterSaleService {
         );
     }
 
+    private AdminAfterSaleSummaryResponse mapAfterSaleSummary(ResultSet rs, int rowNum) throws SQLException {
+        return new AdminAfterSaleSummaryResponse(
+                rs.getLong("id"),
+                rs.getLong("order_id"),
+                rs.getString("order_no"),
+                rs.getLong("user_id"),
+                rs.getString("after_sale_type"),
+                rs.getString("status"),
+                rs.getString("reason"),
+                rs.getLong("requested_amount_cent"),
+                rs.getObject("created_at", LocalDateTime.class)
+        );
+    }
+
     private AfterSaleRow mapAfterSale(ResultSet rs, int rowNum) throws SQLException {
         return new AfterSaleRow(
                 rs.getLong("id"),
@@ -726,6 +930,22 @@ public class AdminAfterSaleService {
     }
 
     private record PaymentOrderRow(Long id, Long orderId, String outTradeNo, String transactionId, String status, long amountCent) {
+    }
+
+    private record AfterSaleQueryFilters(
+            List<String> statuses,
+            Long afterSaleId,
+            String orderNoLike,
+            Long userId,
+            String userPhone,
+            String afterSaleType,
+            LocalDateTime createdStart,
+            LocalDateTime createdEnd,
+            String refundNoLike
+    ) {
+    }
+
+    private record StatusCountRow(String status, Long count) {
     }
 
     private record EvidenceResourceRow(

@@ -98,12 +98,31 @@ class AppPaymentControllerTest extends PaymentTestSupport {
                 .param("orderId", order.orderId())
                 .query(String.class)
                 .optional()).isEmpty();
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from order_status_log
+                        where order_id = :orderId
+                          and event_type = 'PAYMENT_STARTED'
+                          and from_status = 'CREATED'
+                          and to_status = 'PAYING'
+                        """)
+                .param("orderId", order.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
 
         String repeatResponse = pay(session.token(), order.orderId());
         JsonNode repeatData = objectMapper.readTree(repeatResponse).path("data");
 
         assertThat(repeatData.path("package").asText()).isEqualTo(firstPackage);
         assertThat(jdbcClient.sql("select count(*) from payment_order where order_id = :orderId")
+                .param("orderId", order.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from order_status_log
+                        where order_id = :orderId and event_type = 'PAYMENT_STARTED'
+                        """)
                 .param("orderId", order.orderId())
                 .query(Integer.class)
                 .single()).isEqualTo(1);

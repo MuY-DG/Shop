@@ -73,6 +73,7 @@ public class AppOrderService {
     private final AppAddressService appAddressService;
     private final AppAfterSaleService appAfterSaleService;
     private final WechatShippingUploadRecovery shippingUploadRecovery;
+    private final OrderStatusLogService orderStatusLogService;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
     public AppOrderService(
@@ -82,7 +83,8 @@ public class AppOrderService {
             CheckoutSelectionService checkoutSelectionService,
             AppAddressService appAddressService,
             AppAfterSaleService appAfterSaleService,
-            WechatShippingUploadRecovery shippingUploadRecovery
+            WechatShippingUploadRecovery shippingUploadRecovery,
+            OrderStatusLogService orderStatusLogService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -91,6 +93,7 @@ public class AppOrderService {
         this.appAddressService = appAddressService;
         this.appAfterSaleService = appAfterSaleService;
         this.shippingUploadRecovery = shippingUploadRecovery;
+        this.orderStatusLogService = orderStatusLogService;
     }
 
     public OrderPreviewResponse preview(AuthenticatedPrincipal principal, AppOrderPreviewRequest request) {
@@ -151,6 +154,10 @@ public class AppOrderService {
         if (selection.source() == CheckoutSource.CART) {
             deleteCartItems(userId, selection.selectedCartItemIds());
         }
+        orderStatusLogService.record(
+                orderId, "", OrderStatus.CREATED.name(), "ORDER_CREATED",
+                OPERATOR_TYPE_APP, userId, "订单创建", now
+        );
 
         return new OrderSubmitResponse(
                 orderId,
@@ -403,6 +410,10 @@ public class AppOrderService {
                 .param("completedAt", completedAt)
                 .param("orderId", order.orderId())
                 .update();
+        orderStatusLogService.record(
+                order.orderId(), OrderStatus.SHIPPED.name(), OrderStatus.COMPLETED.name(),
+                "ORDER_COMPLETED", OPERATOR_TYPE_APP, userId, "用户确认收货", completedAt
+        );
         return new OrderReceiptResponse(order.orderId(), OrderStatus.COMPLETED.name(), completedAt);
     }
 

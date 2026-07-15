@@ -37,6 +37,18 @@ export const staticRoutes: AppRouteRecordRaw[] = [
     meta: { title: 'menus.forgetPassword.title', isHideTab: true }
   },
   {
+    path: '/order/list',
+    name: 'LegacyOrderListRedirect',
+    redirect: (to) => ({ path: '/trade/orders', query: to.query }),
+    meta: { title: '订单列表', isHideTab: true }
+  },
+  {
+    path: '/aftersale/list',
+    name: 'LegacyAfterSaleListRedirect',
+    redirect: (to) => ({ path: '/trade/after-sales', query: to.query }),
+    meta: { title: '售后列表', isHideTab: true }
+  },
+  {
     path: '/403',
     name: 'Exception403',
     component: () => import('@views/exception/403/index.vue'),

@@ -13,6 +13,7 @@ import org.muybaby.shopserver.logistics.dto.AdminShipOrderRequest;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
 import org.muybaby.shopserver.logistics.provider.WechatShippingProvider;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -36,19 +37,22 @@ public class LocalShipmentService {
     private final WechatShippingProvider shippingProvider;
     private final ShipmentContactMasker contactMasker;
     private final TransactionTemplate transactionTemplate;
+    private final OrderStatusLogService orderStatusLogService;
 
     public LocalShipmentService(
             JdbcClient jdbcClient,
             ShippingProperties shippingProperties,
             WechatShippingProvider shippingProvider,
             ShipmentContactMasker contactMasker,
-            PlatformTransactionManager transactionManager
+            PlatformTransactionManager transactionManager,
+            OrderStatusLogService orderStatusLogService
     ) {
         this.jdbcClient = jdbcClient;
         this.shippingProperties = shippingProperties;
         this.shippingProvider = shippingProvider;
         this.contactMasker = contactMasker;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.orderStatusLogService = orderStatusLogService;
     }
 
     public OrderShipmentResponse create(
@@ -56,17 +60,18 @@ public class LocalShipmentService {
             long orderId,
             AdminShipOrderRequest request
     ) {
-        requireAdmin(principal);
+        Long adminUserId = requireAdmin(principal);
         WechatProviderMode initialProviderMode = initialProviderMode();
         return transactionTemplate.execute(status -> createInTransaction(
-                orderId, request, initialProviderMode
+                orderId, request, initialProviderMode, adminUserId
         ));
     }
 
     private OrderShipmentResponse createInTransaction(
             long orderId,
             AdminShipOrderRequest request,
-            WechatProviderMode initialProviderMode
+            WechatProviderMode initialProviderMode,
+            Long adminUserId
     ) {
         OrderForShipment order = lockPaidOrder(orderId);
         NormalizedShipment shipment = normalize(request, order.receiverPhone());
@@ -123,6 +128,10 @@ public class LocalShipmentService {
         if (updated != 1) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+        orderStatusLogService.record(
+                orderId, OrderStatus.PAID.name(), OrderStatus.SHIPPED.name(),
+                "ORDER_SHIPPED", "ADMIN", adminUserId, "订单发货", now
+        );
         return getForAdmin(orderId);
     }
 
@@ -277,10 +286,11 @@ public class LocalShipmentService {
         }
     }
 
-    private void requireAdmin(AuthenticatedPrincipal principal) {
+    private Long requireAdmin(AuthenticatedPrincipal principal) {
         if (principal == null || principal.kind() != TokenKind.ADMIN) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
+        return principal.subjectId();
     }
 
     private BusinessException validationFailure() {

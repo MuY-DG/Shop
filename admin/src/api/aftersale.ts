@@ -7,6 +7,13 @@ export function fetchAfterSales(params: Api.AfterSale.SearchParams) {
   })
 }
 
+export function fetchAfterSaleStatusCounts(params: Api.AfterSale.SearchParams) {
+  return request.get<Api.AfterSale.StatusCounts>({
+    url: '/admin/after-sales/status-counts',
+    params
+  })
+}
+
 export function fetchAfterSaleDetail(afterSaleId: number) {
   return request.get<Api.AfterSale.Item>({
     url: `/admin/after-sales/${afterSaleId}`

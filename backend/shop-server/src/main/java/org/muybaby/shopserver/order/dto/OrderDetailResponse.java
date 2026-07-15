@@ -10,6 +10,8 @@ public record OrderDetailResponse(
         String orderNo,
         String status,
         String source,
+        Long userId,
+        String userPhone,
         Long productOriginalAmountCent,
         Long productAmountCent,
         Long userCouponId,
@@ -18,6 +20,8 @@ public record OrderDetailResponse(
         Long freightCent,
         Long payableAmountCent,
         Long paidAmountCent,
+        Integer itemCount,
+        Long refundedAmountCent,
         String receiverName,
         String receiverPhone,
         String receiverAddress,
@@ -30,6 +34,10 @@ public record OrderDetailResponse(
         String closeReason,
         LocalDateTime closedAt,
         LocalDateTime createdAt,
+        LocalDateTime shippedAt,
+        LocalDateTime completedAt,
+        LocalDateTime refundingAt,
+        LocalDateTime refundedAt,
         OrderShipmentResponse shipment,
         List<OrderItemResponse> items
 ) {

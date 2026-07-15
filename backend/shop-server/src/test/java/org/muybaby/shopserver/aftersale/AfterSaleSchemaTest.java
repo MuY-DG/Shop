@@ -111,26 +111,61 @@ class AfterSaleSchemaTest {
     }
 
     @Test
-    void afterSaleMenuAndPermissionsAreSeeded() {
-        Integer menuCount = jdbcClient.sql("""
+    void tradeMenuContainsOrderAndAfterSaleWithoutChangingPermissionOwnership() {
+        Integer tradeMenuCount = jdbcClient.sql("""
                         select count(*)
                         from admin_menu
-                        where id in (820, 821)
-                          and path in ('/aftersale', 'list')
-                          and component in ('/index/index', '/aftersale/list')
+                        where id = 830
+                          and parent_id is null
+                          and name = 'Trade'
+                          and path = '/trade'
+                          and title = '交易管理'
+                          and enabled = true
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer childMenuCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu
+                        where parent_id = 830
+                          and (
+                            (id = 501 and path = 'orders' and component = '/order/list')
+                            or (id = 821 and path = 'after-sales' and component = '/aftersale/list')
+                          )
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer disabledLegacyParentCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu
+                        where id in (500, 820)
+                          and enabled = false
+                          and visible = false
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer superRoleMenuCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_menu
+                        where role_id = 1
+                          and menu_id in (830, 501, 821)
                         """)
                 .query(Integer.class)
                 .single();
         Integer permissionCount = jdbcClient.sql("""
                         select count(*)
-                        from admin_permission
-                        where id in (8201, 8202)
-                          and auth_mark in ('aftersale:read', 'aftersale:audit')
+                        from admin_menu_permission mp
+                        join admin_permission p on p.id = mp.permission_id
+                        where (mp.menu_id = 501 and p.auth_mark like 'order:%')
+                           or (mp.menu_id = 821 and p.auth_mark like 'aftersale:%')
                         """)
                 .query(Integer.class)
                 .single();
 
-        assertThat(menuCount).isEqualTo(2);
-        assertThat(permissionCount).isEqualTo(2);
+        assertThat(tradeMenuCount).isEqualTo(1);
+        assertThat(childMenuCount).isEqualTo(2);
+        assertThat(disabledLegacyParentCount).isEqualTo(2);
+        assertThat(superRoleMenuCount).isEqualTo(3);
+        assertThat(permissionCount).isEqualTo(6);
     }
 }

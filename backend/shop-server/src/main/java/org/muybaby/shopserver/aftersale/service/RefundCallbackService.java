@@ -5,6 +5,7 @@ import org.muybaby.shopserver.aftersale.RefundOrderStatus;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.provider.WechatPayProvider;
@@ -30,15 +31,18 @@ public class RefundCallbackService {
     private final JdbcClient jdbcClient;
     private final PaymentConfigResolver paymentConfigResolver;
     private final WechatPayProvider wechatPayProvider;
+    private final OrderStatusLogService orderStatusLogService;
 
     public RefundCallbackService(
             JdbcClient jdbcClient,
             PaymentConfigResolver paymentConfigResolver,
-            WechatPayProvider wechatPayProvider
+            WechatPayProvider wechatPayProvider,
+            OrderStatusLogService orderStatusLogService
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentConfigResolver = paymentConfigResolver;
         this.wechatPayProvider = wechatPayProvider;
+        this.orderStatusLogService = orderStatusLogService;
     }
 
     @Transactional(noRollbackFor = BusinessException.class)
@@ -187,6 +191,10 @@ public class RefundCallbackService {
                 .param("updatedAt", now)
                 .param("orderId", refund.orderId())
                 .update();
+        orderStatusLogService.record(
+                refund.orderId(), OrderStatus.REFUNDING.name(), OrderStatus.REFUNDED.name(),
+                "REFUND_SUCCEEDED", "WECHAT", null, "微信退款成功", successAt
+        );
     }
 
     private void markRefundFailed(RefundCallbackRow refund, WechatRefundNotification notification) {

@@ -8,6 +8,7 @@ import org.muybaby.shopserver.coupon.UserCouponStatus;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.StockLockStatus;
 import org.muybaby.shopserver.order.service.OrderCloseService;
+import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.payment.PaymentProperties;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
@@ -52,19 +53,22 @@ public class AppPaymentService {
     private final PaymentConfigResolver paymentConfigResolver;
     private final WechatPayProvider wechatPayProvider;
     private final OrderCloseService orderCloseService;
+    private final OrderStatusLogService orderStatusLogService;
 
     public AppPaymentService(
             JdbcClient jdbcClient,
             PaymentProperties paymentProperties,
             PaymentConfigResolver paymentConfigResolver,
             WechatPayProvider wechatPayProvider,
-            OrderCloseService orderCloseService
+            OrderCloseService orderCloseService,
+            OrderStatusLogService orderStatusLogService
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentProperties = paymentProperties;
         this.paymentConfigResolver = paymentConfigResolver;
         this.wechatPayProvider = wechatPayProvider;
         this.orderCloseService = orderCloseService;
+        this.orderStatusLogService = orderStatusLogService;
     }
 
     @Transactional
@@ -132,6 +136,10 @@ public class AppPaymentService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+        orderStatusLogService.record(
+                order.orderId(), OrderStatus.CREATED.name(), OrderStatus.PAYING.name(),
+                "PAYMENT_STARTED", OPERATOR_TYPE_APP, userId, "发起微信支付", now
+        );
         return toResponse(prepay);
     }
 
@@ -277,6 +285,10 @@ public class AppPaymentService {
                     .param("locked", UserCouponStatus.LOCKED.name())
                     .update();
         }
+        orderStatusLogService.record(
+                order.orderId(), OrderStatus.PAYING.name(), OrderStatus.PAID.name(),
+                "PAYMENT_SUCCEEDED", "WECHAT", null, "微信支付成功", effectivePaidAt
+        );
         return new PaidFinalizationResult(order.orderId(), OrderStatus.PAID.name(), transactionId, false);
     }
 

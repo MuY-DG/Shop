@@ -1,15 +1,44 @@
 <template>
   <div class="art-full-height">
+    <ElCard class="order-status-card" shadow="never">
+      <ElTabs
+        v-model="activeStatusGroup"
+        class="order-status-tabs"
+        @tab-change="handleStatusChange"
+      >
+        <ElTabPane
+          v-for="tab in statusTabs"
+          :key="tab.value"
+          :name="tab.value"
+          :label="`${tab.label}（${statusCounts[tab.countKey]}）`"
+        />
+      </ElTabs>
+    </ElCard>
+
     <ArtSearchBar
       v-model="searchForm"
       :items="searchItems"
-      :show-expand="false"
+      label-width="84px"
+      :show-expand="true"
+      :default-expanded="false"
+      :style="{ marginTop: '12px' }"
       @search="handleSearch"
       @reset="handleReset"
-    />
+    >
+      <template #userKeyword>
+        <ElInput v-model="searchForm.userKeyword" clearable placeholder="请输入用户信息">
+          <template #prepend>
+            <ElSelect v-model="searchForm.userSearchType" class="user-search-type">
+              <ElOption label="用户 ID" value="USER_ID" />
+              <ElOption label="用户手机号" value="USER_PHONE" />
+            </ElSelect>
+          </template>
+        </ElInput>
+      </template>
+    </ArtSearchBar>
 
     <ElCard class="art-table-card" :style="{ marginTop: '12px' }">
-      <ArtTableHeader v-model:columns="columnChecks" :loading="loading" @refresh="refreshData" />
+      <ArtTableHeader v-model:columns="columnChecks" :loading="loading" @refresh="handleRefresh" />
 
       <ArtTable
         :loading="loading"
@@ -22,210 +51,253 @@
         <template #operation="{ row }">
           <div class="order-actions">
             <ElButton type="primary" link @click="openDetail(row.orderId)">详情</ElButton>
-            <ElButton
-              v-if="row.status === 'PAID'"
-              v-auth="'order:ship'"
-              type="success"
-              link
-              @click="openShipDialog(row.orderId, row.orderNo)"
-            >
-              发货
-            </ElButton>
-            <ElButton
-              v-if="row.status === 'CREATED'"
-              v-auth="'order:close'"
-              type="danger"
-              link
-              :loading="closingOrderId === row.orderId"
-              @click="handleCloseOrder(row.orderId, row.orderNo)"
-            >
-              关闭
-            </ElButton>
+            <ElDropdown @command="(command) => handleMoreCommand(command, row)">
+              <ElButton type="primary" link>
+                更多<ElIcon class="order-actions__arrow"><ArrowDown /></ElIcon>
+              </ElButton>
+              <template #dropdown>
+                <ElDropdownMenu>
+                  <ElDropdownItem command="records">订单记录</ElDropdownItem>
+                </ElDropdownMenu>
+              </template>
+            </ElDropdown>
           </div>
         </template>
       </ArtTable>
     </ElCard>
 
-    <ElDrawer v-model="drawerVisible" title="订单详情" size="880px" destroy-on-close append-to-body>
+    <ElDrawer v-model="drawerVisible" title="订单详情" size="86%" destroy-on-close append-to-body>
       <div v-loading="drawerLoading" class="order-detail">
         <template v-if="currentDetail">
-          <div class="order-detail__header">
-            <div>
-              <div class="order-detail__title">{{ currentDetail.orderNo }}</div>
-              <div class="order-detail__meta">
-                下单时间 {{ formatDateTime(currentDetail.createdAt) }}
+          <div class="order-summary">
+            <div class="order-summary__identity">
+              <div class="order-summary__icon">
+                <ElIcon><Tickets /></ElIcon>
+              </div>
+              <div>
+                <div class="order-summary__title">普通订单</div>
+                <div class="order-summary__no">订单号：{{ currentDetail.orderNo }}</div>
               </div>
             </div>
-            <div class="order-detail__status">
-              <ElTag :type="statusMap[currentDetail.status].type">
-                {{ statusMap[currentDetail.status].text }}
-              </ElTag>
-            </div>
-          </div>
-
-          <ElDescriptions :column="2" border>
-            <ElDescriptionsItem label="订单来源">
-              {{ formatSource(currentDetail.source) }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="支付状态">
-              {{ formatPaymentStatus(currentDetail.paymentStatus || currentDetail.status) }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="商户订单号">
-              {{ formatText(currentDetail.outTradeNo || currentDetail.merchantTradeNo) }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="微信支付单号">
-              {{ formatText(currentDetail.transactionId || currentDetail.paymentTransactionId) }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="支付时间">
-              {{ formatDateTime(currentDetail.paidAt) }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="优惠券">
-              {{ currentDetail.couponName ? currentDetail.couponName : '未使用' }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="收货人">
-              {{ formatText(currentDetail.receiverName) }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="联系电话">
-              {{ formatText(currentDetail.receiverPhone) }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="收货地址" :span="2">
-              {{ formatText(currentDetail.receiverAddress) }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="关闭原因">
-              {{ formatText(currentDetail.closeReason) }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="关闭时间">
-              {{ formatDateTime(currentDetail.closedAt) }}
-            </ElDescriptionsItem>
-          </ElDescriptions>
-
-          <div class="order-amounts">
-            <div class="amount-card">
-              <div class="label">商品原价</div>
-              <div class="value">{{ formatMoney(currentDetail.productOriginalAmountCent) }}</div>
-            </div>
-            <div class="amount-card">
-              <div class="label">商品实付</div>
-              <div class="value">{{ formatMoney(currentDetail.productAmountCent) }}</div>
-            </div>
-            <div class="amount-card">
-              <div class="label">优惠金额</div>
-              <div class="value amount-card__accent">
-                -{{ formatMoney(currentDetail.couponDiscountCent) }}
+            <div class="order-summary__facts">
+              <div class="summary-fact">
+                <span>订单状态</span>
+                <strong :class="`is-${statusMap[currentDetail.status].type}`">
+                  {{ statusMap[currentDetail.status].text }}
+                </strong>
+              </div>
+              <div class="summary-fact">
+                <span>实际支付</span>
+                <strong>{{ formatPaidAmount(currentDetail) }}</strong>
+              </div>
+              <div class="summary-fact">
+                <span>订单来源</span>
+                <strong>{{ formatSource(currentDetail.source) }}</strong>
+              </div>
+              <div class="summary-fact">
+                <span>创建时间</span>
+                <strong>{{ formatDateTime(currentDetail.createdAt) }}</strong>
               </div>
             </div>
-            <div class="amount-card">
-              <div class="label">订单应付</div>
-              <div class="value">{{ formatMoney(currentDetail.payableAmountCent) }}</div>
-            </div>
           </div>
 
-          <div class="order-section">
-            <div class="order-section__title">发货信息</div>
-            <ElDescriptions v-if="currentDetail.shipment" :column="2" border>
-              <ElDescriptionsItem label="履约方式">
-                {{ logisticsTypeLabel(currentDetail.shipment.logisticsType) }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="配送说明">
-                {{ formatShipmentModeDetail(currentDetail.shipment) }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="商品描述" :span="2">
-                {{ formatText(currentDetail.shipment.itemDesc) }}
-              </ElDescriptionsItem>
-              <template v-if="currentDetail.shipment.logisticsType === 1">
-                <ElDescriptionsItem label="快递公司">
-                  {{ formatText(currentDetail.shipment.expressCompanyName) }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="快递公司编码">
-                  {{ formatText(currentDetail.shipment.expressCompanyCode) }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="快递单号" :span="2">
-                  {{ formatText(currentDetail.shipment.trackingNo) }}
-                </ElDescriptionsItem>
-              </template>
-              <ElDescriptionsItem label="发货备注">
-                {{ formatText(currentDetail.shipment.shipmentNote) }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="本地发货状态">
-                {{ formatLocalShipmentStatus(currentDetail.shipment.localShipmentStatus) }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="本地发货时间">
-                {{ formatDateTime(currentDetail.shipment.shippedAt) }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="微信提供方">
-                {{ formatWechatProviderMode(currentDetail.shipment.wechatProviderMode) }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="微信上传状态">
-                <ElTag
-                  v-if="currentDetail.shipment.wechatUploadStatus"
-                  size="small"
-                  :type="
-                    shippingUploadStatusMap[currentDetail.shipment.wechatUploadStatus]?.type ||
-                    'info'
-                  "
-                >
-                  {{ formatShippingUploadStatus(currentDetail.shipment.wechatUploadStatus) }}
-                </ElTag>
-                <span v-else>-</span>
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="本次上传时间">
-                {{ formatDateTime(currentDetail.shipment.uploadTime) }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="微信上传成功时间">
-                {{ formatDateTime(currentDetail.shipment.wechatUploadedAt) }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="最近尝试时间">
-                {{ formatDateTime(currentDetail.shipment.lastAttemptAt) }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="运营重试次数">
-                {{ currentDetail.shipment.retryCount }}
-              </ElDescriptionsItem>
-              <ElDescriptionsItem label="微信错误" :span="2">
-                {{ formatWechatUploadError(currentDetail.shipment) }}
-              </ElDescriptionsItem>
-            </ElDescriptions>
-            <ElEmpty v-else description="暂无发货信息" :image-size="72" />
-          </div>
+          <ElTabs v-model="detailActiveTab" class="order-detail-tabs">
+            <ElTabPane label="订单信息" name="orderInfo">
+              <div class="detail-section">
+                <div class="detail-section__title">用户信息</div>
+                <ElDescriptions :column="3" border>
+                  <ElDescriptionsItem label="用户 ID">
+                    {{ currentDetail.userId }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="用户手机号" :span="2">
+                    {{ maskPhone(currentDetail.userPhone) }}
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+              </div>
 
-          <div class="order-items">
-            <div class="order-items__title">商品快照</div>
-            <ElTable :data="currentDetail.items" border>
-              <ElTableColumn label="商品" min-width="260">
-                <template #default="{ row }">
-                  <div class="item-cell">
-                    <ElImage
-                      :src="row.displayImage || row.skuImage || row.mainImage"
-                      fit="cover"
-                      :preview-src-list="
-                        row.displayImage || row.skuImage || row.mainImage
-                          ? [row.displayImage || row.skuImage || row.mainImage]
-                          : []
-                      "
-                      preview-teleported
-                      class="item-cell__image"
-                    />
-                    <div class="item-cell__content">
-                      <div class="title">{{ row.productTitle }}</div>
-                      <div class="subtitle">{{ row.productSubtitle || '-' }}</div>
+              <div class="detail-section">
+                <div class="detail-section__title">收货信息</div>
+                <ElDescriptions :column="3" border>
+                  <ElDescriptionsItem label="收货人">
+                    {{ formatText(currentDetail.receiverName) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="收货手机号">
+                    {{ maskPhone(currentDetail.receiverPhone) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="收货地址">
+                    {{ formatText(currentDetail.receiverAddress) }}
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+              </div>
+
+              <div class="detail-section">
+                <div class="detail-section__title">订单信息</div>
+                <ElDescriptions :column="3" border>
+                  <ElDescriptionsItem label="商品总价">
+                    {{ formatMoney(currentDetail.productOriginalAmountCent) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="商品总数">
+                    {{ currentDetail.itemCount }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="优惠券">
+                    {{ currentDetail.couponName || '未使用' }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="商品金额">
+                    {{ formatMoney(currentDetail.productAmountCent) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="优惠金额">
+                    {{ formatMoney(currentDetail.couponDiscountCent) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="支付邮费">
+                    {{ formatMoney(currentDetail.freightCent) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="订单应付">
+                    {{ formatMoney(currentDetail.payableAmountCent) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="实际支付">
+                    {{ formatPaidAmount(currentDetail) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="已退款金额">
+                    {{ formatMoney(currentDetail.refundedAmountCent) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="创建时间">
+                    {{ formatDateTime(currentDetail.createdAt) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="发货时间">
+                    {{ formatDateTime(currentDetail.shippedAt) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="完成时间">
+                    {{ formatDateTime(currentDetail.completedAt) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="关闭原因">
+                    {{ formatText(currentDetail.closeReason) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="关闭时间">
+                    {{ formatDateTime(currentDetail.closedAt) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="退款发起时间">
+                    {{ formatDateTime(currentDetail.refundingAt) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="退款完成时间">
+                    {{ formatDateTime(currentDetail.refundedAt) }}
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+              </div>
+
+              <div class="detail-section">
+                <div class="detail-section__title">支付信息</div>
+                <ElDescriptions :column="3" border>
+                  <ElDescriptionsItem label="支付状态">
+                    {{ formatPaymentStatus(currentDetail.paymentStatus || currentDetail.status) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="商户订单号">
+                    {{ formatText(currentDetail.outTradeNo || currentDetail.merchantTradeNo) }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="微信支付单号">
+                    {{
+                      formatText(currentDetail.transactionId || currentDetail.paymentTransactionId)
+                    }}
+                  </ElDescriptionsItem>
+                  <ElDescriptionsItem label="支付时间">
+                    {{ formatDateTime(currentDetail.paidAt) }}
+                  </ElDescriptionsItem>
+                </ElDescriptions>
+              </div>
+
+              <div class="detail-section">
+                <div class="detail-section__title">发货信息</div>
+                <template v-if="currentDetail.shipment">
+                  <ElDescriptions :column="3" border>
+                    <ElDescriptionsItem label="履约方式">
+                      {{ logisticsTypeLabel(currentDetail.shipment.logisticsType) }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="快递公司">
+                      {{ formatText(currentDetail.shipment.expressCompanyName) }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="物流单号">
+                      {{ formatText(currentDetail.shipment.trackingNo) }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="商品描述">
+                      {{ formatText(currentDetail.shipment.itemDesc) }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="发货备注">
+                      {{ formatText(currentDetail.shipment.shipmentNote) }}
+                    </ElDescriptionsItem>
+                    <ElDescriptionsItem label="本地发货时间">
+                      {{ formatDateTime(currentDetail.shipment.shippedAt) }}
+                    </ElDescriptionsItem>
+                  </ElDescriptions>
+                  <ElCollapse class="shipping-diagnostics">
+                    <ElCollapseItem title="微信发货诊断信息" name="wechat-shipping">
+                      <ElDescriptions :column="3" border>
+                        <ElDescriptionsItem label="配送说明">
+                          {{ formatShipmentModeDetail(currentDetail.shipment) }}
+                        </ElDescriptionsItem>
+                        <ElDescriptionsItem label="本地发货状态">
+                          {{
+                            formatLocalShipmentStatus(currentDetail.shipment.localShipmentStatus)
+                          }}
+                        </ElDescriptionsItem>
+                        <ElDescriptionsItem label="微信提供方">
+                          {{ formatWechatProviderMode(currentDetail.shipment.wechatProviderMode) }}
+                        </ElDescriptionsItem>
+                        <ElDescriptionsItem label="微信上传状态">
+                          {{
+                            formatShippingUploadStatus(currentDetail.shipment.wechatUploadStatus)
+                          }}
+                        </ElDescriptionsItem>
+                        <ElDescriptionsItem label="最近尝试时间">
+                          {{ formatDateTime(currentDetail.shipment.lastAttemptAt) }}
+                        </ElDescriptionsItem>
+                        <ElDescriptionsItem label="运营重试次数">
+                          {{ currentDetail.shipment.retryCount }}
+                        </ElDescriptionsItem>
+                        <ElDescriptionsItem label="微信错误" :span="3">
+                          {{ formatWechatUploadError(currentDetail.shipment) }}
+                        </ElDescriptionsItem>
+                      </ElDescriptions>
+                    </ElCollapseItem>
+                  </ElCollapse>
+                </template>
+                <ElEmpty v-else description="暂无发货信息" :image-size="72" />
+              </div>
+            </ElTabPane>
+
+            <ElTabPane label="商品信息" name="products">
+              <ElTable :data="currentDetail.items" border>
+                <ElTableColumn label="商品信息" min-width="340">
+                  <template #default="{ row }">
+                    <div class="item-cell">
+                      <ElImage
+                        :src="row.displayImage || row.skuImage || row.mainImage"
+                        fit="cover"
+                        :preview-src-list="
+                          row.displayImage || row.skuImage || row.mainImage
+                            ? [row.displayImage || row.skuImage || row.mainImage]
+                            : []
+                        "
+                        preview-teleported
+                        class="item-cell__image"
+                      />
+                      <div class="item-cell__content">
+                        <div class="title">{{ row.productTitle }}</div>
+                        <div class="subtitle">
+                          {{ row.productSubtitle || '-' }} · 规格：{{ row.specText || '-' }}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </template>
-              </ElTableColumn>
-              <ElTableColumn prop="skuCode" label="SKU" min-width="130" />
-              <ElTableColumn prop="specText" label="规格" min-width="150" />
-              <ElTableColumn label="单价" width="110">
-                <template #default="{ row }">
-                  {{ formatMoney(row.unitPriceCent) }}
-                </template>
-              </ElTableColumn>
-              <ElTableColumn prop="quantity" label="数量" width="80" />
-              <ElTableColumn label="小计" width="120">
-                <template #default="{ row }">
-                  {{ formatMoney(row.lineAmountCent) }}
-                </template>
-              </ElTableColumn>
-            </ElTable>
-          </div>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="商品售价" width="140">
+                  <template #default="{ row }">{{ formatMoney(row.unitPriceCent) }}</template>
+                </ElTableColumn>
+                <ElTableColumn prop="quantity" label="购买数量" width="120" />
+                <ElTableColumn label="小计" width="140">
+                  <template #default="{ row }">{{ formatMoney(row.lineAmountCent) }}</template>
+                </ElTableColumn>
+              </ElTable>
+            </ElTabPane>
+          </ElTabs>
         </template>
       </div>
 
@@ -264,6 +336,37 @@
           </ElButton>
         </div>
       </template>
+    </ElDrawer>
+
+    <ElDrawer
+      v-model="recordsVisible"
+      title="订单记录"
+      size="520px"
+      destroy-on-close
+      append-to-body
+    >
+      <div v-loading="recordsLoading" class="order-records">
+        <div v-if="recordsOrderNo" class="order-records__no">订单号：{{ recordsOrderNo }}</div>
+        <ElTimeline v-if="statusLogs.length > 0">
+          <ElTimelineItem
+            v-for="record in statusLogs"
+            :key="record.id"
+            :timestamp="formatDateTime(record.createdAt)"
+            placement="top"
+            :type="statusMap[record.toStatus]?.type || 'primary'"
+          >
+            <div class="order-record">
+              <div class="order-record__title">
+                {{ formatRecordTitle(record) }}
+              </div>
+              <div class="order-record__meta">
+                {{ formatStatusTransition(record) }} · {{ formatOperator(record) }}
+              </div>
+            </div>
+          </ElTimelineItem>
+        </ElTimeline>
+        <ElEmpty v-else description="暂无订单记录" :image-size="88" />
+      </div>
     </ElDrawer>
 
     <ElDialog
@@ -413,13 +516,17 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, h, reactive, ref } from 'vue'
+  import { computed, h, onMounted, reactive, ref, watch } from 'vue'
+  import { useRoute } from 'vue-router'
+  import { ArrowDown, Tickets } from '@element-plus/icons-vue'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
   import {
     closeOrder,
     fetchOrderDetail,
+    fetchOrderStatusCounts,
+    fetchOrderStatusLogs,
     fetchOrders,
     retryOrderShippingUpload,
     shipOrder
@@ -459,9 +566,16 @@
   defineOptions({ name: 'OrderList' })
 
   const { hasAuth } = useAuth()
+  const route = useRoute()
 
   const drawerVisible = ref(false)
   const drawerLoading = ref(false)
+  const detailActiveTab = ref<'orderInfo' | 'products'>('orderInfo')
+  const recordsVisible = ref(false)
+  const recordsLoading = ref(false)
+  const recordsOrderNo = ref('')
+  const statusLogs = ref<Api.Order.OrderStatusLog[]>([])
+  const recordsRequestSeq = ref(0)
   const closingOrderId = ref<number | null>(null)
   const retryingOrderId = ref<number | null>(null)
   const currentDetail = ref<Api.Order.OrderDetail | null>(null)
@@ -495,22 +609,66 @@
     shipmentNote: ''
   })
 
-  const searchForm = ref<{
+  interface OrderSearchForm {
     orderNo?: string
-    status?: Api.Order.OrderStatus
-  }>({
-    orderNo: undefined,
-    status: undefined
+    userSearchType: Api.Order.UserSearchType
+    userKeyword?: string
+    receiverName?: string
+    receiverPhone?: string
+    createdRange?: string[]
+    trackingNo?: string
+  }
+
+  const routeOrderNo = () => {
+    const value = route.query.orderNo
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined
+  }
+
+  const createInitialSearchForm = (): OrderSearchForm => ({
+    orderNo: routeOrderNo(),
+    userSearchType: 'USER_ID',
+    userKeyword: undefined,
+    receiverName: undefined,
+    receiverPhone: undefined,
+    createdRange: undefined,
+    trackingNo: undefined
   })
+
+  const searchForm = ref<OrderSearchForm>(createInitialSearchForm())
+  const activeStatusGroup = ref<Api.Order.AdminOrderStatusGroup>('ALL')
+  const statusCounts = reactive<Api.Order.OrderStatusCounts>({
+    all: 0,
+    unpaid: 0,
+    toShip: 0,
+    toReceive: 0,
+    completed: 0,
+    closed: 0,
+    refunding: 0,
+    refunded: 0
+  })
+  const statusTabs: Array<{
+    label: string
+    value: Api.Order.AdminOrderStatusGroup
+    countKey: keyof Api.Order.OrderStatusCounts
+  }> = [
+    { label: '全部', value: 'ALL', countKey: 'all' },
+    { label: '待付款', value: 'UNPAID', countKey: 'unpaid' },
+    { label: '待发货', value: 'TO_SHIP', countKey: 'toShip' },
+    { label: '待收货', value: 'TO_RECEIVE', countKey: 'toReceive' },
+    { label: '已完成', value: 'COMPLETED', countKey: 'completed' },
+    { label: '已关闭', value: 'CLOSED', countKey: 'closed' },
+    { label: '退款中', value: 'REFUNDING', countKey: 'refunding' },
+    { label: '已退款', value: 'REFUNDED', countKey: 'refunded' }
+  ]
 
   const statusMap: Record<
     Api.Order.OrderStatus,
     { type: 'warning' | 'success' | 'info' | 'danger'; text: string }
   > = {
-    CREATED: { type: 'warning', text: '待支付' },
-    PAYING: { type: 'warning', text: '支付中' },
-    PAID: { type: 'success', text: '已支付' },
-    SHIPPED: { type: 'success', text: '已发货' },
+    CREATED: { type: 'warning', text: '待付款' },
+    PAYING: { type: 'warning', text: '待付款' },
+    PAID: { type: 'success', text: '待发货' },
+    SHIPPED: { type: 'success', text: '待收货' },
     COMPLETED: { type: 'success', text: '已完成' },
     CLOSED: { type: 'info', text: '已关闭' },
     REFUNDING: { type: 'warning', text: '退款中' },
@@ -618,28 +776,59 @@
       label: '订单号',
       key: 'orderNo',
       type: 'input',
+      span: 8,
       props: {
         clearable: true,
         placeholder: '请输入订单号'
       }
     },
     {
-      label: '订单状态',
-      key: 'status',
-      type: 'select',
+      label: '用户',
+      key: 'userKeyword',
+      type: 'input',
+      span: 8
+    },
+    {
+      label: '收货人',
+      key: 'receiverName',
+      type: 'input',
+      span: 8,
       props: {
         clearable: true,
-        placeholder: '请选择状态',
-        options: [
-          { label: '待支付', value: 'CREATED' },
-          { label: '支付中', value: 'PAYING' },
-          { label: '已支付', value: 'PAID' },
-          { label: '已发货', value: 'SHIPPED' },
-          { label: '已完成', value: 'COMPLETED' },
-          { label: '已关闭', value: 'CLOSED' },
-          { label: '退款中', value: 'REFUNDING' },
-          { label: '已退款', value: 'REFUNDED' }
-        ]
+        placeholder: '请输入收货人'
+      }
+    },
+    {
+      label: '收货手机号',
+      key: 'receiverPhone',
+      type: 'input',
+      span: 8,
+      props: {
+        clearable: true,
+        placeholder: '请输入收货手机号'
+      }
+    },
+    {
+      label: '创建时间',
+      key: 'createdRange',
+      type: 'datetimerange',
+      span: 8,
+      props: {
+        clearable: true,
+        style: { width: '100%' },
+        valueFormat: 'YYYY-MM-DD HH:mm:ss',
+        startPlaceholder: '开始时间',
+        endPlaceholder: '结束时间'
+      }
+    },
+    {
+      label: '物流单号',
+      key: 'trackingNo',
+      type: 'input',
+      span: 8,
+      props: {
+        clearable: true,
+        placeholder: '请输入物流单号'
       }
     }
   ])
@@ -647,6 +836,17 @@
   const formatMoney = (cent: number | null | undefined) => `¥${((cent ?? 0) / 100).toFixed(2)}`
 
   const formatText = (value: string | null | undefined) => value || '-'
+
+  const maskPhone = (value: string | null | undefined) => {
+    if (!value) return '-'
+    if (value.length < 7) return value
+    return `${value.slice(0, 3)}****${value.slice(-4)}`
+  }
+
+  const formatPaidAmount = (order: Pick<Api.Order.OrderListItem, 'status' | 'paidAmountCent'>) =>
+    order.status === 'CREATED' || order.status === 'PAYING'
+      ? '-'
+      : formatMoney(order.paidAmountCent)
 
   const formatPaymentStatus = (value: string | null | undefined) => {
     if (!value) return '-'
@@ -681,6 +881,85 @@
     return value
   }
 
+  const eventTypeLabels: Record<string, string> = {
+    ORDER_CREATED: '创建订单',
+    PAYMENT_STARTED: '发起支付',
+    PAYMENT_SUCCEEDED: '支付成功',
+    ORDER_SHIPPED: '订单发货',
+    ORDER_COMPLETED: '订单完成',
+    ORDER_CLOSED: '关闭订单',
+    REFUND_STARTED: '发起退款',
+    REFUND_RESTORED: '退款申请回退',
+    REFUND_SUCCEEDED: '退款成功'
+  }
+
+  const statusRecordLabels: Record<Api.Order.OrderStatus, string> = {
+    CREATED: '待付款（待发起支付）',
+    PAYING: '待付款（支付处理中）',
+    PAID: '待发货',
+    SHIPPED: '待收货',
+    COMPLETED: '已完成',
+    CLOSED: '已关闭',
+    REFUNDING: '退款中',
+    REFUNDED: '已退款'
+  }
+
+  const operatorTypeLabels: Record<string, string> = {
+    APP: '用户',
+    ADMIN: '管理员',
+    SYSTEM: '系统',
+    WECHAT: '微信'
+  }
+
+  const formatEventType = (value: string) => eventTypeLabels[value] || value
+
+  const formatRecordTitle = (record: Api.Order.OrderStatusLog) =>
+    record.description?.trim() || formatEventType(record.eventType)
+
+  const formatOperator = (record: Api.Order.OrderStatusLog) => {
+    const operator = operatorTypeLabels[record.operatorType] || record.operatorType
+    return record.operatorId ? `${operator} ${record.operatorId}` : operator
+  }
+
+  const formatStatusTransition = (record: Api.Order.OrderStatusLog) => {
+    const toStatus = statusRecordLabels[record.toStatus] || record.toStatus
+    if (!record.fromStatus) return toStatus
+    const fromStatus = statusRecordLabels[record.fromStatus] || record.fromStatus
+    return fromStatus === toStatus ? toStatus : `${fromStatus} → ${toStatus}`
+  }
+
+  const normalizeSearchParams = (
+    form: OrderSearchForm = searchForm.value
+  ): Api.Order.OrderSearchParams => {
+    const params: Api.Order.OrderSearchParams = {
+      statusGroup: activeStatusGroup.value
+    }
+    const assignText = (key: keyof Api.Order.OrderSearchParams, value?: string) => {
+      const normalized = value?.trim()
+      if (normalized) Object.assign(params, { [key]: normalized })
+    }
+
+    assignText('orderNo', form.orderNo)
+    assignText('receiverName', form.receiverName)
+    assignText('receiverPhone', form.receiverPhone)
+    assignText('trackingNo', form.trackingNo)
+    if (form.userKeyword?.trim()) {
+      params.userSearchType = form.userSearchType
+      params.userKeyword = form.userKeyword.trim()
+    }
+    if (form.createdRange?.length === 2) {
+      params.createdStart = form.createdRange[0]
+      params.createdEnd = form.createdRange[1]
+    }
+    return params
+  }
+
+  const loadStatusCounts = async () => {
+    const params = normalizeSearchParams()
+    delete params.statusGroup
+    Object.assign(statusCounts, await fetchOrderStatusCounts(params))
+  }
+
   const {
     columns,
     columnChecks,
@@ -689,7 +968,6 @@
     pagination,
     getData,
     replaceSearchParams,
-    resetSearchParams,
     handleSizeChange,
     handleCurrentChange,
     refreshData
@@ -698,33 +976,112 @@
       apiFn: fetchOrders,
       apiParams: {
         current: 1,
-        size: 20
+        size: 20,
+        statusGroup: 'ALL',
+        orderNo: searchForm.value.orderNo
       },
       columnsFactory: () => [
         {
           prop: 'orderNo',
-          label: '订单信息',
-          minWidth: 220,
-          formatter: (row) =>
-            h('div', { class: 'order-info-cell' }, [
-              h('div', { class: 'title' }, row.orderNo),
-              h('div', { class: 'subtitle' }, formatDateTime(row.createdAt))
-            ])
+          label: '订单号',
+          minWidth: 230,
+          formatter: (row) => h('span', { class: 'order-no-cell' }, row.orderNo)
+        },
+        {
+          prop: 'receiverName',
+          label: '收货人',
+          minWidth: 150,
+          formatter: (row) => row.receiverName || '-'
         },
         {
           prop: 'productTitle',
-          label: '首件商品',
-          minWidth: 220,
-          showOverflowTooltip: true,
-          formatter: (row) =>
-            h('div', { class: 'order-product-cell' }, [
-              h('div', { class: 'title' }, row.productTitle || '-'),
-              h('div', { class: 'subtitle' }, `共 ${row.itemCount} 件商品`)
-            ])
+          label: '商品信息',
+          minWidth: 330,
+          formatter: (row) => {
+            const image = row.displayImage || row.skuImage || row.mainImage
+            return h(
+              'div',
+              {
+                class: 'order-product-cell',
+                style: {
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  minWidth: 0
+                }
+              },
+              [
+                h(ElImage, {
+                  src: image || '',
+                  fit: 'cover',
+                  lazy: true,
+                  class: 'order-product-cell__image',
+                  style: {
+                    width: '48px',
+                    height: '48px',
+                    flex: '0 0 48px',
+                    overflow: 'hidden',
+                    background: 'var(--el-fill-color-light)',
+                    borderRadius: '6px'
+                  }
+                }),
+                h(
+                  'div',
+                  {
+                    class: 'order-product-cell__content',
+                    style: {
+                      display: 'flex',
+                      flex: 1,
+                      flexDirection: 'column',
+                      gap: '3px',
+                      minWidth: 0
+                    }
+                  },
+                  [
+                    h(
+                      'div',
+                      {
+                        class: 'title',
+                        style: {
+                          overflow: 'hidden',
+                          color: 'var(--el-text-color-primary)',
+                          lineHeight: '20px',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }
+                      },
+                      row.productTitle || '-'
+                    ),
+                    h(
+                      'div',
+                      {
+                        class: 'subtitle',
+                        style: {
+                          overflow: 'hidden',
+                          color: 'var(--el-text-color-secondary)',
+                          fontSize: '12px',
+                          lineHeight: '18px',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }
+                      },
+                      `规格：${row.specText || '-'} · x${row.firstItemQuantity || 0} · 共 ${row.itemCount} 件`
+                    )
+                  ]
+                )
+              ]
+            )
+          }
+        },
+        {
+          prop: 'paidAmountCent',
+          label: '实际支付',
+          width: 120,
+          formatter: (row) => formatPaidAmount(row)
         },
         {
           prop: 'status',
-          label: '状态',
+          label: '订单状态',
           width: 110,
           formatter: (row) => {
             const config = statusMap[row.status]
@@ -732,33 +1089,15 @@
           }
         },
         {
-          prop: 'productAmountCent',
-          label: '商品金额',
-          width: 120,
-          formatter: (row) => formatMoney(row.productAmountCent)
-        },
-        {
-          prop: 'couponDiscountCent',
-          label: '优惠',
-          width: 120,
-          formatter: (row) => `-${formatMoney(row.couponDiscountCent)}`
-        },
-        {
-          prop: 'payableAmountCent',
-          label: '应付金额',
-          width: 120,
-          formatter: (row) => formatMoney(row.payableAmountCent)
-        },
-        {
-          prop: 'paidAmountCent',
-          label: '实付金额',
-          width: 120,
-          formatter: (row) => formatMoney(row.paidAmountCent)
+          prop: 'createdAt',
+          label: '创建时间',
+          width: 180,
+          formatter: (row) => formatDateTime(row.createdAt)
         },
         {
           prop: 'operation',
           label: '操作',
-          width: 150,
+          width: 130,
           fixed: 'right',
           useSlot: true
         }
@@ -766,19 +1105,59 @@
     }
   })
 
-  const handleSearch = (params: Record<string, any>) => {
-    replaceSearchParams(params)
-    getData()
+  const applyCurrentSearch = async () => {
+    replaceSearchParams(normalizeSearchParams())
+    await Promise.all([getData(), loadStatusCounts()])
   }
 
-  const handleReset = () => {
-    searchForm.value = {
-      orderNo: undefined,
-      status: undefined
-    }
-    resetSearchParams()
-    getData()
+  const handleSearch = async () => {
+    await applyCurrentSearch()
   }
+
+  const handleReset = async () => {
+    searchForm.value = createInitialSearchForm()
+    await applyCurrentSearch()
+  }
+
+  const handleStatusChange = async () => {
+    replaceSearchParams(normalizeSearchParams())
+    await getData()
+  }
+
+  const handleRefresh = async () => {
+    await Promise.all([refreshData(), loadStatusCounts()])
+  }
+
+  watch(
+    () => route.query.orderNo,
+    async () => {
+      const orderNo = routeOrderNo()
+      if (route.path !== '/trade/orders' || !orderNo || orderNo === searchForm.value.orderNo) return
+      searchForm.value = createInitialSearchForm()
+      activeStatusGroup.value = 'ALL'
+      await applyCurrentSearch()
+    }
+  )
+
+  const openOrderRecords = async (orderId: number, orderNo: string) => {
+    const requestId = ++recordsRequestSeq.value
+    recordsOrderNo.value = orderNo
+    statusLogs.value = []
+    recordsVisible.value = true
+    recordsLoading.value = true
+    try {
+      const records = await fetchOrderStatusLogs(orderId)
+      if (requestId === recordsRequestSeq.value) statusLogs.value = records
+    } finally {
+      if (requestId === recordsRequestSeq.value) recordsLoading.value = false
+    }
+  }
+
+  const handleMoreCommand = (command: string | number | object, row: Api.Order.OrderListItem) => {
+    if (command === 'records') void openOrderRecords(row.orderId, row.orderNo)
+  }
+
+  onMounted(() => void loadStatusCounts())
 
   const loadOrderDetail = async (orderId: number) => {
     const requestId = ++detailRequestSeq.value
@@ -799,6 +1178,7 @@
   }
 
   const openDetail = async (orderId: number) => {
+    detailActiveTab.value = 'orderInfo'
     drawerVisible.value = true
     await Promise.allSettled([loadOrderDetail(orderId), loadWechatShippingCapability()])
   }
@@ -1060,7 +1440,7 @@
         drawerVisible.value = true
       }
 
-      const refreshTasks: Promise<unknown>[] = [Promise.resolve().then(() => refreshData())]
+      const refreshTasks: Promise<unknown>[] = [Promise.resolve().then(() => handleRefresh())]
       if (dialogStillCurrent || (drawerVisible.value && currentDetail.value?.orderId === orderId)) {
         refreshTasks.push(loadOrderDetail(orderId))
       }
@@ -1118,7 +1498,7 @@
     closingOrderId.value = orderId
     try {
       await closeOrder(orderId)
-      await refreshData()
+      await handleRefresh()
       if (drawerVisible.value && currentDetail.value?.orderId === orderId) {
         await reloadCurrentDetail(orderId)
       }
@@ -1129,15 +1509,49 @@
 </script>
 
 <style scoped lang="scss">
+  .order-status-card {
+    :deep(.el-card__body) {
+      padding: 0 20px;
+    }
+  }
+
+  .order-status-tabs {
+    :deep(.el-tabs__header) {
+      margin: 0;
+    }
+
+    :deep(.el-tabs__nav-wrap::after) {
+      height: 1px;
+    }
+
+    :deep(.el-tabs__item) {
+      height: 52px;
+      padding: 0 20px;
+    }
+  }
+
+  .user-search-type {
+    width: 116px;
+  }
+
   .order-actions {
     display: flex;
-    gap: 4px;
+    gap: 8px;
     align-items: center;
   }
 
-  .order-info-cell,
-  .order-product-cell,
-  .item-cell__content {
+  .order-actions__arrow {
+    margin-left: 3px;
+  }
+
+  .order-no-cell {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    color: var(--el-text-color-primary);
+  }
+
+  .item-cell__content,
+  .order-product-cell__content {
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -1154,78 +1568,173 @@
     }
   }
 
+  .order-product-cell {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .order-product-cell__content {
+    min-width: 0;
+
+    .title,
+    .subtitle {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .order-product-cell__image {
+    flex-shrink: 0;
+    width: 52px;
+    height: 52px;
+    overflow: hidden;
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
+  }
+
   .order-detail {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    min-height: 360px;
   }
 
-  .order-detail__header {
+  .order-summary {
     display: flex;
-    gap: 16px;
-    align-items: flex-start;
+    gap: 28px;
+    align-items: center;
     justify-content: space-between;
+    padding: 20px 24px;
+    margin-bottom: 18px;
+    background: var(--el-fill-color-lighter);
+    border-radius: 10px;
   }
 
-  .order-detail__title {
+  .order-summary__identity {
+    display: flex;
+    flex-shrink: 0;
+    gap: 14px;
+    align-items: center;
+  }
+
+  .order-summary__icon {
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    font-size: 28px;
+    color: white;
+    background: var(--el-color-primary);
+    border-radius: 10px;
+  }
+
+  .order-summary__title {
     font-size: 18px;
-    line-height: 28px;
+    font-weight: 600;
+    line-height: 26px;
     color: var(--el-text-color-primary);
   }
 
-  .order-detail__meta {
+  .order-summary__no {
     margin-top: 4px;
     font-size: 13px;
     color: var(--el-text-color-secondary);
   }
 
-  .order-amounts {
+  .order-summary__facts {
     display: grid;
+    flex: 1;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+    gap: 20px;
+    max-width: 820px;
   }
 
-  .amount-card {
-    padding: 14px 16px;
-    background: var(--el-fill-color-blank);
-    border: 1px solid var(--el-border-color-lighter);
-    border-radius: 8px;
+  .summary-fact {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
 
-    .label {
-      font-size: 12px;
-      line-height: 18px;
+    span {
+      font-size: 13px;
       color: var(--el-text-color-secondary);
     }
 
-    .value {
-      margin-top: 6px;
-      font-size: 18px;
-      line-height: 28px;
+    strong {
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 22px;
       color: var(--el-text-color-primary);
+    }
+
+    .is-warning {
+      color: var(--el-color-warning);
+    }
+
+    .is-success {
+      color: var(--el-color-success);
+    }
+
+    .is-danger {
+      color: var(--el-color-danger);
+    }
+
+    .is-info {
+      color: var(--el-text-color-secondary);
     }
   }
 
-  .amount-card__accent {
-    color: var(--el-color-danger);
+  .order-detail-tabs {
+    :deep(.el-tabs__header) {
+      margin-bottom: 20px;
+    }
   }
 
-  .order-items {
+  .detail-section {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    margin-bottom: 24px;
   }
 
-  .order-section {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  .detail-section__title {
+    padding-left: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 20px;
+    color: var(--el-text-color-primary);
+    border-left: 4px solid var(--el-color-primary);
   }
 
-  .order-section__title,
-  .order-items__title {
-    font-size: 14px;
+  .shipping-diagnostics {
+    margin-top: 12px;
+  }
+
+  .order-records__no {
+    padding: 12px 14px;
+    margin-bottom: 24px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
+  }
+
+  .order-record {
+    padding-bottom: 6px;
+  }
+
+  .order-record__title {
+    font-weight: 600;
     line-height: 22px;
     color: var(--el-text-color-primary);
+  }
+
+  .order-record__meta {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--el-text-color-secondary);
   }
 
   .item-cell {
@@ -1305,19 +1814,24 @@
   }
 
   @media (width <= 900px) {
-    .order-amounts {
+    .order-summary {
+      align-items: flex-start;
+    }
+
+    .order-summary__facts {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 
   @media (width <= 640px) {
-    .order-detail__header {
+    .order-summary {
       flex-direction: column;
       align-items: flex-start;
     }
 
-    .order-amounts {
+    .order-summary__facts {
       grid-template-columns: minmax(0, 1fr);
+      width: 100%;
     }
   }
 </style>

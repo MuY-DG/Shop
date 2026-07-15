@@ -63,8 +63,8 @@ class OrderSchemaTest {
         Integer orderMenuCount = jdbcClient.sql("""
                         select count(*)
                         from admin_menu
-                        where id in (500, 501)
-                          and path in ('/order', 'list')
+                        where id in (830, 501)
+                          and path in ('/trade', 'orders')
                           and component in ('/index/index', '/order/list')
                         """)
                 .query(Integer.class)

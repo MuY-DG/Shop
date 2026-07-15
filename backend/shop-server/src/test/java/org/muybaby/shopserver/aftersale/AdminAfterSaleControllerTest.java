@@ -92,6 +92,83 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     }
 
     @Test
+    void adminListSupportsBusinessStatusGroupsRichFiltersCountsAndLightweightRows() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-v2-app");
+        jdbcClient.sql("""
+                        update app_user
+                        set phone_number = '13800138000', phone_authorized = true
+                        where id = :userId
+                        """)
+                .param("userId", appUser.userId())
+                .update();
+
+        SeedPaidOrder requestedOrder = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-v2-requested");
+        long requestedId = applyAfterSale(appUser, requestedOrder, 1980L);
+        SeedPaidOrder approvedOrder = seedPaidOrder(appUser, 7980L, "PAID", "wx-refund-admin-v2-approved");
+        long approvedId = applyAfterSale(appUser, approvedOrder, 2980L);
+        SeedPaidOrder refundingOrder = seedPaidOrder(appUser, 8980L, "PAID", "wx-refund-admin-v2-refunding");
+        long refundingId = applyAfterSale(appUser, refundingOrder, 3980L);
+
+        jdbcClient.sql("""
+                        update after_sale_request
+                        set status = case id
+                                when :approvedId then 'APPROVED'
+                                when :refundingId then 'REFUNDING'
+                                else 'REQUESTED'
+                            end,
+                            created_at = case id
+                                when :requestedId then timestamp '2026-07-10 09:00:00'
+                                when :approvedId then timestamp '2026-07-11 10:00:00'
+                                else timestamp '2026-07-12 11:00:00'
+                            end
+                        where id in (:requestedId, :approvedId, :refundingId)
+                        """)
+                .param("requestedId", requestedId)
+                .param("approvedId", approvedId)
+                .param("refundingId", refundingId)
+                .update();
+        insertRefundOrder(approvedId, approvedOrder.orderId(), "REF-APPROVED-V2");
+        insertRefundOrder(refundingId, refundingOrder.orderId(), "REF-REFUNDING-V2");
+
+        String readToken = limitedAdminToken(List.of("aftersale:read"));
+
+        mockMvc.perform(get("/admin/after-sales/status-counts")
+                        .param("userSearchType", "USER_PHONE")
+                        .param("userKeyword", "13800138000")
+                        .param("statusGroup", "PENDING_REVIEW")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.all").value(3))
+                .andExpect(jsonPath("$.data.pendingReview").value(1))
+                .andExpect(jsonPath("$.data.refunding").value(2))
+                .andExpect(jsonPath("$.data.refunded").value(0))
+                .andExpect(jsonPath("$.data.rejected").value(0))
+                .andExpect(jsonPath("$.data.refundFailed").value(0));
+
+        mockMvc.perform(get("/admin/after-sales")
+                        .param("statusGroup", "REFUNDING")
+                        .param("afterSaleId", Long.toString(approvedId))
+                        .param("orderNo", approvedOrder.orderNo())
+                        .param("userSearchType", "USER_PHONE")
+                        .param("userKeyword", "13800138000")
+                        .param("afterSaleType", "REFUND_ONLY")
+                        .param("createdStart", "2026-07-11 00:00:00")
+                        .param("createdEnd", "2026-07-11 23:59:59")
+                        .param("refundNo", "REF-APPROVED")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].id").value(approvedId))
+                .andExpect(jsonPath("$.data.records[0].status").value("APPROVED"))
+                .andExpect(jsonPath("$.data.records[0].reason").value("申请退款"))
+                .andExpect(jsonPath("$.data.records[0].requestedAmountCent").value(2980))
+                .andExpect(jsonPath("$.data.records[0].evidenceFileIds").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].evidenceFiles").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].refundOrder").doesNotExist());
+    }
+
+    @Test
     void adminCanReadOnlyEvidenceAttachedToTheRequestedAfterSale() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-evidence-app");
@@ -381,6 +458,22 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .param("orderId", orderId)
                 .query(Long.class)
                 .single();
+    }
+
+    private void insertRefundOrder(long afterSaleId, long orderId, String outRefundNo) {
+        jdbcClient.sql("""
+                        insert into refund_order
+                            (after_sale_id, order_id, payment_order_id, out_refund_no, refund_id,
+                             refund_amount_cent, status, callback_status, requested_at)
+                        values
+                            (:afterSaleId, :orderId, :paymentOrderId, :outRefundNo, '',
+                             100, 'PROCESSING', 'PROCESSING', current_timestamp)
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .param("orderId", orderId)
+                .param("paymentOrderId", paymentOrderId(orderId))
+                .param("outRefundNo", outRefundNo)
+                .update();
     }
 
     private long firstEvidenceFileId(long afterSaleId) {

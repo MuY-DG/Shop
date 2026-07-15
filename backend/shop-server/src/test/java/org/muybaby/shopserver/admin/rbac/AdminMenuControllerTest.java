@@ -51,10 +51,9 @@ class AdminMenuControllerTest {
                         "/dashboard",
                         "/product",
                         "/marketing",
-                        "/order",
+                        "/trade",
                         "/decoration",
                         "/development",
-                        "/aftersale",
                         "/system"
                 )))
                 .andExpect(jsonPath("$.data[0].path").value("/dashboard"))
@@ -101,13 +100,17 @@ class AdminMenuControllerTest {
                         "coupon:template:enable",
                         "coupon:template:disable"
                 )))
-                .andExpect(jsonPath("$.data[3].path").value("/order"))
-                .andExpect(jsonPath("$.data[3].children[*].path", contains("list")))
+                .andExpect(jsonPath("$.data[3].path").value("/trade"))
+                .andExpect(jsonPath("$.data[3].children[*].path", contains("orders", "after-sales")))
                 .andExpect(jsonPath("$.data[3].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "order:read",
                         "order:close",
                         "order:ship",
                         "order:shipping:retry"
+                )))
+                .andExpect(jsonPath("$.data[3].children[1].meta.authList[*].authMark", containsInAnyOrder(
+                        "aftersale:read",
+                        "aftersale:audit"
                 )))
                 .andExpect(jsonPath("$.data[4].path").value("/decoration"))
                 .andExpect(jsonPath("$.data[4].children[*].path", contains(
@@ -158,29 +161,23 @@ class AdminMenuControllerTest {
                         "payment:config:write",
                         "payment:config:enable"
                 )))
-                .andExpect(jsonPath("$.data[6].path").value("/aftersale"))
-                .andExpect(jsonPath("$.data[6].children[*].path", contains("list")))
+                .andExpect(jsonPath("$.data[6].path").value("/system"))
+                .andExpect(jsonPath("$.data[6].children[0].path").value("user"))
                 .andExpect(jsonPath("$.data[6].children[0].meta.authList[*].authMark", containsInAnyOrder(
-                        "aftersale:read",
-                        "aftersale:audit"
-                )))
-                .andExpect(jsonPath("$.data[7].path").value("/system"))
-                .andExpect(jsonPath("$.data[7].children[0].path").value("user"))
-                .andExpect(jsonPath("$.data[7].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "system:user:read",
                         "system:user:create",
                         "system:user:update",
                         "system:user:disable"
                 )))
-                .andExpect(jsonPath("$.data[7].children[1].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[6].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "system:role:read",
                         "system:role:create",
                         "system:role:update",
                         "system:role:assign",
                         "system:role:delete"
                 )))
-                .andExpect(jsonPath("$.data[7].children[2].path").value("menu"))
-                .andExpect(jsonPath("$.data[7].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[6].children[2].path").value("menu"))
+                .andExpect(jsonPath("$.data[6].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "system:menu:read"
                 )));
     }
@@ -200,10 +197,9 @@ class AdminMenuControllerTest {
                         "/dashboard",
                         "/product",
                         "/marketing",
-                        "/order",
+                        "/trade",
                         "/decoration",
                         "/development",
-                        "/aftersale",
                         "/system"
                 )));
     }

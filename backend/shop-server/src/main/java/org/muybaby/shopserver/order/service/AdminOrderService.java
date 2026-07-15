@@ -10,10 +10,14 @@ import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
 import org.muybaby.shopserver.logistics.service.WechatShippingUploadRecovery;
+import org.muybaby.shopserver.order.AdminOrderStatusGroup;
+import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.dto.AdminOrderQueryRequest;
+import org.muybaby.shopserver.order.dto.AdminOrderSummaryResponse;
+import org.muybaby.shopserver.order.dto.AdminOrderStatusCountsResponse;
 import org.muybaby.shopserver.order.dto.OrderDetailResponse;
 import org.muybaby.shopserver.order.dto.OrderItemResponse;
-import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
+import org.muybaby.shopserver.order.dto.OrderStatusLogResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -22,7 +26,10 @@ import org.springframework.util.StringUtils;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class AdminOrderService {
@@ -44,29 +51,44 @@ public class AdminOrderService {
         this.shippingUploadRecovery = shippingUploadRecovery;
     }
 
-    public PageResult<OrderSummaryResponse> page(AuthenticatedPrincipal principal, AdminOrderQueryRequest query) {
+    public PageResult<AdminOrderSummaryResponse> page(AuthenticatedPrincipal principal, AdminOrderQueryRequest query) {
         requireAdminUser(principal);
-        AdminOrderQueryRequest normalizedQuery = query == null
-                ? new AdminOrderQueryRequest(null, null, null, null)
-                : query;
+        AdminOrderQueryRequest normalizedQuery = normalizedQuery(query);
+        OrderQueryFilters filters = normalizeFilters(normalizedQuery, true);
         long current = normalizedQuery.pageCurrent();
         long size = normalizedQuery.pageSize();
         long offset = (current - 1) * size;
-        String orderNoLike = StringUtils.hasText(normalizedQuery.orderNo()) ? "%" + normalizedQuery.orderNo().trim() + "%" : null;
-        String status = StringUtils.hasText(normalizedQuery.status()) ? normalizedQuery.status().trim() : null;
 
         Long total = jdbcClient.sql("""
                         select count(*)
-                        from shop_order
-                        where (:status is null or status = :status)
-                          and (:orderNoLike is null or order_no like :orderNoLike)
+                        from shop_order o
+                        left join app_user u on u.id = o.user_id
+                        where o.status in (:statuses)
+                          and (:orderNoLike is null or o.order_no like :orderNoLike)
+                          and (:userId is null or o.user_id = :userId)
+                          and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:receiverNameLike is null or o.receiver_name like :receiverNameLike)
+                          and (:receiverPhoneLike is null or o.receiver_phone like :receiverPhoneLike)
+                          and (:createdStart is null or o.created_at >= :createdStart)
+                          and (:createdEnd is null or o.created_at <= :createdEnd)
+                          and (:trackingNoLike is null or exists (
+                              select 1 from order_shipment os
+                              where os.order_id = o.id and os.tracking_no like :trackingNoLike
+                          ))
                         """)
-                .param("status", status)
-                .param("orderNoLike", orderNoLike)
+                .param("statuses", filters.statuses())
+                .param("orderNoLike", filters.orderNoLike())
+                .param("userId", filters.userId())
+                .param("userPhone", filters.userPhone())
+                .param("receiverNameLike", filters.receiverNameLike())
+                .param("receiverPhoneLike", filters.receiverPhoneLike())
+                .param("createdStart", filters.createdStart())
+                .param("createdEnd", filters.createdEnd())
+                .param("trackingNoLike", filters.trackingNoLike())
                 .query(Long.class)
                 .single();
 
-        List<OrderSummaryResponse> records = jdbcClient.sql("""
+        List<AdminOrderSummaryResponse> records = jdbcClient.sql("""
                         select o.id as order_id,
                                o.order_no,
                                o.status,
@@ -75,27 +97,51 @@ public class AdminOrderService {
                                o.freight_cent,
                                o.payable_amount_cent,
                                o.paid_amount_cent,
-                               coalesce((
-                                   select oi.product_title
-                                   from order_item oi
-                                   where oi.order_id = o.id
-                                   order by oi.id asc
-                                   limit 1
-                               ), '') as product_title,
-                               coalesce((
-                                   select sum(oi.quantity)
-                                   from order_item oi
-                                   where oi.order_id = o.id
-                               ), 0) as item_count,
+                               o.receiver_name,
+                               o.receiver_phone,
+                               coalesce(first_item.product_title, '') as product_title,
+                               coalesce(first_item.product_subtitle, '') as product_subtitle,
+                               coalesce(first_item.main_image, '') as main_image,
+                               coalesce(first_item.sku_image, '') as sku_image,
+                               coalesce(first_item.display_image, '') as display_image,
+                               coalesce(first_item.spec_text, '') as spec_text,
+                               coalesce(first_item.quantity, 0) as first_item_quantity,
+                               coalesce(item_summary.item_count, 0) as item_count,
                                o.created_at
                         from shop_order o
-                        where (:status is null or o.status = :status)
+                        left join app_user u on u.id = o.user_id
+                        left join order_item first_item on first_item.id = (
+                            select min(oi.id) from order_item oi where oi.order_id = o.id
+                        )
+                        left join (
+                            select order_id, sum(quantity) as item_count
+                            from order_item
+                            group by order_id
+                        ) item_summary on item_summary.order_id = o.id
+                        where o.status in (:statuses)
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
+                          and (:userId is null or o.user_id = :userId)
+                          and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:receiverNameLike is null or o.receiver_name like :receiverNameLike)
+                          and (:receiverPhoneLike is null or o.receiver_phone like :receiverPhoneLike)
+                          and (:createdStart is null or o.created_at >= :createdStart)
+                          and (:createdEnd is null or o.created_at <= :createdEnd)
+                          and (:trackingNoLike is null or exists (
+                              select 1 from order_shipment os
+                              where os.order_id = o.id and os.tracking_no like :trackingNoLike
+                          ))
                         order by o.created_at desc, o.id desc
                         limit :limit offset :offset
                         """)
-                .param("status", status)
-                .param("orderNoLike", orderNoLike)
+                .param("statuses", filters.statuses())
+                .param("orderNoLike", filters.orderNoLike())
+                .param("userId", filters.userId())
+                .param("userPhone", filters.userPhone())
+                .param("receiverNameLike", filters.receiverNameLike())
+                .param("receiverPhoneLike", filters.receiverPhoneLike())
+                .param("createdStart", filters.createdStart())
+                .param("createdEnd", filters.createdEnd())
+                .param("trackingNoLike", filters.trackingNoLike())
                 .param("limit", size)
                 .param("offset", offset)
                 .query(this::mapOrderSummary)
@@ -104,33 +150,93 @@ public class AdminOrderService {
         return PageResult.of(records, total == null ? 0L : total, current, size);
     }
 
+    public AdminOrderStatusCountsResponse statusCounts(
+            AuthenticatedPrincipal principal,
+            AdminOrderQueryRequest query
+    ) {
+        requireAdminUser(principal);
+        OrderQueryFilters filters = normalizeFilters(normalizedQuery(query), false);
+        Map<String, Long> counts = new HashMap<>();
+        jdbcClient.sql("""
+                        select o.status, count(*) as status_count
+                        from shop_order o
+                        left join app_user u on u.id = o.user_id
+                        where (:orderNoLike is null or o.order_no like :orderNoLike)
+                          and (:userId is null or o.user_id = :userId)
+                          and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:receiverNameLike is null or o.receiver_name like :receiverNameLike)
+                          and (:receiverPhoneLike is null or o.receiver_phone like :receiverPhoneLike)
+                          and (:createdStart is null or o.created_at >= :createdStart)
+                          and (:createdEnd is null or o.created_at <= :createdEnd)
+                          and (:trackingNoLike is null or exists (
+                              select 1 from order_shipment os
+                              where os.order_id = o.id and os.tracking_no like :trackingNoLike
+                          ))
+                        group by o.status
+                        """)
+                .param("orderNoLike", filters.orderNoLike())
+                .param("userId", filters.userId())
+                .param("userPhone", filters.userPhone())
+                .param("receiverNameLike", filters.receiverNameLike())
+                .param("receiverPhoneLike", filters.receiverPhoneLike())
+                .param("createdStart", filters.createdStart())
+                .param("createdEnd", filters.createdEnd())
+                .param("trackingNoLike", filters.trackingNoLike())
+                .query((rs, rowNum) -> new StatusCountRow(rs.getString("status"), rs.getLong("status_count")))
+                .list()
+                .forEach(row -> counts.put(row.status(), row.count()));
+
+        return new AdminOrderStatusCountsResponse(
+                countForGroup(counts, AdminOrderStatusGroup.ALL),
+                countForGroup(counts, AdminOrderStatusGroup.UNPAID),
+                countForGroup(counts, AdminOrderStatusGroup.TO_SHIP),
+                countForGroup(counts, AdminOrderStatusGroup.TO_RECEIVE),
+                countForGroup(counts, AdminOrderStatusGroup.COMPLETED),
+                countForGroup(counts, AdminOrderStatusGroup.CLOSED),
+                countForGroup(counts, AdminOrderStatusGroup.REFUNDING),
+                countForGroup(counts, AdminOrderStatusGroup.REFUNDED)
+        );
+    }
+
     public OrderDetailResponse detail(AuthenticatedPrincipal principal, Long orderId) {
         requireAdminUser(principal);
         shippingUploadRecovery.reconcileOrder(orderId);
         OrderDetailHeader header = jdbcClient.sql("""
-                        select id as order_id,
-                               order_no,
-                               status,
-                               source,
-                               product_original_amount_cent,
-                               product_amount_cent,
-                               user_coupon_id,
-                               coupon_name,
-                               coupon_discount_cent,
-                               freight_cent,
-                               payable_amount_cent,
-                               paid_amount_cent,
-                               receiver_name,
-                               receiver_phone,
-                               receiver_address,
-                               payment_transaction_id,
-                               merchant_trade_no,
-                               paid_at,
-                               close_reason,
-                               closed_at,
-                               created_at
-                        from shop_order
-                        where id = :orderId
+                        select o.id as order_id,
+                               o.order_no,
+                               o.status,
+                               o.source,
+                               o.user_id,
+                               case when u.phone_authorized = true then u.phone_number else null end as user_phone,
+                               o.product_original_amount_cent,
+                               o.product_amount_cent,
+                               o.user_coupon_id,
+                               o.coupon_name,
+                               o.coupon_discount_cent,
+                               o.freight_cent,
+                               o.payable_amount_cent,
+                               o.paid_amount_cent,
+                               coalesce((
+                                   select sum(ro.refund_amount_cent)
+                                   from refund_order ro
+                                   where ro.order_id = o.id and ro.status = 'SUCCESS'
+                               ), 0) as refunded_amount_cent,
+                               o.receiver_name,
+                               o.receiver_phone,
+                               o.receiver_address,
+                               o.payment_transaction_id,
+                               o.merchant_trade_no,
+                               o.paid_at,
+                               o.close_reason,
+                               o.closed_at,
+                               o.created_at,
+                               o.shipped_at,
+                               o.completed_at,
+                               o.refunding_at,
+                               o.refunded_at
+                        from shop_order o
+                        left join app_user u on u.id = o.user_id
+                        where o.id = :orderId
                         """)
                 .param("orderId", orderId)
                 .query(this::mapOrderDetailHeader)
@@ -182,6 +288,8 @@ public class AdminOrderService {
                 header.orderNo(),
                 header.status(),
                 header.source(),
+                header.userId(),
+                header.userPhone(),
                 header.productOriginalAmountCent(),
                 header.productAmountCent(),
                 header.userCouponId(),
@@ -190,6 +298,8 @@ public class AdminOrderService {
                 header.freightCent(),
                 header.payableAmountCent(),
                 header.paidAmountCent(),
+                items.stream().mapToInt(OrderItemResponse::quantity).sum(),
+                header.refundedAmountCent(),
                 header.receiverName(),
                 header.receiverPhone(),
                 header.receiverAddress(),
@@ -202,9 +312,44 @@ public class AdminOrderService {
                 header.closeReason(),
                 header.closedAt(),
                 header.createdAt(),
+                header.shippedAt(),
+                header.completedAt(),
+                header.refundingAt(),
+                header.refundedAt(),
                 findShipment(orderId),
                 items
         );
+    }
+
+    public List<OrderStatusLogResponse> statusLogs(AuthenticatedPrincipal principal, Long orderId) {
+        requireAdminUser(principal);
+        Integer exists = jdbcClient.sql("select count(*) from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single();
+        if (exists == null || exists == 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return jdbcClient.sql("""
+                        select id, order_id, from_status, to_status, event_type,
+                               operator_type, operator_id, description, created_at
+                        from order_status_log
+                        where order_id = :orderId
+                        order by created_at asc, id asc
+                        """)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new OrderStatusLogResponse(
+                        rs.getLong("id"),
+                        rs.getLong("order_id"),
+                        rs.getString("from_status"),
+                        rs.getString("to_status"),
+                        rs.getString("event_type"),
+                        rs.getString("operator_type"),
+                        rs.getObject("operator_id", Long.class),
+                        rs.getString("description"),
+                        rs.getObject("created_at", LocalDateTime.class)
+                ))
+                .list();
     }
 
     public void closeCreatedOrder(AuthenticatedPrincipal principal, Long orderId) {
@@ -219,8 +364,8 @@ public class AdminOrderService {
         return principal.subjectId();
     }
 
-    private OrderSummaryResponse mapOrderSummary(ResultSet rs, int rowNum) throws SQLException {
-        return new OrderSummaryResponse(
+    private AdminOrderSummaryResponse mapOrderSummary(ResultSet rs, int rowNum) throws SQLException {
+        return new AdminOrderSummaryResponse(
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getString("status"),
@@ -229,7 +374,15 @@ public class AdminOrderService {
                 rs.getLong("freight_cent"),
                 rs.getLong("payable_amount_cent"),
                 rs.getLong("paid_amount_cent"),
+                rs.getString("receiver_name"),
+                rs.getString("receiver_phone"),
                 rs.getString("product_title"),
+                rs.getString("product_subtitle"),
+                rs.getString("main_image"),
+                rs.getString("sku_image"),
+                rs.getString("display_image"),
+                rs.getString("spec_text"),
+                rs.getInt("first_item_quantity"),
                 rs.getInt("item_count"),
                 rs.getObject("created_at", LocalDateTime.class)
         );
@@ -241,6 +394,8 @@ public class AdminOrderService {
                 rs.getString("order_no"),
                 rs.getString("status"),
                 rs.getString("source"),
+                rs.getLong("user_id"),
+                rs.getString("user_phone"),
                 rs.getLong("product_original_amount_cent"),
                 rs.getLong("product_amount_cent"),
                 rs.getObject("user_coupon_id", Long.class),
@@ -249,6 +404,7 @@ public class AdminOrderService {
                 rs.getLong("freight_cent"),
                 rs.getLong("payable_amount_cent"),
                 rs.getLong("paid_amount_cent"),
+                rs.getLong("refunded_amount_cent"),
                 rs.getString("receiver_name"),
                 rs.getString("receiver_phone"),
                 rs.getString("receiver_address"),
@@ -257,8 +413,78 @@ public class AdminOrderService {
                 rs.getObject("paid_at", LocalDateTime.class),
                 rs.getString("close_reason"),
                 rs.getObject("closed_at", LocalDateTime.class),
-                rs.getObject("created_at", LocalDateTime.class)
+                rs.getObject("created_at", LocalDateTime.class),
+                rs.getObject("shipped_at", LocalDateTime.class),
+                rs.getObject("completed_at", LocalDateTime.class),
+                rs.getObject("refunding_at", LocalDateTime.class),
+                rs.getObject("refunded_at", LocalDateTime.class)
         );
+    }
+
+    private AdminOrderQueryRequest normalizedQuery(AdminOrderQueryRequest query) {
+        return query == null
+                ? new AdminOrderQueryRequest(
+                        null, null, null, null, null, null,
+                        null, null, null, null, null, null
+                )
+                : query;
+    }
+
+    private OrderQueryFilters normalizeFilters(AdminOrderQueryRequest query, boolean includeStatus) {
+        List<String> statuses = Arrays.stream(OrderStatus.values()).map(Enum::name).toList();
+        if (includeStatus && StringUtils.hasText(query.status())) {
+            try {
+                statuses = List.of(OrderStatus.valueOf(query.status().trim()).name());
+            } catch (IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+        } else if (includeStatus && StringUtils.hasText(query.statusGroup())) {
+            try {
+                statuses = AdminOrderStatusGroup.valueOf(query.statusGroup().trim()).statuses();
+            } catch (IllegalArgumentException ex) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+        }
+
+        Long userId = null;
+        String userPhone = null;
+        if (StringUtils.hasText(query.userKeyword())) {
+            String keyword = query.userKeyword().trim();
+            if ("USER_ID".equals(query.userSearchType())) {
+                try {
+                    userId = Long.valueOf(keyword);
+                } catch (NumberFormatException ex) {
+                    throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+                }
+            } else if ("USER_PHONE".equals(query.userSearchType())) {
+                userPhone = keyword;
+            } else {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+        }
+        if (query.createdStart() != null && query.createdEnd() != null
+                && query.createdStart().isAfter(query.createdEnd())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return new OrderQueryFilters(
+                like(query.orderNo()),
+                statuses,
+                userId,
+                userPhone,
+                like(query.receiverName()),
+                like(query.receiverPhone()),
+                query.createdStart(),
+                query.createdEnd(),
+                like(query.trackingNo())
+        );
+    }
+
+    private String like(String value) {
+        return StringUtils.hasText(value) ? "%" + value.trim() + "%" : null;
+    }
+
+    private long countForGroup(Map<String, Long> counts, AdminOrderStatusGroup group) {
+        return group.statuses().stream().mapToLong(status -> counts.getOrDefault(status, 0L)).sum();
     }
 
     private OrderItemResponse mapOrderItem(ResultSet rs, int rowNum) throws SQLException {
@@ -389,6 +615,8 @@ public class AdminOrderService {
             String orderNo,
             String status,
             String source,
+            Long userId,
+            String userPhone,
             Long productOriginalAmountCent,
             Long productAmountCent,
             Long userCouponId,
@@ -397,6 +625,7 @@ public class AdminOrderService {
             Long freightCent,
             Long payableAmountCent,
             Long paidAmountCent,
+            Long refundedAmountCent,
             String receiverName,
             String receiverPhone,
             String receiverAddress,
@@ -405,8 +634,28 @@ public class AdminOrderService {
             LocalDateTime paidAt,
             String closeReason,
             LocalDateTime closedAt,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            LocalDateTime shippedAt,
+            LocalDateTime completedAt,
+            LocalDateTime refundingAt,
+            LocalDateTime refundedAt
     ) {
+    }
+
+    private record OrderQueryFilters(
+            String orderNoLike,
+            List<String> statuses,
+            Long userId,
+            String userPhone,
+            String receiverNameLike,
+            String receiverPhoneLike,
+            LocalDateTime createdStart,
+            LocalDateTime createdEnd,
+            String trackingNoLike
+    ) {
+    }
+
+    private record StatusCountRow(String status, Long count) {
     }
 
     private record PaymentOrderSnapshot(

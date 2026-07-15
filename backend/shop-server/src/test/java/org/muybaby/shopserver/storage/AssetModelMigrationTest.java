@@ -20,7 +20,7 @@ public class AssetModelMigrationTest {
     private static final long LEGACY_FILE_ID = 917001L;
 
     @Test
-    void populatedH2SchemaMigratesFromV16ThroughV18WithAStorageCleanBreak() throws SQLException {
+    void populatedH2SchemaMigratesFromV16ToLatestWithAStorageCleanBreak() throws SQLException {
         String databaseName = "asset_model_" + UUID.randomUUID().toString().replace("-", "");
         String jdbcUrl = "jdbc:h2:mem:" + databaseName
                 + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
@@ -172,7 +172,7 @@ public class AssetModelMigrationTest {
         Flyway flyway = Flyway.configure()
                 .dataSource(jdbcUrl, username, password)
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("19");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("21");
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password);
              Statement statement = connection.createStatement()) {

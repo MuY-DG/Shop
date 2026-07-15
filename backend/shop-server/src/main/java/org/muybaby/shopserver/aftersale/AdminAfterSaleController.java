@@ -2,6 +2,8 @@ package org.muybaby.shopserver.aftersale;
 
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleAuditRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleQueryRequest;
+import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleStatusCountsResponse;
+import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleSummaryResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.service.AdminAfterSaleService;
 import org.muybaby.shopserver.common.api.ApiResponse;
@@ -30,11 +32,20 @@ public class AdminAfterSaleController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('aftersale:read')")
-    public ApiResponse<PageResult<AfterSaleResponse>> page(
+    public ApiResponse<PageResult<AdminAfterSaleSummaryResponse>> page(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             AdminAfterSaleQueryRequest query
     ) {
         return ApiResponse.success(adminAfterSaleService.page(principal, query));
+    }
+
+    @GetMapping("/status-counts")
+    @PreAuthorize("hasAuthority('aftersale:read')")
+    public ApiResponse<AdminAfterSaleStatusCountsResponse> statusCounts(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            AdminAfterSaleQueryRequest query
+    ) {
+        return ApiResponse.success(adminAfterSaleService.statusCounts(principal, query));
     }
 
     @GetMapping("/{afterSaleId}")

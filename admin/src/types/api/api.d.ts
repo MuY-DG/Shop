@@ -847,6 +847,16 @@ declare namespace Api {
       | 'CLOSED'
       | 'REFUNDING'
       | 'REFUNDED'
+    type AdminOrderStatusGroup =
+      | 'ALL'
+      | 'UNPAID'
+      | 'TO_SHIP'
+      | 'TO_RECEIVE'
+      | 'COMPLETED'
+      | 'CLOSED'
+      | 'REFUNDING'
+      | 'REFUNDED'
+    type UserSearchType = 'USER_ID' | 'USER_PHONE'
     type OrderSource = 'CART' | 'DIRECT' | 'MINI_PROGRAM'
     type LogisticsType = 1 | 2 | 3 | 4
     type DeliveryMode = 1
@@ -872,7 +882,15 @@ declare namespace Api {
       freightCent: number
       payableAmountCent: number
       paidAmountCent: number
+      receiverName: string | null
+      receiverPhone: string | null
       productTitle: string
+      productSubtitle: string | null
+      mainImage: string | null
+      skuImage: string | null
+      displayImage: string | null
+      specText: string | null
+      firstItemQuantity: number
       itemCount: number
       createdAt: string
     }
@@ -881,8 +899,39 @@ declare namespace Api {
       Api.Common.CommonSearchParams & {
         orderNo: string
         status: OrderStatus
+        statusGroup: AdminOrderStatusGroup
+        userSearchType: UserSearchType
+        userKeyword: string
+        receiverName: string
+        receiverPhone: string
+        createdStart: string
+        createdEnd: string
+        trackingNo: string
       }
     >
+
+    interface OrderStatusCounts {
+      all: number
+      unpaid: number
+      toShip: number
+      toReceive: number
+      completed: number
+      closed: number
+      refunding: number
+      refunded: number
+    }
+
+    interface OrderStatusLog {
+      id: number
+      orderId: number
+      fromStatus: OrderStatus | null
+      toStatus: OrderStatus
+      eventType: string
+      operatorType: string
+      operatorId: number | null
+      description: string | null
+      createdAt: string
+    }
 
     interface OrderItem {
       orderItemId: number
@@ -907,6 +956,8 @@ declare namespace Api {
       orderNo: string
       status: OrderStatus
       source: OrderSource | string
+      userId: number
+      userPhone: string | null
       productOriginalAmountCent: number
       productAmountCent: number
       userCouponId: number | null
@@ -915,6 +966,8 @@ declare namespace Api {
       freightCent: number
       payableAmountCent: number
       paidAmountCent: number
+      itemCount: number
+      refundedAmountCent: number
       receiverName: string | null
       receiverPhone: string | null
       receiverAddress: string | null
@@ -928,6 +981,10 @@ declare namespace Api {
       closeReason: string | null
       closedAt: string | null
       createdAt: string
+      shippedAt: string | null
+      completedAt: string | null
+      refundingAt: string | null
+      refundedAt: string | null
       items: OrderItem[]
     }
 
@@ -1052,12 +1109,49 @@ declare namespace Api {
       | 'REFUNDED'
       | 'REFUND_FAILED'
     type RefundOrderStatus = 'PROCESSING' | 'SUCCESS' | 'FAILED'
+    type AdminAfterSaleStatusGroup =
+      | 'ALL'
+      | 'PENDING_REVIEW'
+      | 'REFUNDING'
+      | 'REFUNDED'
+      | 'REJECTED'
+      | 'REFUND_FAILED'
+    type UserSearchType = 'USER_ID' | 'USER_PHONE'
 
-    type List = Api.Common.PaginatedResponse<Item>
+    type List = Api.Common.PaginatedResponse<Summary>
 
     interface SearchParams extends Partial<Api.Common.CommonSearchParams> {
       status?: AfterSaleStatus
+      statusGroup?: AdminAfterSaleStatusGroup
+      afterSaleId?: number
       orderNo?: string
+      userSearchType?: UserSearchType
+      userKeyword?: string
+      afterSaleType?: AfterSaleType
+      createdStart?: string
+      createdEnd?: string
+      refundNo?: string
+    }
+
+    interface StatusCounts {
+      all: number
+      pendingReview: number
+      refunding: number
+      refunded: number
+      rejected: number
+      refundFailed: number
+    }
+
+    interface Summary {
+      id: number
+      orderId: number
+      orderNo: string
+      userId: string
+      afterSaleType: AfterSaleType | string
+      status: AfterSaleStatus | string
+      reason: string
+      requestedAmountCent: number
+      createdAt: string
     }
 
     interface Item {

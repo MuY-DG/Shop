@@ -49,6 +49,7 @@ class AdminOrderControllerTest {
 
     @BeforeEach
     void clearOrderState() {
+        jdbcClient.sql("delete from order_status_log").update();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from order_shipment").update();
         jdbcClient.sql("delete from stock_lock").update();
@@ -105,6 +106,97 @@ class AdminOrderControllerTest {
     }
 
     @Test
+    void adminCanUseBusinessStatusTabsAndRichOrderFilters() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long userId = appLogin("admin-order-v2-filter-user").userId();
+        long otherUserId = appLogin("admin-order-v2-other-user").userId();
+        long skuId = createPublishedSku("ADMIN-V2-FILTER-SKU", 3990L, 4990L, 20, "ENABLED");
+
+        jdbcClient.sql("update app_user set phone_number = '13900001111', phone_authorized = true where id = :userId")
+                .param("userId", userId)
+                .update();
+        insertOrderSnapshot(9111L, "ADM-V2-CREATED", OrderStatus.CREATED.name(), userId, skuId, 9211L, "Admin V2 Created");
+        insertOrderSnapshot(9112L, "ADM-V2-PAYING", OrderStatus.PAYING.name(), userId, skuId, 9212L, "Admin V2 Paying");
+        insertOrderSnapshot(9113L, "ADM-V2-PAID", OrderStatus.PAID.name(), userId, skuId, 9213L, "Admin V2 Paid");
+        insertOrderSnapshot(9114L, "ADM-V2-OTHER", OrderStatus.CREATED.name(), otherUserId, skuId, 9214L, "Admin V2 Other");
+
+        jdbcClient.sql("""
+                        update shop_order
+                        set receiver_name = '筛选收货人', receiver_phone = '13800138001',
+                            receiver_address = '广东省广州市测试路 1 号'
+                        where id in (9111, 9112, 9113)
+                        """).update();
+        insertShipment(9113L, "SF-V2-TRACKING-001");
+
+        mockMvc.perform(get("/admin/orders")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("statusGroup", "UNPAID")
+                        .param("userSearchType", "USER_ID")
+                        .param("userKeyword", String.valueOf(userId))
+                        .param("receiverName", "筛选")
+                        .param("receiverPhone", "13800138001")
+                        .param("createdStart", "2026-07-07 00:00:00")
+                        .param("createdEnd", "2026-07-08 00:00:00"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.records[0].receiverName").value("筛选收货人"))
+                .andExpect(jsonPath("$.data.records[0].receiverPhone").value("13800138001"))
+                .andExpect(jsonPath("$.data.records[0].productSubtitle").value("Seed subtitle"))
+                .andExpect(jsonPath("$.data.records[0].displayImage").value("https://example.test/order-sku.jpg"))
+                .andExpect(jsonPath("$.data.records[0].specText").value("300g"));
+
+        mockMvc.perform(get("/admin/orders/status-counts")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("userSearchType", "USER_PHONE")
+                        .param("userKeyword", "13900001111")
+                        .param("receiverName", "筛选"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.all").value(3))
+                .andExpect(jsonPath("$.data.unpaid").value(2))
+                .andExpect(jsonPath("$.data.toShip").value(1))
+                .andExpect(jsonPath("$.data.toReceive").value(0));
+
+        mockMvc.perform(get("/admin/orders")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("statusGroup", "TO_SHIP")
+                        .param("trackingNo", "TRACKING-001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].orderId").value(9113));
+    }
+
+    @Test
+    void adminCanReadDurableOrderStatusRecords() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long userId = appLogin("admin-order-v2-history-user").userId();
+        long skuId = createPublishedSku("ADMIN-V2-HISTORY-SKU", 3990L, 4990L, 10, "ENABLED");
+        insertOrderSnapshot(9121L, "ADM-V2-HISTORY", OrderStatus.PAID.name(), userId, skuId, 9221L, "Admin V2 History");
+
+        jdbcClient.sql("""
+                        insert into order_status_log
+                            (order_id, from_status, to_status, event_type, operator_type,
+                             operator_id, description, created_at)
+                        values
+                            (9121, '', 'CREATED', 'ORDER_CREATED', 'APP_USER', :userId,
+                             '订单创建', timestamp '2026-07-07 12:30:00'),
+                            (9121, 'PAYING', 'PAID', 'PAYMENT_SUCCEEDED', 'WECHAT', null,
+                             '微信支付成功', timestamp '2026-07-07 12:35:00')
+                        """)
+                .param("userId", userId)
+                .update();
+
+        mockMvc.perform(get("/admin/orders/{orderId}/status-logs", 9121L)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].eventType").value("ORDER_CREATED"))
+                .andExpect(jsonPath("$.data[0].toStatus").value("CREATED"))
+                .andExpect(jsonPath("$.data[0].operatorType").value("APP_USER"))
+                .andExpect(jsonPath("$.data[1].eventType").value("PAYMENT_SUCCEEDED"))
+                .andExpect(jsonPath("$.data[1].toStatus").value("PAID"));
+    }
+
+    @Test
     void adminCanReadOrderDetailSnapshots() throws Exception {
         String adminToken = adminLoginAndExtractToken();
         long userId = appLogin("admin-order-detail-user").userId();
@@ -115,6 +207,9 @@ class AdminOrderControllerTest {
         jdbcClient.sql("update shop_order set receiver_address = :receiverAddress where id = 9301")
                 .param("receiverAddress", receiverAddress)
                 .update();
+        jdbcClient.sql("update app_user set phone_number = '13900002222', phone_authorized = true where id = :userId")
+                .param("userId", userId)
+                .update();
 
         mockMvc.perform(get("/admin/orders/{orderId}", 9301L)
                         .header("Authorization", "Bearer " + adminToken))
@@ -122,11 +217,15 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data.orderId").value(9301))
                 .andExpect(jsonPath("$.data.orderNo").value("ADM-DETAIL-ORDER"))
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
+                .andExpect(jsonPath("$.data.userId").value(userId))
+                .andExpect(jsonPath("$.data.userPhone").value("13900002222"))
                 .andExpect(jsonPath("$.data.receiverAddress").value(receiverAddress))
                 .andExpect(jsonPath("$.data.productOriginalAmountCent").value(9980))
                 .andExpect(jsonPath("$.data.productAmountCent").value(7980))
                 .andExpect(jsonPath("$.data.couponDiscountCent").value(500))
                 .andExpect(jsonPath("$.data.payableAmountCent").value(7480))
+                .andExpect(jsonPath("$.data.itemCount").value(2))
+                .andExpect(jsonPath("$.data.refundedAmountCent").value(0))
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].orderItemId").value(9401))
                 .andExpect(jsonPath("$.data.items[0].skuId").value(skuId))
@@ -259,6 +358,16 @@ class AdminOrderControllerTest {
                 .param("userCouponId", seed.userCouponId())
                 .query(LocalDateTime.class)
                 .single()).isNotNull();
+        assertThat(jdbcClient.sql("""
+                        select to_status
+                        from order_status_log
+                        where order_id = :orderId
+                        order by created_at desc, id desc
+                        limit 1
+                        """)
+                .param("orderId", seed.orderId())
+                .query(String.class)
+                .single()).isEqualTo(OrderStatus.CLOSED.name());
 
         String cartResponse = addCartItem(seed.appToken(), seed.skuId(), 1);
         long cartItemId = objectMapper.readTree(cartResponse).path("data").path("id").asLong();
@@ -554,6 +663,21 @@ class AdminOrderControllerTest {
                 .param("transactionId", transactionId)
                 .param("status", status)
                 .param("paidAt", LocalDateTime.parse(paidAt.replace(" ", "T")))
+                .update();
+    }
+
+    private void insertShipment(long orderId, String trackingNo) {
+        jdbcClient.sql("""
+                        insert into order_shipment
+                            (order_id, express_company_name, tracking_no, status,
+                             wechat_upload_status, shipped_at, created_at, updated_at)
+                        values
+                            (:orderId, '顺丰速运', :trackingNo, 'SHIPPED',
+                             'SKIPPED', timestamp '2026-07-07 13:00:00',
+                             timestamp '2026-07-07 13:00:00', timestamp '2026-07-07 13:00:00')
+                        """)
+                .param("orderId", orderId)
+                .param("trackingNo", trackingNo)
                 .update();
     }
 
