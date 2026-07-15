@@ -873,6 +873,14 @@ declare namespace Api {
 
     type OrderList = Api.Common.PaginatedResponse<OrderListItem>
 
+    interface ActiveAfterSaleSummary {
+      afterSaleId: number
+      afterSaleType: string
+      status: string
+      requestedAmountCent: number
+      createdAt: string
+    }
+
     interface OrderListItem {
       orderId: number
       orderNo: string
@@ -892,6 +900,8 @@ declare namespace Api {
       specText: string | null
       firstItemQuantity: number
       itemCount: number
+      canShip: boolean
+      activeAfterSale: ActiveAfterSaleSummary | null
       createdAt: string
     }
 
@@ -977,6 +987,8 @@ declare namespace Api {
       transactionId?: string | null
       paymentStatus?: string | null
       paidAt?: string | null
+      canShip: boolean
+      activeAfterSale: ActiveAfterSaleSummary | null
       shipment?: Shipment | null
       closeReason: string | null
       closedAt: string | null

@@ -284,7 +284,7 @@
     >
       <ElAlert
         v-if="auditMode === 'approve'"
-        title="审核通过后将立即向微信发起退款，请确认退款金额。"
+        title="当前按整单全额退款执行；审核通过后将立即向微信发起退款，金额不可修改。"
         type="warning"
         :closable="false"
         show-icon
@@ -304,6 +304,7 @@
             :precision="2"
             :step="1"
             controls-position="right"
+            disabled
             style="width: 100%"
           />
         </ElFormItem>
@@ -337,7 +338,7 @@
 
 <script setup lang="ts">
   import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-  import { useRouter } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
   import { ArrowDown, Tickets } from '@element-plus/icons-vue'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useAuth } from '@/hooks/core/useAuth'
@@ -378,6 +379,7 @@
     requestedAmountCent: number
   }
 
+  const route = useRoute()
   const router = useRouter()
   const { hasAuth } = useAuth()
   const detailLoading = ref(false)
@@ -393,8 +395,13 @@
   const detailRequestSeq = ref(0)
   const auditFormRef = ref<FormInstance>()
 
+  const routeAfterSaleId = () => {
+    const value = route.query.afterSaleId
+    return typeof value === 'string' && /^\d+$/.test(value) ? value : undefined
+  }
+
   const createInitialSearchForm = (): AfterSaleSearchForm => ({
-    afterSaleId: undefined,
+    afterSaleId: routeAfterSaleId(),
     orderNo: undefined,
     userSearchType: 'USER_ID',
     userKeyword: undefined,
@@ -604,7 +611,12 @@
   } = useTable({
     core: {
       apiFn: fetchAfterSales,
-      apiParams: { current: 1, size: 20, statusGroup: 'ALL' },
+      apiParams: {
+        current: 1,
+        size: 20,
+        statusGroup: 'ALL',
+        afterSaleId: routeAfterSaleId() ? Number(routeAfterSaleId()) : undefined
+      },
       columnsFactory: () => [
         {
           prop: 'id',
@@ -619,14 +631,16 @@
           formatter: (row) => h('span', { class: 'order-no-cell' }, row.orderNo)
         },
         {
+          prop: 'afterSaleType',
+          label: '退款类型',
+          width: 120,
+          formatter: (row) => formatAfterSaleType(row.afterSaleType)
+        },
+        {
           prop: 'reason',
           label: '售后信息',
-          minWidth: 280,
-          formatter: (row) =>
-            h('div', { class: 'aftersale-info-cell' }, [
-              h('div', { class: 'title' }, formatAfterSaleType(row.afterSaleType)),
-              h('div', { class: 'subtitle' }, row.reason || '-')
-            ])
+          minWidth: 180,
+          formatter: (row) => row.reason || '-'
         },
         {
           prop: 'requestedAmountCent',
@@ -682,6 +696,23 @@
   const handleRefresh = async () => {
     await Promise.all([refreshData(), loadStatusCounts()])
   }
+
+  watch(
+    () => route.query.afterSaleId,
+    async () => {
+      const afterSaleId = routeAfterSaleId()
+      if (
+        route.path !== '/trade/after-sales' ||
+        !afterSaleId ||
+        afterSaleId === searchForm.value.afterSaleId
+      ) {
+        return
+      }
+      searchForm.value = createInitialSearchForm()
+      activeStatusGroup.value = 'ALL'
+      await applyCurrentSearch()
+    }
+  )
 
   const isPreviewableImage = (file: Api.AfterSale.EvidenceFile) =>
     file.status === 'ACTIVE' && file.contentType?.toLowerCase().startsWith('image/')
@@ -791,7 +822,7 @@
     try {
       if (isApprove) {
         await approveAfterSale(target.id, {
-          approvedAmountCent: Math.round(auditForm.approvedAmountYuan * 100),
+          approvedAmountCent: target.requestedAmountCent,
           auditNote
         })
       } else {
@@ -853,30 +884,6 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 13px;
     color: var(--el-text-color-primary);
-  }
-
-  .aftersale-info-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-
-    .title,
-    .subtitle {
-      overflow: hidden;
-      line-height: 20px;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .title {
-      color: var(--el-text-color-primary);
-    }
-
-    .subtitle {
-      font-size: 12px;
-      color: var(--el-text-color-secondary);
-    }
   }
 
   .aftersale-detail {

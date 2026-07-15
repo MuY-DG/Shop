@@ -114,15 +114,6 @@
               调库存
             </ElButton>
             <ElButton
-              v-auth="'product:spu:publish'"
-              :type="row.status === 'ON_SALE' ? 'warning' : 'success'"
-              :loading="statusUpdatingIds.has(row.id)"
-              link
-              @click="requestProductStatus(row, row.status !== 'ON_SALE')"
-            >
-              {{ row.status === 'ON_SALE' ? '下架' : '上架' }}
-            </ElButton>
-            <ElButton
               v-auth="'product:spu:delete'"
               type="danger"
               :loading="deletingIds.has(row.id)"
@@ -207,6 +198,7 @@
   interface CategoryOption {
     label: string
     value: number
+    children?: CategoryOption[]
   }
 
   const route = useRoute()
@@ -281,16 +273,14 @@
   const getStatusConfig = (row: Api.Product.SpuListItem) => statusMap[row.status]
 
   const categoryOptions = computed<CategoryOption[]>(() => {
-    const result: CategoryOption[] = []
-    const walk = (nodes: Api.Product.Category[], prefix = '') => {
-      nodes.forEach((item) => {
-        const label = prefix ? `${prefix} / ${item.name}` : item.name
-        result.push({ label, value: item.id })
-        walk(item.children || [], label)
-      })
-    }
-    walk(categories.value)
-    return result
+    const toOptions = (nodes: Api.Product.Category[]): CategoryOption[] =>
+      nodes.map((item) => ({
+        label: item.name,
+        value: item.id,
+        children: item.children?.length ? toOptions(item.children) : undefined
+      }))
+
+    return toOptions(categories.value)
   })
 
   const searchItems = computed<SearchFormItem[]>(() => [
@@ -306,11 +296,17 @@
     {
       label: '商品分类',
       key: 'categoryId',
-      type: 'select',
+      type: 'cascader',
       props: {
         clearable: true,
         placeholder: '请选择分类',
-        options: categoryOptions.value
+        options: categoryOptions.value,
+        showAllLevels: true,
+        props: {
+          emitPath: false,
+          checkStrictly: true,
+          expandTrigger: 'hover'
+        }
       }
     }
   ])
@@ -378,13 +374,14 @@
         },
         {
           prop: 'title',
-          label: '商品信息',
-          minWidth: 220,
-          formatter: (row) =>
-            h('div', { class: 'spu-title-cell' }, [
-              h('div', { class: 'title' }, row.title),
-              h('div', { class: 'subtitle' }, `${row.skuCount ?? 0} 个规格`)
-            ])
+          label: '商品名称',
+          minWidth: 180
+        },
+        {
+          prop: 'skuCount',
+          label: '规格',
+          width: 110,
+          formatter: (row) => `${row.skuCount ?? 0} 个规格`
         },
         {
           prop: 'categoryName',
@@ -440,7 +437,7 @@
         {
           prop: 'operation',
           label: '操作',
-          width: 270,
+          width: 210,
           fixed: 'right',
           useSlot: true
         }
@@ -704,23 +701,6 @@
 
   .product-table-card {
     margin-top: 12px;
-  }
-
-  .spu-title-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-
-    .title {
-      line-height: 20px;
-      color: var(--el-text-color-primary);
-    }
-
-    .subtitle {
-      font-size: 12px;
-      line-height: 18px;
-      color: var(--el-text-color-secondary);
-    }
   }
 
   .sales-value {

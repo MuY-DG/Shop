@@ -68,6 +68,9 @@ class AdminShipmentControllerTest {
     void clearShipmentState() {
         jdbcClient.sql("delete from order_shipment").update();
         jdbcClient.sql("delete from payment_callback_log").update();
+        jdbcClient.sql("delete from refund_order").update();
+        jdbcClient.sql("delete from after_sale_evidence").update();
+        jdbcClient.sql("delete from after_sale_request").update();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from stock_lock").update();
         jdbcClient.sql("delete from order_item").update();
@@ -127,6 +130,55 @@ class AdminShipmentControllerTest {
                 .param("orderId", orderId)
                 .query(Integer.class)
                 .single()).isZero();
+    }
+
+    @Test
+    void activeAfterSaleBlocksShipmentUntilTheRequestIsRejected() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        AppLoginSession session = appLogin("ship-after-sale-hold-user");
+        long orderId = insertPaidOrder(session, "SHIP-AFTER-SALE-HOLD", "wx-ship-after-sale-hold");
+        jdbcClient.sql("""
+                        insert into after_sale_request
+                            (order_id, user_id, after_sale_type, status, reason, description,
+                             requested_amount_cent, created_at, updated_at)
+                        values
+                            (:orderId, :userId, 'REFUND_ONLY', 'REQUESTED', '整单退款', '',
+                             3980, timestamp '2026-07-08 10:20:00', timestamp '2026-07-08 10:20:00')
+                        """)
+                .param("orderId", orderId)
+                .param("userId", session.userId())
+                .update();
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("PAID");
+
+        jdbcClient.sql("""
+                        update after_sale_request
+                        set status = 'REJECTED', updated_at = timestamp '2026-07-08 10:30:00'
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .update();
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.orderId").value(orderId));
     }
 
     @Test

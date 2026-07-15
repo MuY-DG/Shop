@@ -101,6 +101,24 @@
             </div>
           </div>
 
+          <ElAlert
+            v-if="currentDetail.activeAfterSale"
+            :title="formatAfterSaleHoldTitle(currentDetail.status)"
+            :description="formatAfterSaleHold(currentDetail.activeAfterSale)"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="aftersale-hold-alert"
+          >
+            <ElButton
+              type="warning"
+              link
+              @click="openActiveAfterSale(currentDetail.activeAfterSale.afterSaleId)"
+            >
+              查看售后单 #{{ currentDetail.activeAfterSale.afterSaleId }}
+            </ElButton>
+          </ElAlert>
+
           <ElTabs v-model="detailActiveTab" class="order-detail-tabs">
             <ElTabPane label="订单信息" name="orderInfo">
               <div class="detail-section">
@@ -305,12 +323,19 @@
         <div class="order-detail__footer">
           <ElButton @click="drawerVisible = false">关闭</ElButton>
           <ElButton
-            v-if="currentDetail?.status === 'PAID'"
+            v-if="currentDetail?.canShip"
             v-auth="'order:ship'"
             type="success"
             @click="openShipDialog(currentDetail.orderId, currentDetail.orderNo)"
           >
             发货
+          </ElButton>
+          <ElButton
+            v-else-if="currentDetail?.status === 'PAID' && currentDetail.activeAfterSale"
+            type="warning"
+            disabled
+          >
+            售后处理中，暂停发货
           </ElButton>
           <ElButton
             v-if="
@@ -517,7 +542,7 @@
 
 <script setup lang="ts">
   import { computed, h, onMounted, reactive, ref, watch } from 'vue'
-  import { useRoute } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
   import { ArrowDown, Tickets } from '@element-plus/icons-vue'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useAuth } from '@/hooks/core/useAuth'
@@ -567,6 +592,7 @@
 
   const { hasAuth } = useAuth()
   const route = useRoute()
+  const router = useRouter()
 
   const drawerVisible = ref(false)
   const drawerLoading = ref(false)
@@ -674,6 +700,22 @@
     REFUNDING: { type: 'warning', text: '退款中' },
     REFUNDED: { type: 'danger', text: '已退款' }
   }
+
+  const afterSaleStatusMap: Record<string, string> = {
+    REQUESTED: '待审核',
+    APPROVED: '退款处理中',
+    REFUNDING: '退款中',
+    REFUND_FAILED: '退款失败'
+  }
+
+  const formatAfterSaleStatus = (status: string) => afterSaleStatusMap[status] || status
+  const formatAfterSaleHoldTitle = (orderStatus: Api.Order.OrderStatus) => {
+    if (orderStatus === 'PAID') return '订单存在进行中售后，已暂停发货'
+    if (orderStatus === 'SHIPPED') return '订单存在进行中售后，已暂停确认收货'
+    return '订单存在进行中售后，退款流程处理中'
+  }
+  const formatAfterSaleHold = (afterSale: Api.Order.ActiveAfterSaleSummary) =>
+    `售后单 #${afterSale.afterSaleId} · 整单仅退款 · ${formatAfterSaleStatus(afterSale.status)} · ${formatMoney(afterSale.requestedAmountCent)}`
 
   const shippingUploadStatusMap: Record<
     Api.Order.WechatShippingUploadStatus,
@@ -1082,10 +1124,34 @@
         {
           prop: 'status',
           label: '订单状态',
-          width: 110,
+          width: 150,
           formatter: (row) => {
             const config = statusMap[row.status]
-            return h(ElTag, { type: config?.type || 'info' }, () => config?.text || row.status)
+            const activeAfterSale = row.activeAfterSale
+            const tags = [
+              h(ElTag, { type: config?.type || 'info' }, () => config?.text || row.status)
+            ]
+            if (activeAfterSale) {
+              tags.push(
+                h(
+                  ElTag,
+                  { type: 'warning', effect: 'plain' },
+                  () => `售后${formatAfterSaleStatus(activeAfterSale.status)}`
+                )
+              )
+            }
+            return h(
+              'div',
+              {
+                style: {
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: '6px'
+                }
+              },
+              tags
+            )
           }
         },
         {
@@ -1157,6 +1223,10 @@
     if (command === 'records') void openOrderRecords(row.orderId, row.orderNo)
   }
 
+  const openActiveAfterSale = (afterSaleId: number) => {
+    void router.push({ path: '/trade/after-sales', query: { afterSaleId: String(afterSaleId) } })
+  }
+
   onMounted(() => void loadStatusCounts())
 
   const loadOrderDetail = async (orderId: number) => {
@@ -1223,13 +1293,17 @@
 
   const openShipDialog = async (orderId: number, orderNo: string) => {
     if (!canLoadWechatShippingCatalog(hasAuth('order:ship'))) return
+    const cachedDetail = currentDetail.value?.orderId === orderId ? currentDetail.value : null
+    if (cachedDetail && !cachedDetail.canShip) {
+      ElMessage.warning('订单存在进行中售后，已暂停发货')
+      return
+    }
     const generation = ++shipDialogGeneration.value
     shipDialogClosingGeneration.value = null
     shipTargetOrderId.value = orderId
     shipTargetOrderNo.value = orderNo
     shipSubmitting.value = false
     carrierSyncing.value = false
-    const cachedDetail = currentDetail.value?.orderId === orderId ? currentDetail.value : null
     resetShipForm(cachedDetail)
     wechatShippingCapability.value = null
     shippingCarriers.value = []
@@ -1688,6 +1762,18 @@
   .order-detail-tabs {
     :deep(.el-tabs__header) {
       margin-bottom: 20px;
+    }
+  }
+
+  .aftersale-hold-alert {
+    margin-bottom: 18px;
+
+    :deep(.el-alert__content) {
+      width: 100%;
+    }
+
+    :deep(.el-alert__description) {
+      margin-bottom: 4px;
     }
   }
 

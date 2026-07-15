@@ -36,27 +36,26 @@
   line-height: 34rpx;
 }
 
-.type-segment {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
+.policy-card {
   margin-top: 20rpx;
-}
-
-.type-button {
-  height: 76rpx;
-  margin: 0;
+  padding: 22rpx;
   border-radius: 12rpx;
-  background: #fff8f4;
-  color: #51443e;
-  font-size: 26rpx;
-  font-weight: 800;
-  line-height: 76rpx;
+  background: #fff1ed;
+  border: 2rpx solid #edc5ba;
 }
 
-.type-button.active {
-  background: #b3261e;
-  color: #ffffff;
+.policy-card__title {
+  color: #b3261e;
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 40rpx;
+}
+
+.policy-card__desc {
+  margin-top: 6rpx;
+  color: #7a5146;
+  font-size: 24rpx;
+  line-height: 34rpx;
 }
 
 .field {
@@ -82,25 +81,12 @@
   line-height: 56rpx;
 }
 
-.amount-input-row {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
+.amount-value {
   margin-top: 12rpx;
-}
-
-.currency {
   color: #b3261e;
-  font-size: 34rpx;
-  font-weight: 800;
-}
-
-.amount-input {
-  min-width: 0;
-  height: 64rpx;
-  color: #241f1c;
   font-size: 36rpx;
   font-weight: 800;
+  line-height: 64rpx;
 }
 
 .field-hint {

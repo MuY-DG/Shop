@@ -50,6 +50,9 @@ class AdminOrderControllerTest {
     @BeforeEach
     void clearOrderState() {
         jdbcClient.sql("delete from order_status_log").update();
+        jdbcClient.sql("delete from refund_order").update();
+        jdbcClient.sql("delete from after_sale_evidence").update();
+        jdbcClient.sql("delete from after_sale_request").update();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from order_shipment").update();
         jdbcClient.sql("delete from stock_lock").update();
@@ -234,6 +237,61 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data.items[0].quantity").value(2))
                 .andExpect(jsonPath("$.data.items[0].lineOriginalAmountCent").value(9980))
                 .andExpect(jsonPath("$.data.items[0].lineAmountCent").value(7980));
+    }
+
+    @Test
+    void adminOrderListAndDetailExposeActiveAfterSaleShipmentHold() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long userId = appLogin("admin-order-after-sale-hold-user").userId();
+        long skuId = createPublishedSku("ADMIN-AFTER-SALE-HOLD-SKU", 3990L, 4990L, 12, "ENABLED");
+        long orderId = 9303L;
+
+        insertOrderSnapshot(
+                orderId,
+                "ADM-AFTER-SALE-HOLD",
+                OrderStatus.PAID.name(),
+                userId,
+                skuId,
+                9403L,
+                "Admin After Sale Hold"
+        );
+        jdbcClient.sql("update shop_order set paid_amount_cent = 7480 where id = :orderId")
+                .param("orderId", orderId)
+                .update();
+        jdbcClient.sql("""
+                        insert into after_sale_request
+                            (order_id, user_id, after_sale_type, status, reason, description,
+                             requested_amount_cent, created_at, updated_at)
+                        values
+                            (:orderId, :userId, 'REFUND_ONLY', 'REQUESTED', '整单退款', '',
+                             7480, timestamp '2026-07-08 13:00:00', timestamp '2026-07-08 13:00:00')
+                        """)
+                .param("orderId", orderId)
+                .param("userId", userId)
+                .update();
+        Long afterSaleId = jdbcClient.sql("select id from after_sale_request where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .single();
+
+        mockMvc.perform(get("/admin/orders")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("statusGroup", "TO_SHIP")
+                        .param("orderNo", "AFTER-SALE-HOLD"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].orderId").value(orderId))
+                .andExpect(jsonPath("$.data.records[0].canShip").value(false))
+                .andExpect(jsonPath("$.data.records[0].activeAfterSale.afterSaleId").value(afterSaleId))
+                .andExpect(jsonPath("$.data.records[0].activeAfterSale.afterSaleType").value("REFUND_ONLY"))
+                .andExpect(jsonPath("$.data.records[0].activeAfterSale.status").value("REQUESTED"))
+                .andExpect(jsonPath("$.data.records[0].activeAfterSale.requestedAmountCent").value(7480));
+
+        mockMvc.perform(get("/admin/orders/{orderId}", orderId)
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.canShip").value(false))
+                .andExpect(jsonPath("$.data.activeAfterSale.afterSaleId").value(afterSaleId))
+                .andExpect(jsonPath("$.data.activeAfterSale.status").value("REQUESTED"));
     }
 
     private String longestValidReceiverAddress() {

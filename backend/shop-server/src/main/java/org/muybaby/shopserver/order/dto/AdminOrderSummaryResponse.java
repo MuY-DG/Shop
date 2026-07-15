@@ -21,6 +21,8 @@ public record AdminOrderSummaryResponse(
         String specText,
         Integer firstItemQuantity,
         Integer itemCount,
+        Boolean canShip,
+        AdminOrderAfterSaleSummaryResponse activeAfterSale,
         LocalDateTime createdAt
 ) {
 }

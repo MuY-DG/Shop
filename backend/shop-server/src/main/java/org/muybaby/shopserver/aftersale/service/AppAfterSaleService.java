@@ -89,6 +89,9 @@ public class AppAfterSaleService {
     public AfterSaleResponse apply(AuthenticatedPrincipal principal, Long orderId, AppAfterSaleApplyRequest request) {
         Long userId = requireAppUser(principal);
         AfterSaleType type = parseType(request == null ? null : request.afterSaleType());
+        if (type != AfterSaleType.REFUND_ONLY) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
         String reason = requireText(request == null ? null : request.reason(), 128);
         String description = normalizeText(request == null ? null : request.description(), 500);
         long requestedAmountCent = requirePositiveAmount(request == null ? null : request.requestedAmountCent());
@@ -99,7 +102,7 @@ public class AppAfterSaleService {
         if (!ALLOWED_ORDER_STATUSES.contains(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-        if (requestedAmountCent > order.paidAmountCent()) {
+        if (requestedAmountCent != order.paidAmountCent()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         rejectIfActiveAfterSaleExists(order.orderId());

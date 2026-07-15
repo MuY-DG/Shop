@@ -1,4 +1,3 @@
-import type { AfterSaleType } from "../../../types/api";
 import { ensureAppLogin } from "../../../services/auth";
 import { applyAfterSale } from "../../../services/aftersale";
 import { formatPrice } from "../../../services/product";
@@ -22,11 +21,6 @@ interface PickerChangeEvent {
   };
 }
 
-interface TypeOption {
-  label: string;
-  value: AfterSaleType;
-}
-
 interface EvidenceFileView {
   fileId: number;
   tempFilePath: string;
@@ -37,11 +31,8 @@ interface AfterSaleApplyPageData {
   orderId: number;
   maxRefundCent: number;
   maxRefundText: string;
-  selectedType: AfterSaleType;
-  typeOptions: TypeOption[];
   reasons: string[];
   reasonIndex: number;
-  amountYuan: string;
   description: string;
   evidenceFiles: EvidenceFileView[];
   uploading: boolean;
@@ -55,31 +46,8 @@ function parsePositiveNumber(value: string | undefined): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function centsToYuanText(value: number): string {
-  return value > 0 ? (value / 100).toFixed(2) : "";
-}
-
-function parseAmountToCent(value: string): number {
-  const normalized = value.trim();
-  if (!/^\d+(\.\d{0,2})?$/.test(normalized)) {
-    return 0;
-  }
-
-  const [yuanPart, centPart = ""] = normalized.split(".");
-  const yuan = Number(yuanPart);
-  const cent = Number((centPart + "00").slice(0, 2));
-  if (!Number.isFinite(yuan) || !Number.isFinite(cent)) {
-    return 0;
-  }
-  return yuan * 100 + cent;
-}
-
 function toErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
-}
-
-function isAfterSaleType(value: string | number | undefined): value is AfterSaleType {
-  return value === "REFUND_ONLY" || value === "RETURN_REFUND";
 }
 
 function chooseEvidenceImages(count: number): Promise<string[]> {
@@ -112,14 +80,8 @@ Page<AfterSaleApplyPageData, WechatMiniprogram.Page.CustomOption>({
     orderId: 0,
     maxRefundCent: 0,
     maxRefundText: "",
-    selectedType: "REFUND_ONLY",
-    typeOptions: [
-      { label: "仅退款", value: "REFUND_ONLY" },
-      { label: "退货退款", value: "RETURN_REFUND" }
-    ] as TypeOption[],
     reasons: ["不想要了", "商品问题", "发货问题", "其他原因"],
     reasonIndex: 0,
-    amountYuan: "",
     description: "",
     evidenceFiles: [] as EvidenceFileView[],
     uploading: false,
@@ -132,8 +94,7 @@ Page<AfterSaleApplyPageData, WechatMiniprogram.Page.CustomOption>({
     this.setData({
       orderId,
       maxRefundCent,
-      maxRefundText: maxRefundCent > 0 ? formatPrice(maxRefundCent) : "",
-      amountYuan: centsToYuanText(maxRefundCent)
+      maxRefundText: maxRefundCent > 0 ? formatPrice(maxRefundCent) : ""
     });
 
     if (!orderId) {
@@ -143,16 +104,6 @@ Page<AfterSaleApplyPageData, WechatMiniprogram.Page.CustomOption>({
       });
     }
   },
-  onTypeTap(event: DatasetEvent) {
-    const type = event.currentTarget.dataset.type;
-    if (!isAfterSaleType(type)) {
-      return;
-    }
-
-    this.setData({
-      selectedType: type
-    });
-  },
   onReasonChange(event: PickerChangeEvent) {
     const reasonIndex = Number(event.detail.value);
     if (!Number.isInteger(reasonIndex) || reasonIndex < 0 || reasonIndex >= this.data.reasons.length) {
@@ -161,11 +112,6 @@ Page<AfterSaleApplyPageData, WechatMiniprogram.Page.CustomOption>({
 
     this.setData({
       reasonIndex
-    });
-  },
-  onAmountInput(event: InputEvent) {
-    this.setData({
-      amountYuan: event.detail.value
     });
   },
   onDescriptionInput(event: InputEvent) {
@@ -248,7 +194,7 @@ Page<AfterSaleApplyPageData, WechatMiniprogram.Page.CustomOption>({
       return;
     }
 
-    const requestedAmountCent = parseAmountToCent(this.data.amountYuan);
+    const requestedAmountCent = this.data.maxRefundCent;
     const reason = this.data.reasons[this.data.reasonIndex] || "";
     const description = this.data.description.trim();
 
@@ -261,14 +207,7 @@ Page<AfterSaleApplyPageData, WechatMiniprogram.Page.CustomOption>({
     }
     if (requestedAmountCent <= 0) {
       wx.showToast({
-        title: "请输入退款金额",
-        icon: "none"
-      });
-      return;
-    }
-    if (this.data.maxRefundCent > 0 && requestedAmountCent > this.data.maxRefundCent) {
-      wx.showToast({
-        title: "退款金额不能超过实付",
+        title: "退款金额无效，请返回订单重试",
         icon: "none"
       });
       return;
@@ -288,7 +227,7 @@ Page<AfterSaleApplyPageData, WechatMiniprogram.Page.CustomOption>({
     try {
       await ensureAppLogin();
       await applyAfterSale(this.data.orderId, {
-        afterSaleType: this.data.selectedType,
+        afterSaleType: "REFUND_ONLY",
         reason,
         requestedAmountCent,
         description,

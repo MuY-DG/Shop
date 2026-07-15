@@ -235,6 +235,32 @@ class AppOrderServiceTest {
     }
 
     @Test
+    void activeAfterSaleBlocksReceiptConfirmationUntilRejected() {
+        long userId = insertUser("receipt-after-sale-hold");
+        long shippedOrderId = insertReadOrder(userId, "SHIPPED", LocalDateTime.of(2026, 7, 10, 11, 5));
+        long afterSaleId = insertAfterSale(
+                shippedOrderId,
+                userId,
+                "REQUESTED",
+                LocalDateTime.of(2026, 7, 10, 11, 6)
+        );
+
+        assertBusiness(ErrorCode.ORDER_STATE_CONFLICT,
+                () -> appOrderService.confirmReceipt(appPrincipal(userId), shippedOrderId));
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", shippedOrderId)
+                .query(String.class)
+                .single()).isEqualTo("SHIPPED");
+
+        jdbcClient.sql("update after_sale_request set status = 'REJECTED' where id = :afterSaleId")
+                .param("afterSaleId", afterSaleId)
+                .update();
+
+        assertThat(appOrderService.confirmReceipt(appPrincipal(userId), shippedOrderId).status())
+                .isEqualTo("COMPLETED");
+    }
+
+    @Test
     void directPreviewSubmitReplayAndRejectedSubmitNeverMutateExistingCartAndSnapshotReceiver() {
         long userId = insertUser("direct-user");
         long addressId = insertAddress(userId, "张三", "13800138000", "北京市", "", "朝阳区", "火锅路1号");

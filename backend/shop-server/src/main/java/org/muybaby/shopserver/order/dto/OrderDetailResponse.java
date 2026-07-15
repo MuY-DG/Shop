@@ -38,6 +38,8 @@ public record OrderDetailResponse(
         LocalDateTime completedAt,
         LocalDateTime refundingAt,
         LocalDateTime refundedAt,
+        Boolean canShip,
+        AdminOrderAfterSaleSummaryResponse activeAfterSale,
         OrderShipmentResponse shipment,
         List<OrderItemResponse> items
 ) {

@@ -1,16 +1,9 @@
 <view class="page aftersale-apply-page">
   <view class="section">
     <view class="section-title">售后类型</view>
-    <view class="type-segment">
-      <button
-        wx:for="{{typeOptions}}"
-        wx:key="value"
-        class="type-button {{selectedType === item.value ? 'active' : ''}}"
-        data-type="{{item.value}}"
-        bindtap="onTypeTap"
-      >
-        {{item.label}}
-      </button>
+    <view class="policy-card">
+      <view class="policy-card__title">整单仅退款</view>
+      <view class="policy-card__desc">当前阶段仅支持整单全额退款，无需退货</view>
     </view>
   </view>
 
@@ -24,17 +17,8 @@
 
     <view class="field">
       <view class="field-label">退款金额</view>
-      <view class="amount-input-row">
-        <text class="currency">¥</text>
-        <input
-          class="amount-input"
-          type="digit"
-          value="{{amountYuan}}"
-          placeholder="0.00"
-          bindinput="onAmountInput"
-        />
-      </view>
-      <view wx:if="{{maxRefundText}}" class="field-hint">最多可退 {{maxRefundText}}</view>
+      <view class="amount-value">{{maxRefundText || '-'}}</view>
+      <view class="field-hint">将按订单实付金额原路退回，金额不可修改</view>
     </view>
 
     <view class="field">

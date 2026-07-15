@@ -24,7 +24,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
 
     @Test
     void successfulRefundNotificationFinalizesRefundAndDuplicateNotificationIsIdempotent() throws Exception {
-        ApprovedRefund approved = approveRefund("after-sale-refund-success", 6980L, 3980L);
+        ApprovedRefund approved = approveRefund("after-sale-refund-success", 6980L, 6980L);
         String body = refundNotifyBody(
                 "notify-refund-success",
                 "REFUND.SUCCESS",
@@ -32,7 +32,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                 approved.outRefundNo(),
                 "wx-refund-success",
                 "SUCCESS",
-                3980L,
+                6980L,
                 6980L
         );
 
@@ -74,7 +74,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
 
     @Test
     void failedNotificationAfterSuccessfulRefundIsIgnoredWithoutDowngradingState() throws Exception {
-        ApprovedRefund approved = approveRefund("after-sale-refund-success-then-failed", 6980L, 3980L);
+        ApprovedRefund approved = approveRefund("after-sale-refund-success-then-failed", 6980L, 6980L);
         postRefundNotify(refundNotifyBody(
                         "notify-refund-success-before-late-failure",
                         "REFUND.SUCCESS",
@@ -82,7 +82,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                         approved.outRefundNo(),
                         "wx-refund-success-before-late-failure",
                         "SUCCESS",
-                        3980L,
+                        6980L,
                         6980L
                 ), "mock-valid-signature")
                 .andExpect(status().isOk())
@@ -96,7 +96,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                         approved.outRefundNo(),
                         "wx-refund-late-abnormal",
                         "ABNORMAL",
-                        3980L,
+                        6980L,
                         6980L
                 ), "mock-valid-signature")
                 .andExpect(status().isOk())
@@ -118,7 +118,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
 
     @Test
     void failedRefundNotificationMarksRefundFailedAndKeepsOrderRefunding() throws Exception {
-        ApprovedRefund approved = approveRefund("after-sale-refund-failed", 6980L, 3980L);
+        ApprovedRefund approved = approveRefund("after-sale-refund-failed", 6980L, 6980L);
 
         postRefundNotify(refundNotifyBody(
                         "notify-refund-failed",
@@ -127,7 +127,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                         approved.outRefundNo(),
                         "wx-refund-failed",
                         "ABNORMAL",
-                        3980L,
+                        6980L,
                         6980L
                 ), "mock-valid-signature")
                 .andExpect(status().isOk())
@@ -156,7 +156,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
 
     @Test
     void invalidRefundNotificationLogsFailedVerificationWithoutChangingRefundState() throws Exception {
-        ApprovedRefund approved = approveRefund("after-sale-refund-invalid", 6980L, 3980L);
+        ApprovedRefund approved = approveRefund("after-sale-refund-invalid", 6980L, 6980L);
 
         postRefundNotify(refundNotifyBody(
                         "notify-refund-invalid",
@@ -165,7 +165,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                         approved.outRefundNo(),
                         "wx-refund-invalid",
                         "SUCCESS",
-                        3980L,
+                        6980L,
                         6980L
                 ), "bad-signature")
                 .andExpect(status().isBadRequest())

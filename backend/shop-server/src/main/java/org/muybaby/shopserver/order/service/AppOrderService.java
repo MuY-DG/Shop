@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.order.service;
 
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
+import org.muybaby.shopserver.aftersale.service.AfterSaleFulfillmentPolicy;
 import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
@@ -72,6 +73,7 @@ public class AppOrderService {
     private final CheckoutSelectionService checkoutSelectionService;
     private final AppAddressService appAddressService;
     private final AppAfterSaleService appAfterSaleService;
+    private final AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy;
     private final WechatShippingUploadRecovery shippingUploadRecovery;
     private final OrderStatusLogService orderStatusLogService;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
@@ -83,6 +85,7 @@ public class AppOrderService {
             CheckoutSelectionService checkoutSelectionService,
             AppAddressService appAddressService,
             AppAfterSaleService appAfterSaleService,
+            AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
             WechatShippingUploadRecovery shippingUploadRecovery,
             OrderStatusLogService orderStatusLogService
     ) {
@@ -92,6 +95,7 @@ public class AppOrderService {
         this.checkoutSelectionService = checkoutSelectionService;
         this.appAddressService = appAddressService;
         this.appAfterSaleService = appAfterSaleService;
+        this.afterSaleFulfillmentPolicy = afterSaleFulfillmentPolicy;
         this.shippingUploadRecovery = shippingUploadRecovery;
         this.orderStatusLogService = orderStatusLogService;
     }
@@ -397,6 +401,7 @@ public class AppOrderService {
         if (!OrderStatus.SHIPPED.name().equals(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+        afterSaleFulfillmentPolicy.rejectIfBlocked(order.orderId());
 
         LocalDateTime completedAt = LocalDateTime.now().withNano(0);
         jdbcClient.sql("""

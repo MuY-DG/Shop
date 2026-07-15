@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.logistics.service;
 
+import org.muybaby.shopserver.aftersale.service.AfterSaleFulfillmentPolicy;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
@@ -36,6 +37,7 @@ public class LocalShipmentService {
     private final ShippingProperties shippingProperties;
     private final WechatShippingProvider shippingProvider;
     private final ShipmentContactMasker contactMasker;
+    private final AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy;
     private final TransactionTemplate transactionTemplate;
     private final OrderStatusLogService orderStatusLogService;
 
@@ -44,6 +46,7 @@ public class LocalShipmentService {
             ShippingProperties shippingProperties,
             WechatShippingProvider shippingProvider,
             ShipmentContactMasker contactMasker,
+            AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
             PlatformTransactionManager transactionManager,
             OrderStatusLogService orderStatusLogService
     ) {
@@ -51,6 +54,7 @@ public class LocalShipmentService {
         this.shippingProperties = shippingProperties;
         this.shippingProvider = shippingProvider;
         this.contactMasker = contactMasker;
+        this.afterSaleFulfillmentPolicy = afterSaleFulfillmentPolicy;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.orderStatusLogService = orderStatusLogService;
     }
@@ -74,6 +78,7 @@ public class LocalShipmentService {
             Long adminUserId
     ) {
         OrderForShipment order = lockPaidOrder(orderId);
+        afterSaleFulfillmentPolicy.rejectIfBlocked(orderId);
         NormalizedShipment shipment = normalize(request, order.receiverPhone());
         LocalDateTime now = LocalDateTime.now();
 

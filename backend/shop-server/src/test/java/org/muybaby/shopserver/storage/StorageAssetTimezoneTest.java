@@ -160,7 +160,7 @@ class StorageAssetTimezoneTest {
                     APP_USER,
                     ORDER_ID,
                     new AppAfterSaleApplyRequest(
-                            "REFUND_ONLY", "timezone expiry", 100L, "expired evidence",
+                            "REFUND_ONLY", "timezone expiry", 1000L, "expired evidence",
                             List.of(evidence.id())
                     )
             )).isInstanceOfSatisfying(BusinessException.class, exception ->

@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.order.service;
 
+import org.muybaby.shopserver.aftersale.service.AfterSaleFulfillmentPolicy;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
@@ -12,6 +13,7 @@ import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
 import org.muybaby.shopserver.logistics.service.WechatShippingUploadRecovery;
 import org.muybaby.shopserver.order.AdminOrderStatusGroup;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.dto.AdminOrderAfterSaleSummaryResponse;
 import org.muybaby.shopserver.order.dto.AdminOrderQueryRequest;
 import org.muybaby.shopserver.order.dto.AdminOrderSummaryResponse;
 import org.muybaby.shopserver.order.dto.AdminOrderStatusCountsResponse;
@@ -40,15 +42,18 @@ public class AdminOrderService {
     private final JdbcClient jdbcClient;
     private final OrderCloseService orderCloseService;
     private final WechatShippingUploadRecovery shippingUploadRecovery;
+    private final AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy;
 
     public AdminOrderService(
             JdbcClient jdbcClient,
             OrderCloseService orderCloseService,
-            WechatShippingUploadRecovery shippingUploadRecovery
+            WechatShippingUploadRecovery shippingUploadRecovery,
+            AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy
     ) {
         this.jdbcClient = jdbcClient;
         this.orderCloseService = orderCloseService;
         this.shippingUploadRecovery = shippingUploadRecovery;
+        this.afterSaleFulfillmentPolicy = afterSaleFulfillmentPolicy;
     }
 
     public PageResult<AdminOrderSummaryResponse> page(AuthenticatedPrincipal principal, AdminOrderQueryRequest query) {
@@ -107,6 +112,11 @@ public class AdminOrderService {
                                coalesce(first_item.spec_text, '') as spec_text,
                                coalesce(first_item.quantity, 0) as first_item_quantity,
                                coalesce(item_summary.item_count, 0) as item_count,
+                               active_asr.id as active_after_sale_id,
+                               active_asr.after_sale_type as active_after_sale_type,
+                               active_asr.status as active_after_sale_status,
+                               active_asr.requested_amount_cent as active_after_sale_amount_cent,
+                               active_asr.created_at as active_after_sale_created_at,
                                o.created_at
                         from shop_order o
                         left join app_user u on u.id = o.user_id
@@ -118,6 +128,14 @@ public class AdminOrderService {
                             from order_item
                             group by order_id
                         ) item_summary on item_summary.order_id = o.id
+                        left join after_sale_request active_asr on active_asr.id = (
+                            select asr.id
+                            from after_sale_request asr
+                            where asr.order_id = o.id
+                              and asr.status in (:blockingAfterSaleStatuses)
+                            order by asr.created_at desc, asr.id desc
+                            limit 1
+                        )
                         where o.status in (:statuses)
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or o.user_id = :userId)
@@ -142,6 +160,7 @@ public class AdminOrderService {
                 .param("createdStart", filters.createdStart())
                 .param("createdEnd", filters.createdEnd())
                 .param("trackingNoLike", filters.trackingNoLike())
+                .param("blockingAfterSaleStatuses", afterSaleFulfillmentPolicy.blockingStatuses())
                 .param("limit", size)
                 .param("offset", offset)
                 .query(this::mapOrderSummary)
@@ -282,6 +301,10 @@ public class AdminOrderService {
         LocalDateTime paidAt = paymentOrder == null || paymentOrder.paidAt() == null
                 ? header.paidAt()
                 : paymentOrder.paidAt();
+        AdminOrderAfterSaleSummaryResponse activeAfterSale = afterSaleFulfillmentPolicy.findBlocking(orderId)
+                .map(this::toAfterSaleSummary)
+                .orElse(null);
+        boolean canShip = OrderStatus.PAID.name().equals(header.status()) && activeAfterSale == null;
 
         return new OrderDetailResponse(
                 header.orderId(),
@@ -316,6 +339,8 @@ public class AdminOrderService {
                 header.completedAt(),
                 header.refundingAt(),
                 header.refundedAt(),
+                canShip,
+                activeAfterSale,
                 findShipment(orderId),
                 items
         );
@@ -365,10 +390,12 @@ public class AdminOrderService {
     }
 
     private AdminOrderSummaryResponse mapOrderSummary(ResultSet rs, int rowNum) throws SQLException {
+        String status = rs.getString("status");
+        AdminOrderAfterSaleSummaryResponse activeAfterSale = mapActiveAfterSale(rs);
         return new AdminOrderSummaryResponse(
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
-                rs.getString("status"),
+                status,
                 rs.getLong("product_amount_cent"),
                 rs.getLong("coupon_discount_cent"),
                 rs.getLong("freight_cent"),
@@ -384,7 +411,35 @@ public class AdminOrderService {
                 rs.getString("spec_text"),
                 rs.getInt("first_item_quantity"),
                 rs.getInt("item_count"),
+                OrderStatus.PAID.name().equals(status) && activeAfterSale == null,
+                activeAfterSale,
                 rs.getObject("created_at", LocalDateTime.class)
+        );
+    }
+
+    private AdminOrderAfterSaleSummaryResponse mapActiveAfterSale(ResultSet rs) throws SQLException {
+        Long afterSaleId = rs.getObject("active_after_sale_id", Long.class);
+        if (afterSaleId == null) {
+            return null;
+        }
+        return new AdminOrderAfterSaleSummaryResponse(
+                afterSaleId,
+                rs.getString("active_after_sale_type"),
+                rs.getString("active_after_sale_status"),
+                rs.getLong("active_after_sale_amount_cent"),
+                rs.getObject("active_after_sale_created_at", LocalDateTime.class)
+        );
+    }
+
+    private AdminOrderAfterSaleSummaryResponse toAfterSaleSummary(
+            AfterSaleFulfillmentPolicy.BlockingAfterSale afterSale
+    ) {
+        return new AdminOrderAfterSaleSummaryResponse(
+                afterSale.afterSaleId(),
+                afterSale.afterSaleType(),
+                afterSale.status(),
+                afterSale.requestedAmountCent(),
+                afterSale.createdAt()
         );
     }
 

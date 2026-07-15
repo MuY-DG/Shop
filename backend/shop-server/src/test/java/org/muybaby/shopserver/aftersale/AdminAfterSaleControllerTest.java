@@ -50,7 +50,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-list-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-list");
-        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
         long evidenceFileId = firstEvidenceFileId(afterSaleId);
         String readToken = limitedAdminToken(List.of("aftersale:read"));
         String auditOnlyToken = limitedAdminToken(List.of("aftersale:audit"));
@@ -104,11 +104,11 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .update();
 
         SeedPaidOrder requestedOrder = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-v2-requested");
-        long requestedId = applyAfterSale(appUser, requestedOrder, 1980L);
+        long requestedId = applyAfterSale(appUser, requestedOrder, 6980L);
         SeedPaidOrder approvedOrder = seedPaidOrder(appUser, 7980L, "PAID", "wx-refund-admin-v2-approved");
-        long approvedId = applyAfterSale(appUser, approvedOrder, 2980L);
+        long approvedId = applyAfterSale(appUser, approvedOrder, 7980L);
         SeedPaidOrder refundingOrder = seedPaidOrder(appUser, 8980L, "PAID", "wx-refund-admin-v2-refunding");
-        long refundingId = applyAfterSale(appUser, refundingOrder, 3980L);
+        long refundingId = applyAfterSale(appUser, refundingOrder, 8980L);
 
         jdbcClient.sql("""
                         update after_sale_request
@@ -162,7 +162,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.data.records[0].id").value(approvedId))
                 .andExpect(jsonPath("$.data.records[0].status").value("APPROVED"))
                 .andExpect(jsonPath("$.data.records[0].reason").value("申请退款"))
-                .andExpect(jsonPath("$.data.records[0].requestedAmountCent").value(2980))
+                .andExpect(jsonPath("$.data.records[0].requestedAmountCent").value(7980))
                 .andExpect(jsonPath("$.data.records[0].evidenceFileIds").doesNotExist())
                 .andExpect(jsonPath("$.data.records[0].evidenceFiles").doesNotExist())
                 .andExpect(jsonPath("$.data.records[0].refundOrder").doesNotExist());
@@ -173,7 +173,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-evidence-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-evidence");
-        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
         long evidenceFileId = firstEvidenceFileId(afterSaleId);
         byte[] evidenceContent = "private-evidence-image".getBytes(StandardCharsets.UTF_8);
         storageProvider.put(
@@ -207,7 +207,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-reject-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-reject");
-        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
         String adminToken = adminLogin();
 
         mockMvc.perform(post("/admin/after-sales/{afterSaleId}/reject", afterSaleId)
@@ -245,18 +245,18 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-approve-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve");
-        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
         String adminToken = adminLogin();
 
         mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedAmountCent":3980,"auditNote":"同意退款"}
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("REFUNDING"))
-                .andExpect(jsonPath("$.data.approvedAmountCent").value(3980))
+                .andExpect(jsonPath("$.data.approvedAmountCent").value(6980))
                 .andExpect(jsonPath("$.data.refundOrder.status").value("PROCESSING"))
                 .andExpect(jsonPath("$.data.refundOrder.outRefundNo").isNotEmpty());
 
@@ -272,7 +272,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                           and order_id = :orderId
                           and out_refund_no = :outRefundNo
                           and refund_id = :refundId
-                          and refund_amount_cent = 3980
+                          and refund_amount_cent = 6980
                           and status = 'PROCESSING'
                         """)
                 .param("afterSaleId", afterSaleId)
@@ -292,11 +292,33 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     }
 
     @Test
+    void adminCannotChangeTheFullOrderRefundAmount() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-full-amount-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-full-amount");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String adminToken = adminLogin();
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6979,"auditNote":"尝试修改退款金额"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        assertThat(refundOrders(afterSaleId)).isEmpty();
+        verify(refundProvider, never()).requestRefund(any(), any());
+    }
+
+    @Test
     void adminApproveUsesStableOutRefundNoAndDoesNotCallProviderAgainOnRetry() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-approve-retry-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve-retry");
-        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
         long paymentOrderId = paymentOrderId(order.orderId());
         String expectedOutRefundNo = expectedOutRefundNo(afterSaleId, order.orderId(), paymentOrderId);
         String adminToken = adminLogin();
@@ -306,7 +328,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedAmountCent":3980,"auditNote":"同意退款"}
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("REFUNDING"));
@@ -323,7 +345,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedAmountCent":3980,"auditNote":"同意退款"}
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400001));
@@ -341,7 +363,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-approve-provider-failure-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve-provider-failure");
-        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
         long paymentOrderId = paymentOrderId(order.orderId());
         String expectedOutRefundNo = expectedOutRefundNo(afterSaleId, order.orderId(), paymentOrderId);
         String adminToken = adminLogin();
@@ -355,7 +377,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedAmountCent":3980,"auditNote":"同意退款"}
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(700001))
@@ -385,7 +407,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedAmountCent":3980,"auditNote":"同意退款"}
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400001));
@@ -411,14 +433,14 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                         """)
                 .param("orderId", order.orderId())
                 .update();
-        long afterSaleId = applyAfterSale(appUser, order, 3980L);
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
         String adminToken = adminLogin();
 
         mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedAmountCent":3980,"auditNote":"确认收货后仍同意退款"}
+                                {"approvedAmountCent":6980,"auditNote":"确认收货后仍同意退款"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("REFUNDING"))

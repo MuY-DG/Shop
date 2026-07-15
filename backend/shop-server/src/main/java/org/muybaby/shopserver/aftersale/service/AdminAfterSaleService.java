@@ -356,8 +356,12 @@ public class AdminAfterSaleService {
 
         OrderRefundRow order = findOrderForUpdate(afterSale.orderId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
-        if (!REFUNDABLE_ORDER_STATUSES.contains(order.status()) || approvedAmountCent > order.paidAmountCent()) {
+        if (!REFUNDABLE_ORDER_STATUSES.contains(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        if (approvedAmountCent != afterSale.requestedAmountCent()
+                || approvedAmountCent != order.paidAmountCent()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         PaymentOrderRow payment = findPaidPaymentForUpdate(order.orderId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
