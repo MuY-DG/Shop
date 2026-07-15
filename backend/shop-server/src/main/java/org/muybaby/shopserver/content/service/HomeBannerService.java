@@ -5,6 +5,7 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.content.HomeBannerJumpType;
 import org.muybaby.shopserver.content.HomeBannerStatus;
+import org.muybaby.shopserver.content.PublicContentChangedEvent;
 import org.muybaby.shopserver.content.dto.AdminHomeBannerQueryRequest;
 import org.muybaby.shopserver.content.dto.AdminHomeBannerRequest;
 import org.muybaby.shopserver.content.dto.AdminHomeBannerResponse;
@@ -18,6 +19,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -35,15 +37,18 @@ public class HomeBannerService {
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final StorageUsageService storageUsageService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public HomeBannerService(
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
-            StorageUsageService storageUsageService
+            StorageUsageService storageUsageService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageUsageService = storageUsageService;
+        this.eventPublisher = eventPublisher;
     }
 
     public PageResult<AdminHomeBannerResponse> page(AdminHomeBannerQueryRequest query) {
@@ -115,6 +120,7 @@ public class HomeBannerService {
                 new String[]{"id"});
         Long bannerId = requireGeneratedId(keyHolder);
         replaceUsage(bannerId, validated);
+        eventPublisher.publishEvent(PublicContentChangedEvent.home());
         return bannerId;
     }
 
@@ -156,16 +162,19 @@ public class HomeBannerService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         replaceUsage(bannerId, validated);
+        eventPublisher.publishEvent(PublicContentChangedEvent.home());
     }
 
     @Transactional
     public void enable(Long bannerId) {
         updateStatus(bannerId, HomeBannerStatus.ENABLED);
+        eventPublisher.publishEvent(PublicContentChangedEvent.home());
     }
 
     @Transactional
     public void disable(Long bannerId) {
         updateStatus(bannerId, HomeBannerStatus.DISABLED);
+        eventPublisher.publishEvent(PublicContentChangedEvent.home());
     }
 
     public List<AppHomeBannerResponse> appBanners() {

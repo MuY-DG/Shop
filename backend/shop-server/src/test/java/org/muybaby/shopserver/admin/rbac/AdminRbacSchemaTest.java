@@ -38,7 +38,10 @@ class AdminRbacSchemaTest {
         Integer storageRouteCount = jdbcClient.sql("""
                         select count(*)
                         from admin_menu
-                        where path = '/storage/files'
+                        where id = 600
+                          and parent_id = 620
+                          and path = 'assets'
+                          and component = '/storage/files'
                         """)
                 .query(Integer.class)
                 .single();

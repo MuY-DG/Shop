@@ -5,6 +5,7 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigRequest;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigResponse;
+import org.muybaby.shopserver.payment.dto.EnvironmentPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.payment.service.AdminPaymentConfigService;
@@ -51,6 +52,12 @@ public class AdminPaymentConfigController {
     @PreAuthorize("hasAuthority('payment:config:read')")
     public ApiResponse<EffectivePaymentConfigResponse> effective() {
         return ApiResponse.success(adminPaymentConfigService.effective());
+    }
+
+    @GetMapping("/environment")
+    @PreAuthorize("hasAuthority('payment:config:read')")
+    public ApiResponse<EnvironmentPaymentConfigResponse> environment() {
+        return ApiResponse.success(adminPaymentConfigService.environment());
     }
 
     @GetMapping("/source")

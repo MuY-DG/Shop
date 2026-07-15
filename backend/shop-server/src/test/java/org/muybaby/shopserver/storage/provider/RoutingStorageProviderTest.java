@@ -1,11 +1,14 @@
 package org.muybaby.shopserver.storage.provider;
 
 import com.qcloud.cos.COSClient;
+import com.qcloud.cos.model.CannedAccessControlList;
+import com.qcloud.cos.model.PutObjectRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
+import org.mockito.ArgumentCaptor;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -27,6 +30,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class RoutingStorageProviderTest {
+
+    private static final String PUBLIC_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
     @TempDir
     Path tempDir;
@@ -91,6 +96,40 @@ class RoutingStorageProviderTest {
 
         verify(guangzhouClient).shutdown();
         verify(shanghaiClient).shutdown();
+    }
+
+    @Test
+    void cosUploadsApplyLongLivedCacheOnlyToPublicObjects() {
+        StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
+        when(configService.effective()).thenReturn(cosConfig());
+        COSClient client = mock(COSClient.class);
+        RoutingStorageProvider provider = new RoutingStorageProvider(
+                configService,
+                (region, secretId, secretKey) -> client
+        );
+        byte[] content = "cache-policy".getBytes();
+
+        provider.put(
+                cosLocation("ap-guangzhou", "public/library/image/example.jpg"),
+                "image/jpeg",
+                new ByteArrayInputStream(content),
+                content.length
+        );
+        provider.put(
+                cosLocation("ap-guangzhou", "private/secret/document/example.pem"),
+                "application/x-pem-file",
+                new ByteArrayInputStream(content),
+                content.length
+        );
+
+        ArgumentCaptor<PutObjectRequest> requestCaptor = ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(client, times(2)).putObject(requestCaptor.capture());
+        List<PutObjectRequest> requests = requestCaptor.getAllValues();
+
+        assertThat(requests.get(0).getMetadata().getCacheControl()).isEqualTo(PUBLIC_CACHE_CONTROL);
+        assertThat(requests.get(0).getCannedAcl()).isEqualTo(CannedAccessControlList.PublicRead);
+        assertThat(requests.get(1).getMetadata().getCacheControl()).isNull();
+        assertThat(requests.get(1).getCannedAcl()).isEqualTo(CannedAccessControlList.Private);
     }
 
     @Test

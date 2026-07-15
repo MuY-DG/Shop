@@ -1,324 +1,261 @@
 <template>
-  <div class="payment-config art-full-height">
-    <ElCard class="payment-config__effective" shadow="never">
+  <div class="payment-config">
+    <ElAlert
+      title="选择配置后可直接在下方编辑。正在使用的配置不能重复启用；切换到其他配置后，点击“使用此配置”即可立即生效。"
+      type="info"
+      :closable="false"
+      show-icon
+    />
+
+    <ElCard shadow="never">
       <template #header>
         <div class="section-header">
           <div>
-            <div class="section-header__title">有效支付配置</div>
+            <div class="section-header__title">支付配置</div>
             <div class="section-header__subtitle"
-              >运行时实际使用的微信支付配置，只展示 masked 元数据</div
-            >
-          </div>
-          <div class="effective-header__aside">
-            <ElTag v-if="effectiveConfig" :type="sourceTagType(effectiveConfig.source)">
-              {{ formatSource(effectiveConfig.source) }}
-            </ElTag>
-            <ElTag
-              v-if="sourceSetting"
-              size="small"
-              :type="sourceSetting.persisted ? 'success' : 'info'"
-            >
-              {{
-                sourceSetting.persisted
-                  ? '后台设置'
-                  : `${formatSource(sourceSetting.defaultSource)} 默认`
-              }}
-            </ElTag>
-          </div>
-        </div>
-      </template>
-
-      <div v-loading="effectiveLoading">
-        <div class="source-switch" v-loading="sourceLoading">
-          <span class="source-switch__label">运行来源</span>
-          <ElSegmented
-            v-model="sourceSelection"
-            :options="sourceOptions"
-            :disabled="sourceLoading || sourceSaving"
-          />
-          <ElButton
-            type="primary"
-            v-auth="'payment:config:enable'"
-            :loading="sourceSaving"
-            :disabled="sourceSelection === sourceSetting?.source"
-            @click="handleSourceSave"
-          >
-            保存
-          </ElButton>
-        </div>
-        <ElEmpty v-if="!effectiveLoading && !effectiveConfig" description="暂无有效配置" />
-        <ElDescriptions v-else-if="effectiveConfig" :column="3" border>
-          <ElDescriptionsItem label="配置名">{{
-            formatText(effectiveConfig.configName)
-          }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="App ID">{{
-            formatText(effectiveConfig.appIdMasked)
-          }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="商户号">{{
-            formatText(effectiveConfig.mchIdMasked)
-          }}</ElDescriptionsItem>
-          <ElDescriptionsItem label="商户证书序列号">
-            {{ formatText(effectiveConfig.merchantSerialNoMasked) }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="APIv3 Key">
-            <ElTag size="small" :type="effectiveConfig.apiV3KeyConfigured ? 'success' : 'danger'">
-              {{ effectiveConfig.apiV3KeyConfigured ? '已配置' : '未配置' }}
-            </ElTag>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="验签模式">
-            {{ formatVerifyMode(effectiveConfig.verifyMode) }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="私钥文件 ID">
-            {{ formatText(effectiveConfig.privateKeyFileId) }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="商户证书文件 ID">
-            {{ formatText(effectiveConfig.merchantCertificateFileId) }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="微信公钥文件 ID">
-            {{ formatText(effectiveConfig.wechatPublicKeyFileId) }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="微信公钥 ID">
-            {{ formatText(effectiveConfig.wechatPublicKeyIdMasked) }}
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="支付回调" :span="2">
-            <span class="text-ellipsis">{{ formatText(effectiveConfig.notifyUrl) }}</span>
-          </ElDescriptionsItem>
-          <ElDescriptionsItem label="退款回调" :span="3">
-            <span class="text-ellipsis">{{ formatText(effectiveConfig.refundNotifyUrl) }}</span>
-          </ElDescriptionsItem>
-        </ElDescriptions>
-      </div>
-    </ElCard>
-
-    <ElCard class="art-table-card payment-config__table" shadow="never">
-      <template #header>
-        <div class="section-header">
-          <div>
-            <div class="section-header__title">DB 配置</div>
-            <div class="section-header__subtitle"
-              >DB 配置在运行来源为 DB，或 AUTO 回退 DB 时使用</div
+              >配置项按名称在左、输入框在右的方式排列，保存敏感字段后只显示脱敏信息</div
             >
           </div>
           <div class="section-header__actions">
-            <ElButton @click="loadConfigs">刷新</ElButton>
-            <ElButton type="primary" v-auth="'payment:config:write'" @click="openCreateDrawer">
+            <ElTag :type="effectiveConfig?.source === 'DB' ? 'success' : 'warning'">
+              {{ runtimeLabel }}
+            </ElTag>
+            <ElButton
+              type="primary"
+              v-auth="'payment:config:write'"
+              :disabled="creating || loading"
+              @click="openCreateForm"
+            >
               新增配置
             </ElButton>
           </div>
         </div>
       </template>
 
-      <ElTable v-loading="tableLoading" :data="configs" border>
-        <ElTableColumn label="配置" min-width="220">
-          <template #default="{ row }">
-            <div class="config-name-cell">
-              <span class="title">{{ row.configName }}</span>
-              <span class="subtitle">{{ row.appIdMasked }} / {{ row.mchIdMasked }}</span>
-            </div>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn prop="merchantSerialNoMasked" label="证书序列号" min-width="180" />
-        <ElTableColumn label="验签" width="120">
-          <template #default="{ row }">{{ formatVerifyMode(row.verifyMode) }}</template>
-        </ElTableColumn>
-        <ElTableColumn label="APIv3 Key" width="120">
-          <template #default="{ row }">
-            <ElTag size="small" :type="row.apiV3KeyConfigured ? 'success' : 'danger'">
-              {{ row.apiV3KeyConfigured ? '已配置' : '未配置' }}
-            </ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="文件 ID" min-width="190">
-          <template #default="{ row }">
-            <div class="file-id-cell">
-              <span>私钥 {{ formatText(row.privateKeyFileId) }}</span>
-              <span>证书 {{ formatText(row.merchantCertificateFileId) }}</span>
-              <span>公钥 {{ formatText(row.wechatPublicKeyFileId) }}</span>
-            </div>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="DB 候选" width="100">
-          <template #default="{ row }">
-            <ElTag :type="row.enabled ? 'success' : 'info'" size="small">
-              {{ row.enabled ? '当前候选' : '备用' }}
-            </ElTag>
-          </template>
-        </ElTableColumn>
-        <ElTableColumn label="更新时间" width="180">
-          <template #default="{ row }">{{ formatDateTime(row.updatedAt) }}</template>
-        </ElTableColumn>
-        <ElTableColumn label="操作" width="150" fixed="right">
-          <template #default="{ row }">
-            <div class="table-actions">
-              <ElButton
-                type="primary"
-                link
-                v-auth="'payment:config:write'"
-                @click="openEditDrawer(row)"
+      <div v-loading="loading">
+        <ElForm
+          ref="formRef"
+          :model="formData"
+          :rules="rules"
+          label-width="148px"
+          class="payment-form"
+        >
+          <ElFormItem label="选择配置">
+            <div class="config-selector">
+              <ElInput v-if="creating" model-value="正在新增配置" disabled />
+              <ElSelect
+                v-else
+                :model-value="selectedConfigKey"
+                placeholder="请选择支付配置"
+                @change="handleConfigSelect"
               >
-                编辑
-              </ElButton>
-              <ElButton
-                v-if="!row.enabled"
-                type="success"
-                link
-                v-auth="'payment:config:enable'"
-                :loading="enablingId === row.id"
-                @click="handleEnable(row)"
-              >
-                设为候选
-              </ElButton>
+                <ElOption
+                  label="环境变量配置"
+                  value="ENV"
+                  :disabled="!environmentSetting?.available"
+                >
+                  <div class="config-option">
+                    <span>环境变量配置</span>
+                    <ElTag v-if="environmentUseState.active" type="success" size="small">
+                      正在使用
+                    </ElTag>
+                    <ElTag v-else-if="!environmentSetting?.available" type="info" size="small">
+                      配置不完整
+                    </ElTag>
+                  </div>
+                </ElOption>
+                <ElOption
+                  v-for="config in configs"
+                  :key="config.id"
+                  :label="config.configName"
+                  :value="config.id"
+                >
+                  <div class="config-option">
+                    <span>{{ config.configName }}</span>
+                    <ElTag
+                      v-if="paymentConfigUseState(config, effectiveConfig).active"
+                      type="success"
+                      size="small"
+                    >
+                      正在使用
+                    </ElTag>
+                  </div>
+                </ElOption>
+              </ElSelect>
+              <ElTag v-if="currentUseState.active" type="success">正在使用</ElTag>
             </div>
-          </template>
-        </ElTableColumn>
-      </ElTable>
+            <div v-if="selectedEnvironment" class="form-tip">
+              环境变量配置来自后端启动环境，只能查看和切换，不能在此页面编辑。
+            </div>
+          </ElFormItem>
 
-      <div class="table-pagination">
-        <ElPagination
-          background
-          layout="total, prev, pager, next, sizes"
-          :current-page="pagination.current"
-          :page-size="pagination.size"
-          :total="pagination.total"
-          @current-change="handleCurrentChange"
-          @size-change="handleSizeChange"
-        />
+          <ElFormItem label="配置名称" prop="configName">
+            <ElInput
+              v-model="formData.configName"
+              maxlength="80"
+              :disabled="selectedEnvironment"
+              placeholder="例如：生产微信支付"
+            />
+          </ElFormItem>
+          <ElFormItem label="App ID" prop="appId">
+            <ElInput
+              v-model="formData.appId"
+              maxlength="64"
+              :disabled="selectedEnvironment"
+              :placeholder="maskedPlaceholder(selectedConfig?.appIdMasked)"
+            />
+          </ElFormItem>
+          <ElFormItem label="商户号" prop="mchId">
+            <ElInput
+              v-model="formData.mchId"
+              maxlength="32"
+              :disabled="selectedEnvironment"
+              :placeholder="maskedPlaceholder(selectedConfig?.mchIdMasked)"
+            />
+          </ElFormItem>
+          <ElFormItem label="商户证书序列号" prop="merchantSerialNo">
+            <ElInput
+              v-model="formData.merchantSerialNo"
+              maxlength="128"
+              :disabled="selectedEnvironment"
+              :placeholder="maskedPlaceholder(selectedConfig?.merchantSerialNoMasked)"
+            />
+          </ElFormItem>
+          <ElFormItem label="APIv3 Key" prop="apiV3Key">
+            <ElInput
+              v-model="formData.apiV3Key"
+              maxlength="128"
+              :type="selectedEnvironment ? 'text' : 'password'"
+              :show-password="!selectedEnvironment"
+              :disabled="selectedEnvironment"
+              autocomplete="new-password"
+              :placeholder="
+                selectedConfig?.apiV3KeyConfigured ? '已配置，留空不修改' : '请输入 APIv3 Key'
+              "
+            />
+          </ElFormItem>
+          <ElFormItem label="支付回调 URL" prop="notifyUrl">
+            <ElInput
+              v-model="formData.notifyUrl"
+              maxlength="255"
+              :disabled="selectedEnvironment"
+              placeholder="https://域名/wxpay/pay/notify"
+            />
+          </ElFormItem>
+          <ElFormItem label="退款回调 URL" prop="refundNotifyUrl">
+            <ElInput
+              v-model="formData.refundNotifyUrl"
+              maxlength="255"
+              :disabled="selectedEnvironment"
+              placeholder="https://域名/wxpay/refund/notify"
+            />
+          </ElFormItem>
+          <ElFormItem label="验签模式" prop="verifyMode">
+            <ElSegmented
+              v-model="formData.verifyMode"
+              :options="verifyModeOptions"
+              :disabled="selectedEnvironment"
+            />
+          </ElFormItem>
+          <ElFormItem label="微信公钥 ID" prop="wechatPublicKeyId">
+            <ElInput
+              v-model="formData.wechatPublicKeyId"
+              maxlength="128"
+              :disabled="selectedEnvironment || formData.verifyMode !== 'PUBLIC_KEY'"
+              :placeholder="maskedPlaceholder(selectedConfig?.wechatPublicKeyIdMasked)"
+            />
+          </ElFormItem>
+          <ElFormItem label="私钥文件" prop="privateKeyFileId">
+            <ElInput v-if="selectedEnvironment" model-value="由服务器文件路径提供" disabled />
+            <PaymentSecretFileField
+              v-else
+              :model-value="formData.privateKeyFileId"
+              @change="handleSecretFileChange('privateKeyFileId', $event)"
+            />
+          </ElFormItem>
+          <ElFormItem label="商户证书文件" prop="merchantCertificateFileId">
+            <ElInput v-if="selectedEnvironment" model-value="由服务器环境变量管理" disabled />
+            <PaymentSecretFileField
+              v-else
+              :model-value="formData.merchantCertificateFileId || null"
+              @change="handleSecretFileChange('merchantCertificateFileId', $event)"
+            />
+          </ElFormItem>
+          <ElFormItem label="微信公钥文件" prop="wechatPublicKeyFileId">
+            <ElInput v-if="selectedEnvironment" model-value="由服务器文件路径提供" disabled />
+            <PaymentSecretFileField
+              v-else
+              :model-value="formData.wechatPublicKeyFileId || null"
+              @change="handleSecretFileChange('wechatPublicKeyFileId', $event)"
+            />
+          </ElFormItem>
+
+          <ElFormItem>
+            <ElButton
+              v-if="!selectedEnvironment"
+              type="primary"
+              v-auth="'payment:config:write'"
+              :loading="saving"
+              :disabled="using"
+              @click="handleSave"
+            >
+              {{ creating ? '保存配置' : '保存修改' }}
+            </ElButton>
+            <ElButton
+              type="success"
+              v-auth="'payment:config:enable'"
+              :loading="using"
+              :disabled="currentUseState.disabled || saving"
+              @click="handleUse"
+            >
+              {{ creating ? '保存并使用' : currentUseState.label }}
+            </ElButton>
+            <ElButton
+              v-if="!creating && !selectedEnvironment"
+              :disabled="!dirty || saving || using"
+              @click="resetSelectedForm"
+            >
+              撤销未保存修改
+            </ElButton>
+            <ElButton v-if="creating" :disabled="saving || using" @click="cancelCreate">
+              取消新增
+            </ElButton>
+          </ElFormItem>
+        </ElForm>
       </div>
     </ElCard>
-
-    <ElDrawer
-      v-model="drawerVisible"
-      :title="editingConfig ? '编辑支付配置' : '新增支付配置'"
-      size="760px"
-      destroy-on-close
-      append-to-body
-    >
-      <ElForm ref="formRef" :model="formData" :rules="rules" label-width="128px">
-        <ElFormItem label="配置名" prop="configName">
-          <ElInput v-model="formData.configName" maxlength="80" placeholder="例如：生产微信支付" />
-        </ElFormItem>
-        <ElFormItem label="App ID" prop="appId">
-          <ElInput
-            v-model="formData.appId"
-            maxlength="64"
-            :placeholder="maskedPlaceholder(editingConfig?.appIdMasked)"
-          />
-        </ElFormItem>
-        <ElFormItem label="商户号" prop="mchId">
-          <ElInput
-            v-model="formData.mchId"
-            maxlength="32"
-            :placeholder="maskedPlaceholder(editingConfig?.mchIdMasked)"
-          />
-        </ElFormItem>
-        <ElFormItem label="商户证书序列号" prop="merchantSerialNo">
-          <ElInput
-            v-model="formData.merchantSerialNo"
-            maxlength="128"
-            :placeholder="maskedPlaceholder(editingConfig?.merchantSerialNoMasked)"
-          />
-        </ElFormItem>
-        <ElFormItem label="APIv3 Key" prop="apiV3Key">
-          <ElInput
-            v-model="formData.apiV3Key"
-            maxlength="128"
-            show-password
-            autocomplete="new-password"
-            :placeholder="
-              editingConfig?.apiV3KeyConfigured ? '已配置，留空不修改' : '请输入 APIv3 Key'
-            "
-          />
-        </ElFormItem>
-        <ElFormItem label="支付回调 URL" prop="notifyUrl">
-          <ElInput
-            v-model="formData.notifyUrl"
-            maxlength="255"
-            placeholder="https://域名/wxpay/pay/notify"
-          />
-        </ElFormItem>
-        <ElFormItem label="退款回调 URL" prop="refundNotifyUrl">
-          <ElInput
-            v-model="formData.refundNotifyUrl"
-            maxlength="255"
-            placeholder="https://域名/wxpay/refund/notify"
-          />
-        </ElFormItem>
-        <ElFormItem label="验签模式" prop="verifyMode">
-          <ElSegmented v-model="formData.verifyMode" :options="verifyModeOptions" />
-        </ElFormItem>
-        <ElFormItem label="微信公钥 ID" prop="wechatPublicKeyId">
-          <ElInput
-            v-model="formData.wechatPublicKeyId"
-            maxlength="128"
-            :disabled="formData.verifyMode !== 'PUBLIC_KEY'"
-            :placeholder="maskedPlaceholder(editingConfig?.wechatPublicKeyIdMasked)"
-          />
-        </ElFormItem>
-        <ElFormItem label="私钥文件" prop="privateKeyFileId">
-          <PaymentSecretFileField
-            :model-value="formData.privateKeyFileId"
-            @change="handleSecretFileChange('privateKeyFileId', $event)"
-          />
-        </ElFormItem>
-        <ElFormItem label="商户证书文件" prop="merchantCertificateFileId">
-          <PaymentSecretFileField
-            :model-value="formData.merchantCertificateFileId || null"
-            @change="handleSecretFileChange('merchantCertificateFileId', $event)"
-          />
-        </ElFormItem>
-        <ElFormItem label="微信公钥文件" prop="wechatPublicKeyFileId">
-          <PaymentSecretFileField
-            :model-value="formData.wechatPublicKeyFileId || null"
-            @change="handleSecretFileChange('wechatPublicKeyFileId', $event)"
-          />
-        </ElFormItem>
-      </ElForm>
-
-      <template #footer>
-        <div class="drawer-footer">
-          <ElButton @click="drawerVisible = false">取消</ElButton>
-          <ElButton type="primary" :loading="submitting" @click="handleSubmit">保存</ElButton>
-        </div>
-      </template>
-    </ElDrawer>
   </div>
 </template>
 
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
-  import { ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+  import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
   import PaymentSecretFileField from '@/components/business/payment-secret-file-field/index.vue'
   import {
     createPaymentConfig,
     enablePaymentConfig,
     fetchEffectivePaymentConfig,
-    fetchPaymentConfigSource,
+    fetchEnvironmentPaymentConfig,
     fetchPaymentConfigs,
-    updatePaymentConfigSource,
-    updatePaymentConfig
+    updatePaymentConfig,
+    updatePaymentConfigSource
   } from '@/api/payment'
+  import { environmentConfigUseState, paymentConfigUseState } from './payment-config-state'
 
   defineOptions({ name: 'PaymentConfig' })
 
-  const effectiveLoading = ref(false)
-  const sourceLoading = ref(false)
-  const sourceSaving = ref(false)
-  const tableLoading = ref(false)
-  const submitting = ref(false)
-  const drawerVisible = ref(false)
-  const enablingId = ref<number | null>(null)
-  const effectiveConfig = ref<Api.Payment.EffectiveConfig | null>(null)
-  const sourceSetting = ref<Api.Payment.ConfigSourceSetting | null>(null)
-  const sourceSelection = ref<Api.Payment.ConfigSource>('AUTO')
-  const configs = ref<Api.Payment.Config[]>([])
-  const editingConfig = ref<Api.Payment.Config | null>(null)
-  const formRef = ref<FormInstance>()
+  type PaymentConfigSelection = 'ENV' | number
 
-  const pagination = reactive<Api.Common.PaginationParams>({
-    current: 1,
-    size: 20,
-    total: 0
-  })
+  const loading = ref(false)
+  const saving = ref(false)
+  const using = ref(false)
+  const creating = ref(false)
+  const configs = ref<Api.Payment.Config[]>([])
+  const effectiveConfig = ref<Api.Payment.EffectiveConfig | null>(null)
+  const environmentSetting = ref<Api.Payment.EnvironmentConfig | null>(null)
+  const selectedConfigKey = ref<PaymentConfigSelection | null>(null)
+  const baseline = ref('')
+  const formRef = ref<FormInstance>()
 
   const createDefaultForm = (): Api.Payment.ConfigForm => ({
     configName: '',
@@ -336,21 +273,56 @@
   })
 
   const formData = reactive<Api.Payment.ConfigForm>(createDefaultForm())
-
   const verifyModeOptions = [{ label: '微信公钥', value: 'PUBLIC_KEY' }]
 
-  const sourceOptions: Array<{ label: string; value: Api.Payment.ConfigSource }> = [
-    { label: 'AUTO', value: 'AUTO' },
-    { label: 'ENV', value: 'ENV' },
-    { label: 'DB', value: 'DB' }
-  ]
+  const selectedEnvironment = computed(() => selectedConfigKey.value === 'ENV')
+  const selectedConfig = computed(
+    () => configs.value.find((config) => config.id === selectedConfigKey.value) || null
+  )
+  const snapshot = () =>
+    JSON.stringify({
+      configName: formData.configName,
+      appId: formData.appId,
+      mchId: formData.mchId,
+      merchantSerialNo: formData.merchantSerialNo,
+      apiV3Key: formData.apiV3Key,
+      privateKeyFileId: formData.privateKeyFileId,
+      merchantCertificateFileId: formData.merchantCertificateFileId,
+      verifyMode: formData.verifyMode,
+      wechatPublicKeyId: formData.wechatPublicKeyId,
+      wechatPublicKeyFileId: formData.wechatPublicKeyFileId,
+      notifyUrl: formData.notifyUrl,
+      refundNotifyUrl: formData.refundNotifyUrl
+    })
+  const dirty = computed(() => snapshot() !== baseline.value)
+  const environmentUseState = computed(() =>
+    environmentConfigUseState(effectiveConfig.value, environmentSetting.value?.available)
+  )
+  const currentUseState = computed(() =>
+    selectedEnvironment.value
+      ? environmentUseState.value
+      : selectedConfig.value
+        ? paymentConfigUseState(selectedConfig.value, effectiveConfig.value, dirty.value)
+        : {
+            active: false,
+            disabled: false,
+            label: '保存并使用' as const
+          }
+  )
+  const runtimeLabel = computed(() => {
+    if (!effectiveConfig.value) return '暂无正在使用的配置'
+    if (effectiveConfig.value.source === 'DB') {
+      return `正在使用：${effectiveConfig.value.configName}`
+    }
+    return '正在使用：环境变量配置'
+  })
 
   const hasText = (value?: string | null) => Boolean(String(value || '').trim())
   const hasNumber = (value?: number | null) => typeof value === 'number'
 
   const preserveableTextRule = (message: string, existingValue?: string | null) => ({
     validator: (_rule: unknown, value: string | undefined, callback: (error?: Error) => void) => {
-      if (hasText(value) || (editingConfig.value && hasText(existingValue))) {
+      if (hasText(value) || (selectedConfig.value && hasText(existingValue))) {
         callback()
         return
       }
@@ -375,16 +347,16 @@
   })
 
   const rules = computed<FormRules<Api.Payment.ConfigForm>>(() => ({
-    configName: [{ required: true, message: '请输入配置名', trigger: 'blur' }],
-    appId: [preserveableTextRule('请输入完整 App ID', editingConfig.value?.appIdMasked)],
-    mchId: [preserveableTextRule('请输入完整商户号', editingConfig.value?.mchIdMasked)],
+    configName: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],
+    appId: [preserveableTextRule('请输入完整 App ID', selectedConfig.value?.appIdMasked)],
+    mchId: [preserveableTextRule('请输入完整商户号', selectedConfig.value?.mchIdMasked)],
     merchantSerialNo: [
-      preserveableTextRule('请输入完整商户证书序列号', editingConfig.value?.merchantSerialNoMasked)
+      preserveableTextRule('请输入完整商户证书序列号', selectedConfig.value?.merchantSerialNoMasked)
     ],
     apiV3Key: [
       {
         validator: (_rule, value, callback) => {
-          if (!editingConfig.value?.apiV3KeyConfigured && !String(value || '').trim()) {
+          if (!selectedConfig.value?.apiV3KeyConfigured && !String(value || '').trim()) {
             callback(new Error('请输入 APIv3 Key'))
             return
           }
@@ -399,9 +371,11 @@
     privateKeyFileId: [requiredFileRule('请选择私钥文件')],
     merchantCertificateFileId: [
       {
-        validator: (_rule, value, callback) => {
-          callback()
-        },
+        validator: (
+          _rule: unknown,
+          _value: number | null | undefined,
+          callback: (error?: Error) => void
+        ) => callback(),
         trigger: 'change'
       }
     ],
@@ -411,7 +385,7 @@
           if (
             formData.verifyMode === 'PUBLIC_KEY' &&
             !hasText(value) &&
-            !(editingConfig.value && hasText(editingConfig.value.wechatPublicKeyIdMasked))
+            !(selectedConfig.value && hasText(selectedConfig.value.wechatPublicKeyIdMasked))
           ) {
             callback(new Error('请输入微信公钥 ID'))
             return
@@ -424,10 +398,7 @@
     wechatPublicKeyFileId: [
       {
         validator: (_rule, value, callback) => {
-          if (
-            formData.verifyMode === 'PUBLIC_KEY' &&
-            !hasNumber(value)
-          ) {
+          if (formData.verifyMode === 'PUBLIC_KEY' && !hasNumber(value)) {
             callback(new Error('请选择微信公钥文件'))
             return
           }
@@ -439,27 +410,139 @@
   }))
 
   const trimText = (value?: string) => String(value || '').trim()
-  const formatText = (value?: string | number | null) =>
-    value === null || value === undefined || value === '' ? '-' : String(value)
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
-  const formatSource = (source?: string) => {
-    if (source === 'ENV') return 'ENV 配置'
-    if (source === 'DB') return 'DB 配置'
-    return 'AUTO 配置'
-  }
-  const sourceTagType = (source?: string) => {
-    if (source === 'ENV') return 'warning'
-    if (source === 'DB') return 'success'
-    return 'info'
-  }
-  const formatVerifyMode = (value?: string) =>
-    value === 'CERTIFICATE' ? '平台证书（暂不支持）' : '微信公钥'
   const maskedPlaceholder = (value?: string | null) =>
     value ? `当前：${value}，留空不修改` : '请输入完整值'
-  const resetForm = () => {
-    Object.assign(formData, createDefaultForm())
+
+  const fillForm = (config?: Api.Payment.Config | null) => {
+    Object.assign(formData, {
+      ...createDefaultForm(),
+      configName: config?.configName || '',
+      privateKeyFileId: config?.privateKeyFileId ?? null,
+      merchantCertificateFileId: config?.merchantCertificateFileId ?? null,
+      verifyMode: 'PUBLIC_KEY',
+      wechatPublicKeyFileId: config?.wechatPublicKeyFileId ?? null,
+      notifyUrl: config?.notifyUrl || '',
+      refundNotifyUrl: config?.refundNotifyUrl || ''
+    })
+    baseline.value = snapshot()
     formRef.value?.clearValidate()
   }
+
+  const fillEnvironmentForm = () => {
+    const config = environmentSetting.value?.config
+    Object.assign(formData, {
+      ...createDefaultForm(),
+      configName: '环境变量配置',
+      appId: config?.appIdMasked || '',
+      mchId: config?.mchIdMasked || '',
+      merchantSerialNo: config?.merchantSerialNoMasked || '',
+      apiV3Key: config?.apiV3KeyConfigured ? '已配置（内容已隐藏）' : '未配置',
+      verifyMode: 'PUBLIC_KEY',
+      wechatPublicKeyId: config?.wechatPublicKeyIdMasked || '',
+      notifyUrl: config?.notifyUrl || '',
+      refundNotifyUrl: config?.refundNotifyUrl || ''
+    })
+    baseline.value = snapshot()
+    formRef.value?.clearValidate()
+  }
+
+  const selectEnvironment = () => {
+    creating.value = false
+    selectedConfigKey.value = 'ENV'
+    fillEnvironmentForm()
+  }
+
+  const selectConfig = (config: Api.Payment.Config) => {
+    creating.value = false
+    selectedConfigKey.value = config.id
+    fillForm(config)
+  }
+
+  const loadData = async (preferredSelection?: PaymentConfigSelection) => {
+    loading.value = true
+    try {
+      const [environmentResponse, effective, response] = await Promise.all([
+        fetchEnvironmentPaymentConfig().catch(() => null),
+        fetchEffectivePaymentConfig(),
+        fetchPaymentConfigs({ current: 1, size: 100 })
+      ])
+      const environment: Api.Payment.EnvironmentConfig = environmentResponse || {
+        available: true,
+        config: effective.source === 'ENV' ? effective : null
+      }
+      environmentSetting.value = environment
+      effectiveConfig.value = effective
+      configs.value = response.records
+
+      const targetSelection =
+        preferredSelection ??
+        selectedConfigKey.value ??
+        (effective.source === 'ENV' ? 'ENV' : effective.id) ??
+        (environment.available ? 'ENV' : null) ??
+        response.records[0]?.id
+      if (targetSelection === 'ENV' && environment.available) {
+        selectEnvironment()
+        return
+      }
+      const target = response.records.find((config) => config.id === targetSelection)
+      if (target) {
+        selectConfig(target)
+      } else {
+        creating.value = true
+        selectedConfigKey.value = null
+        fillForm()
+      }
+    } finally {
+      loading.value = false
+    }
+  }
+
+  const confirmDiscard = async () => {
+    if (!dirty.value) return true
+    try {
+      await ElMessageBox.confirm('当前有未保存的修改，切换后这些修改会丢失。', '确认切换', {
+        type: 'warning',
+        confirmButtonText: '放弃修改并切换',
+        cancelButtonText: '继续编辑'
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const handleConfigSelect = async (selection: PaymentConfigSelection) => {
+    if (selection === selectedConfigKey.value || !(await confirmDiscard())) return
+    if (selection === 'ENV') {
+      selectEnvironment()
+      return
+    }
+    const target = configs.value.find((config) => config.id === selection)
+    if (target) selectConfig(target)
+  }
+
+  const openCreateForm = async () => {
+    if (!(await confirmDiscard())) return
+    creating.value = true
+    selectedConfigKey.value = null
+    fillForm()
+  }
+
+  const cancelCreate = () => {
+    if (effectiveConfig.value?.source === 'ENV' && environmentSetting.value?.available) {
+      selectEnvironment()
+      return
+    }
+    const activeId = effectiveConfig.value?.id || configs.value[0]?.id
+    const target = configs.value.find((config) => config.id === activeId) || configs.value[0]
+    if (target) {
+      selectConfig(target)
+      return
+    }
+    fillForm()
+  }
+
+  const resetSelectedForm = () => fillForm(selectedConfig.value)
 
   const handleSecretFileChange = (
     field: 'privateKeyFileId' | 'merchantCertificateFileId' | 'wechatPublicKeyFileId',
@@ -467,77 +550,6 @@
   ) => {
     formData[field] = value
     formRef.value?.validateField(field)
-  }
-
-  const loadEffective = async () => {
-    effectiveLoading.value = true
-    try {
-      effectiveConfig.value = await fetchEffectivePaymentConfig()
-    } finally {
-      effectiveLoading.value = false
-    }
-  }
-
-  const loadSource = async () => {
-    sourceLoading.value = true
-    try {
-      sourceSetting.value = await fetchPaymentConfigSource()
-      sourceSelection.value = sourceSetting.value.source
-    } finally {
-      sourceLoading.value = false
-    }
-  }
-
-  const loadConfigs = async () => {
-    tableLoading.value = true
-    try {
-      const response = await fetchPaymentConfigs({
-        current: pagination.current,
-        size: pagination.size
-      })
-      configs.value = response.records
-      pagination.current = response.current
-      pagination.size = response.size
-      pagination.total = response.total
-    } finally {
-      tableLoading.value = false
-    }
-  }
-
-  const loadAll = async () => {
-    await Promise.all([loadSource(), loadEffective(), loadConfigs()])
-  }
-
-  const handleSourceSave = async () => {
-    sourceSaving.value = true
-    try {
-      sourceSetting.value = await updatePaymentConfigSource({ source: sourceSelection.value })
-      sourceSelection.value = sourceSetting.value.source
-      await Promise.all([loadEffective(), loadConfigs()])
-    } finally {
-      sourceSaving.value = false
-    }
-  }
-
-  const openCreateDrawer = () => {
-    editingConfig.value = null
-    resetForm()
-    drawerVisible.value = true
-  }
-
-  const openEditDrawer = (row: Api.Payment.Config) => {
-    editingConfig.value = row
-    resetForm()
-    Object.assign(formData, {
-      configName: row.configName,
-      privateKeyFileId: row.privateKeyFileId ?? null,
-      merchantCertificateFileId: row.merchantCertificateFileId ?? null,
-      verifyMode: 'PUBLIC_KEY',
-      wechatPublicKeyFileId: row.wechatPublicKeyFileId ?? null,
-      notifyUrl: row.notifyUrl,
-      refundNotifyUrl: row.refundNotifyUrl
-    })
-    drawerVisible.value = true
   }
 
   const buildPayload = (): Api.Payment.ConfigForm => {
@@ -562,50 +574,71 @@
     return payload
   }
 
-  const handleSubmit = async () => {
+  const persistCurrent = (showSuccessMessage = true) => {
+    const payload = buildPayload()
+    if (creating.value) return createPaymentConfig(payload, showSuccessMessage)
+    if (!selectedConfig.value) throw new Error('请选择支付配置')
+    return updatePaymentConfig(selectedConfig.value.id, payload, showSuccessMessage)
+  }
+
+  const handleSave = async () => {
     await formRef.value?.validate()
-    submitting.value = true
+    saving.value = true
     try {
-      const payload = buildPayload()
-      if (editingConfig.value) {
-        await updatePaymentConfig(editingConfig.value.id, payload)
-      } else {
-        await createPaymentConfig(payload)
+      const saved = await persistCurrent()
+      await loadData(saved.id)
+    } finally {
+      saving.value = false
+    }
+  }
+
+  const handleUse = async () => {
+    if (selectedEnvironment.value) {
+      await ElMessageBox.confirm('确定切换为环境变量配置吗？', '确认使用配置', {
+        type: 'warning',
+        confirmButtonText: '使用此配置',
+        cancelButtonText: '取消'
+      })
+      using.value = true
+      try {
+        await updatePaymentConfigSource({ source: 'ENV' }, false)
+        await loadData('ENV')
+        ElMessage.success('已开始使用「环境变量配置」')
+      } finally {
+        using.value = false
       }
-      drawerVisible.value = false
-      await loadAll()
-    } finally {
-      submitting.value = false
+      return
     }
-  }
 
-  const handleEnable = async (row: Api.Payment.Config) => {
-    await ElMessageBox.confirm(`确定将「${row.configName}」设为 DB 候选配置吗？`, 'DB 候选确认', {
-      type: 'warning',
-      confirmButtonText: '确定',
-      cancelButtonText: '取消'
-    })
-    enablingId.value = row.id
+    await formRef.value?.validate()
+    const configName = trimText(formData.configName)
+    const saveFirst = creating.value || dirty.value
+    await ElMessageBox.confirm(
+      saveFirst
+        ? `将先保存「${configName}」的当前内容，再设为正在使用的支付配置。`
+        : `确定开始使用「${configName}」吗？`,
+      '确认使用配置',
+      {
+        type: 'warning',
+        confirmButtonText: saveFirst ? '保存并使用' : '使用此配置',
+        cancelButtonText: '取消'
+      }
+    )
+
+    using.value = true
     try {
-      await enablePaymentConfig(row.id)
-      await loadAll()
+      const target =
+        saveFirst || !selectedConfig.value ? await persistCurrent(false) : selectedConfig.value
+      await enablePaymentConfig(target.id, false)
+      await updatePaymentConfigSource({ source: 'DB' }, false)
+      await loadData(target.id)
+      ElMessage.success(`已开始使用「${target.configName}」`)
     } finally {
-      enablingId.value = null
+      using.value = false
     }
   }
 
-  const handleCurrentChange = (current: number) => {
-    pagination.current = current
-    loadConfigs()
-  }
-
-  const handleSizeChange = (size: number) => {
-    pagination.size = size
-    pagination.current = 1
-    loadConfigs()
-  }
-
-  onMounted(loadAll)
+  onMounted(loadData)
 </script>
 
 <style scoped lang="scss">
@@ -617,9 +650,9 @@
 
   .section-header {
     display: flex;
+    gap: 16px;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 16px;
   }
 
   .section-header__title {
@@ -636,102 +669,56 @@
   }
 
   .section-header__actions,
-  .effective-header__aside,
-  .table-actions {
+  .config-selector,
+  .config-option {
     display: flex;
-    align-items: center;
     gap: 8px;
-    flex-shrink: 0;
-  }
-
-  .effective-header__aside {
-    justify-content: flex-end;
-    flex-wrap: wrap;
-  }
-
-  .source-switch {
-    display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 12px;
-    min-height: 32px;
   }
 
-  .source-switch__label {
+  .section-header__actions {
     flex-shrink: 0;
-    font-size: 13px;
-    line-height: 20px;
-    color: var(--el-text-color-regular);
   }
 
-  .payment-config__table {
-    flex: 1;
+  .payment-form {
+    max-width: 900px;
   }
 
-  .config-name-cell,
-  .file-id-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-  }
+  .config-selector {
+    width: 100%;
 
-  .config-name-cell {
-    .title {
-      line-height: 20px;
-      color: var(--el-text-color-primary);
-    }
-
-    .subtitle {
-      font-size: 12px;
-      line-height: 18px;
-      color: var(--el-text-color-secondary);
+    :deep(.el-select),
+    :deep(.el-input) {
+      width: min(100%, 520px);
     }
   }
 
-  .file-id-cell {
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--el-text-color-regular);
-  }
-
-  .text-ellipsis {
-    display: inline-block;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    vertical-align: bottom;
-    white-space: nowrap;
-  }
-
-  .table-pagination {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 16px;
-  }
-
-  .drawer-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
+  .config-option {
+    justify-content: space-between;
     width: 100%;
   }
 
-  @media (max-width: 768px) {
+  .form-tip {
+    width: 100%;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--el-text-color-secondary);
+  }
+
+  @media (width <= 768px) {
     .section-header {
       flex-direction: column;
     }
 
     .section-header__actions {
+      flex-wrap: wrap;
       width: 100%;
-      justify-content: flex-end;
     }
 
-    .effective-header__aside,
-    .source-switch {
-      width: 100%;
-      justify-content: flex-start;
-      flex-wrap: wrap;
+    .config-selector {
+      flex-direction: column;
+      align-items: flex-start;
     }
   }
 </style>

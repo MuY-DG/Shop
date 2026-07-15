@@ -194,6 +194,30 @@ class AdminProductRecycleBinControllerTest {
     }
 
     @Test
+    void purgeRejectsAProductUsedByAnEnabledHomePlacement() throws Exception {
+        ProductFixture fixture = insertRichProduct("Home placement referenced product");
+        jdbcClient.sql("""
+                        insert into home_product_item
+                            (section_type, spu_id, image_file_id, image_url, sort_order, status)
+                        values
+                            ('HOT', :spuId, null, '', 0, 'ENABLED')
+                        """)
+                .param("spuId", fixture.spuId())
+                .update();
+        recycle(fixture.spuId());
+
+        mockMvc.perform(post("/admin/product/spus/{spuId}/purge", fixture.spuId())
+                        .header("Authorization", bearer(adminToken("product:spu:purge")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(purgeBody(fixture.originalTitle())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200007));
+
+        assertThat(spuState(fixture.spuId()).get("PURGED_AT")).isNull();
+        assertThat(count("home_product_item", "spu_id", fixture.spuId())).isEqualTo(1);
+    }
+
+    @Test
     void purgeKeepsOrderSnapshotsProtectedFilesAndSharedMasterDataButRemovesPrivateProductData() throws Exception {
         ProductFixture fixture = insertRichProduct("Order history purge product");
         long disabledBannerId = insertProductBanner(fixture, "DISABLED");

@@ -22,6 +22,7 @@ public enum ErrorCode {
     PRODUCT_PURGE_CONFIRMATION_MISMATCH(200004, "Product title confirmation does not match"),
     PRODUCT_PURGE_HAS_LOCKED_STOCK(200005, "Product has locked stock and cannot be permanently deleted"),
     PRODUCT_PURGE_HAS_ACTIVE_BANNER(200006, "Product is referenced by an enabled banner and cannot be permanently deleted"),
+    PRODUCT_PURGE_HAS_ACTIVE_HOME_ITEM(200007, "Product is referenced by an enabled home placement and cannot be permanently deleted"),
     STOCK_SHORTAGE(200100, "Stock shortage"),
     CART_ITEM_NOT_FOUND(250001, "Cart item not found"),
     COUPON_UNAVAILABLE(300001, "Coupon unavailable"),

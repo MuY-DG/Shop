@@ -15,10 +15,8 @@
             <div class="section-header__subtitle">选择文件保存位置，并配置公开文件的访问域名</div>
           </div>
           <div class="section-header__aside">
-            <ElTag :type="config?.persisted ? 'success' : 'info'">
-              {{
-                config?.persisted ? '后台配置' : `${formatProvider(config?.defaultProvider)} 默认`
-              }}
+            <ElTag type="success">
+              {{ config ? `正在使用：${formatProvider(config.provider)}` : '配置加载中' }}
             </ElTag>
           </div>
         </div>
@@ -88,9 +86,11 @@
             :loading="saving"
             @click="handleSave"
           >
-            保存配置
+            {{ formData.provider === config?.provider ? '保存配置' : '保存并使用' }}
           </ElButton>
-          <ElButton :disabled="loading || saving" @click="loadConfig">重新加载</ElButton>
+          <ElButton :disabled="!dirty || loading || saving" @click="resetUnsavedChanges">
+            撤销未保存修改
+          </ElButton>
         </ElFormItem>
       </ElForm>
     </ElCard>
@@ -107,6 +107,7 @@
   const loading = ref(false)
   const saving = ref(false)
   const config = ref<Api.Storage.Config | null>(null)
+  const baseline = ref('')
   const formRef = ref<FormInstance>()
 
   const createDefaultForm = (): Api.Storage.ConfigForm => ({
@@ -120,6 +121,17 @@
   })
 
   const formData = reactive<Api.Storage.ConfigForm>(createDefaultForm())
+  const snapshot = () =>
+    JSON.stringify({
+      provider: formData.provider,
+      publicBaseUrl: formData.publicBaseUrl,
+      localRoot: formData.localRoot,
+      cosRegion: formData.cosRegion,
+      cosBucket: formData.cosBucket,
+      cosSecretId: formData.cosSecretId,
+      cosSecretKey: formData.cosSecretKey
+    })
+  const dirty = computed(() => snapshot() !== baseline.value)
   const providerOptions: Array<{ label: string; value: Api.Storage.Provider }> = [
     { label: '本地存储', value: 'LOCAL' },
     { label: '腾讯云 COS', value: 'TENCENT_COS' }
@@ -222,7 +234,12 @@
       cosSecretId: '',
       cosSecretKey: ''
     })
+    baseline.value = snapshot()
     formRef.value?.clearValidate()
+  }
+
+  const resetUnsavedChanges = () => {
+    if (config.value) fillForm(config.value)
   }
 
   const loadConfig = async () => {

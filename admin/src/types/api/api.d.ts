@@ -695,6 +695,89 @@ declare namespace Api {
       startAt?: string | null
       endAt?: string | null
     }
+
+    type HomeItemStatus = 'ENABLED' | 'DISABLED'
+    type HomeProductSection = 'HOT' | 'RECOMMENDED'
+
+    interface HomeCategoryItem {
+      id: number
+      categoryId: number
+      categoryName: string
+      categoryStatus: HomeItemStatus
+      imageFileId: number
+      imageUrl: string
+      sortOrder: number
+      status: HomeItemStatus
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface HomeCategoryForm {
+      categoryId: number | null
+      imageFileId: number | null
+      sortOrder: number
+      status: HomeItemStatus
+    }
+
+    interface HomeCategoryOption {
+      id: number
+      parentId: number
+      name: string
+      icon: string
+    }
+
+    interface HomeProductItem {
+      id: number
+      sectionType: HomeProductSection
+      spuId: number
+      productTitle: string
+      productSubtitle: string
+      productStatus: string
+      categoryName: string
+      imageFileId?: number | null
+      imageUrl: string
+      productImageUrl: string
+      displayImageUrl: string
+      minPriceCent?: number | null
+      maxPriceCent?: number | null
+      sortOrder: number
+      status: HomeItemStatus
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface HomeProductForm {
+      spuId: number | null
+      imageFileId: number | null
+      sortOrder: number
+      status: HomeItemStatus
+    }
+
+    interface HomeProductOption {
+      id: number
+      categoryId: number
+      categoryName: string
+      title: string
+      subtitle: string
+      mainImage: string
+      minPriceCent?: number | null
+      maxPriceCent?: number | null
+    }
+
+    interface HomeProductOptionQuery extends Api.Common.CommonSearchParams {
+      keyword?: string
+    }
+
+    type HomeProductOptionList = Api.Common.PaginatedResponse<HomeProductOption>
+
+    interface ContactSetting {
+      phone: string
+      updatedAt: string
+    }
+
+    interface ContactForm {
+      phone: string
+    }
   }
 
   namespace Marketing {
@@ -925,6 +1008,11 @@ declare namespace Api {
     }
 
     type EffectiveConfig = Omit<Config, 'id'> & { id: number | null }
+
+    interface EnvironmentConfig {
+      available: boolean
+      config?: EffectiveConfig | null
+    }
 
     interface ConfigSourceSetting {
       source: ConfigSource

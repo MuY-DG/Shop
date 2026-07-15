@@ -32,7 +32,7 @@ class CommerceFulfillmentMySqlMigrationTest {
         Flyway flyway = Flyway.configure()
                 .dataSource(CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("18");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("19");
         AssetModelMigrationTest.assertFinalAssetSchema(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
 

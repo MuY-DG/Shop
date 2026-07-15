@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.content.PublicContentChangedEvent;
 import org.muybaby.shopserver.product.CategoryStatus;
 import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.ProductSpecType;
@@ -26,6 +27,7 @@ import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -67,17 +69,20 @@ public class AdminProductService {
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final StorageUsageService storageUsageService;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AdminProductService(
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             StorageUsageService storageUsageService,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageUsageService = storageUsageService;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -132,6 +137,7 @@ public class AdminProductService {
             throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
         }
         syncCategoryFileUsages(categoryId, normalizedRequest);
+        publishHomeChanged();
     }
 
     @Transactional
@@ -153,6 +159,7 @@ public class AdminProductService {
         upsertSkuRows(spuId, normalizedRequest, Map.of(), specValuesByKey, SYSTEM_OPERATOR_TYPE, SYSTEM_OPERATOR_ID);
         replaceProductAssociations(spuId, normalizedRequest);
         syncSpuFileUsages(spuId, normalizedRequest);
+        publishHomeChanged();
         return spuId;
     }
 
@@ -245,6 +252,7 @@ public class AdminProductService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
+        publishHomeChanged();
         replaceImageRows(spuId, normalizedRequest.images());
         Map<String, PersistedSpecValue> specValuesByKey = normalizedRequest.specGroupsSpecified()
                 ? replaceSpecRows(spuId, normalizedRequest)
@@ -291,6 +299,7 @@ public class AdminProductService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
+        publishHomeChanged();
     }
 
     @Transactional
@@ -307,6 +316,7 @@ public class AdminProductService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
+        publishHomeChanged();
     }
 
     @Transactional
@@ -330,6 +340,7 @@ public class AdminProductService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
+        publishHomeChanged();
     }
 
     @Transactional
@@ -357,6 +368,7 @@ public class AdminProductService {
             throw new BusinessException(ErrorCode.PRODUCT_NOT_IN_RECYCLE_BIN);
         }
         restoreProductFileUsages(recycledSpu);
+        publishHomeChanged();
     }
 
     @Transactional
@@ -371,9 +383,12 @@ public class AdminProductService {
         requireNoLockedStockForPurge(spuId);
         List<ProductBannerReference> productBanners = lockProductBannersForPurge(spuId);
         requireNoEnabledProductBannerForPurge(productBanners);
+        List<HomeProductReference> homeProducts = lockHomeProductsForPurge(spuId);
+        requireNoEnabledHomeProductForPurge(homeProducts);
         LocalDateTime purgedAt = LocalDateTime.now();
 
         detachDisabledProductBanners(productBanners, purgedAt);
+        deleteDisabledHomeProducts(homeProducts);
         deleteCartItems(skus);
         deleteProductOwnedFileUsages(spuId, skus);
         deleteProductPrivateRows(spuId, skus);
@@ -408,6 +423,7 @@ public class AdminProductService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_NOT_IN_RECYCLE_BIN);
         }
+        publishHomeChanged();
     }
 
     private void restoreLegacyDeletedChildren(Long spuId, LocalDateTime productDeletedAt, LocalDateTime restoredAt) {
@@ -633,6 +649,45 @@ public class AdminProductService {
                     .param("bannerId", banner.id())
                     .update();
         }
+    }
+
+    private List<HomeProductReference> lockHomeProductsForPurge(Long spuId) {
+        return jdbcClient.sql("""
+                        select id, status
+                        from home_product_item
+                        where spu_id = :spuId
+                        order by id
+                        for update
+                        """)
+                .param("spuId", spuId)
+                .query((rs, rowNum) -> new HomeProductReference(
+                        rs.getLong("id"),
+                        rs.getString("status")
+                ))
+                .list();
+    }
+
+    private void requireNoEnabledHomeProductForPurge(List<HomeProductReference> homeProducts) {
+        if (homeProducts.stream().anyMatch(item -> "ENABLED".equals(item.status()))) {
+            throw new BusinessException(ErrorCode.PRODUCT_PURGE_HAS_ACTIVE_HOME_ITEM);
+        }
+    }
+
+    private void deleteDisabledHomeProducts(List<HomeProductReference> homeProducts) {
+        for (HomeProductReference item : homeProducts) {
+            storageUsageService.removeOwnerUsages(StorageUsageOwnerType.HOME_PRODUCT_ITEM, item.id());
+            jdbcClient.sql("""
+                            delete from home_product_item
+                            where id = :itemId
+                              and status <> 'ENABLED'
+                            """)
+                    .param("itemId", item.id())
+                    .update();
+        }
+    }
+
+    private void publishHomeChanged() {
+        eventPublisher.publishEvent(PublicContentChangedEvent.home());
     }
 
     private void deleteCartItems(List<ProductSku> skus) {
@@ -2528,5 +2583,8 @@ public class AdminProductService {
     }
 
     private record ProductBannerReference(Long id, String status) {
+    }
+
+    private record HomeProductReference(Long id, String status) {
     }
 }

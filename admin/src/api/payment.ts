@@ -17,17 +17,27 @@ export function fetchEffectivePaymentConfig() {
   })
 }
 
+export function fetchEnvironmentPaymentConfig() {
+  return request.get<Api.Payment.EnvironmentConfig>({
+    url: '/admin/pay/configs/environment',
+    showErrorMessage: false
+  })
+}
+
 export function fetchPaymentConfigSource() {
   return request.get<Api.Payment.ConfigSourceSetting>({
     url: '/admin/pay/configs/source'
   })
 }
 
-export function updatePaymentConfigSource(data: Api.Payment.ConfigSourceForm) {
+export function updatePaymentConfigSource(
+  data: Api.Payment.ConfigSourceForm,
+  showSuccessMessage = true
+) {
   return request.put<Api.Payment.ConfigSourceSetting>({
     url: '/admin/pay/configs/source',
     data,
-    showSuccessMessage: true
+    showSuccessMessage
   })
 }
 
@@ -38,25 +48,29 @@ export function fetchPaymentConfigs(params: Api.Payment.ConfigSearchParams) {
   })
 }
 
-export function createPaymentConfig(data: Api.Payment.ConfigForm) {
+export function createPaymentConfig(data: Api.Payment.ConfigForm, showSuccessMessage = true) {
   return request.post<Api.Payment.Config>({
     url: '/admin/pay/configs',
     data,
-    showSuccessMessage: true
+    showSuccessMessage
   })
 }
 
-export function updatePaymentConfig(configId: number, data: Api.Payment.ConfigForm) {
+export function updatePaymentConfig(
+  configId: number,
+  data: Api.Payment.ConfigForm,
+  showSuccessMessage = true
+) {
   return request.put<Api.Payment.Config>({
     url: `/admin/pay/configs/${configId}`,
     data,
-    showSuccessMessage: true
+    showSuccessMessage
   })
 }
 
-export function enablePaymentConfig(configId: number) {
+export function enablePaymentConfig(configId: number, showSuccessMessage = true) {
   return request.post<Api.Payment.Config>({
     url: `/admin/pay/configs/${configId}/enable`,
-    showSuccessMessage: true
+    showSuccessMessage
   })
 }

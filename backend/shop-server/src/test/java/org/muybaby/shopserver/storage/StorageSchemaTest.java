@@ -88,7 +88,8 @@ class StorageSchemaTest {
         Integer routeCount = jdbcClient.sql("""
                         select count(*)
                         from admin_menu
-                        where path in ('/storage/files', '/content/banner')
+                        where (id = 600 and parent_id = 620 and path = 'assets' and component = '/storage/files')
+                           or (id = 610 and parent_id = 620 and path = 'banner' and component = '/content/banner')
                         """)
                 .query(Integer.class)
                 .single();

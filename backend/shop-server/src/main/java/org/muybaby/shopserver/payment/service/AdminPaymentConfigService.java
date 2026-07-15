@@ -12,6 +12,7 @@ import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigRequest;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigResponse;
+import org.muybaby.shopserver.payment.dto.EnvironmentPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
@@ -70,7 +71,24 @@ public class AdminPaymentConfigService {
     }
 
     public EffectivePaymentConfigResponse effective() {
-        ResolvedPaymentConfig config = paymentConfigResolver.resolve();
+        return toEffectiveResponse(paymentConfigResolver.resolve());
+    }
+
+    public EnvironmentPaymentConfigResponse environment() {
+        try {
+            return new EnvironmentPaymentConfigResponse(
+                    true,
+                    toEffectiveResponse(paymentConfigResolver.resolve(PaymentConfigSource.ENV))
+            );
+        } catch (BusinessException ex) {
+            if (ex.errorCode() != ErrorCode.VALIDATION_FAILED) {
+                throw ex;
+            }
+            return new EnvironmentPaymentConfigResponse(false, null);
+        }
+    }
+
+    private EffectivePaymentConfigResponse toEffectiveResponse(ResolvedPaymentConfig config) {
         return new EffectivePaymentConfigResponse(
                 config.configId(),
                 config.source().name(),

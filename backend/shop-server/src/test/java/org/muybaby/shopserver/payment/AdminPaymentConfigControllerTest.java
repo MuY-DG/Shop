@@ -187,6 +187,10 @@ class AdminPaymentConfigControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.code()));
 
+        mockMvc.perform(get("/admin/pay/configs/environment"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.code()));
+
         mockMvc.perform(get("/admin/pay/configs")
                         .header("Authorization", "Bearer " + appToken))
                 .andExpect(status().isUnauthorized())
@@ -197,7 +201,17 @@ class AdminPaymentConfigControllerTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
 
+        mockMvc.perform(get("/admin/pay/configs/environment")
+                        .header("Authorization", "Bearer " + writeOnlyToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
+
         mockMvc.perform(get("/admin/pay/configs/effective")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(get("/admin/pay/configs/environment")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
@@ -232,6 +246,45 @@ class AdminPaymentConfigControllerTest {
                 .doesNotContain("mch_env_123456")
                 .doesNotContain("serial_env_123456")
                 .doesNotContain("pub_key_env_123456");
+    }
+
+    @Test
+    void environmentEndpointReturnsMaskedEnvConfigWhenDbIsEffective() throws Exception {
+        String readToken = limitedAdminToken(List.of("payment:config:read"));
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
+        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        long configId = createConfig(writeToken, "DB Pay", privateKeyFileId, certFileId, publicKeyFileId);
+
+        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", configId)
+                        .header("Authorization", "Bearer " + enableToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + enableToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":"DB"}
+                                """))
+                .andExpect(status().isOk());
+
+        String response = mockMvc.perform(get("/admin/pay/configs/environment")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.available").value(true))
+                .andExpect(jsonPath("$.data.config.source").value("ENV"))
+                .andExpect(jsonPath("$.data.config.configName").value("Environment"))
+                .andExpect(jsonPath("$.data.config.appIdMasked").value(startsWith("wx_")))
+                .andExpect(jsonPath("$.data.config.apiV3KeyConfigured").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertSecretMaterialIsAbsent(response);
+        assertThat(response).doesNotContain("wx_env_app_123456")
+                .doesNotContain("mch_env_123456")
+                .doesNotContain("synthetic_env_api_v3_key");
     }
 
     @Test

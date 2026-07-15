@@ -183,6 +183,7 @@
             :data="assets"
             :columns="columns"
             :pagination="pagination"
+            :empty-height="ASSET_LIBRARY_EMPTY_TABLE_HEIGHT"
             row-key="id"
             @selection-change="handleTableSelectionChange"
             @pagination:current-change="handleCurrentChange"
@@ -491,6 +492,7 @@
   import { useTableColumns } from '@/hooks/core/useTableColumns'
   import type { ColumnOption } from '@/types'
   import { settleWithConcurrency } from '@/utils/asset-batch'
+  import { ASSET_LIBRARY_EMPTY_TABLE_HEIGHT } from './asset-library-layout'
   import {
     batchMoveAssets,
     createAssetFolder,

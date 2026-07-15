@@ -30,6 +30,10 @@ shop:
   api:
     success-code: 200
     success-message: success
+  content:
+    cache-enabled: ${SHOP_CONTENT_CACHE_ENABLED:true}
+    home-cache-ttl: ${SHOP_HOME_CACHE_TTL:6h}
+    contact-cache-ttl: ${SHOP_CONTACT_CACHE_TTL:24h}
   auth:
     token-store: redis
     admin-access-ttl: 2h

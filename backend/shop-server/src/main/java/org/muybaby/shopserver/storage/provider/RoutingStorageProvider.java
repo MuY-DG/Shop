@@ -23,6 +23,8 @@ import java.util.concurrent.ConcurrentMap;
 
 public class RoutingStorageProvider implements StorageProvider {
 
+    private static final String PUBLIC_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
     private final StorageRuntimeConfigService configService;
     private final CosClientFactory cosClientFactory;
     private final ConcurrentMap<CosKey, COSClient> cosClients = new ConcurrentHashMap<>();
@@ -72,8 +74,12 @@ public class RoutingStorageProvider implements StorageProvider {
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(sizeBytes);
         metadata.setContentType(contentType);
+        boolean publicObject = resolved.objectKey().startsWith("public/");
+        if (publicObject) {
+            metadata.setCacheControl(PUBLIC_CACHE_CONTROL);
+        }
         PutObjectRequest request = new PutObjectRequest(resolved.container(), resolved.objectKey(), inputStream, metadata);
-        request.setCannedAcl(resolved.objectKey().startsWith("public/")
+        request.setCannedAcl(publicObject
                 ? CannedAccessControlList.PublicRead
                 : CannedAccessControlList.Private);
         cos(config, resolved.region()).putObject(request);
