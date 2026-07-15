@@ -4,8 +4,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.muybaby.shopserver.auth.dto.AppLoginRequest;
 import org.muybaby.shopserver.auth.dto.AppSessionResponse;
+import org.muybaby.shopserver.auth.dto.AppUserProfile;
 import org.muybaby.shopserver.auth.dto.PhoneAuthorizeRequest;
 import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
+import org.muybaby.shopserver.auth.dto.UpdateAppUserProfileRequest;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.InMemoryTokenStore;
 import org.muybaby.shopserver.auth.token.TokenKind;
@@ -53,8 +55,10 @@ class AppAuthServiceTest {
         when(fixture.opaqueTokenService().issue(any(), any()))
                 .thenReturn(new TokenPair("app_token", "apr_token", 604800));
 
-        assertThat(fixture.service().login(new AppLoginRequest("short-code")).user().openidMasked())
-                .isEqualTo("a****c");
+        AppUserProfile profile = fixture.service().login(new AppLoginRequest("short-code")).user();
+
+        assertThat(profile.openidMasked()).isEqualTo("a****c");
+        assertThat(profile.nickname()).isEqualTo("测试用户");
     }
 
     @Test
@@ -217,6 +221,22 @@ class AppAuthServiceTest {
     }
 
     @Test
+    void updateProfileUsesTheAuthenticatedUserAndCanonicalMapper() {
+        Fixture fixture = fixture();
+        when(fixture.appUserService().updateNickname(3L, "山茶花用户"))
+                .thenReturn(appUser(3L, "profile-openid", null, false, "山茶花用户"));
+
+        assertThat(fixture.service().updateProfile(
+                appPrincipal("session-3", 3L),
+                new UpdateAppUserProfileRequest("山茶花用户")
+        )).satisfies(profile -> {
+            assertThat(profile.userId()).isEqualTo(3L);
+            assertThat(profile.nickname()).isEqualTo("山茶花用户");
+        });
+        verify(fixture.appUserService()).updateNickname(3L, "山茶花用户");
+    }
+
+    @Test
     void logoutRevokesTheAuthenticatedAppSession() {
         Fixture fixture = fixture();
 
@@ -281,8 +301,21 @@ class AppAuthServiceTest {
     }
 
     private AppUser appUser(Long id, String openid, String phoneNumber, Boolean phoneAuthorized) {
+        return appUser(id, openid, phoneNumber, phoneAuthorized, "测试用户");
+    }
+
+    private AppUser appUser(
+            Long id,
+            String openid,
+            String phoneNumber,
+            Boolean phoneAuthorized,
+            String nickname
+    ) {
         LocalDateTime now = LocalDateTime.now();
-        return new AppUser(id, openid, null, phoneNumber, "86", phoneAuthorized, "ENABLED", now, now, now);
+        return new AppUser(
+                id, openid, null, nickname, phoneNumber, "86", phoneAuthorized,
+                "ENABLED", now, now, now
+        );
     }
 
     private record Fixture(

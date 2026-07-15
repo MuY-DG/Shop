@@ -49,6 +49,9 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     void adminListAndDetailReturnPagedEnvelopeAndRequireReadAuthority() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-list-app");
+        jdbcClient.sql("update app_user set nickname = '售后详情用户' where id = :userId")
+                .param("userId", appUser.userId())
+                .update();
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-list");
         long afterSaleId = applyAfterSale(appUser, order, 6980L);
         long evidenceFileId = firstEvidenceFileId(afterSaleId);
@@ -71,6 +74,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.data.records[0].orderId").value(order.orderId()))
                 .andExpect(jsonPath("$.data.records[0].userId").isString())
                 .andExpect(jsonPath("$.data.records[0].userId").value(Long.toString(appUser.userId())))
+                .andExpect(jsonPath("$.data.records[0].userNickname").value("售后详情用户"))
                 .andExpect(jsonPath("$.data.records[0].requestedAmountCent").isNumber())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.current").value(1))
@@ -81,6 +85,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(afterSaleId))
                 .andExpect(jsonPath("$.data.orderNo").value(order.orderNo()))
+                .andExpect(jsonPath("$.data.userNickname").value("售后详情用户"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].fileId").value(evidenceFileId))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].originalFilename").value("after-sale-" + evidenceFileId + ".png"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].contentType").value("image/png"))
@@ -97,7 +102,8 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         AppLoginSession appUser = appLogin("after-sale-admin-v2-app");
         jdbcClient.sql("""
                         update app_user
-                        set phone_number = '13800138000', phone_authorized = true
+                        set nickname = '售后筛选用户',
+                            phone_number = '13800138000', phone_authorized = true
                         where id = :userId
                         """)
                 .param("userId", appUser.userId())
@@ -134,8 +140,8 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         String readToken = limitedAdminToken(List.of("aftersale:read"));
 
         mockMvc.perform(get("/admin/after-sales/status-counts")
-                        .param("userSearchType", "USER_PHONE")
-                        .param("userKeyword", "13800138000")
+                        .param("userSearchType", "USER_NAME")
+                        .param("userKeyword", "售后筛选")
                         .param("statusGroup", "PENDING_REVIEW")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
@@ -160,6 +166,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.records[0].id").value(approvedId))
+                .andExpect(jsonPath("$.data.records[0].userNickname").value("售后筛选用户"))
                 .andExpect(jsonPath("$.data.records[0].status").value("APPROVED"))
                 .andExpect(jsonPath("$.data.records[0].reason").value("申请退款"))
                 .andExpect(jsonPath("$.data.records[0].requestedAmountCent").value(7980))

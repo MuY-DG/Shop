@@ -11,6 +11,7 @@ public record AfterSaleResponse(
         String orderNo,
         @JsonStringId
         Long userId,
+        String userNickname,
         String afterSaleType,
         String status,
         String reason,

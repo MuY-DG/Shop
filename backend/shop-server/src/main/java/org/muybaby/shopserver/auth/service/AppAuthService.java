@@ -5,6 +5,7 @@ import org.muybaby.shopserver.auth.dto.AppSessionResponse;
 import org.muybaby.shopserver.auth.dto.AppUserProfile;
 import org.muybaby.shopserver.auth.dto.PhoneAuthorizeRequest;
 import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
+import org.muybaby.shopserver.auth.dto.UpdateAppUserProfileRequest;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenPair;
@@ -64,6 +65,14 @@ public class AppAuthService {
     public AppUserProfile me(AuthenticatedPrincipal principal) {
         requireAppPrincipal(principal);
         return profileMapper.from(appUserService.requireEnabledUser(principal.subjectId()));
+    }
+
+    public AppUserProfile updateProfile(
+            AuthenticatedPrincipal principal,
+            UpdateAppUserProfileRequest request
+    ) {
+        requireAppPrincipal(principal);
+        return profileMapper.from(appUserService.updateNickname(principal.subjectId(), request.nickname()));
     }
 
     public void logout(AuthenticatedPrincipal principal) {

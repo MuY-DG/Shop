@@ -298,7 +298,7 @@ Page<OrderDetailPageData, WechatMiniprogram.Page.CustomOption>({
         canCancel,
         canApplyAfterSale: canApply,
         hasActiveAfterSale,
-        showActionBar: canPay || canCancel || canApply || hasActiveAfterSale
+        showActionBar: true
       });
     } catch (error) {
       this.setData({
@@ -404,6 +404,14 @@ Page<OrderDetailPageData, WechatMiniprogram.Page.CustomOption>({
     const maxAmountCent = this.data.detail.paidAmountCent || this.data.detail.payableAmountCent;
     wx.navigateTo({
       url: `/pages/aftersale/apply/apply?order_id=${this.data.orderId}&max_amount_cent=${maxAmountCent}`
+    });
+  },
+  onCustomerServiceTap() {
+    if (!this.data.orderId) {
+      return;
+    }
+    wx.navigateTo({
+      url: `/pages/customer-service/chat/chat?context_type=ORDER&context_id=${this.data.orderId}`
     });
   }
 });

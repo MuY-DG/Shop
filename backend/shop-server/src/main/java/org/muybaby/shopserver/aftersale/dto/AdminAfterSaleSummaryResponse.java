@@ -10,6 +10,7 @@ public record AdminAfterSaleSummaryResponse(
         Long orderId,
         String orderNo,
         @JsonSerialize(using = ToStringSerializer.class) Long userId,
+        String userNickname,
         String afterSaleType,
         String status,
         String reason,

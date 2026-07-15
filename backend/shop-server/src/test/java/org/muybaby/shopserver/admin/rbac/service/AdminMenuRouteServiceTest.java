@@ -38,9 +38,9 @@ class AdminMenuRouteServiceTest {
 
     @Test
     void authListIgnoresPermissionsGrantedOnlyByDisabledRoles() {
-        insertRole(3L, "R_DISABLED", false);
-        insertUserRole(1L, 3L);
-        insertRolePermission(3L, 1001L);
+        insertRole(93003L, "R_DISABLED", false);
+        insertUserRole(1L, 93003L);
+        insertRolePermission(93003L, 1001L);
         jdbcClient.sql("delete from admin_role_permission where role_id = :roleId and permission_id = :permissionId")
                 .param("roleId", 1L)
                 .param("permissionId", 1001L)
@@ -67,10 +67,10 @@ class AdminMenuRouteServiceTest {
 
     @Test
     void duplicatePermissionGrantsDoNotDuplicateAuthEntries() {
-        insertRole(3L, "R_SUPPORT", true);
-        insertUserRole(1L, 3L);
-        insertRoleMenu(3L, 201L);
-        insertRolePermission(3L, 1001L);
+        insertRole(93003L, "R_SUPPORT", true);
+        insertUserRole(1L, 93003L);
+        insertRoleMenu(93003L, 201L);
+        insertRolePermission(93003L, 1001L);
 
         AdminRouteResponse userRoute = findRoute(menuRouteService.routesForUser(1L), 201L);
 

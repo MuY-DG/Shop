@@ -10,6 +10,7 @@ import org.muybaby.shopserver.order.dto.OrderStatusLogResponse;
 import org.muybaby.shopserver.order.service.AdminOrderService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +31,7 @@ public class AdminOrderController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('order:read')")
     public ApiResponse<PageResult<AdminOrderSummaryResponse>> page(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             AdminOrderQueryRequest query
@@ -38,6 +40,7 @@ public class AdminOrderController {
     }
 
     @GetMapping("/status-counts")
+    @PreAuthorize("hasAuthority('order:read')")
     public ApiResponse<AdminOrderStatusCountsResponse> statusCounts(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             AdminOrderQueryRequest query
@@ -46,6 +49,7 @@ public class AdminOrderController {
     }
 
     @GetMapping("/{orderId}")
+    @PreAuthorize("hasAuthority('order:read')")
     public ApiResponse<OrderDetailResponse> detail(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long orderId
@@ -54,6 +58,7 @@ public class AdminOrderController {
     }
 
     @GetMapping("/{orderId}/status-logs")
+    @PreAuthorize("hasAuthority('order:read')")
     public ApiResponse<List<OrderStatusLogResponse>> statusLogs(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long orderId
@@ -62,6 +67,7 @@ public class AdminOrderController {
     }
 
     @PostMapping("/{orderId}/close")
+    @PreAuthorize("hasAuthority('order:close')")
     public ApiResponse<Map<String, Object>> close(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long orderId

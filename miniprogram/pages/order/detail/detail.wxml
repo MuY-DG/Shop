@@ -96,6 +96,13 @@
 
   <view wx:if="{{detail && showActionBar}}" class="action-bar">
     <button
+      class="action-button secondary"
+      disabled="{{paymentOperating || cancelOperating}}"
+      bindtap="onCustomerServiceTap"
+    >
+      咨询客服
+    </button>
+    <button
       wx:if="{{canCancel}}"
       class="action-button secondary"
       loading="{{cancelOperating}}"

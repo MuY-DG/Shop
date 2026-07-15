@@ -12,7 +12,8 @@
     "pages/order/detail/detail",
     "pages/address/list/list",
     "pages/address/edit/edit",
-    "pages/aftersale/apply/apply"
+    "pages/aftersale/apply/apply",
+    "pages/customer-service/chat/chat"
   ],
   "window": {
     "navigationBarTitleText": "MuYbaby",

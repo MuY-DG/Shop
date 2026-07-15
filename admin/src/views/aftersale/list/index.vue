@@ -30,6 +30,7 @@
           <template #prepend>
             <ElSelect v-model="searchForm.userSearchType" class="user-search-type">
               <ElOption label="用户 ID" value="USER_ID" />
+              <ElOption label="用户名称" value="USER_NAME" />
               <ElOption label="用户手机号" value="USER_PHONE" />
             </ElSelect>
           </template>
@@ -122,6 +123,9 @@
                   }}</ElDescriptionsItem>
                   <ElDescriptionsItem label="用户 ID">{{
                     currentDetail.userId
+                  }}</ElDescriptionsItem>
+                  <ElDescriptionsItem label="用户名称">{{
+                    formatText(currentDetail.userNickname)
                   }}</ElDescriptionsItem>
                   <ElDescriptionsItem label="关联订单">
                     <ElButton type="primary" link @click="openRelatedOrder(currentDetail.orderNo)">
@@ -629,6 +633,12 @@
           label: '订单号',
           minWidth: 220,
           formatter: (row) => h('span', { class: 'order-no-cell' }, row.orderNo)
+        },
+        {
+          prop: 'userNickname',
+          label: '用户名称',
+          minWidth: 140,
+          formatter: (row) => row.userNickname || '-'
         },
         {
           prop: 'afterSaleType',

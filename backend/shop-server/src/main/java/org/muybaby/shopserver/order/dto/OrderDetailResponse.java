@@ -11,6 +11,7 @@ public record OrderDetailResponse(
         String status,
         String source,
         Long userId,
+        String userNickname,
         String userPhone,
         Long productOriginalAmountCent,
         Long productAmountCent,

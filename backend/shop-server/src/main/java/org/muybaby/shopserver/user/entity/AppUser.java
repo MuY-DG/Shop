@@ -9,6 +9,7 @@ public record AppUser(
         Long id,
         String openid,
         String unionid,
+        String nickname,
         String phoneNumber,
         String phoneCountryCode,
         Boolean phoneAuthorized,

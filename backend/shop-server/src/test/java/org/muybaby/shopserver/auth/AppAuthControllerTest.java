@@ -32,6 +32,7 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -65,6 +66,7 @@ class AppAuthControllerTest {
                 .andExpect(jsonPath("$.data.token", startsWith("app_")))
                 .andExpect(jsonPath("$.data.refreshToken", startsWith("apr_")))
                 .andExpect(jsonPath("$.data.expiresIn").value(604800))
+                .andExpect(jsonPath("$.data.user.nickname", startsWith("用户")))
                 .andExpect(jsonPath("$.data.user.openidMasked").value("test****code"))
                 .andExpect(jsonPath("$.data.user.phoneAuthorized").value(false))
                 .andExpect(jsonPath("$.data.user.phoneNumberMasked").doesNotExist());
@@ -78,6 +80,7 @@ class AppAuthControllerTest {
                         .header("Authorization", bearer(login.token())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.userId").value(login.userId()))
+                .andExpect(jsonPath("$.data.nickname").value(login.nickname()))
                 .andExpect(jsonPath("$.data.openidMasked").value("test****ency"))
                 .andExpect(jsonPath("$.data.phoneAuthorized").value(false))
                 .andExpect(jsonPath("$.data.phoneNumberMasked").doesNotExist());
@@ -88,10 +91,53 @@ class AppAuthControllerTest {
                         .content("{\"code\":\"test-phone-code\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.userId").value(login.userId()))
+                .andExpect(jsonPath("$.data.nickname").value(login.nickname()))
                 .andExpect(jsonPath("$.data.openidMasked").value("test****ency"))
                 .andExpect(jsonPath("$.data.phoneAuthorized").value(true))
                 .andExpect(jsonPath("$.data.phoneNumberMasked").value("138****5678"))
                 .andExpect(content().string(not(containsString("13812345678"))));
+    }
+
+    @Test
+    void appUserCanUpdateNicknameAndReadItFromLaterProfiles() throws Exception {
+        AppSession login = login("nickname-profile-user");
+
+        mockMvc.perform(put("/app/users/me")
+                        .header("Authorization", bearer(login.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"  山茶花用户  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(login.userId()))
+                .andExpect(jsonPath("$.data.nickname").value("山茶花用户"));
+
+        mockMvc.perform(get("/app/users/me")
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nickname").value("山茶花用户"));
+
+        mockMvc.perform(post("/app/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"nickname-profile-user\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.nickname").value("山茶花用户"));
+    }
+
+    @Test
+    void nicknameUpdateRequiresAppTokenAndValidNickname() throws Exception {
+        AppSession login = login("nickname-validation-user");
+
+        mockMvc.perform(put("/app/users/me")
+                        .header("Authorization", bearer(login.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"单\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        mockMvc.perform(put("/app/users/me")
+                        .header("Authorization", bearer(adminLoginAndExtractToken("token")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nickname\":\"后台管理员\"}"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -235,7 +281,8 @@ class AppAuthControllerTest {
         return new AppSession(
                 read(result, "/data/token").asText(),
                 read(result, "/data/refreshToken").asText(),
-                read(result, "/data/user/userId").asLong()
+                read(result, "/data/user/userId").asLong(),
+                read(result, "/data/user/nickname").asText()
         );
     }
 
@@ -282,6 +329,6 @@ class AppAuthControllerTest {
         ((Map<String, ?>) field.get(tokenStore)).remove(sessionId);
     }
 
-    private record AppSession(String token, String refreshToken, long userId) {
+    private record AppSession(String token, String refreshToken, long userId, String nickname) {
     }
 }

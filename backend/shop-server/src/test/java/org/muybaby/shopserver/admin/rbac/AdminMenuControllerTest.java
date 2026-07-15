@@ -101,7 +101,9 @@ class AdminMenuControllerTest {
                         "coupon:template:disable"
                 )))
                 .andExpect(jsonPath("$.data[3].path").value("/trade"))
-                .andExpect(jsonPath("$.data[3].children[*].path", contains("orders", "after-sales")))
+                .andExpect(jsonPath("$.data[3].children[*].path", contains(
+                        "orders", "after-sales", "customer-service"
+                )))
                 .andExpect(jsonPath("$.data[3].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "order:read",
                         "order:close",
@@ -111,6 +113,17 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[3].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "aftersale:read",
                         "aftersale:audit"
+                )))
+                .andExpect(jsonPath("$.data[3].children[2].component").value("/customer-service/index"))
+                .andExpect(jsonPath("$.data[3].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                        "customer-service:conversation:read",
+                        "customer-service:conversation:claim",
+                        "customer-service:conversation:transfer",
+                        "customer-service:conversation:close",
+                        "customer-service:message:send",
+                        "customer-service:order:link",
+                        "customer-service:product:send",
+                        "customer-service:agent:manage"
                 )))
                 .andExpect(jsonPath("$.data[4].path").value("/decoration"))
                 .andExpect(jsonPath("$.data[4].children[*].path", contains(

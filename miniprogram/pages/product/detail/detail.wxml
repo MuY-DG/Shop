@@ -76,6 +76,11 @@
 
   <view class="action-bar">
     <button
+      class="action-button service-button"
+      disabled="{{!detail}}"
+      bindtap="onCustomerServiceTap"
+    >联系客服</button>
+    <button
       class="action-button cart-button"
       disabled="{{!selectedSkuId || addingCart || buying}}"
       loading="{{addingCart}}"

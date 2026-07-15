@@ -30,6 +30,7 @@
           <template #prepend>
             <ElSelect v-model="searchForm.userSearchType" class="user-search-type">
               <ElOption label="用户 ID" value="USER_ID" />
+              <ElOption label="用户名称" value="USER_NAME" />
               <ElOption label="用户手机号" value="USER_PHONE" />
             </ElSelect>
           </template>
@@ -124,10 +125,13 @@
               <div class="detail-section">
                 <div class="detail-section__title">用户信息</div>
                 <ElDescriptions :column="3" border>
+                  <ElDescriptionsItem label="用户名称">
+                    {{ formatText(currentDetail.userNickname) }}
+                  </ElDescriptionsItem>
                   <ElDescriptionsItem label="用户 ID">
                     {{ currentDetail.userId }}
                   </ElDescriptionsItem>
-                  <ElDescriptionsItem label="用户手机号" :span="2">
+                  <ElDescriptionsItem label="用户手机号">
                     {{ maskPhone(currentDetail.userPhone) }}
                   </ElDescriptionsItem>
                 </ElDescriptions>
@@ -541,12 +545,14 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, h, onMounted, reactive, ref, watch } from 'vue'
+  import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
+  import { ElNotification } from 'element-plus'
   import { ArrowDown, Tickets } from '@element-plus/icons-vue'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
+  import { realtimeClient, type RealtimeEvent } from '@/utils/realtime'
   import {
     closeOrder,
     fetchOrderDetail,
@@ -1030,6 +1036,12 @@
           formatter: (row) => h('span', { class: 'order-no-cell' }, row.orderNo)
         },
         {
+          prop: 'userNickname',
+          label: '用户名称',
+          minWidth: 140,
+          formatter: (row) => row.userNickname || '-'
+        },
+        {
           prop: 'receiverName',
           label: '收货人',
           minWidth: 150,
@@ -1227,7 +1239,34 @@
     void router.push({ path: '/trade/after-sales', query: { afterSaleId: String(afterSaleId) } })
   }
 
-  onMounted(() => void loadStatusCounts())
+  let unsubscribeOrderRealtime: (() => void) | null = null
+  let realtimeOrderRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+  const handleOrderRealtimeEvent = (event: RealtimeEvent) => {
+    if (event.type !== 'ORDER_PAID') return
+    const data = event.data as unknown as Api.Realtime.OrderPaidData
+    ElNotification({
+      title: '新订单已支付',
+      message: `${data.orderNo} · ¥${(data.paidAmountCent / 100).toFixed(2)}`,
+      type: 'success',
+      duration: 8000
+    })
+    if (realtimeOrderRefreshTimer) clearTimeout(realtimeOrderRefreshTimer)
+    realtimeOrderRefreshTimer = setTimeout(() => {
+      realtimeOrderRefreshTimer = null
+      void handleRefresh()
+    }, 300)
+  }
+
+  onMounted(() => {
+    void loadStatusCounts()
+    unsubscribeOrderRealtime = realtimeClient.subscribe(handleOrderRealtimeEvent)
+  })
+
+  onBeforeUnmount(() => {
+    unsubscribeOrderRealtime?.()
+    if (realtimeOrderRefreshTimer) clearTimeout(realtimeOrderRefreshTimer)
+  })
 
   const loadOrderDetail = async (orderId: number) => {
     const requestId = ++detailRequestSeq.value

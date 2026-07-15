@@ -41,6 +41,7 @@ public class SecurityConfig {
                                 "/app/health",
                                 "/actuator/health",
                                 "/actuator/info",
+                                "/realtime",
                                 "/wxpay/**",
                                 "/wechat/**"
                         ).permitAll()

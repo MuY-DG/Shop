@@ -105,6 +105,7 @@ public class AdminAfterSaleService {
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or asr.user_id = :userId)
                           and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:userNicknameLike is null or lower(u.nickname) like lower(:userNicknameLike))
                           and (:afterSaleType is null or asr.after_sale_type = :afterSaleType)
                           and (:createdStart is null or asr.created_at >= :createdStart)
                           and (:createdEnd is null or asr.created_at <= :createdEnd)
@@ -119,6 +120,7 @@ public class AdminAfterSaleService {
                 .param("orderNoLike", filters.orderNoLike())
                 .param("userId", filters.userId())
                 .param("userPhone", filters.userPhone())
+                .param("userNicknameLike", filters.userNicknameLike())
                 .param("afterSaleType", filters.afterSaleType())
                 .param("createdStart", filters.createdStart())
                 .param("createdEnd", filters.createdEnd())
@@ -131,6 +133,7 @@ public class AdminAfterSaleService {
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
+                               u.nickname as user_nickname,
                                asr.after_sale_type,
                                asr.status,
                                asr.reason,
@@ -144,6 +147,7 @@ public class AdminAfterSaleService {
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or asr.user_id = :userId)
                           and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:userNicknameLike is null or lower(u.nickname) like lower(:userNicknameLike))
                           and (:afterSaleType is null or asr.after_sale_type = :afterSaleType)
                           and (:createdStart is null or asr.created_at >= :createdStart)
                           and (:createdEnd is null or asr.created_at <= :createdEnd)
@@ -160,6 +164,7 @@ public class AdminAfterSaleService {
                 .param("orderNoLike", filters.orderNoLike())
                 .param("userId", filters.userId())
                 .param("userPhone", filters.userPhone())
+                .param("userNicknameLike", filters.userNicknameLike())
                 .param("afterSaleType", filters.afterSaleType())
                 .param("createdStart", filters.createdStart())
                 .param("createdEnd", filters.createdEnd())
@@ -188,6 +193,7 @@ public class AdminAfterSaleService {
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or asr.user_id = :userId)
                           and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:userNicknameLike is null or lower(u.nickname) like lower(:userNicknameLike))
                           and (:afterSaleType is null or asr.after_sale_type = :afterSaleType)
                           and (:createdStart is null or asr.created_at >= :createdStart)
                           and (:createdEnd is null or asr.created_at <= :createdEnd)
@@ -202,6 +208,7 @@ public class AdminAfterSaleService {
                 .param("orderNoLike", filters.orderNoLike())
                 .param("userId", filters.userId())
                 .param("userPhone", filters.userPhone())
+                .param("userNicknameLike", filters.userNicknameLike())
                 .param("afterSaleType", filters.afterSaleType())
                 .param("createdStart", filters.createdStart())
                 .param("createdEnd", filters.createdEnd())
@@ -562,6 +569,7 @@ public class AdminAfterSaleService {
 
         Long userId = null;
         String userPhone = null;
+        String userNicknameLike = null;
         if (StringUtils.hasText(query.userKeyword())) {
             String keyword = query.userKeyword().trim();
             String searchType = StringUtils.hasText(query.userSearchType())
@@ -575,6 +583,8 @@ public class AdminAfterSaleService {
                 }
             } else if ("USER_PHONE".equals(searchType)) {
                 userPhone = keyword;
+            } else if ("USER_NAME".equals(searchType)) {
+                userNicknameLike = like(keyword);
             } else {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
@@ -601,6 +611,7 @@ public class AdminAfterSaleService {
                 like(query.orderNo()),
                 userId,
                 userPhone,
+                userNicknameLike,
                 afterSaleType,
                 query.createdStart(),
                 query.createdEnd(),
@@ -697,6 +708,7 @@ public class AdminAfterSaleService {
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
+                               u.nickname as user_nickname,
                                asr.after_sale_type,
                                asr.status,
                                asr.reason,
@@ -709,6 +721,7 @@ public class AdminAfterSaleService {
                                asr.created_at
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
+                        left join app_user u on u.id = asr.user_id
                         where asr.id = :afterSaleId
                         """)
                 .param("afterSaleId", afterSaleId)
@@ -724,6 +737,7 @@ public class AdminAfterSaleService {
                 row.orderId(),
                 row.orderNo(),
                 row.userId(),
+                row.userNickname(),
                 row.afterSaleType(),
                 row.status(),
                 row.reason(),
@@ -877,6 +891,7 @@ public class AdminAfterSaleService {
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getLong("user_id"),
+                rs.getString("user_nickname"),
                 rs.getString("after_sale_type"),
                 rs.getString("status"),
                 rs.getString("reason"),
@@ -891,6 +906,7 @@ public class AdminAfterSaleService {
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getLong("user_id"),
+                rs.getString("user_nickname"),
                 rs.getString("after_sale_type"),
                 rs.getString("status"),
                 rs.getString("reason"),
@@ -942,6 +958,7 @@ public class AdminAfterSaleService {
             String orderNoLike,
             Long userId,
             String userPhone,
+            String userNicknameLike,
             String afterSaleType,
             LocalDateTime createdStart,
             LocalDateTime createdEnd,
@@ -985,6 +1002,7 @@ public class AdminAfterSaleService {
             Long orderId,
             String orderNo,
             Long userId,
+            String userNickname,
             String afterSaleType,
             String status,
             String reason,

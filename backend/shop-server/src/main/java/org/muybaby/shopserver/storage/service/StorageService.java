@@ -76,6 +76,7 @@ public class StorageService {
     private static final String REFERENCE_REFERENCED = "REFERENCED";
     private static final String REFERENCE_UNREFERENCED = "UNREFERENCED";
     private static final String AFTER_SALE_ORDER_CONTEXT = "ORDER";
+    private static final String CUSTOMER_SERVICE_CONVERSATION_CONTEXT = "CUSTOMER_SERVICE_CONVERSATION";
     private static final Duration AFTER_SALE_EVIDENCE_TTL = Duration.ofHours(24);
     private static final Duration PAYMENT_SECRET_STAGING_TTL = Duration.ofHours(2);
 
@@ -149,6 +150,31 @@ public class StorageService {
                 databaseNow().plus(AFTER_SALE_EVIDENCE_TTL),
                 file,
                 UploadedByType.APP
+        );
+    }
+
+    @Transactional
+    public StorageAssetResponse uploadCustomerServiceImage(
+            AuthenticatedPrincipal principal,
+            Long conversationId,
+            MultipartFile file
+    ) {
+        if (principal == null
+                || (principal.kind() != TokenKind.APP && principal.kind() != TokenKind.ADMIN)
+                || principal.subjectId() == null
+                || conversationId == null
+                || conversationId <= 0) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        return upload(
+                principal,
+                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                null,
+                CUSTOMER_SERVICE_CONVERSATION_CONTEXT,
+                conversationId,
+                null,
+                file,
+                principal.kind() == TokenKind.APP ? UploadedByType.APP : UploadedByType.ADMIN
         );
     }
 
@@ -359,6 +385,54 @@ public class StorageService {
             StoredObject storedObject = storageProvider.open(row.objectLocation());
             MediaType mediaType = MediaType.parseMediaType(
                     StringUtils.hasText(storedObject.contentType()) ? storedObject.contentType() : row.contentType()
+            );
+            return ResponseEntity.ok()
+                    .contentType(mediaType)
+                    .contentLength(row.sizeBytes())
+                    .body(new InputStreamResource(storedObject.inputStream()));
+        } catch (RuntimeException ex) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+    }
+
+    public ResponseEntity<InputStreamResource> customerServiceImageResource(
+            Long assetId,
+            Long conversationId
+    ) {
+        if (assetId == null || assetId <= 0 || conversationId == null || conversationId <= 0) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+        PrivateAttachmentRow row = jdbcClient.sql("""
+                        select provider, storage_container, storage_region, object_key,
+                               content_type, size_bytes
+                        from storage_asset
+                        where id = :assetId
+                          and scope = 'ATTACHMENT'
+                          and media_kind = 'IMAGE'
+                          and visibility = 'PRIVATE'
+                          and status = 'ACTIVE'
+                          and upload_context_type = :contextType
+                          and upload_context_id = :conversationId
+                        """)
+                .param("assetId", assetId)
+                .param("contextType", CUSTOMER_SERVICE_CONVERSATION_CONTEXT)
+                .param("conversationId", conversationId)
+                .query((rs, rowNum) -> new PrivateAttachmentRow(
+                        StorageProviderKind.valueOf(rs.getString("provider")),
+                        rs.getString("storage_container"),
+                        rs.getString("storage_region"),
+                        rs.getString("object_key"),
+                        rs.getString("content_type"),
+                        rs.getLong("size_bytes")
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+        try {
+            StoredObject storedObject = storageProvider.open(row.objectLocation());
+            MediaType mediaType = MediaType.parseMediaType(
+                    StringUtils.hasText(storedObject.contentType())
+                            ? storedObject.contentType()
+                            : row.contentType()
             );
             return ResponseEntity.ok()
                     .contentType(mediaType)
@@ -1104,6 +1178,19 @@ public class StorageService {
     }
 
     private record FolderEdge(Long id, Long parentId) {
+    }
+
+    private record PrivateAttachmentRow(
+            StorageProviderKind provider,
+            String storageContainer,
+            String storageRegion,
+            String objectKey,
+            String contentType,
+            long sizeBytes
+    ) {
+        private StorageObjectLocation objectLocation() {
+            return new StorageObjectLocation(provider, storageContainer, storageRegion, objectKey);
+        }
     }
 
     private static final class MutableFolder {

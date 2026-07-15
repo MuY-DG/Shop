@@ -72,6 +72,7 @@ public class AdminOrderService {
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or o.user_id = :userId)
                           and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:userNicknameLike is null or lower(u.nickname) like lower(:userNicknameLike))
                           and (:receiverNameLike is null or o.receiver_name like :receiverNameLike)
                           and (:receiverPhoneLike is null or o.receiver_phone like :receiverPhoneLike)
                           and (:createdStart is null or o.created_at >= :createdStart)
@@ -85,6 +86,7 @@ public class AdminOrderService {
                 .param("orderNoLike", filters.orderNoLike())
                 .param("userId", filters.userId())
                 .param("userPhone", filters.userPhone())
+                .param("userNicknameLike", filters.userNicknameLike())
                 .param("receiverNameLike", filters.receiverNameLike())
                 .param("receiverPhoneLike", filters.receiverPhoneLike())
                 .param("createdStart", filters.createdStart())
@@ -97,6 +99,7 @@ public class AdminOrderService {
                         select o.id as order_id,
                                o.order_no,
                                o.status,
+                               u.nickname as user_nickname,
                                o.product_amount_cent,
                                o.coupon_discount_cent,
                                o.freight_cent,
@@ -140,6 +143,7 @@ public class AdminOrderService {
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or o.user_id = :userId)
                           and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:userNicknameLike is null or lower(u.nickname) like lower(:userNicknameLike))
                           and (:receiverNameLike is null or o.receiver_name like :receiverNameLike)
                           and (:receiverPhoneLike is null or o.receiver_phone like :receiverPhoneLike)
                           and (:createdStart is null or o.created_at >= :createdStart)
@@ -155,6 +159,7 @@ public class AdminOrderService {
                 .param("orderNoLike", filters.orderNoLike())
                 .param("userId", filters.userId())
                 .param("userPhone", filters.userPhone())
+                .param("userNicknameLike", filters.userNicknameLike())
                 .param("receiverNameLike", filters.receiverNameLike())
                 .param("receiverPhoneLike", filters.receiverPhoneLike())
                 .param("createdStart", filters.createdStart())
@@ -183,6 +188,7 @@ public class AdminOrderService {
                         where (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or o.user_id = :userId)
                           and (:userPhone is null or u.phone_number = :userPhone)
+                          and (:userNicknameLike is null or lower(u.nickname) like lower(:userNicknameLike))
                           and (:receiverNameLike is null or o.receiver_name like :receiverNameLike)
                           and (:receiverPhoneLike is null or o.receiver_phone like :receiverPhoneLike)
                           and (:createdStart is null or o.created_at >= :createdStart)
@@ -196,6 +202,7 @@ public class AdminOrderService {
                 .param("orderNoLike", filters.orderNoLike())
                 .param("userId", filters.userId())
                 .param("userPhone", filters.userPhone())
+                .param("userNicknameLike", filters.userNicknameLike())
                 .param("receiverNameLike", filters.receiverNameLike())
                 .param("receiverPhoneLike", filters.receiverPhoneLike())
                 .param("createdStart", filters.createdStart())
@@ -226,6 +233,7 @@ public class AdminOrderService {
                                o.status,
                                o.source,
                                o.user_id,
+                               u.nickname as user_nickname,
                                case when u.phone_authorized = true then u.phone_number else null end as user_phone,
                                o.product_original_amount_cent,
                                o.product_amount_cent,
@@ -312,6 +320,7 @@ public class AdminOrderService {
                 header.status(),
                 header.source(),
                 header.userId(),
+                header.userNickname(),
                 header.userPhone(),
                 header.productOriginalAmountCent(),
                 header.productAmountCent(),
@@ -396,6 +405,7 @@ public class AdminOrderService {
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 status,
+                rs.getString("user_nickname"),
                 rs.getLong("product_amount_cent"),
                 rs.getLong("coupon_discount_cent"),
                 rs.getLong("freight_cent"),
@@ -450,6 +460,7 @@ public class AdminOrderService {
                 rs.getString("status"),
                 rs.getString("source"),
                 rs.getLong("user_id"),
+                rs.getString("user_nickname"),
                 rs.getString("user_phone"),
                 rs.getLong("product_original_amount_cent"),
                 rs.getLong("product_amount_cent"),
@@ -503,6 +514,7 @@ public class AdminOrderService {
 
         Long userId = null;
         String userPhone = null;
+        String userNicknameLike = null;
         if (StringUtils.hasText(query.userKeyword())) {
             String keyword = query.userKeyword().trim();
             if ("USER_ID".equals(query.userSearchType())) {
@@ -513,6 +525,8 @@ public class AdminOrderService {
                 }
             } else if ("USER_PHONE".equals(query.userSearchType())) {
                 userPhone = keyword;
+            } else if ("USER_NAME".equals(query.userSearchType())) {
+                userNicknameLike = like(keyword);
             } else {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
@@ -526,6 +540,7 @@ public class AdminOrderService {
                 statuses,
                 userId,
                 userPhone,
+                userNicknameLike,
                 like(query.receiverName()),
                 like(query.receiverPhone()),
                 query.createdStart(),
@@ -671,6 +686,7 @@ public class AdminOrderService {
             String status,
             String source,
             Long userId,
+            String userNickname,
             String userPhone,
             Long productOriginalAmountCent,
             Long productAmountCent,
@@ -702,6 +718,7 @@ public class AdminOrderService {
             List<String> statuses,
             Long userId,
             String userPhone,
+            String userNicknameLike,
             String receiverNameLike,
             String receiverPhoneLike,
             LocalDateTime createdStart,

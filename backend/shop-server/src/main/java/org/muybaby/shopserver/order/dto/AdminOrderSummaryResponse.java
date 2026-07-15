@@ -6,6 +6,7 @@ public record AdminOrderSummaryResponse(
         Long orderId,
         String orderNo,
         String status,
+        String userNickname,
         Long productAmountCent,
         Long couponDiscountCent,
         Long freightCent,

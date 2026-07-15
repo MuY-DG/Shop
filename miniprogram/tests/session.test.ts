@@ -21,6 +21,7 @@ const NOW = 1_700_000_000_000;
 function profile(overrides: Partial<AppUserProfile> = {}): AppUserProfile {
   return {
     userId: 7,
+    nickname: "山茶花用户",
     openidMasked: "o****d",
     phoneAuthorized: true,
     phoneNumberMasked: "138****5678",
@@ -348,6 +349,28 @@ test("persists only the masked profile and restores it after restart", async () 
   const restored = restarted.restore();
   assert.equal(restored.profile?.phoneNumberMasked, "138****5678");
   assert.deepEqual(restored.profile, profile());
+});
+
+test("restores a legacy cached profile without a nickname", () => {
+  const storage = fakeStorage({
+    [AUTH_STATE_KEY]: {
+      version: 1,
+      accessToken: "app_legacy_profile",
+      refreshToken: "apr_legacy_profile",
+      accessExpiresAt: NOW + 60_000,
+      profile: {
+        userId: 7,
+        openidMasked: "o****d",
+        phoneAuthorized: false,
+        phoneNumberMasked: null
+      }
+    }
+  });
+  const manager = createSessionManager(fakeDependencies({ storage }));
+
+  const restored = manager.restore();
+
+  assert.equal(restored.profile?.nickname, "用户7");
 });
 
 test("normalizes an omitted backend phoneNumberMasked field to null", async () => {
@@ -726,6 +749,7 @@ test("profile page keeps cached masked data on non-auth refresh failure", async 
     getCurrentUser: async () => {
       throw new Error("network unavailable");
     },
+    updateCurrentUserProfile: async (nickname) => profile({ nickname }),
     updateProfile: () => undefined,
     getSessionState: () => state,
     authorizePhone: async () => cachedProfile
@@ -759,6 +783,7 @@ test("profile page exposes the order center entry", async () => {
       profile: null
     }),
     getCurrentUser: async () => profile(),
+    updateCurrentUserProfile: async (nickname) => profile({ nickname }),
     updateProfile: () => undefined,
     getSessionState: () => ({
       version: 1,
@@ -773,6 +798,10 @@ test("profile page exposes the order center entry", async () => {
   assert.deepEqual(definition.data.actionItems[0], {
     title: "我的订单",
     path: "/pages/order/list/list"
+  });
+  assert.deepEqual(definition.data.actionItems[1], {
+    title: "在线客服",
+    path: "/pages/customer-service/chat/chat"
   });
 });
 
@@ -791,6 +820,7 @@ test("profile page renders logged out only after auth state is fully cleared", a
       throw new Error("authentication required");
     },
     getCurrentUser: async () => profile(),
+    updateCurrentUserProfile: async (nickname) => profile({ nickname }),
     updateProfile: () => undefined,
     getSessionState: () => emptyState,
     authorizePhone: async () => profile()
@@ -820,6 +850,7 @@ test("profile page does not render logged out when auth remains but no profile i
     getCurrentUser: async () => {
       throw new Error("service unavailable");
     },
+    updateCurrentUserProfile: async (nickname) => profile({ nickname }),
     updateProfile: () => undefined,
     getSessionState: () => authenticatedWithoutProfile,
     authorizePhone: async () => profile()
@@ -846,6 +877,7 @@ test("profile page maps phone cancellation and capability failures to non-blocki
     restoreSession: () => state,
     ensureSession: async () => state,
     getCurrentUser: async () => state.profile,
+    updateCurrentUserProfile: async (nickname) => profile({ nickname }),
     updateProfile: () => undefined,
     getSessionState: () => state,
     authorizePhone: async () => {
@@ -883,6 +915,7 @@ test("successful phone authorization clears an earlier profile warning", async (
     restoreSession: () => state,
     ensureSession: async () => state,
     getCurrentUser: async () => unauthorizedProfile,
+    updateCurrentUserProfile: async (nickname) => profile({ nickname }),
     updateProfile: (nextProfile) => {
       persistedProfile = nextProfile;
     },
@@ -903,6 +936,47 @@ test("successful phone authorization clears an earlier profile warning", async (
   assert.equal(page.data.phoneStatus, "已授权：138****5678");
   assert.equal(page.data.phoneButtonText, "更换手机号");
   assert.equal(page.data.phoneAuthorizing, false);
+});
+
+test("profile page validates and saves a trimmed nickname", async () => {
+  const module = await loadProfileModule();
+  const currentProfile = profile();
+  const state = {
+    version: 1 as const,
+    accessToken: "app_cached",
+    refreshToken: "apr_cached",
+    accessExpiresAt: NOW + 60_000,
+    profile: currentProfile
+  };
+  let submittedNickname = "";
+  const persistedProfiles: AppUserProfile[] = [];
+  const definition = module.createProfilePageDefinition({
+    restoreSession: () => state,
+    ensureSession: async () => state,
+    getCurrentUser: async () => currentProfile,
+    updateCurrentUserProfile: async (nickname) => {
+      submittedNickname = nickname;
+      return profile({ nickname });
+    },
+    updateProfile: (nextProfile) => {
+      persistedProfiles.push(nextProfile);
+    },
+    getSessionState: () => state,
+    authorizePhone: async () => currentProfile
+  });
+  const page = pageHarness(definition);
+  page.data.isLoggedIn = true;
+
+  definition.onStartNicknameEdit.call(page);
+  definition.onNicknameInput.call(page, { detail: { value: " 新名称 " } });
+  await definition.onSaveNickname.call(page);
+
+  assert.equal(submittedNickname, "新名称");
+  assert.equal(persistedProfiles[0]?.nickname, "新名称");
+  assert.equal(page.data.nickname, "新名称");
+  assert.equal(page.data.nicknameEditing, false);
+  assert.equal(page.data.nicknameSaving, false);
+  assert.equal(page.data.nicknameMessage, "用户名称已保存");
 });
 
 type ProfileDefinition = ReturnType<typeof createProfilePageDefinition>;

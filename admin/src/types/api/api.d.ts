@@ -856,7 +856,7 @@ declare namespace Api {
       | 'CLOSED'
       | 'REFUNDING'
       | 'REFUNDED'
-    type UserSearchType = 'USER_ID' | 'USER_PHONE'
+    type UserSearchType = 'USER_ID' | 'USER_NAME' | 'USER_PHONE'
     type OrderSource = 'CART' | 'DIRECT' | 'MINI_PROGRAM'
     type LogisticsType = 1 | 2 | 3 | 4
     type DeliveryMode = 1
@@ -885,6 +885,7 @@ declare namespace Api {
       orderId: number
       orderNo: string
       status: OrderStatus
+      userNickname: string
       productAmountCent: number
       couponDiscountCent: number
       freightCent: number
@@ -967,6 +968,7 @@ declare namespace Api {
       status: OrderStatus
       source: OrderSource | string
       userId: number
+      userNickname: string
       userPhone: string | null
       productOriginalAmountCent: number
       productAmountCent: number
@@ -1128,7 +1130,7 @@ declare namespace Api {
       | 'REFUNDED'
       | 'REJECTED'
       | 'REFUND_FAILED'
-    type UserSearchType = 'USER_ID' | 'USER_PHONE'
+    type UserSearchType = 'USER_ID' | 'USER_NAME' | 'USER_PHONE'
 
     type List = Api.Common.PaginatedResponse<Summary>
 
@@ -1159,6 +1161,7 @@ declare namespace Api {
       orderId: number
       orderNo: string
       userId: string
+      userNickname: string
       afterSaleType: AfterSaleType | string
       status: AfterSaleStatus | string
       reason: string
@@ -1171,6 +1174,7 @@ declare namespace Api {
       orderId: number
       orderNo: string
       userId: string
+      userNickname: string
       afterSaleType: AfterSaleType | string
       status: AfterSaleStatus | string
       reason: string

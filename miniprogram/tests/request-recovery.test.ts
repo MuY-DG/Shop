@@ -25,6 +25,7 @@ const NOW = 1_700_000_000_000;
 function profile(): AppUserProfile {
   return {
     userId: 7,
+    nickname: "山茶花用户",
     openidMasked: "o****d",
     phoneAuthorized: true,
     phoneNumberMasked: "138****5678"

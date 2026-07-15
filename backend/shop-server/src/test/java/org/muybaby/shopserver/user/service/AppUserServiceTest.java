@@ -39,6 +39,48 @@ class AppUserServiceTest {
     }
 
     @Test
+    void newUserReceivesAStableDefaultNickname() {
+        AppUserService appUserService = new AppUserService(jdbcClient);
+
+        AppUser user = appUserService.upsertByOpenid(
+                new WechatCodeSession("nickname-new-openid", null, "session-key")
+        );
+
+        assertThat(user.nickname()).startsWith("用户");
+        assertThat(jdbcClient.sql("select nickname from app_user where id = :id")
+                .param("id", user.id())
+                .query(String.class)
+                .single()).isEqualTo(user.nickname());
+    }
+
+    @Test
+    void enabledUserCanUpdateNicknameWithTrimmedValue() {
+        AppUserService appUserService = new AppUserService(jdbcClient);
+        insertAppUser(9105L, "nickname-update-openid", "ENABLED");
+
+        AppUser updated = appUserService.updateNickname(9105L, "  山茶花用户  ");
+
+        assertThat(updated.nickname()).isEqualTo("山茶花用户");
+        assertThat(jdbcClient.sql("select nickname from app_user where id = 9105")
+                .query(String.class)
+                .single()).isEqualTo("山茶花用户");
+    }
+
+    @Test
+    void nicknameRejectsInvalidLengthControlCharactersAndDisabledUsers() {
+        AppUserService appUserService = new AppUserService(jdbcClient);
+        insertAppUser(9106L, "nickname-validation-openid", "ENABLED");
+        insertAppUser(9107L, "nickname-disabled-openid", "DISABLED");
+
+        assertValidationFailed(() -> appUserService.updateNickname(9106L, "单"));
+        assertValidationFailed(() -> appUserService.updateNickname(9106L, "用户\u0001名称"));
+        assertValidationFailed(() -> appUserService.updateNickname(9106L, "用".repeat(33)));
+        assertThatThrownBy(() -> appUserService.updateNickname(9107L, "不可修改"))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED));
+    }
+
+    @Test
     void disabledAppUserCannotLoginAgain() {
         AppUserService appUserService = new AppUserService(jdbcClient);
         insertAppUser(9101L, "disabled-openid", "DISABLED");
@@ -115,6 +157,12 @@ class AppUserServiceTest {
                 .param("unionid", "existing-unionid")
                 .param("id", 9001L)
                 .update();
+    }
+
+    private void assertValidationFailed(org.assertj.core.api.ThrowableAssert.ThrowingCallable action) {
+        assertThatThrownBy(action)
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
     }
 
     private void insertAppUser(Long id, String openid, String status) {

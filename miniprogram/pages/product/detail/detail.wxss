@@ -209,7 +209,7 @@
   bottom: 0;
   left: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 0.8fr 1fr 1fr;
   gap: 16rpx;
   padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
   background: #ffffff;
@@ -233,6 +233,11 @@
 
 .cart-button {
   background: #8a6f61;
+}
+
+.service-button {
+  background: #f3e9e3;
+  color: #7a3c28;
 }
 
 .buy-button {

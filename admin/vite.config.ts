@@ -41,6 +41,11 @@ export default ({ mode }: { mode: string }) => {
         '/admin': {
           target: VITE_ADMIN_API_PROXY_URL || VITE_API_PROXY_URL,
           changeOrigin: true
+        },
+        '/realtime': {
+          target: VITE_ADMIN_API_PROXY_URL || VITE_API_PROXY_URL,
+          changeOrigin: true,
+          ws: true
         }
       },
       host: true

@@ -144,6 +144,7 @@ public class AppAfterSaleService {
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
+                               u.nickname as user_nickname,
                                asr.after_sale_type,
                                asr.status,
                                asr.reason,
@@ -156,6 +157,7 @@ public class AppAfterSaleService {
                                asr.created_at
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
+                        left join app_user u on u.id = asr.user_id
                         where o.user_id = :userId
                           and (:status is null or asr.status = :status)
                         order by asr.created_at desc, asr.id desc
@@ -182,6 +184,7 @@ public class AppAfterSaleService {
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
+                               u.nickname as user_nickname,
                                asr.after_sale_type,
                                asr.status,
                                asr.reason,
@@ -194,6 +197,7 @@ public class AppAfterSaleService {
                                asr.created_at
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
+                        left join app_user u on u.id = asr.user_id
                         where asr.order_id = :orderId
                           and o.user_id = :userId
                         order by asr.created_at desc, asr.id desc
@@ -219,6 +223,7 @@ public class AppAfterSaleService {
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
+                               u.nickname as user_nickname,
                                asr.after_sale_type,
                                asr.status,
                                asr.reason,
@@ -231,6 +236,7 @@ public class AppAfterSaleService {
                                asr.created_at
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
+                        left join app_user u on u.id = asr.user_id
                         where asr.order_id = :orderId
                           and o.user_id = :userId
                         order by asr.created_at desc, asr.id desc
@@ -424,6 +430,7 @@ public class AppAfterSaleService {
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
+                               u.nickname as user_nickname,
                                asr.after_sale_type,
                                asr.status,
                                asr.reason,
@@ -436,6 +443,7 @@ public class AppAfterSaleService {
                                asr.created_at
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
+                        left join app_user u on u.id = asr.user_id
                         where asr.id = :afterSaleId
                           and o.user_id = :userId
                         """)
@@ -453,6 +461,7 @@ public class AppAfterSaleService {
                 row.orderId(),
                 row.orderNo(),
                 row.userId(),
+                row.userNickname(),
                 row.afterSaleType(),
                 row.status(),
                 row.reason(),
@@ -636,6 +645,7 @@ public class AppAfterSaleService {
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getLong("user_id"),
+                rs.getString("user_nickname"),
                 rs.getString("after_sale_type"),
                 rs.getString("status"),
                 rs.getString("reason"),
@@ -694,6 +704,7 @@ public class AppAfterSaleService {
             Long orderId,
             String orderNo,
             Long userId,
+            String userNickname,
             String afterSaleType,
             String status,
             String reason,

@@ -6,6 +6,7 @@ export interface ApiResponse<T> {
 
 export interface AppUserProfile {
   userId: number;
+  nickname: string;
   openidMasked: string;
   phoneAuthorized: boolean;
   phoneNumberMasked: string | null;
@@ -445,4 +446,98 @@ export interface OrderDetail {
   closedAt: string | null;
   createdAt: string;
   items: OrderItem[];
+}
+
+export type CustomerServiceConversationStatus = "DRAFT" | "WAITING" | "ACTIVE" | "CLOSED";
+export type CustomerServiceSenderType = "APP_USER" | "ADMIN" | "SYSTEM";
+export type CustomerServiceMessageType =
+  | "TEXT"
+  | "SYSTEM"
+  | "IMAGE"
+  | "ORDER_CARD"
+  | "PRODUCT_CARD";
+
+export interface CustomerServiceImageMessage {
+  originalFilename: string;
+  contentType: string;
+  width: number | null;
+  height: number | null;
+}
+
+export interface CustomerServiceMessage {
+  messageId: number;
+  conversationId: number;
+  consultationNo: number;
+  senderType: CustomerServiceSenderType;
+  senderId: string | null;
+  senderName: string;
+  messageType: CustomerServiceMessageType;
+  content: string;
+  resourceId: number | null;
+  order: CustomerServiceLinkedOrder | null;
+  product: CustomerServiceLinkedProduct | null;
+  image: CustomerServiceImageMessage | null;
+  clientMessageId: string | null;
+  createdAt: string;
+}
+
+export interface CustomerServiceLinkedOrder {
+  orderId: number;
+  orderNo: string;
+  status: OrderStatus;
+  payableAmountCent: number;
+  primaryProductTitle: string | null;
+  primaryProductImage: string | null;
+  itemCount: number;
+  createdAt: string;
+}
+
+export interface CustomerServiceLinkedProduct {
+  productId: number;
+  title: string;
+  image: string;
+  minPriceCent: number | null;
+  maxPriceCent: number | null;
+  status: "DRAFT" | "ON_SALE" | "OFF_SALE";
+}
+
+export interface CustomerServiceConsultationContext {
+  type: "GENERAL" | "ORDER" | "PRODUCT";
+  resourceId: number | null;
+  order: CustomerServiceLinkedOrder | null;
+  product: CustomerServiceLinkedProduct | null;
+}
+
+export interface CustomerServiceConversation {
+  conversationId: number;
+  appUserId: string;
+  userNickname: string;
+  status: CustomerServiceConversationStatus;
+  assignedAdminUserId: number | null;
+  assignedAdminDisplayName: string | null;
+  lastMessagePreview: string | null;
+  lastMessageAt: string | null;
+  appUnreadCount: number;
+  adminUnreadCount: number;
+  claimedAt: string | null;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  consultationNo: number;
+  currentContext: CustomerServiceConsultationContext;
+  messages: CustomerServiceMessage[];
+  linkedOrders: CustomerServiceLinkedOrder[];
+  linkedProducts: CustomerServiceLinkedProduct[];
+}
+
+export interface RealtimeTicket {
+  ticket: string;
+  expiresIn: number;
+}
+
+export interface RealtimeEvent<T = Record<string, unknown>> {
+  eventId: string;
+  type: string;
+  occurredAt: string;
+  data: T;
 }

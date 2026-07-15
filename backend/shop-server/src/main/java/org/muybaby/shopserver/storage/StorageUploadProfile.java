@@ -8,6 +8,7 @@ public enum StorageUploadProfile {
     LIBRARY_IMAGE(StorageAssetScope.LIBRARY, StorageMediaKind.IMAGE, FileVisibility.PUBLIC),
     LIBRARY_VIDEO(StorageAssetScope.LIBRARY, StorageMediaKind.VIDEO, FileVisibility.PUBLIC),
     AFTER_SALE_EVIDENCE(StorageAssetScope.ATTACHMENT, StorageMediaKind.IMAGE, FileVisibility.PRIVATE),
+    CUSTOMER_SERVICE_IMAGE(StorageAssetScope.ATTACHMENT, StorageMediaKind.IMAGE, FileVisibility.PRIVATE),
     PAYMENT_SECRET(StorageAssetScope.SECRET, StorageMediaKind.DOCUMENT, FileVisibility.PRIVATE);
 
     private final StorageAssetScope scope;

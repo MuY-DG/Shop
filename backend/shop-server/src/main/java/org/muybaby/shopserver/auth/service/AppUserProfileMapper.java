@@ -11,6 +11,7 @@ public class AppUserProfileMapper {
         boolean authorized = Boolean.TRUE.equals(user.phoneAuthorized());
         return new AppUserProfile(
                 user.id(),
+                user.nickname(),
                 mask(user.openid(), 4, 4),
                 authorized,
                 authorized ? mask(user.phoneNumber(), 3, 4) : null

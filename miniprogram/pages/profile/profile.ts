@@ -6,6 +6,7 @@ import {
   getCurrentUser,
   getSessionState,
   restoreSession,
+  updateCurrentUserProfile,
   updateProfile
 } from "../../services/auth";
 
@@ -28,10 +29,17 @@ interface ActionTapEvent {
   };
 }
 
+interface NicknameInputEvent {
+  detail: {
+    value: string;
+  };
+}
+
 export interface ProfilePageDependencies {
   restoreSession(): AuthStateV1;
   ensureSession(): Promise<AuthStateV1>;
   getCurrentUser(): Promise<AppUserProfile>;
+  updateCurrentUserProfile(nickname: string): Promise<AppUserProfile>;
   updateProfile(profile: AppUserProfile): unknown;
   getSessionState(): AuthStateV1;
   authorizePhone(code: string): Promise<AppUserProfile>;
@@ -39,6 +47,11 @@ export interface ProfilePageDependencies {
 
 export interface ProfilePageData {
   loginStatus: string;
+  nickname: string;
+  nicknameDraft: string;
+  nicknameMessage: string;
+  nicknameEditing: boolean;
+  nicknameSaving: boolean;
   phoneStatus: string;
   profileWarning: string;
   phoneButtonText: string;
@@ -61,6 +74,11 @@ export function createProfilePageDefinition(
   return {
     data: {
       loginStatus: "未登录",
+      nickname: "",
+      nicknameDraft: "",
+      nicknameMessage: "",
+      nicknameEditing: false,
+      nicknameSaving: false,
       phoneStatus: "手机号未授权",
       profileWarning: "",
       phoneButtonText: "授权手机号",
@@ -71,6 +89,10 @@ export function createProfilePageDefinition(
         {
           title: "我的订单",
           path: "/pages/order/list/list"
+        },
+        {
+          title: "在线客服",
+          path: "/pages/customer-service/chat/chat"
         },
         {
           title: "领券中心",
@@ -90,6 +112,9 @@ export function createProfilePageDefinition(
         : "手机号未授权";
       this.setData({
         loginStatus: `已登录：${profile.openidMasked}`,
+        nickname: profile.nickname,
+        nicknameDraft: profile.nickname,
+        nicknameEditing: false,
         phoneStatus,
         phoneButtonText: profile.phoneAuthorized ? "更换手机号" : "授权手机号",
         profileWarning: "",
@@ -99,6 +124,11 @@ export function createProfilePageDefinition(
     applyLoggedOutState(this: ProfilePageContext) {
       this.setData({
         loginStatus: "未登录",
+        nickname: "",
+        nicknameDraft: "",
+        nicknameMessage: "",
+        nicknameEditing: false,
+        nicknameSaving: false,
         phoneStatus: "手机号未授权",
         phoneButtonText: "授权手机号",
         profileWarning: "",
@@ -179,6 +209,47 @@ export function createProfilePageDefinition(
         this.setData({ phoneAuthorizing: false });
       }
     },
+    onStartNicknameEdit(this: ProfilePageContext) {
+      if (!this.data.isLoggedIn) {
+        this.setData({ nicknameMessage: "请先登录" });
+        return;
+      }
+      this.setData({
+        nicknameDraft: this.data.nickname,
+        nicknameMessage: "",
+        nicknameEditing: true
+      });
+    },
+    onNicknameInput(this: ProfilePageContext, event: NicknameInputEvent) {
+      this.setData({ nicknameDraft: event.detail.value });
+    },
+    onCancelNicknameEdit(this: ProfilePageContext) {
+      this.setData({
+        nicknameDraft: this.data.nickname,
+        nicknameMessage: "",
+        nicknameEditing: false
+      });
+    },
+    async onSaveNickname(this: ProfilePageContext) {
+      const nickname = this.data.nicknameDraft.trim();
+      const nicknameLength = Array.from(nickname).length;
+      if (nicknameLength < 2 || nicknameLength > 32) {
+        this.setData({ nicknameMessage: "用户名称需为 2–32 个字符" });
+        return;
+      }
+
+      this.setData({ nicknameSaving: true, nicknameMessage: "" });
+      try {
+        const currentProfile = await dependencies.updateCurrentUserProfile(nickname);
+        dependencies.updateProfile(currentProfile);
+        this.applyProfile(currentProfile);
+        this.setData({ nicknameMessage: "用户名称已保存" });
+      } catch {
+        this.setData({ nicknameMessage: "用户名称保存失败，请稍后重试" });
+      } finally {
+        this.setData({ nicknameSaving: false });
+      }
+    },
     onActionTap(this: ProfilePageContext, event: ActionTapEvent) {
       const path = event.currentTarget.dataset.path;
       if (path) {
@@ -196,6 +267,7 @@ Page(
       return getSessionState();
     },
     getCurrentUser,
+    updateCurrentUserProfile,
     updateProfile,
     getSessionState,
     authorizePhone

@@ -115,7 +115,11 @@ class AdminOrderControllerTest {
         long otherUserId = appLogin("admin-order-v2-other-user").userId();
         long skuId = createPublishedSku("ADMIN-V2-FILTER-SKU", 3990L, 4990L, 20, "ENABLED");
 
-        jdbcClient.sql("update app_user set phone_number = '13900001111', phone_authorized = true where id = :userId")
+        jdbcClient.sql("""
+                        update app_user
+                        set nickname = '山茶花用户', phone_number = '13900001111', phone_authorized = true
+                        where id = :userId
+                        """)
                 .param("userId", userId)
                 .update();
         insertOrderSnapshot(9111L, "ADM-V2-CREATED", OrderStatus.CREATED.name(), userId, skuId, 9211L, "Admin V2 Created");
@@ -142,6 +146,7 @@ class AdminOrderControllerTest {
                         .param("createdEnd", "2026-07-08 00:00:00"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.records[0].userNickname").value("山茶花用户"))
                 .andExpect(jsonPath("$.data.records[0].receiverName").value("筛选收货人"))
                 .andExpect(jsonPath("$.data.records[0].receiverPhone").value("13800138001"))
                 .andExpect(jsonPath("$.data.records[0].productSubtitle").value("Seed subtitle"))
@@ -150,8 +155,8 @@ class AdminOrderControllerTest {
 
         mockMvc.perform(get("/admin/orders/status-counts")
                         .header("Authorization", "Bearer " + adminToken)
-                        .param("userSearchType", "USER_PHONE")
-                        .param("userKeyword", "13900001111")
+                        .param("userSearchType", "USER_NAME")
+                        .param("userKeyword", "山茶花")
                         .param("receiverName", "筛选"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.all").value(3))
@@ -210,7 +215,11 @@ class AdminOrderControllerTest {
         jdbcClient.sql("update shop_order set receiver_address = :receiverAddress where id = 9301")
                 .param("receiverAddress", receiverAddress)
                 .update();
-        jdbcClient.sql("update app_user set phone_number = '13900002222', phone_authorized = true where id = :userId")
+        jdbcClient.sql("""
+                        update app_user
+                        set nickname = '详情页用户', phone_number = '13900002222', phone_authorized = true
+                        where id = :userId
+                        """)
                 .param("userId", userId)
                 .update();
 
@@ -221,6 +230,7 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data.orderNo").value("ADM-DETAIL-ORDER"))
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
                 .andExpect(jsonPath("$.data.userId").value(userId))
+                .andExpect(jsonPath("$.data.userNickname").value("详情页用户"))
                 .andExpect(jsonPath("$.data.userPhone").value("13900002222"))
                 .andExpect(jsonPath("$.data.receiverAddress").value(receiverAddress))
                 .andExpect(jsonPath("$.data.productOriginalAmountCent").value(9980))

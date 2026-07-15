@@ -77,8 +77,14 @@ function normalizeProfile(value: unknown): AppUserProfile | undefined {
   ) {
     return undefined;
   }
+  const fallbackNickname = `用户${String(Math.trunc(Math.abs(value.userId))).slice(-6)}`;
+  const nickname =
+    typeof value.nickname === "string" && value.nickname.trim()
+      ? value.nickname.trim()
+      : fallbackNickname;
   return {
     userId: value.userId,
+    nickname,
     openidMasked: value.openidMasked,
     phoneAuthorized: value.phoneAuthorized,
     phoneNumberMasked:

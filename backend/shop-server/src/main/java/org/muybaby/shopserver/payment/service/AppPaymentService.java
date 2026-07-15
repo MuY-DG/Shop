@@ -19,7 +19,9 @@ import org.muybaby.shopserver.payment.provider.WechatJsapiPrepayRequest;
 import org.muybaby.shopserver.payment.provider.WechatJsapiPrepayResult;
 import org.muybaby.shopserver.payment.provider.WechatPayOrderQueryResult;
 import org.muybaby.shopserver.payment.provider.WechatPayProvider;
+import org.muybaby.shopserver.realtime.OrderPaidRealtimeEvent;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,6 +56,7 @@ public class AppPaymentService {
     private final WechatPayProvider wechatPayProvider;
     private final OrderCloseService orderCloseService;
     private final OrderStatusLogService orderStatusLogService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AppPaymentService(
             JdbcClient jdbcClient,
@@ -61,7 +64,8 @@ public class AppPaymentService {
             PaymentConfigResolver paymentConfigResolver,
             WechatPayProvider wechatPayProvider,
             OrderCloseService orderCloseService,
-            OrderStatusLogService orderStatusLogService
+            OrderStatusLogService orderStatusLogService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentProperties = paymentProperties;
@@ -69,6 +73,7 @@ public class AppPaymentService {
         this.wechatPayProvider = wechatPayProvider;
         this.orderCloseService = orderCloseService;
         this.orderStatusLogService = orderStatusLogService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -289,6 +294,9 @@ public class AppPaymentService {
                 order.orderId(), OrderStatus.PAYING.name(), OrderStatus.PAID.name(),
                 "PAYMENT_SUCCEEDED", "WECHAT", null, "微信支付成功", effectivePaidAt
         );
+        eventPublisher.publishEvent(new OrderPaidRealtimeEvent(
+                order.orderId(), order.orderNo(), amountCent, effectivePaidAt
+        ));
         return new PaidFinalizationResult(order.orderId(), OrderStatus.PAID.name(), transactionId, false);
     }
 

@@ -246,6 +246,14 @@ Page({
       this.setData({ buying: false });
     }
   },
+  onCustomerServiceTap() {
+    if (!this.data.detail) {
+      return;
+    }
+    wx.navigateTo({
+      url: `/pages/customer-service/chat/chat?context_type=PRODUCT&context_id=${this.data.detail.id}`
+    });
+  },
   getSelectedSku(): ProductSku | undefined {
     if (!this.data.detail || this.data.selectedSkuId <= 0) {
       return undefined;

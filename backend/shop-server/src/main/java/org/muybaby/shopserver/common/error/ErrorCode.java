@@ -37,7 +37,15 @@ public enum ErrorCode {
     STORAGE_FILE_IN_USE(800003, "Storage file in use"),
     STORAGE_ASSET_FOLDER_UNAVAILABLE(800004, "Storage asset folder unavailable"),
     STORAGE_ASSET_FOLDER_IN_USE(800005, "Storage asset folder is not empty"),
-    STORAGE_ASSET_FOLDER_CYCLE(800006, "Storage asset folder cycle is not allowed");
+    STORAGE_ASSET_FOLDER_CYCLE(800006, "Storage asset folder cycle is not allowed"),
+    CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE(900001, "Customer service conversation unavailable"),
+    CUSTOMER_SERVICE_STATE_CONFLICT(900002, "Customer service conversation state conflict"),
+    CUSTOMER_SERVICE_ASSIGNMENT_REQUIRED(900003, "Customer service assignment required"),
+    CUSTOMER_SERVICE_ORDER_UNAVAILABLE(900004, "Customer service order unavailable"),
+    CUSTOMER_SERVICE_AGENT_NOT_AVAILABLE(900005, "Customer service agent is not available"),
+    CUSTOMER_SERVICE_AGENT_CAPACITY_REACHED(900006, "Customer service agent capacity reached"),
+    CUSTOMER_SERVICE_TRANSFER_UNAVAILABLE(900007, "Customer service transfer request unavailable"),
+    CUSTOMER_SERVICE_TRANSFER_PENDING(900008, "Customer service transfer request already pending");
 
     private final int code;
     private final String message;

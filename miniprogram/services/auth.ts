@@ -25,6 +25,14 @@ export function getCurrentUser(): Promise<AppUserProfile> {
   });
 }
 
+export function updateCurrentUserProfile(nickname: string): Promise<AppUserProfile> {
+  return request<AppUserProfile>({
+    url: "/app/users/me",
+    method: "PUT",
+    data: { nickname }
+  });
+}
+
 export function authorizePhone(code: string): Promise<AppUserProfile> {
   return request<AppUserProfile>({
     url: "/app/auth/phone",

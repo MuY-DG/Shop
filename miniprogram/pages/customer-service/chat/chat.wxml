@@ -1,0 +1,156 @@
+<view class="page customer-service-page">
+  <view class="service-status">
+    <view class="service-status__row">
+      <view class="service-status__title">{{statusText}}</view>
+      <view class="connection {{connected ? 'is-online' : ''}}">
+        {{connected ? '实时连接' : '自动刷新'}}
+      </view>
+    </view>
+    <view class="service-status__hint">{{statusHint}}</view>
+  </view>
+
+  <view
+    wx:if="{{currentContext}}"
+    class="current-context"
+    data-type="{{currentContext.type}}"
+    data-id="{{currentContext.resourceId}}"
+    bindtap="onResourceCardTap"
+  >
+    <view class="current-context__label">{{currentContext.label}}</view>
+    <view class="resource-card resource-card--context">
+      <image wx:if="{{currentContext.image}}" class="resource-card__image" src="{{currentContext.image}}" mode="aspectFill" />
+      <view wx:else class="resource-card__placeholder">{{currentContext.type === 'ORDER' ? '订单' : '商品'}}</view>
+      <view class="resource-card__body">
+        <view class="resource-card__title">{{currentContext.title}}</view>
+        <view class="resource-card__subtitle">{{currentContext.subtitle}}</view>
+        <view class="resource-card__price">{{currentContext.priceText}}</view>
+      </view>
+      <view class="resource-card__arrow">›</view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading && !conversation}}" class="empty-state">正在建立客服会话...</view>
+  <view wx:elif="{{errorText && !conversation}}" class="empty-state error">{{errorText}}</view>
+
+  <scroll-view
+    wx:else
+    class="message-list"
+    scroll-y
+    scroll-with-animation
+    scroll-into-view="{{messageAnchor}}"
+  >
+    <view wx:if="{{messages.length === 0}}" class="welcome-card">
+      <view class="welcome-card__title">你好，有什么可以帮你？</view>
+      <view class="welcome-card__text">可发送文字、图片、订单或商品，客服会尽快回复。</view>
+    </view>
+    <view
+      wx:for="{{messages}}"
+      wx:key="messageId"
+      id="message-{{item.messageId}}"
+      class="message-row {{item.isMine ? 'is-mine' : ''}} {{item.isSystem ? 'is-system' : ''}}"
+    >
+      <view wx:if="{{item.isSystem}}" class="system-message">{{item.content}}</view>
+      <view wx:else class="message-content">
+        <view class="message-meta">{{item.senderName}} · {{item.timeText}}</view>
+        <view wx:if="{{item.messageType === 'IMAGE'}}" class="message-image-wrap">
+          <image
+            wx:if="{{item.imagePath}}"
+            class="message-image"
+            src="{{item.imagePath}}"
+            mode="aspectFill"
+            data-src="{{item.imagePath}}"
+            bindtap="onImageTap"
+          />
+          <view wx:else class="message-image-loading">图片加载中...</view>
+        </view>
+        <view
+          wx:elif="{{item.messageType === 'ORDER_CARD' && item.order}}"
+          class="resource-card resource-card--message"
+          data-type="ORDER"
+          data-id="{{item.order.orderId}}"
+          bindtap="onResourceCardTap"
+        >
+          <image wx:if="{{item.order.primaryProductImage}}" class="resource-card__image" src="{{item.order.primaryProductImage}}" mode="aspectFill" />
+          <view wx:else class="resource-card__placeholder">订单</view>
+          <view class="resource-card__body">
+            <view class="resource-card__badge">订单</view>
+            <view class="resource-card__title">{{item.order.orderNo}}</view>
+            <view class="resource-card__subtitle">{{item.order.primaryProductTitle}} · 共 {{item.order.itemCount}} 件</view>
+            <view class="resource-card__price">{{item.orderPriceText}}</view>
+          </view>
+        </view>
+        <view
+          wx:elif="{{item.messageType === 'PRODUCT_CARD' && item.product}}"
+          class="resource-card resource-card--message"
+          data-type="PRODUCT"
+          data-id="{{item.product.productId}}"
+          bindtap="onResourceCardTap"
+        >
+          <image wx:if="{{item.product.image}}" class="resource-card__image" src="{{item.product.image}}" mode="aspectFill" />
+          <view wx:else class="resource-card__placeholder">商品</view>
+          <view class="resource-card__body">
+            <view class="resource-card__badge">商品</view>
+            <view class="resource-card__title">{{item.product.title}}</view>
+            <view class="resource-card__price">{{item.productPriceText}}</view>
+          </view>
+        </view>
+        <view wx:else class="message-bubble">{{item.content}}</view>
+      </view>
+    </view>
+    <view class="message-bottom"></view>
+  </scroll-view>
+
+  <view class="composer">
+    <button class="composer__more" disabled="{{sending || resourceSending}}" bindtap="onMoreTap">＋</button>
+    <textarea
+      class="composer__input"
+      value="{{messageDraft}}"
+      maxlength="2000"
+      auto-height
+      show-confirm-bar="false"
+      placeholder="请输入你的问题"
+      bindinput="onMessageInput"
+    />
+    <button
+      class="composer__send"
+      loading="{{sending}}"
+      disabled="{{sending || !messageDraft}}"
+      bindtap="onSendTap"
+    >
+      发送
+    </button>
+  </view>
+
+  <block wx:if="{{pickerType}}">
+    <view class="picker-mask" bindtap="closeResourcePicker"></view>
+    <view class="resource-picker">
+      <view class="resource-picker__header">
+        <view class="resource-picker__title">{{pickerTitle}}</view>
+        <view class="resource-picker__close" bindtap="closeResourcePicker">关闭</view>
+      </view>
+      <scroll-view class="resource-picker__list" scroll-y>
+        <view wx:if="{{pickerLoading}}" class="resource-picker__empty">正在加载...</view>
+        <view wx:elif="{{resourceCandidates.length === 0}}" class="resource-picker__empty">
+          {{pickerType === 'ORDER' ? '暂无可发送的订单' : '暂无可发送的商品'}}
+        </view>
+        <view
+          wx:for="{{resourceCandidates}}"
+          wx:key="resourceId"
+          class="resource-picker__item"
+          data-type="{{item.type}}"
+          data-id="{{item.resourceId}}"
+          bindtap="onResourceCandidateTap"
+        >
+          <image wx:if="{{item.image}}" class="resource-card__image" src="{{item.image}}" mode="aspectFill" />
+          <view wx:else class="resource-card__placeholder">{{item.type === 'ORDER' ? '订单' : '商品'}}</view>
+          <view class="resource-card__body">
+            <view class="resource-card__title">{{item.title}}</view>
+            <view class="resource-card__subtitle">{{item.subtitle}}</view>
+            <view class="resource-card__price">{{item.priceText}}</view>
+          </view>
+          <view class="resource-picker__send">{{resourceSending ? '发送中' : '发送'}}</view>
+        </view>
+      </scroll-view>
+    </view>
+  </block>
+</view>
