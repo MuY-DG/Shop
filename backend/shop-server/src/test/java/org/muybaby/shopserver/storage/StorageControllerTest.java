@@ -274,6 +274,20 @@ class StorageControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("DISABLED"));
 
+        mockMvc.perform(put("/admin/asset-folders/{folderId}/position", rootId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"parentId\":" + childId + ",\"index\":0}")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_ASSET_FOLDER_CYCLE.code()));
+
+        mockMvc.perform(put("/admin/asset-folders/{folderId}/position", emptyId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"parentId\":" + childId + ",\"index\":0}")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_ASSET_FOLDER_UNAVAILABLE.code()));
+
         mockMvc.perform(multipart("/admin/assets/upload")
                         .file(new MockMultipartFile("file", "blocked.png", "image/png", TINY_PNG))
                         .param("folderId", String.valueOf(childId))
@@ -311,6 +325,80 @@ class StorageControllerTest {
         mockMvc.perform(delete("/admin/asset-folders/{folderId}", rootId)
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void folderPositionMovesAcrossLevelsAndNormalizesBothSiblingOrders() throws Exception {
+        String token = adminToken();
+        long firstRootId = createFolder(token, 0, "根分组一", "ENABLED");
+        long secondRootId = createFolder(token, 0, "根分组二", "ENABLED");
+        long movingRootId = createFolder(token, 0, "待移动根分组", "ENABLED");
+        long firstChildId = createFolder(token, firstRootId, "子分组一", "ENABLED");
+        long secondChildId = createFolder(token, firstRootId, "子分组二", "ENABLED");
+
+        mockMvc.perform(put("/admin/asset-folders/{folderId}/position", movingRootId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"parentId\":" + firstRootId + ",\"index\":1}")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.parentId").value(firstRootId))
+                .andExpect(jsonPath("$.data.sortOrder").value(1));
+
+        mockMvc.perform(get("/admin/asset-folders")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(firstRootId))
+                .andExpect(jsonPath("$.data[0].sortOrder").value(0))
+                .andExpect(jsonPath("$.data[0].children[0].id").value(firstChildId))
+                .andExpect(jsonPath("$.data[0].children[0].sortOrder").value(0))
+                .andExpect(jsonPath("$.data[0].children[1].id").value(movingRootId))
+                .andExpect(jsonPath("$.data[0].children[1].sortOrder").value(1))
+                .andExpect(jsonPath("$.data[0].children[2].id").value(secondChildId))
+                .andExpect(jsonPath("$.data[0].children[2].sortOrder").value(2))
+                .andExpect(jsonPath("$.data[1].id").value(secondRootId))
+                .andExpect(jsonPath("$.data[1].sortOrder").value(1));
+
+        mockMvc.perform(put("/admin/asset-folders/{folderId}/position", firstChildId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"parentId\":0,\"index\":1}")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.parentId").value(0))
+                .andExpect(jsonPath("$.data.sortOrder").value(1));
+
+        mockMvc.perform(get("/admin/asset-folders")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(firstRootId))
+                .andExpect(jsonPath("$.data[0].children[0].id").value(movingRootId))
+                .andExpect(jsonPath("$.data[0].children[0].sortOrder").value(0))
+                .andExpect(jsonPath("$.data[0].children[1].id").value(secondChildId))
+                .andExpect(jsonPath("$.data[0].children[1].sortOrder").value(1))
+                .andExpect(jsonPath("$.data[1].id").value(firstChildId))
+                .andExpect(jsonPath("$.data[1].sortOrder").value(1))
+                .andExpect(jsonPath("$.data[2].id").value(secondRootId))
+                .andExpect(jsonPath("$.data[2].sortOrder").value(2));
+    }
+
+    @Test
+    void folderCreationAppendsToTheSelectedParent() throws Exception {
+        String token = adminToken();
+        long firstRootId = createFolder(token, 0, "首个根分组", "ENABLED");
+        long secondRootId = createFolder(token, 0, "第二个根分组", "ENABLED");
+        long firstChildId = createFolder(token, firstRootId, "首个子分组", "ENABLED");
+        long secondChildId = createFolder(token, firstRootId, "第二个子分组", "ENABLED");
+
+        mockMvc.perform(get("/admin/asset-folders")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(firstRootId))
+                .andExpect(jsonPath("$.data[0].sortOrder").value(0))
+                .andExpect(jsonPath("$.data[0].children[0].id").value(firstChildId))
+                .andExpect(jsonPath("$.data[0].children[0].sortOrder").value(0))
+                .andExpect(jsonPath("$.data[0].children[1].id").value(secondChildId))
+                .andExpect(jsonPath("$.data[0].children[1].sortOrder").value(1))
+                .andExpect(jsonPath("$.data[1].id").value(secondRootId))
+                .andExpect(jsonPath("$.data[1].sortOrder").value(1));
     }
 
     @Test

@@ -2,6 +2,7 @@ package org.muybaby.shopserver.storage;
 
 import jakarta.validation.Valid;
 import org.muybaby.shopserver.common.api.ApiResponse;
+import org.muybaby.shopserver.storage.dto.StorageAssetFolderPositionRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetFolderRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetFolderResponse;
 import org.muybaby.shopserver.storage.service.StorageService;
@@ -48,6 +49,15 @@ public class AdminAssetFolderController {
             @Valid @RequestBody StorageAssetFolderRequest request
     ) {
         return ApiResponse.success(storageService.updateFolder(folderId, request));
+    }
+
+    @PutMapping("/{folderId}/position")
+    @PreAuthorize("hasAuthority('asset:folder')")
+    public ApiResponse<StorageAssetFolderResponse> updatePosition(
+            @PathVariable Long folderId,
+            @Valid @RequestBody StorageAssetFolderPositionRequest request
+    ) {
+        return ApiResponse.success(storageService.updateFolderPosition(folderId, request));
     }
 
     @DeleteMapping("/{folderId}")

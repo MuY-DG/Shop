@@ -16,6 +16,7 @@ import org.muybaby.shopserver.storage.StorageUploadProfile;
 import org.muybaby.shopserver.storage.UploadedByType;
 import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
+import org.muybaby.shopserver.storage.dto.StorageAssetFolderPositionRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetFolderRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetFolderResponse;
 import org.muybaby.shopserver.storage.dto.StorageAssetQueryRequest;
@@ -463,6 +464,7 @@ public class StorageService {
         }
         String status = normalizeFolderStatus(request.status());
         String name = normalizeFolderName(request.name());
+        int sortOrder = nextFolderSortOrder(parentId);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         try {
             namedParameterJdbcTemplate.update("""
@@ -472,7 +474,7 @@ public class StorageService {
                     new MapSqlParameterSource()
                             .addValue("parentId", databaseParentId(parentId))
                             .addValue("name", name)
-                            .addValue("sortOrder", normalizeSortOrder(request.sortOrder()))
+                            .addValue("sortOrder", sortOrder)
                             .addValue("status", status),
                     keyHolder,
                     new String[]{"id"});
@@ -512,6 +514,48 @@ public class StorageService {
         } catch (DuplicateKeyException ex) {
             throw new BusinessException(ErrorCode.STORAGE_ASSET_FOLDER_UNAVAILABLE);
         }
+        return requireFolderResponse(folderId);
+    }
+
+    @Transactional
+    public StorageAssetFolderResponse updateFolderPosition(
+            Long folderId,
+            StorageAssetFolderPositionRequest request
+    ) {
+        lockFolderTree();
+        FolderRow existing = findFolderRow(folderId, true);
+        Long parentId = normalizeParentId(request.parentId());
+        if (descendantFolderIds(folderId).contains(parentId)) {
+            throw new BusinessException(ErrorCode.STORAGE_ASSET_FOLDER_CYCLE);
+        }
+        if (parentId != 0L) {
+            requireEnabledFolderChain(parentId, true);
+        }
+
+        List<Long> sourceOrder = siblingFolderIds(existing.parentId(), folderId);
+        List<Long> targetOrder = existing.parentId().equals(parentId)
+                ? sourceOrder
+                : siblingFolderIds(parentId, folderId);
+        int targetIndex = Math.min(request.index(), targetOrder.size());
+        targetOrder.add(targetIndex, folderId);
+
+        if (!existing.parentId().equals(parentId)) {
+            try {
+                jdbcClient.sql("""
+                                update storage_asset_folder
+                                set parent_id = :parentId,
+                                    updated_at = current_timestamp
+                                where id = :folderId
+                                """)
+                        .param("parentId", databaseParentId(parentId))
+                        .param("folderId", folderId)
+                        .update();
+            } catch (DuplicateKeyException ex) {
+                throw new BusinessException(ErrorCode.STORAGE_ASSET_FOLDER_UNAVAILABLE);
+            }
+            updateFolderOrder(sourceOrder);
+        }
+        updateFolderOrder(targetOrder);
         return requireFolderResponse(folderId);
     }
 
@@ -851,6 +895,69 @@ public class StorageService {
             queue.addAll(childrenByParent.getOrDefault(current, List.of()));
         }
         return result;
+    }
+
+    private List<Long> siblingFolderIds(Long parentId, Long excludedFolderId) {
+        if (parentId == null || parentId == 0L) {
+            return new ArrayList<>(jdbcClient.sql("""
+                            select id
+                            from storage_asset_folder
+                            where parent_id is null and id <> :excludedFolderId
+                            order by sort_order asc, id asc
+                            for update
+                            """)
+                    .param("excludedFolderId", excludedFolderId)
+                    .query(Long.class)
+                    .list());
+        }
+        return new ArrayList<>(jdbcClient.sql("""
+                        select id
+                        from storage_asset_folder
+                        where parent_id = :parentId and id <> :excludedFolderId
+                        order by sort_order asc, id asc
+                        for update
+                        """)
+                .param("parentId", parentId)
+                .param("excludedFolderId", excludedFolderId)
+                .query(Long.class)
+                .list());
+    }
+
+    private int nextFolderSortOrder(Long parentId) {
+        Integer maximumSortOrder;
+        if (parentId == null || parentId == 0L) {
+            maximumSortOrder = jdbcClient.sql("""
+                            select coalesce(max(sort_order), -1)
+                            from storage_asset_folder
+                            where parent_id is null
+                            """)
+                    .query(Integer.class)
+                    .single();
+        } else {
+            maximumSortOrder = jdbcClient.sql("""
+                            select coalesce(max(sort_order), -1)
+                            from storage_asset_folder
+                            where parent_id = :parentId
+                            """)
+                    .param("parentId", parentId)
+                    .query(Integer.class)
+                    .single();
+        }
+        return maximumSortOrder + 1;
+    }
+
+    private void updateFolderOrder(List<Long> folderIds) {
+        for (int index = 0; index < folderIds.size(); index++) {
+            jdbcClient.sql("""
+                            update storage_asset_folder
+                            set sort_order = :sortOrder,
+                                updated_at = current_timestamp
+                            where id = :folderId
+                            """)
+                    .param("sortOrder", index)
+                    .param("folderId", folderIds.get(index))
+                    .update();
+        }
     }
 
     private void requireEnabledFolderChain(Long folderId, boolean forUpdate) {

@@ -635,6 +635,13 @@ declare namespace Api {
       status: FolderStatus
     }
 
+    interface AssetFolderPositionPayload {
+      /** 0 means move to the root level. */
+      parentId: number
+      /** Zero-based position among the target parent's children. */
+      index: number
+    }
+
     interface AssetUploadPayload {
       file: File
       /** 0 or omitted means ungrouped. */

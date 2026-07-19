@@ -84,6 +84,17 @@ export function updateAssetFolder(folderId: number, data: Api.Storage.AssetFolde
   })
 }
 
+export function updateAssetFolderPosition(
+  folderId: number,
+  data: Api.Storage.AssetFolderPositionPayload
+) {
+  return request.put<Api.Storage.AssetFolder>({
+    url: `/admin/asset-folders/${folderId}/position`,
+    data,
+    showSuccessMessage: false
+  })
+}
+
 export function deleteAssetFolder(folderId: number) {
   return request.del<void>({
     url: `/admin/asset-folders/${folderId}`,

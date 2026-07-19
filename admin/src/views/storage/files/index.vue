@@ -4,9 +4,6 @@
       <aside class="asset-library__sidebar">
         <div class="asset-library__sidebar-header">
           <span>素材分组</span>
-          <ElButton v-auth="'asset:folder'" text type="primary" @click="openFolderDialog('create')">
-            新建
-          </ElButton>
         </div>
 
         <button
@@ -27,15 +24,28 @@
         </button>
 
         <ElTree
+          v-loading="folderSorting"
+          class="asset-library__folder-tree"
           :data="folders"
           node-key="id"
           default-expand-all
           highlight-current
           :expand-on-click-node="false"
+          :draggable="canSortFolders"
+          :allow-drop="allowFolderDrop"
           @node-click="handleFolderSelect"
+          @node-drag-start="captureFolderOrder"
+          @node-drop="handleFolderDrop"
         >
           <template #default="{ data }">
             <div class="asset-library__tree-node">
+              <ElIcon
+                v-if="canSortFolders"
+                class="asset-library__drag-handle"
+                title="拖动调整分组顺序或层级"
+              >
+                <Rank />
+              </ElIcon>
               <span class="asset-library__tree-name">{{ data.name }}</span>
               <ElTag v-if="data.status === 'DISABLED'" size="small" type="info">停用</ElTag>
               <ElDropdown
@@ -61,6 +71,16 @@
             </div>
           </template>
         </ElTree>
+
+        <button
+          v-auth="'asset:folder'"
+          type="button"
+          class="asset-library__virtual-node asset-library__create-node"
+          @click="openFolderDialog('create')"
+        >
+          <ElIcon><Plus /></ElIcon>
+          <span>新建分组</span>
+        </button>
       </aside>
 
       <section class="asset-library__main">
@@ -287,12 +307,13 @@
             :render-after-expand="false"
             placeholder="请选择上级分组"
             style="width: 100%"
+            @change="handleFolderParentChange"
           />
         </ElFormItem>
         <ElFormItem label="分组名称" required>
           <ElInput v-model="folderForm.name" maxlength="64" show-word-limit />
         </ElFormItem>
-        <ElFormItem label="排序">
+        <ElFormItem v-if="folderDialogMode === 'edit'" label="排序">
           <ElInputNumber
             v-model="folderForm.sortOrder"
             :min="0"
@@ -476,12 +497,21 @@
 
 <script setup lang="ts">
   import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
-  import { CopyDocument, MoreFilled, Picture, VideoCamera } from '@element-plus/icons-vue'
+  import {
+    CopyDocument,
+    MoreFilled,
+    Picture,
+    Plus,
+    Rank,
+    VideoCamera
+  } from '@element-plus/icons-vue'
   import {
     ElImage,
     ElMessage,
     ElMessageBox,
     ElTag,
+    type AllowDropFunction,
+    type NodeDropType,
     type TableInstance,
     type UploadUserFile
   } from 'element-plus'
@@ -491,6 +521,7 @@
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
   import { useTableColumns } from '@/hooks/core/useTableColumns'
   import type { ColumnOption } from '@/types'
+  import { useAuth } from '@/hooks'
   import { settleWithConcurrency } from '@/utils/asset-batch'
   import { ASSET_LIBRARY_EMPTY_TABLE_HEIGHT } from './asset-library-layout'
   import {
@@ -503,6 +534,7 @@
     fetchAssets,
     updateAssetDisplayName,
     updateAssetFolder,
+    updateAssetFolderPosition,
     uploadAsset
   } from '@/api/assets'
 
@@ -537,6 +569,7 @@
   const uploading = ref(false)
   const moving = ref(false)
   const folderSaving = ref(false)
+  const folderSorting = ref(false)
   const assets = ref<Api.Storage.AssetItem[]>([])
   const folders = ref<Api.Storage.AssetFolder[]>([])
   const selectedFolderId = ref<number | undefined>()
@@ -560,6 +593,7 @@
   const selectedAssetIds = ref<number[]>([])
   const assetTableRef = ref<AssetTableExpose | null>(null)
   const syncingTableSelection = ref(false)
+  let folderOrderSnapshot: Api.Storage.AssetFolder[] = []
 
   const currentUsages = computed(() =>
     (detailAsset.value?.usages || []).filter((usage) => usage.status === 'ACTIVE')
@@ -568,6 +602,8 @@
     (detailAsset.value?.usages || []).filter((usage) => usage.status !== 'ACTIVE')
   )
   const { copy } = useClipboard({ legacy: true })
+  const { hasAuth } = useAuth()
+  const canSortFolders = computed(() => hasAuth('asset:folder') && !folderSorting.value)
   const selectedAssetIdSet = computed(() => new Set(selectedAssetIds.value))
   const displayNameExtension = computed(() =>
     detailAsset.value?.extension ? `.${detailAsset.value.extension}` : ''
@@ -629,6 +665,74 @@
       if (child) return child
     }
     return null
+  }
+
+  const cloneFolderTree = (items: Api.Storage.AssetFolder[]): Api.Storage.AssetFolder[] =>
+    items.map((item) => ({
+      ...item,
+      children: cloneFolderTree(item.children || [])
+    }))
+
+  const folderContainsId = (folder: Api.Storage.AssetFolder, id: number): boolean =>
+    folder.id === id || folder.children?.some((child) => folderContainsId(child, id)) || false
+
+  const isEnabledFolderChain = (folderId: number): boolean => {
+    if (folderId === 0) return true
+    const folder = findFolder(folders.value, folderId)
+    return Boolean(folder && folder.status === 'ENABLED' && isEnabledFolderChain(folder.parentId))
+  }
+
+  const allowFolderDrop: AllowDropFunction = (draggingNode, dropNode, dropType) => {
+    if (folderSorting.value) return false
+    const draggedFolder = draggingNode.data as Api.Storage.AssetFolder
+    const targetFolder = dropNode.data as Api.Storage.AssetFolder
+    const targetParentId = dropType === 'inner' ? targetFolder.id : targetFolder.parentId
+    if (folderContainsId(draggedFolder, targetParentId)) return false
+    return isEnabledFolderChain(targetParentId)
+  }
+
+  const captureFolderOrder = () => {
+    folderOrderSnapshot = cloneFolderTree(folders.value)
+  }
+
+  const handleFolderDrop = async (
+    draggingNode: Parameters<AllowDropFunction>[0],
+    dropNode: Parameters<AllowDropFunction>[1],
+    dropType: NodeDropType
+  ) => {
+    if (dropType === 'none') return
+
+    const draggedFolder = draggingNode.data as Api.Storage.AssetFolder
+    const targetFolder = dropNode.data as Api.Storage.AssetFolder
+    const targetParentId = dropType === 'inner' ? targetFolder.id : targetFolder.parentId
+    const targetSiblings =
+      targetParentId === 0
+        ? folders.value
+        : findFolder(folders.value, targetParentId)?.children || []
+    const targetIndex = targetSiblings.findIndex((folder) => folder.id === draggedFolder.id)
+    if (targetIndex < 0) {
+      folders.value = folderOrderSnapshot
+      await loadFolders()
+      return
+    }
+
+    folderSorting.value = true
+    try {
+      await updateAssetFolderPosition(draggedFolder.id, {
+        parentId: targetParentId,
+        index: targetIndex
+      })
+      ElMessage.success(
+        targetParentId === draggedFolder.parentId ? '分组排序已更新' : '分组位置已更新'
+      )
+      await loadFolders()
+    } catch {
+      folders.value = folderOrderSnapshot
+      await loadFolders()
+    } finally {
+      folderSorting.value = false
+      folderOrderSnapshot = []
+    }
   }
 
   const collectFolderIds = (folder?: Api.Storage.AssetFolder | null, ids = new Set<number>()) => {
@@ -1092,8 +1196,22 @@
     }
   }
 
+  const nextFolderSortOrder = (parentId: number) => {
+    const siblings =
+      parentId === 0 ? folders.value : findFolder(folders.value, parentId)?.children || []
+    return siblings.reduce((maximum, folder) => Math.max(maximum, folder.sortOrder + 1), 0)
+  }
   const resetFolderForm = (parentId = 0) => {
-    Object.assign(folderForm, { parentId, name: '', sortOrder: 0, status: 'ENABLED' })
+    Object.assign(folderForm, {
+      parentId,
+      name: '',
+      sortOrder: nextFolderSortOrder(parentId),
+      status: 'ENABLED'
+    })
+  }
+  const handleFolderParentChange = (parentId: number) => {
+    if (folderDialogMode.value !== 'create') return
+    folderForm.sortOrder = nextFolderSortOrder(parentId)
   }
   const openFolderDialog = (
     mode: FolderDialogMode,
@@ -1228,6 +1346,25 @@
     gap: 6px;
     width: 100%;
     min-width: 0;
+  }
+
+  .asset-library__create-node {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 4px;
+    color: var(--el-color-primary);
+    cursor: pointer;
+  }
+
+  .asset-library__drag-handle {
+    flex: none;
+    color: var(--el-text-color-placeholder);
+    cursor: grab;
+  }
+
+  .asset-library__folder-tree :deep(.el-tree-node__content:active) .asset-library__drag-handle {
+    cursor: grabbing;
   }
 
   .asset-library__tree-name {
