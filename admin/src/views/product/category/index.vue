@@ -55,9 +55,16 @@
                   <span class="category-manager__name" :title="data.name">{{ data.name }}</span>
                 </div>
                 <span class="category-manager__id">#{{ data.id }}</span>
-                <ElTag :type="categoryStatusConfig(data.status).type" size="small">
-                  {{ categoryStatusConfig(data.status).text }}
-                </ElTag>
+                <ElSwitch
+                  :model-value="data.status === 'ENABLED'"
+                  :loading="categoryStatusUpdatingIds.has(data.id)"
+                  :disabled="!canUpdateCategory || categoryStatusUpdatingIds.has(data.id)"
+                  inline-prompt
+                  active-text="启用"
+                  inactive-text="禁用"
+                  @click.stop
+                  :before-change="() => requestCategoryStatus(data, data.status !== 'ENABLED')"
+                />
                 <div class="category-manager__actions">
                   <ElButton
                     v-if="canCreateCategory"
@@ -90,7 +97,6 @@
           >
             <ElIcon><Plus /></ElIcon>
             <span>新建分类</span>
-            <small>默认添加至顶级分类末尾</small>
           </button>
         </div>
       </div>
@@ -110,13 +116,7 @@
 <script setup lang="ts">
   import { computed, onMounted, ref } from 'vue'
   import { FolderOpened, Plus, Rank, Refresh } from '@element-plus/icons-vue'
-  import {
-    ElImage,
-    ElMessage,
-    ElTag,
-    type AllowDropFunction,
-    type NodeDropType
-  } from 'element-plus'
+  import { ElImage, ElMessage, type AllowDropFunction, type NodeDropType } from 'element-plus'
   import {
     createProductCategory,
     fetchProductCategories,
@@ -137,6 +137,7 @@
   const loading = ref(false)
   const saving = ref(false)
   const categorySorting = ref(false)
+  const categoryStatusUpdatingIds = ref(new Set<number>())
   const categories = ref<Api.Product.Category[]>([])
   const dialogVisible = ref(false)
   const currentCategory = ref<Api.Product.Category | null>(null)
@@ -147,14 +148,6 @@
   const canCreateCategory = computed(() => hasAuth('product:category:create'))
   const canUpdateCategory = computed(() => hasAuth('product:category:update'))
   const canSortCategories = computed(() => canUpdateCategory.value && !categorySorting.value)
-
-  const statusMap: Record<Api.Product.CategoryStatus, { type: 'success' | 'info'; text: string }> =
-    {
-      ENABLED: { type: 'success', text: '启用' },
-      DISABLED: { type: 'info', text: '禁用' }
-    }
-
-  const categoryStatusConfig = (status: Api.Product.CategoryStatus) => statusMap[status]
 
   const collectNodeIds = (category: Api.Product.Category): number[] => {
     const ids = [category.id]
@@ -258,6 +251,32 @@
     const siblings =
       parentId === 0 ? categories.value : findCategory(categories.value, parentId)?.children || []
     return siblings.reduce((maximum, category) => Math.max(maximum, category.sortOrder + 1), 0)
+  }
+
+  const requestCategoryStatus = async (
+    category: Api.Product.Category,
+    enabled: boolean
+  ): Promise<boolean> => {
+    if (!canUpdateCategory.value || categoryStatusUpdatingIds.value.has(category.id)) return false
+
+    categoryStatusUpdatingIds.value.add(category.id)
+    try {
+      const status: Api.Product.CategoryStatus = enabled ? 'ENABLED' : 'DISABLED'
+      await updateProductCategory(category.id, {
+        parentId: category.parentId,
+        name: category.name,
+        icon: category.icon,
+        iconFileId: category.iconFileId,
+        sortOrder: category.sortOrder,
+        status
+      })
+      category.status = status
+      return true
+    } catch {
+      return false
+    } finally {
+      categoryStatusUpdatingIds.value.delete(category.id)
+    }
   }
 
   const loadCategories = async () => {
@@ -458,10 +477,6 @@
 
     &:hover {
       background: var(--el-color-primary-light-9);
-    }
-
-    small {
-      color: var(--el-text-color-placeholder);
     }
   }
 
