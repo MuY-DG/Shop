@@ -4,11 +4,13 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.content.HomeBannerStatus;
+import org.muybaby.shopserver.content.HomeBadgeMode;
 import org.muybaby.shopserver.content.HomeProductSection;
 import org.muybaby.shopserver.content.PublicContentChangedEvent;
 import org.muybaby.shopserver.content.dto.AdminHomeCategoryOptionResponse;
 import org.muybaby.shopserver.content.dto.AdminHomeCategoryRequest;
 import org.muybaby.shopserver.content.dto.AdminHomeCategoryResponse;
+import org.muybaby.shopserver.content.dto.AdminHomeAutoFillResponse;
 import org.muybaby.shopserver.content.dto.AdminHomeProductOptionQuery;
 import org.muybaby.shopserver.content.dto.AdminHomeProductOptionResponse;
 import org.muybaby.shopserver.content.dto.AdminHomeProductRequest;
@@ -29,7 +31,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class HomeDecorationService {
@@ -154,13 +161,14 @@ public class HomeDecorationService {
     }
 
     public List<AdminHomeProductResponse> products(HomeProductSection section) {
-        return jdbcClient.sql("""
+        List<HomeProductRow> rows = jdbcClient.sql("""
                         select i.id, i.section_type, i.spu_id, s.title as product_title,
                                s.subtitle as product_subtitle, s.status as product_status,
                                c.name as category_name, i.image_file_id, i.image_url,
                                s.main_image as product_image_url,
                                min(k.price_cent) as min_price_cent, max(k.price_cent) as max_price_cent,
-                               i.sort_order, i.status, i.created_at, i.updated_at
+                               i.sort_order, i.status, i.badge_mode, i.custom_badge_text,
+                               i.created_at, i.updated_at
                         from home_product_item i
                         join product_spu s on s.id = i.spu_id
                         join product_category c on c.id = s.category_id
@@ -169,14 +177,12 @@ public class HomeDecorationService {
                         where i.section_type = :sectionType
                         group by i.id, i.section_type, i.spu_id, s.title, s.subtitle, s.status,
                                  c.name, i.image_file_id, i.image_url, s.main_image,
-                                 i.sort_order, i.status, i.created_at, i.updated_at
+                                 i.sort_order, i.status, i.badge_mode, i.custom_badge_text,
+                                 i.created_at, i.updated_at
                         order by i.sort_order asc, i.id desc
                         """)
                 .param("sectionType", section.name())
-                .query((rs, rowNum) -> {
-                    String overrideImage = rs.getString("image_url");
-                    String productImage = rs.getString("product_image_url");
-                    return new AdminHomeProductResponse(
+                .query((rs, rowNum) -> new HomeProductRow(
                             rs.getLong("id"),
                             rs.getString("section_type"),
                             rs.getLong("spu_id"),
@@ -185,18 +191,44 @@ public class HomeDecorationService {
                             rs.getString("product_status"),
                             rs.getString("category_name"),
                             rs.getObject("image_file_id", Long.class),
-                            overrideImage,
-                            productImage,
-                            StringUtils.hasText(overrideImage) ? overrideImage : productImage,
+                            rs.getString("image_url"),
+                            rs.getString("product_image_url"),
                             rs.getObject("min_price_cent", Long.class),
                             rs.getObject("max_price_cent", Long.class),
                             rs.getInt("sort_order"),
                             rs.getString("status"),
+                            rs.getString("badge_mode"),
+                            rs.getString("custom_badge_text"),
                             rs.getObject("created_at", LocalDateTime.class),
                             rs.getObject("updated_at", LocalDateTime.class)
-                    );
-                })
+                    ))
                 .list();
+        List<AdminHomeProductResponse> result = new ArrayList<>();
+        int visiblePosition = 0;
+        for (HomeProductRow row : rows) {
+            List<String> tags = productTags(row.spuId());
+            boolean visible = HomeBannerStatus.ENABLED.name().equals(row.status())
+                    && "ON_SALE".equals(row.productStatus());
+            String resolvedBadge = resolveBadge(
+                    section,
+                    visible ? visiblePosition : -1,
+                    tags,
+                    parseBadgeMode(row.badgeMode()),
+                    row.customBadgeText()
+            );
+            if (visible) {
+                visiblePosition++;
+            }
+            String displayImage = StringUtils.hasText(row.imageUrl()) ? row.imageUrl() : row.productImageUrl();
+            result.add(new AdminHomeProductResponse(
+                    row.id(), row.sectionType(), row.spuId(), row.productTitle(), row.productSubtitle(),
+                    row.productStatus(), row.categoryName(), row.imageFileId(), row.imageUrl(),
+                    row.productImageUrl(), displayImage, row.minPriceCent(), row.maxPriceCent(),
+                    row.sortOrder(), row.status(), tags, row.badgeMode(), row.customBadgeText(),
+                    resolvedBadge, row.createdAt(), row.updatedAt()
+            ));
+        }
+        return result;
     }
 
     @Transactional
@@ -205,14 +237,18 @@ public class HomeDecorationService {
         ProductSnapshot product = requireProduct(request.spuId(), status == HomeBannerStatus.ENABLED);
         requireUniqueProduct(section, request.spuId(), null);
         int sortOrder = normalizeSortOrder(request.sortOrder());
+        HomeBadgeMode badgeMode = parseBadgeMode(request.badgeMode());
+        String customBadgeText = normalizeCustomBadgeText(badgeMode, request.customBadgeText());
         String imageUrl = request.imageFileId() == null ? "" : resolveImageUrl(request.imageFileId());
         KeyHolder keyHolder = new GeneratedKeyHolder();
         try {
             namedParameterJdbcTemplate.update("""
                             insert into home_product_item
-                                (section_type, spu_id, image_file_id, image_url, sort_order, status)
+                                (section_type, spu_id, image_file_id, image_url, sort_order, status,
+                                 badge_mode, custom_badge_text)
                             values
-                                (:sectionType, :spuId, :imageFileId, :imageUrl, :sortOrder, :status)
+                                (:sectionType, :spuId, :imageFileId, :imageUrl, :sortOrder, :status,
+                                 :badgeMode, :customBadgeText)
                             """,
                     new MapSqlParameterSource()
                             .addValue("sectionType", section.name())
@@ -220,7 +256,9 @@ public class HomeDecorationService {
                             .addValue("imageFileId", request.imageFileId())
                             .addValue("imageUrl", imageUrl)
                             .addValue("sortOrder", sortOrder)
-                            .addValue("status", status.name()),
+                            .addValue("status", status.name())
+                            .addValue("badgeMode", badgeMode.name())
+                            .addValue("customBadgeText", customBadgeText),
                     keyHolder,
                     new String[]{"id"});
         } catch (DataIntegrityViolationException ex) {
@@ -239,6 +277,8 @@ public class HomeDecorationService {
         ProductSnapshot product = requireProduct(request.spuId(), status == HomeBannerStatus.ENABLED);
         requireUniqueProduct(section, request.spuId(), itemId);
         int sortOrder = normalizeSortOrder(request.sortOrder());
+        HomeBadgeMode badgeMode = parseBadgeMode(request.badgeMode());
+        String customBadgeText = normalizeCustomBadgeText(badgeMode, request.customBadgeText());
         String imageUrl = request.imageFileId() == null ? "" : resolveImageUrl(request.imageFileId());
         try {
             int updated = jdbcClient.sql("""
@@ -248,6 +288,8 @@ public class HomeDecorationService {
                                 image_url = :imageUrl,
                                 sort_order = :sortOrder,
                                 status = :status,
+                                badge_mode = :badgeMode,
+                                custom_badge_text = :customBadgeText,
                                 updated_at = current_timestamp
                             where id = :itemId and section_type = :sectionType
                             """)
@@ -256,6 +298,8 @@ public class HomeDecorationService {
                     .param("imageUrl", imageUrl)
                     .param("sortOrder", sortOrder)
                     .param("status", status.name())
+                    .param("badgeMode", badgeMode.name())
+                    .param("customBadgeText", customBadgeText)
                     .param("itemId", itemId)
                     .param("sectionType", section.name())
                     .update();
@@ -267,6 +311,80 @@ public class HomeDecorationService {
         }
         syncProductUsage(itemId, product.title(), request.imageFileId(), imageUrl, sortOrder);
         publishHomeChanged();
+    }
+
+    @Transactional
+    public AdminHomeAutoFillResponse autoFillProducts(HomeProductSection section, Integer targetCount) {
+        if (targetCount == null || targetCount < 1 || targetCount > 50) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        jdbcClient.sql("select section_type from home_product_fill_guard where section_type = :sectionType for update")
+                .param("sectionType", section.name())
+                .query(String.class)
+                .optional()
+                .orElseThrow(() -> new IllegalStateException("Home product fill guard is unavailable"));
+
+        Integer existing = jdbcClient.sql("""
+                        select count(*)
+                        from home_product_item i
+                        join product_spu s on s.id = i.spu_id
+                        join product_category c on c.id = s.category_id
+                        where i.section_type = :sectionType
+                          and i.status = 'ENABLED'
+                          and s.status = 'ON_SALE'
+                          and s.deleted_at is null
+                          and s.purged_at is null
+                          and c.status = 'ENABLED'
+                        """)
+                .param("sectionType", section.name())
+                .query(Integer.class)
+                .single();
+        int existingCount = existing == null ? 0 : existing;
+        int needed = Math.max(0, targetCount - existingCount);
+        if (needed == 0) {
+            return new AdminHomeAutoFillResponse(
+                    targetCount, existingCount, 0, existingCount, false, List.of()
+            );
+        }
+
+        List<AutoFillCandidate> candidates = autoFillCandidates(section);
+        List<AutoFillCandidate> selected = selectAutoFillCandidates(section, candidates, needed);
+        Integer maximumSortOrder = jdbcClient.sql("""
+                        select coalesce(max(sort_order), -1)
+                        from home_product_item
+                        where section_type = :sectionType
+                        """)
+                .param("sectionType", section.name())
+                .query(Integer.class)
+                .single();
+        int nextSortOrder = (maximumSortOrder == null ? -1 : maximumSortOrder) + 1;
+        List<Long> addedSpuIds = new ArrayList<>();
+        for (AutoFillCandidate candidate : selected) {
+            jdbcClient.sql("""
+                            insert into home_product_item
+                                (section_type, spu_id, image_file_id, image_url, sort_order, status,
+                                 badge_mode, custom_badge_text)
+                            values
+                                (:sectionType, :spuId, null, '', :sortOrder, 'ENABLED', 'AUTO', '')
+                            """)
+                    .param("sectionType", section.name())
+                    .param("spuId", candidate.spuId())
+                    .param("sortOrder", nextSortOrder++)
+                    .update();
+            addedSpuIds.add(candidate.spuId());
+        }
+        if (!addedSpuIds.isEmpty()) {
+            publishHomeChanged();
+        }
+        int finalCount = existingCount + addedSpuIds.size();
+        return new AdminHomeAutoFillResponse(
+                targetCount,
+                existingCount,
+                addedSpuIds.size(),
+                finalCount,
+                finalCount < targetCount,
+                addedSpuIds
+        );
     }
 
     @Transactional
@@ -507,6 +625,198 @@ public class HomeDecorationService {
         storageUsageService.replaceOwnerUsages(StorageUsageOwnerType.HOME_PRODUCT_ITEM, itemId, label, usages);
     }
 
+    private List<AutoFillCandidate> autoFillCandidates(HomeProductSection section) {
+        LocalDateTime salesSince = LocalDateTime.now().minusDays(30);
+        return jdbcClient.sql("""
+                        select s.id as spu_id, s.category_id, s.sort_order,
+                               stock.total_stock,
+                               coalesce(sales.recent_sales, 0) as recent_sales,
+                               coalesce(sales.total_sales, 0) as total_sales
+                        from product_spu s
+                        join product_category c on c.id = s.category_id
+                        join (
+                            select spu_id, sum(stock_available) as total_stock
+                            from product_sku
+                            where status = 'ENABLED'
+                              and deleted_at is null
+                              and stock_available > 0
+                              and price_cent > 0
+                            group by spu_id
+                        ) stock on stock.spu_id = s.id
+                        left join (
+                            select oi.spu_id,
+                                   sum(case when o.paid_at >= :salesSince then oi.quantity else 0 end) as recent_sales,
+                                   sum(oi.quantity) as total_sales
+                            from order_item oi
+                            join shop_order o on o.id = oi.order_id
+                            where o.paid_at is not null
+                            group by oi.spu_id
+                        ) sales on sales.spu_id = s.id
+                        where s.status = 'ON_SALE'
+                          and s.deleted_at is null
+                          and s.purged_at is null
+                          and c.status = 'ENABLED'
+                          and s.main_image <> ''
+                          and not exists (
+                              select 1 from home_product_item i
+                              where i.section_type = :sectionType and i.spu_id = s.id
+                          )
+                        order by s.id
+                        limit 500
+                        """)
+                .param("salesSince", salesSince)
+                .param("sectionType", section.name())
+                .query((rs, rowNum) -> {
+                    Long spuId = rs.getLong("spu_id");
+                    return new AutoFillCandidate(
+                            spuId,
+                            rs.getLong("category_id"),
+                            rs.getInt("sort_order"),
+                            rs.getLong("total_stock"),
+                            rs.getLong("recent_sales"),
+                            rs.getLong("total_sales"),
+                            productTags(spuId)
+                    );
+                })
+                .list();
+    }
+
+    private List<AutoFillCandidate> selectAutoFillCandidates(
+            HomeProductSection section,
+            List<AutoFillCandidate> candidates,
+            int needed
+    ) {
+        Comparator<AutoFillCandidate> comparator = section == HomeProductSection.HOT
+                ? Comparator.comparingLong(AutoFillCandidate::recentSales).reversed()
+                .thenComparing(Comparator.comparingLong(AutoFillCandidate::totalSales).reversed())
+                .thenComparing(Comparator.comparingInt(this::hotTagPriority).reversed())
+                .thenComparing(Comparator.comparingLong(AutoFillCandidate::totalStock).reversed())
+                .thenComparingInt(AutoFillCandidate::sortOrder)
+                .thenComparing(Comparator.comparingLong(AutoFillCandidate::spuId).reversed())
+                : Comparator.comparingInt(this::recommendedTagPriority).reversed()
+                .thenComparing(Comparator.comparingLong(AutoFillCandidate::recentSales).reversed())
+                .thenComparing(Comparator.comparingLong(AutoFillCandidate::totalSales).reversed())
+                .thenComparing(Comparator.comparingLong(AutoFillCandidate::totalStock).reversed())
+                .thenComparingInt(AutoFillCandidate::sortOrder)
+                .thenComparing(Comparator.comparingLong(AutoFillCandidate::spuId).reversed());
+        List<AutoFillCandidate> ordered = new ArrayList<>(candidates);
+        ordered.sort(comparator);
+        if (section == HomeProductSection.HOT) {
+            return ordered.stream().limit(needed).toList();
+        }
+
+        Map<Long, ArrayDeque<AutoFillCandidate>> byCategory = new LinkedHashMap<>();
+        for (AutoFillCandidate candidate : ordered) {
+            byCategory.computeIfAbsent(candidate.categoryId(), ignored -> new ArrayDeque<>()).add(candidate);
+        }
+        List<AutoFillCandidate> diversified = new ArrayList<>();
+        while (diversified.size() < needed && !byCategory.isEmpty()) {
+            List<Long> emptyCategories = new ArrayList<>();
+            for (Map.Entry<Long, ArrayDeque<AutoFillCandidate>> entry : byCategory.entrySet()) {
+                AutoFillCandidate candidate = entry.getValue().pollFirst();
+                if (candidate != null && diversified.size() < needed) {
+                    diversified.add(candidate);
+                }
+                if (entry.getValue().isEmpty()) {
+                    emptyCategories.add(entry.getKey());
+                }
+            }
+            emptyCategories.forEach(byCategory::remove);
+        }
+        return diversified;
+    }
+
+    private int hotTagPriority(AutoFillCandidate candidate) {
+        if (candidate.tags().contains("HOT_RANK")) return 5;
+        if (candidate.tags().contains("HOT_SALE")) return 4;
+        if (candidate.tags().contains("PREMIUM")) return 3;
+        if (candidate.tags().contains("PROMOTION")) return 2;
+        if (candidate.tags().contains("NEW_ARRIVAL")) return 1;
+        return 0;
+    }
+
+    private int recommendedTagPriority(AutoFillCandidate candidate) {
+        if (candidate.tags().contains("PREMIUM")) return 5;
+        if (candidate.tags().contains("NEW_ARRIVAL")) return 4;
+        if (candidate.tags().contains("PROMOTION")) return 3;
+        if (candidate.tags().contains("HOT_SALE")) return 2;
+        if (candidate.tags().contains("HOT_RANK")) return 1;
+        return 0;
+    }
+
+    private List<String> productTags(Long spuId) {
+        return jdbcClient.sql("""
+                        select tag_code from product_spu_tag
+                        where spu_id = :spuId
+                        order by tag_code
+                        """)
+                .param("spuId", spuId)
+                .query(String.class)
+                .list();
+    }
+
+    private String resolveBadge(
+            HomeProductSection section,
+            int visiblePosition,
+            List<String> tags,
+            HomeBadgeMode mode,
+            String customBadgeText
+    ) {
+        if (mode == HomeBadgeMode.HIDDEN) {
+            return "";
+        }
+        if (mode == HomeBadgeMode.CUSTOM) {
+            return defaultString(customBadgeText);
+        }
+        if (section == HomeProductSection.HOT && visiblePosition == 0) {
+            return "TOP 1";
+        }
+        List<Map.Entry<String, String>> priorities = section == HomeProductSection.HOT
+                ? List.of(
+                Map.entry("HOT_RANK", "热门榜单"),
+                Map.entry("HOT_SALE", "人气爆款"),
+                Map.entry("PREMIUM", "精选好物"),
+                Map.entry("PROMOTION", "优惠"),
+                Map.entry("NEW_ARRIVAL", "新品")
+        )
+                : List.of(
+                Map.entry("NEW_ARRIVAL", "新品"),
+                Map.entry("PROMOTION", "优惠"),
+                Map.entry("PREMIUM", "精选好物"),
+                Map.entry("HOT_SALE", "热卖"),
+                Map.entry("HOT_RANK", "热门榜单")
+        );
+        for (Map.Entry<String, String> priority : priorities) {
+            if (tags.contains(priority.getKey())) {
+                return priority.getValue();
+            }
+        }
+        return "";
+    }
+
+    private HomeBadgeMode parseBadgeMode(String value) {
+        if (!StringUtils.hasText(value)) {
+            return HomeBadgeMode.AUTO;
+        }
+        try {
+            return HomeBadgeMode.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+    }
+
+    private String normalizeCustomBadgeText(HomeBadgeMode mode, String value) {
+        String normalized = defaultString(value).trim();
+        if (normalized.length() > 12 || (mode == HomeBadgeMode.CUSTOM && !StringUtils.hasText(normalized))) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return mode == HomeBadgeMode.CUSTOM ? normalized : "";
+    }
+
+    private String defaultString(String value) {
+        return value == null ? "" : value;
+    }
+
     private HomeBannerStatus parseStatus(String value) {
         try {
             return HomeBannerStatus.valueOf(value == null ? "" : value.trim().toUpperCase());
@@ -559,6 +869,39 @@ public class HomeDecorationService {
             LocalDateTime deletedAt,
             LocalDateTime purgedAt,
             String categoryStatus
+    ) {
+    }
+
+    private record HomeProductRow(
+            Long id,
+            String sectionType,
+            Long spuId,
+            String productTitle,
+            String productSubtitle,
+            String productStatus,
+            String categoryName,
+            Long imageFileId,
+            String imageUrl,
+            String productImageUrl,
+            Long minPriceCent,
+            Long maxPriceCent,
+            Integer sortOrder,
+            String status,
+            String badgeMode,
+            String customBadgeText,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
+    }
+
+    private record AutoFillCandidate(
+            Long spuId,
+            Long categoryId,
+            Integer sortOrder,
+            Long totalStock,
+            Long recentSales,
+            Long totalSales,
+            List<String> tags
     ) {
     }
 }

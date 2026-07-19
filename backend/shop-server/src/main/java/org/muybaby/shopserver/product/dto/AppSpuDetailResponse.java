@@ -13,6 +13,7 @@ public record AppSpuDetailResponse(
         List<String> sellingPoints,
         String detailHtml,
         List<ProductImageResponse> images,
-        List<AppSkuResponse> skus
+        List<AppSkuResponse> skus,
+        List<AppProductParameterValueResponse> parameters
 ) {
 }

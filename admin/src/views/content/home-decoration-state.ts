@@ -10,6 +10,8 @@ export interface HomeProductEditorState {
   imageFileId: number | null
   sortOrder: number
   status: Api.Content.HomeItemStatus
+  badgeMode: Api.Content.HomeBadgeMode
+  customBadgeText: string
 }
 
 export function toHomeCategoryPayload(
@@ -28,7 +30,9 @@ export function toHomeProductPayload(state: HomeProductEditorState): Api.Content
     spuId: state.spuId,
     imageFileId: state.imageFileId,
     sortOrder: state.sortOrder,
-    status: state.status
+    status: state.status,
+    badgeMode: state.badgeMode,
+    customBadgeText: state.badgeMode === 'CUSTOM' ? state.customBadgeText.trim() : ''
   }
 }
 

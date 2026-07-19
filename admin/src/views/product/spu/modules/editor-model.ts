@@ -66,6 +66,7 @@ export interface ProductEditorForm {
   tags: ProductTagCode[]
   guaranteeServiceIds: number[]
   couponTemplateIds: number[]
+  parameterValues: Api.Product.SpuParameterValue[]
 }
 
 export interface ProductEditorGuaranteeService {
@@ -121,10 +122,10 @@ export interface ProductEditorCoupon {
 
 export const PRODUCT_TAG_OPTIONS: Array<{ label: string; value: ProductTagCode }> = [
   { label: '促销单品', value: 'PROMOTION' },
-  { label: '是否热卖', value: 'HOT_SALE' },
+  { label: '热卖商品', value: 'HOT_SALE' },
   { label: '热门榜单', value: 'HOT_RANK' },
-  { label: '精品推荐', value: 'PREMIUM' },
-  { label: '首发新品', value: 'NEW_ARRIVAL' }
+  { label: '精选好物', value: 'PREMIUM' },
+  { label: '新品', value: 'NEW_ARRIVAL' }
 ]
 
 export const createEmptyImage = (): ProductEditorImage => ({
@@ -151,7 +152,8 @@ export const createDefaultForm = (): ProductEditorForm => ({
   specGroups: [],
   tags: [],
   guaranteeServiceIds: [],
-  couponTemplateIds: []
+  couponTemplateIds: [],
+  parameterValues: []
 })
 
 export const parseSellingPoints = (value: string): string[] =>

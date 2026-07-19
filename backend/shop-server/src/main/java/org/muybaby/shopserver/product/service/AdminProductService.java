@@ -73,19 +73,22 @@ public class AdminProductService {
     private final StorageUsageService storageUsageService;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final ProductParameterService productParameterService;
 
     public AdminProductService(
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             StorageUsageService storageUsageService,
             ObjectMapper objectMapper,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            ProductParameterService productParameterService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageUsageService = storageUsageService;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.productParameterService = productParameterService;
     }
 
     @Transactional
@@ -349,7 +352,8 @@ public class AdminProductService {
                 || !StringUtils.hasText(spu.mainImage())
                 || enabledSkus.isEmpty()
                 || defaultSkuCount != 1
-                || !specValid) {
+                || !specValid
+                || !productParameterService.requiredValuesComplete(spuId, spu.categoryId())) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
         int updatedRows = jdbcClient.sql("""
@@ -836,6 +840,9 @@ public class AdminProductService {
                 .param("spuId", spuId)
                 .update();
         jdbcClient.sql("delete from product_spu_coupon where spu_id = :spuId")
+                .param("spuId", spuId)
+                .update();
+        jdbcClient.sql("delete from product_spu_parameter_value where spu_id = :spuId")
                 .param("spuId", spuId)
                 .update();
     }

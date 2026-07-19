@@ -47,7 +47,7 @@ class HomeDecorationControllerTest {
         jdbcClient.sql("delete from product_sku where sku_code like 'HOME-%'").update();
         jdbcClient.sql("""
                         delete from product_spu
-                        where title in ('首页编排商品', '唯一编排商品')
+                        where title in ('首页编排商品', '唯一编排商品', '自动填充商品')
                         """).update();
         jdbcClient.sql("delete from product_category where name like '装修分类-%'").update();
         jdbcClient.sql("update app_contact_setting set phone_number = '' where id = 1").update();
@@ -83,7 +83,8 @@ class HomeDecorationControllerTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"spuId":%d,"imageFileId":null,"sortOrder":1,"status":"ENABLED"}
+                                {"spuId":%d,"imageFileId":null,"sortOrder":1,"status":"ENABLED",
+                                 "badgeMode":"CUSTOM","customBadgeText":"限时尝鲜"}
                                 """.formatted(product.spuId())))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString());
@@ -105,7 +106,9 @@ class HomeDecorationControllerTest {
                 .andExpect(jsonPath("$.data[0].spuId").value(product.spuId()))
                 .andExpect(jsonPath("$.data[0].displayImageUrl").value(hotImage.url()))
                 .andExpect(jsonPath("$.data[0].minPriceCent").value(1990))
-                .andExpect(jsonPath("$.data[0].maxPriceCent").value(2590));
+                .andExpect(jsonPath("$.data[0].maxPriceCent").value(2590))
+                .andExpect(jsonPath("$.data[0].badgeMode").value("AUTO"))
+                .andExpect(jsonPath("$.data[0].resolvedBadgeText").value("TOP 1"));
 
         mockMvc.perform(get("/admin/home/recommended-products")
                         .header("Authorization", "Bearer " + token))
@@ -113,7 +116,10 @@ class HomeDecorationControllerTest {
                 .andExpect(jsonPath("$.data[0].id").value(recommendedItemId))
                 .andExpect(jsonPath("$.data[0].sectionType").value("RECOMMENDED"))
                 .andExpect(jsonPath("$.data[0].imageFileId").doesNotExist())
-                .andExpect(jsonPath("$.data[0].displayImageUrl").value(product.mainImage()));
+                .andExpect(jsonPath("$.data[0].displayImageUrl").value(product.mainImage()))
+                .andExpect(jsonPath("$.data[0].badgeMode").value("CUSTOM"))
+                .andExpect(jsonPath("$.data[0].customBadgeText").value("限时尝鲜"))
+                .andExpect(jsonPath("$.data[0].resolvedBadgeText").value("限时尝鲜"));
 
         mockMvc.perform(get("/admin/home/options/categories")
                         .header("Authorization", "Bearer " + token))
@@ -207,6 +213,58 @@ class HomeDecorationControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(200001));
+    }
+
+    @Test
+    void autoFillKeepsExistingPlacementsAndAllowsTheSameProductAcrossSections() throws Exception {
+        String token = adminLoginAndExtractToken();
+        Product product = insertOnSaleProduct(
+                "自动填充商品", "", "http://localhost/auto-fill.png", 1290, 1590
+        );
+
+        mockMvc.perform(post("/admin/home/hot-products/auto-fill")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetCount":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.existingCount").value(0))
+                .andExpect(jsonPath("$.data.addedCount").value(1))
+                .andExpect(jsonPath("$.data.finalCount").value(1))
+                .andExpect(jsonPath("$.data.insufficient").value(false))
+                .andExpect(jsonPath("$.data.addedSpuIds[0]").value(product.spuId()));
+
+        mockMvc.perform(post("/admin/home/recommended-products/auto-fill")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetCount":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.existingCount").value(0))
+                .andExpect(jsonPath("$.data.addedCount").value(1))
+                .andExpect(jsonPath("$.data.addedSpuIds[0]").value(product.spuId()));
+
+        mockMvc.perform(post("/admin/home/hot-products/auto-fill")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"targetCount":1}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.existingCount").value(1))
+                .andExpect(jsonPath("$.data.addedCount").value(0))
+                .andExpect(jsonPath("$.data.finalCount").value(1));
+
+        Integer crossSectionCount = jdbcClient.sql("""
+                        select count(*) from home_product_item
+                        where spu_id = :spuId and section_type in ('HOT', 'RECOMMENDED')
+                        """)
+                .param("spuId", product.spuId())
+                .query(Integer.class)
+                .single();
+        assertThat(crossSectionCount).isEqualTo(2);
     }
 
     @Test

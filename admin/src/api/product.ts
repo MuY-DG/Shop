@@ -61,6 +61,65 @@ export function updateProductSpu(spuId: number, data: Api.Product.SpuForm) {
   })
 }
 
+export function fetchProductParameterDefinitions(params?: {
+  categoryId?: number
+  enabledOnly?: boolean
+}) {
+  return request.get<Api.Product.ProductParameterDefinition[]>({
+    url: '/admin/product/parameter-definitions',
+    params
+  })
+}
+
+export function fetchProductParameterDefinition(parameterId: number) {
+  return request.get<Api.Product.ProductParameterDefinition>({
+    url: `/admin/product/parameter-definitions/${parameterId}`
+  })
+}
+
+export function createProductParameterDefinition(data: Api.Product.ProductParameterDefinitionForm) {
+  return request.post<number>({
+    url: '/admin/product/parameter-definitions',
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function updateProductParameterDefinition(
+  parameterId: number,
+  data: Api.Product.ProductParameterDefinitionForm
+) {
+  return request.put<void>({
+    url: `/admin/product/parameter-definitions/${parameterId}`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function deleteProductParameterDefinition(parameterId: number) {
+  return request.del<void>({
+    url: `/admin/product/parameter-definitions/${parameterId}`,
+    showSuccessMessage: true
+  })
+}
+
+export function fetchProductSpuParameterValues(spuId: number) {
+  return request.get<Api.Product.SpuParameterValue[]>({
+    url: `/admin/product/spus/${spuId}/parameters`
+  })
+}
+
+export function replaceProductSpuParameterValues(
+  spuId: number,
+  data: Api.Product.SpuParameterValuesForm
+) {
+  return request.put<void>({
+    url: `/admin/product/spus/${spuId}/parameters`,
+    data,
+    showSuccessMessage: false
+  })
+}
+
 export function deleteProductSpu(spuId: number) {
   return request.del<void>({
     url: `/admin/product/spus/${spuId}`,

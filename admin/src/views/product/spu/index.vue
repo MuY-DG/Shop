@@ -32,12 +32,7 @@
     <ElCard class="art-table-card product-table-card">
       <ArtTableHeader v-model:columns="columnChecks" :loading="loading" @refresh="refreshData">
         <template #left>
-          <ElButton
-            v-if="!isRecycleBin"
-            v-auth="'product:spu:create'"
-            @click="openEditor()"
-            v-ripple
-          >
+          <ElButton v-if="canCreateProduct" type="primary" @click="openEditor()" v-ripple>
             新增商品
           </ElButton>
         </template>
@@ -174,6 +169,7 @@
 <script setup lang="ts">
   import { computed, h, onMounted, reactive, ref } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
+  import { useAuth } from '@/hooks/core/useAuth'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import type { ColumnOption } from '@/types/component'
   import { useTable } from '@/hooks/core/useTable'
@@ -203,6 +199,7 @@
 
   const route = useRoute()
   const router = useRouter()
+  const { hasAuth } = useAuth()
   const categories = ref<Api.Product.Category[]>([])
   const selectedStatus = ref<StatusFilter>('ALL')
   const statusUpdatingIds = ref(new Set<number>())
@@ -210,6 +207,7 @@
   const restoringIds = ref(new Set<number>())
   const purgingIds = ref(new Set<number>())
   const isRecycleBin = computed(() => selectedStatus.value === 'RECYCLED')
+  const canCreateProduct = computed(() => hasAuth('product:spu:create'))
 
   const editorSpuId = computed<number | null>(() => {
     if (route.query.mode !== 'edit') return null

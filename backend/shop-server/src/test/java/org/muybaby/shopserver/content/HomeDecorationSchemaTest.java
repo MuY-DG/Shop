@@ -21,7 +21,12 @@ class HomeDecorationSchemaTest {
     void migrationCreatesDecorationTablesMenusPermissionsAndContactSeed() {
         assertThat(tableExists("home_category_item")).isTrue();
         assertThat(tableExists("home_product_item")).isTrue();
+        assertThat(tableExists("home_product_fill_guard")).isTrue();
         assertThat(tableExists("app_contact_setting")).isTrue();
+        assertThat(tableExists("product_parameter_definition")).isTrue();
+        assertThat(tableExists("product_parameter_option")).isTrue();
+        assertThat(tableExists("product_category_parameter")).isTrue();
+        assertThat(tableExists("product_spu_parameter_value")).isTrue();
 
         assertThat(columnNames("home_category_item")).containsExactly(
                 "id", "category_id", "image_file_id", "image_url", "sort_order", "status",
@@ -29,7 +34,7 @@ class HomeDecorationSchemaTest {
         );
         assertThat(columnNames("home_product_item")).containsExactly(
                 "id", "section_type", "spu_id", "image_file_id", "image_url", "sort_order", "status",
-                "created_at", "updated_at"
+                "created_at", "updated_at", "badge_mode", "custom_badge_text"
         );
         assertThat(columnNames("app_contact_setting")).containsExactly(
                 "id", "phone_number", "updated_at"
@@ -38,6 +43,9 @@ class HomeDecorationSchemaTest {
         assertThat(jdbcClient.sql("select count(*) from app_contact_setting where id = 1")
                 .query(Integer.class)
                 .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select section_type from home_product_fill_guard order by section_type")
+                .query(String.class)
+                .list()).containsExactly("HOT", "RECOMMENDED");
 
         Integer parentCount = jdbcClient.sql("""
                         select count(*)
@@ -109,6 +117,26 @@ class HomeDecorationSchemaTest {
                         """)
                 .query(Integer.class)
                 .single();
+        Integer productParameterMenuCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu
+                        where id = 305
+                          and parent_id = 300
+                          and path = 'parameter'
+                          and component = '/product/parameter'
+                          and title = '商品参数'
+                          and visible = true
+                          and enabled = true
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer productParameterPermissionCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission
+                        where auth_mark in ('product:parameter:read', 'product:parameter:write')
+                        """)
+                .query(Integer.class)
+                .single();
 
         assertThat(parentCount).isEqualTo(1);
         assertThat(childCount).isEqualTo(3);
@@ -117,6 +145,8 @@ class HomeDecorationSchemaTest {
         assertThat(decorationPermissionCount).isEqualTo(10);
         assertThat(permissionCount).isEqualTo(8);
         assertThat(superRoleMenuCount).isEqualTo(3);
+        assertThat(productParameterMenuCount).isEqualTo(1);
+        assertThat(productParameterPermissionCount).isEqualTo(2);
     }
 
     private boolean tableExists(String tableName) {

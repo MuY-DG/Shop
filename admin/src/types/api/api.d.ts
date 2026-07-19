@@ -198,6 +198,13 @@ declare namespace Api {
     type CategoryStatus = 'ENABLED' | 'DISABLED'
     type SkuStatus = 'ENABLED' | 'DISABLED'
     type SpecType = 'SINGLE' | 'MULTI'
+    type ProductParameterValueType =
+      | 'TEXT'
+      | 'NUMBER'
+      | 'SINGLE_SELECT'
+      | 'MULTI_SELECT'
+      | 'BOOLEAN'
+    type ProductParameterStatus = 'ENABLED' | 'DISABLED'
     type ProductTag = 'PROMOTION' | 'HOT_SALE' | 'HOT_RANK' | 'PREMIUM' | 'NEW_ARRIVAL'
     type FreightChargeMode = 'FREE' | 'FIXED'
     type FreightTemplateStatus = 'ENABLED' | 'DISABLED'
@@ -380,6 +387,62 @@ declare namespace Api {
       specGroups: SpecGroupForm[]
       tags: ProductTag[]
       guaranteeServiceIds: number[]
+    }
+
+    interface ProductParameterOption {
+      id?: number
+      optionCode: string
+      optionLabel: string
+      displayLevel?: number | null
+      sortOrder: number
+    }
+
+    interface ProductParameterDefinition {
+      id: number
+      parameterCode: string
+      parameterName: string
+      valueType: ProductParameterValueType
+      unit: string
+      description: string
+      required: boolean
+      filterable: boolean
+      cardVisible: boolean
+      detailVisible: boolean
+      sortOrder: number
+      status: ProductParameterStatus
+      categoryIds: number[]
+      options: ProductParameterOption[]
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface ProductParameterDefinitionForm {
+      parameterCode: string
+      parameterName: string
+      valueType: ProductParameterValueType
+      unit: string
+      description: string
+      required: boolean
+      filterable: boolean
+      cardVisible: boolean
+      detailVisible: boolean
+      sortOrder: number
+      status: ProductParameterStatus
+      categoryIds: number[]
+      options: ProductParameterOption[]
+    }
+
+    interface SpuParameterValue {
+      parameterId: number
+      textValue?: string | null
+      numberValue?: number | null
+      booleanValue?: boolean | null
+      optionCodes: string[]
+      displayText?: string
+    }
+
+    interface SpuParameterValuesForm {
+      values: SpuParameterValue[]
     }
 
     interface StockAdjustmentForm {
@@ -711,6 +774,7 @@ declare namespace Api {
 
     type HomeItemStatus = 'ENABLED' | 'DISABLED'
     type HomeProductSection = 'HOT' | 'RECOMMENDED'
+    type HomeBadgeMode = 'AUTO' | 'CUSTOM' | 'HIDDEN'
 
     interface HomeCategoryItem {
       id: number
@@ -730,6 +794,19 @@ declare namespace Api {
       imageFileId: number | null
       sortOrder: number
       status: HomeItemStatus
+    }
+
+    interface HomeAutoFillForm {
+      targetCount: number
+    }
+
+    interface HomeAutoFillResult {
+      targetCount: number
+      existingCount: number
+      addedCount: number
+      finalCount: number
+      insufficient: boolean
+      addedSpuIds: number[]
     }
 
     interface HomeCategoryOption {
@@ -755,6 +832,10 @@ declare namespace Api {
       maxPriceCent?: number | null
       sortOrder: number
       status: HomeItemStatus
+      productTags: Api.Product.ProductTag[]
+      badgeMode: HomeBadgeMode
+      customBadgeText: string
+      resolvedBadgeText: string
       createdAt: string
       updatedAt: string
     }
@@ -764,6 +845,8 @@ declare namespace Api {
       imageFileId: number | null
       sortOrder: number
       status: HomeItemStatus
+      badgeMode: HomeBadgeMode
+      customBadgeText: string
     }
 
     interface HomeProductOption {

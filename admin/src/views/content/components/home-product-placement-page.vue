@@ -1,5 +1,15 @@
 <template>
   <div class="home-product-page art-full-height" :class="{ 'is-embedded': embedded }">
+    <div v-auth="writeAuth" class="auto-fill-toolbar">
+      <span>自动补足到</span>
+      <ElInputNumber v-model="autoFillTarget" :min="1" :max="50" :precision="0" />
+      <span>个</span>
+      <ElButton type="primary" plain :loading="autoFilling" @click="handleAutoFill">
+        自动填充
+      </ElButton>
+      <small>保留现有商品；热门与推荐允许重复</small>
+    </div>
+
     <VueDraggable
       v-if="embedded"
       v-model="items"
@@ -162,6 +172,21 @@
         <ElFormItem label="排序" prop="sortOrder">
           <ElInputNumber v-model="formData.sortOrder" :min="0" :precision="0" />
         </ElFormItem>
+        <ElFormItem label="位置角标" prop="badgeMode">
+          <ElRadioGroup v-model="formData.badgeMode">
+            <ElRadioButton value="AUTO">自动</ElRadioButton>
+            <ElRadioButton value="CUSTOM">自定义</ElRadioButton>
+            <ElRadioButton value="HIDDEN">不显示</ElRadioButton>
+          </ElRadioGroup>
+        </ElFormItem>
+        <ElFormItem v-if="formData.badgeMode === 'CUSTOM'" label="角标文字" prop="customBadgeText">
+          <ElInput
+            v-model="formData.customBadgeText"
+            maxlength="12"
+            show-word-limit
+            placeholder="例如：店长推荐"
+          />
+        </ElFormItem>
         <ElFormItem label="状态" prop="status">
           <ElSwitch
             v-model="formData.status"
@@ -190,6 +215,7 @@
   import { useAuth } from '@/hooks'
   import {
     createHomeProduct,
+    autoFillHomeProducts,
     deleteHomeProduct,
     fetchHomeProductOptions,
     fetchHomeProducts,
@@ -218,6 +244,8 @@
   const editorVisible = ref(false)
   const statusUpdatingId = ref<number | null>(null)
   const sorting = ref(false)
+  const autoFilling = ref(false)
+  const autoFillTarget = ref(props.section === 'HOT' ? 3 : 4)
   const currentItemId = ref<number | null>(null)
   const editingSpuId = ref<number | null>(null)
   const items = ref<Api.Content.HomeProductItem[]>([])
@@ -230,7 +258,9 @@
     imageFileId: null,
     imageUrl: '',
     sortOrder: 0,
-    status: 'ENABLED'
+    status: 'ENABLED',
+    badgeMode: 'AUTO',
+    customBadgeText: ''
   })
   const formData = reactive<EditorForm>(defaultForm())
   const usedProductIds = computed(() => new Set(items.value.map((item) => item.spuId)))
@@ -240,7 +270,19 @@
       : '建议使用约 1.23:1 横图，推荐 1200 × 980 px'
   )
   const rules: FormRules<EditorForm> = {
-    spuId: [{ required: true, message: '请选择商品', trigger: 'change' }]
+    spuId: [{ required: true, message: '请选择商品', trigger: 'change' }],
+    customBadgeText: [
+      {
+        validator: (_rule, value, callback) => {
+          if (formData.badgeMode === 'CUSTOM' && !String(value || '').trim()) {
+            callback(new Error('请输入自定义角标文字'))
+            return
+          }
+          callback()
+        },
+        trigger: 'blur'
+      }
+    ]
   }
 
   const loadItems = async () => {
@@ -273,7 +315,9 @@
               spuId: item.spuId,
               imageFileId: item.imageFileId ?? null,
               sortOrder: item.sortOrder,
-              status: item.status
+              status: item.status,
+              badgeMode: item.badgeMode,
+              customBadgeText: item.customBadgeText
             }),
             false
           )
@@ -319,7 +363,9 @@
         imageFileId: item.imageFileId ?? null,
         imageUrl: item.imageUrl || '',
         sortOrder: item.sortOrder,
-        status: item.status
+        status: item.status,
+        badgeMode: item.badgeMode,
+        customBadgeText: item.customBadgeText
       })
     }
     editorVisible.value = true
@@ -382,7 +428,9 @@
           spuId: item.spuId,
           imageFileId: item.imageFileId ?? null,
           sortOrder: item.sortOrder,
-          status: isEnabled ? 'ENABLED' : 'DISABLED'
+          status: isEnabled ? 'ENABLED' : 'DISABLED',
+          badgeMode: item.badgeMode,
+          customBadgeText: item.customBadgeText
         })
       )
       await loadItems()
@@ -401,6 +449,26 @@
     emit('changed')
   }
 
+  const handleAutoFill = async () => {
+    autoFilling.value = true
+    try {
+      const result = await autoFillHomeProducts(props.section, {
+        targetCount: autoFillTarget.value
+      })
+      if (result.addedCount > 0) {
+        ElMessage.success(`已自动添加 ${result.addedCount} 个商品，当前共 ${result.finalCount} 个`)
+      } else if (result.insufficient) {
+        ElMessage.warning(`暂无足够的合格商品，当前共 ${result.finalCount} 个`)
+      } else {
+        ElMessage.info(`当前已达到 ${result.finalCount} 个，无需补充`)
+      }
+      await loadItems()
+      emit('changed')
+    } finally {
+      autoFilling.value = false
+    }
+  }
+
   onMounted(loadItems)
 </script>
 
@@ -408,6 +476,22 @@
   .home-product-page.is-embedded {
     height: auto;
     min-height: 0;
+  }
+
+  .auto-fill-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 12px;
+    color: var(--el-text-color-regular);
+
+    .el-input-number {
+      width: 112px;
+    }
+
+    small {
+      color: var(--el-text-color-secondary);
+    }
   }
 
   .compact-tile-strip {

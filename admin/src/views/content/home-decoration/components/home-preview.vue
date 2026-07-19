@@ -96,8 +96,12 @@
                   <div class="popular-image-wrap">
                     <img :src="product.displayImageUrl" :alt="product.productTitle" />
                     <i class="image-fade" />
-                    <span class="marketing-tag" :class="`marketing-tag--${index}`">
-                      {{ popularTags[index] }}
+                    <span
+                      v-if="product.resolvedBadgeText"
+                      class="marketing-tag"
+                      :class="`marketing-tag--${index}`"
+                    >
+                      {{ product.resolvedBadgeText }}
                     </span>
                   </div>
                   <div class="popular-info">
@@ -148,8 +152,12 @@
                   <div class="recommend-image-wrap">
                     <img :src="product.displayImageUrl" :alt="product.productTitle" />
                     <i class="image-fade" />
-                    <span class="campaign-tag" :class="`campaign-tag--${index}`">
-                      {{ recommendTags[index] }}
+                    <span
+                      v-if="product.resolvedBadgeText"
+                      class="campaign-tag"
+                      :class="`campaign-tag--${index}`"
+                    >
+                      {{ product.resolvedBadgeText }}
                     </span>
                   </div>
                   <div class="recommend-info">
@@ -213,8 +221,6 @@
     select: [section: HomeDecorationSection]
   }>()
 
-  const popularTags = ['TOP 1', '人气爆款', '回购推荐']
-  const recommendTags = ['新品', '限时优惠', '精选好物', '组合推荐']
   const formatPreviewPrice = (priceCent?: number | null) =>
     priceCent == null ? '-' : (priceCent / 100).toFixed(2)
 

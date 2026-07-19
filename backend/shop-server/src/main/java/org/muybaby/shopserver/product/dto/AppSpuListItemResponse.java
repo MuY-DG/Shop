@@ -11,6 +11,7 @@ public record AppSpuListItemResponse(
         List<String> sellingPoints,
         Long minPriceCent,
         Long maxPriceCent,
-        Integer totalStock
+        Integer totalStock,
+        List<AppProductParameterValueResponse> parameters
 ) {
 }

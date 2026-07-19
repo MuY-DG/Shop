@@ -41,21 +41,24 @@
         />
       </ElFormItem>
 
-      <ElFormItem label="商品标签">
-        <ElCheckboxGroup
-          :model-value="modelValue.tags"
-          :disabled="disabled"
-          class="tag-options"
-          @update:model-value="updateTags"
-        >
-          <ElCheckboxButton
-            v-for="option in PRODUCT_TAG_OPTIONS"
-            :key="option.value"
-            :value="option.value"
+      <ElFormItem label="商品语义标签">
+        <div class="semantic-tag-field">
+          <ElCheckboxGroup
+            :model-value="modelValue.tags"
+            :disabled="disabled"
+            class="tag-options"
+            @update:model-value="updateTags"
           >
-            {{ option.label }}
-          </ElCheckboxButton>
-        </ElCheckboxGroup>
+            <ElCheckboxButton
+              v-for="option in PRODUCT_TAG_OPTIONS"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </ElCheckboxButton>
+          </ElCheckboxGroup>
+          <small>由运营手动设置；“新品”不会根据首次上架时间自动计算。</small>
+        </div>
       </ElFormItem>
 
       <ElFormItem label="优惠券">
@@ -438,6 +441,15 @@
       border: 1px solid var(--el-border-color);
       border-radius: 8px;
       box-shadow: none;
+    }
+  }
+
+  .semantic-tag-field {
+    display: grid;
+    gap: 8px;
+
+    small {
+      color: var(--el-text-color-secondary);
     }
   }
 

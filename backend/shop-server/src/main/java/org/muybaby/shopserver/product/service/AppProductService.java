@@ -24,9 +24,11 @@ import java.util.List;
 public class AppProductService {
 
     private final JdbcClient jdbcClient;
+    private final ProductParameterService productParameterService;
 
-    public AppProductService(JdbcClient jdbcClient) {
+    public AppProductService(JdbcClient jdbcClient, ProductParameterService productParameterService) {
         this.jdbcClient = jdbcClient;
+        this.productParameterService = productParameterService;
     }
 
     public List<AppCategoryResponse> categories() {
@@ -153,7 +155,8 @@ public class AppProductService {
                 splitSellingPoints(spu.sellingPoints()),
                 spu.detailHtml(),
                 images,
-                skus
+                skus,
+                productParameterService.displayValues(spuId, false)
         );
     }
 
@@ -179,7 +182,8 @@ public class AppProductService {
                 splitSellingPoints(rs.getString("selling_points")),
                 rs.getObject("min_price_cent", Long.class),
                 rs.getObject("max_price_cent", Long.class),
-                rs.getInt("total_stock")
+                rs.getInt("total_stock"),
+                productParameterService.displayValues(rs.getLong("id"), true)
         );
     }
 

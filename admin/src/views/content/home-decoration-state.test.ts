@@ -14,8 +14,22 @@ test('builds category and product payloads without leaking display fields', () =
     { categoryId: 12, imageFileId: 98, sortOrder: 3, status: 'ENABLED' }
   )
   assert.deepEqual(
-    toHomeProductPayload({ spuId: 36, imageFileId: null, sortOrder: 5, status: 'DISABLED' }),
-    { spuId: 36, imageFileId: null, sortOrder: 5, status: 'DISABLED' }
+    toHomeProductPayload({
+      spuId: 36,
+      imageFileId: null,
+      sortOrder: 5,
+      status: 'DISABLED',
+      badgeMode: 'CUSTOM',
+      customBadgeText: ' 店长推荐 '
+    }),
+    {
+      spuId: 36,
+      imageFileId: null,
+      sortOrder: 5,
+      status: 'DISABLED',
+      badgeMode: 'CUSTOM',
+      customBadgeText: '店长推荐'
+    }
   )
 })
 

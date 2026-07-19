@@ -42,16 +42,23 @@
           />
         </ElTabPane>
 
+        <ElTabPane name="parameter">
+          <template #label>
+            <span class="tab-label"><b>3</b> 商品参数</span>
+          </template>
+          <ProductParameterTab ref="parameterTabRef" v-model="formData" :disabled="submitting" />
+        </ElTabPane>
+
         <ElTabPane name="detail">
           <template #label>
-            <span class="tab-label"><b>3</b> 商品详细</span>
+            <span class="tab-label"><b>4</b> 商品详细</span>
           </template>
           <ProductDetailTab ref="detailTabRef" v-model="formData" :disabled="submitting" />
         </ElTabPane>
 
         <ElTabPane name="other">
           <template #label>
-            <span class="tab-label"><b>4</b> 其他设置</span>
+            <span class="tab-label"><b>5</b> 其他设置</span>
           </template>
           <ProductOtherSettingsTab
             ref="otherTabRef"
@@ -107,12 +114,15 @@
     bindProductSpuCoupons,
     createProductSpu,
     fetchProductSpuDetail,
+    fetchProductSpuParameterValues,
+    replaceProductSpuParameterValues,
     updateProductSpu
   } from '@/api/product'
   import { useAuth } from '@/hooks/core/useAuth'
   import ProductInfoTab from './product-info-tab.vue'
   import ProductSpecificationTab from './product-specification-tab.vue'
   import ProductDetailTab from './product-detail-tab.vue'
+  import ProductParameterTab from './product-parameter-tab.vue'
   import ProductOtherSettingsTab from './product-other-settings-tab.vue'
   import type {
     ProductEditorForm,
@@ -175,6 +185,7 @@
       tags: ProductTagCode[]
       guaranteeServiceIds: number[]
       couponTemplateIds: number[]
+      parameterValues: Api.Product.SpuParameterValue[]
     }>
 
   const props = withDefaults(defineProps<Props>(), {
@@ -184,7 +195,7 @@
   const emit = defineEmits<Emits>()
   const { hasAuth } = useAuth()
 
-  const tabs = ['info', 'specification', 'detail', 'other'] as const
+  const tabs = ['info', 'specification', 'parameter', 'detail', 'other'] as const
   type TabName = (typeof tabs)[number]
 
   const activeTab = ref<TabName>('info')
@@ -200,6 +211,7 @@
   const infoTabRef = ref<ValidatableTab>()
   const specificationTabRef = ref<ValidatableTab>()
   const detailTabRef = ref<ValidatableTab>()
+  const parameterTabRef = ref<ValidatableTab>()
   const otherTabRef = ref<ValidatableTab>()
 
   const activeTabIndex = computed(() => tabs.indexOf(activeTab.value))
@@ -221,6 +233,7 @@
   const tabRefs = computed<Array<ValidatableTab | undefined>>(() => [
     infoTabRef.value,
     specificationTabRef.value,
+    parameterTabRef.value,
     detailTabRef.value,
     otherTabRef.value
   ])
@@ -389,7 +402,8 @@
       specGroups,
       tags: detail.tags || [],
       guaranteeServiceIds: detail.guaranteeServiceIds || [],
-      couponTemplateIds: detail.couponTemplateIds || []
+      couponTemplateIds: detail.couponTemplateIds || [],
+      parameterValues: detail.parameterValues || []
     }
     currentStatus.value = detail.status
   }
@@ -410,7 +424,11 @@
       if (!props.spuId) {
         fillForm()
       } else {
-        const detail = (await fetchProductSpuDetail(props.spuId)) as ProductDetail
+        const [detailResponse, parameterValues] = await Promise.all([
+          fetchProductSpuDetail(props.spuId),
+          fetchProductSpuParameterValues(props.spuId)
+        ])
+        const detail = { ...detailResponse, parameterValues } as ProductDetail
         if (sequence !== loadSequence.value) return
         fillForm(detail)
       }
@@ -523,6 +541,9 @@
           couponTemplateIds: formData.value.couponTemplateIds
         })
       }
+      await replaceProductSpuParameterValues(localSpuId.value, {
+        values: formData.value.parameterValues
+      })
       await rememberSavedState()
       if (returnToListAfterSave) {
         ElMessage.success('商品已保存，正在返回商品列表')

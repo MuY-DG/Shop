@@ -81,6 +81,17 @@ export function fetchHomeProducts(section: Api.Content.HomeProductSection) {
   return request.get<Api.Content.HomeProductItem[]>({ url: productSectionUrl[section] })
 }
 
+export function autoFillHomeProducts(
+  section: Api.Content.HomeProductSection,
+  data: Api.Content.HomeAutoFillForm
+) {
+  return request.post<Api.Content.HomeAutoFillResult>({
+    url: `${productSectionUrl[section]}/auto-fill`,
+    data,
+    showSuccessMessage: false
+  })
+}
+
 export function createHomeProduct(
   section: Api.Content.HomeProductSection,
   data: Api.Content.HomeProductForm

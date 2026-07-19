@@ -17,7 +17,7 @@ public enum ErrorCode {
     WECHAT_LOGIN_FAILED(100101, "WeChat login failed"),
     WECHAT_PHONE_FAILED(100102, "WeChat phone authorization failed"),
     APP_USER_UNAVAILABLE(100103, "App user unavailable"),
-    PRODUCT_CATEGORY_UNAVAILABLE(200000, "Product category unavailable"),
+    PRODUCT_CATEGORY_UNAVAILABLE(200000, "商品分类不存在或当前不可用"),
     PRODUCT_UNAVAILABLE(200001, "Product unavailable"),
     SKU_UNAVAILABLE(200002, "SKU unavailable"),
     PRODUCT_NOT_IN_RECYCLE_BIN(200003, "Product is not in recycle bin"),

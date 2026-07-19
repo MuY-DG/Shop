@@ -2,6 +2,8 @@ package org.muybaby.shopserver.content;
 
 import jakarta.validation.Valid;
 import org.muybaby.shopserver.common.api.ApiResponse;
+import org.muybaby.shopserver.content.dto.AdminHomeAutoFillRequest;
+import org.muybaby.shopserver.content.dto.AdminHomeAutoFillResponse;
 import org.muybaby.shopserver.content.dto.AdminHomeProductRequest;
 import org.muybaby.shopserver.content.dto.AdminHomeProductResponse;
 import org.muybaby.shopserver.content.service.HomeDecorationService;
@@ -37,6 +39,14 @@ public class AdminHomeHotProductController {
     @PreAuthorize("hasAuthority('content:home-hot:write')")
     public ApiResponse<Long> create(@Valid @RequestBody AdminHomeProductRequest request) {
         return ApiResponse.success(service.createProduct(HomeProductSection.HOT, request));
+    }
+
+    @PostMapping("/auto-fill")
+    @PreAuthorize("hasAuthority('content:home-hot:write')")
+    public ApiResponse<AdminHomeAutoFillResponse> autoFill(
+            @Valid @RequestBody AdminHomeAutoFillRequest request
+    ) {
+        return ApiResponse.success(service.autoFillProducts(HomeProductSection.HOT, request.targetCount()));
     }
 
     @PutMapping("/{itemId}")
