@@ -37,6 +37,7 @@ export const createEmptySku = (overrides: Partial<ProductEditorSku> = {}): Produ
   costPriceCent: null,
   originalPriceCent: null,
   stockAvailable: 0,
+  lowStockThreshold: 10,
   weightGram: null,
   volumeCubicMeter: null,
   image: '',

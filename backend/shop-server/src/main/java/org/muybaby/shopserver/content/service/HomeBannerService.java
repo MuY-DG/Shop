@@ -301,8 +301,8 @@ public class HomeBannerService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
 
-        String title = trimToNull(request.title());
-        if (!StringUtils.hasText(title) || title.length() > 128) {
+        String title = trimToEmpty(request.title());
+        if (title.length() > 128) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
 

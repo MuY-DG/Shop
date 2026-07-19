@@ -303,6 +303,28 @@ class HomeBannerControllerTest {
     }
 
     @Test
+    void titleAndSubtitleAreOptional() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        UploadedFile uploadedFile = uploadBannerFile(adminToken, "banner-without-copy.png");
+
+        mockMvc.perform(post("/admin/home/banners")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"imageFileId":%d,"jumpType":"NONE",
+                                 "status":"DISABLED","sortOrder":0}
+                                """.formatted(uploadedFile.id())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").isNumber());
+
+        mockMvc.perform(get("/admin/home/banners")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].title").value(""))
+                .andExpect(jsonPath("$.data.records[0].subtitle").value(""));
+    }
+
+    @Test
     void appFeedIsPublicAndReturnsOnlyEnabledCurrentBannersInDeterministicOrder() throws Exception {
         insertProductTarget(201L, "ON_SALE");
         UploadedFile slowBanner = insertPublicStorageFile("banner-slow.png", "http://localhost:8080/files/public/banner-slow.png");

@@ -370,6 +370,9 @@ export type OrderSubmitRequest = CheckoutQuery & {
   addressId: string;
   userCouponId?: number | null;
   idempotencyKey: string;
+  analyticsVisitorId?: string;
+  analyticsSessionId?: string;
+  analyticsEntryScene?: string;
 };
 
 export interface OrderPreviewResponse {

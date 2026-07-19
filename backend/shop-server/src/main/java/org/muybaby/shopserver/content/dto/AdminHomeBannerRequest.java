@@ -2,11 +2,12 @@ package org.muybaby.shopserver.content.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
 
 public record AdminHomeBannerRequest(
-        @NotBlank String title,
+        @Size(max = 128) String title,
         String subtitle,
         @NotNull Long imageFileId,
         @NotBlank String jumpType,

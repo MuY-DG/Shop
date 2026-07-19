@@ -11,22 +11,13 @@ const fastEnterConfig: FastEnterConfig = {
   // 应用列表
   applications: [
     {
-      name: '工作台',
-      description: '系统概览与数据统计',
+      name: '运营概览',
+      description: '经营指标、运营待办与最近成交',
       icon: 'ri:pie-chart-line',
       iconColor: '#377dff',
       enabled: true,
       order: 1,
-      routeName: 'Console'
-    },
-    {
-      name: '分析页',
-      description: '数据分析与可视化',
-      icon: 'ri:game-line',
-      iconColor: '#ff3b30',
-      enabled: true,
-      order: 2,
-      routeName: 'Analysis'
+      routeName: 'OperationsOverview'
     },
     {
       name: '礼花效果',

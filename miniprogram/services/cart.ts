@@ -4,6 +4,9 @@ import { request } from "../utils/request";
 export interface AddCartItemPayload {
   skuId: number;
   quantity: number;
+  analyticsVisitorId?: string;
+  analyticsSessionId?: string;
+  analyticsEntryScene?: string;
 }
 
 export interface UpdateCartQuantityPayload {

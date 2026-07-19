@@ -48,7 +48,7 @@ class AdminMenuControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[*].path", contains(
-                        "/dashboard",
+                        "/operations",
                         "/product",
                         "/marketing",
                         "/customers",
@@ -57,8 +57,32 @@ class AdminMenuControllerTest {
                         "/development",
                         "/system"
                 )))
-                .andExpect(jsonPath("$.data[0].path").value("/dashboard"))
+                .andExpect(jsonPath("$.data[0].path").value("/operations"))
                 .andExpect(jsonPath("$.data[0].component").value("/index/index"))
+                .andExpect(jsonPath("$.data[0].children[*].path", contains(
+                        "overview",
+                        "trade-statistics",
+                        "product-statistics",
+                        "user-statistics",
+                        "traffic-statistics",
+                        "marketing-statistics",
+                        "service-statistics"
+                )))
+                .andExpect(jsonPath("$.data[0].children[*].component", contains(
+                        "/operations/overview",
+                        "/operations/trade-statistics",
+                        "/operations/product-statistics",
+                        "/operations/user-statistics",
+                        "/operations/traffic-statistics",
+                        "/operations/marketing-statistics",
+                        "/operations/service-statistics"
+                )))
+                .andExpect(jsonPath("$.data[0].children[0].meta.authList[*].authMark", contains(
+                        "operation:overview:read"
+                )))
+                .andExpect(jsonPath("$.data[0].children[1].meta.authList[*].authMark", contains(
+                        "operation:trade:read"
+                )))
                 .andExpect(jsonPath("$.data[1].path").value("/product"))
                 .andExpect(jsonPath("$.data[1].children[*].path", contains(
                         "category",
@@ -144,36 +168,28 @@ class AdminMenuControllerTest {
                 )))
                 .andExpect(jsonPath("$.data[5].path").value("/decoration"))
                 .andExpect(jsonPath("$.data[5].children[*].path", contains(
-                        "banner",
-                        "category",
-                        "hot-products",
-                        "recommended-products",
+                        "home",
                         "contact",
                         "assets"
                 )))
+                .andExpect(jsonPath("$.data[5].children[0].component").value("/content/home-decoration"))
                 .andExpect(jsonPath("$.data[5].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "content:banner:read",
                         "content:banner:create",
                         "content:banner:update",
-                        "content:banner:publish"
-                )))
-                .andExpect(jsonPath("$.data[5].children[1].meta.authList[*].authMark", containsInAnyOrder(
+                        "content:banner:publish",
                         "content:home-category:read",
-                        "content:home-category:write"
-                )))
-                .andExpect(jsonPath("$.data[5].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                        "content:home-category:write",
                         "content:home-hot:read",
-                        "content:home-hot:write"
-                )))
-                .andExpect(jsonPath("$.data[5].children[3].meta.authList[*].authMark", containsInAnyOrder(
+                        "content:home-hot:write",
                         "content:home-recommended:read",
                         "content:home-recommended:write"
                 )))
-                .andExpect(jsonPath("$.data[5].children[4].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[5].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "content:contact:read",
                         "content:contact:write"
                 )))
-                .andExpect(jsonPath("$.data[5].children[5].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[5].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "asset:upload",
                         "asset:read",
                         "asset:delete",
@@ -224,7 +240,7 @@ class AdminMenuControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[*].path", contains(
-                        "/dashboard",
+                        "/operations",
                         "/product",
                         "/marketing",
                         "/customers",

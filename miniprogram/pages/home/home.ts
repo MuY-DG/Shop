@@ -2,6 +2,7 @@ import type { HomeBanner, ProductCategory, ProductListItem } from "../../types/a
 import { getHomeBanners } from "../../services/home";
 import { formatProductPriceRange, getProductCategories, getProductList } from "../../services/product";
 import { request } from "../../utils/request";
+import { trackPageView } from "../../services/analytics";
 
 interface HealthStatus {
   status: string;
@@ -78,6 +79,7 @@ Page({
     loadingProducts: false
   },
   async onLoad() {
+    trackPageView("/pages/home/home");
     this.loadHealth();
     void this.loadBanners();
     void this.loadCategories();

@@ -29,6 +29,9 @@ public class AdminSkuUpsertRequest {
     private Integer stockAvailable;
 
     @Min(0)
+    private Integer lowStockThreshold;
+
+    @Min(0)
     private Integer weightGram;
 
     @Min(0)
@@ -58,6 +61,8 @@ public class AdminSkuUpsertRequest {
     private boolean costPriceCentSpecified;
 
     private boolean volumeCubicMeterSpecified;
+
+    private boolean lowStockThresholdSpecified;
 
     public AdminSkuUpsertRequest() {
     }
@@ -269,6 +274,15 @@ public class AdminSkuUpsertRequest {
         this.stockAvailable = stockAvailable;
     }
 
+    public Integer lowStockThreshold() {
+        return lowStockThreshold;
+    }
+
+    public void setLowStockThreshold(Integer lowStockThreshold) {
+        this.lowStockThreshold = lowStockThreshold;
+        this.lowStockThresholdSpecified = true;
+    }
+
     public Integer weightGram() {
         return weightGram;
     }
@@ -367,5 +381,9 @@ public class AdminSkuUpsertRequest {
 
     public boolean volumeCubicMeterSpecified() {
         return volumeCubicMeterSpecified;
+    }
+
+    public boolean lowStockThresholdSpecified() {
+        return lowStockThresholdSpecified;
     }
 }

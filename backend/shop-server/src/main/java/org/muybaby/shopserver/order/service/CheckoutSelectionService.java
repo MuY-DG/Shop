@@ -101,6 +101,7 @@ public class CheckoutSelectionService {
     ) {
         List<OrderPreviewItemResponse> previewItems = new ArrayList<>(checkoutRows.size());
         List<CheckoutItem> checkoutItems = new ArrayList<>(checkoutRows.size());
+        List<Long> unitCostCents = new ArrayList<>(checkoutRows.size());
         Map<Long, Long> freightAmountsByTemplate = new HashMap<>();
         long productOriginalAmountCent = 0L;
         long productAmountCent = 0L;
@@ -139,6 +140,7 @@ public class CheckoutSelectionService {
                     lineAmountCent
             ));
             checkoutItems.add(new CheckoutItem(row.skuId(), row.spuId(), lineAmountCent, row.quantity()));
+            unitCostCents.add(row.unitCostCent());
         }
         long freightCent = freightAmountsByTemplate.values().stream()
                 .mapToLong(Long::longValue)
@@ -148,6 +150,7 @@ public class CheckoutSelectionService {
                 source,
                 previewItems,
                 checkoutItems,
+                unitCostCents,
                 selectedCartItemIds,
                 productOriginalAmountCent,
                 productAmountCent,
@@ -363,6 +366,7 @@ public class CheckoutSelectionService {
                                spec_text,
                                original_price_cent,
                                price_cent as unit_price_cent,
+                               cost_price_cent as unit_cost_cent,
                                stock_available,
                                status as sku_status
                         from product_sku
@@ -381,6 +385,7 @@ public class CheckoutSelectionService {
                         rs.getString("spec_text"),
                         rs.getLong("original_price_cent"),
                         rs.getLong("unit_price_cent"),
+                        rs.getObject("unit_cost_cent", Long.class),
                         rs.getInt("stock_available"),
                         rs.getString("sku_status")
                 ));
@@ -426,6 +431,7 @@ public class CheckoutSelectionService {
                 sku.specText(),
                 sku.originalPriceCent(),
                 sku.unitPriceCent(),
+                sku.unitCostCent(),
                 quantity,
                 sku.stockAvailable(),
                 sku.skuStatus(),
@@ -457,6 +463,7 @@ public class CheckoutSelectionService {
                                k.spec_text,
                                k.original_price_cent,
                                k.price_cent as unit_price_cent,
+                               k.cost_price_cent as unit_cost_cent,
                                k.stock_available,
                                k.status as sku_status,
                                s.status as spu_status,
@@ -500,6 +507,7 @@ public class CheckoutSelectionService {
                        k.spec_text,
                        k.original_price_cent,
                        k.price_cent as unit_price_cent,
+                       k.cost_price_cent as unit_cost_cent,
                        k.stock_available,
                        k.status as sku_status,
                        s.status as spu_status,
@@ -586,6 +594,7 @@ public class CheckoutSelectionService {
                 rs.getString("spec_text"),
                 rs.getLong("original_price_cent"),
                 rs.getLong("unit_price_cent"),
+                rs.getObject("unit_cost_cent", Long.class),
                 quantity,
                 rs.getInt("stock_available"),
                 rs.getString("sku_status"),
@@ -650,6 +659,7 @@ public class CheckoutSelectionService {
             String specText,
             Long originalPriceCent,
             Long unitPriceCent,
+            Long unitCostCent,
             Integer stockAvailable,
             String skuStatus
     ) {
@@ -685,6 +695,7 @@ public class CheckoutSelectionService {
             String specText,
             Long originalPriceCent,
             Long unitPriceCent,
+            Long unitCostCent,
             Integer quantity,
             Integer stockAvailable,
             String skuStatus,

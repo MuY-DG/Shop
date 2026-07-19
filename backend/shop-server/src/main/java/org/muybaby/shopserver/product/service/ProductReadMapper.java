@@ -161,7 +161,7 @@ public class ProductReadMapper {
 
         List<AdminSkuResponse> skus = jdbcClient.sql("""
                         select id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               cost_price_cent, stock_available, weight_gram, volume_cubic_meter,
+                               cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
                                image, image_file_id, status, is_default, combination_key, sort_order
                         from product_sku
                         where spu_id = :spuId and deleted_at is null
@@ -173,7 +173,7 @@ public class ProductReadMapper {
         skus = skus.stream()
                 .map(sku -> new AdminSkuResponse(
                         sku.id(), sku.skuCode(), sku.specJson(), sku.specText(), sku.priceCent(),
-                        sku.originalPriceCent(), sku.costPriceCent(), sku.stockAvailable(), sku.weightGram(),
+                        sku.originalPriceCent(), sku.costPriceCent(), sku.stockAvailable(), sku.lowStockThreshold(), sku.weightGram(),
                         sku.volumeCubicMeter(), sku.image(), sku.imageFileId(), sku.status(),
                         sku.defaultSelected(), sku.combinationKey(), findSkuSpecValueKeys(sku.id()), sku.sortOrder()
                 ))
@@ -344,6 +344,7 @@ public class ProductReadMapper {
                 rs.getLong("original_price_cent"),
                 rs.getObject("cost_price_cent", Long.class),
                 rs.getInt("stock_available"),
+                rs.getInt("low_stock_threshold"),
                 rs.getObject("weight_gram", Integer.class),
                 rs.getBigDecimal("volume_cubic_meter"),
                 rs.getString("image"),

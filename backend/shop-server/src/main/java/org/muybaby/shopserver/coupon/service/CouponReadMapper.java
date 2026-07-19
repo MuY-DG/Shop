@@ -52,7 +52,9 @@ public class CouponReadMapper {
         long size = normalizedQuery.pageSize();
         long offset = (current - 1) * size;
 
-        String nameLike = StringUtils.hasText(normalizedQuery.name()) ? "%" + normalizedQuery.name().trim() + "%" : null;
+        String nameKeyword = StringUtils.hasText(normalizedQuery.name()) ? normalizedQuery.name().trim() : null;
+        String nameLike = nameKeyword == null ? null : "%" + nameKeyword + "%";
+        Long templateId = parsePositiveLong(nameKeyword);
         String status = StringUtils.hasText(normalizedQuery.status()) ? normalizedQuery.status().trim() : null;
         String distributionMode = normalizeOptionalFilter(
                 normalizedQuery.distributionMode(),
@@ -63,10 +65,15 @@ public class CouponReadMapper {
                         select count(*)
                         from coupon_template t
                         where (:distributionMode = '' or t.distribution_mode = :distributionMode)
-                          and (:nameLike is null or t.name like :nameLike)
+                          and (
+                              :nameLike is null
+                              or t.name like :nameLike
+                              or (:templateId is not null and t.id = :templateId)
+                          )
                           and (:status is null or t.status = :status)
                         """)
                 .param("nameLike", nameLike)
+                .param("templateId", templateId)
                 .param("status", status)
                 .param("distributionMode", distributionMode)
                 .query(Long.class)
@@ -85,12 +92,17 @@ public class CouponReadMapper {
                         from coupon_template t
                         left join app_user u on u.id = t.audience_user_id
                         where (:distributionMode = '' or t.distribution_mode = :distributionMode)
-                          and (:nameLike is null or t.name like :nameLike)
+                          and (
+                              :nameLike is null
+                              or t.name like :nameLike
+                              or (:templateId is not null and t.id = :templateId)
+                          )
                           and (:status is null or t.status = :status)
                         order by t.sort_order asc, t.id desc
                         limit :limit offset :offset
                         """)
                 .param("nameLike", nameLike)
+                .param("templateId", templateId)
                 .param("status", status)
                 .param("distributionMode", distributionMode)
                 .param("limit", size)

@@ -25,6 +25,18 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
         SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
         pay(session.token(), order.orderId());
         String outTradeNo = activeOutTradeNo(order.orderId());
+        jdbcClient.sql("""
+                        insert into payment_attempt
+                            (order_id, out_trade_no, status, amount_cent, error_code, error_message,
+                             started_at, created_at, updated_at)
+                        values
+                            (:orderId, :outTradeNo, 'PREPAY_FAILED', 6980, 'PROVIDER_ERROR', 'previous failure',
+                             timestamp '2026-07-08 11:00:00', timestamp '2026-07-08 11:00:00',
+                             timestamp '2026-07-08 11:00:01')
+                        """)
+                .param("orderId", order.orderId())
+                .param("outTradeNo", outTradeNo)
+                .update();
         String body = payNotifyBody("notify-payment-1", outTradeNo, "wx-transaction-callback", 6980L);
 
         postPayNotify(body, "mock-valid-signature")
@@ -32,6 +44,27 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.code").value(200));
 
         assertPaidState(order, outTradeNo, "wx-transaction-callback");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_attempt a
+                        join payment_order p on p.id = a.payment_order_id
+                        where a.out_trade_no = :outTradeNo
+                          and a.status = 'PAID'
+                          and p.status = 'PAID'
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_attempt
+                        where out_trade_no = :outTradeNo
+                          and status = 'PREPAY_FAILED'
+                          and payment_order_id is null
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
         assertThat(jdbcClient.sql("select count(*) from payment_callback_log where out_trade_no = :outTradeNo and status = 'SUCCESS'")
                 .param("outTradeNo", outTradeNo)
                 .query(Integer.class)

@@ -71,6 +71,7 @@ public abstract class PaymentTestSupport {
         jdbcClient.sql("delete from after_sale_request").update();
         jdbcClient.sql("delete from payment_callback_log").update();
         jdbcClient.sql("delete from order_shipment").update();
+        jdbcClient.sql("delete from payment_attempt").update();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from stock_lock").update();
         jdbcClient.sql("delete from order_item").update();
@@ -429,6 +430,24 @@ public abstract class PaymentTestSupport {
                 .param("outTradeNo", outTradeNo)
                 .param("prepayId", "mock-prepay-" + outTradeNo)
                 .param("openid", openid)
+                .param("amountCent", amountCent)
+                .update();
+        Long paymentOrderId = jdbcClient.sql("select id from payment_order where out_trade_no = :outTradeNo")
+                .param("outTradeNo", outTradeNo)
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into payment_attempt
+                            (order_id, payment_order_id, out_trade_no, status, amount_cent,
+                             started_at, prepay_succeeded_at, created_at, updated_at)
+                        values
+                            (:orderId, :paymentOrderId, :outTradeNo, 'PREPAY_SUCCEEDED', :amountCent,
+                             timestamp '2026-07-07 08:44:00', timestamp '2026-07-07 08:45:00',
+                             timestamp '2026-07-07 08:44:00', timestamp '2026-07-07 08:45:00')
+                        """)
+                .param("orderId", order.orderId())
+                .param("paymentOrderId", paymentOrderId)
+                .param("outTradeNo", outTradeNo)
                 .param("amountCent", amountCent)
                 .update();
     }

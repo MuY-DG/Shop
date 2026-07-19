@@ -19,6 +19,8 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.LocalDateTime;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -41,6 +44,9 @@ class AppCartServiceTest {
 
     @Autowired
     private DuplicateInsertProbe duplicateInsertProbe;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @Test
     void addMergesExistingRowAfterDuplicateKeyRetryThroughTransactionalProxy() {
@@ -75,6 +81,43 @@ class AppCartServiceTest {
                 .query(Integer.class)
                 .single();
         assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void cartAddAnalyticsIsPublishedOnlyAfterTheCartTransactionCommits() {
+        long userId = insertAppUser("cart-analytics-openid");
+        long skuId = insertSellableSku("CART-ANALYTICS-SKU", 3990L, 4990L, 20);
+        AuthenticatedPrincipal principal = new AuthenticatedPrincipal(
+                TokenKind.APP, userId, "app-user", List.of(), List.of());
+        AddCartItemRequest request = new AddCartItemRequest(
+                skuId,
+                2,
+                "00000000-0000-4000-8000-000000000081",
+                "00000000-0000-4000-8000-000000000082",
+                "1001");
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+
+        assertThatThrownBy(() -> transactionTemplate.executeWithoutResult(status -> {
+            appCartService.add(principal, request);
+            throw new ForcedRollbackException();
+        })).isInstanceOf(ForcedRollbackException.class);
+
+        assertThat(jdbcClient.sql("select count(*) from cart_item where user_id = :userId and sku_id = :skuId")
+                .param("userId", userId)
+                .param("skuId", skuId)
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("select count(*) from analytics_event where visitor_id = :visitorId")
+                .param("visitorId", request.analyticsVisitorId())
+                .query(Integer.class)
+                .single()).isZero();
+
+        appCartService.add(principal, request);
+
+        assertThat(jdbcClient.sql("select count(*) from analytics_event where visitor_id = :visitorId and event_type = 'CART_ADD'")
+                .param("visitorId", request.analyticsVisitorId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
     }
 
     private long insertAppUser(String openid) {
@@ -221,5 +264,8 @@ class AppCartServiceTest {
             }
             return super.update(sql, paramSource, generatedKeyHolder, keyColumnNames);
         }
+    }
+
+    private static final class ForcedRollbackException extends RuntimeException {
     }
 }

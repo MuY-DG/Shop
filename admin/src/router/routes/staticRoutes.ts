@@ -49,6 +49,42 @@ export const staticRoutes: AppRouteRecordRaw[] = [
     meta: { title: '售后列表', isHideTab: true }
   },
   {
+    path: '/dashboard',
+    name: 'LegacyDashboardRedirect',
+    redirect: '/operations/overview',
+    meta: { title: '运营概览', isHideTab: true }
+  },
+  {
+    path: '/dashboard/console',
+    name: 'LegacyDashboardConsoleRedirect',
+    redirect: '/operations/overview',
+    meta: { title: '运营概览', isHideTab: true }
+  },
+  {
+    path: '/decoration/banner',
+    name: 'LegacyHomeBannerRedirect',
+    redirect: '/decoration/home?section=banner',
+    meta: { title: '首页装修', isHideTab: true }
+  },
+  {
+    path: '/decoration/category',
+    name: 'LegacyHomeCategoryRedirect',
+    redirect: '/decoration/home?section=category',
+    meta: { title: '首页装修', isHideTab: true }
+  },
+  {
+    path: '/decoration/hot-products',
+    name: 'LegacyHomeHotRedirect',
+    redirect: '/decoration/home?section=hot',
+    meta: { title: '首页装修', isHideTab: true }
+  },
+  {
+    path: '/decoration/recommended-products',
+    name: 'LegacyHomeRecommendedRedirect',
+    redirect: '/decoration/home?section=recommended',
+    meta: { title: '首页装修', isHideTab: true }
+  },
+  {
     path: '/403',
     name: 'Exception403',
     component: () => import('@views/exception/403/index.vue'),

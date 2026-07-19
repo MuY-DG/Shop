@@ -12,6 +12,7 @@ public record AdminSkuResponse(
         Long originalPriceCent,
         Long costPriceCent,
         Integer stockAvailable,
+        Integer lowStockThreshold,
         Integer weightGram,
         BigDecimal volumeCubicMeter,
         String image,

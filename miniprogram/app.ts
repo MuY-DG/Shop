@@ -1,16 +1,21 @@
 import { restoreSession } from "./services/session";
+import { flushAnalytics, initializeAnalytics } from "./services/analytics";
 
 App<IAppOption>({
   globalData: {
     apiBaseUrl: "https://pay-dev.muybaby6.icu"
   },
-  onLaunch() {
+  onLaunch(options) {
     restoreSession();
+    initializeAnalytics(String(options.scene ?? ""));
     wx.getSystemInfo({
       success: (info) => {
         this.globalData.systemInfo = info;
       }
     });
+  },
+  onHide() {
+    void flushAnalytics();
   }
 });
 

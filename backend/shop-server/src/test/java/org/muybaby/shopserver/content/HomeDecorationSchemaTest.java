@@ -55,7 +55,37 @@ class HomeDecorationSchemaTest {
                         select count(*)
                         from admin_menu
                         where parent_id = 620
-                          and id in (600, 610, 621, 622, 623, 624)
+                          and id in (600, 610, 624)
+                          and enabled = true
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer consolidatedMenuCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu
+                        where id = 610
+                          and parent_id = 620
+                          and name = 'HomeDecoration'
+                          and path = 'home'
+                          and component = '/content/home-decoration'
+                          and title = '首页装修'
+                          and visible = true
+                          and enabled = true
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer legacyVisibleCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu
+                        where id in (621, 622, 623)
+                          and (visible = true or enabled = true)
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer decorationPermissionCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu_permission
+                        where menu_id = 610
                         """)
                 .query(Integer.class)
                 .single();
@@ -75,15 +105,18 @@ class HomeDecorationSchemaTest {
                         select count(*)
                         from admin_role_menu
                         where role_id = 1
-                          and menu_id in (620, 621, 622, 623, 624)
+                          and menu_id in (610, 620, 624)
                         """)
                 .query(Integer.class)
                 .single();
 
         assertThat(parentCount).isEqualTo(1);
-        assertThat(childCount).isEqualTo(6);
+        assertThat(childCount).isEqualTo(3);
+        assertThat(consolidatedMenuCount).isEqualTo(1);
+        assertThat(legacyVisibleCount).isZero();
+        assertThat(decorationPermissionCount).isEqualTo(10);
         assertThat(permissionCount).isEqualTo(8);
-        assertThat(superRoleMenuCount).isEqualTo(5);
+        assertThat(superRoleMenuCount).isEqualTo(3);
     }
 
     private boolean tableExists(String tableName) {

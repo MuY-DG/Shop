@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.security;
 
+import org.muybaby.shopserver.analytics.AppUserDailyActivityFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -23,7 +24,8 @@ public class SecurityConfig {
             HttpSecurity http,
             ApiAuthenticationEntryPoint apiAuthenticationEntryPoint,
             ApiAccessDeniedHandler apiAccessDeniedHandler,
-            TokenAuthenticationFilter tokenAuthenticationFilter
+            TokenAuthenticationFilter tokenAuthenticationFilter,
+            AppUserDailyActivityFilter appUserDailyActivityFilter
     ) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -32,6 +34,7 @@ public class SecurityConfig {
                         .authenticationEntryPoint(apiAuthenticationEntryPoint)
                         .accessDeniedHandler(apiAccessDeniedHandler))
                 .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(appUserDailyActivityFilter, TokenAuthenticationFilter.class)
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers(
                                 "/admin/auth/login",
@@ -45,6 +48,7 @@ public class SecurityConfig {
                                 "/wxpay/**",
                                 "/wechat/**"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.POST, "/app/analytics/events/batch").permitAll()
                         .requestMatchers(HttpMethod.GET, "/files/public/**").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/app/product/categories", "/app/product/spus", "/app/product/spus/*",

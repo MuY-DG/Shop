@@ -195,9 +195,23 @@ export function buildSubmitRequest(
   selection: CheckoutQuery,
   addressId: string,
   userCouponId: number | null,
-  idempotencyKey: string
+  idempotencyKey: string,
+  analytics?: {
+    visitorId: string;
+    sessionId: string;
+    entryScene: string;
+  } | null
 ): OrderSubmitRequest {
-  const common = { addressId, userCouponId, idempotencyKey };
+  const common = {
+    addressId,
+    userCouponId,
+    idempotencyKey,
+    ...(analytics ? {
+      analyticsVisitorId: analytics.visitorId,
+      analyticsSessionId: analytics.sessionId,
+      analyticsEntryScene: analytics.entryScene
+    } : {})
+  };
   return selection.source === "CART"
     ? { source: "CART", cartItemIds: [...selection.cartItemIds], ...common }
     : {

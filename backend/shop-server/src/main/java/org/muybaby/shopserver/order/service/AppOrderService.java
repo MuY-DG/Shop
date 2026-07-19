@@ -3,6 +3,7 @@ package org.muybaby.shopserver.order.service;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.service.AfterSaleFulfillmentPolicy;
 import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
+import org.muybaby.shopserver.analytics.AnalyticsEventService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
@@ -117,6 +118,12 @@ public class AppOrderService {
         CheckoutRequest checkoutRequest = CheckoutRequest.from(request);
         checkoutSelectionService.validate(checkoutRequest);
         validateSubmitRequest(request, checkoutRequest);
+        String analyticsVisitorId = AnalyticsEventService.optionalUuid(request.analyticsVisitorId());
+        String analyticsSessionId = AnalyticsEventService.optionalUuid(request.analyticsSessionId());
+        if ((analyticsVisitorId == null) != (analyticsSessionId == null)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        String analyticsEntryScene = AnalyticsEventService.optionalEntryScene(request.analyticsEntryScene());
 
         Optional<ExistingOrder> existing = findExistingOrder(userId, request.idempotencyKey(), false);
         if (existing.isPresent()) {
@@ -133,6 +140,9 @@ public class AppOrderService {
                     checkoutRequest.source(),
                     request.idempotencyKey(),
                     CheckoutRequestDigest.digest(checkoutRequest),
+                    analyticsVisitorId,
+                    analyticsSessionId,
+                    analyticsEntryScene,
                     now
             );
         } catch (DuplicateKeyException ex) {
@@ -150,7 +160,18 @@ public class AppOrderService {
         );
         String requestDigest = CheckoutRequestDigest.digest(checkoutRequest, selection.freightCent());
         updateOrderAmounts(orderId, selection, coupon, receiver, payableAmountCent, requestDigest, now);
-        List<Long> orderItemIds = insertOrderItems(orderId, selection.previewItems(), now);
+        List<OrderItemOperatingSnapshot> operatingSnapshots = OrderAmountAllocator.allocate(
+                selection.previewItems(),
+                selection.unitCostCents(),
+                coupon.discountCent(),
+                selection.freightCent());
+        long allocatedPayableAmountCent = operatingSnapshots.stream()
+                .mapToLong(OrderItemOperatingSnapshot::paidAmountAllocatedCent)
+                .reduce(0L, Math::addExact);
+        if (allocatedPayableAmountCent != payableAmountCent) {
+            throw new IllegalStateException("Order item paid allocation does not balance");
+        }
+        List<Long> orderItemIds = insertOrderItems(orderId, selection.previewItems(), operatingSnapshots, now);
         applyStockLocks(userId, orderId, orderItemIds, selection.previewItems(), now);
         if (coupon.userCouponId() != null) {
             lockCoupon(userId, coupon.userCouponId(), orderId, now);
@@ -526,16 +547,21 @@ public class AppOrderService {
             CheckoutSource source,
             String idempotencyKey,
             String checkoutRequestDigest,
+            String analyticsVisitorId,
+            String analyticsSessionId,
+            String analyticsEntryScene,
             LocalDateTime now
     ) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into shop_order (
                             order_no, user_id, status, source, idempotency_key, checkout_request_digest,
+                            analytics_visitor_id, analytics_session_id, analytics_entry_scene,
                             created_at, updated_at
                         )
                         values (
                             :orderNo, :userId, :status, :source, :idempotencyKey, :checkoutRequestDigest,
+                            :analyticsVisitorId, :analyticsSessionId, :analyticsEntryScene,
                             :createdAt, :updatedAt
                         )
                         """,
@@ -546,6 +572,9 @@ public class AppOrderService {
                         .addValue("source", source.name())
                         .addValue("idempotencyKey", idempotencyKey)
                         .addValue("checkoutRequestDigest", checkoutRequestDigest)
+                        .addValue("analyticsVisitorId", analyticsVisitorId)
+                        .addValue("analyticsSessionId", analyticsSessionId)
+                        .addValue("analyticsEntryScene", analyticsEntryScene)
                         .addValue("createdAt", now)
                         .addValue("updatedAt", now),
                 keyHolder,
@@ -597,21 +626,35 @@ public class AppOrderService {
         }
     }
 
-    private List<Long> insertOrderItems(Long orderId, List<OrderPreviewItemResponse> items, LocalDateTime now) {
+    private List<Long> insertOrderItems(
+            Long orderId,
+            List<OrderPreviewItemResponse> items,
+            List<OrderItemOperatingSnapshot> operatingSnapshots,
+            LocalDateTime now
+    ) {
+        if (items.size() != operatingSnapshots.size()) {
+            throw new IllegalArgumentException("Operating snapshots must align with order items");
+        }
         List<Long> orderItemIds = new ArrayList<>(items.size());
-        for (OrderPreviewItemResponse item : items) {
+        for (int index = 0; index < items.size(); index++) {
+            OrderPreviewItemResponse item = items.get(index);
+            OrderItemOperatingSnapshot snapshot = operatingSnapshots.get(index);
             KeyHolder keyHolder = new GeneratedKeyHolder();
             namedParameterJdbcTemplate.update("""
                             insert into order_item (
                                 order_id, sku_id, spu_id, product_title, product_subtitle, main_image,
                                 main_image_file_id, sku_image, sku_image_file_id, display_image, display_image_file_id,
                                 sku_code, spec_text, original_price_cent,
-                                unit_price_cent, quantity, line_original_amount_cent, line_amount_cent, created_at
+                                unit_price_cent, quantity, line_original_amount_cent, line_amount_cent,
+                                unit_cost_cent, line_cost_cent, coupon_discount_allocated_cent,
+                                freight_allocated_cent, paid_amount_allocated_cent, created_at
                             )
                             values (
                                 :orderId, :skuId, :spuId, :productTitle, :productSubtitle, :mainImage,
                                 :mainImageFileId, :skuImage, :skuImageFileId, :displayImage, :displayImageFileId, :skuCode, :specText, :originalPriceCent,
-                                :unitPriceCent, :quantity, :lineOriginalAmountCent, :lineAmountCent, :createdAt
+                                :unitPriceCent, :quantity, :lineOriginalAmountCent, :lineAmountCent,
+                                :unitCostCent, :lineCostCent, :couponDiscountAllocatedCent,
+                                :freightAllocatedCent, :paidAmountAllocatedCent, :createdAt
                             )
                             """,
                     new MapSqlParameterSource()
@@ -633,6 +676,11 @@ public class AppOrderService {
                             .addValue("quantity", item.quantity())
                             .addValue("lineOriginalAmountCent", item.lineOriginalAmountCent())
                             .addValue("lineAmountCent", item.lineAmountCent())
+                            .addValue("unitCostCent", snapshot.unitCostCent())
+                            .addValue("lineCostCent", snapshot.lineCostCent())
+                            .addValue("couponDiscountAllocatedCent", snapshot.couponDiscountAllocatedCent())
+                            .addValue("freightAllocatedCent", snapshot.freightAllocatedCent())
+                            .addValue("paidAmountAllocatedCent", snapshot.paidAmountAllocatedCent())
                             .addValue("createdAt", now),
                     keyHolder,
                     new String[]{"id"});

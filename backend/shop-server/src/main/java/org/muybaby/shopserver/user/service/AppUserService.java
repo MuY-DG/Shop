@@ -67,17 +67,20 @@ public class AppUserService {
     }
 
     public AppUser markPhoneAuthorized(Long userId, WechatPhoneInfo phoneInfo) {
+        LocalDateTime now = LocalDateTime.now();
         int updatedRows = jdbcClient.sql("""
                         UPDATE app_user
                         SET phone_number = :phoneNumber,
                             phone_country_code = :phoneCountryCode,
                             phone_authorized = TRUE,
+                            phone_authorized_at = COALESCE(phone_authorized_at, :phoneAuthorizedAt),
                             updated_at = :updatedAt
                         WHERE id = :id AND status = :status
                         """)
                 .param("phoneNumber", phoneInfo.phoneNumber())
                 .param("phoneCountryCode", phoneInfo.countryCode())
-                .param("updatedAt", LocalDateTime.now())
+                .param("phoneAuthorizedAt", now)
+                .param("updatedAt", now)
                 .param("id", userId)
                 .param("status", ENABLED_STATUS)
                 .update();

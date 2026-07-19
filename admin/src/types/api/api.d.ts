@@ -281,6 +281,7 @@ declare namespace Api {
       originalPriceCent?: number | null
       costPriceCent?: number | null
       stockAvailable: number
+      lowStockThreshold: number
       weightGram?: number | null
       volumeCubicMeter?: number | null
       image: string

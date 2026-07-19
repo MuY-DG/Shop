@@ -6,6 +6,7 @@ public enum ErrorCode {
     PERMISSION_DENIED(100003, "Permission denied"),
     TOKEN_EXPIRED(100004, "Token expired"),
     VALIDATION_FAILED(100400, "Validation failed"),
+    ANALYTICS_RATE_LIMITED(100429, "Too many analytics events"),
     ADMIN_USER_UNAVAILABLE(110001, "Admin user unavailable"),
     ADMIN_USERNAME_CONFLICT(110002, "Admin username already exists"),
     ADMIN_ROLE_UNAVAILABLE(110003, "Admin role unavailable"),

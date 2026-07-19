@@ -94,6 +94,21 @@ class AdminRbacSchemaTest {
                         """)
                 .query(Integer.class)
                 .single();
+        Integer operationPermissionCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission
+                        where auth_mark like 'operation:%:read'
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer operationMenuCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_menu
+                        where id between 100 and 107
+                          and (id = 100 or parent_id = 100)
+                        """)
+                .query(Integer.class)
+                .single();
 
         assertThat(passwordEncoder.matches("123456", passwordHash)).isTrue();
         assertThat(menuCount).isGreaterThanOrEqualTo(5);
@@ -105,5 +120,7 @@ class AdminRbacSchemaTest {
         assertThat(customerMenuCount).isEqualTo(1);
         assertThat(couponCenterMenuCount).isEqualTo(3);
         assertThat(couponClaimReadGrantCount).isEqualTo(1);
+        assertThat(operationPermissionCount).isEqualTo(7);
+        assertThat(operationMenuCount).isEqualTo(8);
     }
 }

@@ -529,9 +529,9 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+  import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
   import { ElMessageBox } from 'element-plus'
-  import { useRouter } from 'vue-router'
+  import { useRoute, useRouter } from 'vue-router'
   import {
     acceptCustomerServiceTransfer,
     claimCustomerServiceConversation,
@@ -556,14 +556,19 @@
   } from '@/api/customer-service'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useUserStore } from '@/store/modules/user'
+  import {
+    customerServiceStatusFromQuery,
+    type CustomerServiceStatusFilter
+  } from '@/utils/business-route-query'
   import { realtimeClient, type RealtimeEvent } from '@/utils/realtime'
 
-  type StatusFilter = 'ALL' | Api.CustomerService.ConversationStatus
-
+  const route = useRoute()
   const router = useRouter()
   const userStore = useUserStore()
   const { hasAuth } = useAuth()
-  const activeStatus = ref<StatusFilter>('ALL')
+  const activeStatus = ref<CustomerServiceStatusFilter>(
+    customerServiceStatusFromQuery(route.query.status) || 'ALL'
+  )
   const conversationPage = ref<Api.CustomerService.ConversationPage>({
     records: [],
     current: 1,
@@ -775,6 +780,16 @@
     currentDetail.value = null
     await loadConversations(true)
   }
+
+  watch(
+    () => route.query.status,
+    async () => {
+      const status = customerServiceStatusFromQuery(route.query.status) || 'ALL'
+      if (route.path !== '/customer-service' || status === activeStatus.value) return
+      activeStatus.value = status
+      await handleStatusChange()
+    }
+  )
 
   const handleClaim = async () => {
     if (!selectedConversationId.value) return

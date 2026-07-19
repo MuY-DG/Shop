@@ -99,6 +99,16 @@
               @update:model-value="updateSingleSku({ stockAvailable: $event ?? 0 })"
             />
           </ElFormItem>
+          <ElFormItem class="single-sku-form__number" label="低库存预警值">
+            <ElInputNumber
+              :model-value="singleSku.lowStockThreshold"
+              :min="0"
+              :precision="0"
+              controls-position="right"
+              :disabled="disabled || !canAdjustStock"
+              @update:model-value="updateSingleSku({ lowStockThreshold: $event ?? 0 })"
+            />
+          </ElFormItem>
           <ElFormItem class="single-sku-form__code" label="商品编码">
             <ElInput
               :model-value="singleSku.skuCode"
@@ -432,6 +442,7 @@
     if (sku.costPriceCent !== null && sku.costPriceCent < 0) return '成本价不能小于 0'
     if (sku.originalPriceCent !== null && sku.originalPriceCent < 0) return '划线价不能小于 0'
     if (sku.stockAvailable < 0) return '库存不能小于 0'
+    if (sku.lowStockThreshold < 0) return '低库存预警值不能小于 0'
     if (sku.weightGram !== null && sku.weightGram < 0) return '重量不能小于 0'
     if (sku.volumeCubicMeter !== null && sku.volumeCubicMeter < 0) return '体积不能小于 0'
     return null
@@ -448,6 +459,9 @@
       return '请填写所有商品属性的售价'
     }
     if (props.modelValue.skus.some((sku) => sku.stockAvailable < 0)) return '库存不能小于 0'
+    if (props.modelValue.skus.some((sku) => sku.lowStockThreshold < 0)) {
+      return '低库存预警值不能小于 0'
+    }
     const enabled = props.modelValue.skus.filter((sku) => sku.status === 'ENABLED')
     if (!enabled.length) return '至少启用一个商品属性'
     if (enabled.filter((sku) => sku.defaultSelected).length !== 1) {

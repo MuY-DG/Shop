@@ -85,17 +85,16 @@ class StorageSchemaTest {
                         """)
                 .query(Integer.class)
                 .single();
-        Integer routeCount = jdbcClient.sql("""
+        Integer assetRouteCount = jdbcClient.sql("""
                         select count(*)
                         from admin_menu
                         where (id = 600 and parent_id = 620 and path = 'assets' and component = '/storage/files')
-                           or (id = 610 and parent_id = 620 and path = 'banner' and component = '/content/banner')
                         """)
                 .query(Integer.class)
                 .single();
 
         assertThat(permissionCount).isEqualTo(8);
-        assertThat(routeCount).isEqualTo(2);
+        assertThat(assetRouteCount).isEqualTo(1);
         assertThat(jdbcClient.sql("select title from admin_menu where id = 600")
                 .query(String.class)
                 .single()).isEqualTo("素材库");

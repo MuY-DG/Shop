@@ -77,10 +77,27 @@ class AdminProductStockPermissionTest {
                 .extracting("errorCode")
                 .isEqualTo(ErrorCode.PERMISSION_DENIED);
 
+        AdminSpuUpsertRequest thresholdChange = productRequest(
+                categoryId, skuId, "UPDATE-STOCK-PERMISSION-SKU", "Forbidden threshold change", 5);
+        thresholdChange.skus().getFirst().setLowStockThreshold(2);
+        assertThatThrownBy(() -> adminProductService.updateSpu(
+                spuId,
+                thresholdChange,
+                42L,
+                false
+        ))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.PERMISSION_DENIED);
+
         assertThat(jdbcClient.sql("select stock_available from product_sku where id = :skuId")
                 .param("skuId", skuId)
                 .query(Integer.class)
                 .single()).isEqualTo(5);
+        assertThat(jdbcClient.sql("select low_stock_threshold from product_sku where id = :skuId")
+                .param("skuId", skuId)
+                .query(Integer.class)
+                .single()).isEqualTo(10);
         assertThat(jdbcClient.sql("select title from product_spu where id = :spuId")
                 .param("spuId", spuId)
                 .query(String.class)

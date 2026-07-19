@@ -347,6 +347,7 @@
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
+  import { afterSaleStatusGroupFromQuery } from '@/utils/business-route-query'
   import {
     approveAfterSale,
     fetchAfterSaleDetail,
@@ -404,6 +405,8 @@
     return typeof value === 'string' && /^\d+$/.test(value) ? value : undefined
   }
 
+  const routeStatusGroup = () => afterSaleStatusGroupFromQuery(route.query.statusGroup)
+
   const createInitialSearchForm = (): AfterSaleSearchForm => ({
     afterSaleId: routeAfterSaleId(),
     orderNo: undefined,
@@ -415,7 +418,9 @@
   })
 
   const searchForm = ref<AfterSaleSearchForm>(createInitialSearchForm())
-  const activeStatusGroup = ref<Api.AfterSale.AdminAfterSaleStatusGroup>('ALL')
+  const activeStatusGroup = ref<Api.AfterSale.AdminAfterSaleStatusGroup>(
+    routeStatusGroup() || 'ALL'
+  )
   const statusCounts = reactive<Api.AfterSale.StatusCounts>({
     all: 0,
     pendingReview: 0,
@@ -618,7 +623,7 @@
       apiParams: {
         current: 1,
         size: 20,
-        statusGroup: 'ALL',
+        statusGroup: activeStatusGroup.value,
         afterSaleId: routeAfterSaleId() ? Number(routeAfterSaleId()) : undefined
       },
       columnsFactory: () => [
@@ -708,18 +713,18 @@
   }
 
   watch(
-    () => route.query.afterSaleId,
+    () => [route.query.afterSaleId, route.query.statusGroup],
     async () => {
       const afterSaleId = routeAfterSaleId()
+      const statusGroup = routeStatusGroup() || 'ALL'
       if (
         route.path !== '/trade/after-sales' ||
-        !afterSaleId ||
-        afterSaleId === searchForm.value.afterSaleId
+        (afterSaleId === searchForm.value.afterSaleId && statusGroup === activeStatusGroup.value)
       ) {
         return
       }
       searchForm.value = createInitialSearchForm()
-      activeStatusGroup.value = 'ALL'
+      activeStatusGroup.value = statusGroup
       await applyCurrentSearch()
     }
   )

@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.cart.service;
 
+import org.muybaby.shopserver.analytics.AnalyticsEventService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.cart.dto.AddCartItemRequest;
 import org.muybaby.shopserver.cart.dto.CartItemResponse;
@@ -18,7 +19,11 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -30,15 +35,22 @@ import java.util.Optional;
 @Service
 public class AppCartService {
 
+    private static final Logger log = LoggerFactory.getLogger(AppCartService.class);
     private static final int MAX_QUANTITY = 999;
     private static final String CATEGORY_ENABLED = "ENABLED";
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
+    private final AnalyticsEventService analyticsEventService;
 
-    public AppCartService(JdbcClient jdbcClient, NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
+    public AppCartService(
+            JdbcClient jdbcClient,
+            NamedParameterJdbcTemplate namedParameterJdbcTemplate,
+            AnalyticsEventService analyticsEventService
+    ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
+        this.analyticsEventService = analyticsEventService;
     }
 
     public CartListResponse list(AuthenticatedPrincipal principal) {
@@ -75,8 +87,43 @@ public class AppCartService {
                     return item.id();
                 })
                 .orElseGet(() -> insertOrMergeCartItem(userId, request.skuId(), requestQuantity, sku));
-        return findCartItem(userId, cartItemId)
+        CartItemResponse response = findCartItem(userId, cartItemId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND));
+        recordCartAddAfterCommit(principal, request, sku.spuId(), requestQuantity);
+        return response;
+    }
+
+    private void recordCartAddAfterCommit(
+            AuthenticatedPrincipal principal,
+            AddCartItemRequest request,
+            Long spuId,
+            int requestQuantity
+    ) {
+        Runnable recorder = () -> {
+            try {
+                analyticsEventService.recordCartAdd(
+                        principal,
+                        request.analyticsVisitorId(),
+                        request.analyticsSessionId(),
+                        request.analyticsEntryScene(),
+                        spuId,
+                        request.skuId(),
+                        requestQuantity);
+            } catch (RuntimeException ex) {
+                log.warn("Failed to record cart add analytics for SKU {}", request.skuId(), ex);
+            }
+        };
+        if (TransactionSynchronizationManager.isActualTransactionActive()
+                && TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    recorder.run();
+                }
+            });
+            return;
+        }
+        recorder.run();
     }
 
     @Transactional
@@ -199,6 +246,7 @@ public class AppCartService {
                 .param("spuId", spuId.get())
                 .query((rs, rowNum) -> new SellableSkuRow(
                         rs.getLong("sku_id"),
+                        spuId.get(),
                         rs.getInt("stock_available"),
                         rs.getString("sku_status"),
                         productRow.spuStatus(),
@@ -428,6 +476,7 @@ public class AppCartService {
 
     private record SellableSkuRow(
             Long skuId,
+            Long spuId,
             Integer stockAvailable,
             String skuStatus,
             String spuStatus,

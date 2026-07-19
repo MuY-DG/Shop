@@ -92,6 +92,7 @@ class AdminProductSpuControllerTest {
                                       "priceCent": 3990,
                                       "originalPriceCent": 4990,
                                       "stockAvailable": 5,
+                                      "lowStockThreshold": 6,
                                       "weightGram": 300,
                                       "image": "%s",
                                       "imageFileId": %d,
@@ -143,11 +144,28 @@ class AdminProductSpuControllerTest {
                 .andExpect(jsonPath("$.data.images[0].fileId").value(galleryFile.id()))
                 .andExpect(jsonPath("$.data.skus[0].imageFileId").value(skuFile.id()))
                 .andExpect(jsonPath("$.data.skus[0].stockAvailable").value(5))
+                .andExpect(jsonPath("$.data.skus[0].lowStockThreshold").value(6))
                 .andExpect(jsonPath("$.data.skus[0].sortOrder").value(1))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
         long skuId = objectMapper.readTree(detailResponse).path("data").path("skus").get(0).path("id").asLong();
+
+        mockMvc.perform(put("/admin/product/skus/" + skuId + "/low-stock-threshold")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lowStockThreshold\":3}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/admin/product/skus/" + skuId + "/low-stock-threshold")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lowStockThreshold\":-1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
+        mockMvc.perform(get("/admin/product/spus/" + spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.skus[0].lowStockThreshold").value(3));
 
         long paidOrderId = insertSalesOrder("PAID", true);
         long refundedOrderId = insertSalesOrder("REFUNDED", true);
@@ -219,6 +237,7 @@ class AdminProductSpuControllerTest {
                                       "priceCent": 3990,
                                       "originalPriceCent": 4990,
                                       "stockAvailable": 10,
+                                      "lowStockThreshold": 4,
                                       "weightGram": 300,
                                       "image": "%s",
                                       "imageFileId": %d,
@@ -259,7 +278,8 @@ class AdminProductSpuControllerTest {
                 .andExpect(jsonPath("$.data.mainImageFileId").value(replacementMainFile.id()))
                 .andExpect(jsonPath("$.data.images[0].fileId").value(replacementGalleryFile.id()))
                 .andExpect(jsonPath("$.data.skus[0].imageFileId").value(replacementSkuFile.id()))
-                .andExpect(jsonPath("$.data.skus[0].stockAvailable").value(10));
+                .andExpect(jsonPath("$.data.skus[0].stockAvailable").value(10))
+                .andExpect(jsonPath("$.data.skus[0].lowStockThreshold").value(4));
 
         assertThat(activeUsageCount(mainFile.id(), "PRODUCT_SPU_MAIN", "PRODUCT_SPU", spuId)).isZero();
         assertThat(removedUsageCount(mainFile.id(), "PRODUCT_SPU_MAIN", "PRODUCT_SPU", spuId)).isEqualTo(1);

@@ -6,6 +6,12 @@ import jakarta.validation.constraints.NotNull;
 
 public record AddCartItemRequest(
         @NotNull Long skuId,
-        @NotNull @Min(1) @Max(999) Integer quantity
+        @NotNull @Min(1) @Max(999) Integer quantity,
+        String analyticsVisitorId,
+        String analyticsSessionId,
+        String analyticsEntryScene
 ) {
+    public AddCartItemRequest(Long skuId, Integer quantity) {
+        this(skuId, quantity, null, null, null);
+    }
 }

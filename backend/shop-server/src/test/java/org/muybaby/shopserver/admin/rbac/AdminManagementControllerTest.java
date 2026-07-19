@@ -11,6 +11,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -78,12 +79,20 @@ class AdminManagementControllerTest {
                 .getContentAsString();
         long userId = objectMapper.readTree(createUserResponse).path("data").asLong();
 
-        mockMvc.perform(get("/admin/system/users")
+        String filteredUsersResponse = mockMvc.perform(get("/admin/system/users")
                         .param("username", "support")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.records[0].roleIds", containsInAnyOrder((int) roleId)));
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        JsonNode returnedRoleIds = objectMapper.readTree(filteredUsersResponse)
+                .at("/data/records/0/roleIds");
+        assertThat(returnedRoleIds.isArray()).isTrue();
+        assertThat(returnedRoleIds.size()).isEqualTo(1);
+        assertThat(returnedRoleIds.get(0).isIntegralNumber()).isTrue();
+        assertThat(returnedRoleIds.get(0).longValue()).isEqualTo(roleId);
 
         mockMvc.perform(delete("/admin/system/roles/{roleId}", roleId)
                         .header("Authorization", "Bearer " + token))

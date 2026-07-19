@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class AdminTokenTestSupport {
 
-    private static final AtomicLong IDS = new AtomicLong(8_000_000_000L);
+    private static final AtomicLong FIXTURE_SEQUENCE = new AtomicLong();
 
     private AdminTokenTestSupport() {
     }
@@ -21,32 +21,39 @@ public final class AdminTokenTestSupport {
             OpaqueTokenService opaqueTokenService,
             List<String> permissions
     ) {
-        long id = IDS.incrementAndGet();
-        String username = "test-admin-" + id;
-        String roleCode = "R_TEST_" + id;
+        long fixtureSequence = FIXTURE_SEQUENCE.incrementAndGet();
+        String username = "test-admin-" + fixtureSequence;
+        String roleCode = "R_TEST_" + fixtureSequence;
 
         jdbcClient.sql("""
                         insert into admin_user
-                            (id, username, password_hash, display_name, email, status)
+                            (username, password_hash, display_name, email, status)
                         values
-                            (:id, :username, 'test-only-not-used', :username, :email, 'ENABLED')
+                            (:username, 'test-only-not-used', :username, :email, 'ENABLED')
                         """)
-                .param("id", id)
                 .param("username", username)
                 .param("email", username + "@shop.test")
                 .update();
+        long userId = jdbcClient.sql("select id from admin_user where username = :username")
+                .param("username", username)
+                .query(Long.class)
+                .single();
         jdbcClient.sql("""
-                        insert into admin_role (id, code, name, description, enabled)
-                        values (:id, :roleCode, :roleCode, '', true)
+                        insert into admin_role (code, name, description, enabled)
+                        values (:roleCode, :roleCode, '', true)
                         """)
-                .param("id", id)
                 .param("roleCode", roleCode)
                 .update();
+        long roleId = jdbcClient.sql("select id from admin_role where code = :roleCode")
+                .param("roleCode", roleCode)
+                .query(Long.class)
+                .single();
         jdbcClient.sql("""
                         insert into admin_user_role (user_id, role_id)
-                        values (:id, :id)
+                        values (:userId, :roleId)
                         """)
-                .param("id", id)
+                .param("userId", userId)
+                .param("roleId", roleId)
                 .update();
         for (String permission : permissions) {
             Long permissionId = jdbcClient.sql("""
@@ -61,13 +68,13 @@ public final class AdminTokenTestSupport {
                             insert into admin_role_permission (role_id, permission_id)
                             values (:roleId, :permissionId)
                             """)
-                    .param("roleId", id)
+                    .param("roleId", roleId)
                     .param("permissionId", permissionId)
                     .update();
         }
 
         TokenSession session = TokenSession.admin(
-                id,
+                userId,
                 username,
                 List.of(roleCode),
                 List.copyOf(permissions),

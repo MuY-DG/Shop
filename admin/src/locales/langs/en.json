@@ -227,6 +227,16 @@
       "analysis": "Analysis",
       "ecommerce": "Ecommerce"
     },
+    "operations": {
+      "title": "Operations",
+      "overview": "Overview",
+      "trade": "Trade Statistics",
+      "product": "Product Statistics",
+      "user": "User Statistics",
+      "traffic": "Traffic Conversion",
+      "marketing": "Marketing Statistics",
+      "service": "Service Statistics"
+    },
     "widgets": {
       "title": "Components",
       "icon": "Icon",

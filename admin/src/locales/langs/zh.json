@@ -227,6 +227,16 @@
       "analysis": "分析页",
       "ecommerce": "电子商务"
     },
+    "operations": {
+      "title": "运营管理",
+      "overview": "运营概览",
+      "trade": "交易统计",
+      "product": "商品统计",
+      "user": "用户统计",
+      "traffic": "流量转化",
+      "marketing": "营销统计",
+      "service": "服务统计"
+    },
     "widgets": {
       "title": "组件中心",
       "icon": "图标",

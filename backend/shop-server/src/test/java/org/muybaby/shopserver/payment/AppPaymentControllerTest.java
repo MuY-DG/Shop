@@ -2,8 +2,11 @@ package org.muybaby.shopserver.payment;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.common.error.BusinessException;
+import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.config.PaymentConfigSource;
 import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
+import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatPayOrderQueryResult;
 import org.muybaby.shopserver.payment.service.AppPaymentService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,12 +15,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -33,6 +39,9 @@ class AppPaymentControllerTest extends PaymentTestSupport {
 
     @Autowired
     private PaymentProperties paymentProperties;
+
+    @MockitoSpyBean
+    private MockWechatPayProvider retryableMockWechatPayProvider;
 
     @Test
     void paymentEndpointsRequireAppToken() throws Exception {
@@ -81,6 +90,7 @@ class AppPaymentControllerTest extends PaymentTestSupport {
         assertThat(firstData.path("paySign").asText()).startsWith("mock-pay-sign-");
 
         String outTradeNo = activeOutTradeNo(order.orderId());
+        assertPaymentAttemptStatus(outTradeNo, "PREPAY_SUCCEEDED", true);
         assertThat(firstPackage).isEqualTo("prepay_id=mock-prepay-" + outTradeNo);
         assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
                 .param("orderId", order.orderId())
@@ -129,6 +139,68 @@ class AppPaymentControllerTest extends PaymentTestSupport {
     }
 
     @Test
+    void failedPrepayRetryAppendsAttemptAndPaidSyncUpdatesOnlyTheBoundAttempt() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-attempt-retry-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        doThrow(new BusinessException(ErrorCode.ORDER_STATE_CONFLICT))
+                .doCallRealMethod()
+                .when(retryableMockWechatPayProvider)
+                .createJsapiPrepay(any(), any());
+
+        mockMvc.perform(post("/app/orders/{orderId}/pay", order.orderId())
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+        assertThat(jdbcClient.sql("select count(*) from payment_attempt where out_trade_no = :outTradeNo")
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_attempt
+                        where out_trade_no = :outTradeNo
+                          and status = 'PREPAY_FAILED'
+                          and payment_order_id is null
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertPaymentAttemptStatus(outTradeNo, "PREPAY_SUCCEEDED", true);
+
+        mockWechatPayProvider.markOrderPaid(outTradeNo, 6980L, "wx-transaction-attempt-retry");
+        mockMvc.perform(post("/app/orders/{orderId}/payment/sync", order.orderId())
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PAID"));
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_attempt a
+                        join payment_order p on p.id = a.payment_order_id
+                        where a.out_trade_no = :outTradeNo
+                          and a.status = 'PAID'
+                          and p.status = 'PAID'
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_attempt
+                        where out_trade_no = :outTradeNo
+                          and status = 'PREPAY_FAILED'
+                          and payment_order_id is null
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    @Test
     void nonMockRepeatPayWithMissingSigningMaterialFailsClosedWithoutMockParams() throws Exception {
         seedEnabledPaymentConfig("", "");
         AppLoginSession session = appLogin("payment-repeat-non-mock-user");
@@ -169,6 +241,7 @@ class AppPaymentControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.data.transactionId").value("wx-transaction-sync"));
 
         assertPaidOrderState(order, outTradeNo, "wx-transaction-sync");
+        assertPaymentAttemptStatus(outTradeNo, "PAID", true);
     }
 
     @Test
@@ -220,6 +293,22 @@ class AppPaymentControllerTest extends PaymentTestSupport {
 
         assertThat(mockWechatPayProvider.closedOutTradeNos()).containsExactly(outTradeNo);
         assertClosedReleasedState(order, outTradeNo);
+        assertPaymentAttemptStatus(outTradeNo, "CLOSED", true);
+    }
+
+    private void assertPaymentAttemptStatus(String outTradeNo, String status, boolean paymentOrderBound) {
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_attempt
+                        where out_trade_no = :outTradeNo
+                          and status = :status
+                          and (:paymentOrderBound = false or payment_order_id is not null)
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .param("status", status)
+                .param("paymentOrderBound", paymentOrderBound)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
     }
 
     private void assertPaidOrderState(SeedOrder order, String outTradeNo, String transactionId) {

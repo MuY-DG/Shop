@@ -1,11 +1,19 @@
 import type { ProductCategory, ProductListItem } from "../../../types/api";
+import { buildProductListFilters, normalizeProductSearchKeyword } from "../../../features/product-search";
 import { formatProductPriceRange, getProductCategories, getProductList } from "../../../services/product";
+import { trackPageView, trackSearch } from "../../../services/analytics";
 
 const PAGE_SIZE = 10;
 
 interface DatasetEvent {
   currentTarget: {
     dataset: Record<string, string | number | undefined>;
+  };
+}
+
+interface SearchInputEvent {
+  detail: {
+    value: string;
   };
 }
 
@@ -55,6 +63,8 @@ Page({
     categories: [] as ProductCategory[],
     categoryTabs: [] as CategoryTab[],
     activeCategoryId: 0,
+    searchInput: "",
+    activeKeyword: "",
     products: [] as ProductCardView[],
     current: 1,
     total: 0,
@@ -63,9 +73,13 @@ Page({
     errorText: ""
   },
   async onLoad(options: Record<string, string | undefined>) {
+    trackPageView("/pages/product/list/list");
     const activeCategoryId = parsePositiveNumber(options.categoryId);
+    const activeKeyword = normalizeProductSearchKeyword(options.keyword ?? "");
     this.setData({
-      activeCategoryId
+      activeCategoryId,
+      searchInput: activeKeyword,
+      activeKeyword
     });
 
     await Promise.all([
@@ -96,7 +110,7 @@ Page({
       const result = await getProductList({
         current: 1,
         size: PAGE_SIZE,
-        categoryId: this.data.activeCategoryId || undefined
+        ...buildProductListFilters(this.data.activeCategoryId, this.data.activeKeyword)
       });
 
       this.setData({
@@ -116,7 +130,8 @@ Page({
   },
   async onCategoryTap(event: DatasetEvent) {
     const categoryId = Number(event.currentTarget.dataset.id);
-    if (!Number.isFinite(categoryId) || categoryId < 0 || categoryId === this.data.activeCategoryId) {
+    if (this.data.loading || this.data.loadingMore || !Number.isFinite(categoryId)
+      || categoryId < 0 || categoryId === this.data.activeCategoryId) {
       return;
     }
 
@@ -127,6 +142,41 @@ Page({
       current: 1,
       total: 0
     });
+    await this.loadFirstPage();
+  },
+  onSearchInput(event: SearchInputEvent) {
+    this.setData({
+      searchInput: event.detail.value
+    });
+  },
+  async onSearchConfirm(event: SearchInputEvent) {
+    await this.submitSearch(event.detail.value);
+  },
+  async onSearchTap() {
+    await this.submitSearch(this.data.searchInput);
+  },
+  async onSearchClear() {
+    if (this.data.loading || this.data.loadingMore || (!this.data.searchInput && !this.data.activeKeyword)) {
+      return;
+    }
+    await this.submitSearch("");
+  },
+  async submitSearch(rawKeyword: string) {
+    if (this.data.loading || this.data.loadingMore) {
+      return;
+    }
+    const keyword = normalizeProductSearchKeyword(rawKeyword);
+    this.setData({
+      searchInput: keyword,
+      activeKeyword: keyword,
+      products: [],
+      current: 1,
+      total: 0,
+      errorText: ""
+    });
+    if (keyword) {
+      trackSearch(keyword, "/pages/product/list/list");
+    }
     await this.loadFirstPage();
   },
   async onPullDownRefresh() {
@@ -150,7 +200,7 @@ Page({
       const result = await getProductList({
         current: this.data.current + 1,
         size: PAGE_SIZE,
-        categoryId: this.data.activeCategoryId || undefined
+        ...buildProductListFilters(this.data.activeCategoryId, this.data.activeKeyword)
       });
 
       this.setData({

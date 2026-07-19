@@ -2,6 +2,11 @@ package org.muybaby.shopserver.fulfillment;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.Granularity;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.ReportQuery;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TradeStatisticsReport;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TrafficStatisticsReport;
+import org.muybaby.shopserver.operation.service.OperationsStatisticsService;
 import org.muybaby.shopserver.storage.AssetModelMigrationTest;
 import org.muybaby.shopserver.user.service.AdminCustomerService;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -16,6 +21,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -37,7 +43,7 @@ class CommerceFulfillmentMySqlMigrationTest {
         Flyway flyway = Flyway.configure()
                 .dataSource(CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("30");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("33");
         AssetModelMigrationTest.assertFinalAssetSchema(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
         assertAdminCustomerCouponQueryIsCollationSafe();
@@ -129,18 +135,132 @@ class CommerceFulfillmentMySqlMigrationTest {
         CommerceFulfillmentMigrationTest.seedLegacyShipment(jdbcUrl, username, password);
         AssetModelMigrationTest.migrateToV16(jdbcUrl, username, password);
         AssetModelMigrationTest.seedLegacyStorageBindings(jdbcUrl, username, password);
+        seedLegacyPhoneAuthorization(jdbcUrl, username, password);
         AssetModelMigrationTest.migrateToLatest(jdbcUrl, username, password);
 
         CommerceFulfillmentMigrationTest.assertMigratedLegacyShipment(jdbcUrl, username, password);
         CommerceFulfillmentMigrationTest.assertMigratedLegacyProduct(jdbcUrl, username, password);
         AssetModelMigrationTest.assertFinalAssetSchema(jdbcUrl, username, password);
         AssetModelMigrationTest.assertLegacyBindingsWereCleared(jdbcUrl, username, password);
+        assertLegacyPhoneAuthorizationWasSnapshotted(jdbcUrl, username, password);
+    }
+
+    @Test
+    void operationsStatisticsUseShanghaiDayBoundariesForLegacyMySqlTimestamps() {
+        String jdbcUrl = CLEAN_MYSQL.getJdbcUrl();
+        CommerceFulfillmentMigrationTest.migrateToLatest(
+                jdbcUrl, CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(
+                jdbcUrl, CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
+        JdbcClient jdbcClient = JdbcClient.create(dataSource);
+        jdbcClient.sql("""
+                        insert into app_user (id, openid, status, created_at, updated_at)
+                        values (990101, 'mysql-operations-timezone', 'ENABLED',
+                                timestamp '2029-12-01 00:00:00', timestamp '2029-12-01 00:00:00')
+                        """)
+                .update();
+        jdbcClient.sql("""
+                        insert into shop_order
+                            (id, order_no, user_id, status, idempotency_key,
+                             payable_amount_cent, paid_amount_cent, paid_at, created_at, updated_at)
+                        values
+                            (990111, 'MYSQL-OPS-BEFORE', 990101, 'PAID', 'mysql-ops-before',
+                             100, 100, timestamp '2029-12-31 23:59:59',
+                             timestamp '2029-12-31 23:59:59', timestamp '2029-12-31 23:59:59'),
+                            (990112, 'MYSQL-OPS-START', 990101, 'PAID', 'mysql-ops-start',
+                             200, 200, timestamp '2030-01-01 00:00:00',
+                             timestamp '2030-01-01 00:00:00', timestamp '2030-01-01 00:00:00'),
+                            (990113, 'MYSQL-OPS-END', 990101, 'PAID', 'mysql-ops-end',
+                             300, 300, timestamp '2030-01-01 23:59:59',
+                             timestamp '2030-01-01 23:59:59', timestamp '2030-01-01 23:59:59'),
+                            (990114, 'MYSQL-OPS-AFTER', 990101, 'PAID', 'mysql-ops-after',
+                             400, 400, timestamp '2030-01-02 00:00:00',
+                             timestamp '2030-01-02 00:00:00', timestamp '2030-01-02 00:00:00')
+                        """)
+                .update();
+
+        TradeStatisticsReport report = new OperationsStatisticsService(jdbcClient).tradeStatistics(
+                new ReportQuery(LocalDate.of(2030, 1, 1), LocalDate.of(2030, 1, 1), Granularity.HOUR)
+        );
+
+        assertThat(report.meta().timezone()).isEqualTo("Asia/Shanghai");
+        assertThat(report.summary().get("createdOrderCount").value()).isEqualTo(2);
+        assertThat(report.summary().get("paidOrderCount").value()).isEqualTo(2);
+        assertThat(report.summary().get("paidAmountCent").value()).isEqualTo(500);
+        assertThat(report.hourlyOrders().data())
+                .filteredOn(point -> point.value() > 0)
+                .extracting("label", "value")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("00:00", 1L),
+                        org.assertj.core.groups.Tuple.tuple("23:00", 1L)
+                );
+    }
+
+    @Test
+    void trafficStatisticsReadMySqlTimestampsWithoutReportingAuthenticationFailure() {
+        String jdbcUrl = CLEAN_MYSQL.getJdbcUrl();
+        CommerceFulfillmentMigrationTest.migrateToLatest(
+                jdbcUrl, CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
+        JdbcClient jdbcClient = JdbcClient.create(new DriverManagerDataSource(
+                jdbcUrl, CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword()));
+        jdbcClient.sql("""
+                        insert into analytics_event
+                            (id, client_event_id, payload_digest, visitor_id, session_id,
+                             event_source, event_type, page_path, occurred_at, received_at, business_date)
+                        values
+                            (990301, 'mysql-traffic-home', 'mysql-traffic-home-digest',
+                             'mysql-traffic-visitor', 'mysql-traffic-session',
+                             'CLIENT', 'PAGE_VIEW', '/pages/home/home',
+                             timestamp '2030-02-01 12:00:00', timestamp '2030-02-01 12:00:01',
+                             date '2030-02-01'),
+                            (990302, 'mysql-traffic-product', 'mysql-traffic-product-digest',
+                             'mysql-traffic-visitor', 'mysql-traffic-session',
+                             'CLIENT', 'PRODUCT_VIEW', '/pages/product/detail/detail',
+                             timestamp '2030-02-01 12:01:00', timestamp '2030-02-01 12:01:01',
+                             date '2030-02-01')
+                        """)
+                .update();
+
+        TrafficStatisticsReport report = new OperationsStatisticsService(jdbcClient).trafficStatistics(
+                new ReportQuery(LocalDate.of(2030, 2, 1), LocalDate.of(2030, 2, 1), Granularity.HOUR)
+        );
+
+        assertThat(report.summary().get("pageViewCount").value()).isEqualTo(1);
+        assertThat(report.trend().data()).isNotEmpty();
+        assertThat(report.funnel().data())
+                .extracting("key", "users")
+                .startsWith(
+                        org.assertj.core.groups.Tuple.tuple("homeVisit", 1L),
+                        org.assertj.core.groups.Tuple.tuple("productView", 1L)
+                );
+    }
+
+    private void seedLegacyPhoneAuthorization(String jdbcUrl, String username, String password) {
+        JdbcClient.create(new DriverManagerDataSource(jdbcUrl, username, password))
+                .sql("""
+                        insert into app_user (id, openid, phone_number, phone_authorized, status)
+                        values (990201, 'mysql-legacy-phone-auth', '13800009902', true, 'ENABLED')
+                        """)
+                .update();
+    }
+
+    private void assertLegacyPhoneAuthorizationWasSnapshotted(
+            String jdbcUrl,
+            String username,
+            String password
+    ) {
+        assertThat(JdbcClient.create(new DriverManagerDataSource(jdbcUrl, username, password))
+                .sql("select phone_authorized_at from app_user where id = 990201")
+                .query(java.time.LocalDateTime.class)
+                .single()).isNotNull();
     }
 
     private static MySQLContainer<?> mysql(String databaseName) {
         return new MySQLContainer<>("mysql:8.0")
                 .withDatabaseName(databaseName)
                 .withUsername("shop_test")
-                .withPassword("shop_test");
+                .withPassword("shop_test")
+                .withEnv("TZ", "Asia/Shanghai")
+                .withUrlParam("serverTimezone", "Asia/Shanghai");
     }
 }

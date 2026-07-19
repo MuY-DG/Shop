@@ -840,6 +840,26 @@ public class AdminProductService {
         insertStockLog(skuId, StockChangeType.ADJUST.name(), quantityBefore, request.quantityDelta(), quantityAfter, request.reason(), ADMIN_OPERATOR_TYPE, operatorId);
     }
 
+    @Transactional
+    public void updateSkuLowStockThreshold(Long skuId, Integer lowStockThreshold) {
+        if (lowStockThreshold == null || lowStockThreshold < 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        int updatedRows = jdbcClient.sql("""
+                        update product_sku
+                        set low_stock_threshold = :lowStockThreshold,
+                            updated_at = :updatedAt
+                        where id = :skuId and deleted_at is null
+                        """)
+                .param("lowStockThreshold", lowStockThreshold)
+                .param("updatedAt", LocalDateTime.now())
+                .param("skuId", skuId)
+                .update();
+        if (updatedRows != 1) {
+            throw new BusinessException(ErrorCode.SKU_UNAVAILABLE);
+        }
+    }
+
     private Long insertSpu(AdminSpuUpsertRequest request) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
@@ -1093,7 +1113,10 @@ public class AdminProductService {
         String combinationKey = request.combinationKey() == null && existingSku != null
                 ? existingSku.combinationKey()
                 : request.combinationKey();
-        return new AdminSkuUpsertRequest(
+        Integer lowStockThreshold = !request.lowStockThresholdSpecified() && existingSku != null
+                ? existingSku.lowStockThreshold()
+                : request.lowStockThreshold();
+        AdminSkuUpsertRequest normalized = new AdminSkuUpsertRequest(
                 request.id(),
                 request.skuCode(),
                 request.specJson(),
@@ -1116,15 +1139,19 @@ public class AdminProductService {
                 request.costPriceCentSpecified(),
                 request.volumeCubicMeterSpecified()
         );
+        normalized.setLowStockThreshold(lowStockThreshold == null ? 10 : lowStockThreshold);
+        return normalized;
     }
 
     private AdminSkuUpsertRequest existingSkuRequest(ProductSku sku, boolean preserveSpecValueKeys) {
-        return new AdminSkuUpsertRequest(
+        AdminSkuUpsertRequest request = new AdminSkuUpsertRequest(
                 sku.id(), sku.skuCode(), sku.specJson(), sku.specText(), sku.priceCent(), sku.originalPriceCent(),
                 sku.stockAvailable(), sku.weightGram(), sku.costPriceCent(), sku.volumeCubicMeter(), sku.image(),
                 sku.imageFileId(), sku.status(), sku.sortOrder(), sku.defaultSelected(), sku.combinationKey(),
                 preserveSpecValueKeys ? findSkuSpecValueKeys(sku.id()) : List.of(), false, false, false, false
         );
+        request.setLowStockThreshold(sku.lowStockThreshold());
+        return request;
     }
 
     private void normalizeDefaultSku(List<AdminSkuUpsertRequest> skus) {
@@ -1264,12 +1291,12 @@ public class AdminProductService {
         namedParameterJdbcTemplate.update("""
                         INSERT INTO product_sku (
                             spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                            cost_price_cent, stock_available, weight_gram, volume_cubic_meter,
+                            cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
                             image, image_file_id, status, is_default, combination_key, sort_order
                         )
                         VALUES (
                             :spuId, :skuCode, :specJson, :specText, :priceCent, :originalPriceCent,
-                            :costPriceCent, :stockAvailable, :weightGram, :volumeCubicMeter,
+                            :costPriceCent, :stockAvailable, :lowStockThreshold, :weightGram, :volumeCubicMeter,
                             :image, :imageFileId, :status, :isDefault, :combinationKey, :sortOrder
                         )
                         """,
@@ -1282,6 +1309,7 @@ public class AdminProductService {
                         .addValue("originalPriceCent", request.originalPriceCent())
                         .addValue("costPriceCent", request.costPriceCent())
                         .addValue("stockAvailable", request.stockAvailable())
+                        .addValue("lowStockThreshold", request.lowStockThreshold())
                         .addValue("weightGram", request.weightGram())
                         .addValue("volumeCubicMeter", request.volumeCubicMeter())
                         .addValue("image", snapshot.image())
@@ -1311,6 +1339,7 @@ public class AdminProductService {
                             original_price_cent = :originalPriceCent,
                             cost_price_cent = :costPriceCent,
                             stock_available = :stockAvailable,
+                            low_stock_threshold = :lowStockThreshold,
                             weight_gram = :weightGram,
                             volume_cubic_meter = :volumeCubicMeter,
                             image = :image,
@@ -1330,6 +1359,7 @@ public class AdminProductService {
                 .param("originalPriceCent", request.originalPriceCent())
                 .param("costPriceCent", request.costPriceCent())
                 .param("stockAvailable", request.stockAvailable())
+                .param("lowStockThreshold", request.lowStockThreshold())
                 .param("weightGram", request.weightGram())
                 .param("volumeCubicMeter", request.volumeCubicMeter())
                 .param("image", snapshot.image())
@@ -1953,8 +1983,12 @@ public class AdminProductService {
                 if (sku.stockAvailable() != null && sku.stockAvailable() != 0) {
                     throw new BusinessException(ErrorCode.PERMISSION_DENIED);
                 }
+                if (sku.lowStockThreshold() != null && sku.lowStockThreshold() != 10) {
+                    throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+                }
             } else if (existingSku.deletedAt() != null
-                    || !Objects.equals(existingSku.stockAvailable(), sku.stockAvailable())) {
+                    || !Objects.equals(existingSku.stockAvailable(), sku.stockAvailable())
+                    || !Objects.equals(existingSku.lowStockThreshold(), sku.lowStockThreshold())) {
                 throw new BusinessException(ErrorCode.PERMISSION_DENIED);
             }
         }
@@ -2365,7 +2399,7 @@ public class AdminProductService {
     private List<ProductSku> findSkusBySpuId(Long spuId) {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               cost_price_cent, stock_available, weight_gram, volume_cubic_meter,
+                               cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
                                image, image_file_id, status, is_default, combination_key, sort_order,
                                deleted_at, created_at, updated_at
                         FROM product_sku
@@ -2380,7 +2414,7 @@ public class AdminProductService {
     private List<ProductSku> findSkusBySpuIdForUpdate(Long spuId) {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               cost_price_cent, stock_available, weight_gram, volume_cubic_meter,
+                               cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
                                image, image_file_id, status, is_default, combination_key, sort_order,
                                deleted_at, created_at, updated_at
                         FROM product_sku
@@ -2396,7 +2430,7 @@ public class AdminProductService {
     private Optional<ProductSku> findSku(Long skuId) {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               cost_price_cent, stock_available, weight_gram, volume_cubic_meter,
+                               cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
                                image, image_file_id, status, is_default, combination_key, sort_order,
                                deleted_at, created_at, updated_at
                         FROM product_sku
@@ -2417,7 +2451,7 @@ public class AdminProductService {
     private Optional<ProductSku> findSkuForUpdate(Long skuId) {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               cost_price_cent, stock_available, weight_gram, volume_cubic_meter,
+                               cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
                                image, image_file_id, status, is_default, combination_key, sort_order,
                                deleted_at, created_at, updated_at
                         FROM product_sku
@@ -2514,6 +2548,7 @@ public class AdminProductService {
                 rs.getLong("original_price_cent"),
                 rs.getObject("cost_price_cent", Long.class),
                 rs.getInt("stock_available"),
+                rs.getInt("low_stock_threshold"),
                 rs.getObject("weight_gram", Integer.class),
                 rs.getBigDecimal("volume_cubic_meter"),
                 rs.getString("image"),

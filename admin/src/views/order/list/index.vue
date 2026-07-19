@@ -552,6 +552,7 @@
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
+  import { orderStatusGroupFromQuery } from '@/utils/business-route-query'
   import { realtimeClient, type RealtimeEvent } from '@/utils/realtime'
   import {
     closeOrder,
@@ -656,6 +657,8 @@
     return typeof value === 'string' && value.trim() ? value.trim() : undefined
   }
 
+  const routeStatusGroup = () => orderStatusGroupFromQuery(route.query.statusGroup)
+
   const createInitialSearchForm = (): OrderSearchForm => ({
     orderNo: routeOrderNo(),
     userSearchType: 'USER_ID',
@@ -667,7 +670,7 @@
   })
 
   const searchForm = ref<OrderSearchForm>(createInitialSearchForm())
-  const activeStatusGroup = ref<Api.Order.AdminOrderStatusGroup>('ALL')
+  const activeStatusGroup = ref<Api.Order.AdminOrderStatusGroup>(routeStatusGroup() || 'ALL')
   const statusCounts = reactive<Api.Order.OrderStatusCounts>({
     all: 0,
     unpaid: 0,
@@ -1025,7 +1028,7 @@
       apiParams: {
         current: 1,
         size: 20,
-        statusGroup: 'ALL',
+        statusGroup: activeStatusGroup.value,
         orderNo: searchForm.value.orderNo
       },
       columnsFactory: () => [
@@ -1207,12 +1210,18 @@
   }
 
   watch(
-    () => route.query.orderNo,
+    () => [route.query.orderNo, route.query.statusGroup],
     async () => {
       const orderNo = routeOrderNo()
-      if (route.path !== '/trade/orders' || !orderNo || orderNo === searchForm.value.orderNo) return
+      const statusGroup = routeStatusGroup() || 'ALL'
+      if (
+        route.path !== '/trade/orders' ||
+        (orderNo === searchForm.value.orderNo && statusGroup === activeStatusGroup.value)
+      ) {
+        return
+      }
       searchForm.value = createInitialSearchForm()
-      activeStatusGroup.value = 'ALL'
+      activeStatusGroup.value = statusGroup
       await applyCurrentSearch()
     }
   )

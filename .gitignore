@@ -33,6 +33,7 @@ dist-ssr/
 .vite/
 coverage/
 miniprogram_npm/
+demo-miniprogram/
 
 # IDEs
 .idea/

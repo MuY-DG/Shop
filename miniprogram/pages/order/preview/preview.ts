@@ -18,6 +18,7 @@ import {
   replaceAddressFromEvent,
   resolveAddressSelection
 } from "../../../features/checkout";
+import { getAnalyticsContext, trackPageView } from "../../../services/analytics";
 
 interface OrderPreviewItemView extends OrderPreviewItem {
   imageUrl: string;
@@ -83,6 +84,7 @@ Page<PreviewPageData, WechatMiniprogram.Page.CustomOption>({
     preview: null as OrderPreviewView | null
   },
   async onLoad(query: Record<string, string | undefined>) {
+    trackPageView("/pages/order/preview/preview");
     try {
       const selection = parseCheckoutQuery(query);
       this.setData({
@@ -223,7 +225,8 @@ Page<PreviewPageData, WechatMiniprogram.Page.CustomOption>({
           selection,
           address.id,
           this.data.preview?.userCouponId ?? null,
-          this.data.idempotencyKey
+          this.data.idempotencyKey,
+          getAnalyticsContext()
         )
       );
       wx.redirectTo({

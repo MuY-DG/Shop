@@ -57,6 +57,7 @@
   const searchItems = computed<SearchFormItem[]>(() => [
     {
       label: '用户关键字',
+      labelWidth: '84px',
       key: 'keyword',
       type: 'input',
       props: {
@@ -102,31 +103,29 @@
       },
       columnsFactory: () => [
         {
-          prop: 'nickname',
-          label: '用户',
-          minWidth: 230,
+          prop: 'id',
+          label: '用户 ID',
+          minWidth: 190,
+          formatter: (row: Customer) => h('span', { class: 'customer-id' }, row.id)
+        },
+        {
+          prop: 'avatar',
+          label: '头像',
+          width: 80,
           formatter: (row: Customer) =>
-            h('div', { class: 'customer-cell' }, [
-              h(ElAvatar, { size: 38 }, () => row.nickname?.slice(0, 1) || '用'),
-              h('div', { class: 'customer-cell__text' }, [
-                h('div', { class: 'customer-cell__name' }, row.nickname || '未命名用户'),
-                h('div', { class: 'customer-cell__id' }, `ID ${row.id}`)
-              ])
-            ])
+            h(ElAvatar, { size: 38 }, () => row.nickname?.slice(0, 1) || '用')
+        },
+        {
+          prop: 'nickname',
+          label: '用户名',
+          minWidth: 150,
+          formatter: (row: Customer) => row.nickname || '未命名用户'
         },
         {
           prop: 'phoneNumber',
           label: '手机号',
           minWidth: 170,
-          formatter: (row: Customer) =>
-            h('div', { class: 'phone-cell' }, [
-              h('div', row.phoneNumber || '-'),
-              h(
-                'div',
-                { class: ['phone-cell__status', row.phoneAuthorized ? 'is-authorized' : ''] },
-                row.phoneAuthorized ? '微信已授权' : '未授权'
-              )
-            ])
+          formatter: (row: Customer) => row.phoneNumber || '-'
         },
         {
           prop: 'couponTotalCount',
@@ -216,41 +215,10 @@
     color: var(--el-text-color-secondary);
   }
 
-  .customer-cell {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-
-    &__text {
-      min-width: 0;
-    }
-
-    &__name {
-      overflow: hidden;
-      font-weight: 500;
-      color: var(--el-text-color-primary);
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    &__id {
-      margin-top: 3px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 12px;
-      color: var(--el-text-color-secondary);
-    }
-  }
-
-  .phone-cell {
-    &__status {
-      margin-top: 3px;
-      font-size: 12px;
-      color: var(--el-text-color-placeholder);
-
-      &.is-authorized {
-        color: var(--el-color-success);
-      }
-    }
+  .customer-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 
   .coupon-stats {

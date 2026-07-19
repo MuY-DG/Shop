@@ -57,6 +57,7 @@ public class AppPaymentService {
     private final OrderCloseService orderCloseService;
     private final OrderStatusLogService orderStatusLogService;
     private final ApplicationEventPublisher eventPublisher;
+    private final PaymentAttemptService paymentAttemptService;
 
     public AppPaymentService(
             JdbcClient jdbcClient,
@@ -65,7 +66,8 @@ public class AppPaymentService {
             WechatPayProvider wechatPayProvider,
             OrderCloseService orderCloseService,
             OrderStatusLogService orderStatusLogService,
-            ApplicationEventPublisher eventPublisher
+            ApplicationEventPublisher eventPublisher,
+            PaymentAttemptService paymentAttemptService
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentProperties = paymentProperties;
@@ -74,6 +76,7 @@ public class AppPaymentService {
         this.orderCloseService = orderCloseService;
         this.orderStatusLogService = orderStatusLogService;
         this.eventPublisher = eventPublisher;
+        this.paymentAttemptService = paymentAttemptService;
     }
 
     @Transactional
@@ -105,7 +108,16 @@ public class AppPaymentService {
                 config.notifyUrl(),
                 expiresAt
         );
-        WechatJsapiPrepayResult prepay = wechatPayProvider.createJsapiPrepay(config, request);
+        long paymentAttemptId = paymentAttemptService.started(
+                order.orderId(), outTradeNo, order.payableAmountCent(), now);
+        WechatJsapiPrepayResult prepay;
+        try {
+            prepay = wechatPayProvider.createJsapiPrepay(config, request);
+        } catch (RuntimeException ex) {
+            paymentAttemptService.prepayFailed(paymentAttemptId, ex, LocalDateTime.now());
+            throw ex;
+        }
+        paymentAttemptService.prepaySucceeded(paymentAttemptId, LocalDateTime.now());
         jdbcClient.sql("""
                         insert into payment_order
                             (order_id, payment_config_id, out_trade_no, prepay_id, payer_openid, status,
@@ -126,6 +138,11 @@ public class AppPaymentService {
                 .param("createdAt", now)
                 .param("updatedAt", now)
                 .update();
+        Long paymentOrderId = jdbcClient.sql("select id from payment_order where out_trade_no = :outTradeNo")
+                .param("outTradeNo", outTradeNo)
+                .query(Long.class)
+                .single();
+        paymentAttemptService.bindPaymentOrder(paymentAttemptId, paymentOrderId, LocalDateTime.now());
         int updatedRows = jdbcClient.sql("""
                         update shop_order
                         set status = 'PAYING',
@@ -209,11 +226,13 @@ public class AppPaymentService {
     ) {
         PaymentOrderRow payment = findPaymentForUpdate(outTradeNo)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+        LocalDateTime effectivePaidAt = paidAt == null ? LocalDateTime.now() : paidAt;
         if (OrderStatus.PAID.name().equals(payment.status())) {
             validatePaidDuplicate(payment, transactionId, amountCent);
             OrderPaymentRow order = findOrderForUpdate(payment.orderId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
             validatePaidDuplicateOrder(order, outTradeNo, transactionId, amountCent);
+            paymentAttemptService.paid(payment.paymentOrderId(), effectivePaidAt);
             return new PaidFinalizationResult(order.orderId(), order.status(), payment.transactionId(), true);
         }
         if (!OrderStatus.PAYING.name().equals(payment.status()) || payment.amountCent() != amountCent) {
@@ -224,7 +243,6 @@ public class AppPaymentService {
         if (!OrderStatus.PAYING.name().equals(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-        LocalDateTime effectivePaidAt = paidAt == null ? LocalDateTime.now() : paidAt;
         jdbcClient.sql("""
                         update payment_order
                         set status = 'PAID',
@@ -297,6 +315,7 @@ public class AppPaymentService {
         eventPublisher.publishEvent(new OrderPaidRealtimeEvent(
                 order.orderId(), order.orderNo(), amountCent, effectivePaidAt
         ));
+        paymentAttemptService.paid(payment.paymentOrderId(), effectivePaidAt);
         return new PaidFinalizationResult(order.orderId(), OrderStatus.PAID.name(), transactionId, false);
     }
 
@@ -317,6 +336,7 @@ public class AppPaymentService {
                 .param("updatedAt", LocalDateTime.now())
                 .param("outTradeNo", payment.outTradeNo())
                 .update();
+        paymentAttemptService.closed(payment.paymentOrderId(), LocalDateTime.now());
         orderCloseService.closePayingOrder(orderId, closeReason, OPERATOR_TYPE_APP, operatorId);
     }
 

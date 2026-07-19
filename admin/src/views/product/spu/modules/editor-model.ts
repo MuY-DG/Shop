@@ -34,6 +34,7 @@ export interface ProductEditorSku {
   costPriceCent: number | null
   originalPriceCent: number | null
   stockAvailable: number
+  lowStockThreshold: number
   weightGram: number | null
   volumeCubicMeter: number | null
   image: string

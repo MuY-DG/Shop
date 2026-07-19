@@ -115,6 +115,20 @@
         </template>
       </ElTableColumn>
 
+      <ElTableColumn label="低库存预警值" width="150">
+        <template #default="{ row, $index }">
+          <ElInputNumber
+            :model-value="row.lowStockThreshold"
+            :min="0"
+            :precision="0"
+            :disabled="disabled || stockDisabled"
+            controls-position="right"
+            class="sku-matrix__number"
+            @update:model-value="updateNumber($index, 'lowStockThreshold', $event ?? 0)"
+          />
+        </template>
+      </ElTableColumn>
+
       <ElTableColumn label="商品编码" width="170">
         <template #default="{ row, $index }">
           <ElInput
@@ -232,7 +246,11 @@
     updateRow(index, { [field]: yuanToCent(value) } as Partial<ProductEditorSku>)
   }
 
-  const updateNumber = (index: number, field: 'stockAvailable', value: number | undefined) => {
+  const updateNumber = (
+    index: number,
+    field: 'stockAvailable' | 'lowStockThreshold',
+    value: number | undefined
+  ) => {
     updateRow(index, { [field]: value ?? 0 })
   }
 

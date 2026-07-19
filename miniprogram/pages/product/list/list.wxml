@@ -1,4 +1,20 @@
 <view class="page product-list-page">
+  <view class="search-bar">
+    <input
+      class="search-input"
+      value="{{searchInput}}"
+      maxlength="80"
+      placeholder="搜索商品"
+      confirm-type="search"
+      bindinput="onSearchInput"
+      bindconfirm="onSearchConfirm"
+    />
+    <button class="search-button" size="mini" bindtap="onSearchTap">搜索</button>
+    <view wx:if="{{searchInput || activeKeyword}}" class="search-clear" bindtap="onSearchClear">清除</view>
+  </view>
+
+  <view wx:if="{{activeKeyword}}" class="search-summary">“{{activeKeyword}}”的搜索结果</view>
+
   <scroll-view class="category-bar" scroll-x="true" enhanced="true" show-scrollbar="false">
     <view class="category-track">
       <view
@@ -15,7 +31,9 @@
 
   <view wx:if="{{loading && products.length === 0}}" class="empty-state">商品加载中...</view>
   <view wx:elif="{{errorText && products.length === 0}}" class="empty-state">{{errorText}}</view>
-  <view wx:elif="{{products.length === 0}}" class="empty-state">暂无商品</view>
+  <view wx:elif="{{products.length === 0}}" class="empty-state">
+    {{activeKeyword ? '未找到相关商品' : '暂无商品'}}
+  </view>
   <view wx:else class="product-list">
     <view
       wx:for="{{products}}"

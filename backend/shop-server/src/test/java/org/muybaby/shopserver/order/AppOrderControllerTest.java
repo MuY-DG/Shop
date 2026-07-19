@@ -240,6 +240,9 @@ class AppOrderControllerTest {
         String appToken = session.token();
         long userId = session.userId();
         long skuId = createPublishedSku("ORDER-SUBMIT-SKU", 3990L, 4990L, 10, "ENABLED");
+        jdbcClient.sql("update product_sku set cost_price_cent = 1500 where id = :skuId")
+                .param("skuId", skuId)
+                .update();
         seedUserCoupon(userId,
                 seedTemplate("Five Off Submit", "ENABLED", 10, 0, 2, 0L, 500L),
                 "Five Off Submit",
@@ -255,7 +258,10 @@ class AppOrderControllerTest {
         long addressId = insertAddress(userId, "submit");
 
         String submitPayload = """
-                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-20260707-001"}
+                {"cartItemIds":[%d],"addressId":%d,"idempotencyKey":"checkout-20260707-001",
+                 "analyticsVisitorId":"00000000-0000-4000-8000-000000000011",
+                 "analyticsSessionId":"00000000-0000-4000-8000-000000000012",
+                 "analyticsEntryScene":"1001"}
                 """.formatted(cartItemId, addressId);
         String submitResponse = mockMvc.perform(post("/app/orders")
                         .header("Authorization", "Bearer " + appToken)
@@ -279,6 +285,30 @@ class AppOrderControllerTest {
                 .query(Integer.class)
                 .single();
         Integer orderItemCount = jdbcClient.sql("select count(*) from order_item where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single();
+        Integer operatingSnapshotCount = jdbcClient.sql("""
+                        select count(*)
+                        from order_item
+                        where order_id = :orderId
+                          and unit_cost_cent = 1500
+                          and line_cost_cent = 3000
+                          and coupon_discount_allocated_cent = 1000
+                          and freight_allocated_cent = 0
+                          and paid_amount_allocated_cent = 6980
+                        """)
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single();
+        Integer attributionCount = jdbcClient.sql("""
+                        select count(*)
+                        from shop_order
+                        where id = :orderId
+                          and analytics_visitor_id = '00000000-0000-4000-8000-000000000011'
+                          and analytics_session_id = '00000000-0000-4000-8000-000000000012'
+                          and analytics_entry_scene = '1001'
+                        """)
                 .param("orderId", orderId)
                 .query(Integer.class)
                 .single();
@@ -325,6 +355,8 @@ class AppOrderControllerTest {
 
         assertThat(orderCount).isEqualTo(1);
         assertThat(orderItemCount).isEqualTo(1);
+        assertThat(operatingSnapshotCount).isEqualTo(1);
+        assertThat(attributionCount).isEqualTo(1);
         assertThat(stockLockCount).isEqualTo(1);
         assertThat(stockLogCount).isEqualTo(1);
         assertThat(remainingCartRows).isEqualTo(0);

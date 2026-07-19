@@ -18,6 +18,7 @@ import java.util.List;
 public class AdminHomeOptionController {
 
     private static final String DECORATION_AUTHORITIES = "hasAnyAuthority(" +
+            "'content:banner:read', 'content:banner:create', 'content:banner:update', " +
             "'content:home-category:read', 'content:home-category:write', " +
             "'content:home-hot:read', 'content:home-hot:write', " +
             "'content:home-recommended:read', 'content:home-recommended:write')";

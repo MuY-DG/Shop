@@ -22,17 +22,20 @@ public class PaymentTimeoutCloseService {
     private final PaymentConfigResolver paymentConfigResolver;
     private final WechatPayProvider wechatPayProvider;
     private final OrderCloseService orderCloseService;
+    private final PaymentAttemptService paymentAttemptService;
 
     public PaymentTimeoutCloseService(
             JdbcClient jdbcClient,
             PaymentConfigResolver paymentConfigResolver,
             WechatPayProvider wechatPayProvider,
-            OrderCloseService orderCloseService
+            OrderCloseService orderCloseService,
+            PaymentAttemptService paymentAttemptService
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentConfigResolver = paymentConfigResolver;
         this.wechatPayProvider = wechatPayProvider;
         this.orderCloseService = orderCloseService;
+        this.paymentAttemptService = paymentAttemptService;
     }
 
     @Transactional
@@ -70,6 +73,7 @@ public class PaymentTimeoutCloseService {
                     .param("paymentOrderId", payment.paymentOrderId())
                     .update();
             if (updatedRows == 1) {
+                paymentAttemptService.closed(payment.paymentOrderId(), LocalDateTime.now());
                 orderCloseService.closePayingOrder(payment.orderId(), "PAY_TIMEOUT", OPERATOR_TYPE_SYSTEM, 0L);
                 closedCount++;
             }

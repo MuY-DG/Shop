@@ -112,6 +112,35 @@ class AppUserServiceTest {
     }
 
     @Test
+    void phoneAuthorizationCapturesTheFirstAuthorizationTime() {
+        AppUserService appUserService = new AppUserService(jdbcClient);
+        insertAppUser(9108L, "phone-time-openid", "ENABLED");
+
+        AppUser authorized = appUserService.markPhoneAuthorized(
+                9108L,
+                new WechatPhoneInfo("13812345678", "13812345678", "86")
+        );
+        LocalDateTime firstAuthorizedAt = jdbcClient.sql("""
+                        select phone_authorized_at
+                        from app_user
+                        where id = 9108
+                        """)
+                .query(LocalDateTime.class)
+                .single();
+
+        assertThat(authorized.phoneAuthorized()).isTrue();
+        assertThat(firstAuthorizedAt).isNotNull();
+
+        appUserService.markPhoneAuthorized(
+                9108L,
+                new WechatPhoneInfo("13912345678", "13912345678", "86")
+        );
+        assertThat(jdbcClient.sql("select phone_authorized_at from app_user where id = 9108")
+                .query(LocalDateTime.class)
+                .single()).isEqualTo(firstAuthorizedAt);
+    }
+
+    @Test
     void requireEnabledUserReturnsEnabledUser() {
         AppUserService appUserService = new AppUserService(jdbcClient);
         insertAppUser(9103L, "enabled-require-openid", "ENABLED");

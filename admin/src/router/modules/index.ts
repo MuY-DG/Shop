@@ -1,5 +1,5 @@
 import { AppRouteRecord } from '@/types/router'
-import { dashboardRoutes } from './dashboard'
+import { operationsRoutes } from './operations'
 import { templateRoutes } from './template'
 import { widgetsRoutes } from './widgets'
 import { examplesRoutes } from './examples'
@@ -14,7 +14,7 @@ import { helpRoutes } from './help'
  * 导出所有模块化路由
  */
 export const routeModules: AppRouteRecord[] = [
-  dashboardRoutes,
+  operationsRoutes,
   templateRoutes,
   widgetsRoutes,
   examplesRoutes,

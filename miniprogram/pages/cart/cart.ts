@@ -9,6 +9,7 @@ import {
 import { getAvailableCoupons } from "../../services/coupon";
 import { formatPrice } from "../../services/product";
 import { buildCartCheckoutUrl } from "../../features/checkout";
+import { trackCheckoutStart, trackPageView } from "../../services/analytics";
 
 interface DatasetEvent {
   currentTarget: {
@@ -61,6 +62,7 @@ Page({
     checkoutDisabled: true
   },
   async onShow() {
+    trackPageView("/pages/cart/cart");
     await this.loadCart();
   },
   async onPullDownRefresh() {
@@ -195,6 +197,7 @@ Page({
       return;
     }
 
+    trackCheckoutStart("CART", "/pages/cart/cart");
     wx.navigateTo({
       url: buildCartCheckoutUrl(availableItemIds)
     });

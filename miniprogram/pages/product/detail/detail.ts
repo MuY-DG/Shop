@@ -6,6 +6,12 @@ import {
   buildProductCommand,
   clampQuantity
 } from "../../../features/checkout";
+import {
+  getAnalyticsContext,
+  trackCheckoutStart,
+  trackPageView,
+  trackProductView
+} from "../../../services/analytics";
 
 interface DatasetEvent {
   currentTarget: {
@@ -85,6 +91,7 @@ Page({
       return;
     }
 
+    trackPageView("/pages/product/detail/detail");
     await this.loadDetail(productId);
   },
   async loadDetail(productId: number) {
@@ -111,6 +118,7 @@ Page({
         selectedPriceText: selectedSku ? formatPrice(selectedSku.priceCent) : "暂无价格",
         selectedStockText: selectedSku ? `库存 ${selectedSku.stockAvailable}` : "暂无可售规格"
       });
+      trackProductView(detail.id, "/pages/product/detail/detail");
     } catch (error) {
       this.setData({
         errorText: error instanceof Error ? error.message : "商品详情加载失败"
@@ -200,7 +208,15 @@ Page({
 
     try {
       await ensureAppLogin();
-      await addCartItem(command.payload);
+      const analytics = getAnalyticsContext();
+      await addCartItem({
+        ...command.payload,
+        ...(analytics ? {
+          analyticsVisitorId: analytics.visitorId,
+          analyticsSessionId: analytics.sessionId,
+          analyticsEntryScene: analytics.entryScene
+        } : {})
+      });
       wx.showToast({
         title: "已加入购物车",
         icon: "success"
@@ -236,6 +252,12 @@ Page({
     this.setData({ buying: true });
     try {
       await ensureAppLogin();
+      trackCheckoutStart(
+        "DIRECT",
+        "/pages/product/detail/detail",
+        command.url.includes("sku_id=") ? this.data.selectedSkuId : undefined,
+        this.data.selectedQuantity
+      );
       await wx.navigateTo({ url: command.url });
     } catch (error) {
       wx.showToast({
