@@ -5,7 +5,7 @@
         <div class="page-header">
           <div>
             <h3>商品参数</h3>
-            <p>定义分类级展示参数；商品编辑时只出现所属分类绑定的参数。</p>
+            <p>定义分类级展示参数；绑定父分类后，其所有子分类会自动继承。</p>
           </div>
           <div class="page-header__actions">
             <ElButton :loading="loading" @click="loadData">刷新</ElButton>
@@ -16,12 +16,8 @@
 
       <div ref="tableContainerRef">
         <ElTable ref="tableRef" v-loading="loading" :data="items" row-key="id">
-          <ElTableColumn label="参数" min-width="180">
-            <template #default="{ row }">
-              <strong>{{ row.parameterName }}</strong>
-              <div class="muted">{{ row.parameterCode }}</div>
-            </template>
-          </ElTableColumn>
+          <ElTableColumn prop="parameterName" label="参数名称" min-width="140" />
+          <ElTableColumn prop="parameterCode" label="参数编码" min-width="180" />
           <ElTableColumn label="类型" width="130">
             <template #default="{ row }">{{ valueTypeLabel(row.valueType) }}</template>
           </ElTableColumn>
@@ -35,10 +31,15 @@
               </div>
             </template>
           </ElTableColumn>
-          <ElTableColumn label="展示" width="150">
+          <ElTableColumn label="用途" min-width="310">
             <template #default="{ row }">
-              <ElTag v-if="row.cardVisible" size="small" type="success">商品卡片</ElTag>
-              <ElTag v-if="row.detailVisible" size="small" type="info">商品详情</ElTag>
+              <div class="usage-tags">
+                <ElTag v-if="row.required" size="small" type="danger">必填</ElTag>
+                <ElTag v-if="row.filterable" size="small" type="warning">可筛选</ElTag>
+                <ElTag v-if="row.cardVisible" size="small" type="success">商品卡片</ElTag>
+                <ElTag v-if="row.detailVisible" size="small" type="info">商品详情</ElTag>
+                <span v-if="!hasUsage(row)" class="muted">未设置</span>
+              </div>
             </template>
           </ElTableColumn>
           <ElTableColumn label="状态" width="100">
@@ -71,19 +72,16 @@
             <ElInput v-model="formData.parameterName" maxlength="64" placeholder="例如：辣度" />
           </ElFormItem>
           <ElFormItem label="参数编码" prop="parameterCode">
-            <div class="parameter-code-field">
-              <ElInput
-                :model-value="formData.parameterCode"
-                maxlength="64"
-                placeholder="输入参数名称后自动生成"
-                @update:model-value="handleParameterCodeInput"
-              >
-                <template #append>
-                  <ElButton @click="regenerateParameterCode">重新生成</ElButton>
-                </template>
-              </ElInput>
-              <small>仅用于系统内部识别，通常无需修改。</small>
-            </div>
+            <ElInput
+              :model-value="formData.parameterCode"
+              maxlength="64"
+              placeholder="输入参数名称后自动生成"
+              @update:model-value="handleParameterCodeInput"
+            >
+              <template #append>
+                <ElButton @click="regenerateParameterCode">重新生成</ElButton>
+              </template>
+            </ElInput>
           </ElFormItem>
           <ElFormItem label="值类型" prop="valueType">
             <ElSelect v-model="formData.valueType" @change="handleValueTypeChange">
@@ -112,20 +110,23 @@
         </div>
 
         <ElFormItem label="适用分类" prop="categoryIds">
-          <ElTreeSelect
-            v-model="formData.categoryIds"
-            :data="categoryTreeOptions"
-            node-key="value"
-            multiple
-            check-strictly
-            show-checkbox
-            default-expand-all
-            :render-after-expand="false"
-            filterable
-            clearable
-            style="width: 100%"
-            placeholder="选择需要填写该参数的商品分类"
-          />
+          <div class="category-field">
+            <ElTreeSelect
+              v-model="formData.categoryIds"
+              :data="categoryTreeOptions"
+              node-key="value"
+              multiple
+              check-strictly
+              show-checkbox
+              default-expand-all
+              :render-after-expand="false"
+              filterable
+              clearable
+              style="width: 100%"
+              placeholder="选择需要填写该参数的商品分类"
+            />
+            <small>选择父分类后，其所有层级的子分类都会自动继承该参数。</small>
+          </div>
         </ElFormItem>
         <ElFormItem label="参数说明">
           <ElInput
@@ -274,16 +275,16 @@
       BOOLEAN: '是/否'
     })[value]
 
+  const hasUsage = (item: Api.Product.ProductParameterDefinition) =>
+    item.required || item.filterable || item.cardVisible || item.detailVisible
+
   const generatedParameterCode = (parameterName: string) => {
     const normalizedName = parameterName.trim()
     if (!normalizedName) return ''
-    const readableCode = normalizedName
-      .normalize('NFKD')
-      .replace(/[^A-Za-z0-9_-]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .replace(/_+/g, '_')
-      .toUpperCase()
-    if (readableCode) return readableCode.slice(0, 64)
+    if (/^[A-Za-z0-9_-]+$/.test(normalizedName)) {
+      const readableCode = normalizedName.replace(/_+/g, '_').toUpperCase()
+      return `PARAM_${readableCode}`.slice(0, 64)
+    }
 
     let hash = 2166136261
     for (const character of normalizedName) {
@@ -437,7 +438,8 @@
   }
 
   .page-header__actions,
-  .category-tags {
+  .category-tags,
+  .usage-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
@@ -465,7 +467,7 @@
   .option-editor small {
     color: var(--el-text-color-secondary);
   }
-  .parameter-code-field {
+  .category-field {
     display: grid;
     width: 100%;
     gap: 6px;

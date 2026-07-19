@@ -36,8 +36,9 @@ class AdminProductParameterControllerTest {
     void categorySpecificDisplayParameterCanBeConfiguredAndSavedOutsideSku() throws Exception {
         String token = adminLoginAndExtractToken();
         Long hotpotCategoryId = insertCategory("参数测试-火锅底料");
+        Long beefBaseCategoryId = insertCategory("参数测试-牛油底料", hotpotCategoryId);
         Long cookwareCategoryId = insertCategory("参数测试-锅具");
-        Long spuId = insertSpu(hotpotCategoryId, "参数测试-牛油火锅底料");
+        Long spuId = insertSpu(beefBaseCategoryId, "参数测试-牛油火锅底料");
 
         String createResponse = mockMvc.perform(post("/admin/product/parameter-definitions")
                         .header("Authorization", "Bearer " + token)
@@ -68,7 +69,7 @@ class AdminProductParameterControllerTest {
         long parameterId = objectMapper.readTree(createResponse).path("data").asLong();
 
         mockMvc.perform(get("/admin/product/parameter-definitions")
-                        .param("categoryId", hotpotCategoryId.toString())
+                        .param("categoryId", beefBaseCategoryId.toString())
                         .param("enabledOnly", "true")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
@@ -150,16 +151,21 @@ class AdminProductParameterControllerTest {
                 .andExpect(jsonPath("$.data.parameters[0].selectedOptions[0].displayLevel").value(2));
 
         mockMvc.perform(get("/app/product/spus")
-                        .param("categoryId", hotpotCategoryId.toString()))
+                        .param("categoryId", beefBaseCategoryId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.records[0].parameters[0].displayText").value("中辣"));
     }
 
     private Long insertCategory(String name) {
+        return insertCategory(name, 0L);
+    }
+
+    private Long insertCategory(String name, Long parentId) {
         jdbcClient.sql("""
                         insert into product_category (parent_id, name, icon, sort_order, status)
-                        values (0, :name, '', 0, 'ENABLED')
+                        values (:parentId, :name, '', 0, 'ENABLED')
                         """)
+                .param("parentId", parentId)
                 .param("name", name)
                 .update();
         return jdbcClient.sql("select id from product_category where name = :name")

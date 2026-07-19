@@ -437,6 +437,7 @@
           label: '操作',
           width: 210,
           fixed: 'right',
+          disabled: true,
           useSlot: true
         }
       ]

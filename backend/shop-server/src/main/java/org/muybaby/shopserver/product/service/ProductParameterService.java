@@ -57,9 +57,12 @@ public class ProductParameterService {
     }
 
     public List<AdminProductParameterDefinitionResponse> definitions(Long categoryId, boolean enabledOnly) {
+        List<Long> categoryLineage = categoryId == null ? List.of() : categoryLineage(categoryId);
         String categoryClause = categoryId == null
                 ? ""
-                : "and exists (select 1 from product_category_parameter cp where cp.parameter_id = d.id and cp.category_id = :categoryId)";
+                : "and exists (select 1 from product_category_parameter cp " +
+                "where cp.parameter_id = d.id and cp.category_id in (%s))"
+                .formatted(categoryParameters(categoryLineage.size()));
         String enabledClause = enabledOnly ? "and d.status = 'ENABLED'" : "";
         JdbcClient.StatementSpec statement = jdbcClient.sql("""
                         select d.id, d.parameter_code, d.parameter_name, d.value_type, d.unit, d.description,
@@ -72,7 +75,9 @@ public class ProductParameterService {
                         order by d.sort_order, d.id
                         """.formatted(categoryClause, enabledClause));
         if (categoryId != null) {
-            statement = statement.param("categoryId", categoryId);
+            for (int index = 0; index < categoryLineage.size(); index++) {
+                statement = statement.param("categoryId" + index, categoryLineage.get(index));
+            }
         }
         return statement.query((rs, rowNum) -> definitionResponse(
                 rs.getLong("id"),
@@ -90,6 +95,33 @@ public class ProductParameterService {
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class)
         )).list();
+    }
+
+    private List<Long> categoryLineage(Long categoryId) {
+        LinkedHashSet<Long> lineage = new LinkedHashSet<>();
+        Long currentCategoryId = categoryId;
+        while (currentCategoryId != null && currentCategoryId > 0) {
+            if (!lineage.add(currentCategoryId)) {
+                throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_CYCLE);
+            }
+            Long resolvedCategoryId = currentCategoryId;
+            currentCategoryId = jdbcClient.sql("""
+                            select parent_id from product_category where id = :categoryId
+                            """)
+                    .param("categoryId", resolvedCategoryId)
+                    .query(Long.class)
+                    .optional()
+                    .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE));
+        }
+        return new ArrayList<>(lineage);
+    }
+
+    private String categoryParameters(int size) {
+        List<String> parameters = new ArrayList<>();
+        for (int index = 0; index < size; index++) {
+            parameters.add(":categoryId" + index);
+        }
+        return String.join(", ", parameters);
     }
 
     public AdminProductParameterDefinitionResponse definition(Long parameterId) {
