@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
 import org.muybaby.shopserver.product.dto.AdminCategoryResponse;
+import org.muybaby.shopserver.product.dto.AdminCategoryPositionRequest;
 import org.muybaby.shopserver.product.service.AdminProductService;
 import org.muybaby.shopserver.product.service.ProductReadMapper;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,6 +62,16 @@ public class AdminProductCategoryController {
     @PreAuthorize("hasAuthority('product:category:update')")
     public ApiResponse<Void> update(@PathVariable Long categoryId, @Valid @RequestBody AdminCategoryRequest request) {
         adminProductService.updateCategory(categoryId, request);
+        return ApiResponse.success();
+    }
+
+    @PutMapping("/{categoryId}/position")
+    @PreAuthorize("hasAuthority('product:category:update')")
+    public ApiResponse<Void> updatePosition(
+            @PathVariable Long categoryId,
+            @Valid @RequestBody AdminCategoryPositionRequest request
+    ) {
+        adminProductService.updateCategoryPosition(categoryId, request);
         return ApiResponse.success();
     }
 }

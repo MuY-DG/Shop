@@ -24,6 +24,16 @@ export function updateProductCategory(categoryId: number, data: Api.Product.Cate
   })
 }
 
+export function updateProductCategoryPosition(
+  categoryId: number,
+  data: Api.Product.CategoryPositionForm
+) {
+  return request.put<void>({
+    url: `/admin/product/categories/${categoryId}/position`,
+    data
+  })
+}
+
 export function fetchProductSpus(params: Api.Product.SpuSearchParams) {
   return request.get<Api.Product.SpuList>({
     url: '/admin/product/spus',

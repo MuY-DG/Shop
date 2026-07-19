@@ -222,6 +222,11 @@ declare namespace Api {
       status: CategoryStatus
     }
 
+    interface CategoryPositionForm {
+      parentId: number
+      index: number
+    }
+
     type SpuList = Api.Common.PaginatedResponse<SpuListItem>
 
     interface SpuListItem {

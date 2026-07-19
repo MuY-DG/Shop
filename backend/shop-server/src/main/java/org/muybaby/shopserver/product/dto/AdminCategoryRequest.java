@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 public class AdminCategoryRequest {
 
     @NotNull
+    @Min(0)
     private Long parentId;
 
     @NotBlank

@@ -12,6 +12,7 @@ import org.muybaby.shopserver.product.ProductSpecType;
 import org.muybaby.shopserver.product.ProductTag;
 import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.product.StockChangeType;
+import org.muybaby.shopserver.product.dto.AdminCategoryPositionRequest;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
 import org.muybaby.shopserver.product.dto.AdminProductImageUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
@@ -28,6 +29,7 @@ import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -42,6 +44,7 @@ import java.sql.SQLException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Deque;
@@ -87,56 +90,118 @@ public class AdminProductService {
 
     @Transactional
     public Long createCategory(AdminCategoryRequest request) {
+        lockCategoryTree();
+        Long parentId = requireCategoryParent(request.parentId());
         String status = requireCategoryStatus(request.status()).name();
         KeyHolder keyHolder = new GeneratedKeyHolder();
-        namedParameterJdbcTemplate.update("""
-                        INSERT INTO product_category (parent_id, name, icon, icon_file_id, sort_order, status)
-                        VALUES (:parentId, :name, :icon, :iconFileId, :sortOrder, :status)
-                        """,
-                new MapSqlParameterSource()
-                        .addValue("parentId", request.parentId())
-                        .addValue("name", request.name())
-                        .addValue("icon", defaultString(request.icon()))
-                        .addValue("iconFileId", request.iconFileId())
-                        .addValue("sortOrder", request.sortOrder())
-                        .addValue("status", status),
-                keyHolder,
-                new String[]{"id"});
+        try {
+            namedParameterJdbcTemplate.update("""
+                            INSERT INTO product_category (parent_id, name, icon, icon_file_id, sort_order, status)
+                            VALUES (:parentId, :name, :icon, :iconFileId, :sortOrder, :status)
+                            """,
+                    new MapSqlParameterSource()
+                            .addValue("parentId", parentId)
+                            .addValue("name", request.name().trim())
+                            .addValue("icon", defaultString(request.icon()))
+                            .addValue("iconFileId", request.iconFileId())
+                            .addValue("sortOrder", nextCategorySortOrder(parentId))
+                            .addValue("status", status),
+                    keyHolder,
+                    new String[]{"id"});
+        } catch (DuplicateKeyException ex) {
+            throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
+        }
         Long categoryId = requireGeneratedId(keyHolder);
         syncCategoryFileUsages(categoryId, request);
+        publishHomeChanged();
         return categoryId;
     }
 
     @Transactional
     public void updateCategory(Long categoryId, AdminCategoryRequest request) {
-        ProductCategory existingCategory = findCategory(categoryId)
+        lockCategoryTree();
+        ProductCategory existingCategory = findCategoryForUpdate(categoryId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE));
+        Long parentId = requireCategoryParent(request.parentId());
+        if (descendantCategoryIds(categoryId).contains(parentId)) {
+            throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_CYCLE);
+        }
         AdminCategoryRequest normalizedRequest = normalizeCategoryRequest(request, existingCategory);
         String status = requireCategoryStatus(request.status()).name();
-        int updatedRows = jdbcClient.sql("""
-                        UPDATE product_category
-                        SET parent_id = :parentId,
-                            name = :name,
-                            icon = :icon,
-                            icon_file_id = :iconFileId,
-                            sort_order = :sortOrder,
-                            status = :status,
-                            updated_at = :updatedAt
-                        WHERE id = :categoryId
-                        """)
-                .param("parentId", normalizedRequest.parentId())
-                .param("name", normalizedRequest.name())
-                .param("icon", defaultString(normalizedRequest.icon()))
-                .param("iconFileId", normalizedRequest.iconFileId())
-                .param("sortOrder", normalizedRequest.sortOrder())
-                .param("status", status)
-                .param("updatedAt", LocalDateTime.now())
-                .param("categoryId", categoryId)
-                .update();
+        boolean parentChanged = !existingCategory.parentId().equals(parentId);
+        List<Long> sourceOrder = parentChanged
+                ? siblingCategoryIds(existingCategory.parentId(), categoryId)
+                : List.of();
+        int sortOrder = parentChanged ? nextCategorySortOrder(parentId) : normalizedRequest.sortOrder();
+        int updatedRows;
+        try {
+            updatedRows = jdbcClient.sql("""
+                            UPDATE product_category
+                            SET parent_id = :parentId,
+                                name = :name,
+                                icon = :icon,
+                                icon_file_id = :iconFileId,
+                                sort_order = :sortOrder,
+                                status = :status,
+                                updated_at = :updatedAt
+                            WHERE id = :categoryId
+                            """)
+                    .param("parentId", parentId)
+                    .param("name", normalizedRequest.name().trim())
+                    .param("icon", defaultString(normalizedRequest.icon()))
+                    .param("iconFileId", normalizedRequest.iconFileId())
+                    .param("sortOrder", sortOrder)
+                    .param("status", status)
+                    .param("updatedAt", LocalDateTime.now())
+                    .param("categoryId", categoryId)
+                    .update();
+        } catch (DuplicateKeyException ex) {
+            throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
+        }
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
         }
+        if (parentChanged) {
+            updateCategoryOrder(sourceOrder);
+        }
         syncCategoryFileUsages(categoryId, normalizedRequest);
+        publishHomeChanged();
+    }
+
+    @Transactional
+    public void updateCategoryPosition(Long categoryId, AdminCategoryPositionRequest request) {
+        lockCategoryTree();
+        ProductCategory existingCategory = findCategoryForUpdate(categoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE));
+        Long parentId = requireCategoryParent(request.parentId());
+        if (descendantCategoryIds(categoryId).contains(parentId)) {
+            throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_CYCLE);
+        }
+
+        List<Long> sourceOrder = siblingCategoryIds(existingCategory.parentId(), categoryId);
+        List<Long> targetOrder = existingCategory.parentId().equals(parentId)
+                ? sourceOrder
+                : siblingCategoryIds(parentId, categoryId);
+        int targetIndex = Math.min(request.index(), targetOrder.size());
+        targetOrder.add(targetIndex, categoryId);
+
+        if (!existingCategory.parentId().equals(parentId)) {
+            try {
+                jdbcClient.sql("""
+                                UPDATE product_category
+                                SET parent_id = :parentId,
+                                    updated_at = current_timestamp
+                                WHERE id = :categoryId
+                                """)
+                        .param("parentId", parentId)
+                        .param("categoryId", categoryId)
+                        .update();
+            } catch (DuplicateKeyException ex) {
+                throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
+            }
+            updateCategoryOrder(sourceOrder);
+        }
+        updateCategoryOrder(targetOrder);
         publishHomeChanged();
     }
 
@@ -926,6 +991,95 @@ public class AdminProductService {
                 request.status(),
                 request.iconFileIdSpecified()
         );
+    }
+
+    private Long requireCategoryParent(Long parentId) {
+        if (parentId == null || parentId < 0) {
+            throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
+        }
+        if (parentId != 0L && findCategory(parentId).isEmpty()) {
+            throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
+        }
+        return parentId;
+    }
+
+    private Set<Long> descendantCategoryIds(Long rootCategoryId) {
+        List<CategoryEdge> edges = jdbcClient.sql("""
+                        SELECT id, parent_id
+                        FROM product_category
+                        ORDER BY id
+                        """)
+                .query((rs, rowNum) -> new CategoryEdge(rs.getLong("id"), rs.getLong("parent_id")))
+                .list();
+        Map<Long, List<Long>> childrenByParent = new HashMap<>();
+        Set<Long> existingIds = new HashSet<>();
+        for (CategoryEdge edge : edges) {
+            existingIds.add(edge.id());
+            childrenByParent.computeIfAbsent(edge.parentId(), ignored -> new ArrayList<>()).add(edge.id());
+        }
+        if (!existingIds.contains(rootCategoryId)) {
+            return Set.of();
+        }
+        Set<Long> result = new LinkedHashSet<>();
+        ArrayDeque<Long> queue = new ArrayDeque<>();
+        queue.add(rootCategoryId);
+        while (!queue.isEmpty()) {
+            Long current = queue.removeFirst();
+            if (!result.add(current)) {
+                continue;
+            }
+            queue.addAll(childrenByParent.getOrDefault(current, List.of()));
+        }
+        return result;
+    }
+
+    private List<Long> siblingCategoryIds(Long parentId, Long excludedCategoryId) {
+        return new ArrayList<>(jdbcClient.sql("""
+                        SELECT id
+                        FROM product_category
+                        WHERE parent_id = :parentId AND id <> :excludedCategoryId
+                        ORDER BY sort_order, id
+                        FOR UPDATE
+                        """)
+                .param("parentId", parentId)
+                .param("excludedCategoryId", excludedCategoryId)
+                .query(Long.class)
+                .list());
+    }
+
+    private int nextCategorySortOrder(Long parentId) {
+        Integer maximumSortOrder = jdbcClient.sql("""
+                        SELECT COALESCE(MAX(sort_order), -1)
+                        FROM product_category
+                        WHERE parent_id = :parentId
+                        """)
+                .param("parentId", parentId)
+                .query(Integer.class)
+                .single();
+        return maximumSortOrder + 1;
+    }
+
+    private void updateCategoryOrder(List<Long> categoryIds) {
+        for (int index = 0; index < categoryIds.size(); index++) {
+            jdbcClient.sql("""
+                            UPDATE product_category
+                            SET sort_order = :sortOrder,
+                                updated_at = current_timestamp
+                            WHERE id = :categoryId
+                            """)
+                    .param("sortOrder", index)
+                    .param("categoryId", categoryIds.get(index))
+                    .update();
+        }
+    }
+
+    private void lockCategoryTree() {
+        Long guardId = jdbcClient.sql("SELECT id FROM product_category_guard WHERE id = 1 FOR UPDATE")
+                .query(Long.class)
+                .single();
+        if (guardId == null || guardId != 1L) {
+            throw new IllegalStateException("Product category guard is unavailable");
+        }
     }
 
     private AdminSpuUpsertRequest normalizeCreateSpuRequest(AdminSpuUpsertRequest request) {
@@ -2343,6 +2497,18 @@ public class AdminProductService {
                 .optional();
     }
 
+    private Optional<ProductCategory> findCategoryForUpdate(Long categoryId) {
+        return jdbcClient.sql("""
+                        SELECT id, parent_id, name, icon, icon_file_id, sort_order, status, created_at, updated_at
+                        FROM product_category
+                        WHERE id = :categoryId
+                        FOR UPDATE
+                        """)
+                .param("categoryId", categoryId)
+                .query(this::mapCategory)
+                .optional();
+    }
+
     private Optional<ProductSpu> findSpu(Long spuId) {
         return jdbcClient.sql("""
                         SELECT id, category_id, title, subtitle, main_image, main_image_file_id,
@@ -2582,6 +2748,9 @@ public class AdminProductService {
             Long imageFileId,
             List<Long> specValueIds
     ) {
+    }
+
+    private record CategoryEdge(Long id, Long parentId) {
     }
 
     private record PersistedSpecValue(

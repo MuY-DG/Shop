@@ -3,6 +3,7 @@ package org.muybaby.shopserver.product;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.common.error.ErrorCode;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -11,6 +12,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
@@ -198,6 +201,50 @@ class AdminProductCategoryControllerTest {
     }
 
     @Test
+    void categoriesAppendAtSiblingEndAndCanMoveAcrossLevels() throws Exception {
+        String token = loginAndExtractToken();
+        long firstRootId = createCategory(token, 0, "排序根分类一", 0);
+        long secondRootId = createCategory(token, 0, "排序根分类二", 0);
+        long firstChildId = createCategory(token, firstRootId, "排序子分类一", 0);
+        long secondChildId = createCategory(token, firstRootId, "排序子分类二", 0);
+        long targetChildId = createCategory(token, secondRootId, "目标子分类", 0);
+
+        assertThat(categoryIds(firstRootId)).containsExactly(firstChildId, secondChildId);
+        assertThat(categorySortOrders(firstRootId)).containsExactly(0, 1);
+
+        mockMvc.perform(put("/admin/product/categories/{categoryId}/position", secondChildId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"parentId\":" + firstRootId + ",\"index\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        assertThat(categoryIds(firstRootId)).containsExactly(secondChildId, firstChildId);
+        assertThat(categorySortOrders(firstRootId)).containsExactly(0, 1);
+
+        mockMvc.perform(put("/admin/product/categories/{categoryId}/position", firstChildId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"parentId\":" + secondRootId + ",\"index\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        assertThat(categoryIds(firstRootId)).containsExactly(secondChildId);
+        assertThat(categorySortOrders(firstRootId)).containsExactly(0);
+        assertThat(categoryIds(secondRootId)).containsExactly(targetChildId, firstChildId);
+        assertThat(categorySortOrders(secondRootId)).containsExactly(0, 1);
+
+        mockMvc.perform(put("/admin/product/categories/{categoryId}/position", secondRootId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"parentId\":" + firstChildId + ",\"index\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PRODUCT_CATEGORY_CYCLE.code()));
+
+        assertThat(categoryParentId(secondRootId)).isZero();
+    }
+
+    @Test
     void appTokenCannotCallAdminCategoryApi() throws Exception {
         String appToken = appLoginAndExtractToken();
 
@@ -233,6 +280,52 @@ class AdminProductCategoryControllerTest {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(response).path("data").path("token").asText();
+    }
+
+    private long createCategory(String token, long parentId, String name, int sortOrder) throws Exception {
+        String response = mockMvc.perform(post("/admin/product/categories")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parentId":%d,"name":"%s","icon":"","sortOrder":%d,"status":"ENABLED"}
+                                """.formatted(parentId, name, sortOrder)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response).path("data").asLong();
+    }
+
+    private List<Long> categoryIds(long parentId) {
+        return jdbcClient.sql("""
+                        select id
+                        from product_category
+                        where parent_id = :parentId
+                        order by sort_order, id
+                        """)
+                .param("parentId", parentId)
+                .query(Long.class)
+                .list();
+    }
+
+    private List<Integer> categorySortOrders(long parentId) {
+        return jdbcClient.sql("""
+                        select sort_order
+                        from product_category
+                        where parent_id = :parentId
+                        order by sort_order, id
+                        """)
+                .param("parentId", parentId)
+                .query(Integer.class)
+                .list();
+    }
+
+    private long categoryParentId(long categoryId) {
+        return jdbcClient.sql("select parent_id from product_category where id = :categoryId")
+                .param("categoryId", categoryId)
+                .query(Long.class)
+                .single();
     }
 
     private int activeUsageCount(long fileId, String usageType, String ownerType, long ownerId) {

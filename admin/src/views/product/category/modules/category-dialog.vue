@@ -8,7 +8,7 @@
     @closed="handleClosed"
   >
     <ElForm ref="formRef" :model="formData" :rules="rules" label-width="88px">
-      <ElFormItem label="上级分类" prop="parentId">
+      <ElFormItem v-if="!isEdit" label="上级分类" prop="parentId">
         <ElTreeSelect
           v-model="formData.parentId"
           :data="treeOptions"
@@ -21,6 +21,12 @@
           style="width: 100%"
         />
       </ElFormItem>
+      <ElFormItem v-else label="上级分类">
+        <div class="category-dialog__readonly-field">
+          <span>{{ currentParentName }}</span>
+          <small>如需调整层级，请在分类列表中拖动</small>
+        </div>
+      </ElFormItem>
       <ElFormItem label="分类名称" prop="name">
         <ElInput v-model="formData.name" maxlength="40" placeholder="请输入分类名称" />
       </ElFormItem>
@@ -30,15 +36,10 @@
       <ElFormItem label="图标地址" prop="icon">
         <ElInput v-model="formData.icon" placeholder="请输入图标 URL" />
       </ElFormItem>
-      <ElFormItem label="排序" prop="sortOrder">
-        <ElInputNumber
-          v-model="formData.sortOrder"
-          :min="0"
-          :step="1"
-          :precision="0"
-          controls-position="right"
-          style="width: 100%"
-        />
+      <ElFormItem label="排序">
+        <span class="category-dialog__sort-tip">
+          {{ isEdit ? '请在分类列表中拖动调整顺序' : '新分类将添加到所选层级的末尾' }}
+        </span>
       </ElFormItem>
       <ElFormItem label="状态" prop="status">
         <ElRadioGroup v-model="formData.status">
@@ -113,21 +114,25 @@
 
   const isEdit = computed(() => !!props.category?.id)
 
+  const findOptionName = (items: TreeOption[], value: number): string | null => {
+    for (const item of items) {
+      if (item.value === value) return item.label
+      const childName = findOptionName(item.children || [], value)
+      if (childName) return childName
+    }
+    return null
+  }
+
+  const currentParentName = computed(() => {
+    if (!props.category?.parentId) return '顶级分类'
+    return (
+      findOptionName(props.parentOptions, props.category.parentId) ||
+      `分类 #${props.category.parentId}`
+    )
+  })
+
   const rules: FormRules<Api.Product.CategoryForm> = {
-    name: [{ required: true, message: '请输入分类名称', trigger: 'blur' }],
-    sortOrder: [
-      { required: true, message: '请输入排序值', trigger: 'blur' },
-      {
-        validator: (_rule, value, callback) => {
-          if (!Number.isInteger(value) || value < 0) {
-            callback(new Error('排序值需为大于等于 0 的整数'))
-            return
-          }
-          callback()
-        },
-        trigger: 'blur'
-      }
-    ]
+    name: [{ required: true, message: '请输入分类名称', trigger: 'blur' }]
   }
 
   const syncForm = () => {
@@ -196,3 +201,20 @@
     })
   }
 </script>
+
+<style scoped lang="scss">
+  .category-dialog__readonly-field {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.5;
+
+    small {
+      color: var(--el-text-color-placeholder);
+    }
+  }
+
+  .category-dialog__sort-tip {
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+</style>
