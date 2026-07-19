@@ -1,13 +1,26 @@
 <template>
   <div class="home-product-page art-full-height" :class="{ 'is-embedded': embedded }">
-    <div v-if="embedded" v-loading="loading" class="compact-tile-strip">
-      <button v-auth="writeAuth" class="compact-add-tile" type="button" @click="openEditor()">
-        <span class="compact-add-tile__icon"><ArtSvgIcon icon="ri:add-line" /></span>
-        <strong>添加商品</strong>
-        <small>选择已上架商品</small>
-      </button>
-
-      <article v-for="item in items" :key="item.id" class="compact-content-tile">
+    <VueDraggable
+      v-if="embedded"
+      v-model="items"
+      v-loading="loading || sorting"
+      class="compact-tile-strip"
+      draggable=".compact-content-tile"
+      direction="horizontal"
+      :animation="180"
+      :disabled="sorting || !hasAuth(writeAuth)"
+      ghost-class="compact-content-tile--ghost"
+      chosen-class="compact-content-tile--chosen"
+      @start="captureItemOrder"
+      @end="handleItemReorder"
+    >
+      <article
+        v-for="item in items"
+        :key="item.id"
+        class="compact-content-tile"
+        :class="{ 'is-disabled': item.status !== 'ENABLED' || item.productStatus !== 'ON_SALE' }"
+        title="拖动排序，点击编辑"
+      >
         <button
           class="compact-content-tile__media"
           type="button"
@@ -15,46 +28,31 @@
           @click="openEditor(item)"
         >
           <img :src="item.displayImageUrl" :alt="item.productTitle" />
-          <span v-if="item.imageFileId" class="compact-content-tile__badge">自定义图</span>
+          <span class="compact-content-tile__disabled-overlay" aria-hidden="true" />
         </button>
-        <div class="compact-content-tile__body">
-          <strong>{{ item.productTitle }}</strong>
-          <small>{{ formatPriceRange(item.minPriceCent, item.maxPriceCent) }}</small>
-          <div class="compact-content-tile__footer">
-            <ElSwitch
-              :model-value="item.status === 'ENABLED'"
-              inline-prompt
-              active-text="展示"
-              inactive-text="隐藏"
-              :loading="statusUpdatingId === item.id"
-              :disabled="!hasAuth(writeAuth)"
-              @update:model-value="(enabled) => handleStatusChange(item, enabled)"
-            />
-            <span class="compact-content-tile__actions">
-              <ElButton
-                circle
-                text
-                aria-label="编辑商品"
-                v-auth="writeAuth"
-                @click="openEditor(item)"
-              >
-                <ArtSvgIcon icon="ri:edit-2-line" />
-              </ElButton>
-              <ElButton
-                circle
-                text
-                type="danger"
-                aria-label="删除商品"
-                v-auth="writeAuth"
-                @click="handleDelete(item)"
-              >
-                <ArtSvgIcon icon="ri:delete-bin-6-line" />
-              </ElButton>
-            </span>
-          </div>
-        </div>
+        <button
+          v-auth="writeAuth"
+          class="compact-content-tile__delete"
+          type="button"
+          :aria-label="`删除商品 ${item.productTitle}`"
+          title="删除"
+          @click="handleDelete(item)"
+        >
+          <ArtSvgIcon icon="ri:close-line" />
+        </button>
       </article>
-    </div>
+
+      <button
+        v-auth="writeAuth"
+        class="compact-add-tile"
+        type="button"
+        aria-label="添加商品"
+        title="添加商品"
+        @click="openEditor()"
+      >
+        <ArtSvgIcon icon="ri:add-line" />
+      </button>
+    </VueDraggable>
 
     <ElCard v-else>
       <template #header>
@@ -157,7 +155,9 @@
             allow-clear
             @change="handleImageChange"
           />
-          <div class="field-tip">不选择时自动使用商品主图</div>
+          <div class="field-tip">
+            不选择时自动使用商品主图。{{ imageGuidance }}，支持 JPG、PNG、WebP
+          </div>
         </ElFormItem>
         <ElFormItem label="排序" prop="sortOrder">
           <ElInputNumber v-model="formData.sortOrder" :min="0" :precision="0" />
@@ -184,7 +184,8 @@
 
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
-  import { ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+  import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+  import { VueDraggable } from 'vue-draggable-plus'
   import AssetPicker from '@/components/business/asset-picker/index.vue'
   import { useAuth } from '@/hooks'
   import {
@@ -216,11 +217,13 @@
   const optionLoading = ref(false)
   const editorVisible = ref(false)
   const statusUpdatingId = ref<number | null>(null)
+  const sorting = ref(false)
   const currentItemId = ref<number | null>(null)
   const editingSpuId = ref<number | null>(null)
   const items = ref<Api.Content.HomeProductItem[]>([])
   const productOptions = ref<Api.Content.HomeProductOption[]>([])
   const formRef = ref<FormInstance>()
+  let itemOrderSnapshot: Api.Content.HomeProductItem[] = []
 
   const defaultForm = (): EditorForm => ({
     spuId: null,
@@ -231,6 +234,11 @@
   })
   const formData = reactive<EditorForm>(defaultForm())
   const usedProductIds = computed(() => new Set(items.value.map((item) => item.spuId)))
+  const imageGuidance = computed(() =>
+    props.section === 'HOT'
+      ? '建议使用 1:1 图片，推荐 800 × 800 px'
+      : '建议使用约 1.23:1 横图，推荐 1200 × 980 px'
+  )
   const rules: FormRules<EditorForm> = {
     spuId: [{ required: true, message: '请选择商品', trigger: 'change' }]
   }
@@ -241,6 +249,45 @@
       items.value = await fetchHomeProducts(props.section)
     } finally {
       loading.value = false
+    }
+  }
+
+  const captureItemOrder = () => {
+    itemOrderSnapshot = [...items.value]
+  }
+
+  const handleItemReorder = async () => {
+    const reordered = items.value.map((item, index) => ({ ...item, sortOrder: index }))
+    const changed = reordered.filter((item, index) => itemOrderSnapshot[index]?.id !== item.id)
+    if (!changed.length) return
+
+    items.value = reordered
+    sorting.value = true
+    try {
+      await Promise.all(
+        changed.map((item) =>
+          updateHomeProduct(
+            props.section,
+            item.id,
+            toHomeProductPayload({
+              spuId: item.spuId,
+              imageFileId: item.imageFileId ?? null,
+              sortOrder: item.sortOrder,
+              status: item.status
+            }),
+            false
+          )
+        )
+      )
+      ElMessage.success(`${props.title}排序已更新`)
+      await loadItems()
+      emit('changed')
+    } catch {
+      items.value = itemOrderSnapshot
+      await loadItems()
+    } finally {
+      sorting.value = false
+      itemOrderSnapshot = []
     }
   }
 
@@ -365,7 +412,7 @@
 
   .compact-tile-strip {
     display: grid;
-    grid-auto-columns: 164px;
+    grid-auto-columns: 136px;
     grid-auto-flow: column;
     gap: 12px;
     padding: 1px 1px 6px;
@@ -375,7 +422,8 @@
 
   .compact-add-tile,
   .compact-content-tile {
-    min-height: 190px;
+    width: 136px;
+    aspect-ratio: 1;
     overflow: hidden;
     background: var(--el-fill-color-lighter);
     border: 1px solid var(--el-border-color-lighter);
@@ -384,12 +432,12 @@
 
   .compact-add-tile {
     display: grid;
-    gap: 5px;
     place-items: center;
-    align-content: center;
     font: inherit;
-    color: var(--el-color-primary);
+    font-size: 27px;
+    color: var(--el-text-color-placeholder);
     cursor: pointer;
+    background: var(--el-fill-color-extra-light);
     border-style: dashed;
     transition:
       background 0.18s ease,
@@ -397,40 +445,39 @@
       transform 0.18s ease;
 
     &:hover {
+      color: var(--el-color-primary-light-3);
       background: var(--el-color-primary-light-9);
       border-color: var(--el-color-primary-light-5);
       transform: translateY(-2px);
     }
-
-    &__icon {
-      display: grid;
-      place-items: center;
-      width: 40px;
-      height: 40px;
-      font-size: 22px;
-      background: var(--el-color-primary-light-8);
-      border-radius: 12px;
-    }
-
-    strong {
-      font-size: 13px;
-    }
-
-    small {
-      font-size: 10px;
-      color: var(--el-text-color-secondary);
-    }
   }
 
   .compact-content-tile {
-    display: grid;
-    grid-template-rows: 100px minmax(0, 1fr);
+    position: relative;
     background: var(--el-bg-color);
     box-shadow: 0 6px 18px rgb(24 40 72 / 5%);
+    transition:
+      box-shadow 0.18s ease,
+      transform 0.18s ease;
+
+    &:hover {
+      box-shadow: 0 9px 24px rgb(24 40 72 / 13%);
+      transform: translateY(-2px);
+    }
+
+    &--chosen {
+      cursor: grabbing;
+    }
+
+    &--ghost {
+      opacity: 0.3;
+    }
 
     &__media {
       position: relative;
       display: block;
+      width: 100%;
+      height: 100%;
       padding: 0;
       overflow: hidden;
       cursor: pointer;
@@ -444,63 +491,52 @@
       }
     }
 
-    &__badge {
+    &__disabled-overlay {
       position: absolute;
-      top: 6px;
-      right: 6px;
-      padding: 2px 6px;
-      font-size: 9px;
-      color: #9a6715;
-      background: rgb(255 246 217 / 92%);
-      border-radius: 999px;
+      inset: 0;
+      pointer-events: none;
+      background: rgb(15 23 42 / 30%);
+      opacity: 0;
+      transition: opacity 0.18s ease;
     }
 
-    &__body {
+    &.is-disabled &__disabled-overlay {
+      opacity: 1;
+    }
+
+    &__delete {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      z-index: 3;
       display: grid;
-      grid-template-rows: auto auto 1fr;
-      min-width: 0;
-      padding: 9px 10px 7px;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      font-size: 16px;
+      color: #fff;
+      cursor: pointer;
+      background: rgb(20 25 35 / 58%);
+      border: 0;
+      border-radius: 50%;
+      opacity: 0;
+      transition:
+        background 0.18s ease,
+        opacity 0.18s ease,
+        transform 0.18s ease;
 
-      > strong,
-      > small {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      > strong {
-        font-size: 12px;
-      }
-
-      > small {
-        margin-top: 2px;
-        font-size: 10px;
-        font-weight: 600;
-        color: var(--el-color-danger);
-      }
-    }
-
-    &__footer {
-      display: flex;
-      align-items: end;
-      justify-content: space-between;
-      min-width: 0;
-      margin-top: 6px;
-
-      :deep(.el-switch) {
-        --el-switch-width: 42px;
+      &:hover,
+      &:focus-visible {
+        background: var(--el-color-danger);
+        opacity: 1;
+        transform: scale(1.06);
       }
     }
 
-    &__actions {
-      display: flex;
-      gap: 1px;
-
-      :deep(.el-button) {
-        width: 25px;
-        height: 25px;
-        margin: 0;
-      }
+    &:hover &__delete,
+    &:focus-within &__delete {
+      opacity: 1;
     }
   }
 

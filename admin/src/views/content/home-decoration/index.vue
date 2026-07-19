@@ -87,15 +87,17 @@
         </article>
       </section>
 
-      <HomePreview
-        :loading="previewLoading"
-        :banners="visibleBanners"
-        :categories="visibleCategories"
-        :hot-products="visibleHotProducts"
-        :recommended-products="visibleRecommendedProducts"
-        @refresh="loadPreview"
-        @select="scrollToSection"
-      />
+      <div class="preview-column">
+        <HomePreview
+          :loading="previewLoading"
+          :banners="visibleBanners"
+          :categories="visibleCategories"
+          :hot-products="visibleHotProducts"
+          :recommended-products="visibleRecommendedProducts"
+          @refresh="loadPreview"
+          @select="scrollToSection"
+        />
+      </div>
     </div>
 
     <ElCard v-else>
@@ -242,7 +244,7 @@
 
   .decoration-workspace {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 370px;
+    grid-template-columns: minmax(0, 1fr) minmax(270px, 370px);
     gap: 16px;
     align-items: start;
   }
@@ -250,6 +252,10 @@
   .editor-column {
     display: grid;
     gap: 14px;
+    min-width: 0;
+  }
+
+  .preview-column {
     min-width: 0;
   }
 
@@ -325,7 +331,7 @@
     }
   }
 
-  @media (width <= 1120px) {
+  @media (width <= 900px) {
     .decoration-workspace {
       grid-template-columns: 1fr;
     }

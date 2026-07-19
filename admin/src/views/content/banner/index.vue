@@ -9,19 +9,27 @@
       @reset="handleReset"
     />
 
-    <div v-if="embedded" v-loading="loading" class="compact-tile-strip">
-      <button
-        v-auth="'content:banner:create'"
-        class="compact-add-tile"
-        type="button"
-        @click="openEditor()"
+    <VueDraggable
+      v-if="embedded"
+      v-model="banners"
+      v-loading="loading || sorting"
+      class="compact-tile-strip"
+      draggable=".compact-content-tile"
+      direction="horizontal"
+      :animation="180"
+      :disabled="sorting || !hasAuth('content:banner:update')"
+      ghost-class="compact-content-tile--ghost"
+      chosen-class="compact-content-tile--chosen"
+      @start="captureBannerOrder"
+      @end="handleBannerReorder"
+    >
+      <article
+        v-for="banner in banners"
+        :key="banner.id"
+        class="compact-content-tile"
+        :class="{ 'is-disabled': banner.status !== 'ENABLED' }"
+        title="拖动排序，点击编辑"
       >
-        <span class="compact-add-tile__icon"><ArtSvgIcon icon="ri:add-line" /></span>
-        <strong>新增轮播</strong>
-        <small>添加首屏广告</small>
-      </button>
-
-      <article v-for="banner in banners" :key="banner.id" class="compact-content-tile">
         <button
           class="compact-content-tile__media"
           type="button"
@@ -29,34 +37,21 @@
           @click="openEditor(banner)"
         >
           <img :src="banner.imageUrl" :alt="banner.title || '轮播图'" />
-          <span class="compact-content-tile__badge">排序 {{ banner.sortOrder }}</span>
+          <span class="compact-content-tile__disabled-overlay" aria-hidden="true" />
         </button>
-        <div class="compact-content-tile__body">
-          <strong>{{ banner.title || '未填写标题' }}</strong>
-          <small>{{ formatEffectiveTime(banner) }}</small>
-          <div class="compact-content-tile__footer">
-            <ElSwitch
-              :model-value="banner.status === 'ENABLED'"
-              inline-prompt
-              active-text="启用"
-              inactive-text="禁用"
-              :loading="statusUpdatingId === banner.id"
-              :disabled="!hasAuth('content:banner:publish')"
-              @update:model-value="(enabled) => toggleBanner(banner, enabled === true)"
-            />
-            <ElButton
-              circle
-              text
-              aria-label="编辑轮播"
-              v-auth="'content:banner:update'"
-              @click="openEditor(banner)"
-            >
-              <ArtSvgIcon icon="ri:edit-2-line" />
-            </ElButton>
-          </div>
-        </div>
       </article>
-    </div>
+
+      <button
+        v-auth="'content:banner:create'"
+        class="compact-add-tile"
+        type="button"
+        aria-label="新增轮播"
+        title="新增轮播"
+        @click="openEditor()"
+      >
+        <ArtSvgIcon icon="ri:add-line" />
+      </button>
+    </VueDraggable>
 
     <ElCard v-else class="art-table-card" :style="{ marginTop: '12px' }">
       <ArtTableHeader :loading="loading" v-model:columns="columnChecks" @refresh="loadBanners">
@@ -98,6 +93,13 @@
               @change="handleBannerImageChange"
             />
             <ElInput v-model="formData.imageUrl" readonly placeholder="已选素材地址" />
+            <div class="image-guidance">
+              <ArtSvgIcon icon="ri:information-line" />
+              <span>
+                建议使用 1:1 方图，推荐 1500 × 1500 px（最低 750 × 750 px），支持
+                JPG、PNG、WebP，建议不超过 2 MB
+              </span>
+            </div>
           </div>
         </ElFormItem>
         <ElRow :gutter="16">
@@ -222,6 +224,7 @@
 <script setup lang="ts">
   import { computed, h, onMounted, reactive, ref } from 'vue'
   import { ElImage, ElMessage, ElSwitch, type FormInstance, type FormRules } from 'element-plus'
+  import { VueDraggable } from 'vue-draggable-plus'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
@@ -277,9 +280,11 @@
   const formRef = ref<FormInstance>()
   const targetLoading = ref(false)
   const statusUpdatingId = ref<number | null>(null)
+  const sorting = ref(false)
   const jumpTargetOptions = ref<JumpTargetOption[]>([])
   const categoryOptions = ref<Api.Content.HomeCategoryOption[]>([])
   let targetSearchSequence = 0
+  let bannerOrderSnapshot: Api.Content.BannerItem[] = []
 
   const pagination = reactive<Api.Common.PaginationParams>({
     current: 1,
@@ -541,6 +546,54 @@
     }
   }
 
+  const toBannerPayload = (
+    banner: Api.Content.BannerItem,
+    sortOrder: number
+  ): Api.Content.BannerForm => ({
+    title: banner.title,
+    subtitle: banner.subtitle,
+    imageFileId: banner.imageFileId,
+    imageUrl: banner.imageUrl,
+    jumpType: banner.jumpType,
+    jumpTargetId: banner.jumpTargetId ?? null,
+    jumpPath: banner.jumpPath || '',
+    status: banner.status,
+    sortOrder,
+    startAt: banner.startAt ?? null,
+    endAt: banner.endAt ?? null
+  })
+
+  const captureBannerOrder = () => {
+    bannerOrderSnapshot = [...banners.value]
+  }
+
+  const handleBannerReorder = async () => {
+    const reordered = banners.value.map((banner, index) => ({ ...banner, sortOrder: index }))
+    const changed = reordered.filter(
+      (banner, index) => bannerOrderSnapshot[index]?.id !== banner.id || banner.sortOrder !== index
+    )
+    if (!changed.length) return
+
+    banners.value = reordered
+    sorting.value = true
+    try {
+      await Promise.all(
+        changed.map((banner) =>
+          updateHomeBanner(banner.id, toBannerPayload(banner, banner.sortOrder), false)
+        )
+      )
+      ElMessage.success('轮播排序已更新')
+      await loadBanners()
+      emit('changed')
+    } catch {
+      banners.value = bannerOrderSnapshot
+      await loadBanners()
+    } finally {
+      sorting.value = false
+      bannerOrderSnapshot = []
+    }
+  }
+
   const ensureCategoryOptions = async () => {
     if (categoryOptions.value.length > 0) return
     categoryOptions.value = await fetchHomeCategoryOptions()
@@ -755,7 +808,7 @@
 
   .compact-tile-strip {
     display: grid;
-    grid-auto-columns: 176px;
+    grid-auto-columns: 142px;
     grid-auto-flow: column;
     gap: 12px;
     padding: 1px 1px 6px;
@@ -765,7 +818,8 @@
 
   .compact-add-tile,
   .compact-content-tile {
-    min-height: 190px;
+    width: 142px;
+    aspect-ratio: 1;
     overflow: hidden;
     background: var(--el-fill-color-lighter);
     border: 1px solid var(--el-border-color-lighter);
@@ -774,12 +828,12 @@
 
   .compact-add-tile {
     display: grid;
-    gap: 5px;
     place-items: center;
-    align-content: center;
     font: inherit;
-    color: var(--el-color-primary);
+    font-size: 28px;
+    color: var(--el-text-color-placeholder);
     cursor: pointer;
+    background: var(--el-fill-color-extra-light);
     border-style: dashed;
     transition:
       background 0.18s ease,
@@ -787,40 +841,39 @@
       transform 0.18s ease;
 
     &:hover {
+      color: var(--el-color-primary-light-3);
       background: var(--el-color-primary-light-9);
       border-color: var(--el-color-primary-light-5);
       transform: translateY(-2px);
     }
-
-    &__icon {
-      display: grid;
-      place-items: center;
-      width: 40px;
-      height: 40px;
-      font-size: 22px;
-      background: var(--el-color-primary-light-8);
-      border-radius: 12px;
-    }
-
-    strong {
-      font-size: 13px;
-    }
-
-    small {
-      font-size: 10px;
-      color: var(--el-text-color-secondary);
-    }
   }
 
   .compact-content-tile {
-    display: grid;
-    grid-template-rows: 104px minmax(0, 1fr);
+    position: relative;
     background: var(--el-bg-color);
     box-shadow: 0 6px 18px rgb(24 40 72 / 5%);
+    transition:
+      box-shadow 0.18s ease,
+      transform 0.18s ease;
+
+    &:hover {
+      box-shadow: 0 9px 24px rgb(24 40 72 / 13%);
+      transform: translateY(-2px);
+    }
+
+    &--chosen {
+      cursor: grabbing;
+    }
+
+    &--ghost {
+      opacity: 0.3;
+    }
 
     &__media {
       position: relative;
       display: block;
+      width: 100%;
+      height: 100%;
       padding: 0;
       overflow: hidden;
       cursor: pointer;
@@ -834,58 +887,17 @@
       }
     }
 
-    &__badge {
+    &__disabled-overlay {
       position: absolute;
-      right: 6px;
-      bottom: 6px;
-      padding: 2px 6px;
-      font-size: 9px;
-      color: #5c6470;
-      background: rgb(255 255 255 / 88%);
-      backdrop-filter: blur(5px);
-      border-radius: 999px;
+      inset: 0;
+      pointer-events: none;
+      background: rgb(15 23 42 / 34%);
+      opacity: 0;
+      transition: opacity 0.18s ease;
     }
 
-    &__body {
-      display: grid;
-      grid-template-rows: auto auto 1fr;
-      min-width: 0;
-      padding: 9px 10px 7px;
-
-      > strong,
-      > small {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      > strong {
-        font-size: 12px;
-      }
-
-      > small {
-        margin-top: 2px;
-        font-size: 9px;
-        color: var(--el-text-color-secondary);
-      }
-    }
-
-    &__footer {
-      display: flex;
-      align-items: end;
-      justify-content: space-between;
-      min-width: 0;
-      margin-top: 6px;
-
-      :deep(.el-button) {
-        width: 25px;
-        height: 25px;
-        margin: 0;
-      }
-
-      :deep(.el-switch) {
-        --el-switch-width: 42px;
-      }
+    &.is-disabled &__disabled-overlay {
+      opacity: 1;
     }
   }
 
@@ -893,6 +905,21 @@
     display: grid;
     gap: 10px;
     width: 100%;
+  }
+
+  .image-guidance {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--el-text-color-secondary);
+
+    :deep(.art-svg-icon) {
+      flex: 0 0 auto;
+      margin-top: 2px;
+      color: var(--el-color-primary);
+    }
   }
 
   .drawer-footer {

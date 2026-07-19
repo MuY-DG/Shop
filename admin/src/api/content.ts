@@ -15,11 +15,15 @@ export function createHomeBanner(data: Api.Content.BannerForm) {
   })
 }
 
-export function updateHomeBanner(bannerId: number, data: Api.Content.BannerForm) {
+export function updateHomeBanner(
+  bannerId: number,
+  data: Api.Content.BannerForm,
+  showSuccessMessage = true
+) {
   return request.put<void>({
     url: `/admin/home/banners/${bannerId}`,
     data,
-    showSuccessMessage: true
+    showSuccessMessage
   })
 }
 
@@ -45,11 +49,15 @@ export function createHomeCategory(data: Api.Content.HomeCategoryForm) {
   return request.post<number>({ url: '/admin/home/categories', data, showSuccessMessage: true })
 }
 
-export function updateHomeCategory(itemId: number, data: Api.Content.HomeCategoryForm) {
+export function updateHomeCategory(
+  itemId: number,
+  data: Api.Content.HomeCategoryForm,
+  showSuccessMessage = true
+) {
   return request.put<void>({
     url: `/admin/home/categories/${itemId}`,
     data,
-    showSuccessMessage: true
+    showSuccessMessage
   })
 }
 
@@ -87,12 +95,13 @@ export function createHomeProduct(
 export function updateHomeProduct(
   section: Api.Content.HomeProductSection,
   itemId: number,
-  data: Api.Content.HomeProductForm
+  data: Api.Content.HomeProductForm,
+  showSuccessMessage = true
 ) {
   return request.put<void>({
     url: `${productSectionUrl[section]}/${itemId}`,
     data,
-    showSuccessMessage: true
+    showSuccessMessage
   })
 }
 

@@ -1,10 +1,7 @@
 <template>
-  <aside class="preview-card">
+  <aside ref="previewCardRef" class="preview-card" :style="fixedPreviewStyle">
     <header class="preview-card__header">
-      <div>
-        <div class="preview-card__eyebrow">展示效果</div>
-        <div class="preview-card__title">小程序首页预览</div>
-      </div>
+      <div class="preview-card__eyebrow">展示效果</div>
       <ElButton circle plain :loading="loading" aria-label="刷新预览" @click="emit('refresh')">
         <ArtSvgIcon icon="ri:refresh-line" />
       </ElButton>
@@ -199,6 +196,8 @@
 </template>
 
 <script setup lang="ts">
+  import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+
   type HomeDecorationSection = 'banner' | 'category' | 'hot' | 'recommended'
 
   defineProps<{
@@ -218,13 +217,65 @@
   const recommendTags = ['新品', '限时优惠', '精选好物', '组合推荐']
   const formatPreviewPrice = (priceCent?: number | null) =>
     priceCent == null ? '-' : (priceCent / 100).toFixed(2)
+
+  const previewCardRef = ref<HTMLElement>()
+  const fixedPreviewStyle = ref<Record<string, string>>({})
+  let previewAnchorObserver: ResizeObserver | null = null
+
+  const getScrollParent = (element: HTMLElement) => {
+    let current = element.parentElement
+    while (current) {
+      const overflowY = window.getComputedStyle(current).overflowY
+      if (overflowY === 'auto' || overflowY === 'scroll') return current
+      current = current.parentElement
+    }
+    return null
+  }
+
+  const syncFixedPreview = () => {
+    const anchor = previewCardRef.value?.parentElement
+    if (!anchor || window.matchMedia('(max-width: 900px)').matches) {
+      fixedPreviewStyle.value = {}
+      return
+    }
+
+    const anchorRect = anchor.getBoundingClientRect()
+    const scrollParent = getScrollParent(anchor)
+    const naturalTop = anchorRect.top + (scrollParent?.scrollTop ?? window.scrollY)
+    fixedPreviewStyle.value = {
+      top: `${naturalTop}px`,
+      left: `${anchorRect.left}px`,
+      width: `${anchorRect.width}px`
+    }
+  }
+
+  onMounted(() => {
+    nextTick(() => {
+      const anchor = previewCardRef.value?.parentElement
+      if (!anchor) return
+      syncFixedPreview()
+      previewAnchorObserver = new ResizeObserver(syncFixedPreview)
+      previewAnchorObserver.observe(anchor)
+      if (anchor.parentElement) previewAnchorObserver.observe(anchor.parentElement)
+      window.addEventListener('resize', syncFixedPreview)
+      requestAnimationFrame(syncFixedPreview)
+    })
+  })
+
+  onBeforeUnmount(() => {
+    previewAnchorObserver?.disconnect()
+    window.removeEventListener('resize', syncFixedPreview)
+  })
 </script>
 
 <style scoped lang="scss">
   .preview-card {
-    position: sticky;
-    top: 12px;
-    padding: 18px;
+    position: fixed;
+    z-index: 10;
+    width: 100%;
+    max-height: calc(100dvh - 126px);
+    padding: 16px;
+    overflow: hidden;
     background: var(--el-bg-color);
     border: 1px solid var(--el-border-color-lighter);
     border-radius: 18px;
@@ -234,21 +285,14 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     &__eyebrow {
-      margin-bottom: 3px;
       font-size: 11px;
       font-weight: 700;
       color: var(--el-color-primary);
       letter-spacing: 0.12em;
-    }
-
-    &__title {
-      font-size: 17px;
-      font-weight: 700;
-      color: var(--el-text-color-primary);
     }
 
     &__tip {
@@ -263,10 +307,11 @@
   }
 
   .phone-shell {
-    width: 100%;
+    width: min(100%, clamp(220px, calc(31vh + 18px), 352px));
     max-width: 352px;
     padding: 10px;
     margin: 0 auto;
+    overflow: hidden;
     background: #17191e;
     border: 1px solid rgb(255 255 255 / 16%);
     border-radius: 34px;
@@ -285,9 +330,12 @@
 
   .phone-screen {
     position: relative;
-    height: min(716px, calc(100vh - 210px));
-    min-height: 560px;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 375 / 812;
     overflow: hidden;
+    clip-path: inset(0 round 24px);
     color: #2e1d16;
     background: #f7eddf;
     border-radius: 24px;
@@ -388,14 +436,15 @@
 
   .hero-section {
     width: 100%;
-    height: 290px;
+    height: auto;
+    aspect-ratio: 1;
     background: #f4dfba;
 
     > img {
       display: block;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
     }
 
     &::after {
@@ -925,6 +974,7 @@
     background: rgb(255 251 244 / 88%);
     backdrop-filter: blur(10px);
     border-top: 1px solid rgb(139 96 57 / 13%);
+    border-radius: 0 0 22px 22px;
     box-shadow: 0 -6px 17px rgb(68 37 22 / 6.5%);
 
     span {
@@ -946,13 +996,10 @@
     }
   }
 
-  @media (width <= 1260px) {
+  @media (width <= 900px) {
     .preview-card {
       position: static;
-    }
-
-    .phone-screen {
-      height: 680px;
+      max-height: none;
     }
   }
 </style>
