@@ -115,6 +115,7 @@ public class AdminCouponService {
                             updated_at = :updatedAt
                         where id = :templateId
                           and distribution_mode = :distributionMode
+                          and claimed_count <= :totalStock
                         """)
                 .param("name", validated.name())
                 .param("description", validated.description())

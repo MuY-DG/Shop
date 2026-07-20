@@ -27,6 +27,7 @@ import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -38,12 +39,21 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.Node;
 
 import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
+import javax.imageio.ImageReadParam;
+import javax.imageio.ImageReader;
+import javax.imageio.metadata.IIOMetadata;
+import javax.imageio.stream.ImageInputStream;
+import javax.imageio.stream.MemoryCacheImageInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -61,12 +71,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 
 @Service
 public class StorageService {
@@ -79,7 +92,11 @@ public class StorageService {
     private static final String AFTER_SALE_ORDER_CONTEXT = "ORDER";
     private static final String CUSTOMER_SERVICE_CONVERSATION_CONTEXT = "CUSTOMER_SERVICE_CONVERSATION";
     private static final Duration AFTER_SALE_EVIDENCE_TTL = Duration.ofHours(24);
+    private static final Duration CUSTOMER_SERVICE_IMAGE_STAGING_TTL = Duration.ofHours(2);
     private static final Duration PAYMENT_SECRET_STAGING_TTL = Duration.ofHours(2);
+    private static final long IMAGE_VALIDATION_MAX_DECODED_PIXELS = 1_000_000L;
+    private static final int IMAGE_VALIDATION_MAX_FRAMES = 16;
+    private static final long IMAGE_VALIDATION_MAX_TOTAL_SOURCE_PIXELS = 100_000_000L;
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -88,7 +105,11 @@ public class StorageService {
     private final StorageObjectKeyGenerator storageObjectKeyGenerator;
     private final StorageUsageService storageUsageService;
     private final StorageRuntimeConfigService storageRuntimeConfigService;
+    private final StorageAssetCleanupService storageAssetCleanupService;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate requiresNewTransaction;
+    private final TransactionTemplate withoutTransaction;
+    private final Duration uploadPendingGrace;
 
     public StorageService(
             JdbcClient jdbcClient,
@@ -98,7 +119,10 @@ public class StorageService {
             StorageObjectKeyGenerator storageObjectKeyGenerator,
             StorageUsageService storageUsageService,
             StorageRuntimeConfigService storageRuntimeConfigService,
-            ObjectMapper objectMapper
+            StorageAssetCleanupService storageAssetCleanupService,
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager,
+            @Value("${shop.storage.cleanup.upload-pending-grace:30m}") Duration uploadPendingGrace
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -107,94 +131,104 @@ public class StorageService {
         this.storageObjectKeyGenerator = storageObjectKeyGenerator;
         this.storageUsageService = storageUsageService;
         this.storageRuntimeConfigService = storageRuntimeConfigService;
+        this.storageAssetCleanupService = storageAssetCleanupService;
         this.objectMapper = objectMapper;
+        this.requiresNewTransaction = new TransactionTemplate(transactionManager);
+        this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.withoutTransaction = new TransactionTemplate(transactionManager);
+        this.withoutTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
+        this.uploadPendingGrace = positiveDuration(uploadPendingGrace, Duration.ofMinutes(30));
     }
 
-    @Transactional
     public StorageAssetResponse uploadLibrary(
             AuthenticatedPrincipal principal,
             Long folderId,
             MultipartFile file
     ) {
-        requirePrincipal(principal, TokenKind.ADMIN);
-        String originalFilename = sanitizeFilename(file.getOriginalFilename());
-        String contentType = defaultContentType(file.getContentType());
-        StorageUploadProfile profile = uploadPolicy.detectLibraryProfile(originalFilename, contentType);
-        return upload(
-                principal,
-                profile,
-                normalizeFolderId(folderId),
-                null,
-                null,
-                null,
-                file,
-                UploadedByType.ADMIN
-        );
+        return outsideTransaction(() -> {
+            requirePrincipal(principal, TokenKind.ADMIN);
+            String originalFilename = sanitizeFilename(file.getOriginalFilename());
+            String contentType = defaultContentType(file.getContentType());
+            StorageUploadProfile profile = uploadPolicy.detectLibraryProfile(originalFilename, contentType);
+            return upload(
+                    principal,
+                    profile,
+                    normalizeFolderId(folderId),
+                    null,
+                    null,
+                    null,
+                    file,
+                    UploadedByType.ADMIN
+            );
+        });
     }
 
-    @Transactional
     public StorageAssetResponse uploadAfterSaleEvidence(
             AuthenticatedPrincipal principal,
             Long orderId,
             MultipartFile file
     ) {
-        requirePrincipal(principal, TokenKind.APP);
-        if (orderId == null || orderId <= 0 || !ownsOrder(principal.subjectId(), orderId)) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        return upload(
-                principal,
-                StorageUploadProfile.AFTER_SALE_EVIDENCE,
-                null,
-                AFTER_SALE_ORDER_CONTEXT,
-                orderId,
-                databaseNow().plus(AFTER_SALE_EVIDENCE_TTL),
-                file,
-                UploadedByType.APP
-        );
+        return outsideTransaction(() -> {
+            requirePrincipal(principal, TokenKind.APP);
+            if (orderId == null || orderId <= 0 || !ownsOrder(principal.subjectId(), orderId)) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            return upload(
+                    principal,
+                    StorageUploadProfile.AFTER_SALE_EVIDENCE,
+                    null,
+                    AFTER_SALE_ORDER_CONTEXT,
+                    orderId,
+                    databaseNow().plus(AFTER_SALE_EVIDENCE_TTL),
+                    file,
+                    UploadedByType.APP
+            );
+        });
     }
 
-    @Transactional
     public StorageAssetResponse uploadCustomerServiceImage(
             AuthenticatedPrincipal principal,
             Long conversationId,
             MultipartFile file
     ) {
-        if (principal == null
-                || (principal.kind() != TokenKind.APP && principal.kind() != TokenKind.ADMIN)
-                || principal.subjectId() == null
-                || conversationId == null
-                || conversationId <= 0) {
-            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
-        }
-        return upload(
-                principal,
-                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
-                null,
-                CUSTOMER_SERVICE_CONVERSATION_CONTEXT,
-                conversationId,
-                null,
-                file,
-                principal.kind() == TokenKind.APP ? UploadedByType.APP : UploadedByType.ADMIN
-        );
+        return outsideTransaction(() -> {
+            if (principal == null
+                    || (principal.kind() != TokenKind.APP && principal.kind() != TokenKind.ADMIN)
+                    || principal.subjectId() == null
+                    || conversationId == null
+                    || conversationId <= 0) {
+                throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+            }
+            return upload(
+                    principal,
+                    StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                    null,
+                    CUSTOMER_SERVICE_CONVERSATION_CONTEXT,
+                    conversationId,
+                    databaseNow().plus(CUSTOMER_SERVICE_IMAGE_STAGING_TTL),
+                    file,
+                    principal.kind() == TokenKind.APP ? UploadedByType.APP : UploadedByType.ADMIN
+            );
+        });
     }
 
-    @Transactional
     public StorageAssetResponse uploadPaymentSecret(
             AuthenticatedPrincipal principal,
             MultipartFile file
     ) {
-        requirePrincipal(principal, TokenKind.ADMIN);
-        return upload(
-                principal,
-                StorageUploadProfile.PAYMENT_SECRET,
-                null,
-                null,
-                null,
-                databaseNow().plus(PAYMENT_SECRET_STAGING_TTL),
-                file,
-                UploadedByType.ADMIN
-        );
+        return outsideTransaction(() -> {
+            requirePrincipal(principal, TokenKind.ADMIN);
+            return upload(
+                    principal,
+                    StorageUploadProfile.PAYMENT_SECRET,
+                    null,
+                    null,
+                    null,
+                    databaseNow().plus(PAYMENT_SECRET_STAGING_TTL),
+                    file,
+                    UploadedByType.ADMIN
+            );
+        });
     }
 
     public PageResult<StorageAssetResponse> page(StorageAssetQueryRequest query) {
@@ -342,28 +376,60 @@ public class StorageService {
         return detail(assetId);
     }
 
-    @Transactional
     public void delete(Long assetId) {
+        withoutTransaction.executeWithoutResult(status -> deleteOutsideTransaction(assetId));
+    }
+
+    private void deleteOutsideTransaction(Long assetId) {
+        Boolean prepared = requiresNewTransaction.execute(status -> prepareLibraryDelete(assetId));
+        if (!Boolean.TRUE.equals(prepared)) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+        cleanupAssetSafely(assetId, "library delete");
+    }
+
+    private boolean prepareLibraryDelete(Long assetId) {
         AssetRow row = findLibraryAssetRow(assetId, true);
         if (storageUsageService.hasActiveUsages(assetId) || hasLocalPublicUrlReferences(row.publicUrl())) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_IN_USE);
         }
 
-        jdbcClient.sql("""
+        return jdbcClient.sql("""
                         update storage_asset
-                        set status = 'DELETED',
+                        set status = 'DELETE_PENDING',
                             folder_id = null,
                             public_url = null,
-                            deleted_at = current_timestamp,
+                            cleanup_attempts = 0,
+                            cleanup_next_retry_at = current_timestamp,
+                            cleanup_lease_token = null,
                             updated_at = current_timestamp
                         where id = :assetId
+                          and status = 'ACTIVE'
                         """)
                 .param("assetId", assetId)
+                .update() == 1;
+    }
+
+    @Transactional
+    public void bindCustomerServiceImage(Long assetId, Long conversationId) {
+        int updated = jdbcClient.sql("""
+                        update storage_asset
+                        set expires_at = null,
+                            updated_at = current_timestamp
+                        where id = :assetId
+                          and scope = 'ATTACHMENT'
+                          and media_kind = 'IMAGE'
+                          and status = 'ACTIVE'
+                          and upload_context_type = :contextType
+                          and upload_context_id = :conversationId
+                          and expires_at is not null
+                        """)
+                .param("assetId", assetId)
+                .param("contextType", CUSTOMER_SERVICE_CONVERSATION_CONTEXT)
+                .param("conversationId", conversationId)
                 .update();
-        try {
-            storageProvider.delete(row.objectLocation());
-        } catch (RuntimeException ignored) {
-            // Metadata is authoritative. Physical cleanup is best effort.
+        if (updated != 1) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
     }
 
@@ -594,19 +660,19 @@ public class StorageService {
             UploadedByType uploadedByType
     ) {
         if (profile.scope() == StorageAssetScope.LIBRARY) {
-            if (folderId != null) {
-                requireEnabledFolderChain(folderId, false);
-            }
+            // The enabled folder chain is locked and revalidated in the pending-row transaction.
         } else if (folderId != null) {
             throw new BusinessException(ErrorCode.STORAGE_ASSET_FOLDER_UNAVAILABLE);
         }
 
         String originalFilename = sanitizeFilename(file.getOriginalFilename());
         String contentType = defaultContentType(file.getContentType());
-        uploadPolicy.requireAllowed(profile, originalFilename, contentType, file.getSize(), true);
+        UploadPolicy.UploadDecision preflight = uploadPolicy.requireAllowed(
+                profile, originalFilename, contentType, file.getSize(), true);
 
         byte[] bytes = readBytes(file);
-        BufferedImage image = readImageIfNeeded(bytes, profile.mediaKind());
+        ImageMetadata image = readImageMetadataIfNeeded(
+                bytes, profile.mediaKind(), preflight.contentType());
         UploadPolicy.UploadDecision decision = uploadPolicy.requireAllowed(
                 profile,
                 originalFilename,
@@ -618,72 +684,170 @@ public class StorageService {
         String objectKey = storageObjectKeyGenerator.nextKey(profile, decision.extension(), LocalDate.now());
         ResolvedStorageConfig storageConfig = storageRuntimeConfigService.effective();
         StorageObjectLocation objectLocation = objectLocation(storageConfig, objectKey);
-        storageProvider.put(
-                objectLocation,
-                decision.contentType(),
-                new ByteArrayInputStream(bytes),
-                bytes.length
-        );
-
         String publicUrl = decision.visibility() == FileVisibility.PUBLIC ? publicUrl(storageConfig, objectKey) : null;
+
+        Long assetId = requiresNewTransaction.execute(status -> insertPendingUpload(
+                principal,
+                decision,
+                folderId,
+                uploadContextType,
+                uploadContextId,
+                expiresAt,
+                uploadedByType,
+                originalFilename,
+                objectLocation,
+                bytes,
+                image
+        ));
+        if (assetId == null) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+
         try {
-            if (profile.scope() == StorageAssetScope.LIBRARY && folderId != null) {
-                lockFolderTree();
-                requireEnabledFolderChain(folderId, true);
-            }
-            jdbcClient.sql("""
-                            insert into storage_asset
-                                (scope, media_kind, folder_id, visibility, provider, storage_container, storage_region, object_key,
-                                 original_filename, content_type, extension, size_bytes, sha256, width, height,
-                                 duration_seconds, alt_text, tags_json, public_url, status, uploaded_by_type,
-                                 uploaded_by_id, upload_context_type, upload_context_id, expires_at)
-                            values
-                                (:scope, :mediaKind, :folderId, :visibility, :provider, :storageContainer, :storageRegion, :objectKey,
-                                 :originalFilename, :contentType, :extension, :sizeBytes, :sha256, :width, :height,
-                                 null, '', null, :publicUrl, 'ACTIVE', :uploadedByType,
-                                 :uploadedById, :uploadContextType, :uploadContextId, :expiresAt)
-                            """)
-                    .param("scope", decision.scope().name())
-                    .param("mediaKind", decision.mediaKind().name())
-                    .param("folderId", folderId)
-                    .param("visibility", decision.visibility().name())
-                    .param("provider", storageConfig.provider().name())
-                    .param("storageContainer", objectLocation.container())
-                    .param("storageRegion", objectLocation.region())
-                    .param("objectKey", objectKey)
-                    .param("originalFilename", originalFilename)
-                    .param("contentType", decision.contentType())
-                    .param("extension", decision.extension())
-                    .param("sizeBytes", bytes.length)
-                    .param("sha256", sha256(bytes))
-                    .param("width", image == null ? null : image.getWidth())
-                    .param("height", image == null ? null : image.getHeight())
-                    .param("publicUrl", publicUrl)
-                    .param("uploadedByType", uploadedByType.name())
-                    .param("uploadedById", principal.subjectId())
-                    .param("uploadContextType", uploadContextType)
-                    .param("uploadContextId", uploadContextId)
-                    .param("expiresAt", expiresAt)
-                    .update();
+            storageProvider.put(
+                    objectLocation,
+                    decision.contentType(),
+                    new ByteArrayInputStream(bytes),
+                    bytes.length
+            );
         } catch (RuntimeException ex) {
-            try {
-                storageProvider.delete(objectLocation);
-            } catch (RuntimeException cleanupFailure) {
-                // No metadata row committed, so only provider inventory reconciliation can find this orphan.
-                log.warn(
-                        "Storage upload compensation failed: provider={}, objectKey={}, exception={}",
-                        objectLocation.provider(), objectLocation.objectKey(),
-                        cleanupFailure.getClass().getSimpleName()
-                );
-            }
+            scheduleUploadCleanup(assetId, "provider put failed");
             throw ex;
         }
 
-        Long assetId = jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
-                .param("objectKey", objectKey)
-                .query(Long.class)
-                .single();
+        try {
+            Boolean activated = requiresNewTransaction.execute(status -> activateUpload(assetId, publicUrl));
+            if (!Boolean.TRUE.equals(activated)) {
+                throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+            }
+        } catch (RuntimeException ex) {
+            scheduleUploadCleanup(assetId, "upload activation failed");
+            throw ex;
+        }
         return toResponse(findAssetRow(assetId), List.of());
+    }
+
+    private Long insertPendingUpload(
+            AuthenticatedPrincipal principal,
+            UploadPolicy.UploadDecision decision,
+            Long folderId,
+            String uploadContextType,
+            Long uploadContextId,
+            LocalDateTime expiresAt,
+            UploadedByType uploadedByType,
+            String originalFilename,
+            StorageObjectLocation objectLocation,
+            byte[] bytes,
+            ImageMetadata image
+    ) {
+        if (decision.scope() == StorageAssetScope.LIBRARY && folderId != null) {
+            lockFolderTree();
+            requireEnabledFolderChain(folderId, true);
+        }
+        LocalDateTime cleanupNotBefore = databaseNow().plus(uploadPendingGrace);
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        int inserted = jdbcClient.sql("""
+                        insert into storage_asset
+                            (scope, media_kind, folder_id, visibility, provider, storage_container, storage_region, object_key,
+                             original_filename, content_type, extension, size_bytes, sha256, width, height,
+                             duration_seconds, alt_text, tags_json, public_url, status, uploaded_by_type,
+                             uploaded_by_id, upload_context_type, upload_context_id, expires_at,
+                             cleanup_attempts, cleanup_next_retry_at, cleanup_lease_token)
+                        values
+                            (:scope, :mediaKind, :folderId, :visibility, :provider, :storageContainer, :storageRegion, :objectKey,
+                             :originalFilename, :contentType, :extension, :sizeBytes, :sha256, :width, :height,
+                             null, '', null, null, 'UPLOAD_PENDING', :uploadedByType,
+                             :uploadedById, :uploadContextType, :uploadContextId, :expiresAt,
+                             0, :cleanupNotBefore, null)
+                        """)
+                .param("scope", decision.scope().name())
+                .param("mediaKind", decision.mediaKind().name())
+                .param("folderId", folderId)
+                .param("visibility", decision.visibility().name())
+                .param("provider", objectLocation.provider().name())
+                .param("storageContainer", objectLocation.container())
+                .param("storageRegion", objectLocation.region())
+                .param("objectKey", objectLocation.objectKey())
+                .param("originalFilename", originalFilename)
+                .param("contentType", decision.contentType())
+                .param("extension", decision.extension())
+                .param("sizeBytes", bytes.length)
+                .param("sha256", sha256(bytes))
+                .param("width", image == null ? null : image.width())
+                .param("height", image == null ? null : image.height())
+                .param("uploadedByType", uploadedByType.name())
+                .param("uploadedById", principal.subjectId())
+                .param("uploadContextType", uploadContextType)
+                .param("uploadContextId", uploadContextId)
+                .param("expiresAt", expiresAt)
+                .param("cleanupNotBefore", cleanupNotBefore)
+                .update(keyHolder, "id");
+        if (inserted != 1 || keyHolder.getKey() == null) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+        return keyHolder.getKey().longValue();
+    }
+
+    private boolean activateUpload(Long assetId, String publicUrl) {
+        return jdbcClient.sql("""
+                        update storage_asset
+                        set status = 'ACTIVE',
+                            public_url = :publicUrl,
+                            cleanup_attempts = 0,
+                            cleanup_next_retry_at = null,
+                            cleanup_lease_token = null,
+                            updated_at = current_timestamp
+                        where id = :assetId
+                          and status = 'UPLOAD_PENDING'
+                        """)
+                .param("publicUrl", publicUrl)
+                .param("assetId", assetId)
+                .update() == 1;
+    }
+
+    private void scheduleUploadCleanup(Long assetId, String reason) {
+        try {
+            Boolean scheduled = requiresNewTransaction.execute(status -> jdbcClient.sql("""
+                            update storage_asset
+                            set status = 'DELETE_PENDING',
+                                public_url = null,
+                                cleanup_attempts = 0,
+                                cleanup_next_retry_at = current_timestamp,
+                                cleanup_lease_token = null,
+                                updated_at = current_timestamp
+                            where id = :assetId
+                              and status = 'UPLOAD_PENDING'
+                            """)
+                    .param("assetId", assetId)
+                    .update() == 1);
+            if (Boolean.TRUE.equals(scheduled)) {
+                cleanupAssetSafely(assetId, reason);
+            }
+        } catch (RuntimeException cleanupStateFailure) {
+            log.warn(
+                    "Storage upload cleanup state could not be persisted: assetId={}, reason={}, exception={}",
+                    assetId, reason, cleanupStateFailure.getClass().getSimpleName()
+            );
+        }
+    }
+
+    private void cleanupAssetSafely(Long assetId, String reason) {
+        try {
+            storageAssetCleanupService.cleanupAsset(assetId);
+        } catch (RuntimeException cleanupFailure) {
+            log.warn(
+                    "Storage cleanup will be retried by the scheduled worker: assetId={}, reason={}, exception={}",
+                    assetId, reason, cleanupFailure.getClass().getSimpleName()
+            );
+        }
+    }
+
+    private <T> T outsideTransaction(Supplier<T> action) {
+        return Objects.requireNonNull(withoutTransaction.execute(status -> action.get()));
+    }
+
+    private Duration positiveDuration(Duration value, Duration fallback) {
+        return value == null || value.isZero() || value.isNegative() ? fallback : value;
     }
 
     private String assetSelect() {
@@ -1121,15 +1285,99 @@ public class StorageService {
         }
     }
 
-    private BufferedImage readImageIfNeeded(byte[] bytes, StorageMediaKind mediaKind) {
+    private ImageMetadata readImageMetadataIfNeeded(
+            byte[] bytes,
+            StorageMediaKind mediaKind,
+            String expectedContentType
+    ) {
         if (mediaKind != StorageMediaKind.IMAGE) {
             return null;
         }
-        try (InputStream inputStream = new ByteArrayInputStream(bytes)) {
-            return ImageIO.read(inputStream);
+        try (ImageInputStream imageInput = new MemoryCacheImageInputStream(new ByteArrayInputStream(bytes))) {
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(imageInput);
+            if (!readers.hasNext()) {
+                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+            }
+            ImageReader reader = readers.next();
+            try {
+                requireExpectedImageFormat(reader.getFormatName(), expectedContentType);
+                reader.setInput(imageInput, false, true);
+                if ("image/gif".equals(expectedContentType)) {
+                    requireAllowedGifCanvas(reader);
+                }
+                int frameCount = reader.getNumImages(true);
+                if (frameCount < 1 || frameCount > IMAGE_VALIDATION_MAX_FRAMES) {
+                    throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+                }
+                int firstWidth = 0;
+                int firstHeight = 0;
+                long totalSourcePixels = 0;
+                for (int frame = 0; frame < frameCount; frame++) {
+                    int width = reader.getWidth(frame);
+                    int height = reader.getHeight(frame);
+                    uploadPolicy.requireAllowedImageDimensions(width, height);
+                    long pixels = (long) width * height;
+                    if (pixels > IMAGE_VALIDATION_MAX_TOTAL_SOURCE_PIXELS - totalSourcePixels) {
+                        throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+                    }
+                    totalSourcePixels += pixels;
+                    if (frame == 0) {
+                        firstWidth = width;
+                        firstHeight = height;
+                    }
+                    ImageReadParam readParam = reader.getDefaultReadParam();
+                    int subsampling = Math.max(1, (int) Math.ceil(Math.sqrt(
+                            (double) pixels / IMAGE_VALIDATION_MAX_DECODED_PIXELS)));
+                    readParam.setSourceSubsampling(subsampling, subsampling, 0, 0);
+                    reader.read(frame, readParam);
+                }
+                return new ImageMetadata(firstWidth, firstHeight);
+            } finally {
+                reader.dispose();
+            }
+        } catch (BusinessException ex) {
+            throw ex;
         } catch (IOException ex) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        } catch (RuntimeException ex) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
+    }
+
+    private void requireExpectedImageFormat(String readerFormat, String expectedContentType) {
+        String actual = readerFormat == null ? "" : readerFormat.trim().toLowerCase(Locale.ROOT);
+        String expected = switch (expectedContentType) {
+            case "image/jpeg" -> "jpeg";
+            case "image/png" -> "png";
+            case "image/gif" -> "gif";
+            case "image/webp" -> "webp";
+            default -> "";
+        };
+        if ("jpg".equals(actual)) {
+            actual = "jpeg";
+        }
+        if (!expected.equals(actual)) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+    }
+
+    private void requireAllowedGifCanvas(ImageReader reader) throws IOException {
+        IIOMetadata metadata = reader.getStreamMetadata();
+        if (metadata == null || metadata.getNativeMetadataFormatName() == null) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        Node root = metadata.getAsTree(metadata.getNativeMetadataFormatName());
+        for (Node child = root.getFirstChild(); child != null; child = child.getNextSibling()) {
+            if (!"LogicalScreenDescriptor".equals(child.getNodeName())) {
+                continue;
+            }
+            NamedNodeMap attributes = child.getAttributes();
+            int width = Integer.parseInt(attributes.getNamedItem("logicalScreenWidth").getNodeValue());
+            int height = Integer.parseInt(attributes.getNamedItem("logicalScreenHeight").getNodeValue());
+            uploadPolicy.requireAllowedImageDimensions(width, height);
+            return;
+        }
+        throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
     }
 
     private String sanitizeFilename(String originalFilename) {
@@ -1282,6 +1530,9 @@ public class StorageService {
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
+    }
+
+    private record ImageMetadata(int width, int height) {
     }
 
     private record FolderEdge(Long id, Long parentId) {

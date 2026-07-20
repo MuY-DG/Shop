@@ -11,6 +11,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,6 +45,7 @@ public class AssetModelMigrationTest {
     public static void migrateToLatest(String jdbcUrl, String username, String password) {
         Flyway.configure()
                 .dataSource(jdbcUrl, username, password)
+                .placeholders(safeSeedPlaceholders())
                 .load()
                 .migrate();
     }
@@ -171,8 +173,9 @@ public class AssetModelMigrationTest {
     public static void assertFinalAssetSchema(String jdbcUrl, String username, String password) throws SQLException {
         Flyway flyway = Flyway.configure()
                 .dataSource(jdbcUrl, username, password)
+                .placeholders(safeSeedPlaceholders())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("35");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("43");
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password);
              Statement statement = connection.createStatement()) {
@@ -183,6 +186,7 @@ public class AssetModelMigrationTest {
             assertThat(tableExists(statement, "storage_file")).isFalse();
             assertThat(tableExists(statement, "storage_asset_category")).isFalse();
             assertThat(tableExists(statement, "storage_file_usage")).isFalse();
+            assertThat(columnNames(statement, "payment_order")).contains("payment_config_fingerprint");
 
             assertThat(columnNames(statement, "storage_asset")).containsExactly(
                     "id", "scope", "media_kind", "folder_id", "visibility", "provider",
@@ -235,6 +239,13 @@ public class AssetModelMigrationTest {
             assertThat(singleString(statement, "select title from admin_menu where id = 600"))
                     .isEqualTo("素材库");
         }
+    }
+
+    private static Map<String, String> safeSeedPlaceholders() {
+        return Map.of(
+                "seed_super_status", "DISABLED",
+                "seed_super_password_hash", "$2y$10$VtYIL778Ftr75pHOJ3dV0efoMsPK20vZncmZ/vB6tkYj3aW9fqT.i"
+        );
     }
 
     public static void assertLegacyBindingsWereCleared(

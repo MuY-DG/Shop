@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenSession;
+import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.coupon.dto.AdminCouponTemplateRequest;
+import org.muybaby.shopserver.coupon.service.AdminCouponService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,8 +18,19 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,6 +60,12 @@ class AdminCouponTemplateControllerTest {
 
     @Autowired
     private OpaqueTokenService opaqueTokenService;
+
+    @Autowired
+    private AdminCouponService adminCouponService;
+
+    @Autowired
+    private DataSource dataSource;
 
     @Test
     void genericCouponTemplateMutationsRequireTheirDedicatedAuthorities() throws Exception {
@@ -200,7 +220,7 @@ class AdminCouponTemplateControllerTest {
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.records[0].id").value(templateId))
                 .andExpect(jsonPath("$.data.records[0].distributionMode").value("DIRECT"))
-                .andExpect(jsonPath("$.data.records[0].audienceUserId").value(userId))
+                .andExpect(jsonPath("$.data.records[0].audienceUserId").value(Long.toString(userId)))
                 .andExpect(jsonPath("$.data.records[0].audienceNickname").value("专属券用户"))
                 .andExpect(jsonPath("$.data.records[0].audiencePhoneNumber").value("13800138101"));
     }
@@ -222,6 +242,70 @@ class AdminCouponTemplateControllerTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100400));
+    }
+
+    @Test
+    void updateDoesNotLowerStockBelowAClaimCommittedWhileTheUpdateWaits() throws Exception {
+        long templateId = seedTemplate("Concurrent stock validation", 10, 5, "DISABLED");
+        AdminCouponTemplateRequest updateRequest = new AdminCouponTemplateRequest(
+                "Concurrent stock validation",
+                "update",
+                "MIN_SPEND",
+                "AMOUNT_OFF",
+                2000L,
+                500L,
+                "ALL",
+                "",
+                "coupon.amount-off.v1",
+                5,
+                1,
+                LocalDateTime.of(2026, 7, 7, 0, 0),
+                LocalDateTime.of(2026, 8, 7, 23, 59, 59),
+                "DISABLED",
+                1
+        );
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try (Connection claimConnection = dataSource.getConnection()) {
+            claimConnection.setAutoCommit(false);
+            try (PreparedStatement statement = claimConnection.prepareStatement("""
+                    update coupon_template
+                    set claimed_count = claimed_count + 1
+                    where id = ?
+                    """)) {
+                statement.setLong(1, templateId);
+                assertThat(statement.executeUpdate()).isEqualTo(1);
+            }
+
+            CountDownLatch updateStarted = new CountDownLatch(1);
+            Future<?> update = executor.submit(() -> {
+                updateStarted.countDown();
+                adminCouponService.update(templateId, updateRequest);
+            });
+            assertThat(updateStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> update.get(300, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(TimeoutException.class);
+
+            claimConnection.commit();
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> update.get(5, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .hasCauseInstanceOf(BusinessException.class);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        Inventory inventory = jdbcClient.sql("""
+                        select total_stock, claimed_count
+                        from coupon_template
+                        where id = :templateId
+                        """)
+                .param("templateId", templateId)
+                .query((rs, rowNum) -> new Inventory(
+                        rs.getInt("total_stock"),
+                        rs.getInt("claimed_count")
+                ))
+                .single();
+        assertThat(inventory.totalStock()).isEqualTo(10);
+        assertThat(inventory.claimedCount()).isEqualTo(6);
     }
 
     @Test
@@ -301,6 +385,9 @@ class AdminCouponTemplateControllerTest {
                 .param("name", name)
                 .query(Long.class)
                 .single();
+    }
+
+    private record Inventory(int totalStock, int claimedCount) {
     }
 
     private long seedDirectTemplate(String name, long userId) {

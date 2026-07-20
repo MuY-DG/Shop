@@ -1111,6 +1111,7 @@ class AppOrderControllerTest {
 
     private long seedTemplate(String name, String status, int totalStock, int claimedCount, int perUserLimit, long thresholdCent, long discountCent) {
         String couponType = thresholdCent == 0L ? "NO_THRESHOLD" : "MIN_SPEND";
+        LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into coupon_template
                             (name, description, coupon_type, discount_type, threshold_cent, discount_cent,
@@ -1119,7 +1120,7 @@ class AppOrderControllerTest {
                         values
                             (:name, 'seed', :couponType, 'AMOUNT_OFF', :thresholdCent, :discountCent,
                              'ALL', '', 'coupon.amount-off.v1', :totalStock, :claimedCount, :perUserLimit,
-                             timestamp '2026-07-01 00:00:00', timestamp '2026-08-01 23:59:59', :status, 1)
+                             :validStartAt, :validEndAt, :status, 1)
                         """)
                 .param("name", name)
                 .param("couponType", couponType)
@@ -1128,6 +1129,8 @@ class AppOrderControllerTest {
                 .param("totalStock", totalStock)
                 .param("claimedCount", claimedCount)
                 .param("perUserLimit", perUserLimit)
+                .param("validStartAt", now.minusDays(1))
+                .param("validEndAt", now.plusDays(30))
                 .param("status", status)
                 .update();
         return jdbcClient.sql("select id from coupon_template where name = :name order by id desc limit 1")
@@ -1137,14 +1140,15 @@ class AppOrderControllerTest {
     }
 
     private long seedUserCoupon(long userId, long templateId, String templateName, String status, String claimedAt) {
+        LocalDateTime now = LocalDateTime.now();
         return seedUserCoupon(
                 userId,
                 templateId,
                 templateName,
                 status,
                 claimedAt,
-                "2026-07-01 00:00:00",
-                "2026-08-01 23:59:59"
+                now.minusDays(1).toString(),
+                now.plusDays(30).toString()
         );
     }
 

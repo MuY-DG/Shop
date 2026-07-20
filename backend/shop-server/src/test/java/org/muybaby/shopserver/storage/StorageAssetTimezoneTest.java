@@ -138,9 +138,9 @@ class StorageAssetTimezoneTest {
 
             assertTtlMinutes(secret.id(), 119, 120);
             assertTtlMinutes(evidence.id(), 1_439, 1_440);
-            assertThatCode(() -> privateStorageFileService.lockAndValidatePaymentSecrets(
-                    List.of(secret.id()), List.of()
-            )).doesNotThrowAnyException();
+            var inspectedSecret = privateStorageFileService.inspectPaymentSecrets(List.of(secret.id()));
+            assertThatCode(() -> privateStorageFileService.lockAndRevalidatePaymentSecrets(
+                    inspectedSecret, List.of())).doesNotThrowAnyException();
             assertThat(cleanupService.cleanupExpiredAssets()).isZero();
 
             jdbcClient.sql("""
@@ -151,9 +151,8 @@ class StorageAssetTimezoneTest {
                     .param("assetIds", List.of(secret.id(), evidence.id()))
                     .update();
 
-            assertThatThrownBy(() -> privateStorageFileService.lockAndValidatePaymentSecrets(
-                    List.of(secret.id()), List.of()
-            )).isInstanceOfSatisfying(BusinessException.class, exception ->
+            assertThatThrownBy(() -> privateStorageFileService.inspectPaymentSecrets(List.of(secret.id())))
+                    .isInstanceOfSatisfying(BusinessException.class, exception ->
                     assertThat(exception.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
             assertThatThrownBy(() -> appAfterSaleService.apply(

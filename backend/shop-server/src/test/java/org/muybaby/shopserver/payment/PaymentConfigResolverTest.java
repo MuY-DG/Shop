@@ -9,12 +9,17 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.config.AesGcmPaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.MaskedPaymentConfig;
 import org.muybaby.shopserver.payment.config.PaymentConfigMasker;
+import org.muybaby.shopserver.payment.config.PaymentConfigIdentityValidator;
+import org.muybaby.shopserver.payment.config.PaymentConfigSnapshotStore;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.PaymentConfigSource;
+import org.muybaby.shopserver.payment.config.PaymentConfigSourceSettingService;
+import org.muybaby.shopserver.payment.config.PaymentNotificationConfigSelector;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
+import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -57,6 +62,15 @@ class PaymentConfigResolverTest {
     private PaymentConfigMasker masker;
 
     @Autowired
+    private PaymentConfigSnapshotStore snapshotStore;
+
+    @Autowired
+    private PaymentConfigSourceSettingService sourceSettingService;
+
+    @Autowired
+    private PrivateStorageFileService privateStorageFileService;
+
+    @Autowired
     private StorageProvider storageProvider;
 
     @Autowired
@@ -68,6 +82,8 @@ class PaymentConfigResolverTest {
     @BeforeEach
     void clearPaymentConfigState() {
         jdbcClient.sql("delete from payment_runtime_setting").update();
+        jdbcClient.sql("delete from payment_order where out_trade_no like 'CONFIG-SNAPSHOT-%'").update();
+        jdbcClient.sql("delete from payment_config_snapshot").update();
         jdbcClient.sql("delete from payment_config").update();
         jdbcClient.sql("delete from storage_asset where object_key like 'test/%'").update();
     }
@@ -243,6 +259,124 @@ class PaymentConfigResolverTest {
     }
 
     @Test
+    void persistedConfigIdResolvesDisabledHistoryWhileNullUsesCurrentAndMissingMaterialFails() {
+        Long privateKeyFileId = insertPrivateStorageFile(
+                22201L, "private/payment/history-merchant.pem", PRIVATE_KEY_PEM);
+        Long publicKeyFileId = insertPrivateStorageFile(
+                22202L, "private/payment/history-public.pem", PUBLIC_KEY_PEM);
+        insertDbConfig(22203L, "Historical Config", false, "history", privateKeyFileId, publicKeyFileId);
+        insertDbConfig(22204L, "Current Config", true, "current", privateKeyFileId, publicKeyFileId);
+
+        ResolvedPaymentConfig historical = resolver.resolveForPaymentConfigId(22203L);
+        ResolvedPaymentConfig current = resolver.resolveForPaymentConfigId(null);
+
+        assertThat(historical.configId()).isEqualTo(22203L);
+        assertThat(historical.configName()).isEqualTo("Historical Config");
+        assertThat(historical.enabled()).isFalse();
+        assertThat(historical.mchId()).isEqualTo("mch_history");
+        assertThat(current.configId()).isEqualTo(22204L);
+        assertThat(current.configName()).isEqualTo("Current Config");
+
+        String historicalFingerprint = resolver.fingerprint(historical);
+        assertThat(historicalFingerprint).hasSize(64);
+        assertThat(resolver.resolveForPayment(22203L, historicalFingerprint).configId()).isEqualTo(22203L);
+        // Legacy DB orders remain recoverable because their historical row is immutable.
+        assertThat(resolver.resolveForPayment(22203L, "").configId()).isEqualTo(22203L);
+        assertThatThrownBy(() -> resolver.resolveForPayment(22203L, "0".repeat(64)))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.PAYMENT_CONFIGURATION_CHANGED));
+        // Legacy ENV orders have no persisted credentials and must not fall back to a rotated config.
+        assertThatThrownBy(() -> resolver.resolveForPayment(null, ""))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.PAYMENT_CONFIGURATION_CHANGED));
+
+        assertThatThrownBy(() -> resolver.resolveForPaymentConfigId(22999L))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+
+        jdbcClient.sql("delete from storage_asset where id = :fileId")
+                .param("fileId", publicKeyFileId)
+                .update();
+        assertThatThrownBy(() -> resolver.resolveForPaymentConfigId(22203L))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+    }
+
+    @Test
+    void encryptedEnvironmentSnapshotSurvivesCredentialRotationAndCannotBeOverwritten() throws Exception {
+        PaymentProperties historicalProperties = environmentProperties("history");
+        PaymentProperties rotatedProperties = environmentProperties("rotated");
+        ResolvedPaymentConfig historicalConfig = resolver.resolve(historicalProperties);
+        String historicalFingerprint = resolver.captureForPayment(historicalConfig);
+        SnapshotCiphertexts before = snapshotCiphertexts(historicalFingerprint);
+
+        assertThat(before.apiV3Key()).startsWith("v1:").doesNotContain("api_v3_history");
+        assertThat(before.privateKey()).startsWith("v1:").doesNotContain("private-key-history");
+        assertThat(before.publicKey()).startsWith("v1:").doesNotContain("public-key-history");
+
+        // Capturing an already known content identity is a no-op, not a secret re-encryption/update.
+        assertThat(resolver.captureForPayment(historicalConfig)).isEqualTo(historicalFingerprint);
+        assertThat(snapshotCiphertexts(historicalFingerprint)).isEqualTo(before);
+
+        jdbcClient.sql("insert into payment_runtime_setting (id, config_source) values (1, 'ENV')").update();
+        PaymentConfigResolver rotatedResolver = resolverFor(rotatedProperties);
+        assertThat(rotatedResolver.fingerprint(rotatedResolver.resolve()))
+                .isNotEqualTo(historicalFingerprint);
+
+        ResolvedPaymentConfig recovered = rotatedResolver.resolveForPayment(null, historicalFingerprint);
+        assertThat(recovered.source()).isEqualTo(PaymentConfigSource.ENV);
+        assertThat(recovered.mchId()).isEqualTo("mch_history");
+        assertThat(recovered.apiV3Key()).isEqualTo("api_v3_history");
+        assertThat(recovered.privateKeyPem()).contains("private-key-history");
+        assertThat(recovered.wechatPublicKeyPem()).contains("public-key-history");
+
+        jdbcClient.sql("""
+                        update payment_config_snapshot
+                        set app_id = 'tampered-app-id'
+                        where fingerprint = :fingerprint
+                        """)
+                .param("fingerprint", historicalFingerprint)
+                .update();
+        assertThatThrownBy(() -> rotatedResolver.resolveForPayment(null, historicalFingerprint))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.PAYMENT_CONFIGURATION_CHANGED));
+    }
+
+    @Test
+    void notificationSelectorCanDecryptWithHistoricalEnvironmentSnapshotAfterRotation() throws Exception {
+        PaymentProperties historicalProperties = environmentProperties("notify_history");
+        PaymentProperties rotatedProperties = environmentProperties("notify_rotated");
+        ResolvedPaymentConfig historicalConfig = resolver.resolve(historicalProperties);
+        String historicalFingerprint = resolver.captureForPayment(historicalConfig);
+        jdbcClient.sql("insert into payment_runtime_setting (id, config_source) values (1, 'ENV')").update();
+        jdbcClient.sql("""
+                        insert into payment_order
+                            (order_id, payment_config_id, payment_config_fingerprint, out_trade_no,
+                             payer_openid, status, amount_cent, currency, expires_at)
+                        values
+                            (22991, null, :fingerprint, 'CONFIG-SNAPSHOT-NOTIFY',
+                             'openid-snapshot', 'PAYING', 100, 'CNY', current_timestamp)
+                        """)
+                .param("fingerprint", historicalFingerprint)
+                .update();
+
+        PaymentConfigResolver rotatedResolver = resolverFor(rotatedProperties);
+        PaymentNotificationConfigSelector selector = new PaymentNotificationConfigSelector(
+                jdbcClient,
+                rotatedResolver,
+                new PaymentConfigIdentityValidator(rotatedResolver));
+        PaymentNotificationConfigSelector.ParsedNotification<String> parsed = selector.parse(config -> {
+            if (!"mch_notify_history".equals(config.mchId())) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            return "CONFIG-SNAPSHOT-NOTIFY";
+        }, PaymentNotificationConfigSelector.NotificationRoute::payment);
+
+        assertThat(parsed.notification()).isEqualTo("CONFIG-SNAPSHOT-NOTIFY");
+        assertThat(parsed.config().apiV3Key()).isEqualTo("api_v3_notify_history");
+    }
+
+    @Test
     void dbSecretEncryptionFailsValidationWhenSecretKeyIsMissing() {
         PaymentSecretCipher cipherWithoutKey = new AesGcmPaymentSecretCipher(new PaymentProperties(
                 true,
@@ -265,6 +399,47 @@ class PaymentConfigResolverTest {
         assertThatThrownBy(() -> cipherWithoutKey.encrypt("api_v3_secret_test"))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+    }
+
+    @Test
+    void environmentPaymentIsNotSnapshottedWhenRootEncryptionKeyIsMissing() throws Exception {
+        PaymentProperties sourceProperties = environmentProperties("missing_root_key");
+        ResolvedPaymentConfig environmentConfig = resolver.resolve(sourceProperties);
+        PaymentProperties propertiesWithoutRootKey = new PaymentProperties(
+                sourceProperties.enabled(),
+                sourceProperties.mockEnabled(),
+                sourceProperties.configSource(),
+                sourceProperties.appId(),
+                sourceProperties.mchId(),
+                sourceProperties.merchantSerialNo(),
+                sourceProperties.privateKeyPath(),
+                sourceProperties.apiV3Key(),
+                sourceProperties.notifyUrl(),
+                sourceProperties.refundNotifyUrl(),
+                sourceProperties.verifyMode(),
+                sourceProperties.publicKeyId(),
+                sourceProperties.publicKeyPath(),
+                sourceProperties.expireMinutes(),
+                ""
+        );
+        PaymentSecretCipher cipherWithoutKey = new AesGcmPaymentSecretCipher(propertiesWithoutRootKey);
+        PaymentConfigSnapshotStore storeWithoutKey = new PaymentConfigSnapshotStore(
+                jdbcClient, cipherWithoutKey);
+        PaymentConfigResolver resolverWithoutKey = new PaymentConfigResolver(
+                propertiesWithoutRootKey,
+                jdbcClient,
+                cipherWithoutKey,
+                privateStorageFileService,
+                sourceSettingService,
+                storeWithoutKey
+        );
+
+        assertThatThrownBy(() -> resolverWithoutKey.captureForPayment(environmentConfig))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+        assertThat(jdbcClient.sql("select count(*) from payment_config_snapshot")
+                .query(Integer.class)
+                .single()).isZero();
     }
 
     @Test
@@ -322,5 +497,102 @@ class PaymentConfigResolverTest {
                 .param("sizeBytes", bytes.length)
                 .update();
         return id;
+    }
+
+    private PaymentConfigResolver resolverFor(PaymentProperties candidate) {
+        return new PaymentConfigResolver(
+                candidate,
+                jdbcClient,
+                secretCipher,
+                privateStorageFileService,
+                sourceSettingService,
+                snapshotStore
+        );
+    }
+
+    private PaymentProperties environmentProperties(String suffix) throws Exception {
+        Path privateKeyPath = tempDir.resolve("merchant-private-" + suffix + ".pem");
+        Path publicKeyPath = tempDir.resolve("wechat-public-" + suffix + ".pem");
+        Files.writeString(privateKeyPath, """
+                -----BEGIN PRIVATE KEY-----
+                private-key-%s
+                -----END PRIVATE KEY-----
+                """.formatted(suffix), StandardCharsets.UTF_8);
+        Files.writeString(publicKeyPath, """
+                -----BEGIN PUBLIC KEY-----
+                public-key-%s
+                -----END PUBLIC KEY-----
+                """.formatted(suffix), StandardCharsets.UTF_8);
+        return new PaymentProperties(
+                true,
+                false,
+                PaymentConfigSource.ENV,
+                "wx_" + suffix,
+                "mch_" + suffix,
+                "serial_" + suffix,
+                privateKeyPath.toString(),
+                "api_v3_" + suffix,
+                "https://" + suffix + ".test/wxpay/pay/notify",
+                "https://" + suffix + ".test/wxpay/refund/notify",
+                PaymentVerifyMode.PUBLIC_KEY,
+                "public_" + suffix,
+                publicKeyPath.toString(),
+                15,
+                "0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    private SnapshotCiphertexts snapshotCiphertexts(String fingerprint) {
+        return jdbcClient.sql("""
+                        select api_v3_key_ciphertext,
+                               private_key_pem_ciphertext,
+                               wechat_public_key_pem_ciphertext
+                        from payment_config_snapshot
+                        where fingerprint = :fingerprint
+                        """)
+                .param("fingerprint", fingerprint)
+                .query((rs, rowNum) -> new SnapshotCiphertexts(
+                        rs.getString("api_v3_key_ciphertext"),
+                        rs.getString("private_key_pem_ciphertext"),
+                        rs.getString("wechat_public_key_pem_ciphertext")
+                ))
+                .single();
+    }
+
+    private record SnapshotCiphertexts(String apiV3Key, String privateKey, String publicKey) {
+    }
+
+    private void insertDbConfig(
+            Long id,
+            String configName,
+            boolean enabled,
+            String suffix,
+            Long privateKeyFileId,
+            Long publicKeyFileId
+    ) {
+        jdbcClient.sql("""
+                        insert into payment_config
+                            (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_file_id, merchant_certificate_file_id, verify_mode,
+                             wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                             enabled, status)
+                        values
+                            (:id, :configName, :appId, :mchId, :merchantSerialNo, :ciphertext,
+                             :privateKeyFileId, null, 'PUBLIC_KEY', :publicKeyId, :publicKeyFileId,
+                             :notifyUrl, :refundNotifyUrl, :enabled, 'ACTIVE')
+                        """)
+                .param("id", id)
+                .param("configName", configName)
+                .param("appId", "wx_" + suffix)
+                .param("mchId", "mch_" + suffix)
+                .param("merchantSerialNo", "serial_" + suffix)
+                .param("ciphertext", secretCipher.encrypt("api_v3_" + suffix))
+                .param("privateKeyFileId", privateKeyFileId)
+                .param("publicKeyId", "public_" + suffix)
+                .param("publicKeyFileId", publicKeyFileId)
+                .param("notifyUrl", "https://" + suffix + ".test/wxpay/pay/notify")
+                .param("refundNotifyUrl", "https://" + suffix + ".test/wxpay/refund/notify")
+                .param("enabled", enabled)
+                .update();
     }
 }

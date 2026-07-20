@@ -42,3 +42,47 @@ export function rejectAfterSale(afterSaleId: number, data: Api.AfterSale.AuditPa
     showSuccessMessage: true
   })
 }
+
+export function retryClosedRefund(afterSaleId: number, data: Api.AfterSale.RefundOperationPayload) {
+  return request.post<Api.AfterSale.Item>({
+    url: `/admin/after-sales/${afterSaleId}/refund-retry`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function queryRefundProvider(
+  afterSaleId: number,
+  refundOrderId: number | string,
+  data: Api.AfterSale.RefundOperationPayload
+) {
+  return request.post<Api.AfterSale.RefundOperationResponse>({
+    url: `/admin/after-sales/${afterSaleId}/refunds/${refundOrderId}/provider-query`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function resubmitRefundProvider(
+  afterSaleId: number,
+  refundOrderId: number | string,
+  data: Api.AfterSale.RefundOperationPayload
+) {
+  return request.post<Api.AfterSale.RefundOperationResponse>({
+    url: `/admin/after-sales/${afterSaleId}/refunds/${refundOrderId}/provider-resubmit`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function markRefundManualIntervention(
+  afterSaleId: number,
+  refundOrderId: number | string,
+  data: Api.AfterSale.RefundOperationPayload
+) {
+  return request.post<Api.AfterSale.RefundOperationResponse>({
+    url: `/admin/after-sales/${afterSaleId}/refunds/${refundOrderId}/manual-intervention`,
+    data,
+    showSuccessMessage: true
+  })
+}

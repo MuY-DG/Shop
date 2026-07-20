@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.coupon.dto;
 
+import org.muybaby.shopserver.common.api.JsonStringId;
+
 import java.time.LocalDateTime;
 
 public record AdminCouponClaimResponse(
@@ -7,7 +9,7 @@ public record AdminCouponClaimResponse(
         Long templateId,
         String templateName,
         String distributionMode,
-        Long userId,
+        @JsonStringId Long userId,
         String userNickname,
         String userPhoneNumber,
         Long userCouponId,

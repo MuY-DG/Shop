@@ -18,6 +18,7 @@ import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
+import org.muybaby.shopserver.storage.service.PrivateStorageFileService.PaymentSecretSnapshot;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -25,7 +26,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.sql.ResultSet;
@@ -36,6 +39,8 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Supplier;
 
 @Service
 public class AdminPaymentConfigService {
@@ -51,6 +56,8 @@ public class AdminPaymentConfigService {
     private final PaymentSecretCipher paymentSecretCipher;
     private final PrivateStorageFileService privateStorageFileService;
     private final StorageUsageService storageUsageService;
+    private final TransactionTemplate requiresNewTransaction;
+    private final TransactionTemplate withoutTransaction;
 
     public AdminPaymentConfigService(
             JdbcClient jdbcClient,
@@ -59,7 +66,8 @@ public class AdminPaymentConfigService {
             PaymentConfigSourceSettingService paymentConfigSourceSettingService,
             PaymentSecretCipher paymentSecretCipher,
             PrivateStorageFileService privateStorageFileService,
-            StorageUsageService storageUsageService
+            StorageUsageService storageUsageService,
+            PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -68,6 +76,10 @@ public class AdminPaymentConfigService {
         this.paymentSecretCipher = paymentSecretCipher;
         this.privateStorageFileService = privateStorageFileService;
         this.storageUsageService = storageUsageService;
+        this.requiresNewTransaction = new TransactionTemplate(transactionManager);
+        this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.withoutTransaction = new TransactionTemplate(transactionManager);
+        this.withoutTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
     }
 
     public EffectivePaymentConfigResponse effective() {
@@ -115,15 +127,24 @@ public class AdminPaymentConfigService {
         return paymentConfigSourceSettingService.current();
     }
 
-    @Transactional
     public PaymentConfigSourceResponse updateSource(PaymentConfigSourceUpdateRequest request) {
-        if (request == null) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        PaymentConfigSource source = paymentConfigSourceSettingService.parse(request.source());
-        paymentConfigResolver.resolve(source);
-        paymentConfigSourceSettingService.update(source);
-        return paymentConfigSourceSettingService.current();
+        return outsideTransaction(() -> {
+            if (request == null) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            PaymentConfigSource source = paymentConfigSourceSettingService.parse(request.source());
+            ResolvedPaymentConfig resolved = paymentConfigResolver.resolve(source);
+            StoredConfigSnapshot storedConfig = resolved.source() == PaymentConfigSource.DB
+                    ? inspectStoredConfig(resolved.configId(), true, resolved)
+                    : null;
+            return requireTransactionResult(requiresNewTransaction.execute(status -> {
+                if (storedConfig != null) {
+                    revalidateStoredConfig(storedConfig, false);
+                }
+                paymentConfigSourceSettingService.update(source);
+                return paymentConfigSourceSettingService.current();
+            }));
+        });
     }
 
     public PageResult<AdminPaymentConfigResponse> page(Long current, Long size) {
@@ -157,11 +178,23 @@ public class AdminPaymentConfigService {
         return PageResult.of(records, total == null ? 0L : total, pageCurrent, pageSize);
     }
 
-    @Transactional
     public AdminPaymentConfigResponse create(AdminPaymentConfigRequest request) {
-        ValidatedConfig validated = validateRequest(request, null);
-        List<Long> currentSecretIds = paymentSecretIds(validated);
-        privateStorageFileService.lockAndValidatePaymentSecrets(currentSecretIds, List.of());
+        return outsideTransaction(() -> {
+            ValidatedConfig validated = validateRequest(request, null);
+            List<Long> currentSecretIds = paymentSecretIds(validated);
+            List<PaymentSecretSnapshot> secretSnapshots =
+                    privateStorageFileService.inspectPaymentSecrets(currentSecretIds);
+            return requireTransactionResult(requiresNewTransaction.execute(status ->
+                    createInTransaction(validated, currentSecretIds, secretSnapshots)));
+        });
+    }
+
+    private AdminPaymentConfigResponse createInTransaction(
+            ValidatedConfig validated,
+            List<Long> currentSecretIds,
+            List<PaymentSecretSnapshot> secretSnapshots
+    ) {
+        privateStorageFileService.lockAndRevalidatePaymentSecrets(secretSnapshots, List.of());
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into payment_config
@@ -196,13 +229,37 @@ public class AdminPaymentConfigService {
         return requireConfig(configId);
     }
 
-    @Transactional
     public AdminPaymentConfigResponse update(Long configId, AdminPaymentConfigRequest request) {
-        PaymentConfigRow existing = requireConfigRow(configId, true);
-        ValidatedConfig validated = validateRequest(request, existing);
-        List<Long> currentSecretIds = paymentSecretIds(validated);
-        List<Long> previousSecretIds = paymentSecretIds(existing);
-        privateStorageFileService.lockAndValidatePaymentSecrets(currentSecretIds, previousSecretIds);
+        return outsideTransaction(() -> {
+            PaymentConfigRow observed = requireConfigRow(configId, false);
+            ValidatedConfig validated = validateRequest(request, observed);
+            List<Long> currentSecretIds = paymentSecretIds(validated);
+            List<Long> previousSecretIds = paymentSecretIds(observed);
+            List<PaymentSecretSnapshot> secretSnapshots =
+                    privateStorageFileService.inspectPaymentSecrets(currentSecretIds);
+            return requireTransactionResult(requiresNewTransaction.execute(status -> updateInTransaction(
+                    configId,
+                    observed,
+                    validated,
+                    currentSecretIds,
+                    previousSecretIds,
+                    secretSnapshots
+            )));
+        });
+    }
+
+    private AdminPaymentConfigResponse updateInTransaction(
+            Long configId,
+            PaymentConfigRow observed,
+            ValidatedConfig validated,
+            List<Long> currentSecretIds,
+            List<Long> previousSecretIds,
+            List<PaymentSecretSnapshot> secretSnapshots
+    ) {
+        privateStorageFileService.lockAndRevalidatePaymentSecrets(secretSnapshots, previousSecretIds);
+        PaymentConfigRow locked = requireConfigRow(configId, true);
+        requireUnchangedConfig(observed, locked);
+        rejectReferencedConfigMutation(configId);
         int updatedRows = jdbcClient.sql("""
                         update payment_config
                         set config_name = :configName,
@@ -243,9 +300,33 @@ public class AdminPaymentConfigService {
         return requireConfig(configId);
     }
 
-    @Transactional
+    private void rejectReferencedConfigMutation(Long configId) {
+        boolean referenced = jdbcClient.sql("""
+                        select count(*)
+                        from payment_order
+                        where payment_config_id = :configId
+                        """)
+                .param("configId", configId)
+                .query(Long.class)
+                .single() > 0;
+        if (referenced) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
     public AdminPaymentConfigResponse enable(Long configId) {
-        requireConfigRow(configId, true);
+        return outsideTransaction(() -> {
+            StoredConfigSnapshot storedConfig = inspectStoredConfig(configId, false, null);
+            return requireTransactionResult(requiresNewTransaction.execute(status ->
+                    enableInTransaction(configId, storedConfig)));
+        });
+    }
+
+    private AdminPaymentConfigResponse enableInTransaction(
+            Long configId,
+            StoredConfigSnapshot storedConfig
+    ) {
+        revalidateStoredConfig(storedConfig, true);
         jdbcClient.sql("""
                         update payment_config
                         set enabled = false,
@@ -268,6 +349,84 @@ public class AdminPaymentConfigService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return requireConfig(configId);
+    }
+
+    private StoredConfigSnapshot inspectStoredConfig(
+            Long configId,
+            boolean requireEnabled,
+            ResolvedPaymentConfig previouslyResolved
+    ) {
+        PaymentConfigRow observed = requireConfigRow(configId, false);
+        if (requireEnabled && !observed.enabled()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        ResolvedPaymentConfig resolved = previouslyResolved == null
+                ? paymentConfigResolver.resolveForPaymentConfigId(configId)
+                : previouslyResolved;
+        requireResolvedConfig(observed, resolved);
+        PaymentConfigRow confirmed = requireConfigRow(configId, false);
+        requireUnchangedConfig(observed, confirmed);
+        List<PaymentSecretSnapshot> secretSnapshots = privateStorageFileService.inspectPaymentSecrets(
+                paymentSecretIds(confirmed)
+        );
+        return new StoredConfigSnapshot(confirmed, secretSnapshots);
+    }
+
+    private void revalidateStoredConfig(StoredConfigSnapshot storedConfig, boolean lockAllConfigs) {
+        privateStorageFileService.lockAndRevalidatePaymentSecrets(storedConfig.secretSnapshots(), List.of());
+        if (lockAllConfigs) {
+            lockActiveConfigsInOrder();
+        }
+        PaymentConfigRow locked = requireConfigRow(storedConfig.config().id(), true);
+        requireUnchangedConfig(storedConfig.config(), locked);
+    }
+
+    private void lockActiveConfigsInOrder() {
+        jdbcClient.sql("""
+                        select id
+                        from payment_config
+                        where status = 'ACTIVE'
+                        order by id
+                        for update
+                        """)
+                .query(Long.class)
+                .list();
+    }
+
+    private void requireResolvedConfig(PaymentConfigRow row, ResolvedPaymentConfig resolved) {
+        boolean matches = resolved != null
+                && resolved.source() == PaymentConfigSource.DB
+                && Objects.equals(row.id(), resolved.configId())
+                && Objects.equals(row.configName(), resolved.configName())
+                && row.enabled() == resolved.enabled()
+                && Objects.equals(row.appId(), resolved.appId())
+                && Objects.equals(row.mchId(), resolved.mchId())
+                && Objects.equals(row.merchantSerialNo(), resolved.merchantSerialNo())
+                && Objects.equals(paymentSecretCipher.decrypt(row.apiV3KeyCiphertext()), resolved.apiV3Key())
+                && row.verifyMode() == resolved.verifyMode()
+                && Objects.equals(row.wechatPublicKeyId(), resolved.wechatPublicKeyId())
+                && Objects.equals(row.privateKeyFileId(), resolved.privateKeyFileId())
+                && Objects.equals(row.merchantCertificateFileId(), resolved.merchantCertificateFileId())
+                && Objects.equals(row.wechatPublicKeyFileId(), resolved.wechatPublicKeyFileId())
+                && Objects.equals(row.notifyUrl(), resolved.notifyUrl())
+                && Objects.equals(row.refundNotifyUrl(), resolved.refundNotifyUrl());
+        if (!matches) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
+    private void requireUnchangedConfig(PaymentConfigRow observed, PaymentConfigRow current) {
+        if (!Objects.equals(observed, current)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
+    private <T> T outsideTransaction(Supplier<T> action) {
+        return requireTransactionResult(withoutTransaction.execute(status -> action.get()));
+    }
+
+    private <T> T requireTransactionResult(T result) {
+        return Objects.requireNonNull(result);
     }
 
     private ValidatedConfig validateRequest(AdminPaymentConfigRequest request, PaymentConfigRow existing) {
@@ -375,9 +534,10 @@ public class AdminPaymentConfigService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return jdbcClient.sql("""
-                        select id, api_v3_key_ciphertext
-                              ,app_id, mch_id, merchant_serial_no, private_key_file_id,
-                               merchant_certificate_file_id, wechat_public_key_id, wechat_public_key_file_id
+                        select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                               private_key_file_id, merchant_certificate_file_id, verify_mode,
+                               wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                               enabled, updated_at
                         from payment_config
                         where id = :configId
                           and status = 'ACTIVE'
@@ -385,14 +545,20 @@ public class AdminPaymentConfigService {
                 .param("configId", configId)
                 .query((rs, rowNum) -> new PaymentConfigRow(
                         rs.getLong("id"),
-                        rs.getString("api_v3_key_ciphertext"),
+                        rs.getString("config_name"),
                         rs.getString("app_id"),
                         rs.getString("mch_id"),
                         rs.getString("merchant_serial_no"),
+                        rs.getString("api_v3_key_ciphertext"),
                         nullableLong(rs, "private_key_file_id"),
                         nullableLong(rs, "merchant_certificate_file_id"),
+                        PaymentVerifyMode.valueOf(rs.getString("verify_mode")),
                         rs.getString("wechat_public_key_id"),
-                        nullableLong(rs, "wechat_public_key_file_id")
+                        nullableLong(rs, "wechat_public_key_file_id"),
+                        rs.getString("notify_url"),
+                        rs.getString("refund_notify_url"),
+                        rs.getBoolean("enabled"),
+                        rs.getObject("updated_at", LocalDateTime.class)
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
@@ -557,14 +723,26 @@ public class AdminPaymentConfigService {
 
     private record PaymentConfigRow(
             Long id,
-            String apiV3KeyCiphertext,
+            String configName,
             String appId,
             String mchId,
             String merchantSerialNo,
+            String apiV3KeyCiphertext,
             Long privateKeyFileId,
             Long merchantCertificateFileId,
+            PaymentVerifyMode verifyMode,
             String wechatPublicKeyId,
-            Long wechatPublicKeyFileId
+            Long wechatPublicKeyFileId,
+            String notifyUrl,
+            String refundNotifyUrl,
+            boolean enabled,
+            LocalDateTime updatedAt
+    ) {
+    }
+
+    private record StoredConfigSnapshot(
+            PaymentConfigRow config,
+            List<PaymentSecretSnapshot> secretSnapshots
     ) {
     }
 

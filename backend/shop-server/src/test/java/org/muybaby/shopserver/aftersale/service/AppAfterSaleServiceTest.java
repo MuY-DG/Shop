@@ -2,6 +2,7 @@ package org.muybaby.shopserver.aftersale.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.aftersale.dto.AfterSaleEvidenceFileResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
@@ -9,13 +10,25 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.AbstractDataSource;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
+import javax.sql.DataSource;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,6 +36,7 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@Import(AppAfterSaleServiceTest.CountingDataSourceConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AppAfterSaleServiceTest {
 
@@ -33,6 +47,9 @@ class AppAfterSaleServiceTest {
 
     @Autowired
     private JdbcClient jdbcClient;
+
+    @Autowired
+    private SqlCounter sqlCounter;
 
     @BeforeEach
     void clearState() {
@@ -93,6 +110,91 @@ class AppAfterSaleServiceTest {
                 () -> appAfterSaleService.list(appPrincipal(ownerId), 1L, 0L, null));
     }
 
+    @Test
+    void listHydratesEvidenceAndLatestRefundWithConstantQueries() {
+        long ownerId = insertUser("after-sale-batch-owner");
+        LocalDateTime createdAt = LocalDateTime.of(2026, 7, 10, 14, 0);
+        long orderId = insertOrder(ownerId, "COMPLETED", createdAt);
+        long afterSaleId = insertAfterSale(orderId, ownerId, "REFUNDING", createdAt.plusMinutes(1));
+
+        long lastEvidenceFileId = insertStorageAsset(ownerId, "last.png", 31L);
+        long firstEvidenceFileId = insertStorageAsset(ownerId, "first.png", 32L);
+        long secondEvidenceFileId = insertStorageAsset(ownerId, "second.png", 33L);
+        insertEvidence(afterSaleId, firstEvidenceFileId, 1);
+        insertEvidence(afterSaleId, secondEvidenceFileId, 1);
+        insertEvidence(afterSaleId, lastEvidenceFileId, 2);
+
+        insertRefundOrder(afterSaleId, orderId, "FAILED", createdAt.plusMinutes(3));
+        long latestRefundId = insertRefundOrder(afterSaleId, orderId, "PROCESSING", createdAt.plusMinutes(2));
+        jdbcClient.sql("""
+                        update refund_order
+                        set last_error_code = 'SensitiveInternalCode',
+                            last_error_message = 'internal ticket and operator note'
+                        where id = :refundOrderId
+                        """)
+                .param("refundOrderId", latestRefundId)
+                .update();
+
+        sqlCounter.reset();
+        PageResult<AfterSaleResponse> single = appAfterSaleService.list(appPrincipal(ownerId), 1L, 100L, null);
+        int singleRecordQueries = sqlCounter.count();
+
+        assertThat(single.records()).hasSize(1);
+        AfterSaleResponse hydrated = single.records().getFirst();
+        assertThat(hydrated.evidenceFileIds())
+                .containsExactly(firstEvidenceFileId, secondEvidenceFileId, lastEvidenceFileId);
+        assertThat(hydrated.evidenceFiles())
+                .extracting(AfterSaleEvidenceFileResponse::fileId)
+                .containsExactly(firstEvidenceFileId, secondEvidenceFileId, lastEvidenceFileId);
+        assertThat(hydrated.evidenceFiles())
+                .extracting(AfterSaleEvidenceFileResponse::originalFilename)
+                .containsExactly("first.png", "second.png", "last.png");
+        assertThat(hydrated.refundOrder()).isNotNull();
+        assertThat(hydrated.refundOrder().id()).isEqualTo(latestRefundId);
+        assertThat(hydrated.refundOrder().status()).isEqualTo("PROCESSING");
+        assertThat(hydrated.refundOrder().lastErrorCode()).isNull();
+        assertThat(hydrated.refundOrder().lastErrorMessage()).isNull();
+
+        for (int index = 1; index < 6; index++) {
+            long additionalOrderId = insertOrder(ownerId, "COMPLETED", createdAt.plusHours(index));
+            insertAfterSale(
+                    additionalOrderId,
+                    ownerId,
+                    "REQUESTED",
+                    createdAt.plusHours(index).plusMinutes(1)
+            );
+        }
+
+        sqlCounter.reset();
+        PageResult<AfterSaleResponse> many = appAfterSaleService.list(appPrincipal(ownerId), 1L, 100L, null);
+        int manyRecordQueries = sqlCounter.count();
+
+        assertThat(many.records()).hasSize(6);
+        assertThat(singleRecordQueries).isEqualTo(4);
+        assertThat(manyRecordQueries).isEqualTo(singleRecordQueries);
+        assertThat(many.records())
+                .filteredOn(record -> record.id().equals(afterSaleId))
+                .singleElement()
+                .satisfies(record -> {
+                    assertThat(record.evidenceFileIds())
+                            .containsExactly(firstEvidenceFileId, secondEvidenceFileId, lastEvidenceFileId);
+                    assertThat(record.refundOrder()).isNotNull();
+                    assertThat(record.refundOrder().id()).isEqualTo(latestRefundId);
+                });
+    }
+
+    @Test
+    void emptyPageSkipsBatchHydrationQueries() {
+        long ownerId = insertUser("after-sale-empty-page-owner");
+
+        sqlCounter.reset();
+        PageResult<AfterSaleResponse> page = appAfterSaleService.list(appPrincipal(ownerId), 1L, 100L, null);
+
+        assertThat(page.total()).isZero();
+        assertThat(page.records()).isEmpty();
+        assertThat(sqlCounter.count()).isEqualTo(2);
+    }
+
     private long insertUser(String suffix) {
         long userId = SEQUENCE.incrementAndGet();
         LocalDateTime now = LocalDateTime.now();
@@ -148,6 +250,66 @@ class AppAfterSaleServiceTest {
         return afterSaleId;
     }
 
+    private long insertStorageAsset(long uploadedById, String filename, long sizeBytes) {
+        long assetId = SEQUENCE.incrementAndGet();
+        LocalDateTime now = LocalDateTime.now();
+        jdbcClient.sql("""
+                        insert into storage_asset
+                            (id, scope, media_kind, visibility, provider, object_key, original_filename,
+                             content_type, extension, size_bytes, status, uploaded_by_type, uploaded_by_id,
+                             created_at, updated_at)
+                        values
+                            (:assetId, 'ATTACHMENT', 'IMAGE', 'PRIVATE', 'LOCAL', :objectKey, :filename,
+                             'image/png', 'png', :sizeBytes, 'ACTIVE', 'APP', :uploadedById, :now, :now)
+                        """)
+                .param("assetId", assetId)
+                .param("objectKey", "after-sale-query-count/" + assetId + ".png")
+                .param("filename", filename)
+                .param("sizeBytes", sizeBytes)
+                .param("uploadedById", uploadedById)
+                .param("now", now)
+                .update();
+        return assetId;
+    }
+
+    private void insertEvidence(long afterSaleId, long fileId, int sortOrder) {
+        jdbcClient.sql("""
+                        insert into after_sale_evidence (after_sale_id, file_id, sort_order)
+                        values (:afterSaleId, :fileId, :sortOrder)
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .param("fileId", fileId)
+                .param("sortOrder", sortOrder)
+                .update();
+    }
+
+    private long insertRefundOrder(
+            long afterSaleId,
+            long orderId,
+            String status,
+            LocalDateTime requestedAt
+    ) {
+        long refundOrderId = SEQUENCE.incrementAndGet();
+        jdbcClient.sql("""
+                        insert into refund_order
+                            (id, after_sale_id, order_id, payment_order_id, out_refund_no, refund_id,
+                             refund_amount_cent, status, callback_status, last_error_code,
+                             last_error_message, requested_at, created_at, updated_at)
+                        values
+                            (:refundOrderId, :afterSaleId, :orderId, :paymentOrderId, :outRefundNo, '',
+                             100, :status, 'PENDING', '', '', :requestedAt, :requestedAt, :requestedAt)
+                        """)
+                .param("refundOrderId", refundOrderId)
+                .param("afterSaleId", afterSaleId)
+                .param("orderId", orderId)
+                .param("paymentOrderId", SEQUENCE.incrementAndGet())
+                .param("outRefundNo", "AS-QUERY-COUNT-REFUND-" + refundOrderId)
+                .param("status", status)
+                .param("requestedAt", requestedAt)
+                .update();
+        return refundOrderId;
+    }
+
     private AuthenticatedPrincipal appPrincipal(long userId) {
         return new AuthenticatedPrincipal(TokenKind.APP, userId, "app-user-" + userId, List.of(), List.of());
     }
@@ -156,5 +318,83 @@ class AppAfterSaleServiceTest {
         BusinessException exception = catchThrowableOfType(action::run, BusinessException.class);
         assertThat(exception).isNotNull();
         assertThat(exception.errorCode()).isEqualTo(expected);
+    }
+
+    static final class SqlCounter {
+        private final AtomicInteger count = new AtomicInteger();
+
+        int count() {
+            return count.get();
+        }
+
+        void increment() {
+            count.incrementAndGet();
+        }
+
+        void reset() {
+            count.set(0);
+        }
+    }
+
+    @TestConfiguration(proxyBeanMethods = false)
+    static class CountingDataSourceConfiguration {
+
+        @Bean
+        SqlCounter sqlCounter() {
+            return new SqlCounter();
+        }
+
+        @Bean
+        @Primary
+        CountingDataSource dataSource(DataSourceProperties properties, SqlCounter sqlCounter) {
+            return new CountingDataSource(properties.initializeDataSourceBuilder().build(), sqlCounter);
+        }
+    }
+
+    static final class CountingDataSource extends AbstractDataSource implements AutoCloseable {
+        private final DataSource delegate;
+        private final SqlCounter sqlCounter;
+
+        private CountingDataSource(DataSource delegate, SqlCounter sqlCounter) {
+            this.delegate = delegate;
+            this.sqlCounter = sqlCounter;
+        }
+
+        @Override
+        public Connection getConnection() throws SQLException {
+            return countingConnection(delegate.getConnection());
+        }
+
+        @Override
+        public Connection getConnection(String username, String password) throws SQLException {
+            return countingConnection(delegate.getConnection(username, password));
+        }
+
+        private Connection countingConnection(Connection connection) {
+            return (Connection) Proxy.newProxyInstance(
+                    Connection.class.getClassLoader(),
+                    new Class<?>[]{Connection.class},
+                    (proxy, method, arguments) -> {
+                        String methodName = method.getName();
+                        if ("prepareStatement".equals(methodName)
+                                || "prepareCall".equals(methodName)
+                                || "createStatement".equals(methodName)) {
+                            sqlCounter.increment();
+                        }
+                        try {
+                            return method.invoke(connection, arguments);
+                        } catch (InvocationTargetException ex) {
+                            throw ex.getTargetException();
+                        }
+                    }
+            );
+        }
+
+        @Override
+        public void close() throws Exception {
+            if (delegate instanceof AutoCloseable closeable) {
+                closeable.close();
+            }
+        }
     }
 }

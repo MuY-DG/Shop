@@ -33,8 +33,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -70,14 +72,13 @@ public class AppAfterSaleService {
         this.storageUsageService = storageUsageService;
     }
 
-    @Transactional
     public StorageAssetResponse uploadEvidence(
             AuthenticatedPrincipal principal,
             Long orderId,
             MultipartFile file
     ) {
         Long userId = requireAppUser(principal);
-        OrderRow order = findOwnedOrderForUpdate(orderId, userId)
+        OrderRow order = findOwnedOrder(orderId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
         if (!ALLOWED_ORDER_STATUSES.contains(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
@@ -139,7 +140,7 @@ public class AppAfterSaleService {
                 .query(Long.class)
                 .single();
 
-        List<AfterSaleResponse> records = jdbcClient.sql("""
+        List<AfterSaleRow> pageRows = jdbcClient.sql("""
                         select asr.id,
                                asr.order_id,
                                o.order_no,
@@ -168,10 +169,8 @@ public class AppAfterSaleService {
                 .param("limit", pageSize)
                 .param("offset", offset)
                 .query(this::mapAfterSale)
-                .list()
-                .stream()
-                .map(this::toResponse)
-                .toList();
+                .list();
+        List<AfterSaleResponse> records = toResponses(pageRows);
 
         return PageResult.of(records, total == null ? 0L : total, pageCurrent, pageSize);
     }
@@ -179,7 +178,7 @@ public class AppAfterSaleService {
     public List<AfterSaleResponse> listForOrder(AuthenticatedPrincipal principal, Long orderId) {
         Long userId = requireAppUser(principal);
         requireOwnedOrder(orderId, userId);
-        return jdbcClient.sql("""
+        List<AfterSaleRow> rows = jdbcClient.sql("""
                         select asr.id,
                                asr.order_id,
                                o.order_no,
@@ -205,10 +204,8 @@ public class AppAfterSaleService {
                 .param("orderId", orderId)
                 .param("userId", userId)
                 .query(this::mapAfterSale)
-                .list()
-                .stream()
-                .map(this::toResponse)
-                .toList();
+                .list();
+        return toResponses(rows);
     }
 
     public AfterSaleResponse detail(AuthenticatedPrincipal principal, Long afterSaleId) {
@@ -218,7 +215,7 @@ public class AppAfterSaleService {
 
     public AfterSaleResponse latestForOrder(AuthenticatedPrincipal principal, Long orderId) {
         Long userId = requireAppUser(principal);
-        return jdbcClient.sql("""
+        AfterSaleRow row = jdbcClient.sql("""
                         select asr.id,
                                asr.order_id,
                                o.order_no,
@@ -246,8 +243,8 @@ public class AppAfterSaleService {
                 .param("userId", userId)
                 .query(this::mapAfterSale)
                 .optional()
-                .map(this::toResponse)
                 .orElse(null);
+        return row == null ? null : toResponses(List.of(row)).getFirst();
     }
 
     private Long requireAppUser(AuthenticatedPrincipal principal) {
@@ -282,6 +279,23 @@ public class AppAfterSaleService {
                         where id = :orderId
                           and user_id = :userId
                         for update
+                        """)
+                .param("orderId", orderId)
+                .param("userId", userId)
+                .query(this::mapOrder)
+                .optional();
+    }
+
+    private java.util.Optional<OrderRow> findOwnedOrder(Long orderId, Long userId) {
+        return jdbcClient.sql("""
+                        select id as order_id,
+                               order_no,
+                               user_id,
+                               status,
+                               paid_amount_cent
+                        from shop_order
+                        where id = :orderId
+                          and user_id = :userId
                         """)
                 .param("orderId", orderId)
                 .param("userId", userId)
@@ -452,10 +466,28 @@ public class AppAfterSaleService {
                 .query(this::mapAfterSale)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-        return toResponse(row);
+        return toResponses(List.of(row)).getFirst();
     }
 
-    private AfterSaleResponse toResponse(AfterSaleRow row) {
+    private List<AfterSaleResponse> toResponses(List<AfterSaleRow> rows) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<Long> afterSaleIds = rows.stream()
+                .map(AfterSaleRow::id)
+                .toList();
+        EvidenceBatch evidenceBatch = evidenceBatch(afterSaleIds);
+        Map<Long, RefundOrderResponse> refundsByAfterSaleId = refundOrders(afterSaleIds);
+        return rows.stream()
+                .map(row -> toResponse(row, evidenceBatch, refundsByAfterSaleId))
+                .toList();
+    }
+
+    private AfterSaleResponse toResponse(
+            AfterSaleRow row,
+            EvidenceBatch evidenceBatch,
+            Map<Long, RefundOrderResponse> refundsByAfterSaleId
+    ) {
         return new AfterSaleResponse(
                 row.id(),
                 row.orderId(),
@@ -472,27 +504,17 @@ public class AppAfterSaleService {
                 row.reviewedBy(),
                 row.reviewedAt(),
                 row.createdAt(),
-                evidenceFileIds(row.id()),
-                evidenceFiles(row.id()),
-                refundOrder(row.id())
+                evidenceBatch.fileIdsByAfterSaleId().getOrDefault(row.id(), List.of()),
+                evidenceBatch.filesByAfterSaleId().getOrDefault(row.id(), List.of()),
+                refundsByAfterSaleId.get(row.id())
         );
     }
 
-    private List<Long> evidenceFileIds(Long afterSaleId) {
-        return jdbcClient.sql("""
-                        select file_id
-                        from after_sale_evidence
-                        where after_sale_id = :afterSaleId
-                        order by sort_order asc, id asc
-                        """)
-                .param("afterSaleId", afterSaleId)
-                .query(Long.class)
-                .list();
-    }
-
-    private List<AfterSaleEvidenceFileResponse> evidenceFiles(Long afterSaleId) {
-        return jdbcClient.sql("""
-                        select ase.file_id,
+    private EvidenceBatch evidenceBatch(List<Long> afterSaleIds) {
+        List<EvidenceProjectionRow> rows = jdbcClient.sql("""
+                        select ase.after_sale_id,
+                               ase.file_id,
+                               asset.id as asset_id,
                                asset.original_filename,
                                asset.content_type,
                                asset.size_bytes,
@@ -501,18 +523,33 @@ public class AppAfterSaleService {
                                asset.visibility,
                                asset.status
                         from after_sale_evidence ase
-                        join storage_asset asset on asset.id = ase.file_id
-                        where ase.after_sale_id = :afterSaleId
-                        order by ase.sort_order asc, ase.id asc
+                        left join storage_asset asset on asset.id = ase.file_id
+                        where ase.after_sale_id in (:afterSaleIds)
+                        order by ase.after_sale_id asc, ase.sort_order asc, ase.id asc
                         """)
-                .param("afterSaleId", afterSaleId)
-                .query(this::mapEvidenceFileResponse)
+                .param("afterSaleIds", afterSaleIds)
+                .query(this::mapEvidenceProjection)
                 .list();
+
+        Map<Long, List<Long>> fileIdsByAfterSaleId = new HashMap<>();
+        Map<Long, List<AfterSaleEvidenceFileResponse>> filesByAfterSaleId = new HashMap<>();
+        for (EvidenceProjectionRow row : rows) {
+            fileIdsByAfterSaleId.computeIfAbsent(row.afterSaleId(), ignored -> new ArrayList<>())
+                    .add(row.fileId());
+            if (row.file() != null) {
+                filesByAfterSaleId.computeIfAbsent(row.afterSaleId(), ignored -> new ArrayList<>())
+                        .add(row.file());
+            }
+        }
+        return new EvidenceBatch(fileIdsByAfterSaleId, filesByAfterSaleId);
     }
 
-    private AfterSaleEvidenceFileResponse mapEvidenceFileResponse(ResultSet rs, int rowNum) throws SQLException {
-        return new AfterSaleEvidenceFileResponse(
-                rs.getLong("file_id"),
+    private EvidenceProjectionRow mapEvidenceProjection(ResultSet rs, int rowNum) throws SQLException {
+        Long afterSaleId = rs.getLong("after_sale_id");
+        Long fileId = rs.getLong("file_id");
+        Long assetId = rs.getObject("asset_id", Long.class);
+        AfterSaleEvidenceFileResponse file = assetId == null ? null : new AfterSaleEvidenceFileResponse(
+                fileId,
                 rs.getString("original_filename"),
                 rs.getString("content_type"),
                 rs.getLong("size_bytes"),
@@ -521,32 +558,43 @@ public class AppAfterSaleService {
                 rs.getString("visibility"),
                 rs.getString("status")
         );
+        return new EvidenceProjectionRow(afterSaleId, fileId, file);
     }
 
-    private RefundOrderResponse refundOrder(Long afterSaleId) {
-        return jdbcClient.sql("""
-                        select id,
-                               after_sale_id,
-                               order_id,
-                               payment_order_id,
-                               out_refund_no,
-                               refund_id,
-                               refund_amount_cent,
-                               status,
-                               callback_status,
-                               last_error_code,
-                               last_error_message,
-                               requested_at,
-                               success_at
-                        from refund_order
-                        where after_sale_id = :afterSaleId
-                        order by id desc
-                        limit 1
+    private Map<Long, RefundOrderResponse> refundOrders(List<Long> afterSaleIds) {
+        List<RefundOrderResponse> rows = jdbcClient.sql("""
+                        select ro.id,
+                               ro.after_sale_id,
+                               ro.order_id,
+                               ro.payment_order_id,
+                               ro.out_refund_no,
+                               ro.refund_id,
+                               ro.refund_amount_cent,
+                               ro.status,
+                               ro.callback_status,
+                               ro.last_error_code,
+                               ro.last_error_message,
+                               ro.requested_at,
+                               ro.success_at
+                        from refund_order ro
+                        join (
+                            select after_sale_id, max(id) as latest_id
+                            from refund_order
+                            where after_sale_id in (:afterSaleIds)
+                            group by after_sale_id
+                        ) latest
+                          on latest.after_sale_id = ro.after_sale_id
+                         and latest.latest_id = ro.id
+                        order by ro.after_sale_id asc
                         """)
-                .param("afterSaleId", afterSaleId)
+                .param("afterSaleIds", afterSaleIds)
                 .query(this::mapRefundOrder)
-                .optional()
-                .orElse(null);
+                .list();
+        Map<Long, RefundOrderResponse> refundsByAfterSaleId = new HashMap<>();
+        for (RefundOrderResponse row : rows) {
+            refundsByAfterSaleId.put(row.afterSaleId(), row);
+        }
+        return refundsByAfterSaleId;
     }
 
     private List<Long> normalizeEvidenceFileIds(List<Long> fileIds) {
@@ -670,8 +718,8 @@ public class AppAfterSaleService {
                 rs.getLong("refund_amount_cent"),
                 rs.getString("status"),
                 rs.getString("callback_status"),
-                rs.getString("last_error_code"),
-                rs.getString("last_error_message"),
+                null,
+                null,
                 rs.getObject("requested_at", LocalDateTime.class),
                 rs.getObject("success_at", LocalDateTime.class)
         );
@@ -696,6 +744,19 @@ public class AppAfterSaleService {
             String uploadContextType,
             Long uploadContextId,
             boolean hasActiveUsage
+    ) {
+    }
+
+    private record EvidenceProjectionRow(
+            Long afterSaleId,
+            Long fileId,
+            AfterSaleEvidenceFileResponse file
+    ) {
+    }
+
+    private record EvidenceBatch(
+            Map<Long, List<Long>> fileIdsByAfterSaleId,
+            Map<Long, List<AfterSaleEvidenceFileResponse>> filesByAfterSaleId
     ) {
     }
 

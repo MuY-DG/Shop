@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.invocation.Invocation;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.security.web.ClientIpProperties;
+import org.muybaby.shopserver.security.web.ClientIpResolver;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -23,20 +25,6 @@ import static org.mockito.Mockito.when;
 class AnalyticsRateLimiterTest {
 
     private static final String VISITOR_ID = "00000000-0000-4000-8000-000000000071";
-
-    @Test
-    void trustedProxyHeaderIsUsedButAnUntrustedPeerCannotSpoofIt() {
-        AnalyticsClientIpResolver resolver = new AnalyticsClientIpResolver(properties());
-        MockHttpServletRequest trusted = new MockHttpServletRequest();
-        trusted.setRemoteAddr("127.0.0.1");
-        trusted.addHeader("X-Forwarded-For", "198.51.100.25");
-        MockHttpServletRequest untrusted = new MockHttpServletRequest();
-        untrusted.setRemoteAddr("203.0.113.10");
-        untrusted.addHeader("X-Forwarded-For", "198.51.100.25");
-
-        assertThat(resolver.resolve(trusted)).isEqualTo("198.51.100.25");
-        assertThat(resolver.resolve(untrusted)).isEqualTo("203.0.113.10");
-    }
 
     @Test
     void usesOneAtomicLuaDecisionAndDoesNotPutRawIdentifiersInRedisKeys() {
@@ -83,7 +71,9 @@ class AnalyticsRateLimiterTest {
 
     private AnalyticsRateLimiter limiter(StringRedisTemplate redis) {
         AnalyticsRateLimitProperties properties = properties();
-        return new AnalyticsRateLimiter(redis, properties, new AnalyticsClientIpResolver(properties));
+        ClientIpResolver resolver = new ClientIpResolver(
+                new ClientIpProperties(List.of("127.0.0.0/8", "::1/128"), 20, 2_048));
+        return new AnalyticsRateLimiter(redis, properties, resolver);
     }
 
     private AnalyticsRateLimitProperties properties() {
@@ -91,8 +81,7 @@ class AnalyticsRateLimiterTest {
                 true,
                 Duration.ofMinutes(1),
                 500,
-                100,
-                List.of("127.0.0.0/8", "::1/128"));
+                100);
     }
 
     private MockHttpServletRequest request() {

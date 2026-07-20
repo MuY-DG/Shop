@@ -1,11 +1,21 @@
 package org.muybaby.shopserver.payment;
 
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.payment.service.PaymentCallbackService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,6 +27,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class PaymentCallbackServiceTest extends PaymentTestSupport {
+
+    @Autowired
+    private PaymentCallbackService paymentCallbackService;
 
     @Test
     void validPayNotificationFinalizesOrderAndDuplicateNotificationIsIdempotent() throws Exception {
@@ -86,6 +99,164 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
     }
 
     @Test
+    void callbackFallsBackToPaymentOrdersHistoricalConfigurationAfterRotation() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-callback-config-rotation-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+        switchToClonedPaymentConfig(91002L);
+        mockWechatPayProvider.requirePayNotificationConfig(outTradeNo, 91001L);
+
+        postPayNotify(
+                payNotifyBody("notify-payment-old-config", outTradeNo, "wx-old-config", 6980L),
+                "mock-valid-signature"
+        ).andExpect(status().isOk());
+
+        assertPaidState(order, outTradeNo, "wx-old-config");
+        assertThat(mockWechatPayProvider.payNotificationConfigAttempts(outTradeNo))
+                .containsExactly(91002L, 91001L);
+    }
+
+    @Test
+    void callbackReparsesWithExactStoredIdentityWhenCurrentRevisionCanAlsoParse() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-callback-shared-key-rotation-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+        switchToClonedPaymentConfig(91002L);
+
+        postPayNotify(
+                payNotifyBody("notify-payment-shared-key", outTradeNo, "wx-shared-key", 6980L),
+                "mock-valid-signature"
+        ).andExpect(status().isOk());
+
+        assertPaidState(order, outTradeNo, "wx-shared-key");
+        assertThat(mockWechatPayProvider.payNotificationConfigAttempts(outTradeNo))
+                .containsExactly(91002L, 91001L);
+    }
+
+    @Test
+    void verifiedNotificationConfigurationMustMatchPaymentConfigurationIdentity() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-callback-config-mismatch-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+        switchToClonedPaymentConfig(91002L);
+        mockWechatPayProvider.requirePayNotificationConfig(outTradeNo, 91002L);
+
+        postPayNotify(
+                payNotifyBody("notify-payment-wrong-config", outTradeNo, "wx-wrong-config", 6980L),
+                "mock-valid-signature"
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(500002));
+
+        assertPayingState(order, outTradeNo);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where callback_type = 'PAY'
+                          and out_trade_no = ''
+                          and status = 'FAILED'
+                          and error_code = 'VERIFY_FAILED'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(mockWechatPayProvider.payNotificationConfigAttempts(outTradeNo))
+                .containsExactly(91002L, 91001L);
+    }
+
+    @Test
+    void concurrentIdenticalNotificationsFinalizeTheirOwnCallbackLogRows() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-concurrent-callback-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+        String body = payNotifyBody(
+                "notify-payment-concurrent",
+                outTradeNo,
+                "wx-transaction-concurrent",
+                6980L
+        );
+        int callbackCount = 6;
+        String notificationTimestamp = currentWechatpayTimestamp();
+        CountDownLatch ready = new CountDownLatch(callbackCount);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(callbackCount);
+        List<Future<?>> callbacks = new ArrayList<>();
+        try {
+            for (int index = 0; index < callbackCount; index++) {
+                callbacks.add(executor.submit(() -> {
+                    ready.countDown();
+                    try {
+                        if (!start.await(5, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("Concurrent callbacks did not start in time");
+                        }
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("Concurrent callback was interrupted", ex);
+                    }
+                    paymentCallbackService.handlePayNotification(
+                            notificationTimestamp,
+                            "mock-notify-nonce",
+                            "mock-serial",
+                            "mock-valid-signature",
+                            body
+                    );
+                }));
+            }
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            for (Future<?> callback : callbacks) {
+                callback.get(10, TimeUnit.SECONDS);
+            }
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        assertPaidState(order, outTradeNo, "wx-transaction-concurrent");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where out_trade_no = :outTradeNo
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(callbackCount);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where out_trade_no = :outTradeNo
+                          and status = 'PROCESSING'
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where out_trade_no = :outTradeNo
+                          and status = 'SUCCESS'
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where out_trade_no = :outTradeNo
+                          and status = 'DUPLICATE'
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(Integer.class)
+                .single()).isEqualTo(callbackCount - 1);
+    }
+
+    @Test
     void invalidPayNotificationReturnsFailureAndDoesNotPersistPlaintextSecretMaterial() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-invalid-callback-user");
@@ -112,6 +283,27 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                         """)
                 .query(Integer.class)
                 .single()).isEqualTo(1);
+    }
+
+    @Test
+    void stalePayNotificationIsRejectedBeforeVerificationOrBusinessMutation() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-stale-callback-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+
+        postPayNotify(
+                payNotifyBody("notify-payment-stale", outTradeNo, "wx-transaction-stale", 6980L),
+                "mock-valid-signature",
+                "1"
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        assertPayingState(order, outTradeNo);
+        assertThat(jdbcClient.sql("select count(*) from payment_callback_log")
+                .query(Integer.class)
+                .single()).isZero();
     }
 
     @Test
@@ -167,6 +359,66 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                 .param("orderId", order.orderId())
                 .query(String.class)
                 .single()).isEqualTo("PAYING");
+    }
+
+    @Test
+    void successfulNotificationRequiresTransactionIdAndCnyCurrency() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-callback-required-fields-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+
+        postPayNotify(
+                payNotifyBody("notify-payment-empty-transaction", outTradeNo, "", 6980L),
+                "mock-valid-signature"
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+        postPayNotify(
+                payNotifyBody("notify-payment-wrong-currency", "TRANSACTION.SUCCESS", outTradeNo,
+                        "wx-wrong-currency", 6980L, "SUCCESS", "USD"),
+                "mock-valid-signature"
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertPayingState(order, outTradeNo);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where notify_id in ('notify-payment-empty-transaction', 'notify-payment-wrong-currency')
+                          and status = 'FAILED'
+                          and error_code = 'ORDER_STATE_CONFLICT'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+    }
+
+    @Test
+    void corruptedStockLockMappingRollsBackPaidTransition() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-stock-lock-mismatch-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        pay(session.token(), order.orderId());
+        String outTradeNo = activeOutTradeNo(order.orderId());
+        jdbcClient.sql("""
+                        update stock_lock
+                        set sku_id = sku_id + 999999
+                        where order_id = :orderId
+                        """)
+                .param("orderId", order.orderId())
+                .update();
+
+        postPayNotify(
+                payNotifyBody("notify-payment-stock-lock-mismatch", outTradeNo, "wx-stock-lock-mismatch", 6980L),
+                "mock-valid-signature"
+        ).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertPayingState(order, outTradeNo);
+        assertThat(jdbcClient.sql("select status from stock_lock where order_id = :orderId")
+                .param("orderId", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("LOCKED");
     }
 
     @Test
@@ -270,9 +522,17 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
     }
 
     private org.springframework.test.web.servlet.ResultActions postPayNotify(String body, String signature) throws Exception {
+        return postPayNotify(body, signature, currentWechatpayTimestamp());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions postPayNotify(
+            String body,
+            String signature,
+            String timestamp
+    ) throws Exception {
         return mockMvc.perform(post("/wxpay/pay/notify")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("Wechatpay-Timestamp", "1783500000")
+                .header("Wechatpay-Timestamp", timestamp)
                 .header("Wechatpay-Nonce", "mock-notify-nonce")
                 .header("Wechatpay-Serial", "mock-serial")
                 .header("Wechatpay-Signature", signature)
@@ -291,6 +551,18 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
             long amountCent,
             String tradeState
     ) {
+        return payNotifyBody(notifyId, eventType, outTradeNo, transactionId, amountCent, tradeState, "CNY");
+    }
+
+    private String payNotifyBody(
+            String notifyId,
+            String eventType,
+            String outTradeNo,
+            String transactionId,
+            long amountCent,
+            String tradeState,
+            String currency
+    ) {
         return """
                 {
                   "id":"%s",
@@ -300,10 +572,11 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                     "transaction_id":"%s",
                     "trade_state":"%s",
                     "success_time":"2026-07-08T12:00:00+08:00",
-                    "amount":{"total":%d,"payer_total":%d,"currency":"CNY"}
+                    "amount":{"total":%d,"payer_total":%d,"currency":"%s"}
                   }
                 }
-                """.formatted(notifyId, eventType, outTradeNo, transactionId, tradeState, amountCent, amountCent);
+                """.formatted(
+                notifyId, eventType, outTradeNo, transactionId, tradeState, amountCent, amountCent, currency);
     }
 
     private void assertPaidState(SeedOrder order, String outTradeNo, String transactionId) {

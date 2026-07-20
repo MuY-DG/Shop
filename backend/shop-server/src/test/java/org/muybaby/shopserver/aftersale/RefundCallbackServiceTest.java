@@ -1,14 +1,23 @@
 package org.muybaby.shopserver.aftersale;
 
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.aftersale.service.RefundCallbackService;
 import org.muybaby.shopserver.payment.PaymentTestSupport;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,6 +30,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class RefundCallbackServiceTest extends PaymentTestSupport {
+
+    @Autowired
+    private RefundCallbackService refundCallbackService;
 
     @Test
     void successfulRefundNotificationFinalizesRefundAndDuplicateNotificationIsIdempotent() throws Exception {
@@ -70,6 +82,149 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                 .param("outRefundNo", approved.outRefundNo())
                 .query(Integer.class)
                 .single()).isEqualTo(1);
+    }
+
+    @Test
+    void refundCallbackFallsBackToOriginalPaymentConfigurationAfterRotation() throws Exception {
+        ApprovedRefund approved = approveRefund("after-sale-refund-old-config", 6980L, 6980L);
+        switchToClonedPaymentConfig(91002L);
+        mockWechatPayProvider.requireRefundNotificationConfig(approved.outRefundNo(), 91001L);
+
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-old-config",
+                        "REFUND.SUCCESS",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-old-config",
+                        "SUCCESS",
+                        6980L,
+                        6980L
+                ), "mock-valid-signature")
+                .andExpect(status().isOk());
+
+        assertRefundSuccessState(approved, "wx-refund-old-config");
+        assertThat(mockWechatPayProvider.refundNotificationConfigAttempts(approved.outRefundNo()))
+                .containsExactly(91002L, 91001L);
+    }
+
+    @Test
+    void refundCallbackReparsesWithExactStoredIdentityWhenCurrentRevisionCanAlsoParse() throws Exception {
+        ApprovedRefund approved = approveRefund("after-sale-refund-shared-key", 6980L, 6980L);
+        switchToClonedPaymentConfig(91002L);
+
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-shared-key",
+                        "REFUND.SUCCESS",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-shared-key",
+                        "SUCCESS",
+                        6980L,
+                        6980L
+                ), "mock-valid-signature")
+                .andExpect(status().isOk());
+
+        assertRefundSuccessState(approved, "wx-refund-shared-key");
+        assertThat(mockWechatPayProvider.refundNotificationConfigAttempts(approved.outRefundNo()))
+                .containsExactly(91002L, 91001L);
+    }
+
+    @Test
+    void verifiedRefundNotificationConfigurationMustMatchOriginalPaymentIdentity() throws Exception {
+        ApprovedRefund approved = approveRefund("after-sale-refund-config-mismatch", 6980L, 6980L);
+        switchToClonedPaymentConfig(91002L);
+        mockWechatPayProvider.requireRefundNotificationConfig(approved.outRefundNo(), 91002L);
+
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-wrong-config",
+                        "REFUND.SUCCESS",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-wrong-config",
+                        "SUCCESS",
+                        6980L,
+                        6980L
+                ), "mock-valid-signature")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(500002));
+
+        assertThat(jdbcClient.sql("select status from refund_order where out_refund_no = :outRefundNo")
+                .param("outRefundNo", approved.outRefundNo())
+                .query(String.class)
+                .single()).isEqualTo("PROCESSING");
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", approved.orderId())
+                .query(String.class)
+                .single()).isEqualTo("REFUNDING");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where callback_type = 'REFUND'
+                          and out_refund_no = ''
+                          and status = 'FAILED'
+                          and error_code = 'VERIFY_FAILED'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(mockWechatPayProvider.refundNotificationConfigAttempts(approved.outRefundNo()))
+                .containsExactly(91002L, 91001L);
+    }
+
+    @Test
+    void concurrentIdenticalNotificationsFinalizeTheirOwnCallbackLogRows() throws Exception {
+        ApprovedRefund approved = approveRefund("after-sale-refund-concurrent", 6980L, 6980L);
+        String body = refundNotifyBody(
+                "notify-refund-concurrent",
+                "REFUND.SUCCESS",
+                approved.outTradeNo(),
+                approved.outRefundNo(),
+                "wx-refund-concurrent",
+                "SUCCESS",
+                6980L,
+                6980L
+        );
+        int callbackCount = 6;
+        String notificationTimestamp = currentWechatpayTimestamp();
+        CountDownLatch ready = new CountDownLatch(callbackCount);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(callbackCount);
+        List<Future<?>> callbacks = new ArrayList<>();
+        try {
+            for (int index = 0; index < callbackCount; index++) {
+                callbacks.add(executor.submit(() -> {
+                    ready.countDown();
+                    try {
+                        if (!start.await(5, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("Concurrent callbacks did not start in time");
+                        }
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("Concurrent callback was interrupted", ex);
+                    }
+                    refundCallbackService.handleRefundNotification(
+                            notificationTimestamp,
+                            "mock-refund-notify-nonce",
+                            "mock-refund-serial",
+                            "mock-valid-signature",
+                            body
+                    );
+                }));
+            }
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            for (Future<?> callback : callbacks) {
+                callback.get(10, TimeUnit.SECONDS);
+            }
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+        }
+
+        assertRefundSuccessState(approved, "wx-refund-concurrent");
+        assertThat(callbackLogCount(approved.outRefundNo(), null)).isEqualTo(callbackCount);
+        assertThat(callbackLogCount(approved.outRefundNo(), "PROCESSING")).isZero();
+        assertThat(callbackLogCount(approved.outRefundNo(), "SUCCESS")).isEqualTo(1);
+        assertThat(callbackLogCount(approved.outRefundNo(), "DUPLICATE")).isEqualTo(callbackCount - 1);
     }
 
     @Test
@@ -155,6 +310,75 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
     }
 
     @Test
+    void callbackForSupersededFailedRefundCannotFinalizeOverNewerRefund() throws Exception {
+        ApprovedRefund approved = approveRefund("after-sale-refund-superseded", 6980L, 6980L);
+        String newerOutRefundNo = approved.outRefundNo() + "N";
+        jdbcClient.sql("""
+                        update refund_order
+                        set status = 'FAILED',
+                            callback_status = 'CLOSED',
+                            failed_at = current_timestamp,
+                            updated_at = current_timestamp
+                        where out_refund_no = :outRefundNo
+                        """)
+                .param("outRefundNo", approved.outRefundNo())
+                .update();
+        jdbcClient.sql("""
+                        insert into refund_order
+                            (after_sale_id, order_id, payment_order_id, out_refund_no, refund_id,
+                             refund_amount_cent, status, callback_status, requested_at, created_at, updated_at)
+                        select after_sale_id, order_id, payment_order_id, :newerOutRefundNo, '',
+                               refund_amount_cent, 'PROCESSING', 'PROCESSING',
+                               current_timestamp, current_timestamp, current_timestamp
+                        from refund_order
+                        where out_refund_no = :outRefundNo
+                        """)
+                .param("newerOutRefundNo", newerOutRefundNo)
+                .param("outRefundNo", approved.outRefundNo())
+                .update();
+
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-superseded",
+                        "REFUND.SUCCESS",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-superseded",
+                        "SUCCESS",
+                        6980L,
+                        6980L
+                ), "mock-valid-signature")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertThat(jdbcClient.sql("select status from refund_order where out_refund_no = :outRefundNo")
+                .param("outRefundNo", approved.outRefundNo())
+                .query(String.class)
+                .single()).isEqualTo("FAILED");
+        assertThat(jdbcClient.sql("select status from refund_order where out_refund_no = :outRefundNo")
+                .param("outRefundNo", newerOutRefundNo)
+                .query(String.class)
+                .single()).isEqualTo("PROCESSING");
+        assertThat(jdbcClient.sql("select status from after_sale_request where id = :afterSaleId")
+                .param("afterSaleId", approved.afterSaleId())
+                .query(String.class)
+                .single()).isEqualTo("REFUNDING");
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", approved.orderId())
+                .query(String.class)
+                .single()).isEqualTo("REFUNDING");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where callback_type = 'REFUND'
+                          and notify_id = 'notify-refund-superseded'
+                          and status = 'FAILED'
+                          and error_code = 'ORDER_STATE_CONFLICT'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    @Test
     void invalidRefundNotificationLogsFailedVerificationWithoutChangingRefundState() throws Exception {
         ApprovedRefund approved = approveRefund("after-sale-refund-invalid", 6980L, 6980L);
 
@@ -185,6 +409,65 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                         """)
                 .query(Integer.class)
                 .single()).isEqualTo(1);
+    }
+
+    @Test
+    void rejectedRefundTransitionPersistsFailedCallbackLogOutsideBusinessTransaction() throws Exception {
+        ApprovedRefund approved = approveRefund("after-sale-refund-mismatch", 6980L, 6980L);
+
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-mismatch",
+                        "REFUND.SUCCESS",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-mismatch",
+                        "SUCCESS",
+                        6979L,
+                        6980L
+                ), "mock-valid-signature")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertThat(jdbcClient.sql("select status from refund_order where out_refund_no = :outRefundNo")
+                .param("outRefundNo", approved.outRefundNo())
+                .query(String.class)
+                .single()).isEqualTo("PROCESSING");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where callback_type = 'REFUND'
+                          and notify_id = 'notify-refund-mismatch'
+                          and status = 'FAILED'
+                          and error_code = 'ORDER_STATE_CONFLICT'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    @Test
+    void staleRefundNotificationIsRejectedBeforeVerificationOrBusinessMutation() throws Exception {
+        ApprovedRefund approved = approveRefund("after-sale-refund-stale", 6980L, 6980L);
+
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-stale",
+                        "REFUND.SUCCESS",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-stale",
+                        "SUCCESS",
+                        6980L,
+                        6980L
+                ), "mock-valid-signature", "1")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        assertThat(jdbcClient.sql("select status from refund_order where out_refund_no = :outRefundNo")
+                .param("outRefundNo", approved.outRefundNo())
+                .query(String.class)
+                .single()).isEqualTo("PROCESSING");
+        assertThat(jdbcClient.sql("select count(*) from payment_callback_log")
+                .query(Integer.class)
+                .single()).isZero();
     }
 
     private ApprovedRefund approveRefund(String code, long paidAmountCent, long approvedAmountCent) throws Exception {
@@ -219,9 +502,17 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
     }
 
     private org.springframework.test.web.servlet.ResultActions postRefundNotify(String body, String signature) throws Exception {
+        return postRefundNotify(body, signature, currentWechatpayTimestamp());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions postRefundNotify(
+            String body,
+            String signature,
+            String timestamp
+    ) throws Exception {
         return mockMvc.perform(post("/wxpay/refund/notify")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("Wechatpay-Timestamp", "1783500000")
+                .header("Wechatpay-Timestamp", timestamp)
                 .header("Wechatpay-Nonce", "mock-refund-notify-nonce")
                 .header("Wechatpay-Serial", "mock-refund-serial")
                 .header("Wechatpay-Signature", signature)
@@ -287,6 +578,20 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                 .param("orderId", approved.orderId())
                 .query(String.class)
                 .single()).isEqualTo("REFUNDED");
+    }
+
+    private int callbackLogCount(String outRefundNo, String status) {
+        return jdbcClient.sql("""
+                        select count(*)
+                        from payment_callback_log
+                        where callback_type = 'REFUND'
+                          and out_refund_no = :outRefundNo
+                          and (:status is null or status = :status)
+                        """)
+                .param("outRefundNo", outRefundNo)
+                .param("status", status)
+                .query(Integer.class)
+                .single();
     }
 
     private record ApprovedRefund(long afterSaleId, long orderId, String outTradeNo, String outRefundNo) {

@@ -10,6 +10,7 @@ import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -21,20 +22,28 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -80,7 +89,7 @@ class AdminPaymentConfigControllerTest {
     @Autowired
     private OpaqueTokenService opaqueTokenService;
 
-    @Autowired
+    @MockitoSpyBean
     private StorageProvider storageProvider;
 
     @BeforeAll
@@ -367,6 +376,54 @@ class AdminPaymentConfigControllerTest {
                 .andExpect(jsonPath("$.data.configName").value("Switchable DB Pay"))
                 .andExpect(jsonPath("$.data.privateKeyFileId").value(privateKeyFileId))
                 .andExpect(jsonPath("$.data.wechatPublicKeyFileId").value(publicKeyFileId));
+    }
+
+    @Test
+    void configCreateUpdateEnableAndSourceSwitchReadProviderOutsideTransactions() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
+        long privateKeyFileId = insertStorageAsset(
+                "SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certFileId = insertStorageAsset(
+                "SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
+        long publicKeyFileId = insertStorageAsset(
+                "SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return invocation.callRealMethod();
+        }).when(storageProvider).open(any(StorageObjectLocation.class));
+
+        long configId = createConfig(
+                writeToken, "Outside Transaction Pay", privateKeyFileId, certFileId, publicKeyFileId);
+        mockMvc.perform(put("/admin/pay/configs/{configId}", configId)
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(configJson(
+                                "Outside Transaction Pay Updated",
+                                " ",
+                                " ",
+                                " ",
+                                " ",
+                                privateKeyFileId,
+                                certFileId,
+                                "PUBLIC_KEY",
+                                "pub_key_db_123456",
+                                publicKeyFileId,
+                                "https://pay.example.test/wxpay/pay/notify",
+                                "https://pay.example.test/wxpay/refund/notify")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", configId)
+                        .header("Authorization", "Bearer " + enableToken))
+                .andExpect(status().isOk());
+        mockMvc.perform(put("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + enableToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":"DB"}
+                                """))
+                .andExpect(status().isOk());
+
+        verify(storageProvider, atLeastOnce()).open(any(StorageObjectLocation.class));
     }
 
     @Test
@@ -725,7 +782,7 @@ class AdminPaymentConfigControllerTest {
                              expires_at)
                         values
                             (:scope, :mediaKind, :visibility, 'LOCAL', '', :objectKey, :filename,
-                             'text/plain', 'pem', :sizeBytes, '', 'ACTIVE', 'ADMIN', 1, :expiresAt)
+                             'text/plain', 'pem', :sizeBytes, :sha256, 'ACTIVE', 'ADMIN', 1, :expiresAt)
                         """)
                 .param("scope", scope)
                 .param("mediaKind", mediaKind)
@@ -733,12 +790,21 @@ class AdminPaymentConfigControllerTest {
                 .param("objectKey", objectKey)
                 .param("filename", filename)
                 .param("sizeBytes", bytes.length)
+                .param("sha256", sha256(bytes))
                 .param("expiresAt", LocalDateTime.now().plusHours(2))
                 .update();
         return jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
                 .param("objectKey", objectKey)
                 .query(Long.class)
                 .single();
+    }
+
+    private String sha256(byte[] content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private PaymentConfigSnapshot paymentConfigSnapshot(long configId) {

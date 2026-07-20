@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.wechat.pay.java.core.Config;
 import com.wechat.pay.java.core.RSAPublicKeyConfig;
+import com.wechat.pay.java.core.exception.ServiceException;
 import com.wechat.pay.java.core.notification.NotificationParser;
 import com.wechat.pay.java.core.notification.RequestParam;
 import com.wechat.pay.java.service.payments.jsapi.JsapiServiceExtension;
@@ -17,6 +18,7 @@ import com.wechat.pay.java.service.payments.model.Transaction;
 import com.wechat.pay.java.service.refund.RefundService;
 import com.wechat.pay.java.service.refund.model.AmountReq;
 import com.wechat.pay.java.service.refund.model.CreateRequest;
+import com.wechat.pay.java.service.refund.model.QueryByOutRefundNoRequest;
 import com.wechat.pay.java.service.refund.model.Refund;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
@@ -26,6 +28,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -36,9 +39,11 @@ import java.util.HexFormat;
 public class RealWechatPayProvider implements WechatPayProvider {
 
     private final ObjectMapper objectMapper;
+    private final Clock clock;
 
-    public RealWechatPayProvider(ObjectMapper objectMapper) {
+    public RealWechatPayProvider(ObjectMapper objectMapper, Clock clock) {
         this.objectMapper = objectMapper;
+        this.clock = clock;
     }
 
     @Override
@@ -75,14 +80,22 @@ public class RealWechatPayProvider implements WechatPayProvider {
         QueryOrderByOutTradeNoRequest request = new QueryOrderByOutTradeNoRequest();
         request.setMchid(config.mchId());
         request.setOutTradeNo(outTradeNo);
-        Transaction transaction = jsapiService(config).queryOrderByOutTradeNo(request);
+        Transaction transaction;
+        try {
+            transaction = jsapiService(config).queryOrderByOutTradeNo(request);
+        } catch (ServiceException ex) {
+            if ("ORDER_NOT_EXIST".equals(ex.getErrorCode())) {
+                return WechatPayOrderQueryResult.notPaid(outTradeNo, "NOT_FOUND");
+            }
+            throw ex;
+        }
         boolean paid = transaction.getTradeState() == Transaction.TradeStateEnum.SUCCESS;
         long amountCent = transaction.getAmount() == null || transaction.getAmount().getTotal() == null
                 ? 0L
                 : transaction.getAmount().getTotal();
         LocalDateTime paidAt = transaction.getSuccessTime() == null
                 ? null
-                : OffsetDateTime.parse(transaction.getSuccessTime()).toLocalDateTime();
+                : toLocalDateTime(transaction.getSuccessTime());
         return new WechatPayOrderQueryResult(
                 paid,
                 transaction.getOutTradeNo(),
@@ -119,14 +132,15 @@ public class RealWechatPayProvider implements WechatPayProvider {
                     .body(body)
                     .build();
             Transaction transaction = notificationParser(config).parse(requestParam, Transaction.class);
+            validatePayNotificationMerchant(config, transaction);
             JsonNode root = objectMapper.readTree(body);
             String resourceDigest = root.path("resource").isMissingNode() ? "" : sha256(root.path("resource").toString());
             long amountCent = transaction.getAmount() == null || transaction.getAmount().getTotal() == null
                     ? 0L
                     : transaction.getAmount().getTotal();
             LocalDateTime paidAt = transaction.getSuccessTime() == null
-                    ? LocalDateTime.now()
-                    : OffsetDateTime.parse(transaction.getSuccessTime()).toLocalDateTime();
+                    ? LocalDateTime.now(clock)
+                    : toLocalDateTime(transaction.getSuccessTime());
             return new WechatPayNotification(
                     root.path("id").asText(),
                     root.path("event_type").asText(),
@@ -148,8 +162,13 @@ public class RealWechatPayProvider implements WechatPayProvider {
     @Override
     public WechatRefundResult requestRefund(ResolvedPaymentConfig config, WechatRefundRequest request) {
         CreateRequest createRequest = new CreateRequest();
-        createRequest.setOutTradeNo(request.outTradeNo());
-        createRequest.setTransactionId(request.transactionId());
+        if (request.transactionId() != null && !request.transactionId().isBlank()) {
+            createRequest.setTransactionId(request.transactionId());
+        } else if (request.outTradeNo() != null && !request.outTradeNo().isBlank()) {
+            createRequest.setOutTradeNo(request.outTradeNo());
+        } else {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
         createRequest.setOutRefundNo(request.outRefundNo());
         createRequest.setReason(request.reason());
         createRequest.setNotifyUrl(request.notifyUrl());
@@ -158,8 +177,38 @@ public class RealWechatPayProvider implements WechatPayProvider {
         amountReq.setTotal(request.totalAmountCent());
         amountReq.setCurrency("CNY");
         createRequest.setAmount(amountReq);
-        Refund refund = new RefundService.Builder().config(config(config)).build().create(createRequest);
+        Refund refund = refundService(config).create(createRequest);
         return new WechatRefundResult(refund.getOutRefundNo(), nullToEmpty(refund.getRefundId()), refund.getStatus() == null ? "" : refund.getStatus().name());
+    }
+
+    @Override
+    public WechatRefundQueryResult queryRefund(ResolvedPaymentConfig config, String outRefundNo) {
+        QueryByOutRefundNoRequest request = new QueryByOutRefundNoRequest();
+        request.setOutRefundNo(outRefundNo);
+        Refund refund;
+        try {
+            refund = refundService(config).queryByOutRefundNo(request);
+        } catch (ServiceException ex) {
+            if ("RESOURCE_NOT_EXISTS".equals(ex.getErrorCode())
+                    || "REFUND_NOT_EXIST".equals(ex.getErrorCode())) {
+                return new WechatRefundQueryResult(outRefundNo, "", "", "NOT_FOUND", 0L, null);
+            }
+            throw ex;
+        }
+        long refundAmountCent = refund.getAmount() == null || refund.getAmount().getRefund() == null
+                ? 0L
+                : refund.getAmount().getRefund();
+        LocalDateTime successAt = refund.getSuccessTime() == null
+                ? null
+                : toLocalDateTime(refund.getSuccessTime());
+        return new WechatRefundQueryResult(
+                refund.getOutRefundNo(),
+                nullToEmpty(refund.getRefundId()),
+                refund.getOutTradeNo(),
+                refund.getStatus() == null ? "" : refund.getStatus().name(),
+                refundAmountCent,
+                successAt
+        );
     }
 
     @Override
@@ -181,6 +230,8 @@ public class RealWechatPayProvider implements WechatPayProvider {
                     .build();
             com.wechat.pay.java.service.refund.model.RefundNotification refundNotification =
                     notificationParser(config).parse(requestParam, com.wechat.pay.java.service.refund.model.RefundNotification.class);
+            // The current refund SDK resource has no mchid/appid fields. Merchant identity is bound
+            // transactionally to payment_order's configuration id and fingerprint before mutation.
             JsonNode root = objectMapper.readTree(body);
             String resourceDigest = root.path("resource").isMissingNode() ? "" : sha256(root.path("resource").toString());
             long refundAmountCent = refundNotification.getAmount() == null || refundNotification.getAmount().getRefund() == null
@@ -188,7 +239,7 @@ public class RealWechatPayProvider implements WechatPayProvider {
                     : refundNotification.getAmount().getRefund();
             LocalDateTime successAt = refundNotification.getSuccessTime() == null
                     ? null
-                    : OffsetDateTime.parse(refundNotification.getSuccessTime()).toLocalDateTime();
+                    : toLocalDateTime(refundNotification.getSuccessTime());
             return new WechatRefundNotification(
                     root.path("id").asText(),
                     root.path("event_type").asText(),
@@ -213,6 +264,20 @@ public class RealWechatPayProvider implements WechatPayProvider {
                 .build();
     }
 
+    RefundService refundService(ResolvedPaymentConfig config) {
+        return new RefundService.Builder()
+                .config(config(config))
+                .build();
+    }
+
+    void validatePayNotificationMerchant(ResolvedPaymentConfig config, Transaction transaction) {
+        if (transaction == null
+                || !config.mchId().equals(transaction.getMchid())
+                || !config.appId().equals(transaction.getAppid())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+    }
+
     private NotificationParser notificationParser(ResolvedPaymentConfig config) {
         return new NotificationParser((RSAPublicKeyConfig) config(config));
     }
@@ -230,6 +295,12 @@ public class RealWechatPayProvider implements WechatPayProvider {
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    LocalDateTime toLocalDateTime(String value) {
+        return OffsetDateTime.parse(value)
+                .atZoneSameInstant(clock.getZone())
+                .toLocalDateTime();
     }
 
     private String sha256(String value) throws Exception {

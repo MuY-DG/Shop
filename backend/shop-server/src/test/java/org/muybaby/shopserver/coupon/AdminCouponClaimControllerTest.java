@@ -106,7 +106,7 @@ class AdminCouponClaimControllerTest {
                 .andExpect(jsonPath("$.data.records[0].templateName").value("专属测试券"))
                 .andExpect(jsonPath("$.data.records[0].distributionMode").value("DIRECT"))
                 .andExpect(jsonPath("$.data.records[0].issueSource").value("ADMIN_DIRECT"))
-                .andExpect(jsonPath("$.data.records[0].userId").value(USER_ID))
+                .andExpect(jsonPath("$.data.records[0].userId").value(Long.toString(USER_ID)))
                 .andExpect(jsonPath("$.data.records[0].userNickname").value("领取记录用户"))
                 .andExpect(jsonPath("$.data.records[0].operatorDisplayName").value("Super Admin"))
                 .andExpect(jsonPath("$.data.records[0].issueNote").value("专属补偿"))

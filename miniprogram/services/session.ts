@@ -67,8 +67,8 @@ function normalizeProfile(value: unknown): AppUserProfile | undefined {
     return undefined;
   }
   if (
-    typeof value.userId !== "number" ||
-    !Number.isFinite(value.userId) ||
+    typeof value.userId !== "string" ||
+    !/^[1-9]\d*$/.test(value.userId) ||
     typeof value.openidMasked !== "string" ||
     typeof value.phoneAuthorized !== "boolean" ||
     value.phoneNumberMasked !== undefined &&
@@ -77,7 +77,7 @@ function normalizeProfile(value: unknown): AppUserProfile | undefined {
   ) {
     return undefined;
   }
-  const fallbackNickname = `用户${String(Math.trunc(Math.abs(value.userId))).slice(-6)}`;
+  const fallbackNickname = `用户${value.userId.slice(-6)}`;
   const nickname =
     typeof value.nickname === "string" && value.nickname.trim()
       ? value.nickname.trim()

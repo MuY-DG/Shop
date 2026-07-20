@@ -415,6 +415,21 @@ class CustomerServiceControllerTest {
         mockMvc.perform(get("/admin/customer-service/messages/{messageId}/image", adminMessageId)
                         .header("Authorization", bearer(adminToken)))
                 .andExpect(status().isOk());
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from customer_service_message message
+                        join storage_asset asset on asset.id = message.resource_id
+                        where message.conversation_id = :conversationId
+                          and message.message_type = 'IMAGE'
+                          and asset.status = 'ACTIVE'
+                          and asset.expires_at is null
+                          and asset.upload_context_type = 'CUSTOMER_SERVICE_CONVERSATION'
+                          and asset.upload_context_id = :conversationId
+                        """)
+                .param("conversationId", conversationId)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
     }
 
     @Test

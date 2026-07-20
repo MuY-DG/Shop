@@ -15,6 +15,7 @@ Shop/
 ## Current Design
 
 - [Hotpot Shop WeChat Mini Program Design](docs/superpowers/specs/2026-07-06-hotpot-shop-design.md)
+- [Backend Architecture and Evolution Rules](docs/backend-architecture.md)
 
 ## Implementation Plans
 

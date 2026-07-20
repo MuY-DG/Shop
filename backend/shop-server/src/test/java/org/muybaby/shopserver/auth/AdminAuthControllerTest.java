@@ -87,8 +87,8 @@ class AdminAuthControllerTest {
         mockMvc.perform(get("/admin/auth/current-user")
                 .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.userId").isString())
-                .andExpect(jsonPath("$.data.userId").value("1"))
+                .andExpect(jsonPath("$.data.userId").isNumber())
+                .andExpect(jsonPath("$.data.userId").value(1))
                 .andExpect(jsonPath("$.data.userName").value("Super"))
                 .andExpect(jsonPath("$.data.roles", containsInAnyOrder("R_SUPER")))
                 .andExpect(jsonPath("$.data.buttons", containsInAnyOrder(

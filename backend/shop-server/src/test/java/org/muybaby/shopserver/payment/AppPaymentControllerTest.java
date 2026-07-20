@@ -8,7 +8,7 @@ import org.muybaby.shopserver.payment.config.PaymentConfigSource;
 import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
 import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatPayOrderQueryResult;
-import org.muybaby.shopserver.payment.service.AppPaymentService;
+import org.muybaby.shopserver.payment.service.PaymentInitiationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AppPaymentControllerTest extends PaymentTestSupport {
 
     @Autowired
-    private AppPaymentService appPaymentService;
+    private PaymentInitiationService paymentInitiationService;
 
     @Autowired
     private PaymentProperties paymentProperties;
@@ -206,7 +206,7 @@ class AppPaymentControllerTest extends PaymentTestSupport {
         AppLoginSession session = appLogin("payment-repeat-non-mock-user");
         SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
         pay(session.token(), order.orderId());
-        ReflectionTestUtils.setField(appPaymentService, "paymentProperties", nonMockPaymentProperties());
+        ReflectionTestUtils.setField(paymentInitiationService, "paymentProperties", nonMockPaymentProperties());
 
         mockMvc.perform(post("/app/orders/{orderId}/pay", order.orderId())
                         .header("Authorization", "Bearer " + session.token()))
@@ -225,12 +225,20 @@ class AppPaymentControllerTest extends PaymentTestSupport {
     }
 
     @Test
-    void paymentSyncFinalizesPaidProviderResultThroughSharedStateTransition() throws Exception {
+    void paymentSyncReconcilesExpiredPaidResultWithOriginalPaymentConfiguration() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-sync-user");
         SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
         pay(session.token(), order.orderId());
         String outTradeNo = activeOutTradeNo(order.orderId());
+        jdbcClient.sql("""
+                        update payment_order
+                        set expires_at = timestamp '2026-07-07 09:00:00'
+                        where out_trade_no = :outTradeNo
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .update();
+        switchToClonedPaymentConfig(91002L);
         mockWechatPayProvider.markOrderPaid(outTradeNo, 6980L, "wx-transaction-sync");
 
         mockMvc.perform(post("/app/orders/{orderId}/payment/sync", order.orderId())
@@ -242,6 +250,7 @@ class AppPaymentControllerTest extends PaymentTestSupport {
 
         assertPaidOrderState(order, outTradeNo, "wx-transaction-sync");
         assertPaymentAttemptStatus(outTradeNo, "PAID", true);
+        assertThat(mockWechatPayProvider.queriedPaymentConfigId(outTradeNo)).isEqualTo(91001L);
     }
 
     @Test

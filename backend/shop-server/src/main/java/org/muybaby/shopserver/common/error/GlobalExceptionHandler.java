@@ -1,8 +1,12 @@
 package org.muybaby.shopserver.common.error;
 
 import org.muybaby.shopserver.common.api.ApiResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.BindException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
@@ -20,12 +24,16 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException ex) {
         ErrorCode errorCode = ex.errorCode();
-        return ResponseEntity
-                .status(statusFor(errorCode))
-                .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(statusFor(errorCode));
+        if (ex instanceof RateLimitException rateLimitException) {
+            response.header("Retry-After", Long.toString(rateLimitException.retryAfterSeconds()));
+        }
+        return response.body(ApiResponse.fail(errorCode.code(), errorCode.message()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -77,11 +85,37 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
     }
 
+    @ExceptionHandler(AuthenticationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAuthenticationException() {
+        ErrorCode errorCode = ErrorCode.AUTHENTICATION_REQUIRED;
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDeniedException() {
+        ErrorCode errorCode = ErrorCode.PERMISSION_DENIED;
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnexpectedException(Exception ex) {
+        log.error("Unhandled request failure", ex);
+        ErrorCode errorCode = ErrorCode.INTERNAL_ERROR;
+        return ResponseEntity
+                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
+    }
+
     private HttpStatus statusFor(ErrorCode errorCode) {
         return switch (errorCode) {
             case AUTHENTICATION_REQUIRED -> HttpStatus.UNAUTHORIZED;
             case PERMISSION_DENIED -> HttpStatus.FORBIDDEN;
-            case ANALYTICS_RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
+            case ADMIN_LOGIN_RATE_LIMITED, ANALYTICS_RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
+            case AUTHENTICATION_TEMPORARILY_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.BAD_REQUEST;
         };
     }

@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.auth;
 
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.muybaby.shopserver.auth.dto.AdminLoginRequest;
 import org.muybaby.shopserver.auth.dto.CurrentAdminUserResponse;
 import org.muybaby.shopserver.auth.dto.LoginTokenResponse;
@@ -8,6 +9,7 @@ import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
 import org.muybaby.shopserver.auth.service.AdminAuthService;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.security.web.ClientIpResolver;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,14 +22,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminAuthController {
 
     private final AdminAuthService adminAuthService;
+    private final ClientIpResolver clientIpResolver;
 
-    public AdminAuthController(AdminAuthService adminAuthService) {
+    public AdminAuthController(AdminAuthService adminAuthService, ClientIpResolver clientIpResolver) {
         this.adminAuthService = adminAuthService;
+        this.clientIpResolver = clientIpResolver;
     }
 
     @PostMapping("/login")
-    public ApiResponse<LoginTokenResponse> login(@Valid @RequestBody AdminLoginRequest request) {
-        return ApiResponse.success(adminAuthService.login(request));
+    public ApiResponse<LoginTokenResponse> login(
+            @Valid @RequestBody AdminLoginRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        return ApiResponse.success(adminAuthService.login(request, clientIpResolver.resolve(servletRequest)));
     }
 
     @PostMapping("/refresh")

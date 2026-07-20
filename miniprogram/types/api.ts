@@ -5,7 +5,7 @@ export interface ApiResponse<T> {
 }
 
 export interface AppUserProfile {
-  userId: number;
+  userId: string;
   nickname: string;
   openidMasked: string;
   phoneAuthorized: boolean;
@@ -324,7 +324,7 @@ export interface AfterSaleResponse {
   requestedAmountCent: number;
   approvedAmountCent: number | null;
   auditNote: string | null;
-  reviewedBy: string | null;
+  reviewedBy: number | null;
   reviewedAt: string | null;
   createdAt: string;
   evidenceFileIds: number[];

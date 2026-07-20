@@ -6,6 +6,7 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.product.dto.AppCategoryResponse;
+import org.muybaby.shopserver.product.dto.AppProductParameterValueResponse;
 import org.muybaby.shopserver.product.dto.AppSkuResponse;
 import org.muybaby.shopserver.product.dto.AppSpuDetailResponse;
 import org.muybaby.shopserver.product.dto.AppSpuListItemResponse;
@@ -19,6 +20,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class AppProductService {
@@ -67,7 +69,7 @@ public class AppProductService {
                 .query(Long.class)
                 .single();
 
-        List<AppSpuListItemResponse> records = jdbcClient.sql("""
+        List<SpuListRow> rows = jdbcClient.sql("""
                         SELECT s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points,
                                min(k.price_cent) AS min_price_cent,
                                max(k.price_cent) AS max_price_cent,
@@ -92,8 +94,27 @@ public class AppProductService {
                 .param("keywordLike", keywordLike)
                 .param("limit", size)
                 .param("offset", offset)
-                .query(this::mapSpuListItem)
+                .query(this::mapSpuListRow)
                 .list();
+        Map<Long, List<AppProductParameterValueResponse>> parametersBySpuId =
+                productParameterService.displayValuesBySpuIds(
+                        rows.stream().map(SpuListRow::id).toList(),
+                        true
+                );
+        List<AppSpuListItemResponse> records = rows.stream()
+                .map(row -> new AppSpuListItemResponse(
+                        row.id(),
+                        row.categoryId(),
+                        row.title(),
+                        row.subtitle(),
+                        row.mainImage(),
+                        splitSellingPoints(row.sellingPoints()),
+                        row.minPriceCent(),
+                        row.maxPriceCent(),
+                        row.totalStock(),
+                        parametersBySpuId.getOrDefault(row.id(), List.of())
+                ))
+                .toList();
 
         return PageResult.of(records, total == null ? 0 : total, current, size);
     }
@@ -172,18 +193,17 @@ public class AppProductService {
         );
     }
 
-    private AppSpuListItemResponse mapSpuListItem(ResultSet rs, int rowNum) throws SQLException {
-        return new AppSpuListItemResponse(
+    private SpuListRow mapSpuListRow(ResultSet rs, int rowNum) throws SQLException {
+        return new SpuListRow(
                 rs.getLong("id"),
                 rs.getLong("category_id"),
                 rs.getString("title"),
                 rs.getString("subtitle"),
                 rs.getString("main_image"),
-                splitSellingPoints(rs.getString("selling_points")),
+                rs.getString("selling_points"),
                 rs.getObject("min_price_cent", Long.class),
                 rs.getObject("max_price_cent", Long.class),
-                rs.getInt("total_stock"),
-                productParameterService.displayValues(rs.getLong("id"), true)
+                rs.getInt("total_stock")
         );
     }
 
@@ -250,6 +270,19 @@ public class AppProductService {
             Long mainImageFileId,
             String sellingPoints,
             String detailHtml
+    ) {
+    }
+
+    private record SpuListRow(
+            Long id,
+            Long categoryId,
+            String title,
+            String subtitle,
+            String mainImage,
+            String sellingPoints,
+            Long minPriceCent,
+            Long maxPriceCent,
+            Integer totalStock
     ) {
     }
 }

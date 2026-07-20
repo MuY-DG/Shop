@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -21,6 +22,8 @@ public class RequestIdFilter implements Filter {
 
     public static final String HEADER_NAME = "X-Request-Id";
     private static final String MDC_KEY = "requestId";
+    private static final int MAX_REQUEST_ID_LENGTH = 128;
+    private static final Pattern SAFE_REQUEST_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
 
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain chain)
@@ -40,7 +43,9 @@ public class RequestIdFilter implements Filter {
 
     private String resolveRequestId(HttpServletRequest request) {
         String incoming = request.getHeader(HEADER_NAME);
-        if (incoming == null || incoming.isBlank()) {
+        if (incoming == null
+                || incoming.length() > MAX_REQUEST_ID_LENGTH
+                || !SAFE_REQUEST_ID.matcher(incoming).matches()) {
             return UUID.randomUUID().toString();
         }
         return incoming;

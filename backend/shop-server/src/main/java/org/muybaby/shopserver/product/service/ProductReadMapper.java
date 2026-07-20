@@ -170,50 +170,68 @@ public class ProductReadMapper {
                 .param("spuId", spuId)
                 .query(this::mapAdminSku)
                 .list();
+        Map<Long, List<String>> specValueKeysBySkuId = findSkuSpecValueKeysBySpuId(spuId);
         skus = skus.stream()
                 .map(sku -> new AdminSkuResponse(
                         sku.id(), sku.skuCode(), sku.specJson(), sku.specText(), sku.priceCent(),
                         sku.originalPriceCent(), sku.costPriceCent(), sku.stockAvailable(), sku.lowStockThreshold(), sku.weightGram(),
                         sku.volumeCubicMeter(), sku.image(), sku.imageFileId(), sku.status(),
-                        sku.defaultSelected(), sku.combinationKey(), findSkuSpecValueKeys(sku.id()), sku.sortOrder()
+                        sku.defaultSelected(), sku.combinationKey(),
+                        specValueKeysBySkuId.getOrDefault(sku.id(), List.of()), sku.sortOrder()
                 ))
                 .toList();
 
-        List<AdminSpuSpecGroupResponse> specGroups = jdbcClient.sql("""
+        List<SpecGroupRow> specGroupRows = jdbcClient.sql("""
                         select id, group_key, name, image_enabled, sort_order
                         from product_spu_spec_group
                         where spu_id = :spuId and deleted_at is null
                         order by sort_order, id
                         """)
                 .param("spuId", spuId)
-                .query((rs, rowNum) -> {
-                    Long groupId = rs.getLong("id");
-                    List<AdminSpuSpecValueResponse> values = jdbcClient.sql("""
-                                    select id, value_key, value_name, image, image_file_id, sort_order
-                                    from product_spu_spec_value
-                                    where group_id = :groupId and deleted_at is null
-                                    order by sort_order, id
-                                    """)
-                            .param("groupId", groupId)
-                            .query((valueRs, valueRowNum) -> new AdminSpuSpecValueResponse(
-                                    valueRs.getLong("id"),
-                                    valueRs.getString("value_key"),
-                                    valueRs.getString("value_name"),
-                                    valueRs.getString("image"),
-                                    valueRs.getObject("image_file_id", Long.class),
-                                    valueRs.getInt("sort_order")
-                            ))
-                            .list();
-                    return new AdminSpuSpecGroupResponse(
-                            groupId,
-                            rs.getString("group_key"),
-                            rs.getString("name"),
-                            rs.getBoolean("image_enabled"),
-                            rs.getInt("sort_order"),
-                            values
-                    );
-                })
+                .query((rs, rowNum) -> new SpecGroupRow(
+                        rs.getLong("id"),
+                        rs.getString("group_key"),
+                        rs.getString("name"),
+                        rs.getBoolean("image_enabled"),
+                        rs.getInt("sort_order")
+                ))
                 .list();
+        List<SpecValueRow> specValueRows = jdbcClient.sql("""
+                        select v.group_id, v.id, v.value_key, v.value_name, v.image, v.image_file_id, v.sort_order
+                        from product_spu_spec_value v
+                        join product_spu_spec_group g on g.id = v.group_id
+                        where g.spu_id = :spuId
+                          and g.deleted_at is null
+                          and v.deleted_at is null
+                        order by g.sort_order, g.id, v.sort_order, v.id
+                        """)
+                .param("spuId", spuId)
+                .query((rs, rowNum) -> new SpecValueRow(
+                        rs.getLong("group_id"),
+                        new AdminSpuSpecValueResponse(
+                                rs.getLong("id"),
+                                rs.getString("value_key"),
+                                rs.getString("value_name"),
+                                rs.getString("image"),
+                                rs.getObject("image_file_id", Long.class),
+                                rs.getInt("sort_order")
+                        )
+                ))
+                .list();
+        Map<Long, List<AdminSpuSpecValueResponse>> specValuesByGroupId = new LinkedHashMap<>();
+        for (SpecValueRow row : specValueRows) {
+            specValuesByGroupId.computeIfAbsent(row.groupId(), ignored -> new ArrayList<>()).add(row.value());
+        }
+        List<AdminSpuSpecGroupResponse> specGroups = specGroupRows.stream()
+                .map(group -> new AdminSpuSpecGroupResponse(
+                        group.id(),
+                        group.groupKey(),
+                        group.name(),
+                        group.imageEnabled(),
+                        group.sortOrder(),
+                        List.copyOf(specValuesByGroupId.getOrDefault(group.id(), List.of()))
+                ))
+                .toList();
         List<String> tags = jdbcClient.sql("""
                         select tag_code from product_spu_tag
                         where spu_id = :spuId order by tag_code
@@ -357,18 +375,28 @@ public class ProductReadMapper {
         );
     }
 
-    private List<String> findSkuSpecValueKeys(Long skuId) {
-        return jdbcClient.sql("""
-                        select v.value_key
+    private Map<Long, List<String>> findSkuSpecValueKeysBySpuId(Long spuId) {
+        List<SkuSpecValueKeyRow> rows = jdbcClient.sql("""
+                        select sv.sku_id, v.value_key
                         from product_sku_spec_value sv
+                        join product_sku k on k.id = sv.sku_id
                         join product_spu_spec_value v on v.id = sv.spec_value_id
                         join product_spu_spec_group g on g.id = v.group_id
-                        where sv.sku_id = :skuId
-                        order by g.sort_order, g.id, v.sort_order, v.id
+                        where k.spu_id = :spuId and k.deleted_at is null
+                        order by sv.sku_id, g.sort_order, g.id, v.sort_order, v.id
                         """)
-                .param("skuId", skuId)
-                .query(String.class)
+                .param("spuId", spuId)
+                .query((rs, rowNum) -> new SkuSpecValueKeyRow(
+                        rs.getLong("sku_id"),
+                        rs.getString("value_key")
+                ))
                 .list();
+        Map<Long, List<String>> keysBySkuId = new LinkedHashMap<>();
+        for (SkuSpecValueKeyRow row : rows) {
+            keysBySkuId.computeIfAbsent(row.skuId(), ignored -> new ArrayList<>()).add(row.valueKey());
+        }
+        keysBySkuId.replaceAll((ignored, keys) -> List.copyOf(keys));
+        return keysBySkuId;
     }
 
     private record CategoryRow(
@@ -402,6 +430,21 @@ public class ProductReadMapper {
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
+    }
+
+    private record SkuSpecValueKeyRow(Long skuId, String valueKey) {
+    }
+
+    private record SpecGroupRow(
+            Long id,
+            String groupKey,
+            String name,
+            Boolean imageEnabled,
+            Integer sortOrder
+    ) {
+    }
+
+    private record SpecValueRow(Long groupId, AdminSpuSpecValueResponse value) {
     }
 
     private record MutableCategory(

@@ -12,7 +12,9 @@ import org.springframework.test.context.ActiveProfiles;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
@@ -66,19 +68,56 @@ class PrivateStorageFileServiceTest {
                 .update();
 
         assertUnavailable(stagedFileId);
-        privateStorageFileService.lockAndValidatePaymentSecrets(List.of(stagedFileId), List.of());
+        var inspected = privateStorageFileService.inspectPaymentSecrets(List.of(stagedFileId));
+        privateStorageFileService.lockAndRevalidatePaymentSecrets(inspected, List.of());
 
         jdbcClient.sql("update storage_asset set expires_at = :expiresAt where id = :assetId")
                 .param("expiresAt", databaseNow().minusSeconds(1))
                 .param("assetId", stagedFileId)
                 .update();
-        assertThatThrownBy(() -> privateStorageFileService.lockAndValidatePaymentSecrets(List.of(stagedFileId), List.of()))
+        assertThatThrownBy(() -> privateStorageFileService.inspectPaymentSecrets(List.of(stagedFileId)))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
     }
 
+    @Test
+    void lockedRevalidationRejectsFingerprintOrStatusChangesAfterInspection() {
+        Long replacedFileId = insertStorageAsset(
+                23007L, "SECRET", "DOCUMENT", "PRIVATE", "ACTIVE",
+                "private/payment/replaced.pem", "replacement-sensitive-text");
+        Long deletedFileId = insertStorageAsset(
+                23008L, "SECRET", "DOCUMENT", "PRIVATE", "ACTIVE",
+                "private/payment/deleted-during-read.pem", "deletion-sensitive-text");
+        jdbcClient.sql("update storage_asset set expires_at = :expiresAt where id in (:firstId, :secondId)")
+                .param("expiresAt", databaseNow().plusHours(2))
+                .param("firstId", replacedFileId)
+                .param("secondId", deletedFileId)
+                .update();
+
+        var replacedSnapshot = privateStorageFileService.inspectPaymentSecrets(List.of(replacedFileId));
+        jdbcClient.sql("update storage_asset set sha256 = :sha256 where id = :assetId")
+                .param("sha256", "0".repeat(64))
+                .param("assetId", replacedFileId)
+                .update();
+        assertUnavailable(() -> privateStorageFileService.lockAndRevalidatePaymentSecrets(
+                replacedSnapshot, List.of()));
+
+        var deletedSnapshot = privateStorageFileService.inspectPaymentSecrets(List.of(deletedFileId));
+        jdbcClient.sql("update storage_asset set status = 'DELETE_PENDING' where id = :assetId")
+                .param("assetId", deletedFileId)
+                .update();
+        assertUnavailable(() -> privateStorageFileService.lockAndRevalidatePaymentSecrets(
+                deletedSnapshot, List.of()));
+    }
+
     private void assertUnavailable(Long fileId) {
         assertThatThrownBy(() -> privateStorageFileService.readSecretText(fileId))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+    }
+
+    private void assertUnavailable(Runnable action) {
+        assertThatThrownBy(action::run)
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
     }
@@ -100,7 +139,7 @@ class PrivateStorageFileServiceTest {
                              content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id)
                         values
                             (:id, :scope, :mediaKind, :visibility, 'LOCAL', '', :objectKey, 'file.txt',
-                             'text/plain', 'txt', :sizeBytes, '', :status, 'ADMIN', 1)
+                             'text/plain', 'txt', :sizeBytes, :sha256, :status, 'ADMIN', 1)
                         """)
                 .param("id", id)
                 .param("scope", scope)
@@ -108,8 +147,17 @@ class PrivateStorageFileServiceTest {
                 .param("visibility", visibility)
                 .param("objectKey", uniqueObjectKey)
                 .param("sizeBytes", bytes.length)
+                .param("sha256", sha256(bytes))
                 .param("status", status)
                 .update();
         return id;
+    }
+
+    private String sha256(byte[] content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 }

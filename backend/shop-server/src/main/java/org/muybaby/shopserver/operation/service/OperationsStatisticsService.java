@@ -28,6 +28,11 @@ import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TrafficStat
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TrendPoint;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TrendSeries;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.UserStatisticsReport;
+import org.muybaby.shopserver.operation.query.CommerceTrendQueryRepository;
+import org.muybaby.shopserver.operation.query.CommerceTrendQueryRepository.ProductTrendBucket;
+import org.muybaby.shopserver.operation.query.TrafficStatisticsQueryRepository;
+import org.muybaby.shopserver.operation.query.TrafficStatisticsQueryRepository.TrafficFunnelCounts;
+import org.muybaby.shopserver.operation.query.TrafficStatisticsQueryRepository.TrafficTrendBucket;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
@@ -35,7 +40,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
@@ -50,20 +54,28 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.function.ToLongFunction;
 
 @Service
 public class OperationsStatisticsService {
 
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final String BUSINESS_TIMEZONE = BUSINESS_ZONE.getId();
-    private static final String HOME_PAGE_PATH = "/pages/home/home";
     private static final long MAX_RANGE_DAYS = 366;
     private static final int RANKING_LIMIT = 10;
 
     private final JdbcClient jdbcClient;
+    private final CommerceTrendQueryRepository commerceTrendQueryRepository;
+    private final TrafficStatisticsQueryRepository trafficStatisticsQueryRepository;
 
-    public OperationsStatisticsService(JdbcClient jdbcClient) {
+    public OperationsStatisticsService(
+            JdbcClient jdbcClient,
+            CommerceTrendQueryRepository commerceTrendQueryRepository,
+            TrafficStatisticsQueryRepository trafficStatisticsQueryRepository
+    ) {
         this.jdbcClient = jdbcClient;
+        this.commerceTrendQueryRepository = commerceTrendQueryRepository;
+        this.trafficStatisticsQueryRepository = trafficStatisticsQueryRepository;
     }
 
     public OverviewReport overview(ReportQuery query) {
@@ -689,31 +701,35 @@ public class OperationsStatisticsService {
                         roundedLong(rs, "review_seconds")
                 ))
                 .single();
-        RefundServiceAggregate refunds = jdbcClient.sql("""
-                        select coalesce(sum(case when status = 'SUCCESS'
-                                                  and success_at >= :startAt and success_at < :endExclusive
-                                                 then 1 else 0 end), 0) as success_count,
-                               coalesce(sum(case when status = 'FAILED'
-                                                  and updated_at >= :startAt and updated_at < :endExclusive
-                                                 then 1 else 0 end), 0) as failed_count,
-                               coalesce(sum(case when status = 'SUCCESS'
-                                                  and success_at >= :startAt and success_at < :endExclusive
-                                                 then refund_amount_cent else 0 end), 0) as success_amount_cent,
-                               avg(case when status = 'SUCCESS'
-                                             and success_at >= :startAt and success_at < :endExclusive
-                                             and success_at >= requested_at
+        RefundSuccessServiceAggregate successfulRefunds = jdbcClient.sql("""
+                        select count(*) as success_count,
+                               coalesce(sum(refund_amount_cent), 0) as success_amount_cent,
+                               avg(case when success_at >= requested_at
                                         then timestampdiff(second, requested_at, success_at) else null end)
                                    as processing_seconds
                         from refund_order
+                        where status = 'SUCCESS'
+                          and success_at >= :startAt
+                          and success_at < :endExclusive
                         """)
                 .param("startAt", startAt)
                 .param("endExclusive", endExclusive)
-                .query((rs, rowNum) -> new RefundServiceAggregate(
+                .query((rs, rowNum) -> new RefundSuccessServiceAggregate(
                         rs.getLong("success_count"),
-                        rs.getLong("failed_count"),
                         rs.getLong("success_amount_cent"),
                         roundedLong(rs, "processing_seconds")
                 ))
+                .single();
+        long failedRefundCount = jdbcClient.sql("""
+                        select count(*)
+                        from refund_order
+                        where status = 'FAILED'
+                          and failed_at >= :startAt
+                          and failed_at < :endExclusive
+                        """)
+                .param("startAt", startAt)
+                .param("endExclusive", endExclusive)
+                .query(Long.class)
                 .single();
         return new ServiceAggregate(
                 durations.shippingSeconds(),
@@ -722,10 +738,10 @@ public class OperationsStatisticsService {
                 afterSales.approvedCount(),
                 afterSales.rejectedCount(),
                 afterSales.averageReviewSeconds(),
-                refunds.successCount(),
-                refunds.failedCount(),
-                refunds.successAmountCent(),
-                refunds.averageProcessingSeconds()
+                successfulRefunds.successCount(),
+                failedRefundCount,
+                successfulRefunds.successAmountCent(),
+                successfulRefunds.averageProcessingSeconds()
         );
     }
 
@@ -1179,63 +1195,19 @@ public class OperationsStatisticsService {
     }
 
     private List<FunnelStage> trafficFunnel(ReportContext context) {
-        List<FunnelEvent> events = jdbcClient.sql("""
-                        select visitor_id, event_type, page_path, occurred_at
-                        from analytics_event
-                        where business_date >= :startDate
-                          and business_date <= :endDate
-                        order by occurred_at, id
-                        """)
-                .param("startDate", context.startDate())
-                .param("endDate", context.endDate())
-                .query((rs, rowNum) -> new FunnelEvent(
-                        rs.getString("visitor_id"),
-                        rs.getString("event_type"),
-                        rs.getString("page_path"),
-                        instantTimestamp(rs, "occurred_at")
-                ))
-                .list();
-        Map<String, FunnelProgress> progressByVisitor = new HashMap<>();
-        for (FunnelEvent event : events) {
-            FunnelProgress progress = progressByVisitor.computeIfAbsent(
-                    event.visitorId(), ignored -> new FunnelProgress());
-            progress.accept(event);
-        }
-
-        List<AttributedOrder> orders = jdbcClient.sql("""
-                        select analytics_visitor_id,
-                               created_at,
-                               case when paid_at >= :startAt and paid_at < :endExclusive
-                                    then paid_at else null end as paid_at
-                        from shop_order
-                        where created_at >= :startAt
-                          and created_at < :endExclusive
-                          and analytics_visitor_id is not null
-                        order by created_at, id
-                        """)
-                .param("startAt", context.startAt())
-                .param("endExclusive", context.endExclusive())
-                .query((rs, rowNum) -> new AttributedOrder(
-                        rs.getString("analytics_visitor_id"),
-                        instantTimestamp(rs, "created_at"),
-                        instantTimestamp(rs, "paid_at")
-                ))
-                .list();
-        for (AttributedOrder order : orders) {
-            FunnelProgress progress = progressByVisitor.get(order.visitorId());
-            if (progress == null) {
-                continue;
-            }
-            progress.accept(order);
-        }
+        TrafficFunnelCounts counts = trafficStatisticsQueryRepository.loadFunnelCounts(
+                context.startDate(),
+                context.endDate(),
+                context.startAt(),
+                context.endExclusive());
 
         List<StageCount> stages = List.of(
-                new StageCount("homeVisit", "首页访问", reached(progressByVisitor, FunnelStageKey.HOME)),
-                new StageCount("productView", "商品详情", reached(progressByVisitor, FunnelStageKey.PRODUCT)),
-                new StageCount("cartAdd", "加入购物车", reached(progressByVisitor, FunnelStageKey.CART)),
-                new StageCount("checkoutStart", "开始结算", reached(progressByVisitor, FunnelStageKey.CHECKOUT)),
-                new StageCount("orderSubmit", "提交订单", reached(progressByVisitor, FunnelStageKey.SUBMIT)),
-                new StageCount("paymentSuccess", "支付成功", reached(progressByVisitor, FunnelStageKey.PAID))
+                new StageCount("homeVisit", "首页访问", counts.homeCount()),
+                new StageCount("productView", "商品详情", counts.productCount()),
+                new StageCount("cartAdd", "加入购物车", counts.cartCount()),
+                new StageCount("checkoutStart", "开始结算", counts.checkoutCount()),
+                new StageCount("orderSubmit", "提交订单", counts.submittedCount()),
+                new StageCount("paymentSuccess", "支付成功", counts.paidCount())
         );
         List<FunnelStage> result = new ArrayList<>();
         long previous = 0;
@@ -1248,10 +1220,6 @@ public class OperationsStatisticsService {
             previous = stage.count();
         }
         return result;
-    }
-
-    private long reached(Map<String, FunnelProgress> progressByVisitor, FunnelStageKey stage) {
-        return progressByVisitor.values().stream().filter(progress -> progress.reached(stage)).count();
     }
 
     private List<RankingItem> couponTemplateRanking(ReportContext context) {
@@ -1437,31 +1405,19 @@ public class OperationsStatisticsService {
     }
 
     private List<TrendSeries> productTrend(ReportContext context) {
-        List<ProductTrendFact> facts = jdbcClient.sql("""
-                        select o.paid_at, oi.quantity, oi.line_amount_cent
-                        from order_item oi
-                        join shop_order o on o.id = oi.order_id
-                        where o.paid_at >= :startAt
-                          and o.paid_at < :endExclusive
-                        order by o.paid_at, oi.id
-                        """)
-                .param("startAt", context.startAt())
-                .param("endExclusive", context.endExclusive())
-                .query((rs, rowNum) -> new ProductTrendFact(
-                        rs.getObject("paid_at", LocalDateTime.class),
-                        rs.getLong("quantity"),
-                        rs.getLong("line_amount_cent")
-                ))
-                .list();
+        List<Bucket> buckets = buckets(context);
+        Map<Integer, ProductTrendBucket> aggregateByBucket = new HashMap<>();
+        commerceTrendQueryRepository.loadProductTrendBuckets(
+                        context.startDate(),
+                        context.startAt(),
+                        context.endExclusive(),
+                        context.granularity())
+                .forEach(bucket -> aggregateByBucket.put(bucket.bucketOrdinal(), bucket));
         return List.of(
                 new TrendSeries("soldQuantity", "支付件数", MetricUnit.COUNT,
-                        sumPoints(context, facts.stream()
-                                .map(fact -> new TimedValue(fact.occurredAt(), fact.quantity()))
-                                .toList())),
+                        bucketTrendPoints(buckets, aggregateByBucket, ProductTrendBucket::soldQuantity)),
                 new TrendSeries("paidItemAmountCent", "支付商品毛额", MetricUnit.CENT,
-                        sumPoints(context, facts.stream()
-                                .map(fact -> new TimedValue(fact.occurredAt(), fact.amountCent()))
-                                .toList()))
+                        bucketTrendPoints(buckets, aggregateByBucket, ProductTrendBucket::paidItemAmountCent))
         );
     }
 
@@ -1628,39 +1584,38 @@ public class OperationsStatisticsService {
     }
 
     private List<TrendSeries> trafficTrend(ReportContext context) {
-        List<AnalyticsTrendFact> facts = jdbcClient.sql("""
-                        select occurred_at, event_type, visitor_id, session_id
-                        from analytics_event
-                        where business_date >= :startDate
-                          and business_date <= :endDate
-                        order by occurred_at, id
-                        """)
-                .param("startDate", context.startDate())
-                .param("endDate", context.endDate())
-                .query((rs, rowNum) -> new AnalyticsTrendFact(
-                        instantTimestamp(rs, "occurred_at")
-                                .atZone(BUSINESS_ZONE)
-                                .toLocalDateTime(),
-                        rs.getString("event_type"),
-                        rs.getString("visitor_id"),
-                        rs.getString("session_id")
-                ))
-                .list();
+        List<Bucket> buckets = buckets(context);
+        Map<Integer, TrafficTrendBucket> aggregateByBucket = new HashMap<>();
+        trafficStatisticsQueryRepository.loadTrendBuckets(
+                        context.startDate(),
+                        context.endDate(),
+                        context.startAt(),
+                        context.endExclusive(),
+                        context.granularity())
+                .forEach(bucket -> aggregateByBucket.put(bucket.bucketOrdinal(), bucket));
         return List.of(
                 new TrendSeries("pageViewCount", "PV", MetricUnit.COUNT,
-                        countPoints(context, facts.stream()
-                                .filter(fact -> "PAGE_VIEW".equals(fact.eventType()))
-                                .map(AnalyticsTrendFact::occurredAt)
-                                .toList())),
+                        bucketTrendPoints(buckets, aggregateByBucket, TrafficTrendBucket::pageViewCount)),
                 new TrendSeries("visitorCount", "UV", MetricUnit.COUNT,
-                        distinctPoints(context, facts.stream()
-                                .map(fact -> new TimedKey(fact.occurredAt(), fact.visitorId()))
-                                .toList())),
+                        bucketTrendPoints(buckets, aggregateByBucket, TrafficTrendBucket::visitorCount)),
                 new TrendSeries("sessionCount", "会话", MetricUnit.COUNT,
-                        distinctPoints(context, facts.stream()
-                                .map(fact -> new TimedKey(fact.occurredAt(), fact.visitorId() + ":" + fact.sessionId()))
-                                .toList()))
+                        bucketTrendPoints(buckets, aggregateByBucket, TrafficTrendBucket::sessionCount))
         );
+    }
+
+    private <T> List<TrendPoint> bucketTrendPoints(
+            List<Bucket> buckets,
+            Map<Integer, T> aggregateByBucket,
+            ToLongFunction<T> valueExtractor
+    ) {
+        List<TrendPoint> points = new ArrayList<>(buckets.size());
+        for (int index = 0; index < buckets.size(); index++) {
+            Bucket bucket = buckets.get(index);
+            T aggregate = aggregateByBucket.get(index);
+            long value = aggregate == null ? 0L : valueExtractor.applyAsLong(aggregate);
+            points.add(new TrendPoint(bucket.key(), bucket.label(), value));
+        }
+        return points;
     }
 
     private List<TrendSeries> marketingTrend(ReportContext context) {
@@ -2047,11 +2002,6 @@ public class OperationsStatisticsService {
                 .value();
     }
 
-    private Instant instantTimestamp(ResultSet resultSet, String column) throws SQLException {
-        LocalDateTime value = resultSet.getObject(column, LocalDateTime.class);
-        return value == null ? null : value.atZone(BUSINESS_ZONE).toInstant();
-    }
-
     private MetricValue metric(long value, MetricUnit unit) {
         return new MetricValue(value, unit, Availability.AVAILABLE, null, null);
     }
@@ -2351,8 +2301,8 @@ public class OperationsStatisticsService {
                                       Long averageReviewSeconds) {
     }
 
-    private record RefundServiceAggregate(long successCount, long failedCount, long successAmountCent,
-                                          Long averageProcessingSeconds) {
+    private record RefundSuccessServiceAggregate(long successCount, long successAmountCent,
+                                                 Long averageProcessingSeconds) {
     }
 
     private record ServiceAggregate(Long averageShippingSeconds, Long averageCompletionSeconds,
@@ -2376,80 +2326,6 @@ public class OperationsStatisticsService {
     private record PurchaseSegments(long noPurchase, long oneOrder, long twoToFour, long fivePlus) {
     }
 
-    private enum FunnelStageKey {
-        HOME,
-        PRODUCT,
-        CART,
-        CHECKOUT,
-        SUBMIT,
-        PAID
-    }
-
-    private record FunnelEvent(String visitorId, String eventType, String pagePath, Instant occurredAt) {
-    }
-
-    private record AttributedOrder(String visitorId, Instant createdAt, Instant paidAt) {
-    }
-
-    private static final class FunnelProgress {
-        private Instant homeAt;
-        private Instant productAt;
-        private Instant cartAt;
-        private Instant checkoutAt;
-        private Instant submittedAt;
-        private Instant paidAt;
-
-        private void accept(FunnelEvent event) {
-            if (homeAt == null
-                    && "PAGE_VIEW".equals(event.eventType())
-                    && HOME_PAGE_PATH.equals(event.pagePath())) {
-                homeAt = event.occurredAt();
-                return;
-            }
-            if (productAt == null && homeAt != null
-                    && "PRODUCT_VIEW".equals(event.eventType())
-                    && !event.occurredAt().isBefore(homeAt)) {
-                productAt = event.occurredAt();
-                return;
-            }
-            if (cartAt == null && productAt != null
-                    && "CART_ADD".equals(event.eventType())
-                    && !event.occurredAt().isBefore(productAt)) {
-                cartAt = event.occurredAt();
-                return;
-            }
-            if (checkoutAt == null && cartAt != null
-                    && "CHECKOUT_START".equals(event.eventType())
-                    && !event.occurredAt().isBefore(cartAt)) {
-                checkoutAt = event.occurredAt();
-            }
-        }
-
-        private void accept(AttributedOrder order) {
-            if (checkoutAt == null || order.createdAt().isBefore(checkoutAt)) {
-                return;
-            }
-            if (submittedAt == null) {
-                submittedAt = order.createdAt();
-            }
-            if (paidAt == null && order.paidAt() != null
-                    && !order.paidAt().isBefore(order.createdAt())) {
-                paidAt = order.paidAt();
-            }
-        }
-
-        private boolean reached(FunnelStageKey stage) {
-            return switch (stage) {
-                case HOME -> homeAt != null;
-                case PRODUCT -> productAt != null;
-                case CART -> cartAt != null;
-                case CHECKOUT -> checkoutAt != null;
-                case SUBMIT -> submittedAt != null;
-                case PAID -> paidAt != null;
-            };
-        }
-    }
-
     private record StageCount(String key, String label, long count) {
     }
 
@@ -2468,13 +2344,6 @@ public class OperationsStatisticsService {
     }
 
     private record PaidTrendFact(LocalDateTime occurredAt, long amountCent, long userId) {
-    }
-
-    private record ProductTrendFact(LocalDateTime occurredAt, long quantity, long amountCent) {
-    }
-
-    private record AnalyticsTrendFact(LocalDateTime occurredAt, String eventType,
-                                      String visitorId, String sessionId) {
     }
 
     private record TimedValue(LocalDateTime occurredAt, long value) {

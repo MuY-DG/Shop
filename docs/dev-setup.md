@@ -59,6 +59,39 @@ Expected result:
 BUILD SUCCESS
 ```
 
+## Seeded Administrator Safety
+
+The historical `Super / 123456` account is enabled only by the `dev` and `test` profiles for local smoke checks. The default/production profile disables that known credential during Flyway migration `V36` and replaces its hash unless the password was already rotated.
+
+For a controlled first-time deployment, provide a BCrypt hash and explicitly enable the seed only for the migration run:
+
+```properties
+SHOP_DEFAULT_ADMIN_STATUS=ENABLED
+SHOP_DEFAULT_ADMIN_PASSWORD_HASH=<bcrypt-hash-for-a-unique-bootstrap-password>
+```
+
+Log in once, rotate the password or create the real administrator, and remove both variables. Never enable the documented local password on a shared environment.
+
+OpenAPI is disabled by default and enabled in the local `dev` profile. Override it with `SHOP_OPENAPI_ENABLED` when needed.
+
+Administrator login protection is enabled by default and uses Redis in non-test profiles. The pair/account/IP limits are controlled by `SHOP_ADMIN_LOGIN_PAIR_FAILURE_LIMIT`, `SHOP_ADMIN_LOGIN_ACCOUNT_FAILURE_LIMIT`, `SHOP_ADMIN_LOGIN_IP_FAILURE_LIMIT`, `SHOP_ADMIN_LOGIN_FAILURE_WINDOW`, and `SHOP_ADMIN_LOGIN_LOCK_DURATION`. A Redis outage intentionally rejects login with HTTP 503 instead of bypassing the protection.
+
+Spring's container-level forwarded-header rewriting is disabled so the application has one IP trust model. Configure every real reverse proxy or load balancer network in `SHOP_TRUSTED_PROXY_CIDRS`; the edge proxy must replace or safely append `X-Forwarded-For`. Do not trust broad application or cluster networks merely for convenience.
+
+Expired `PREPARING` and `PAYING` payment orders are scanned every 60 seconds by default. A fresh prepay lease is never stolen. The scanner queries WeChat first, confirms a remotely paid order, and only closes an unpaid order; a provider-side `CLOSED` result completes an interrupted local close. The operational controls are `SHOP_PAY_TIMEOUT_SCAN_ENABLED`, `SHOP_PAY_TIMEOUT_SCAN_DELAY`, `SHOP_PAY_TIMEOUT_SCAN_BATCH_SIZE`, and `SHOP_PAY_TIMEOUT_SCAN_CLAIM_TIMEOUT`.
+
+Refunds left in `PROCESSING` are reconciled with WeChat after one minute by default. Configure this with `SHOP_REFUND_RECOVERY_ENABLED`, `SHOP_REFUND_RECOVERY_DELAY`, `SHOP_REFUND_RECOVERY_BATCH_SIZE`, `SHOP_REFUND_RECOVERY_MIN_AGE`, and `SHOP_REFUND_RECOVERY_CLAIM_TIMEOUT`.
+
+A refund that WeChat definitively closes is not resubmitted under the old merchant refund number. After resolving the cause (for example, recharging the merchant account), an administrator with `aftersale:audit` can call `POST /admin/after-sales/{afterSaleId}/refund-retry` with `{"note":"..."}`. The note is mandatory and stored in the operator audit trail. The endpoint accepts only the latest `FAILED/CLOSED` attempt without an active recovery lease, safely clears an expired orphan lease by its token, preserves the old attempt, creates a new merchant refund number, and leaves an indeterminate provider response in `PROCESSING/REQUEST_UNKNOWN` for the recovery job. A callback or query can finalize only the latest refund attempt for that after-sale record.
+
+For the latest `PROCESSING` or `FAILED` attempt, the same permission can use `.../refunds/{refundOrderId}/provider-query`, `.../provider-resubmit`, or `.../manual-intervention`. Every request requires a nonblank operation note of at most 180 characters and produces audit records. Resubmit always queries WeChat first and submits the original merchant refund number only when WeChat reports `NOT_FOUND`; it never resubmits a known `PROCESSING`, `SUCCESS`, `CLOSED`, or `ABNORMAL` refund. Manual intervention records `FAILED/MANUAL_INTERVENTION` and stops automatic recovery without fabricating a successful refund, but it cannot overwrite a provider `CLOSED` terminal state. Operator notes stay in the admin audit log and are not returned through App refund error fields. The admin after-sale drawer exposes only the actions valid for the current state.
+
+Once a database payment configuration has been referenced by a payment order, its merchant identity and key material are immutable. Create and enable a new configuration revision instead of editing the historical one; outstanding payment queries, closes, callbacks, and refunds continue to use their original merchant configuration. New payment orders also store a non-reversible configuration fingerprint, and every provider result is bound to that ID/fingerprint before local state changes.
+
+For an ENV-sourced payment, migration `V41` adds an append-only, content-addressed configuration snapshot. Payment preparation encrypts the APIv3 key, merchant private key PEM, and WeChat public key PEM with the existing AES-GCM `SHOP_PAYMENT_SECRET_KEY` before inserting the payment order. Query, close, refund, recovery, and callback candidate selection can therefore restore the exact credential revision after `WECHAT_PAY_*` values or key files are rotated. For DB-sourced payments, preparation locks and revalidates the configuration row in the payment transaction before inserting its identity reference. Snapshot rows never expose key material through an API and application code has no update/delete path; a row whose decrypted contents no longer match its fingerprint fails closed with `PAYMENT_CONFIGURATION_CHANGED`.
+
+`SHOP_PAYMENT_SECRET_KEY` is the root encryption key, not a WeChat credential. It must be present before creating an ENV payment and must remain stable for the lifetime of stored payments; back it up in the deployment secret manager. Rotating or losing it without an explicit re-encryption/key-ring procedure makes both database secrets and historical ENV snapshots unreadable. Upgrade-era ENV orders without a fingerprint/snapshot still fail closed and require manual reconciliation. Callback parsing tries the current revision first and then a bounded set of the 32 most recently used database or encrypted ENV revisions because the merchant order number is inside the encrypted notification resource; after a candidate exposes that route, the callback is reparsed and validated with the exact configuration identity stored on the payment.
+
 ## Local WeChat Mini Program Credentials
 
 The backend imports an optional local properties file from `backend/shop-server/.env.local`. This file is ignored by Git and should hold real mini program credentials for local integration checks:
@@ -113,12 +146,17 @@ SHOP_STORAGE_PROVIDER=LOCAL
 SHOP_STORAGE_LOCAL_ROOT=var/uploads
 SHOP_STORAGE_PUBLIC_BASE_URL=http://localhost:8080
 SHOP_STORAGE_IMAGE_MAX_SIZE=5MB
+SHOP_STORAGE_IMAGE_MAX_WIDTH=8192
+SHOP_STORAGE_IMAGE_MAX_HEIGHT=8192
+SHOP_STORAGE_IMAGE_MAX_PIXELS=25000000
 SHOP_STORAGE_VIDEO_MAX_SIZE=50MB
 SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE=1MB
 SHOP_STORAGE_CLEANUP_INITIAL_DELAY=10m
 SHOP_STORAGE_CLEANUP_FIXED_DELAY=10m
 SHOP_STORAGE_CLEANUP_BATCH_SIZE=100
 ```
+
+Image uploads are rejected when the extension, declared MIME, and decoded format disagree, or when width, height, GIF logical canvas, frame count, or cumulative pixels exceed the validation limits. JPEG, PNG, GIF, and WebP are decoded through ImageIO; WebP support is an explicit runtime dependency. Keep the byte-size limit as well: it controls transfer/storage size, while the dimension/frame limits protect the JVM from decompression-bomb memory pressure.
 
 Tencent Cloud COS can also be supplied through environment defaults:
 

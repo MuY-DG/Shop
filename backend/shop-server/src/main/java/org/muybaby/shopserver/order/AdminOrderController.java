@@ -18,7 +18,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/admin/orders")
@@ -68,11 +67,11 @@ public class AdminOrderController {
 
     @PostMapping("/{orderId}/close")
     @PreAuthorize("hasAuthority('order:close')")
-    public ApiResponse<Map<String, Object>> close(
+    public ApiResponse<Void> close(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long orderId
     ) {
         adminOrderService.closeCreatedOrder(principal, orderId);
-        return ApiResponse.success(Map.of());
+        return ApiResponse.success();
     }
 }

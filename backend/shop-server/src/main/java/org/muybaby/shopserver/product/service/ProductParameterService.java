@@ -28,8 +28,10 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -79,7 +81,7 @@ public class ProductParameterService {
                 statement = statement.param("categoryId" + index, categoryLineage.get(index));
             }
         }
-        return statement.query((rs, rowNum) -> definitionResponse(
+        List<DefinitionRow> rows = statement.query((rs, rowNum) -> new DefinitionRow(
                 rs.getLong("id"),
                 rs.getString("parameter_code"),
                 rs.getString("parameter_name"),
@@ -95,6 +97,7 @@ public class ProductParameterService {
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class)
         )).list();
+        return hydrateDefinitions(rows);
     }
 
     private List<Long> categoryLineage(Long categoryId) {
@@ -125,15 +128,15 @@ public class ProductParameterService {
     }
 
     public AdminProductParameterDefinitionResponse definition(Long parameterId) {
-        return jdbcClient.sql("""
+        DefinitionRow row = jdbcClient.sql("""
                         select id, parameter_code, parameter_name, value_type, unit, description,
                                required_value, filterable, card_visible, detail_visible,
                                sort_order, status, created_at, updated_at
                         from product_parameter_definition
                         where id = :parameterId
-                        """)
+                """)
                 .param("parameterId", parameterId)
-                .query((rs, rowNum) -> definitionResponse(
+                .query((rs, rowNum) -> new DefinitionRow(
                         rs.getLong("id"), rs.getString("parameter_code"), rs.getString("parameter_name"),
                         rs.getString("value_type"), rs.getString("unit"), rs.getString("description"),
                         rs.getBoolean("required_value"), rs.getBoolean("filterable"),
@@ -144,6 +147,7 @@ public class ProductParameterService {
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        return hydrateDefinitions(List.of(row)).getFirst();
     }
 
     @Transactional
@@ -229,79 +233,121 @@ public class ProductParameterService {
 
     public List<AdminSpuParameterValueResponse> spuValues(Long spuId) {
         requireSpu(spuId, false);
-        return jdbcClient.sql("""
+        List<StoredParameterValueRow> rows = jdbcClient.sql("""
                         select v.parameter_id, v.text_value, v.number_value, v.boolean_value,
                                v.option_codes_json, d.parameter_name, d.value_type, d.unit
                         from product_spu_parameter_value v
                         join product_parameter_definition d on d.id = v.parameter_id
                         where v.spu_id = :spuId
                         order by d.sort_order, d.id
-                        """)
+                """)
                 .param("spuId", spuId)
-                .query((rs, rowNum) -> {
-                    Long parameterId = rs.getLong("parameter_id");
-                    String textValue = rs.getString("text_value");
-                    BigDecimal numberValue = rs.getBigDecimal("number_value");
-                    Boolean booleanValue = rs.getObject("boolean_value", Boolean.class);
-                    List<String> optionCodes = readOptionCodes(rs.getString("option_codes_json"));
-                    return new AdminSpuParameterValueResponse(
-                            parameterId, textValue, numberValue, booleanValue, optionCodes,
-                            displayText(
-                                    parameterId,
-                                    ProductParameterValueType.valueOf(rs.getString("value_type")),
-                                    textValue,
-                                    numberValue,
-                                    booleanValue,
-                                    optionCodes,
-                                    rs.getString("unit")
-                            )
-                    );
-                })
+                .query((rs, rowNum) -> new StoredParameterValueRow(
+                        rs.getLong("parameter_id"),
+                        rs.getString("parameter_name"),
+                        ProductParameterValueType.valueOf(rs.getString("value_type")),
+                        rs.getString("unit"),
+                        rs.getString("text_value"),
+                        rs.getBigDecimal("number_value"),
+                        rs.getObject("boolean_value", Boolean.class),
+                        readOptionCodes(rs.getString("option_codes_json"))
+                ))
                 .list();
+        ParameterOptions options = loadParameterOptions(rows.stream()
+                .map(StoredParameterValueRow::parameterId)
+                .toList());
+        return rows.stream()
+                .map(row -> new AdminSpuParameterValueResponse(
+                        row.parameterId(),
+                        row.textValue(),
+                        row.numberValue(),
+                        row.booleanValue(),
+                        row.optionCodes(),
+                        displayText(
+                                row.parameterId(),
+                                row.valueType(),
+                                row.textValue(),
+                                row.numberValue(),
+                                row.booleanValue(),
+                                row.optionCodes(),
+                                row.unit(),
+                                options.byCode()
+                        )
+                ))
+                .toList();
     }
 
     public List<AppProductParameterValueResponse> displayValues(Long spuId, boolean cardVisible) {
+        return displayValuesBySpuIds(List.of(spuId), cardVisible).getOrDefault(spuId, List.of());
+    }
+
+    public Map<Long, List<AppProductParameterValueResponse>> displayValuesBySpuIds(
+            List<Long> spuIds,
+            boolean cardVisible
+    ) {
+        List<Long> normalizedSpuIds = spuIds == null
+                ? List.of()
+                : spuIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (normalizedSpuIds.isEmpty()) {
+            return Map.of();
+        }
         String visibilityColumn = cardVisible ? "d.card_visible" : "d.detail_visible";
-        return jdbcClient.sql("""
-                        select v.parameter_id, v.text_value, v.number_value, v.boolean_value,
+        List<DisplayParameterValueRow> rows = namedParameterJdbcTemplate.query("""
+                        select v.spu_id, v.parameter_id, v.text_value, v.number_value, v.boolean_value,
                                v.option_codes_json, d.parameter_code, d.parameter_name,
                                d.value_type, d.unit
                         from product_spu_parameter_value v
                         join product_parameter_definition d on d.id = v.parameter_id
-                        where v.spu_id = :spuId
+                        where v.spu_id in (:spuIds)
                           and d.status = 'ENABLED'
                           and %s = true
-                        order by d.sort_order, d.id
-                        """.formatted(visibilityColumn))
-                .param("spuId", spuId)
-                .query((rs, rowNum) -> {
-                    Long parameterId = rs.getLong("parameter_id");
-                    ProductParameterValueType valueType = ProductParameterValueType.valueOf(
-                            rs.getString("value_type")
-                    );
-                    String textValue = rs.getString("text_value");
-                    BigDecimal numberValue = rs.getBigDecimal("number_value");
-                    Boolean booleanValue = rs.getObject("boolean_value", Boolean.class);
-                    List<String> optionCodes = readOptionCodes(rs.getString("option_codes_json"));
-                    return new AppProductParameterValueResponse(
-                            parameterId,
-                            rs.getString("parameter_code"),
-                            rs.getString("parameter_name"),
-                            valueType.name(),
-                            rs.getString("unit"),
-                            displayText(
-                                    parameterId,
-                                    valueType,
-                                    textValue,
-                                    numberValue,
-                                    booleanValue,
-                                    optionCodes,
-                                    rs.getString("unit")
-                            ),
-                            selectedOptionValues(parameterId, optionCodes)
-                    );
-                })
-                .list();
+                        order by v.spu_id, d.sort_order, d.id
+                        """.formatted(visibilityColumn),
+                Map.of("spuIds", normalizedSpuIds),
+                (rs, rowNum) -> new DisplayParameterValueRow(
+                        rs.getLong("spu_id"),
+                        rs.getLong("parameter_id"),
+                        rs.getString("parameter_code"),
+                        rs.getString("parameter_name"),
+                        ProductParameterValueType.valueOf(rs.getString("value_type")),
+                        rs.getString("unit"),
+                        rs.getString("text_value"),
+                        rs.getBigDecimal("number_value"),
+                        rs.getObject("boolean_value", Boolean.class),
+                        readOptionCodes(rs.getString("option_codes_json"))
+                ));
+        ParameterOptions options = loadParameterOptions(rows.stream()
+                .map(DisplayParameterValueRow::parameterId)
+                .toList());
+        Map<Long, List<AppProductParameterValueResponse>> valuesBySpuId = new LinkedHashMap<>();
+        for (Long normalizedSpuId : normalizedSpuIds) {
+            valuesBySpuId.put(normalizedSpuId, new ArrayList<>());
+        }
+        for (DisplayParameterValueRow row : rows) {
+            valuesBySpuId.get(row.spuId()).add(new AppProductParameterValueResponse(
+                    row.parameterId(),
+                    row.parameterCode(),
+                    row.parameterName(),
+                    row.valueType().name(),
+                    row.unit(),
+                    displayText(
+                            row.parameterId(),
+                            row.valueType(),
+                            row.textValue(),
+                            row.numberValue(),
+                            row.booleanValue(),
+                            row.optionCodes(),
+                            row.unit(),
+                            options.byCode()
+                    ),
+                    selectedOptionValues(row.parameterId(), row.optionCodes(), options.byCode())
+            ));
+        }
+        valuesBySpuId.replaceAll((ignored, values) -> List.copyOf(values));
+        return Collections.unmodifiableMap(valuesBySpuId);
     }
 
     @Transactional
@@ -368,45 +414,53 @@ public class ProductParameterService {
         return valueIds.containsAll(requiredIds);
     }
 
-    private AdminProductParameterDefinitionResponse definitionResponse(
-            Long id,
-            String code,
-            String name,
-            String valueType,
-            String unit,
-            String description,
-            Boolean required,
-            Boolean filterable,
-            Boolean cardVisible,
-            Boolean detailVisible,
-            Integer sortOrder,
-            String status,
-            LocalDateTime createdAt,
-            LocalDateTime updatedAt
-    ) {
-        List<Long> categoryIds = jdbcClient.sql("""
-                        select category_id from product_category_parameter
-                        where parameter_id = :parameterId order by category_id
-                        """)
-                .param("parameterId", id)
-                .query(Long.class)
-                .list();
-        List<AdminProductParameterOptionResponse> options = jdbcClient.sql("""
-                        select id, option_code, option_label, display_level, sort_order
-                        from product_parameter_option
-                        where parameter_id = :parameterId
-                        order by sort_order, id
-                        """)
-                .param("parameterId", id)
-                .query((rs, rowNum) -> new AdminProductParameterOptionResponse(
-                        rs.getLong("id"), rs.getString("option_code"), rs.getString("option_label"),
-                        rs.getObject("display_level", Integer.class), rs.getInt("sort_order")
+    private List<AdminProductParameterDefinitionResponse> hydrateDefinitions(List<DefinitionRow> rows) {
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        List<Long> parameterIds = rows.stream().map(DefinitionRow::id).toList();
+        Map<Long, List<Long>> categoryIdsByParameterId = new HashMap<>();
+        namedParameterJdbcTemplate.query("""
+                        select parameter_id, category_id
+                        from product_category_parameter
+                        where parameter_id in (:parameterIds)
+                        order by parameter_id, category_id
+                        """,
+                Map.of("parameterIds", parameterIds),
+                rs -> {
+                    categoryIdsByParameterId
+                            .computeIfAbsent(rs.getLong("parameter_id"), ignored -> new ArrayList<>())
+                            .add(rs.getLong("category_id"));
+                });
+        ParameterOptions options = loadParameterOptions(parameterIds);
+        return rows.stream()
+                .map(row -> new AdminProductParameterDefinitionResponse(
+                        row.id(),
+                        row.code(),
+                        row.name(),
+                        row.valueType(),
+                        row.unit(),
+                        row.description(),
+                        row.required(),
+                        row.filterable(),
+                        row.cardVisible(),
+                        row.detailVisible(),
+                        row.sortOrder(),
+                        row.status(),
+                        List.copyOf(categoryIdsByParameterId.getOrDefault(row.id(), List.of())),
+                        options.ordered().getOrDefault(row.id(), List.of()).stream()
+                                .map(option -> new AdminProductParameterOptionResponse(
+                                        option.id(),
+                                        option.optionCode(),
+                                        option.optionLabel(),
+                                        option.displayLevel(),
+                                        option.sortOrder()
+                                ))
+                                .toList(),
+                        row.createdAt(),
+                        row.updatedAt()
                 ))
-                .list();
-        return new AdminProductParameterDefinitionResponse(
-                id, code, name, valueType, unit, description, required, filterable, cardVisible,
-                detailVisible, sortOrder, status, categoryIds, options, createdAt, updatedAt
-        );
+                .toList();
     }
 
     private NormalizedDefinition normalizeDefinition(AdminProductParameterDefinitionRequest request) {
@@ -592,57 +646,82 @@ public class ProductParameterService {
             BigDecimal numberValue,
             Boolean booleanValue,
             List<String> optionCodes,
-            String unit
+            String unit,
+            Map<Long, Map<String, ParameterOptionRow>> optionsByParameterAndCode
     ) {
         return switch (type) {
             case TEXT -> defaultString(textValue);
             case NUMBER -> numberValue == null ? "" : numberValue.stripTrailingZeros().toPlainString() + defaultString(unit);
             case BOOLEAN -> Boolean.TRUE.equals(booleanValue) ? "是" : "否";
             case SINGLE_SELECT, MULTI_SELECT -> {
-                Map<String, String> labels = new HashMap<>();
-                jdbcClient.sql("""
-                                select option_code, option_label from product_parameter_option
-                                where parameter_id = :parameterId
-                                """)
-                        .param("parameterId", parameterId)
-                        .query((rs, rowNum) -> {
-                            labels.put(rs.getString("option_code"), rs.getString("option_label"));
-                            return rs.getString("option_code");
-                        }).list();
-                yield String.join("、", optionCodes.stream().map(code -> labels.getOrDefault(code, code)).toList());
+                Map<String, ParameterOptionRow> options = optionsByParameterAndCode.getOrDefault(
+                        parameterId,
+                        Map.of()
+                );
+                yield String.join("、", optionCodes.stream()
+                        .map(code -> {
+                            ParameterOptionRow option = options.get(code);
+                            return option == null ? code : option.optionLabel();
+                        })
+                        .toList());
             }
         };
     }
 
     private List<AppProductParameterOptionValueResponse> selectedOptionValues(
             Long parameterId,
-            List<String> optionCodes
+            List<String> optionCodes,
+            Map<Long, Map<String, ParameterOptionRow>> optionsByParameterAndCode
     ) {
         if (optionCodes.isEmpty()) {
             return List.of();
         }
-        Map<String, AppProductParameterOptionValueResponse> options = new HashMap<>();
-        jdbcClient.sql("""
-                        select option_code, option_label, display_level
-                        from product_parameter_option
-                        where parameter_id = :parameterId
-                        """)
-                .param("parameterId", parameterId)
-                .query((rs, rowNum) -> {
-                    AppProductParameterOptionValueResponse option =
-                            new AppProductParameterOptionValueResponse(
-                                    rs.getString("option_code"),
-                                    rs.getString("option_label"),
-                                    rs.getObject("display_level", Integer.class)
-                            );
-                    options.put(option.optionCode(), option);
-                    return option.optionCode();
-                })
-                .list();
+        Map<String, ParameterOptionRow> options = optionsByParameterAndCode.getOrDefault(parameterId, Map.of());
         return optionCodes.stream()
                 .map(options::get)
                 .filter(java.util.Objects::nonNull)
+                .map(option -> new AppProductParameterOptionValueResponse(
+                        option.optionCode(),
+                        option.optionLabel(),
+                        option.displayLevel()
+                ))
                 .toList();
+    }
+
+    private ParameterOptions loadParameterOptions(List<Long> parameterIds) {
+        List<Long> normalizedParameterIds = parameterIds == null
+                ? List.of()
+                : parameterIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        if (normalizedParameterIds.isEmpty()) {
+            return ParameterOptions.empty();
+        }
+        List<ParameterOptionRow> rows = namedParameterJdbcTemplate.query("""
+                        select id, parameter_id, option_code, option_label, display_level, sort_order
+                        from product_parameter_option
+                        where parameter_id in (:parameterIds)
+                        order by parameter_id, sort_order, id
+                        """,
+                Map.of("parameterIds", normalizedParameterIds),
+                (rs, rowNum) -> new ParameterOptionRow(
+                        rs.getLong("id"),
+                        rs.getLong("parameter_id"),
+                        rs.getString("option_code"),
+                        rs.getString("option_label"),
+                        rs.getObject("display_level", Integer.class),
+                        rs.getInt("sort_order")
+                ));
+        Map<Long, List<ParameterOptionRow>> ordered = new HashMap<>();
+        Map<Long, Map<String, ParameterOptionRow>> byCode = new HashMap<>();
+        for (ParameterOptionRow row : rows) {
+            ordered.computeIfAbsent(row.parameterId(), ignored -> new ArrayList<>()).add(row);
+            byCode.computeIfAbsent(row.parameterId(), ignored -> new HashMap<>()).put(row.optionCode(), row);
+        }
+        ordered.replaceAll((ignored, options) -> List.copyOf(options));
+        byCode.replaceAll((ignored, options) -> Map.copyOf(options));
+        return new ParameterOptions(Map.copyOf(ordered), Map.copyOf(byCode));
     }
 
     private MapSqlParameterSource definitionParameters(NormalizedDefinition definition) {
@@ -688,6 +767,69 @@ public class ProductParameterService {
 
     private String defaultString(String value) {
         return value == null ? "" : value;
+    }
+
+    private record DefinitionRow(
+            Long id,
+            String code,
+            String name,
+            String valueType,
+            String unit,
+            String description,
+            Boolean required,
+            Boolean filterable,
+            Boolean cardVisible,
+            Boolean detailVisible,
+            Integer sortOrder,
+            String status,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
+    }
+
+    private record StoredParameterValueRow(
+            Long parameterId,
+            String parameterName,
+            ProductParameterValueType valueType,
+            String unit,
+            String textValue,
+            BigDecimal numberValue,
+            Boolean booleanValue,
+            List<String> optionCodes
+    ) {
+    }
+
+    private record DisplayParameterValueRow(
+            Long spuId,
+            Long parameterId,
+            String parameterCode,
+            String parameterName,
+            ProductParameterValueType valueType,
+            String unit,
+            String textValue,
+            BigDecimal numberValue,
+            Boolean booleanValue,
+            List<String> optionCodes
+    ) {
+    }
+
+    private record ParameterOptionRow(
+            Long id,
+            Long parameterId,
+            String optionCode,
+            String optionLabel,
+            Integer displayLevel,
+            Integer sortOrder
+    ) {
+    }
+
+    private record ParameterOptions(
+            Map<Long, List<ParameterOptionRow>> ordered,
+            Map<Long, Map<String, ParameterOptionRow>> byCode
+    ) {
+        private static ParameterOptions empty() {
+            return new ParameterOptions(Map.of(), Map.of());
+        }
     }
 
     private record NormalizedDefinition(

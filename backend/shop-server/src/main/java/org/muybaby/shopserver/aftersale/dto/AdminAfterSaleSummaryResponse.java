@@ -1,7 +1,6 @@
 package org.muybaby.shopserver.aftersale.dto;
 
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+import org.muybaby.shopserver.common.api.JsonStringId;
 
 import java.time.LocalDateTime;
 
@@ -9,7 +8,7 @@ public record AdminAfterSaleSummaryResponse(
         Long id,
         Long orderId,
         String orderNo,
-        @JsonSerialize(using = ToStringSerializer.class) Long userId,
+        @JsonStringId Long userId,
         String userNickname,
         String afterSaleType,
         String status,

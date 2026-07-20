@@ -13,16 +13,25 @@ import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -47,28 +56,86 @@ public class PrivateStorageFileService {
         return readText(row);
     }
 
+    /**
+     * Reads payment secret objects without holding a database transaction or row lock. The returned
+     * fingerprints must be revalidated with {@link #lockAndRevalidatePaymentSecrets(Collection, Collection)}
+     * in the short transaction that persists the payment configuration.
+     */
+    public List<PaymentSecretSnapshot> inspectPaymentSecrets(Collection<Long> currentAssetIds) {
+        Set<Long> current = normalizedIds(currentAssetIds);
+        LocalDateTime now = databaseNow();
+        List<PaymentSecretSnapshot> snapshots = new ArrayList<>(current.size());
+        for (Long assetId : current) {
+            PrivateFileRow row = requireSecretRow(assetId, false);
+            validateCurrentPaymentSecret(assetId, row, now);
+            byte[] content = readBytes(row);
+            if (content.length != row.sizeBytes()) {
+                throw unavailable();
+            }
+            String contentSha256 = sha256(content);
+            String persistedSha256 = normalizeSha256(row.sha256());
+            if (StringUtils.hasText(persistedSha256)
+                    && !persistedSha256.equals(contentSha256)) {
+                throw unavailable();
+            }
+            String text = new String(content, StandardCharsets.UTF_8);
+            if (!StringUtils.hasText(text)) {
+                throw unavailable();
+            }
+            snapshots.add(new PaymentSecretSnapshot(
+                    assetId,
+                    persistedSha256,
+                    contentSha256,
+                    row.sizeBytes(),
+                    row.objectLocation()
+            ));
+        }
+        return List.copyOf(snapshots);
+    }
+
+    /**
+     * Locks only database rows and compares them with content inspected outside the transaction.
+     * No provider call is allowed on this path.
+     */
     @Transactional
-    public void lockAndValidatePaymentSecrets(
-            Collection<Long> currentAssetIds,
+    public void lockAndRevalidatePaymentSecrets(
+            Collection<PaymentSecretSnapshot> currentSnapshots,
             Collection<Long> previousAssetIds
     ) {
-        Set<Long> current = normalizedIds(currentAssetIds);
-        Set<Long> all = new TreeSet<>(current);
+        Map<Long, PaymentSecretSnapshot> current = snapshotsByAssetId(currentSnapshots);
+        Set<Long> all = new TreeSet<>(current.keySet());
         all.addAll(normalizedIds(previousAssetIds));
         LocalDateTime now = databaseNow();
         for (Long assetId : all) {
             PrivateFileRow row = requireSecretRow(assetId, true);
-            if (!current.contains(assetId)) {
+            PaymentSecretSnapshot snapshot = current.get(assetId);
+            if (snapshot == null) {
                 continue;
             }
-            if (row.expiresAt() == null) {
-                if (!hasActivePaymentConfigReference(assetId)) {
-                    throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
-                }
-            } else if (!row.expiresAt().isAfter(now)) {
-                throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+            validateCurrentPaymentSecret(assetId, row, now);
+            if (row.sizeBytes() != snapshot.sizeBytes()
+                    || !Objects.equals(row.objectLocation(), snapshot.objectLocation())
+                    || !Objects.equals(normalizeSha256(row.sha256()), snapshot.persistedSha256())) {
+                throw unavailable();
             }
-            readText(row);
+            if (!StringUtils.hasText(snapshot.persistedSha256())) {
+                int updated = jdbcClient.sql("""
+                                update storage_asset
+                                set sha256 = :sha256,
+                                    updated_at = current_timestamp
+                                where id = :assetId
+                                  and status = 'ACTIVE'
+                                  and (sha256 is null or sha256 = '')
+                                """)
+                        .param("sha256", snapshot.contentSha256())
+                        .param("assetId", assetId)
+                        .update();
+                if (updated != 1) {
+                    throw unavailable();
+                }
+            } else if (!snapshot.persistedSha256().equals(snapshot.contentSha256())) {
+                throw unavailable();
+            }
         }
     }
 
@@ -131,7 +198,8 @@ public class PrivateStorageFileService {
         }
         PrivateFileRow row = jdbcClient.sql("""
                         select scope, media_kind, visibility, status, uploaded_by_type,
-                               provider, storage_container, storage_region, object_key, expires_at
+                               provider, storage_container, storage_region, object_key,
+                               size_bytes, sha256, expires_at
                         from storage_asset
                         where id = :assetId
                         """ + (forUpdate ? " for update" : ""))
@@ -151,10 +219,24 @@ public class PrivateStorageFileService {
     }
 
     private String readText(PrivateFileRow row) {
+        return new String(readBytes(row), StandardCharsets.UTF_8);
+    }
+
+    private byte[] readBytes(PrivateFileRow row) {
         try (InputStream inputStream = storageProvider.open(row.objectLocation()).inputStream()) {
-            return new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
+            return inputStream.readAllBytes();
         } catch (IOException | RuntimeException ex) {
-            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+            throw unavailable();
+        }
+    }
+
+    private void validateCurrentPaymentSecret(Long assetId, PrivateFileRow row, LocalDateTime now) {
+        if (row.expiresAt() == null) {
+            if (!hasActivePaymentConfigReference(assetId)) {
+                throw unavailable();
+            }
+        } else if (!row.expiresAt().isAfter(now)) {
+            throw unavailable();
         }
     }
 
@@ -192,6 +274,38 @@ public class PrivateStorageFileService {
         return normalized;
     }
 
+    private Map<Long, PaymentSecretSnapshot> snapshotsByAssetId(
+            Collection<PaymentSecretSnapshot> snapshots
+    ) {
+        Map<Long, PaymentSecretSnapshot> normalized = new LinkedHashMap<>();
+        if (snapshots == null) {
+            return normalized;
+        }
+        for (PaymentSecretSnapshot snapshot : snapshots) {
+            if (snapshot == null || snapshot.assetId() == null || snapshot.assetId() <= 0
+                    || normalized.putIfAbsent(snapshot.assetId(), snapshot) != null) {
+                throw unavailable();
+            }
+        }
+        return normalized;
+    }
+
+    private String sha256(byte[] content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    private String normalizeSha256(String sha256) {
+        return sha256 == null ? "" : sha256.trim().toLowerCase();
+    }
+
+    private BusinessException unavailable() {
+        return new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+    }
+
     private PrivateFileRow mapPrivateFileRow(ResultSet rs, int rowNum) throws SQLException {
         return new PrivateFileRow(
                 rs.getString("scope"),
@@ -203,6 +317,8 @@ public class PrivateStorageFileService {
                 rs.getString("storage_container"),
                 rs.getString("storage_region"),
                 rs.getString("object_key"),
+                rs.getLong("size_bytes"),
+                rs.getString("sha256"),
                 rs.getObject("expires_at", LocalDateTime.class)
         );
     }
@@ -217,6 +333,8 @@ public class PrivateStorageFileService {
             String storageContainer,
             String storageRegion,
             String objectKey,
+            long sizeBytes,
+            String sha256,
             LocalDateTime expiresAt
     ) {
         private StorageObjectLocation objectLocation() {
@@ -227,5 +345,14 @@ public class PrivateStorageFileService {
                     objectKey
             );
         }
+    }
+
+    public record PaymentSecretSnapshot(
+            Long assetId,
+            String persistedSha256,
+            String contentSha256,
+            long sizeBytes,
+            StorageObjectLocation objectLocation
+    ) {
     }
 }

@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.order.dto;
 
+import org.muybaby.shopserver.common.api.JsonStringId;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
 
 import java.time.LocalDateTime;
@@ -10,7 +11,7 @@ public record OrderDetailResponse(
         String orderNo,
         String status,
         String source,
-        Long userId,
+        @JsonStringId Long userId,
         String userNickname,
         String userPhone,
         Long productOriginalAmountCent,

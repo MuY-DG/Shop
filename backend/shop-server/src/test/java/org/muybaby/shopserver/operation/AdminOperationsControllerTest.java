@@ -3,6 +3,12 @@ package org.muybaby.shopserver.operation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.Granularity;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.ReportQuery;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TrendPoint;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TrendSeries;
+import org.muybaby.shopserver.operation.service.OperationsStatisticsService;
+import org.muybaby.shopserver.operation.query.CommerceTrendQueryRepository;
 import org.muybaby.shopserver.support.AdminTokenTestSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,7 +22,10 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.groups.Tuple.tuple;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -45,6 +54,12 @@ class AdminOperationsControllerTest {
 
     @Autowired
     private OpaqueTokenService opaqueTokenService;
+
+    @Autowired
+    private OperationsStatisticsService operationsStatisticsService;
+
+    @Autowired
+    private CommerceTrendQueryRepository commerceTrendQueryRepository;
 
     @BeforeEach
     void clearStatisticsFacts() {
@@ -659,6 +674,134 @@ class AdminOperationsControllerTest {
                 .andExpect(jsonPath("$.data.funnel.data[4].users").value(1))
                 .andExpect(jsonPath("$.data.funnel.data[5].users").value(1))
                 .andExpect(jsonPath("$.data.funnel.data[3].conversionRateBasisPoints").value(5000));
+    }
+
+    @Test
+    void trafficTrendAggregatesDistinctValuesAcrossPartialCalendarMonths() {
+        jdbcClient.sql("""
+                        insert into analytics_event
+                            (id, client_event_id, payload_digest, visitor_id, session_id,
+                             event_source, event_type, page_path, occurred_at, received_at, business_date)
+                        values
+                            (88701, 'trend-july-first', 'trend-july-first-digest',
+                             'trend-visitor-a', 'trend-session-a', 'CLIENT', 'PAGE_VIEW', '/first',
+                             timestamp '2026-07-15 00:00:00', timestamp '2026-07-15 00:00:01', date '2026-07-15'),
+                            (88702, 'trend-july-repeat', 'trend-july-repeat-digest',
+                             'trend-visitor-a', 'trend-session-a', 'CLIENT', 'SEARCH', '/search',
+                             timestamp '2026-07-31 23:59:59', timestamp '2026-07-31 23:59:59', date '2026-07-31'),
+                            (88703, 'trend-july-second', 'trend-july-second-digest',
+                             'trend-visitor-b', 'trend-session-b', 'CLIENT', 'PAGE_VIEW', '/second',
+                             timestamp '2026-07-31 12:00:00', timestamp '2026-07-31 12:00:01', date '2026-07-31'),
+                            (88704, 'trend-august-first', 'trend-august-first-digest',
+                             'trend-visitor-a', 'trend-session-a', 'CLIENT', 'PAGE_VIEW', '/first',
+                             timestamp '2026-08-01 00:00:00', timestamp '2026-08-01 00:00:01', date '2026-08-01'),
+                            (88705, 'trend-august-session', 'trend-august-session-digest',
+                             'trend-visitor-a', 'trend-session-c', 'CLIENT', 'SEARCH', '/search',
+                             timestamp '2026-08-02 23:59:59', timestamp '2026-08-02 23:59:59', date '2026-08-02')
+                        """).update();
+
+        var report = operationsStatisticsService.trafficStatistics(new ReportQuery(
+                LocalDate.of(2026, 7, 15),
+                LocalDate.of(2026, 8, 2),
+                Granularity.MONTH));
+        Map<String, List<TrendPoint>> pointsBySeries = report.trend().data().stream()
+                .collect(Collectors.toMap(TrendSeries::key, TrendSeries::points));
+
+        assertThat(pointsBySeries.get("pageViewCount"))
+                .extracting(TrendPoint::bucket, TrendPoint::value)
+                .containsExactly(tuple("2026-07", 2L), tuple("2026-08", 1L));
+        assertThat(pointsBySeries.get("visitorCount"))
+                .extracting(TrendPoint::bucket, TrendPoint::value)
+                .containsExactly(tuple("2026-07", 2L), tuple("2026-08", 1L));
+        assertThat(pointsBySeries.get("sessionCount"))
+                .extracting(TrendPoint::bucket, TrendPoint::value)
+                .containsExactly(tuple("2026-07", 2L), tuple("2026-08", 2L));
+    }
+
+    @Test
+    void productTrendIsAggregatedIntoDatabaseBuckets() {
+        jdbcClient.sql("""
+                        insert into shop_order
+                            (id, order_no, user_id, status, idempotency_key, paid_at, created_at, updated_at)
+                        values
+                            (88901, 'OPS-PRODUCT-TREND-JULY', 88900, 'PAID', 'ops-product-trend-july',
+                             timestamp '2026-07-31 23:00:00', timestamp '2026-07-31 22:00:00',
+                             timestamp '2026-07-31 23:00:00'),
+                            (88902, 'OPS-PRODUCT-TREND-AUGUST', 88900, 'PAID', 'ops-product-trend-august',
+                             timestamp '2026-08-01 01:00:00', timestamp '2026-08-01 00:30:00',
+                             timestamp '2026-08-01 01:00:00')
+                        """).update();
+        jdbcClient.sql("""
+                        insert into order_item
+                            (id, order_id, sku_id, spu_id, product_title, sku_code, quantity,
+                             line_amount_cent, created_at)
+                        values
+                            (88911, 88901, 88921, 88931, '七月商品 A', 'OPS-JULY-A', 2, 2000,
+                             timestamp '2026-07-31 22:00:00'),
+                            (88912, 88901, 88922, 88932, '七月商品 B', 'OPS-JULY-B', 1, 1500,
+                             timestamp '2026-07-31 22:00:00'),
+                            (88913, 88902, 88923, 88933, '八月商品', 'OPS-AUGUST', 4, 5000,
+                             timestamp '2026-08-01 00:30:00')
+                        """).update();
+
+        var buckets = commerceTrendQueryRepository.loadProductTrendBuckets(
+                LocalDate.of(2026, 7, 15),
+                LocalDate.of(2026, 7, 15).atStartOfDay(),
+                LocalDate.of(2026, 8, 3).atStartOfDay(),
+                Granularity.MONTH
+        );
+
+        assertThat(buckets)
+                .extracting(
+                        CommerceTrendQueryRepository.ProductTrendBucket::bucketOrdinal,
+                        CommerceTrendQueryRepository.ProductTrendBucket::soldQuantity,
+                        CommerceTrendQueryRepository.ProductTrendBucket::paidItemAmountCent)
+                .containsExactly(tuple(0, 3L, 3500L), tuple(1, 4L, 5000L));
+    }
+
+    @Test
+    void trafficFunnelUsesEventIdToOrderStagesWithTheSameTimestamp() {
+        jdbcClient.sql("""
+                        insert into analytics_event
+                            (id, client_event_id, payload_digest, visitor_id, session_id,
+                             event_source, event_type, page_path, occurred_at, received_at, business_date)
+                        values
+                            (88801, 'tie-before-product', 'tie-before-product-digest',
+                             'tie-before', 'tie-before-session', 'CLIENT', 'PRODUCT_VIEW', '/product',
+                             timestamp '2026-07-02 08:00:00', timestamp '2026-07-02 08:00:00', date '2026-07-02'),
+                            (88802, 'tie-before-home', 'tie-before-home-digest',
+                             'tie-before', 'tie-before-session', 'CLIENT', 'PAGE_VIEW', '/pages/home/home',
+                             timestamp '2026-07-02 08:00:00', timestamp '2026-07-02 08:00:00', date '2026-07-02'),
+                            (88811, 'tie-after-home', 'tie-after-home-digest',
+                             'tie-after', 'tie-after-session', 'CLIENT', 'PAGE_VIEW', '/pages/home/home',
+                             timestamp '2026-07-02 09:00:00', timestamp '2026-07-02 09:00:00', date '2026-07-02'),
+                            (88812, 'tie-after-product', 'tie-after-product-digest',
+                             'tie-after', 'tie-after-session', 'CLIENT', 'PRODUCT_VIEW', '/product',
+                             timestamp '2026-07-02 09:00:00', timestamp '2026-07-02 09:00:00', date '2026-07-02'),
+                            (88813, 'tie-after-cart', 'tie-after-cart-digest',
+                             'tie-after', 'tie-after-session', 'SERVER', 'CART_ADD', '/product',
+                             timestamp '2026-07-02 09:00:00', timestamp '2026-07-02 09:00:00', date '2026-07-02'),
+                            (88814, 'tie-after-checkout', 'tie-after-checkout-digest',
+                             'tie-after', 'tie-after-session', 'CLIENT', 'CHECKOUT_START', '/checkout',
+                             timestamp '2026-07-02 09:00:00', timestamp '2026-07-02 09:00:00', date '2026-07-02')
+                        """).update();
+
+        var funnel = operationsStatisticsService.trafficStatistics(new ReportQuery(
+                        LocalDate.of(2026, 7, 2),
+                        LocalDate.of(2026, 7, 2),
+                        Granularity.HOUR))
+                .funnel()
+                .data();
+
+        assertThat(funnel)
+                .extracting("key", "users")
+                .containsExactly(
+                        tuple("homeVisit", 2L),
+                        tuple("productView", 1L),
+                        tuple("cartAdd", 1L),
+                        tuple("checkoutStart", 1L),
+                        tuple("orderSubmit", 0L),
+                        tuple("paymentSuccess", 0L));
     }
 
     @Test

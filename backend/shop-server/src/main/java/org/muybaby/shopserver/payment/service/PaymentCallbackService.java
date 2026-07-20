@@ -2,12 +2,15 @@ package org.muybaby.shopserver.payment.service;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
-import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
+import org.muybaby.shopserver.payment.config.PaymentNotificationConfigSelector;
+import org.muybaby.shopserver.payment.config.PaymentNotificationTimestampValidator;
 import org.muybaby.shopserver.payment.provider.WechatPayNotification;
 import org.muybaby.shopserver.payment.provider.WechatPayProvider;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -20,20 +23,23 @@ public class PaymentCallbackService {
     private static final String CALLBACK_TYPE_PAY = "PAY";
 
     private final JdbcClient jdbcClient;
-    private final PaymentConfigResolver paymentConfigResolver;
+    private final PaymentNotificationTimestampValidator timestampValidator;
+    private final PaymentNotificationConfigSelector paymentNotificationConfigSelector;
     private final WechatPayProvider wechatPayProvider;
-    private final AppPaymentService appPaymentService;
+    private final PaymentFinalizationService paymentFinalizationService;
 
     public PaymentCallbackService(
             JdbcClient jdbcClient,
-            PaymentConfigResolver paymentConfigResolver,
+            PaymentNotificationTimestampValidator timestampValidator,
+            PaymentNotificationConfigSelector paymentNotificationConfigSelector,
             WechatPayProvider wechatPayProvider,
-            AppPaymentService appPaymentService
+            PaymentFinalizationService paymentFinalizationService
     ) {
         this.jdbcClient = jdbcClient;
-        this.paymentConfigResolver = paymentConfigResolver;
+        this.timestampValidator = timestampValidator;
+        this.paymentNotificationConfigSelector = paymentNotificationConfigSelector;
         this.wechatPayProvider = wechatPayProvider;
-        this.appPaymentService = appPaymentService;
+        this.paymentFinalizationService = paymentFinalizationService;
     }
 
     public void handlePayNotification(
@@ -43,11 +49,16 @@ public class PaymentCallbackService {
             String signature,
             String body
     ) {
-        ResolvedPaymentConfig config = paymentConfigResolver.resolve();
+        timestampValidator.validate(timestamp);
         String rawBodySha256 = sha256(body);
-        WechatPayNotification notification;
+        PaymentNotificationConfigSelector.ParsedNotification<WechatPayNotification> parsed;
         try {
-            notification = wechatPayProvider.parsePayNotification(config, timestamp, nonce, serial, signature, body);
+            parsed = paymentNotificationConfigSelector.parse(
+                    config -> wechatPayProvider.parsePayNotification(
+                            config, timestamp, nonce, serial, signature, body),
+                    notification -> PaymentNotificationConfigSelector.NotificationRoute.payment(
+                            notification.outTradeNo())
+            );
         } catch (BusinessException ex) {
             insertCallbackLog(
                     "",
@@ -62,6 +73,7 @@ public class PaymentCallbackService {
             );
             throw ex;
         }
+        WechatPayNotification notification = parsed.notification();
 
         Long logId = insertCallbackLog(
                 notification.notifyId(),
@@ -78,12 +90,13 @@ public class PaymentCallbackService {
             if (!isSuccessfulPayNotification(notification)) {
                 throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
             }
-            AppPaymentService.PaidFinalizationResult result = appPaymentService.finalizePaid(
+            PaymentFinalizationService.PaidFinalizationResult result = paymentFinalizationService.finalizePaid(
                     notification.outTradeNo(),
                     notification.transactionId(),
                     notification.amountCent(),
                     notification.paidAt(),
-                    notification.resourceDigest()
+                    notification.resourceDigest(),
+                    parsed.config()
             );
             updateCallbackLog(logId, result.duplicate() ? "DUPLICATE" : "SUCCESS", "", "");
         } catch (BusinessException ex) {
@@ -106,7 +119,8 @@ public class PaymentCallbackService {
             String errorCode,
             String errorMessage
     ) {
-        jdbcClient.sql("""
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        int insertedRows = jdbcClient.sql("""
                         insert into payment_callback_log
                             (callback_type, notify_id, out_trade_no, transaction_id, event_type,
                              resource_digest, raw_body_sha256, status, error_code, error_message,
@@ -128,17 +142,15 @@ public class PaymentCallbackService {
                 .param("errorMessage", nullToEmpty(errorMessage))
                 .param("createdAt", LocalDateTime.now())
                 .param("updatedAt", LocalDateTime.now())
-                .update();
-        return jdbcClient.sql("""
-                        select id
-                        from payment_callback_log
-                        where raw_body_sha256 = :rawBodySha256
-                        order by id desc
-                        limit 1
-                        """)
-                .param("rawBodySha256", rawBodySha256)
-                .query(Long.class)
-                .single();
+                .update(keyHolder, "id");
+        if (insertedRows != 1) {
+            throw new IllegalStateException("Payment callback log was not inserted");
+        }
+        Number key = keyHolder.getKey();
+        if (key == null) {
+            throw new IllegalStateException("Payment callback log id was not generated");
+        }
+        return key.longValue();
     }
 
     private void updateCallbackLog(Long logId, String status, String errorCode, String errorMessage) {
@@ -173,6 +185,8 @@ public class PaymentCallbackService {
 
     private boolean isSuccessfulPayNotification(WechatPayNotification notification) {
         return "TRANSACTION.SUCCESS".equals(notification.eventType())
-                && "SUCCESS".equals(notification.tradeState());
+                && "SUCCESS".equals(notification.tradeState())
+                && StringUtils.hasText(notification.transactionId())
+                && "CNY".equals(notification.currency());
     }
 }

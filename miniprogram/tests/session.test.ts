@@ -20,7 +20,7 @@ const NOW = 1_700_000_000_000;
 
 function profile(overrides: Partial<AppUserProfile> = {}): AppUserProfile {
   return {
-    userId: 7,
+    userId: "2075761422822531074",
     nickname: "山茶花用户",
     openidMasked: "o****d",
     phoneAuthorized: true,
@@ -359,7 +359,7 @@ test("restores a legacy cached profile without a nickname", () => {
       refreshToken: "apr_legacy_profile",
       accessExpiresAt: NOW + 60_000,
       profile: {
-        userId: 7,
+        userId: "7",
         openidMasked: "o****d",
         phoneAuthorized: false,
         phoneNumberMasked: null
@@ -376,7 +376,7 @@ test("restores a legacy cached profile without a nickname", () => {
 test("normalizes an omitted backend phoneNumberMasked field to null", async () => {
   const storage = fakeStorage();
   const userWithoutNullableField = {
-    userId: 7,
+    userId: "7",
     openidMasked: "o****d",
     phoneAuthorized: false
   } as AppUserProfile;

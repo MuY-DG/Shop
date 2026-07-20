@@ -1,7 +1,9 @@
 package org.muybaby.shopserver.auth.dto;
 
+import org.muybaby.shopserver.common.api.JsonStringId;
+
 public record AppUserProfile(
-        Long userId,
+        @JsonStringId Long userId,
         String nickname,
         String openidMasked,
         boolean phoneAuthorized,

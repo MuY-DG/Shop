@@ -8,6 +8,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,8 +40,16 @@ class CommerceFulfillmentMigrationTest {
     static void migrateToLatest(String jdbcUrl, String username, String password) {
         Flyway.configure()
                 .dataSource(jdbcUrl, username, password)
+                .placeholders(safeSeedPlaceholders())
                 .load()
                 .migrate();
+    }
+
+    static Map<String, String> safeSeedPlaceholders() {
+        return Map.of(
+                "seed_super_status", "DISABLED",
+                "seed_super_password_hash", "$2y$10$VtYIL778Ftr75pHOJ3dV0efoMsPK20vZncmZ/vB6tkYj3aW9fqT.i"
+        );
     }
 
     static void seedLegacyShipment(String jdbcUrl, String username, String password) throws SQLException {

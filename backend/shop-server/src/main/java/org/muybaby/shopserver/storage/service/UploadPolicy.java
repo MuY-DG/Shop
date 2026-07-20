@@ -14,17 +14,17 @@ import java.util.Set;
 
 public class UploadPolicy {
 
-    private static final Set<String> IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp", "gif");
+    private static final Map<String, String> IMAGE_CONTENT_TYPES_BY_EXTENSION = Map.of(
+            "jpg", "image/jpeg",
+            "jpeg", "image/jpeg",
+            "png", "image/png",
+            "webp", "image/webp",
+            "gif", "image/gif"
+    );
     private static final Set<String> DOCUMENT_EXTENSIONS = Set.of("pem", "crt", "cer", "txt");
     private static final Map<String, String> VIDEO_CONTENT_TYPES = Map.of(
             "mp4", "video/mp4",
             "webm", "video/webm"
-    );
-    private static final Set<String> IMAGE_CONTENT_TYPES = Set.of(
-            "image/jpeg",
-            "image/png",
-            "image/webp",
-            "image/gif"
     );
     private static final Set<String> DOCUMENT_CONTENT_TYPES = Set.of(
             "text/plain",
@@ -78,7 +78,7 @@ public class UploadPolicy {
     public StorageUploadProfile detectLibraryProfile(String originalFilename, String contentType) {
         String extension = extensionOf(originalFilename);
         String normalizedContentType = normalizeContentType(contentType);
-        if (IMAGE_EXTENSIONS.contains(extension) && IMAGE_CONTENT_TYPES.contains(normalizedContentType)) {
+        if (normalizedContentType.equals(IMAGE_CONTENT_TYPES_BY_EXTENSION.get(extension))) {
             return StorageUploadProfile.LIBRARY_IMAGE;
         }
         if (normalizedContentType.equals(VIDEO_CONTENT_TYPES.get(extension))) {
@@ -87,8 +87,18 @@ public class UploadPolicy {
         throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
     }
 
+    public void requireAllowedImageDimensions(int width, int height) {
+        StorageProperties.Limits limits = storageProperties.limits();
+        if (width <= 0 || height <= 0
+                || width > limits.imageMaxWidth()
+                || height > limits.imageMaxHeight()
+                || (long) width * height > limits.imageMaxPixels()) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+    }
+
     private void requireAllowedImage(String extension, String contentType, long sizeBytes, boolean imageReadable) {
-        if (!IMAGE_EXTENSIONS.contains(extension) || !IMAGE_CONTENT_TYPES.contains(contentType) || !imageReadable) {
+        if (!contentType.equals(IMAGE_CONTENT_TYPES_BY_EXTENSION.get(extension)) || !imageReadable) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
         if (sizeBytes > storageProperties.limits().imageMaxSize().toBytes()) {

@@ -334,6 +334,7 @@ class AppCouponControllerTest {
 
     private long seedTemplate(String name, String status, int totalStock, int claimedCount, int perUserLimit, long thresholdCent, long discountCent) {
         String couponType = thresholdCent == 0L ? "NO_THRESHOLD" : "MIN_SPEND";
+        LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into coupon_template
                             (name, description, coupon_type, discount_type, threshold_cent, discount_cent,
@@ -342,7 +343,7 @@ class AppCouponControllerTest {
                         values
                             (:name, 'seed', :couponType, 'AMOUNT_OFF', :thresholdCent, :discountCent,
                              'ALL', '', 'coupon.amount-off.v1', :totalStock, :claimedCount, :perUserLimit,
-                             timestamp '2026-07-01 00:00:00', timestamp '2026-08-01 23:59:59', :status, 1)
+                             :validStartAt, :validEndAt, :status, 1)
                         """)
                 .param("name", name)
                 .param("couponType", couponType)
@@ -351,6 +352,8 @@ class AppCouponControllerTest {
                 .param("totalStock", totalStock)
                 .param("claimedCount", claimedCount)
                 .param("perUserLimit", perUserLimit)
+                .param("validStartAt", now.minusDays(1))
+                .param("validEndAt", now.plusDays(30))
                 .param("status", status)
                 .update();
         return jdbcClient.sql("select id from coupon_template where name = :name order by id desc limit 1")
@@ -360,6 +363,7 @@ class AppCouponControllerTest {
     }
 
     private void seedExpiredTemplate(String name) {
+        LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into coupon_template
                             (name, description, coupon_type, discount_type, threshold_cent, discount_cent,
@@ -368,13 +372,16 @@ class AppCouponControllerTest {
                         values
                             (:name, 'seed', 'NO_THRESHOLD', 'AMOUNT_OFF', 0, 500,
                              'ALL', '', 'coupon.amount-off.v1', 10, 0, 1,
-                             timestamp '2026-05-01 00:00:00', timestamp '2026-05-31 23:59:59', 'ENABLED', 1)
+                             :validStartAt, :validEndAt, 'ENABLED', 1)
                         """)
                 .param("name", name)
+                .param("validStartAt", now.minusDays(30))
+                .param("validEndAt", now.minusDays(1))
                 .update();
     }
 
     private long seedDirectTemplate(String name) {
+        LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into coupon_template
                             (name, description, coupon_type, discount_type, threshold_cent, discount_cent,
@@ -384,10 +391,12 @@ class AppCouponControllerTest {
                         values
                             (:name, 'direct', 'NO_THRESHOLD', 'AMOUNT_OFF', 0, 500,
                              'ALL', '', 'coupon.amount-off.v1', 1, 0, 1,
-                             timestamp '2026-07-01 00:00:00', timestamp '2026-08-01 23:59:59', 'ENABLED', 1,
+                             :validStartAt, :validEndAt, 'ENABLED', 1,
                              'DIRECT', 999999)
                         """)
                 .param("name", name)
+                .param("validStartAt", now.minusDays(1))
+                .param("validEndAt", now.plusDays(30))
                 .update();
         return jdbcClient.sql("select id from coupon_template where name = :name order by id desc limit 1")
                 .param("name", name)
@@ -400,26 +409,28 @@ class AppCouponControllerTest {
     }
 
     private long seedUserCoupon(long userId, long templateId, String templateName, String status, String claimedAt) {
+        LocalDateTime now = LocalDateTime.now();
         return seedUserCoupon(
                 userId,
                 templateId,
                 templateName,
                 status,
                 claimedAt,
-                "2026-07-01 00:00:00",
-                "2026-08-01 23:59:59"
+                now.minusDays(1).toString(),
+                now.plusDays(30).toString()
         );
     }
 
     private long seedExpiredUserCoupon(long userId, long templateId, String templateName) {
+        LocalDateTime now = LocalDateTime.now();
         return seedUserCoupon(
                 userId,
                 templateId,
                 templateName,
                 "CLAIMED",
                 "2026-07-07 08:00:00",
-                "2026-05-01 00:00:00",
-                "2026-05-31 23:59:59"
+                now.minusDays(30).toString(),
+                now.minusDays(1).toString()
         );
     }
 

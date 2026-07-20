@@ -276,6 +276,43 @@
               审核拒绝
             </ElButton>
           </template>
+          <template
+            v-if="currentDetail?.refundOrder && hasAuth('aftersale:audit')"
+          >
+            <ElButton
+              v-if="canOperateRefund(currentDetail)"
+              :loading="refundOperating"
+              @click="openRefundOperationDialog('query')"
+            >
+              查询渠道状态
+            </ElButton>
+            <ElButton
+              v-if="canResubmitRefund(currentDetail)"
+              type="warning"
+              plain
+              :loading="refundOperating"
+              @click="openRefundOperationDialog('resubmit')"
+            >
+              安全查询并重提
+            </ElButton>
+            <ElButton
+              v-if="canMarkRefundManual(currentDetail)"
+              type="danger"
+              plain
+              :loading="refundOperating"
+              @click="openRefundOperationDialog('manual')"
+            >
+              转人工介入
+            </ElButton>
+            <ElButton
+              v-if="canRetryClosedRefund(currentDetail)"
+              type="danger"
+              :loading="refundOperating"
+              @click="handleClosedRefundRetry"
+            >
+              CLOSED 新单重试
+            </ElButton>
+          </template>
         </div>
       </template>
     </ElDrawer>
@@ -337,6 +374,54 @@
         </div>
       </template>
     </ElDialog>
+
+    <ElDialog
+      v-model="refundOperationDialogVisible"
+      :title="refundOperationTitle"
+      width="520px"
+      align-center
+    >
+      <ElAlert
+        :title="refundOperationDescription"
+        :type="refundOperationMode === 'manual' ? 'warning' : 'info'"
+        :closable="false"
+        show-icon
+        class="audit-alert"
+      />
+      <ElForm
+        ref="refundOperationFormRef"
+        :model="refundOperationForm"
+        :rules="refundOperationRules"
+        label-width="96px"
+      >
+        <ElFormItem label="退款单">
+          <ElInput
+            :model-value="currentDetail?.refundOrder ? `#${currentDetail.refundOrder.id} / ${currentDetail.refundOrder.outRefundNo}` : '-'"
+            disabled
+          />
+        </ElFormItem>
+        <ElFormItem label="操作备注" prop="note">
+          <ElInput
+            v-model="refundOperationForm.note"
+            type="textarea"
+            maxlength="180"
+            show-word-limit
+            :rows="4"
+            placeholder="请输入本次异常退款操作原因或核查结论"
+          />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="refundOperationDialogVisible = false">取消</ElButton>
+        <ElButton
+          :type="refundOperationMode === 'manual' ? 'danger' : 'primary'"
+          :loading="refundOperating"
+          @click="submitRefundOperation"
+        >
+          确认执行
+        </ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
@@ -354,6 +439,10 @@
     fetchAfterSaleEvidence,
     fetchAfterSales,
     fetchAfterSaleStatusCounts,
+    markRefundManualIntervention,
+    queryRefundProvider,
+    resubmitRefundProvider,
+    retryClosedRefund,
     rejectAfterSale
   } from '@/api/aftersale'
   import { ElMessageBox, ElTag, type FormInstance, type FormRules } from 'element-plus'
@@ -361,6 +450,7 @@
   defineOptions({ name: 'AfterSaleList' })
 
   type AuditMode = 'approve' | 'reject'
+  type RefundOperationMode = 'query' | 'resubmit' | 'manual'
   type TagType = 'success' | 'warning' | 'info' | 'danger'
 
   interface AfterSaleSearchForm {
@@ -384,6 +474,10 @@
     requestedAmountCent: number
   }
 
+  interface RefundOperationForm {
+    note: string
+  }
+
   const route = useRoute()
   const router = useRouter()
   const { hasAuth } = useAuth()
@@ -393,12 +487,16 @@
   const evidencePreviewLoading = ref(false)
   const auditDialogVisible = ref(false)
   const auditing = ref(false)
+  const refundOperationDialogVisible = ref(false)
+  const refundOperating = ref(false)
   const currentDetail = ref<Api.AfterSale.Item | null>(null)
   const evidencePreviewUrls = ref<Record<number, string>>({})
   const auditTarget = ref<AuditTarget | null>(null)
   const auditMode = ref<AuditMode>('approve')
   const detailRequestSeq = ref(0)
   const auditFormRef = ref<FormInstance>()
+  const refundOperationFormRef = ref<FormInstance>()
+  const refundOperationMode = ref<RefundOperationMode>('query')
 
   const routeAfterSaleId = () => {
     const value = route.query.afterSaleId
@@ -446,6 +544,35 @@
     approvedAmountYuan: 0,
     auditNote: ''
   })
+
+  const refundOperationForm = reactive<RefundOperationForm>({ note: '' })
+
+  const refundOperationCopy: Record<
+    RefundOperationMode,
+    { title: string; description: string; confirmation: string }
+  > = {
+    query: {
+      title: '查询渠道退款状态',
+      description: '立即查询微信退款状态，并通过现有幂等状态机同步本地结果。',
+      confirmation: '确定立即查询该退款单的渠道状态吗？'
+    },
+    resubmit: {
+      title: '安全查询并重提退款',
+      description: '系统会先查询微信，仅在明确返回 NOT_FOUND 时使用原商户退款单号重提。',
+      confirmation: '确定执行“先查询、仅缺失时重提”吗？'
+    },
+    manual: {
+      title: '转人工介入',
+      description: '退款将停止自动恢复并标记为人工介入；该动作不会伪造退款成功。',
+      confirmation: '确定停止自动恢复并转为人工介入吗？'
+    }
+  }
+  const refundOperationTitle = computed(
+    () => refundOperationCopy[refundOperationMode.value].title
+  )
+  const refundOperationDescription = computed(
+    () => refundOperationCopy[refundOperationMode.value].description
+  )
 
   const statusMap: Record<string, { type: TagType; text: string }> = {
     REQUESTED: { type: 'warning', text: '待审核' },
@@ -541,6 +668,26 @@
     ],
     auditNote: [{ required: true, message: '请输入审核备注', trigger: 'blur' }]
   }))
+
+  const refundOperationRules: FormRules<RefundOperationForm> = {
+    note: [
+      {
+        validator: (_rule, value, callback) => {
+          const note = typeof value === 'string' ? value.trim() : ''
+          if (!note) {
+            callback(new Error('请输入操作备注'))
+            return
+          }
+          if (note.length > 180) {
+            callback(new Error('操作备注不能超过 180 个字符'))
+            return
+          }
+          callback()
+        },
+        trigger: 'blur'
+      }
+    ]
+  }
 
   const formatMoney = (cent: number | null | undefined) => `¥${((cent ?? 0) / 100).toFixed(2)}`
   const formatMoneyOrDash = (cent: number | null | undefined) =>
@@ -806,6 +953,103 @@
     auditForm.auditNote = ''
     auditFormRef.value?.clearValidate()
     auditDialogVisible.value = true
+  }
+
+  const canOperateRefund = (item?: Api.AfterSale.Item | null) =>
+    Boolean(item?.refundOrder && ['PROCESSING', 'FAILED'].includes(item.refundOrder.status))
+
+  const canResubmitRefund = (item?: Api.AfterSale.Item | null) =>
+    Boolean(canOperateRefund(item) && item?.refundOrder?.callbackStatus !== 'CLOSED')
+
+  const canMarkRefundManual = (item?: Api.AfterSale.Item | null) =>
+    Boolean(canOperateRefund(item) && item?.refundOrder?.callbackStatus !== 'CLOSED')
+
+  const canRunRefundOperation = (
+    item: Api.AfterSale.Item | null | undefined,
+    mode: RefundOperationMode
+  ) =>
+    mode === 'query'
+      ? canOperateRefund(item)
+      : mode === 'resubmit'
+        ? canResubmitRefund(item)
+        : canMarkRefundManual(item)
+
+  const canRetryClosedRefund = (item?: Api.AfterSale.Item | null) =>
+    Boolean(
+      item?.status === 'REFUND_FAILED' &&
+        item.refundOrder?.status === 'FAILED' &&
+        item.refundOrder.callbackStatus === 'CLOSED'
+    )
+
+  const openRefundOperationDialog = (mode: RefundOperationMode) => {
+    if (!canRunRefundOperation(currentDetail.value, mode)) return
+    refundOperationMode.value = mode
+    refundOperationForm.note = ''
+    refundOperationFormRef.value?.clearValidate()
+    refundOperationDialogVisible.value = true
+  }
+
+  const refreshCurrentAfterSale = async (afterSaleId: number) => {
+    await handleRefresh()
+    if (detailDrawerVisible.value) await openDetail(afterSaleId)
+  }
+
+  const submitRefundOperation = async () => {
+    const detail = currentDetail.value
+    const refundOrder = detail?.refundOrder
+    if (!detail || !refundOrder || !canRunRefundOperation(detail, refundOperationMode.value)) return
+    await refundOperationFormRef.value?.validate()
+
+    const copy = refundOperationCopy[refundOperationMode.value]
+    await ElMessageBox.confirm(copy.confirmation, copy.title, {
+      type: refundOperationMode.value === 'manual' ? 'warning' : 'info',
+      confirmButtonText: '确认执行',
+      cancelButtonText: '取消'
+    })
+
+    refundOperating.value = true
+    try {
+      const payload = { note: refundOperationForm.note.trim() }
+      if (refundOperationMode.value === 'query') {
+        await queryRefundProvider(detail.id, refundOrder.id, payload)
+      } else if (refundOperationMode.value === 'resubmit') {
+        await resubmitRefundProvider(detail.id, refundOrder.id, payload)
+      } else {
+        await markRefundManualIntervention(detail.id, refundOrder.id, payload)
+      }
+      refundOperationDialogVisible.value = false
+      await refreshCurrentAfterSale(detail.id)
+    } finally {
+      refundOperating.value = false
+    }
+  }
+
+  const handleClosedRefundRetry = async () => {
+    const detail = currentDetail.value
+    if (!detail || !canRetryClosedRefund(detail)) return
+    const { value } = await ElMessageBox.prompt(
+      '微信已明确关闭原退款。本操作会保留原记录，并使用新的商户退款单号重新发起退款。请输入已排除失败原因后的操作说明。',
+      'CLOSED 新单重试',
+      {
+        type: 'warning',
+        confirmButtonText: '确认新单重试',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如：商户余额已补足，已核对原退款确为 CLOSED',
+        inputValidator: (input) => {
+          const note = input.trim()
+          if (!note) return '请输入操作原因'
+          return note.length <= 180 || '操作原因最多 180 个字符'
+        }
+      }
+    )
+
+    refundOperating.value = true
+    try {
+      await retryClosedRefund(detail.id, { note: value.trim() })
+      await refreshCurrentAfterSale(detail.id)
+    } finally {
+      refundOperating.value = false
+    }
   }
 
   const handleMoreCommand = (command: string | number | object, row: Api.AfterSale.Summary) => {

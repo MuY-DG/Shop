@@ -4,6 +4,8 @@ import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleAuditRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleQueryRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleStatusCountsResponse;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleSummaryResponse;
+import org.muybaby.shopserver.aftersale.dto.AdminRefundOperationRequest;
+import org.muybaby.shopserver.aftersale.dto.AdminRefundOperationResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.service.AdminAfterSaleService;
 import org.muybaby.shopserver.common.api.ApiResponse;
@@ -75,6 +77,52 @@ public class AdminAfterSaleController {
             @RequestBody AdminAfterSaleAuditRequest request
     ) {
         return ApiResponse.success(adminAfterSaleService.approve(principal, afterSaleId, request));
+    }
+
+    @PostMapping("/{afterSaleId}/refund-retry")
+    @PreAuthorize("hasAuthority('aftersale:audit')")
+    public ApiResponse<AfterSaleResponse> retryClosedRefund(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId,
+            @RequestBody AdminRefundOperationRequest request
+    ) {
+        return ApiResponse.success(adminAfterSaleService.retryClosedRefund(principal, afterSaleId, request));
+    }
+
+    @PostMapping("/{afterSaleId}/refunds/{refundOrderId}/provider-query")
+    @PreAuthorize("hasAuthority('aftersale:audit')")
+    public ApiResponse<AdminRefundOperationResponse> queryRefundProvider(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId,
+            @PathVariable Long refundOrderId,
+            @RequestBody AdminRefundOperationRequest request
+    ) {
+        return ApiResponse.success(adminAfterSaleService.queryRefundProvider(
+                principal, afterSaleId, refundOrderId, request));
+    }
+
+    @PostMapping("/{afterSaleId}/refunds/{refundOrderId}/provider-resubmit")
+    @PreAuthorize("hasAuthority('aftersale:audit')")
+    public ApiResponse<AdminRefundOperationResponse> resubmitRefundProvider(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId,
+            @PathVariable Long refundOrderId,
+            @RequestBody AdminRefundOperationRequest request
+    ) {
+        return ApiResponse.success(adminAfterSaleService.resubmitRefundProvider(
+                principal, afterSaleId, refundOrderId, request));
+    }
+
+    @PostMapping("/{afterSaleId}/refunds/{refundOrderId}/manual-intervention")
+    @PreAuthorize("hasAuthority('aftersale:audit')")
+    public ApiResponse<AdminRefundOperationResponse> markRefundManualIntervention(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId,
+            @PathVariable Long refundOrderId,
+            @RequestBody AdminRefundOperationRequest request
+    ) {
+        return ApiResponse.success(adminAfterSaleService.markRefundManualIntervention(
+                principal, afterSaleId, refundOrderId, request));
     }
 
     @PostMapping("/{afterSaleId}/reject")

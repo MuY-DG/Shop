@@ -5,22 +5,45 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
+import org.muybaby.shopserver.storage.provider.StorageProvider;
+import org.muybaby.shopserver.storage.provider.StoredObject;
+import org.muybaby.shopserver.storage.service.StorageAssetCleanupService;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.web.servlet.MultipartProperties;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.unit.DataSize;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import javax.imageio.IIOImage;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.zip.CRC32;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -36,6 +59,15 @@ class StorageServiceTest {
     @Autowired
     private MultipartProperties multipartProperties;
 
+    @Autowired
+    private JdbcClient jdbcClient;
+
+    @Autowired
+    private StorageAssetCleanupService cleanupService;
+
+    @MockitoBean
+    private StorageProvider storageProvider;
+
     @Test
     void testProfileConfiguresIndependentFiftyMegabyteVideoLimit() {
         assertThat(storageProperties.limits().videoMaxSize()).isEqualTo(DataSize.ofMegabytes(50));
@@ -45,11 +77,46 @@ class StorageServiceTest {
                 .isGreaterThanOrEqualTo(storageProperties.limits().videoMaxSize());
         assertThat(multipartProperties.getMaxRequestSize())
                 .isGreaterThan(multipartProperties.getMaxFileSize());
+        assertThat(storageProperties.limits().imageMaxWidth()).isEqualTo(8192);
+        assertThat(storageProperties.limits().imageMaxHeight()).isEqualTo(8192);
+        assertThat(storageProperties.limits().imageMaxPixels()).isEqualTo(25_000_000L);
+    }
+
+    @Test
+    void advertisedWebpUploadsHaveAnInstalledImageReader() {
+        assertThat(ImageIO.getImageReadersByFormatName("webp").hasNext()).isTrue();
+    }
+
+    @Test
+    void realWebpImageIsDecodedAndPersisted() {
+        byte[] webp = Base64.getDecoder().decode("""
+                UklGRs4CAABXRUJQVlA4IMICAACwEACdASpQAFAAPrFMoUmnJKOhLhdMAOAWCWcAzNe0WZELdMOrrI61aJ4BVnXAgrdVIDUrszd8F3VX2yXbaAGkyMq/bTrMcn8qqvdBPY90WFsGRzuIEu16A9LhLMVYBFuZO1+QayEuJZTYbINLrJbjDvCOtlu0FQkV3c3Rzapq1vUgZfVdntqrTOW+M/wgAP71/RhN2HY+CQi/cAaciXdXTNNVno+7dC5IlTdbKEEaqjVvRpdcmD574LWaxCpnPLKZ8w3wXjZhVymH8WWp0zMV3N8cKClrQAqT0HZav3BW9PGlv5KGbj5auZn2wQ68GfUCkMzh1NkgD1/7hs7U+IsXGea/IPy9QG4BdL+AE6SHAJXZ1XO0p05TLvXeMCs1YWSwuHtFlEUNSpcgwrM27txbMv3JVN7xUajcp45qQpxgRdJ7A4ej8y7yZ/DoEyehEt0nQMQ/VgLuMExqj1ZGgxlCGxJ4vZPIqpkRR7T8F9E8MfLH+VqqxQiyJ2devw3K2ZA02otrCnZUv4r3dQIc5GEbn5rugR3FE8ycCP9lppMhGFM33LXEDJapleiER3fx/Rj2ZxexdCzdgywrxCqT7zZVrY3QfRx1DkW0Ge6pk5qgdB9Q4lr2SLfb32ZXvGoZK1QZBHXmd1pnOoWNyqrPPd+XRT4dONb1rwWZ/twSPZm+LuCm/g3+QVugdZHVpils6IjGmdjNPlj/cY0B+Ud9BPW5dsWcSohf6tzzEfG0ti0Dgsf68qo0ZVG45D/k6arvIXUbBiIFU4PB4xDrudWWnTSVhL5WPOqHH+TvLPDFxjvlX0nw8QyuJkPKpoRdogdl9vi8UbUYVH/1GlMRK27etM0N5rFk4owMZZYMgJ6ALf4soeO+5TvrIw5NzR78KeFgtw6Gcm27etqw6VCznf5KPbem07Kp9f2OzaYCivh1yhd2aMAA
+                """.replaceAll("\\s", ""));
+
+        var response = storageService.uploadLibrary(
+                adminPrincipal(), null,
+                TrackingMultipartFile.withBytes("avatar.webp", "image/webp", webp));
+
+        assertThat(response.width()).isEqualTo(80);
+        assertThat(response.height()).isEqualTo(80);
+        assertThat(response.contentType()).isEqualTo("image/webp");
     }
 
     @Test
     void unsupportedLibraryTypeIsRejectedBeforeReadingBytes() {
         TrackingMultipartFile file = TrackingMultipartFile.rejectIfRead("not-image.svg", "image/svg+xml", 512);
+
+        assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
+
+        assertThat(file.bytesRead()).isFalse();
+    }
+
+    @Test
+    void mismatchedImageExtensionAndContentTypeAreRejectedBeforeReadingBytes() {
+        TrackingMultipartFile file = TrackingMultipartFile.rejectIfRead(
+                "mismatch.jpg", "image/png", 512);
 
         assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
@@ -78,6 +145,96 @@ class StorageServiceTest {
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
 
         assertThat(file.bytesRead()).isTrue();
+    }
+
+    @Test
+    void decodedImageFormatMustMatchTheDeclaredType() {
+        TrackingMultipartFile file = TrackingMultipartFile.withBytes(
+                "disguised.gif", "image/gif", pngImage(3, 2));
+
+        assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
+
+        assertThat(file.bytesRead()).isTrue();
+    }
+
+    @Test
+    void truncatedImageWithValidHeaderIsRejectedBeforeCreatingAnAsset() {
+        Long assetsBefore = jdbcClient.sql("select count(*) from storage_asset")
+                .query(Long.class)
+                .single();
+        TrackingMultipartFile file = TrackingMultipartFile.withBytes(
+                "truncated.png",
+                "image/png",
+                pngHeader(3, 2)
+        );
+
+        assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
+
+        assertThat(jdbcClient.sql("select count(*) from storage_asset")
+                .query(Long.class)
+                .single()).isEqualTo(assetsBefore);
+    }
+
+    @Test
+    void oversizedDecodedImageIsRejectedFromMetadataBeforeCreatingAnAsset() {
+        Long assetsBefore = jdbcClient.sql("select count(*) from storage_asset")
+                .query(Long.class)
+                .single();
+        TrackingMultipartFile file = TrackingMultipartFile.withBytes(
+                "pixel-bomb.png",
+                "image/png",
+                pngHeader(8192, 8192)
+        );
+
+        assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
+
+        assertThat(jdbcClient.sql("select count(*) from storage_asset")
+                .query(Long.class)
+                .single()).isEqualTo(assetsBefore);
+    }
+
+    @Test
+    void validImageDimensionsAreReadFromMetadataAndPersisted() {
+        var response = storageService.uploadLibrary(
+                adminPrincipal(),
+                null,
+                TrackingMultipartFile.withBytes("dimensions.png", "image/png", pngImage(3, 2))
+        );
+
+        assertThat(response.width()).isEqualTo(3);
+        assertThat(response.height()).isEqualTo(2);
+    }
+
+    @Test
+    void everyAnimatedImageFrameIsDecodedAndDimensionChecked() {
+        TrackingMultipartFile file = TrackingMultipartFile.withBytes(
+                "oversized-later-frame.gif",
+                "image/gif",
+                gifAnimation(new int[][]{{3, 2}, {8193, 1}})
+        );
+
+        assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
+    }
+
+    @Test
+    void oversizedGifLogicalCanvasIsRejectedEvenWhenItsFrameIsSmall() {
+        TrackingMultipartFile file = TrackingMultipartFile.withBytes(
+                "oversized-canvas.gif",
+                "image/gif",
+                gifWithLogicalScreen(8193, 2, 3, 2)
+        );
+
+        assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
     }
 
     @Test
@@ -117,8 +274,204 @@ class StorageServiceTest {
         assertThat(response.publicUrl()).isNull();
     }
 
+    @Test
+    void providerPutAndDeleteRunOutsideTransactionsAroundCommittedStateTransitions() {
+        when(storageProvider.put(
+                any(StorageObjectLocation.class), anyString(), any(InputStream.class), anyLong()))
+                .thenAnswer(invocation -> {
+                    assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                    StorageObjectLocation location = invocation.getArgument(0);
+                    return new StoredObject(location.objectKey(), invocation.getArgument(1), InputStream.nullInputStream(),
+                            invocation.getArgument(3));
+                });
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return null;
+        }).when(storageProvider).delete(any(StorageObjectLocation.class));
+
+        var response = storageService.uploadLibrary(
+                adminPrincipal(), null,
+                TrackingMultipartFile.withBytes("two-phase.mp4", "video/mp4", "video".getBytes()));
+
+        assertThat(assetStatus(response.id())).isEqualTo("ACTIVE");
+        assertThat(jdbcClient.sql("select cleanup_next_retry_at from storage_asset where id = :assetId")
+                .param("assetId", response.id())
+                .query(LocalDateTime.class)
+                .optional()).isEmpty();
+
+        storageService.delete(response.id());
+
+        assertThat(assetStatus(response.id())).isEqualTo("DELETED");
+    }
+
+    @Test
+    void failedUploadCleanupIsPersistedAndRetriedWithTheSameObjectLocation() {
+        AtomicReference<StorageObjectLocation> attemptedLocation = new AtomicReference<>();
+        when(storageProvider.put(
+                any(StorageObjectLocation.class), anyString(), any(InputStream.class), anyLong()))
+                .thenAnswer(invocation -> {
+                    attemptedLocation.set(invocation.getArgument(0));
+                    throw new IllegalStateException("provider put failed");
+                });
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(invocation.<StorageObjectLocation>getArgument(0)).isEqualTo(attemptedLocation.get());
+            throw new IllegalStateException("provider delete failed");
+        })
+                .doAnswer(invocation -> {
+                    assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                    assertThat(invocation.<StorageObjectLocation>getArgument(0)).isEqualTo(attemptedLocation.get());
+                    return null;
+                })
+                .when(storageProvider).delete(any(StorageObjectLocation.class));
+
+        assertThatThrownBy(() -> storageService.uploadLibrary(
+                adminPrincipal(), null,
+                TrackingMultipartFile.withBytes("failed.mp4", "video/mp4", "video".getBytes())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("provider put failed");
+
+        Long assetId = jdbcClient.sql("select max(id) from storage_asset")
+                .query(Long.class)
+                .single();
+        assertThat(assetStatus(assetId)).isEqualTo("DELETE_PENDING");
+        assertThat(jdbcClient.sql("select cleanup_attempts from storage_asset where id = :assetId")
+                .param("assetId", assetId)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        jdbcClient.sql("""
+                        update storage_asset
+                        set cleanup_next_retry_at = current_timestamp,
+                            cleanup_lease_token = null
+                        where id = :assetId
+                        """)
+                .param("assetId", assetId)
+                .update();
+        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(assetStatus(assetId)).isEqualTo("DELETED");
+    }
+
+    @Test
+    void failedLibraryDeleteRemainsHiddenAndIsRetried() {
+        AtomicReference<StorageObjectLocation> storedLocation = new AtomicReference<>();
+        when(storageProvider.put(
+                any(StorageObjectLocation.class), anyString(), any(InputStream.class), anyLong()))
+                .thenAnswer(invocation -> {
+                    StorageObjectLocation location = invocation.getArgument(0);
+                    storedLocation.set(location);
+                    return new StoredObject(
+                            location.objectKey(), "video/mp4", InputStream.nullInputStream(), 5);
+                });
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            assertThat(invocation.<StorageObjectLocation>getArgument(0)).isEqualTo(storedLocation.get());
+            throw new IllegalStateException("provider delete failed");
+        })
+                .doAnswer(invocation -> {
+                    assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+                    assertThat(invocation.<StorageObjectLocation>getArgument(0)).isEqualTo(storedLocation.get());
+                    return null;
+                })
+                .when(storageProvider).delete(any(StorageObjectLocation.class));
+        var response = storageService.uploadLibrary(
+                adminPrincipal(), null,
+                TrackingMultipartFile.withBytes("delete-retry.mp4", "video/mp4", "video".getBytes()));
+
+        storageService.delete(response.id());
+
+        assertThat(assetStatus(response.id())).isEqualTo("DELETE_PENDING");
+        jdbcClient.sql("""
+                        update storage_asset
+                        set cleanup_next_retry_at = current_timestamp,
+                            cleanup_lease_token = null
+                        where id = :assetId
+                        """)
+                .param("assetId", response.id())
+                .update();
+        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(assetStatus(response.id())).isEqualTo("DELETED");
+    }
+
+    private String assetStatus(Long assetId) {
+        return jdbcClient.sql("select status from storage_asset where id = :assetId")
+                .param("assetId", assetId)
+                .query(String.class)
+                .single();
+    }
+
     private AuthenticatedPrincipal adminPrincipal() {
         return new AuthenticatedPrincipal(TokenKind.ADMIN, 1L, "Super", List.of("SUPER_ADMIN"), List.of("asset:upload"));
+    }
+
+    private byte[] pngHeader(int width, int height) {
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            DataOutputStream data = new DataOutputStream(output);
+            data.write(new byte[]{(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a});
+            ByteArrayOutputStream ihdrBuffer = new ByteArrayOutputStream();
+            DataOutputStream ihdr = new DataOutputStream(ihdrBuffer);
+            ihdr.writeBytes("IHDR");
+            ihdr.writeInt(width);
+            ihdr.writeInt(height);
+            ihdr.writeByte(8);
+            ihdr.writeByte(2);
+            ihdr.writeByte(0);
+            ihdr.writeByte(0);
+            ihdr.writeByte(0);
+            byte[] chunk = ihdrBuffer.toByteArray();
+            data.writeInt(13);
+            data.write(chunk);
+            CRC32 crc = new CRC32();
+            crc.update(chunk);
+            data.writeInt((int) crc.getValue());
+            return output.toByteArray();
+        } catch (IOException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private byte[] pngImage(int width, int height) {
+        try {
+            BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            if (!ImageIO.write(image, "png", output)) {
+                throw new IllegalStateException("PNG writer unavailable");
+            }
+            return output.toByteArray();
+        } catch (IOException ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private byte[] gifAnimation(int[][] dimensions) {
+        ImageWriter writer = ImageIO.getImageWritersByFormatName("gif").next();
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream();
+             ImageOutputStream imageOutput = ImageIO.createImageOutputStream(output)) {
+            writer.setOutput(imageOutput);
+            writer.prepareWriteSequence(null);
+            for (int[] dimension : dimensions) {
+                BufferedImage frame = new BufferedImage(
+                        dimension[0], dimension[1], BufferedImage.TYPE_BYTE_INDEXED);
+                writer.writeToSequence(new IIOImage(frame, null, null), null);
+            }
+            writer.endWriteSequence();
+            imageOutput.flush();
+            return output.toByteArray();
+        } catch (IOException ex) {
+            throw new IllegalStateException(ex);
+        } finally {
+            writer.dispose();
+        }
+    }
+
+    private byte[] gifWithLogicalScreen(int canvasWidth, int canvasHeight, int frameWidth, int frameHeight) {
+        byte[] gif = gifAnimation(new int[][]{{frameWidth, frameHeight}});
+        gif[6] = (byte) (canvasWidth & 0xff);
+        gif[7] = (byte) ((canvasWidth >>> 8) & 0xff);
+        gif[8] = (byte) (canvasHeight & 0xff);
+        gif[9] = (byte) ((canvasHeight >>> 8) & 0xff);
+        return gif;
     }
 
     private static final class TrackingMultipartFile implements MultipartFile {

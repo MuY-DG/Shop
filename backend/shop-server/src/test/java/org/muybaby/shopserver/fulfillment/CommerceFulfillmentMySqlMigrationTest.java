@@ -6,6 +6,8 @@ import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.Granularity
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.ReportQuery;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TradeStatisticsReport;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TrafficStatisticsReport;
+import org.muybaby.shopserver.operation.query.TrafficStatisticsQueryRepository;
+import org.muybaby.shopserver.operation.query.CommerceTrendQueryRepository;
 import org.muybaby.shopserver.operation.service.OperationsStatisticsService;
 import org.muybaby.shopserver.storage.AssetModelMigrationTest;
 import org.muybaby.shopserver.user.service.AdminCustomerService;
@@ -42,8 +44,9 @@ class CommerceFulfillmentMySqlMigrationTest {
 
         Flyway flyway = Flyway.configure()
                 .dataSource(CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword())
+                .placeholders(CommerceFulfillmentMigrationTest.safeSeedPlaceholders())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("35");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("43");
         AssetModelMigrationTest.assertFinalAssetSchema(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
         assertAdminCustomerCouponQueryIsCollationSafe();
@@ -66,6 +69,61 @@ class CommerceFulfillmentMySqlMigrationTest {
             assertThat(resultSet.next()).isTrue();
             assertThat(resultSet.getInt(1)).isEqualTo(10);
         }
+    }
+
+    @Test
+    void environmentPaymentSnapshotInsertIsAppendOnlyOnMySql() {
+        CommerceFulfillmentMigrationTest.migrateToLatest(
+                CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
+        JdbcClient jdbcClient = JdbcClient.create(new DriverManagerDataSource(
+                CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword()));
+        String fingerprint = "a".repeat(64);
+
+        insertEnvironmentSnapshot(jdbcClient, fingerprint, "wx-original", "v1:original-ciphertext");
+        insertEnvironmentSnapshot(jdbcClient, fingerprint, "wx-replacement", "v1:replacement-ciphertext");
+
+        assertThat(jdbcClient.sql("""
+                        select app_id
+                        from payment_config_snapshot
+                        where fingerprint = :fingerprint
+                        """)
+                .param("fingerprint", fingerprint)
+                .query(String.class)
+                .single()).isEqualTo("wx-original");
+        assertThat(jdbcClient.sql("""
+                        select api_v3_key_ciphertext
+                        from payment_config_snapshot
+                        where fingerprint = :fingerprint
+                        """)
+                .param("fingerprint", fingerprint)
+                .query(String.class)
+                .single()).isEqualTo("v1:original-ciphertext");
+    }
+
+    private void insertEnvironmentSnapshot(
+            JdbcClient jdbcClient,
+            String fingerprint,
+            String appId,
+            String apiV3KeyCiphertext
+    ) {
+        jdbcClient.sql("""
+                        insert into payment_config_snapshot
+                            (fingerprint, config_source, config_name, app_id, mch_id,
+                             merchant_serial_no, api_v3_key_ciphertext, private_key_pem_ciphertext,
+                             notify_url, refund_notify_url, verify_mode, wechat_public_key_id,
+                             wechat_public_key_pem_ciphertext)
+                        values
+                            (:fingerprint, 'ENV', 'MySQL snapshot', :appId, 'mch-snapshot',
+                             'serial-snapshot', :apiV3KeyCiphertext, 'v1:private-ciphertext',
+                             'https://example.test/wxpay/pay/notify',
+                             'https://example.test/wxpay/refund/notify', 'PUBLIC_KEY',
+                             'wechat-public-key-id', 'v1:public-ciphertext')
+                        on duplicate key update fingerprint = fingerprint
+                        """)
+                .param("fingerprint", fingerprint)
+                .param("appId", appId)
+                .param("apiV3KeyCiphertext", apiV3KeyCiphertext)
+                .update();
     }
 
     private void assertAdminCustomerCouponQueryIsCollationSafe() {
@@ -179,7 +237,7 @@ class CommerceFulfillmentMySqlMigrationTest {
                         """)
                 .update();
 
-        TradeStatisticsReport report = new OperationsStatisticsService(jdbcClient).tradeStatistics(
+        TradeStatisticsReport report = operationsStatisticsService(jdbcClient).tradeStatistics(
                 new ReportQuery(LocalDate.of(2030, 1, 1), LocalDate.of(2030, 1, 1), Granularity.HOUR)
         );
 
@@ -217,16 +275,47 @@ class CommerceFulfillmentMySqlMigrationTest {
                              'mysql-traffic-visitor', 'mysql-traffic-session',
                              'CLIENT', 'PRODUCT_VIEW', '/pages/product/detail/detail',
                              timestamp '2030-02-01 12:01:00', timestamp '2030-02-01 12:01:01',
+                             date '2030-02-01'),
+                            (990303, 'mysql-traffic-late-page', 'mysql-traffic-late-page-digest',
+                             'mysql-traffic-visitor-2', 'mysql-traffic-session-2',
+                             'CLIENT', 'PAGE_VIEW', '/pages/other',
+                             timestamp '2030-02-01 23:59:59', timestamp '2030-02-01 23:59:59',
+                             date '2030-02-01'),
+                            (990304, 'mysql-traffic-late-search', 'mysql-traffic-late-search-digest',
+                             'mysql-traffic-visitor', 'mysql-traffic-session-3',
+                             'CLIENT', 'SEARCH', '/pages/search',
+                             timestamp '2030-02-01 23:59:59', timestamp '2030-02-01 23:59:59',
                              date '2030-02-01')
                         """)
                 .update();
 
-        TrafficStatisticsReport report = new OperationsStatisticsService(jdbcClient).trafficStatistics(
+        TrafficStatisticsReport report = operationsStatisticsService(jdbcClient).trafficStatistics(
                 new ReportQuery(LocalDate.of(2030, 2, 1), LocalDate.of(2030, 2, 1), Granularity.HOUR)
         );
 
-        assertThat(report.summary().get("pageViewCount").value()).isEqualTo(1);
-        assertThat(report.trend().data()).isNotEmpty();
+        assertThat(report.summary().get("pageViewCount").value()).isEqualTo(2);
+        assertThat(report.summary().get("visitorCount").value()).isEqualTo(2);
+        assertThat(report.summary().get("sessionCount").value()).isEqualTo(3);
+        assertThat(report.trend().data().stream()
+                .filter(series -> series.key().equals("pageViewCount"))
+                .findFirst()
+                .orElseThrow()
+                .points())
+                .filteredOn(point -> point.value() > 0)
+                .extracting("label", "value")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("2030-02-01 12:00", 1L),
+                        org.assertj.core.groups.Tuple.tuple("2030-02-01 23:00", 1L));
+        assertThat(report.trend().data().stream()
+                .filter(series -> series.key().equals("visitorCount"))
+                .findFirst()
+                .orElseThrow()
+                .points())
+                .filteredOn(point -> point.value() > 0)
+                .extracting("label", "value")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("2030-02-01 12:00", 1L),
+                        org.assertj.core.groups.Tuple.tuple("2030-02-01 23:00", 2L));
         assertThat(report.funnel().data())
                 .extracting("key", "users")
                 .startsWith(
@@ -262,5 +351,12 @@ class CommerceFulfillmentMySqlMigrationTest {
                 .withPassword("shop_test")
                 .withEnv("TZ", "Asia/Shanghai")
                 .withUrlParam("serverTimezone", "Asia/Shanghai");
+    }
+
+    private OperationsStatisticsService operationsStatisticsService(JdbcClient jdbcClient) {
+        return new OperationsStatisticsService(
+                jdbcClient,
+                new CommerceTrendQueryRepository(jdbcClient),
+                new TrafficStatisticsQueryRepository(jdbcClient));
     }
 }

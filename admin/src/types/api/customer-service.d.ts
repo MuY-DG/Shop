@@ -18,7 +18,7 @@ declare namespace Api {
       conversationId: number
       consultationNo: number
       senderType: SenderType
-      senderId: number | null
+      senderId: string | null
       senderName: string
       messageType: 'TEXT' | 'IMAGE' | 'ORDER_CARD' | 'PRODUCT_CARD' | 'SYSTEM'
       content: string

@@ -44,6 +44,9 @@ public class SecurityConfig {
                                 "/app/health",
                                 "/actuator/health",
                                 "/actuator/info",
+                                "/v3/api-docs/**",
+                                "/swagger-ui.html",
+                                "/swagger-ui/**",
                                 "/realtime",
                                 "/wxpay/**",
                                 "/wechat/**"

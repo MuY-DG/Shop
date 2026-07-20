@@ -51,4 +51,36 @@ class RequestIdFilterTest {
         assertThat(MDC.get(MDC_KEY)).isNull();
         verify(chain).doFilter(request, response);
     }
+
+    @Test
+    void replacesUnsafeIncomingRequestId() throws Exception {
+        RequestIdFilter filter = new RequestIdFilter();
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+        request.addHeader(RequestIdFilter.HEADER_NAME, "attacker controlled value");
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getHeader(RequestIdFilter.HEADER_NAME))
+                .isNotBlank()
+                .isNotEqualTo("attacker controlled value");
+        assertThat(MDC.get(MDC_KEY)).isNull();
+        verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void replacesOversizedIncomingRequestId() throws Exception {
+        RequestIdFilter filter = new RequestIdFilter();
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+        request.addHeader(RequestIdFilter.HEADER_NAME, "r".repeat(129));
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getHeader(RequestIdFilter.HEADER_NAME)).hasSize(36);
+        assertThat(MDC.get(MDC_KEY)).isNull();
+        verify(chain).doFilter(request, response);
+    }
 }

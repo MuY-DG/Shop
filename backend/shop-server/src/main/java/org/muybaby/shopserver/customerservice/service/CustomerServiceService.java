@@ -32,7 +32,10 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -40,6 +43,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -59,19 +63,26 @@ public class CustomerServiceService {
     private final ApplicationEventPublisher eventPublisher;
     private final StorageService storageService;
     private final RealtimeSessionHub realtimeSessionHub;
+    private final TransactionTemplate requiresNewTransaction;
+    private final TransactionTemplate withoutTransaction;
 
     public CustomerServiceService(
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             ApplicationEventPublisher eventPublisher,
             StorageService storageService,
-            RealtimeSessionHub realtimeSessionHub
+            RealtimeSessionHub realtimeSessionHub,
+            PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
         this.realtimeSessionHub = realtimeSessionHub;
+        this.requiresNewTransaction = new TransactionTemplate(transactionManager);
+        this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.withoutTransaction = new TransactionTemplate(transactionManager);
+        this.withoutTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
     }
 
     @Transactional
@@ -170,19 +181,41 @@ public class CustomerServiceService {
         return linked;
     }
 
-    @Transactional
     public MessageResponse sendImageFromApp(AuthenticatedPrincipal principal, MultipartFile file) {
         Long appUserId = requirePrincipal(principal, TokenKind.APP);
-        ConversationRow conversation = findOrCreateConversation(appUserId);
-        conversation = prepareForAppAction(conversation, appUserId);
-        StorageAssetResponse asset = storageService.uploadCustomerServiceImage(principal, conversation.id(), file);
-        MessageResponse message = insertMessage(
-                conversation, "APP_USER", appUserId, "IMAGE",
-                asset.originalFilename(), asset.id(), null
-        );
-        touchForAdminNotification(conversation.id(), message.createdAt());
-        publish(conversation.id(), appUserId, "MESSAGE_CREATED", message.messageId());
-        return message;
+        return requireTransactionResult(withoutTransaction.execute(status ->
+                sendImageFromAppOutsideTransaction(principal, appUserId, file)));
+    }
+
+    private MessageResponse sendImageFromAppOutsideTransaction(
+            AuthenticatedPrincipal principal,
+            Long appUserId,
+            MultipartFile file
+    ) {
+        ImageMessageContext context = requireTransactionResult(requiresNewTransaction.execute(status -> {
+            ConversationRow conversation = findOrCreateConversation(appUserId);
+            conversation = prepareForAppAction(conversation, appUserId);
+            return new ImageMessageContext(conversation.id(), conversation.appUserId());
+        }));
+        StorageAssetResponse asset = storageService.uploadCustomerServiceImage(principal, context.conversationId(), file);
+        return requireTransactionResult(requiresNewTransaction.execute(status -> {
+            ConversationRow conversation = findConversationByAppUser(appUserId)
+                    .filter(row -> row.id().equals(context.conversationId()))
+                    .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE));
+            conversation = prepareForAppAction(conversation, appUserId);
+            MessageResponse message = insertMessage(
+                    conversation, "APP_USER", appUserId, "IMAGE",
+                    asset.originalFilename(), asset.id(), null
+            );
+            storageService.bindCustomerServiceImage(asset.id(), conversation.id());
+            touchForAdminNotification(conversation.id(), message.createdAt());
+            publish(conversation.id(), appUserId, "MESSAGE_CREATED", message.messageId());
+            return message;
+        }));
+    }
+
+    private <T> T requireTransactionResult(T result) {
+        return Objects.requireNonNull(result);
     }
 
     public PageResult<ConversationSummaryResponse> adminPage(String rawStatus, Long rawCurrent, Long rawSize) {
@@ -707,23 +740,33 @@ public class CustomerServiceService {
         return linked;
     }
 
-    @Transactional
     public MessageResponse sendImageFromAdmin(
             AuthenticatedPrincipal principal,
             Long conversationId,
             MultipartFile file
     ) {
         Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
-        ConversationRow conversation = requireAdminVisibleConversation(conversationId);
-        requireAssigned(conversation, adminUserId);
-        StorageAssetResponse asset = storageService.uploadCustomerServiceImage(principal, conversation.id(), file);
-        MessageResponse message = insertMessage(
-                conversation, "ADMIN", adminUserId, "IMAGE",
-                asset.originalFilename(), asset.id(), null
-        );
-        touchForAppNotification(conversationId, message.createdAt());
-        publish(conversationId, conversation.appUserId(), "MESSAGE_CREATED", message.messageId());
-        return message;
+        return requireTransactionResult(withoutTransaction.execute(status -> {
+            ImageMessageContext context = requireTransactionResult(requiresNewTransaction.execute(prepareStatus -> {
+                ConversationRow conversation = requireAdminVisibleConversation(conversationId);
+                requireAssigned(conversation, adminUserId);
+                return new ImageMessageContext(conversation.id(), conversation.appUserId());
+            }));
+            StorageAssetResponse asset = storageService.uploadCustomerServiceImage(
+                    principal, context.conversationId(), file);
+            return requireTransactionResult(requiresNewTransaction.execute(finalizeStatus -> {
+                ConversationRow conversation = requireAdminVisibleConversation(context.conversationId());
+                requireAssigned(conversation, adminUserId);
+                MessageResponse message = insertMessage(
+                        conversation, "ADMIN", adminUserId, "IMAGE",
+                        asset.originalFilename(), asset.id(), null
+                );
+                storageService.bindCustomerServiceImage(asset.id(), conversation.id());
+                touchForAppNotification(conversation.id(), message.createdAt());
+                publish(conversation.id(), conversation.appUserId(), "MESSAGE_CREATED", message.messageId());
+                return message;
+            }));
+        }));
     }
 
     public ResponseEntity<InputStreamResource> imageForApp(
@@ -2008,5 +2051,8 @@ public class CustomerServiceService {
     }
 
     private record ImageReference(Long conversationId, Long assetId) {
+    }
+
+    private record ImageMessageContext(Long conversationId, Long appUserId) {
     }
 }

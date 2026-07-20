@@ -229,7 +229,7 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data.orderId").value(9301))
                 .andExpect(jsonPath("$.data.orderNo").value("ADM-DETAIL-ORDER"))
                 .andExpect(jsonPath("$.data.status").value("CREATED"))
-                .andExpect(jsonPath("$.data.userId").value(userId))
+                .andExpect(jsonPath("$.data.userId").value(Long.toString(userId)))
                 .andExpect(jsonPath("$.data.userNickname").value("详情页用户"))
                 .andExpect(jsonPath("$.data.userPhone").value("13900002222"))
                 .andExpect(jsonPath("$.data.receiverAddress").value(receiverAddress))
@@ -340,7 +340,7 @@ class AdminOrderControllerTest {
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data").isMap());
+                .andExpect(jsonPath("$.data").doesNotExist());
 
         assertThat(jdbcClient.sql("""
                         select status
@@ -873,6 +873,7 @@ class AdminOrderControllerTest {
 
     private long seedTemplate(String name, String status, int totalStock, int claimedCount, int perUserLimit, long thresholdCent, long discountCent) {
         String couponType = thresholdCent == 0L ? "NO_THRESHOLD" : "MIN_SPEND";
+        LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into coupon_template
                             (name, description, coupon_type, discount_type, threshold_cent, discount_cent,
@@ -881,7 +882,7 @@ class AdminOrderControllerTest {
                         values
                             (:name, 'seed', :couponType, 'AMOUNT_OFF', :thresholdCent, :discountCent,
                              'ALL', '', 'coupon.amount-off.v1', :totalStock, :claimedCount, :perUserLimit,
-                             timestamp '2026-07-01 00:00:00', timestamp '2026-08-01 23:59:59', :status, 1)
+                             :validStartAt, :validEndAt, :status, 1)
                         """)
                 .param("name", name)
                 .param("couponType", couponType)
@@ -890,6 +891,8 @@ class AdminOrderControllerTest {
                 .param("totalStock", totalStock)
                 .param("claimedCount", claimedCount)
                 .param("perUserLimit", perUserLimit)
+                .param("validStartAt", now.minusDays(1))
+                .param("validEndAt", now.plusDays(30))
                 .param("status", status)
                 .update();
         return jdbcClient.sql("select id from coupon_template where name = :name order by id desc limit 1")
@@ -899,6 +902,7 @@ class AdminOrderControllerTest {
     }
 
     private long seedUserCoupon(long userId, long templateId, String templateName, String status, String claimedAt) {
+        LocalDateTime now = LocalDateTime.now();
         String couponType = jdbcClient.sql("select coupon_type from coupon_template where id = :templateId")
                 .param("templateId", templateId)
                 .query(String.class)
@@ -927,8 +931,8 @@ class AdminOrderControllerTest {
                 .param("couponType", couponType)
                 .param("thresholdCent", thresholdCent)
                 .param("discountCent", discountCent)
-                .param("validStartAt", LocalDateTime.parse("2026-07-01T00:00:00"))
-                .param("validEndAt", LocalDateTime.parse("2026-08-01T23:59:59"))
+                .param("validStartAt", now.minusDays(1))
+                .param("validEndAt", now.plusDays(30))
                 .param("status", status)
                 .param("claimedAt", LocalDateTime.parse(claimedAt.replace(" ", "T")))
                 .update();

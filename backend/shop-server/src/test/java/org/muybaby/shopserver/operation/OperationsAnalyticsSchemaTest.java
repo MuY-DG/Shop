@@ -108,12 +108,16 @@ class OperationsAnalyticsSchemaTest {
                             'idx_order_shipment_statistics_shipped',
                             'idx_after_sale_statistics_created',
                             'idx_customer_service_statistics_activated',
-                            'idx_product_sku_statistics_stock'
+                            'idx_product_sku_statistics_stock',
+                            'idx_refund_order_status_failed',
+                            'idx_shop_order_statistics_created',
+                            'idx_user_coupon_status_valid_end',
+                            'idx_after_sale_evidence_after_sale_sort'
                         )
                         """)
                 .query(Integer.class)
                 .single();
 
-        assertThat(indexCount).isEqualTo(11);
+        assertThat(indexCount).isEqualTo(15);
     }
 }

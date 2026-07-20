@@ -20,6 +20,8 @@ public interface WechatPayProvider {
 
     WechatRefundResult requestRefund(ResolvedPaymentConfig config, WechatRefundRequest request);
 
+    WechatRefundQueryResult queryRefund(ResolvedPaymentConfig config, String outRefundNo);
+
     WechatRefundNotification parseRefundNotification(
             ResolvedPaymentConfig config,
             String timestamp,

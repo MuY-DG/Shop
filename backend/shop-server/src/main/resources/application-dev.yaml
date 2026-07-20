@@ -4,6 +4,10 @@ spring:
     username: ${SHOP_DB_USERNAME:root}
     password: ${SHOP_DB_PASSWORD:123456}
     driver-class-name: com.mysql.cj.jdbc.Driver
+  flyway:
+    placeholders:
+      seed_super_status: ENABLED
+      seed_super_password_hash: "$2y$10$VtYIL778Ftr75pHOJ3dV0efoMsPK20vZncmZ/vB6tkYj3aW9fqT.i"
   data:
     redis:
       host: 127.0.0.1
@@ -13,6 +17,12 @@ spring:
 logging:
   level:
     org.muybaby.shopserver: debug
+
+springdoc:
+  api-docs:
+    enabled: ${SHOP_OPENAPI_ENABLED:true}
+  swagger-ui:
+    enabled: ${SHOP_OPENAPI_ENABLED:true}
 
 shop:
   wechat:

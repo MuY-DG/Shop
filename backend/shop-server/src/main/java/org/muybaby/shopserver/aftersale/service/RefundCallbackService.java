@@ -1,25 +1,18 @@
 package org.muybaby.shopserver.aftersale.service;
 
-import org.muybaby.shopserver.aftersale.AfterSaleStatus;
-import org.muybaby.shopserver.aftersale.RefundOrderStatus;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.order.OrderStatus;
-import org.muybaby.shopserver.order.service.OrderStatusLogService;
-import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
-import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
+import org.muybaby.shopserver.payment.config.PaymentNotificationConfigSelector;
+import org.muybaby.shopserver.payment.config.PaymentNotificationTimestampValidator;
 import org.muybaby.shopserver.payment.provider.WechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatRefundNotification;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.interceptor.TransactionAspectSupport;
-import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.HexFormat;
 
@@ -29,23 +22,25 @@ public class RefundCallbackService {
     private static final String CALLBACK_TYPE_REFUND = "REFUND";
 
     private final JdbcClient jdbcClient;
-    private final PaymentConfigResolver paymentConfigResolver;
+    private final PaymentNotificationTimestampValidator timestampValidator;
+    private final PaymentNotificationConfigSelector paymentNotificationConfigSelector;
     private final WechatPayProvider wechatPayProvider;
-    private final OrderStatusLogService orderStatusLogService;
+    private final RefundFinalizationService refundFinalizationService;
 
     public RefundCallbackService(
             JdbcClient jdbcClient,
-            PaymentConfigResolver paymentConfigResolver,
+            PaymentNotificationTimestampValidator timestampValidator,
+            PaymentNotificationConfigSelector paymentNotificationConfigSelector,
             WechatPayProvider wechatPayProvider,
-            OrderStatusLogService orderStatusLogService
+            RefundFinalizationService refundFinalizationService
     ) {
         this.jdbcClient = jdbcClient;
-        this.paymentConfigResolver = paymentConfigResolver;
+        this.timestampValidator = timestampValidator;
+        this.paymentNotificationConfigSelector = paymentNotificationConfigSelector;
         this.wechatPayProvider = wechatPayProvider;
-        this.orderStatusLogService = orderStatusLogService;
+        this.refundFinalizationService = refundFinalizationService;
     }
 
-    @Transactional(noRollbackFor = BusinessException.class)
     public void handleRefundNotification(
             String timestamp,
             String nonce,
@@ -53,11 +48,16 @@ public class RefundCallbackService {
             String signature,
             String body
     ) {
-        ResolvedPaymentConfig config = paymentConfigResolver.resolve();
+        timestampValidator.validate(timestamp);
         String rawBodySha256 = sha256(body);
-        WechatRefundNotification notification;
+        PaymentNotificationConfigSelector.ParsedNotification<WechatRefundNotification> parsed;
         try {
-            notification = wechatPayProvider.parseRefundNotification(config, timestamp, nonce, serial, signature, body);
+            parsed = paymentNotificationConfigSelector.parse(
+                    config -> wechatPayProvider.parseRefundNotification(
+                            config, timestamp, nonce, serial, signature, body),
+                    notification -> PaymentNotificationConfigSelector.NotificationRoute.refund(
+                            notification.outTradeNo(), notification.outRefundNo())
+            );
         } catch (BusinessException ex) {
             insertCallbackLog(
                     "",
@@ -73,6 +73,7 @@ public class RefundCallbackService {
             );
             throw ex;
         }
+        WechatRefundNotification notification = parsed.notification();
 
         Long logId = insertCallbackLog(
                 notification.notifyId(),
@@ -87,17 +88,21 @@ public class RefundCallbackService {
                 ""
         );
         try {
-            RefundCallbackRow refund = findRefundForUpdate(notification.outRefundNo())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.WECHAT_REFUND_FAILED));
-            validateNotificationMatchesRefund(refund, notification);
-            if (isDuplicate(refund, notification)) {
+            RefundFinalizationService.Outcome outcome = refundFinalizationService.apply(
+                    new RefundFinalizationService.ProviderRefundState(
+                            notification.outRefundNo(),
+                            notification.refundId(),
+                            notification.outTradeNo(),
+                            notification.status(),
+                            notification.refundAmountCent(),
+                            notification.successAt(),
+                            notification.resourceDigest()
+                    ),
+                    parsed.config()
+            );
+            if (outcome == RefundFinalizationService.Outcome.DUPLICATE) {
                 updateCallbackLog(logId, "DUPLICATE", "", "");
                 return;
-            }
-            if (isSuccessfulRefund(notification)) {
-                markRefundSuccess(refund, notification);
-            } else {
-                markRefundFailed(refund, notification);
             }
             updateCallbackLog(logId, "SUCCESS", "", "");
         } catch (BusinessException ex) {
@@ -105,131 +110,8 @@ public class RefundCallbackService {
             throw ex;
         } catch (RuntimeException ex) {
             updateCallbackLog(logId, "FAILED", "REFUND_CALLBACK_FAILED", "refund callback failed");
-            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             throw new BusinessException(ErrorCode.WECHAT_REFUND_FAILED);
         }
-    }
-
-    private java.util.Optional<RefundCallbackRow> findRefundForUpdate(String outRefundNo) {
-        return jdbcClient.sql("""
-                        select ro.id,
-                               ro.after_sale_id,
-                               ro.order_id,
-                               ro.payment_order_id,
-                               ro.out_refund_no,
-                               ro.refund_id,
-                               ro.refund_amount_cent,
-                               ro.status,
-                               po.out_trade_no
-                        from refund_order ro
-                        join payment_order po on po.id = ro.payment_order_id
-                        where ro.out_refund_no = :outRefundNo
-                        for update
-                        """)
-                .param("outRefundNo", outRefundNo)
-                .query(this::mapRefundCallback)
-                .optional();
-    }
-
-    private void validateNotificationMatchesRefund(RefundCallbackRow refund, WechatRefundNotification notification) {
-        if (!refund.outRefundNo().equals(notification.outRefundNo())
-                || !refund.outTradeNo().equals(notification.outTradeNo())
-                || refund.refundAmountCent() != notification.refundAmountCent()) {
-            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-        }
-    }
-
-    private boolean isDuplicate(RefundCallbackRow refund, WechatRefundNotification notification) {
-        if (RefundOrderStatus.SUCCESS.name().equals(refund.status())) {
-            return true;
-        }
-        return RefundOrderStatus.FAILED.name().equals(refund.status()) && !isSuccessfulRefund(notification);
-    }
-
-    private void markRefundSuccess(RefundCallbackRow refund, WechatRefundNotification notification) {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime successAt = notification.successAt() == null ? now : notification.successAt();
-        jdbcClient.sql("""
-                        update refund_order
-                        set status = :status,
-                            refund_id = :refundId,
-                            callback_status = :callbackStatus,
-                            callback_digest = :callbackDigest,
-                            last_error_code = '',
-                            last_error_message = '',
-                            success_at = :successAt,
-                            updated_at = :updatedAt
-                        where id = :refundOrderId
-                        """)
-                .param("status", RefundOrderStatus.SUCCESS.name())
-                .param("refundId", nullToEmpty(notification.refundId()))
-                .param("callbackStatus", nullToEmpty(notification.status()))
-                .param("callbackDigest", nullToEmpty(notification.resourceDigest()))
-                .param("successAt", successAt)
-                .param("updatedAt", now)
-                .param("refundOrderId", refund.id())
-                .update();
-        jdbcClient.sql("""
-                        update after_sale_request
-                        set status = :status,
-                            updated_at = :updatedAt
-                        where id = :afterSaleId
-                        """)
-                .param("status", AfterSaleStatus.REFUNDED.name())
-                .param("updatedAt", now)
-                .param("afterSaleId", refund.afterSaleId())
-                .update();
-        jdbcClient.sql("""
-                        update shop_order
-                        set status = :status,
-                            refunded_at = :refundedAt,
-                            updated_at = :updatedAt
-                        where id = :orderId
-                        """)
-                .param("status", OrderStatus.REFUNDED.name())
-                .param("refundedAt", successAt)
-                .param("updatedAt", now)
-                .param("orderId", refund.orderId())
-                .update();
-        orderStatusLogService.record(
-                refund.orderId(), OrderStatus.REFUNDING.name(), OrderStatus.REFUNDED.name(),
-                "REFUND_SUCCEEDED", "WECHAT", null, "微信退款成功", successAt
-        );
-    }
-
-    private void markRefundFailed(RefundCallbackRow refund, WechatRefundNotification notification) {
-        LocalDateTime now = LocalDateTime.now();
-        String callbackStatus = StringUtils.hasText(notification.status()) ? notification.status() : "FAILED";
-        jdbcClient.sql("""
-                        update refund_order
-                        set status = :status,
-                            refund_id = :refundId,
-                            callback_status = :callbackStatus,
-                            callback_digest = :callbackDigest,
-                            last_error_code = :lastErrorCode,
-                            last_error_message = :lastErrorMessage,
-                            updated_at = :updatedAt
-                        where id = :refundOrderId
-                        """)
-                .param("status", RefundOrderStatus.FAILED.name())
-                .param("refundId", nullToEmpty(notification.refundId()))
-                .param("callbackStatus", callbackStatus)
-                .param("callbackDigest", nullToEmpty(notification.resourceDigest()))
-                .param("lastErrorCode", callbackStatus)
-                .param("lastErrorMessage", "refund callback status " + callbackStatus)
-                .param("updatedAt", now)
-                .param("refundOrderId", refund.id())
-                .update();
-        jdbcClient.sql("""
-                        update after_sale_request
-                        set status = :status,
-                            updated_at = :updatedAt
-                        where id = :afterSaleId
-                        """)
-                .param("status", AfterSaleStatus.REFUND_FAILED.name())
-                .param("updatedAt", now)
-                .param("afterSaleId", refund.afterSaleId())
-                .update();
     }
 
     private Long insertCallbackLog(
@@ -244,7 +126,8 @@ public class RefundCallbackService {
             String errorCode,
             String errorMessage
     ) {
-        jdbcClient.sql("""
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        int insertedRows = jdbcClient.sql("""
                         insert into payment_callback_log
                             (callback_type, notify_id, out_trade_no, out_refund_no, refund_id, event_type,
                              resource_digest, raw_body_sha256, status, error_code, error_message,
@@ -267,17 +150,15 @@ public class RefundCallbackService {
                 .param("errorMessage", nullToEmpty(errorMessage))
                 .param("createdAt", LocalDateTime.now())
                 .param("updatedAt", LocalDateTime.now())
-                .update();
-        return jdbcClient.sql("""
-                        select id
-                        from payment_callback_log
-                        where raw_body_sha256 = :rawBodySha256
-                        order by id desc
-                        limit 1
-                        """)
-                .param("rawBodySha256", rawBodySha256)
-                .query(Long.class)
-                .single();
+                .update(keyHolder, "id");
+        if (insertedRows != 1) {
+            throw new IllegalStateException("Refund callback log was not inserted");
+        }
+        Number key = keyHolder.getKey();
+        if (key == null) {
+            throw new IllegalStateException("Refund callback log id was not generated");
+        }
+        return key.longValue();
     }
 
     private void updateCallbackLog(Long logId, String status, String errorCode, String errorMessage) {
@@ -297,10 +178,6 @@ public class RefundCallbackService {
                 .update();
     }
 
-    private boolean isSuccessfulRefund(WechatRefundNotification notification) {
-        return "SUCCESS".equals(notification.status());
-    }
-
     private String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -314,30 +191,4 @@ public class RefundCallbackService {
         return value == null ? "" : value;
     }
 
-    private RefundCallbackRow mapRefundCallback(ResultSet rs, int rowNum) throws SQLException {
-        return new RefundCallbackRow(
-                rs.getLong("id"),
-                rs.getLong("after_sale_id"),
-                rs.getLong("order_id"),
-                rs.getLong("payment_order_id"),
-                rs.getString("out_refund_no"),
-                rs.getString("refund_id"),
-                rs.getLong("refund_amount_cent"),
-                rs.getString("status"),
-                rs.getString("out_trade_no")
-        );
-    }
-
-    private record RefundCallbackRow(
-            Long id,
-            Long afterSaleId,
-            Long orderId,
-            Long paymentOrderId,
-            String outRefundNo,
-            String refundId,
-            long refundAmountCent,
-            String status,
-            String outTradeNo
-    ) {
-    }
 }

@@ -38,6 +38,23 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void loginProtectionErrorsUseRateLimitAndUnavailableStatuses() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        ResponseEntity<ApiResponse<Void>> limited = handler.handleBusinessException(
+                new BusinessException(ErrorCode.ADMIN_LOGIN_RATE_LIMITED));
+        ResponseEntity<ApiResponse<Void>> unavailable = handler.handleBusinessException(
+                new BusinessException(ErrorCode.AUTHENTICATION_TEMPORARILY_UNAVAILABLE));
+
+        assertThat(limited.getStatusCode().value()).isEqualTo(429);
+        assertThat(limited.getBody()).isNotNull();
+        assertThat(limited.getBody().code()).isEqualTo(100005);
+        assertThat(unavailable.getStatusCode().value()).isEqualTo(503);
+        assertThat(unavailable.getBody()).isNotNull();
+        assertThat(unavailable.getBody().code()).isEqualTo(100503);
+    }
+
+    @Test
     void bindingFailuresStillReturnBadRequestEnvelope() {
         GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
@@ -90,5 +107,21 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().msg()).isEqualTo("Validation failed");
         assertThat(response.getBody().data()).isNull();
         assertThat(response.getHeaders().getAllow()).containsExactly(org.springframework.http.HttpMethod.GET);
+    }
+
+    @Test
+    void unexpectedExceptionReturnsStableNonSensitiveEnvelope() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleUnexpectedException(
+                new IllegalStateException("database-password-must-not-leak")
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(500);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(100500);
+        assertThat(response.getBody().msg()).isEqualTo("Internal server error");
+        assertThat(response.getBody().msg()).doesNotContain("database-password-must-not-leak");
+        assertThat(response.getBody().data()).isNull();
     }
 }

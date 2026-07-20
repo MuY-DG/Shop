@@ -84,7 +84,7 @@ declare namespace Api {
     interface UserInfo {
       buttons: string[]
       roles: string[]
-      userId: string
+      userId: number
       userName: string
       email: string
       avatar?: string
@@ -936,7 +936,7 @@ declare namespace Api {
     }
 
     interface CouponIssueResult {
-      userCouponId: string
+      userCouponId: number
       templateId: number
       templateName: string
       status: 'CLAIMED'
@@ -979,7 +979,7 @@ declare namespace Api {
       createdAt: string
       updatedAt: string
       distributionMode: CouponDistributionMode
-      audienceUserId?: number | null
+      audienceUserId?: string | null
       audienceNickname?: string | null
       audiencePhoneNumber?: string | null
     }
@@ -1017,7 +1017,7 @@ declare namespace Api {
       templateId: number
       templateName: string
       distributionMode: CouponDistributionMode
-      userId: number
+      userId: string
       userNickname: string
       userPhoneNumber?: string | null
       userCouponId: number
@@ -1180,7 +1180,7 @@ declare namespace Api {
       orderNo: string
       status: OrderStatus
       source: OrderSource | string
-      userId: number
+      userId: string
       userNickname: string
       userPhone: string | null
       productOriginalAmountCent: number
@@ -1395,7 +1395,7 @@ declare namespace Api {
       requestedAmountCent: number
       approvedAmountCent?: number | null
       auditNote?: string | null
-      reviewedBy?: string | null
+      reviewedBy?: number | null
       reviewedAt?: string | null
       createdAt: string
       evidenceFileIds: number[]
@@ -1433,6 +1433,18 @@ declare namespace Api {
     interface AuditPayload {
       approvedAmountCent?: number | null
       auditNote: string
+    }
+
+    interface RefundOperationPayload {
+      note: string
+    }
+
+    interface RefundOperationResponse {
+      action: string
+      result: string
+      providerStatus: string
+      resubmitted: boolean
+      afterSale: Item
     }
   }
 }

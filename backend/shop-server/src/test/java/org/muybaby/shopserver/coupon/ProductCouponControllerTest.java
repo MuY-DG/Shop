@@ -378,13 +378,14 @@ class ProductCouponControllerTest {
     }
 
     private String couponRequest(String name, String scopeType, String scopeValue) {
+        LocalDateTime now = LocalDateTime.now();
         return """
                 {"name":"%s","description":"product coupon","couponType":"NO_THRESHOLD","discountType":"AMOUNT_OFF",
                  "thresholdCent":0,"discountCent":500,"scopeType":"%s","scopeValue":"%s",
                  "strategyKey":"coupon.amount-off.v1","totalStock":100,"perUserLimit":1,
-                 "validStartAt":"2026-07-01T00:00:00","validEndAt":"2026-08-01T23:59:59",
+                 "validStartAt":"%s","validEndAt":"%s",
                  "status":"ENABLED","sortOrder":1}
-                """.formatted(name, scopeType, scopeValue);
+                """.formatted(name, scopeType, scopeValue, now.minusDays(1), now.plusDays(30));
     }
 
     private long seedProduct(String title, String status, long priceCent) {
@@ -450,6 +451,7 @@ class ProductCouponControllerTest {
             long discountCent
     ) {
         String couponType = thresholdCent == 0L ? "NO_THRESHOLD" : "MIN_SPEND";
+        LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into coupon_template
                             (name, description, coupon_type, discount_type, threshold_cent, discount_cent,
@@ -466,8 +468,8 @@ class ProductCouponControllerTest {
                 .param("discountCent", discountCent)
                 .param("scopeType", scopeType)
                 .param("scopeValue", scopeValue)
-                .param("validStartAt", LocalDateTime.of(2026, 7, 1, 0, 0))
-                .param("validEndAt", LocalDateTime.of(2026, 8, 1, 23, 59, 59))
+                .param("validStartAt", now.minusDays(1))
+                .param("validEndAt", now.plusDays(30))
                 .param("status", status)
                 .update();
         return jdbcClient.sql("select id from coupon_template where name = :name order by id desc limit 1")

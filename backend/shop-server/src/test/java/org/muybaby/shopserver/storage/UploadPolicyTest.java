@@ -166,6 +166,16 @@ class UploadPolicyTest {
     }
 
     @Test
+    void imageDimensionsAndDecodedPixelCountAreBoundedIndependentlyFromFileSize() {
+        uploadPolicy.requireAllowedImageDimensions(4000, 4000);
+
+        assertValidationFailure(() -> uploadPolicy.requireAllowedImageDimensions(8193, 1));
+        assertValidationFailure(() -> uploadPolicy.requireAllowedImageDimensions(1, 8193));
+        assertValidationFailure(() -> uploadPolicy.requireAllowedImageDimensions(5001, 5001));
+        assertValidationFailure(() -> uploadPolicy.requireAllowedImageDimensions(0, 100));
+    }
+
+    @Test
     void generatedObjectKeysUseScopeAndMediaKindInsteadOfBusinessPurpose() {
         LocalDate date = LocalDate.of(2026, 7, 13);
 

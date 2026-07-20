@@ -136,7 +136,7 @@ class AdminCustomerControllerTest {
                                 {"templateId":%d,"note":"订单延迟补偿"}
                                 """.formatted(templateId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.userCouponId").isString())
+                .andExpect(jsonPath("$.data.userCouponId").isNumber())
                 .andExpect(jsonPath("$.data.templateId").value(templateId))
                 .andExpect(jsonPath("$.data.templateName").value("客服补偿券"))
                 .andExpect(jsonPath("$.data.status").value("CLAIMED"))
@@ -201,7 +201,7 @@ class AdminCustomerControllerTest {
                                  "validStartAt":"%s","validEndAt":"%s","note":"专属售后补偿"}
                                 """.formatted(validStartAt, validEndAt)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.userCouponId").isString())
+                .andExpect(jsonPath("$.data.userCouponId").isNumber())
                 .andExpect(jsonPath("$.data.templateName").value("专属补偿券"))
                 .andExpect(jsonPath("$.data.status").value("CLAIMED"))
                 .andReturn()

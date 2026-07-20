@@ -6,6 +6,8 @@ import org.muybaby.shopserver.auth.dto.AdminLoginRequest;
 import org.muybaby.shopserver.auth.dto.CurrentAdminUserResponse;
 import org.muybaby.shopserver.auth.dto.LoginTokenResponse;
 import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
+import org.muybaby.shopserver.auth.login.AdminLoginAttempt;
+import org.muybaby.shopserver.auth.login.AdminLoginGuard;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenPair;
@@ -28,25 +30,35 @@ public class AdminAuthService {
     private final AdminRbacService adminRbacService;
     private final PasswordEncoder passwordEncoder;
     private final OpaqueTokenService opaqueTokenService;
+    private final AdminLoginGuard adminLoginGuard;
 
     public AdminAuthService(
             AdminRbacService adminRbacService,
             PasswordEncoder passwordEncoder,
-            OpaqueTokenService opaqueTokenService
+            OpaqueTokenService opaqueTokenService,
+            AdminLoginGuard adminLoginGuard
     ) {
         this.adminRbacService = adminRbacService;
         this.passwordEncoder = passwordEncoder;
         this.opaqueTokenService = opaqueTokenService;
+        this.adminLoginGuard = adminLoginGuard;
     }
 
-    public LoginTokenResponse login(AdminLoginRequest request) {
-        Optional<AdminUser> userResult = adminRbacService.findEnabledUserByUsername(request.userName());
+    public LoginTokenResponse login(AdminLoginRequest request, String clientIp) {
+        String username = request.userName().strip();
+        AdminLoginAttempt suppliedIdentityAttempt = adminLoginGuard.start(username, clientIp);
+        Optional<AdminUser> userResult = adminRbacService.findEnabledUserByUsername(username);
+        AdminLoginAttempt attempt = userResult
+                .map(user -> adminLoginGuard.start(user.id(), clientIp))
+                .orElse(suppliedIdentityAttempt);
         String passwordHash = userResult.map(AdminUser::passwordHash).orElse(DUMMY_PASSWORD_HASH);
         boolean passwordMatches = passwordEncoder.matches(request.password(), passwordHash);
         if (userResult.isEmpty() || !passwordMatches) {
+            adminLoginGuard.recordFailure(attempt);
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS);
         }
 
+        adminLoginGuard.recordSuccess(attempt);
         return issueSession(userResult.get(), null);
     }
 

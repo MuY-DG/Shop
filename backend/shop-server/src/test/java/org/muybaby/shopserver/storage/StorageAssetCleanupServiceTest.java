@@ -13,6 +13,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -117,6 +118,20 @@ class StorageAssetCleanupServiceTest {
     }
 
     @Test
+    void staleUploadPendingIsDeletedWithoutClaimingAnUploadInsideItsGraceWindow() {
+        InsertedAsset stale = insertPendingUpload(LocalDateTime.now().minusHours(1));
+        InsertedAsset fresh = insertPendingUpload(LocalDateTime.now());
+
+        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+
+        assertThat(status(stale.id())).isEqualTo("DELETED");
+        assertThat(status(fresh.id())).isEqualTo("UPLOAD_PENDING");
+        assertThatThrownBy(() -> storageProvider.open(stale.objectKey())).isInstanceOf(RuntimeException.class);
+        assertThat(storageProvider.open(fresh.objectKey()).sizeBytes()).isPositive();
+        storageProvider.delete(fresh.objectKey());
+    }
+
+    @Test
     void staleWorkerCannotFinalizeAfterAnotherWorkerOwnsTheLease() throws Exception {
         InsertedAsset expired = insertExpiredAsset("SECRET");
         StorageProvider slowProvider = mock(StorageProvider.class);
@@ -131,7 +146,8 @@ class StorageAssetCleanupServiceTest {
                 jdbcClient,
                 slowProvider,
                 transactionTemplate,
-                2
+                2,
+                Duration.ofMinutes(30)
         );
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -203,6 +219,33 @@ class StorageAssetCleanupServiceTest {
                 .param("objectKey", objectKey)
                 .param("sizeBytes", bytes.length)
                 .param("expiresAt", LocalDateTime.now().minusHours(1))
+                .update();
+        Long id = jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
+                .param("objectKey", objectKey)
+                .query(Long.class)
+                .single();
+        return new InsertedAsset(id, objectKey);
+    }
+
+    private InsertedAsset insertPendingUpload(LocalDateTime createdAt) {
+        String objectKey = "private/cleanup/" + UUID.randomUUID() + ".txt";
+        byte[] bytes = "pending-upload".getBytes();
+        storageProvider.put(objectKey, "text/plain", new ByteArrayInputStream(bytes), bytes.length);
+        LocalDateTime cleanupNotBefore = createdAt.plusMinutes(30);
+        jdbcClient.sql("""
+                        insert into storage_asset
+                            (scope, media_kind, visibility, provider, storage_container, object_key,
+                             original_filename, content_type, extension, size_bytes, sha256, status,
+                             uploaded_by_type, uploaded_by_id, cleanup_next_retry_at, created_at, updated_at)
+                        values
+                            ('ATTACHMENT', 'DOCUMENT', 'PRIVATE', 'LOCAL', '', :objectKey,
+                             'pending.txt', 'text/plain', 'txt', :sizeBytes, '', 'UPLOAD_PENDING',
+                             'ADMIN', 1, :cleanupNotBefore, :createdAt, :createdAt)
+                        """)
+                .param("objectKey", objectKey)
+                .param("sizeBytes", bytes.length)
+                .param("cleanupNotBefore", cleanupNotBefore)
+                .param("createdAt", createdAt)
                 .update();
         Long id = jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
                 .param("objectKey", objectKey)

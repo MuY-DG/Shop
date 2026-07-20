@@ -14,8 +14,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -29,53 +30,65 @@ public class StorageAssetCleanupService {
     private final StorageProvider storageProvider;
     private final TransactionTemplate transactionTemplate;
     private final int cleanupBatchSize;
+    private final Duration uploadPendingGrace;
 
     public StorageAssetCleanupService(
             JdbcClient jdbcClient,
             StorageProvider storageProvider,
             TransactionTemplate transactionTemplate,
-            @Value("${shop.storage.cleanup.batch-size:100}") int cleanupBatchSize
+            @Value("${shop.storage.cleanup.batch-size:100}") int cleanupBatchSize,
+            @Value("${shop.storage.cleanup.upload-pending-grace:30m}") Duration uploadPendingGrace
     ) {
         this.jdbcClient = jdbcClient;
         this.storageProvider = storageProvider;
         this.transactionTemplate = transactionTemplate;
         this.cleanupBatchSize = Math.max(1, cleanupBatchSize);
+        this.uploadPendingGrace = positiveDuration(uploadPendingGrace, Duration.ofMinutes(30));
     }
 
     public int cleanupExpiredAssets() {
-        List<Long> candidateIds = new ArrayList<>(expiredCandidateIds());
+        Set<Long> candidateIds = new LinkedHashSet<>(expiredCandidateIds());
         candidateIds.addAll(retryCandidateIds());
+        candidateIds.addAll(staleUploadCandidateIds());
 
         int cleaned = 0;
         for (Long assetId : candidateIds) {
-            CleanupAsset asset = transactionTemplate.execute(status -> claim(assetId));
-            if (asset == null) {
-                continue;
-            }
-            try {
-                storageProvider.delete(asset.objectLocation());
-            } catch (RuntimeException ex) {
-                RetrySchedule retry = transactionTemplate.execute(status -> scheduleRetry(asset));
-                if (retry != null && retry.scheduled()) {
-                    log.warn(
-                            "Storage asset cleanup failed; scheduled retry: assetId={}, provider={}, attempts={}, retryAt={}, exception={}",
-                            asset.id(), asset.provider(), retry.attempts(), retry.retryAt(),
-                            ex.getClass().getSimpleName()
-                    );
-                } else {
-                    log.warn(
-                            "Storage asset cleanup failed after its lease was lost: assetId={}, provider={}, exception={}",
-                            asset.id(), asset.provider(), ex.getClass().getSimpleName()
-                    );
-                }
-                continue;
-            }
-            Boolean finalized = transactionTemplate.execute(status -> finalizeDelete(asset));
-            if (Boolean.TRUE.equals(finalized)) {
+            if (cleanupAsset(assetId)) {
                 cleaned++;
             }
         }
         return cleaned;
+    }
+
+    /**
+     * Claims and physically removes one pending asset. The provider call deliberately runs between
+     * the short claim and finalize transactions so callers can reuse the same lease/retry protocol.
+     */
+    public boolean cleanupAsset(Long assetId) {
+        CleanupAsset asset = transactionTemplate.execute(status -> claim(assetId));
+        if (asset == null) {
+            return false;
+        }
+        try {
+            storageProvider.delete(asset.objectLocation());
+        } catch (RuntimeException ex) {
+            RetrySchedule retry = transactionTemplate.execute(status -> scheduleRetry(asset));
+            if (retry != null && retry.scheduled()) {
+                log.warn(
+                        "Storage asset cleanup failed; scheduled retry: assetId={}, provider={}, attempts={}, retryAt={}, exception={}",
+                        asset.id(), asset.provider(), retry.attempts(), retry.retryAt(),
+                        ex.getClass().getSimpleName()
+                );
+            } else {
+                log.warn(
+                        "Storage asset cleanup failed after its lease was lost: assetId={}, provider={}, exception={}",
+                        asset.id(), asset.provider(), ex.getClass().getSimpleName()
+                );
+            }
+            return false;
+        }
+        Boolean finalized = transactionTemplate.execute(status -> finalizeDelete(asset));
+        return Boolean.TRUE.equals(finalized);
     }
 
     private List<Long> expiredCandidateIds() {
@@ -112,8 +125,7 @@ public class StorageAssetCleanupService {
         return jdbcClient.sql("""
                         select asset.id
                         from storage_asset asset
-                        where asset.scope in ('ATTACHMENT', 'SECRET')
-                          and asset.status = 'DELETE_PENDING'
+                        where asset.status = 'DELETE_PENDING'
                           and (asset.cleanup_next_retry_at is null
                             or asset.cleanup_next_retry_at <= current_timestamp)
                         order by asset.cleanup_next_retry_at asc, asset.id asc
@@ -124,9 +136,27 @@ public class StorageAssetCleanupService {
                 .list();
     }
 
+    private List<Long> staleUploadCandidateIds() {
+        LocalDateTime staleBefore = databaseNow().minus(uploadPendingGrace);
+        return jdbcClient.sql("""
+                        select asset.id
+                        from storage_asset asset
+                        where asset.status = 'UPLOAD_PENDING'
+                          and asset.created_at <= :staleBefore
+                          and (asset.cleanup_next_retry_at is null
+                            or asset.cleanup_next_retry_at <= current_timestamp)
+                        order by asset.created_at asc, asset.id asc
+                        limit :limit
+                        """)
+                .param("staleBefore", staleBefore)
+                .param("limit", cleanupBatchSize)
+                .query(Long.class)
+                .list();
+    }
+
     private CleanupAsset claim(Long assetId) {
         CleanupAsset asset = jdbcClient.sql("""
-                        select id, scope, status, expires_at, cleanup_attempts,
+                        select id, scope, status, expires_at, cleanup_attempts, created_at,
                                cleanup_next_retry_at, provider,
                                storage_container, storage_region, object_key
                         from storage_asset
@@ -137,7 +167,7 @@ public class StorageAssetCleanupService {
                 .query(this::mapCleanupAsset)
                 .optional()
                 .orElse(null);
-        if (asset == null || !("ATTACHMENT".equals(asset.scope()) || "SECRET".equals(asset.scope()))) {
+        if (asset == null) {
             return null;
         }
         LocalDateTime now = databaseNow();
@@ -163,7 +193,37 @@ public class StorageAssetCleanupService {
                     .update();
             return leased == 1 ? asset.withLeaseToken(leaseToken) : null;
         }
-        if (!"ACTIVE".equals(asset.status())
+
+        if ("UPLOAD_PENDING".equals(asset.status())) {
+            LocalDateTime staleBefore = now.minus(uploadPendingGrace);
+            if (asset.createdAt().isAfter(staleBefore)
+                    || (asset.cleanupNextRetryAt() != null && asset.cleanupNextRetryAt().isAfter(now))) {
+                return null;
+            }
+            int leased = jdbcClient.sql("""
+                            update storage_asset
+                            set status = 'DELETE_PENDING',
+                                public_url = null,
+                                cleanup_attempts = 0,
+                                cleanup_next_retry_at = :leaseUntil,
+                                cleanup_lease_token = :leaseToken,
+                                updated_at = current_timestamp
+                            where id = :assetId
+                              and status = 'UPLOAD_PENDING'
+                              and created_at <= :staleBefore
+                              and (cleanup_next_retry_at is null
+                                or cleanup_next_retry_at <= current_timestamp)
+                            """)
+                    .param("assetId", asset.id())
+                    .param("staleBefore", staleBefore)
+                    .param("leaseUntil", leaseUntil)
+                    .param("leaseToken", leaseToken)
+                    .update();
+            return leased == 1 ? asset.withLeaseToken(leaseToken) : null;
+        }
+
+        if (!isPrivateExpirableScope(asset.scope())
+                || !"ACTIVE".equals(asset.status())
                 || asset.expiresAt() == null
                 || asset.expiresAt().isAfter(now)
                 || hasActiveReference(asset.id())) {
@@ -219,6 +279,8 @@ public class StorageAssetCleanupService {
         int updated = jdbcClient.sql("""
                         update storage_asset
                         set status = 'DELETED',
+                            folder_id = null,
+                            public_url = null,
                             expires_at = null,
                             cleanup_next_retry_at = null,
                             cleanup_lease_token = null,
@@ -274,6 +336,7 @@ public class StorageAssetCleanupService {
                 rs.getString("status"),
                 rs.getObject("expires_at", LocalDateTime.class),
                 rs.getInt("cleanup_attempts"),
+                rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("cleanup_next_retry_at", LocalDateTime.class),
                 rs.getString("provider"),
                 rs.getString("storage_container"),
@@ -289,6 +352,7 @@ public class StorageAssetCleanupService {
             String status,
             LocalDateTime expiresAt,
             int cleanupAttempts,
+            LocalDateTime createdAt,
             LocalDateTime cleanupNextRetryAt,
             String provider,
             String storageContainer,
@@ -298,7 +362,7 @@ public class StorageAssetCleanupService {
     ) {
         private CleanupAsset withLeaseToken(String token) {
             return new CleanupAsset(
-                    id, scope, status, expiresAt, cleanupAttempts, cleanupNextRetryAt,
+                    id, scope, status, expiresAt, cleanupAttempts, createdAt, cleanupNextRetryAt,
                     provider, storageContainer, storageRegion, objectKey, token
             );
         }
@@ -314,5 +378,13 @@ public class StorageAssetCleanupService {
     }
 
     private record RetrySchedule(boolean scheduled, int attempts, LocalDateTime retryAt) {
+    }
+
+    private boolean isPrivateExpirableScope(String scope) {
+        return "ATTACHMENT".equals(scope) || "SECRET".equals(scope);
+    }
+
+    private Duration positiveDuration(Duration value, Duration fallback) {
+        return value == null || value.isZero() || value.isNegative() ? fallback : value;
     }
 }

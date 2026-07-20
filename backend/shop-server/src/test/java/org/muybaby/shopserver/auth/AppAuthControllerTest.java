@@ -79,7 +79,7 @@ class AppAuthControllerTest {
         mockMvc.perform(get("/app/users/me")
                         .header("Authorization", bearer(login.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.userId").value(login.userId()))
+                .andExpect(jsonPath("$.data.userId").value(Long.toString(login.userId())))
                 .andExpect(jsonPath("$.data.nickname").value(login.nickname()))
                 .andExpect(jsonPath("$.data.openidMasked").value("test****ency"))
                 .andExpect(jsonPath("$.data.phoneAuthorized").value(false))
@@ -90,7 +90,7 @@ class AppAuthControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"test-phone-code\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.userId").value(login.userId()))
+                .andExpect(jsonPath("$.data.userId").value(Long.toString(login.userId())))
                 .andExpect(jsonPath("$.data.nickname").value(login.nickname()))
                 .andExpect(jsonPath("$.data.openidMasked").value("test****ency"))
                 .andExpect(jsonPath("$.data.phoneAuthorized").value(true))
@@ -107,7 +107,7 @@ class AppAuthControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"nickname\":\"  山茶花用户  \"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.userId").value(login.userId()))
+                .andExpect(jsonPath("$.data.userId").value(Long.toString(login.userId())))
                 .andExpect(jsonPath("$.data.nickname").value("山茶花用户"));
 
         mockMvc.perform(get("/app/users/me")
@@ -149,7 +149,7 @@ class AppAuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.token", startsWith("app_")))
                 .andExpect(jsonPath("$.data.refreshToken", startsWith("apr_")))
-                .andExpect(jsonPath("$.data.user.userId").value(login.userId()))
+                .andExpect(jsonPath("$.data.user.userId").value(Long.toString(login.userId())))
                 .andReturn();
 
         mockMvc.perform(post("/app/auth/refresh")
@@ -187,7 +187,7 @@ class AppAuthControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"code\":\"persistent-phone\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.user.userId").value(firstLogin.userId()))
+                .andExpect(jsonPath("$.data.user.userId").value(Long.toString(firstLogin.userId())))
                 .andExpect(jsonPath("$.data.user.phoneAuthorized").value(true))
                 .andExpect(jsonPath("$.data.user.phoneNumberMasked").value("138****5678"))
                 .andExpect(content().string(not(containsString("13812345678"))))
@@ -197,7 +197,7 @@ class AppAuthControllerTest {
         mockMvc.perform(get("/app/users/me")
                         .header("Authorization", bearer(laterAccess)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.userId").value(firstLogin.userId()))
+                .andExpect(jsonPath("$.data.userId").value(Long.toString(firstLogin.userId())))
                 .andExpect(jsonPath("$.data.phoneAuthorized").value(true))
                 .andExpect(jsonPath("$.data.phoneNumberMasked").value("138****5678"))
                 .andExpect(content().string(not(containsString("13812345678"))));

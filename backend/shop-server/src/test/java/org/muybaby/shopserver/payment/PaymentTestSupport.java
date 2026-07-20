@@ -110,6 +110,10 @@ public abstract class PaymentTestSupport {
         return new AppLoginSession(json.path("data").path("token").asText(), userId, openid);
     }
 
+    protected String currentWechatpayTimestamp() {
+        return Long.toString(Instant.now().getEpochSecond());
+    }
+
     protected void seedEnabledPaymentConfig() {
         seedEnabledPaymentConfig("""
                 -----BEGIN PRIVATE KEY-----
@@ -142,6 +146,26 @@ public abstract class PaymentTestSupport {
                 .param("ciphertext", paymentSecretCipher.encrypt("api_v3_secret_test"))
                 .param("privateKeyFileId", privateKeyFileId)
                 .param("publicKeyFileId", publicKeyFileId)
+                .update();
+    }
+
+    protected void switchToClonedPaymentConfig(long replacementConfigId) {
+        jdbcClient.sql("update payment_config set enabled = false where enabled = true").update();
+        jdbcClient.sql("""
+                        insert into payment_config
+                            (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_file_id, merchant_certificate_file_id, verify_mode,
+                             wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                             enabled, status)
+                        select :replacementConfigId, 'Replacement Payment Flow Test', app_id,
+                               concat(mch_id, '_replacement'), merchant_serial_no, api_v3_key_ciphertext,
+                               private_key_file_id, merchant_certificate_file_id, verify_mode,
+                               wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                               true, status
+                        from payment_config
+                        where id = 91001
+                        """)
+                .param("replacementConfigId", replacementConfigId)
                 .update();
     }
 

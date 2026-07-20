@@ -24,7 +24,7 @@ public class AdminMenuRouteService {
 
     public List<AdminRouteResponse> routesForUser(Long userId) {
         List<MenuRow> menuRows = menuRowsForUser(userId);
-        return buildRoutes(menuRows, menuId -> authListForMenu(userId, menuId));
+        return buildRoutes(menuRows, authListsForUser(userId, menuIds(menuRows)));
     }
 
     public List<AdminRouteResponse> allRoutes() {
@@ -35,16 +35,19 @@ public class AdminMenuRouteService {
                         """)
                 .query(this::mapMenuRow)
                 .list();
-        return buildRoutes(menuRows, this::allAuthListForMenu);
+        return buildRoutes(menuRows, allAuthLists(menuIds(menuRows)));
     }
 
     private List<AdminRouteResponse> buildRoutes(
             List<MenuRow> menuRows,
-            java.util.function.Function<Long, List<AdminRouteAuthResponse>> authProvider
+            Map<Long, List<AdminRouteAuthResponse>> authByMenuId
     ) {
         Map<Long, MutableRoute> routesById = new LinkedHashMap<>();
         for (MenuRow menuRow : menuRows) {
-            routesById.put(menuRow.id(), MutableRoute.from(menuRow, authProvider.apply(menuRow.id())));
+            routesById.put(menuRow.id(), MutableRoute.from(
+                    menuRow,
+                    authByMenuId.getOrDefault(menuRow.id(), List.of())
+            ));
         }
 
         List<MutableRoute> roots = new ArrayList<>();
@@ -63,21 +66,21 @@ public class AdminMenuRouteService {
                 .toList();
     }
 
-    private List<AdminRouteAuthResponse> allAuthListForMenu(Long menuId) {
-        return jdbcClient.sql("""
-                        select distinct p.id, p.title, p.auth_mark
+    private Map<Long, List<AdminRouteAuthResponse>> allAuthLists(List<Long> menuIds) {
+        if (menuIds.isEmpty()) {
+            return Map.of();
+        }
+        List<MenuAuthRow> authRows = jdbcClient.sql("""
+                        select distinct mp.menu_id, p.id, p.title, p.auth_mark
                         from admin_permission p
                         join admin_menu_permission mp on mp.permission_id = p.id
-                        where mp.menu_id = :menuId
-                        order by p.id
+                        where mp.menu_id in (:menuIds)
+                        order by mp.menu_id, p.id
                         """)
-                .param("menuId", menuId)
-                .query((rs, rowNum) -> new AdminRouteAuthResponse(
-                        rs.getLong("id"),
-                        rs.getString("title"),
-                        rs.getString("auth_mark")
-                ))
+                .param("menuIds", menuIds)
+                .query(this::mapMenuAuthRow)
                 .list();
+        return groupAuthByMenuId(authRows);
     }
 
     private List<MenuRow> menuRowsForUser(Long userId) {
@@ -100,9 +103,12 @@ public class AdminMenuRouteService {
                 .list();
     }
 
-    private List<AdminRouteAuthResponse> authListForMenu(Long userId, Long menuId) {
-        return jdbcClient.sql("""
-                        select distinct p.id, p.title, p.auth_mark
+    private Map<Long, List<AdminRouteAuthResponse>> authListsForUser(Long userId, List<Long> menuIds) {
+        if (menuIds.isEmpty()) {
+            return Map.of();
+        }
+        List<MenuAuthRow> authRows = jdbcClient.sql("""
+                        select distinct mp.menu_id, p.id, p.title, p.auth_mark
                         from admin_permission p
                         join admin_menu_permission mp on mp.permission_id = p.id
                         join admin_role_permission rp on rp.permission_id = p.id
@@ -110,19 +116,39 @@ public class AdminMenuRouteService {
                         join admin_role r on r.id = ur.role_id
                         join admin_user u on u.id = ur.user_id
                         where ur.user_id = :userId
-                          and mp.menu_id = :menuId
+                          and mp.menu_id in (:menuIds)
                           and u.status = 'ENABLED'
                           and r.enabled = true
-                        order by p.id
+                        order by mp.menu_id, p.id
                         """)
                 .param("userId", userId)
-                .param("menuId", menuId)
-                .query((rs, rowNum) -> new AdminRouteAuthResponse(
-                        rs.getLong("id"),
-                        rs.getString("title"),
-                        rs.getString("auth_mark")
-                ))
+                .param("menuIds", menuIds)
+                .query(this::mapMenuAuthRow)
                 .list();
+        return groupAuthByMenuId(authRows);
+    }
+
+    private List<Long> menuIds(List<MenuRow> menuRows) {
+        return menuRows.stream().map(MenuRow::id).toList();
+    }
+
+    private Map<Long, List<AdminRouteAuthResponse>> groupAuthByMenuId(List<MenuAuthRow> authRows) {
+        Map<Long, List<AdminRouteAuthResponse>> authByMenuId = new LinkedHashMap<>();
+        for (MenuAuthRow authRow : authRows) {
+            authByMenuId.computeIfAbsent(authRow.menuId(), ignored -> new ArrayList<>())
+                    .add(new AdminRouteAuthResponse(authRow.id(), authRow.title(), authRow.authMark()));
+        }
+        authByMenuId.replaceAll((menuId, authList) -> List.copyOf(authList));
+        return Map.copyOf(authByMenuId);
+    }
+
+    private MenuAuthRow mapMenuAuthRow(ResultSet rs, int rowNum) throws SQLException {
+        return new MenuAuthRow(
+                rs.getLong("menu_id"),
+                rs.getLong("id"),
+                rs.getString("title"),
+                rs.getString("auth_mark")
+        );
     }
 
     private MenuRow mapMenuRow(ResultSet rs, int rowNum) throws SQLException {
@@ -150,6 +176,9 @@ public class AdminMenuRouteService {
             String icon,
             boolean keepAlive
     ) {
+    }
+
+    private record MenuAuthRow(Long menuId, Long id, String title, String authMark) {
     }
 
     private record MutableRoute(

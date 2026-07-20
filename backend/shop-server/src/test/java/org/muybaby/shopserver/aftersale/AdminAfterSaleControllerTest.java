@@ -1,7 +1,9 @@
 package org.muybaby.shopserver.aftersale;
 
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.aftersale.service.RefundRecoveryService;
 import org.muybaby.shopserver.payment.PaymentTestSupport;
+import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatRefundRequest;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
@@ -16,6 +18,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -23,6 +26,7 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -44,6 +48,9 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
 
     @Autowired
     private StorageProvider storageProvider;
+
+    @Autowired
+    private RefundRecoveryService refundRecoveryService;
 
     @Test
     void adminListAndDetailReturnPagedEnvelopeAndRequireReadAuthority() throws Exception {
@@ -226,8 +233,8 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("REJECTED"))
                 .andExpect(jsonPath("$.data.auditNote").value("凭证不足，暂不退款"))
-                .andExpect(jsonPath("$.data.reviewedBy").isString())
-                .andExpect(jsonPath("$.data.reviewedBy").value("1"));
+                .andExpect(jsonPath("$.data.reviewedBy").isNumber())
+                .andExpect(jsonPath("$.data.reviewedBy").value(1));
 
         assertThat(jdbcClient.sql("""
                         select count(*)
@@ -253,6 +260,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         AppLoginSession appUser = appLogin("after-sale-admin-approve-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve");
         long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        switchToClonedPaymentConfig(91002L);
         String adminToken = adminLogin();
 
         mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
@@ -296,6 +304,9 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .param("orderId", order.orderId())
                 .query(String.class)
                 .single()).isEqualTo("REFUNDING");
+        ArgumentCaptor<ResolvedPaymentConfig> configCaptor = ArgumentCaptor.forClass(ResolvedPaymentConfig.class);
+        verify(refundProvider, times(1)).requestRefund(configCaptor.capture(), any());
+        assertThat(configCaptor.getValue().configId()).isEqualTo(91001L);
     }
 
     @Test
@@ -366,7 +377,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     }
 
     @Test
-    void adminApproveProviderFailureKeepsLocalRefundOrderAndSanitizesErrorBeforeRetry() throws Exception {
+    void adminApproveIndeterminateProviderFailureKeepsRefundPendingForRecovery() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-approve-provider-failure-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve-provider-failure");
@@ -375,7 +386,10 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         String expectedOutRefundNo = expectedOutRefundNo(afterSaleId, order.orderId(), paymentOrderId);
         String adminToken = adminLogin();
         String sensitiveProviderMessage = "synthetic-provider-sensitive-detail";
-        doThrow(new RuntimeException(sensitiveProviderMessage))
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new RuntimeException(sensitiveProviderMessage);
+        })
                 .when(refundProvider)
                 .requestRefund(any(), any());
         clearInvocations(refundProvider);
@@ -394,19 +408,29 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         assertThat(rows).hasSize(1);
         RefundOrderSnapshot refundOrder = rows.get(0);
         assertThat(refundOrder.outRefundNo()).isEqualTo(expectedOutRefundNo).hasSizeLessThanOrEqualTo(64);
-        assertThat(refundOrder.status()).isEqualTo("FAILED");
-        assertThat(refundOrder.lastErrorCode()).isEqualTo("WECHAT_REFUND_FAILED");
+        assertThat(refundOrder.status()).isEqualTo("PROCESSING");
+        assertThat(refundOrder.lastErrorCode()).isEqualTo("RuntimeException");
         assertThat(refundOrder.lastErrorMessage())
-                .isEqualTo("WeChat refund failed")
+                .isEqualTo("Refund request result is unknown; provider query scheduled")
                 .doesNotContain(sensitiveProviderMessage);
         assertThat(jdbcClient.sql("select status from after_sale_request where id = :afterSaleId")
                 .param("afterSaleId", afterSaleId)
                 .query(String.class)
-                .single()).isEqualTo("REFUND_FAILED");
+                .single()).isEqualTo("REFUNDING");
         assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
                 .param("orderId", order.orderId())
                 .query(String.class)
-                .single()).isEqualTo("PAID");
+                .single()).isEqualTo("REFUNDING");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from refund_order
+                        where after_sale_id = :afterSaleId
+                          and callback_status = 'REQUEST_UNKNOWN'
+                          and next_recovery_at is not null
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
         verify(refundProvider, times(1)).requestRefund(any(), any());
 
         clearInvocations(refundProvider);
@@ -425,6 +449,574 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .extracting(RefundOrderSnapshot::outRefundNo)
                 .isEqualTo(expectedOutRefundNo);
         verify(refundProvider, never()).requestRefund(any(), any());
+
+        LocalDateTime successAt = LocalDateTime.of(2026, 7, 19, 12, 0);
+        refundProvider.markRefundStatus(expectedOutRefundNo, "SUCCESS", successAt);
+        jdbcClient.sql("""
+                        update refund_order
+                        set updated_at = :updatedAt,
+                            next_recovery_at = null
+                        where out_refund_no = :outRefundNo
+                        """)
+                .param("updatedAt", LocalDateTime.now().minusMinutes(5))
+                .param("outRefundNo", expectedOutRefundNo)
+                .update();
+
+        assertThat(refundRecoveryService.recoverPendingRefunds(1)).isEqualTo(1);
+        assertThat(jdbcClient.sql("select status from refund_order where out_refund_no = :outRefundNo")
+                .param("outRefundNo", expectedOutRefundNo)
+                .query(String.class)
+                .single()).isEqualTo("SUCCESS");
+        assertThat(jdbcClient.sql("select status from after_sale_request where id = :afterSaleId")
+                .param("afterSaleId", afterSaleId)
+                .query(String.class)
+                .single()).isEqualTo("REFUNDED");
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("REFUNDED");
+    }
+
+    @Test
+    void adminCanRetryClosedRefundWithNewMerchantRefundNumberAndOriginalPaymentConfig() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-closed-retry-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-closed-retry");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String adminToken = adminLogin();
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6980,"auditNote":"原始退款原因"}
+                                """))
+                .andExpect(status().isOk());
+        String originalOutRefundNo = refundOrders(afterSaleId).getFirst().outRefundNo();
+        markLatestRefundTerminal(afterSaleId, "CLOSED");
+        jdbcClient.sql("""
+                        update refund_order
+                        set recovery_claim_token = 'expired-closed-retry-claim',
+                            recovery_claimed_at = :claimedAt
+                        where after_sale_id = :afterSaleId
+                        """)
+                .param("claimedAt", LocalDateTime.now().minusMinutes(10))
+                .param("afterSaleId", afterSaleId)
+                .update();
+        switchToClonedPaymentConfig(91002L);
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/refund-retry", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"商户余额已补足并核对原退款已关闭"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REFUNDING"))
+                .andExpect(jsonPath("$.data.refundOrder.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.data.refundOrder.callbackStatus").value("PROCESSING"));
+
+        List<RefundOrderSnapshot> rows = refundOrders(afterSaleId);
+        assertThat(rows).hasSize(2);
+        assertThat(rows.get(0).outRefundNo()).isEqualTo(originalOutRefundNo);
+        assertThat(rows.get(0).status()).isEqualTo("FAILED");
+        assertThat(rows.get(0).callbackStatus()).isEqualTo("CLOSED");
+        assertThat(rows.get(1).outRefundNo())
+                .isNotEqualTo(originalOutRefundNo)
+                .startsWith("RF" + afterSaleId + "R")
+                .hasSizeLessThanOrEqualTo(64);
+        assertThat(rows.get(1).status()).isEqualTo("PROCESSING");
+
+        ArgumentCaptor<ResolvedPaymentConfig> configCaptor = ArgumentCaptor.forClass(ResolvedPaymentConfig.class);
+        ArgumentCaptor<WechatRefundRequest> requestCaptor = ArgumentCaptor.forClass(WechatRefundRequest.class);
+        verify(refundProvider, times(1)).requestRefund(configCaptor.capture(), requestCaptor.capture());
+        assertThat(configCaptor.getValue().configId()).isEqualTo(91001L);
+        assertThat(requestCaptor.getValue().outRefundNo()).isEqualTo(rows.get(1).outRefundNo());
+        assertThat(requestCaptor.getValue().refundAmountCent()).isEqualTo(6980L);
+        assertThat(requestCaptor.getValue().reason()).isEqualTo("原始退款原因");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from order_status_log
+                        where order_id = :orderId
+                          and event_type = 'REFUND_RETRIED'
+                          and operator_type = 'ADMIN'
+                          and operator_id is not null
+                        """)
+                .param("orderId", order.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    @Test
+    void adminRefundRetryRejectsNonFailedAndAbnormalRefunds() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-retry-reject-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-retry-reject");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String adminToken = adminLogin();
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isOk());
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/refund-retry", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"测试非失败状态不可重试"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+        assertThat(refundOrders(afterSaleId)).hasSize(1);
+
+        markLatestRefundTerminal(afterSaleId, "ABNORMAL");
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/refund-retry", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"ABNORMAL 应通过渠道核查而不是新单重试"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertThat(refundOrders(afterSaleId)).hasSize(1);
+        verify(refundProvider, never()).requestRefund(any(), any());
+    }
+
+    @Test
+    void closedRefundPreservesTerminalEvidenceAndRejectsConflictingOperations() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-closed-exclusive-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-closed-exclusive");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String adminToken = adminLogin();
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isOk());
+        long refundOrderId = latestRefundOrderId(afterSaleId);
+        markLatestRefundTerminal(afterSaleId, "CLOSED");
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-resubmit",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"不得复用已关闭的商户退款单号"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/manual-intervention",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"不得覆盖渠道 CLOSED 终态"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        jdbcClient.sql("""
+                        update refund_order
+                        set recovery_claim_token = 'active-recovery-claim',
+                            recovery_claimed_at = current_timestamp
+                        where id = :refundOrderId
+                        """)
+                .param("refundOrderId", refundOrderId)
+                .update();
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/refund-retry", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"活动恢复任务期间不得新单重试"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        List<RefundOrderSnapshot> rows = refundOrders(afterSaleId);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst().status()).isEqualTo("FAILED");
+        assertThat(rows.getFirst().callbackStatus()).isEqualTo("CLOSED");
+        verify(refundProvider, never()).queryRefund(any(), any());
+        verify(refundProvider, never()).requestRefund(any(), any());
+    }
+
+    @Test
+    void adminProviderQueryFinalizesAbnormalRefundAndWritesOperatorAudit() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-provider-query-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-provider-query");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String adminToken = adminLogin();
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isOk());
+        long refundOrderId = latestRefundOrderId(afterSaleId);
+        String outRefundNo = refundOrders(afterSaleId).getFirst().outRefundNo();
+        markLatestRefundTerminal(afterSaleId, "ABNORMAL");
+        refundProvider.markRefundStatus(
+                outRefundNo, "SUCCESS", LocalDateTime.of(2026, 7, 19, 15, 0));
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-query",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"用户反馈到账异常，立即核验渠道状态"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.action").value("PROVIDER_QUERY"))
+                .andExpect(jsonPath("$.data.result").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.providerStatus").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.resubmitted").value(false))
+                .andExpect(jsonPath("$.data.afterSale.status").value("REFUNDED"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.callbackStatus").value("SUCCESS"));
+
+        verify(refundProvider, times(1)).queryRefund(any(), any());
+        verify(refundProvider, never()).requestRefund(any(), any());
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from order_status_log
+                        where order_id = :orderId
+                          and event_type in ('REFUND_QUERY_REQUESTED', 'REFUND_QUERY_COMPLETED')
+                          and operator_type = 'ADMIN'
+                          and operator_id is not null
+                        """)
+                .param("orderId", order.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+
+        clearInvocations(refundProvider);
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-query",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"HTTP 重试应幂等返回，不再访问渠道"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("DUPLICATE"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.status").value("SUCCESS"));
+        verify(refundProvider, never()).queryRefund(any(), any());
+
+    }
+
+    @Test
+    void adminProviderResubmitQueriesFirstAndReusesOriginalMerchantRefundNumber() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-provider-resubmit-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-provider-resubmit");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String adminToken = adminLogin();
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isOk());
+        long refundOrderId = latestRefundOrderId(afterSaleId);
+        String outRefundNo = refundOrders(afterSaleId).getFirst().outRefundNo();
+        refundProvider.forgetRefund(outRefundNo);
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-query",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"   "}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+        verify(refundProvider, never()).queryRefund(any(), any());
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-resubmit",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"原退款请求结果不确定，安全重提"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.action").value("PROVIDER_RESUBMIT"))
+                .andExpect(jsonPath("$.data.result").value("PROCESSING"))
+                .andExpect(jsonPath("$.data.resubmitted").value(true))
+                .andExpect(jsonPath("$.data.afterSale.status").value("REFUNDING"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.outRefundNo").value(outRefundNo))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.status").value("PROCESSING"));
+
+        ArgumentCaptor<WechatRefundRequest> firstRequest = ArgumentCaptor.forClass(WechatRefundRequest.class);
+        verify(refundProvider, times(1)).queryRefund(any(), any());
+        verify(refundProvider, times(1)).requestRefund(any(), firstRequest.capture());
+        assertThat(firstRequest.getValue().outRefundNo()).isEqualTo(outRefundNo);
+
+        clearInvocations(refundProvider);
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-resubmit",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"重复点击仍应先查询，不能重复创建退款"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.resubmitted").value(false))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.outRefundNo").value(outRefundNo));
+        verify(refundProvider, times(1)).queryRefund(any(), any());
+        verify(refundProvider, never()).requestRefund(any(), any());
+    }
+
+    @Test
+    void adminProviderQueryDoesNotSubmitWhenProviderReportsNotFound() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-query-not-found-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-query-not-found");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String adminToken = adminLogin();
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isOk());
+        long refundOrderId = latestRefundOrderId(afterSaleId);
+        String outRefundNo = refundOrders(afterSaleId).getFirst().outRefundNo();
+        refundProvider.forgetRefund(outRefundNo);
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-query",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"只查询，不授权发起退款请求"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.data.providerStatus").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.data.resubmitted").value(false))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.status").value("PROCESSING"));
+
+        verify(refundProvider, times(1)).queryRefund(any(), any());
+        verify(refundProvider, never()).requestRefund(any(), any());
+    }
+
+    @Test
+    void adminCanPauseAutomaticRecoveryForManualInterventionWithoutForgingSuccess() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-manual-intervention-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-manual-intervention");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String adminToken = adminLogin();
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isOk());
+        long refundOrderId = latestRefundOrderId(afterSaleId);
+        String readOnlyToken = limitedAdminToken(List.of("aftersale:read"));
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/manual-intervention",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + readOnlyToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"无权限操作"}
+                                """))
+                .andExpect(status().isForbidden());
+
+        jdbcClient.sql("""
+                        update refund_order
+                        set recovery_claim_token = 'expired-manual-claim',
+                            recovery_claimed_at = :claimedAt
+                        where id = :refundOrderId
+                        """)
+                .param("claimedAt", LocalDateTime.now().minusMinutes(10))
+                .param("refundOrderId", refundOrderId)
+                .update();
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/manual-intervention",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"需要联系微信支付人工核查"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.action").value("MANUAL_INTERVENTION"))
+                .andExpect(jsonPath("$.data.result").value("MANUAL_INTERVENTION"))
+                .andExpect(jsonPath("$.data.afterSale.status").value("REFUND_FAILED"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.status").value("FAILED"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.callbackStatus").value("MANUAL_INTERVENTION"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.lastErrorCode").value("MANUAL_INTERVENTION"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.lastErrorMessage")
+                        .value("Refund requires manual intervention"));
+
+        LocalDateTime firstFailedAt = jdbcClient.sql("""
+                        select failed_at
+                        from refund_order
+                        where id = :refundOrderId
+                        """)
+                .param("refundOrderId", refundOrderId)
+                .query(LocalDateTime.class)
+                .single();
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("REFUNDING");
+        assertThat(refundRecoveryService.recoverPendingRefunds(1)).isZero();
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/manual-intervention",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"重复操作保持人工介入状态"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.status").value("FAILED"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.callbackStatus").value("MANUAL_INTERVENTION"));
+
+        assertThat(jdbcClient.sql("select failed_at from refund_order where id = :refundOrderId")
+                .param("refundOrderId", refundOrderId)
+                .query(LocalDateTime.class)
+                .single()).isEqualTo(firstFailedAt);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from order_status_log
+                        where order_id = :orderId
+                          and event_type = 'REFUND_MANUAL_INTERVENTION'
+                          and operator_type = 'ADMIN'
+                          and operator_id is not null
+                        """)
+                .param("orderId", order.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-query",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"人工核查完成，重新以渠道状态为准"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("PROCESSING"))
+                .andExpect(jsonPath("$.data.afterSale.status").value("REFUNDING"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.status").value("PROCESSING"))
+                .andExpect(jsonPath("$.data.afterSale.refundOrder.callbackStatus").value("PROCESSING"));
+    }
+
+    @Test
+    void adminClosedRefundRetryProviderFailureRemainsRecoverable() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-closed-retry-failure-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-closed-retry-failure");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String adminToken = adminLogin();
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
+                                """))
+                .andExpect(status().isOk());
+        markLatestRefundTerminal(afterSaleId, "CLOSED");
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new RuntimeException("sensitive-retry-provider-detail");
+        }).when(refundProvider).requestRefund(any(), any());
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/refund-retry", afterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"故障后以新商户退款单号恢复"}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(700001));
+
+        List<RefundOrderSnapshot> rows = refundOrders(afterSaleId);
+        assertThat(rows).hasSize(2);
+        RefundOrderSnapshot retry = rows.get(1);
+        assertThat(retry.status()).isEqualTo("PROCESSING");
+        assertThat(retry.callbackStatus()).isEqualTo("REQUEST_UNKNOWN");
+        assertThat(retry.lastErrorCode()).isEqualTo("RuntimeException");
+        assertThat(retry.lastErrorMessage())
+                .isEqualTo("Refund request result is unknown; provider query scheduled")
+                .doesNotContain("sensitive-retry-provider-detail");
+        assertThat(retry.nextRecoveryAt()).isNotNull();
+        assertThat(jdbcClient.sql("select status from after_sale_request where id = :afterSaleId")
+                .param("afterSaleId", afterSaleId)
+                .query(String.class)
+                .single()).isEqualTo("REFUNDING");
+
+        LocalDateTime successAt = LocalDateTime.of(2026, 7, 19, 13, 0);
+        refundProvider.markRefundStatus(retry.outRefundNo(), "SUCCESS", successAt);
+        jdbcClient.sql("""
+                        update refund_order
+                        set updated_at = :updatedAt,
+                            next_recovery_at = null
+                        where out_refund_no = :outRefundNo
+                        """)
+                .param("updatedAt", LocalDateTime.now().minusMinutes(5))
+                .param("outRefundNo", retry.outRefundNo())
+                .update();
+
+        assertThat(refundRecoveryService.recoverPendingRefunds(1)).isEqualTo(1);
+        assertThat(jdbcClient.sql("select status from refund_order where out_refund_no = :outRefundNo")
+                .param("outRefundNo", retry.outRefundNo())
+                .query(String.class)
+                .single()).isEqualTo("SUCCESS");
+        assertThat(jdbcClient.sql("select status from after_sale_request where id = :afterSaleId")
+                .param("afterSaleId", afterSaleId)
+                .query(String.class)
+                .single()).isEqualTo("REFUNDED");
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("REFUNDED");
     }
 
     @Test
@@ -489,6 +1081,19 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .single();
     }
 
+    private long latestRefundOrderId(long afterSaleId) {
+        return jdbcClient.sql("""
+                        select id
+                        from refund_order
+                        where after_sale_id = :afterSaleId
+                        order by id desc
+                        limit 1
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query(Long.class)
+                .single();
+    }
+
     private void insertRefundOrder(long afterSaleId, long orderId, String outRefundNo) {
         jdbcClient.sql("""
                         insert into refund_order
@@ -522,9 +1127,38 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         return "RF" + afterSaleId + "O" + orderId + "P" + paymentOrderId;
     }
 
+    private void markLatestRefundTerminal(long afterSaleId, String callbackStatus) {
+        jdbcClient.sql("""
+                        update refund_order
+                        set status = 'FAILED',
+                            failed_at = current_timestamp,
+                            callback_status = :callbackStatus,
+                            last_error_code = :callbackStatus,
+                            last_error_message = concat('refund provider status ', :callbackStatus),
+                            updated_at = current_timestamp
+                        where after_sale_id = :afterSaleId
+                        """)
+                .param("callbackStatus", callbackStatus)
+                .param("afterSaleId", afterSaleId)
+                .update();
+        jdbcClient.sql("""
+                        update after_sale_request
+                        set status = 'REFUND_FAILED',
+                            updated_at = current_timestamp
+                        where id = :afterSaleId
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .update();
+    }
+
     private List<RefundOrderSnapshot> refundOrders(long afterSaleId) {
         return jdbcClient.sql("""
-                        select out_refund_no, status, last_error_code, last_error_message
+                        select out_refund_no,
+                               status,
+                               callback_status,
+                               last_error_code,
+                               last_error_message,
+                               next_recovery_at
                         from refund_order
                         where after_sale_id = :afterSaleId
                         order by id
@@ -533,8 +1167,10 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .query((rs, rowNum) -> new RefundOrderSnapshot(
                         rs.getString("out_refund_no"),
                         rs.getString("status"),
+                        rs.getString("callback_status"),
                         rs.getString("last_error_code"),
-                        rs.getString("last_error_message")
+                        rs.getString("last_error_message"),
+                        rs.getObject("next_recovery_at", LocalDateTime.class)
                 ))
                 .list();
     }
@@ -542,8 +1178,10 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     private record RefundOrderSnapshot(
             String outRefundNo,
             String status,
+            String callbackStatus,
             String lastErrorCode,
-            String lastErrorMessage
+            String lastErrorMessage,
+            LocalDateTime nextRecoveryAt
     ) {
     }
 }

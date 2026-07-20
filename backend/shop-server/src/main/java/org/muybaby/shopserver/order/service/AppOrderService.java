@@ -49,6 +49,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigInteger;
+import java.security.SecureRandom;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -56,8 +58,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class AppOrderService {
@@ -66,7 +68,9 @@ public class AppOrderService {
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 100;
     private static final DateTimeFormatter ORDER_NO_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
-    private static final AtomicLong ORDER_NO_SEQUENCE = new AtomicLong();
+    private static final int ORDER_NO_RANDOM_BYTES = 9;
+    private static final int ORDER_NO_RANDOM_WIDTH = 14;
+    private static final SecureRandom ORDER_NO_RANDOM = new SecureRandom();
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -1172,9 +1176,15 @@ public class AppOrderService {
         };
     }
 
-    private String nextOrderNo(LocalDateTime now) {
-        long sequence = ORDER_NO_SEQUENCE.incrementAndGet() % 1_000_000L;
-        return "ORD" + now.format(ORDER_NO_TIME_FORMATTER) + String.format("%06d", sequence);
+    static String nextOrderNo(LocalDateTime now) {
+        byte[] randomBytes = new byte[ORDER_NO_RANDOM_BYTES];
+        ORDER_NO_RANDOM.nextBytes(randomBytes);
+        String randomSuffix = new BigInteger(1, randomBytes).toString(Character.MAX_RADIX)
+                .toUpperCase(Locale.ROOT);
+        return "ORD"
+                + now.format(ORDER_NO_TIME_FORMATTER)
+                + "0".repeat(ORDER_NO_RANDOM_WIDTH - randomSuffix.length())
+                + randomSuffix;
     }
 
     private Long requireGeneratedId(KeyHolder keyHolder) {

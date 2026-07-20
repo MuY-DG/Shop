@@ -19,7 +19,6 @@ public record AfterSaleResponse(
         Long requestedAmountCent,
         Long approvedAmountCent,
         String auditNote,
-        @JsonStringId
         Long reviewedBy,
         LocalDateTime reviewedAt,
         LocalDateTime createdAt,

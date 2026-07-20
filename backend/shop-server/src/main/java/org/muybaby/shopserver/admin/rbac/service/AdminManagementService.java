@@ -27,7 +27,9 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class AdminManagementService {
@@ -72,7 +74,7 @@ public class AdminManagementService {
                 .query(Long.class)
                 .single();
 
-        List<AdminUserResponse> records = jdbcClient.sql("""
+        List<UserRow> userRows = jdbcClient.sql("""
                         SELECT u.id, u.username, u.display_name, u.email, u.avatar, u.status,
                                u.last_login_at, u.created_at, u.updated_at
                         FROM admin_user u
@@ -90,9 +92,11 @@ public class AdminManagementService {
                 .param("size", size)
                 .param("offset", offset)
                 .query(this::mapUserRow)
-                .list()
-                .stream()
-                .map(this::toUserResponse)
+                .list();
+        Map<Long, List<UserRoleRow>> rolesByUserId = rolesByUserId(
+                userRows.stream().map(UserRow::id).toList());
+        List<AdminUserResponse> records = userRows.stream()
+                .map(row -> toUserResponse(row, rolesByUserId.getOrDefault(row.id(), List.of())))
                 .toList();
 
         return PageResult.of(records, total, current, size);
@@ -423,27 +427,36 @@ public class AdminManagementService {
         }
     }
 
-    private AdminUserResponse toUserResponse(UserRow row) {
-        List<Long> roleIds = jdbcClient.sql("""
-                        SELECT r.id
-                        FROM admin_role r
-                        JOIN admin_user_role ur ON ur.role_id = r.id
-                        WHERE ur.user_id = :userId
-                        ORDER BY r.id
+    private Map<Long, List<UserRoleRow>> rolesByUserId(List<Long> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        List<UserRoleRow> roleRows = jdbcClient.sql("""
+                        SELECT ur.user_id, r.id AS role_id, r.code AS role_code
+                        FROM admin_user_role ur
+                        JOIN admin_role r ON r.id = ur.role_id
+                        WHERE ur.user_id IN (:userIds)
+                        ORDER BY ur.user_id, r.id
                         """)
-                .param("userId", row.id())
-                .query(Long.class)
+                .param("userIds", userIds)
+                .query((rs, rowNum) -> new UserRoleRow(
+                        rs.getLong("user_id"),
+                        rs.getLong("role_id"),
+                        rs.getString("role_code")
+                ))
                 .list();
-        List<String> roleCodes = jdbcClient.sql("""
-                        SELECT r.code
-                        FROM admin_role r
-                        JOIN admin_user_role ur ON ur.role_id = r.id
-                        WHERE ur.user_id = :userId
-                        ORDER BY r.id
-                        """)
-                .param("userId", row.id())
-                .query(String.class)
-                .list();
+        Map<Long, List<UserRoleRow>> rolesByUserId = new LinkedHashMap<>();
+        for (UserRoleRow roleRow : roleRows) {
+            rolesByUserId.computeIfAbsent(roleRow.userId(), ignored -> new java.util.ArrayList<>())
+                    .add(roleRow);
+        }
+        rolesByUserId.replaceAll((userId, roles) -> List.copyOf(roles));
+        return Map.copyOf(rolesByUserId);
+    }
+
+    private AdminUserResponse toUserResponse(UserRow row, List<UserRoleRow> roles) {
+        List<Long> roleIds = roles.stream().map(UserRoleRow::roleId).toList();
+        List<String> roleCodes = roles.stream().map(UserRoleRow::roleCode).toList();
         return new AdminUserResponse(
                 row.id(), row.username(), row.displayName(), row.email(), row.avatar(), row.status(),
                 roleIds, roleCodes, row.lastLoginAt(), row.createdAt(), row.updatedAt()
@@ -603,5 +616,8 @@ public class AdminManagementService {
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
+    }
+
+    private record UserRoleRow(Long userId, Long roleId, String roleCode) {
     }
 }

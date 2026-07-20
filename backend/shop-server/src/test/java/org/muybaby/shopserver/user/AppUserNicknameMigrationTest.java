@@ -8,6 +8,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,10 +30,13 @@ class AppUserNicknameMigrationTest {
                     """);
         }
 
-        Flyway flyway = Flyway.configure().dataSource(jdbcUrl, "sa", "").load();
+        Flyway flyway = Flyway.configure()
+                .dataSource(jdbcUrl, "sa", "")
+                .placeholders(safeSeedPlaceholders())
+                .load();
         flyway.migrate();
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("35");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("43");
         try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
              Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("""
@@ -43,5 +47,12 @@ class AppUserNicknameMigrationTest {
             assertThat(resultSet.next()).isTrue();
             assertThat(resultSet.getString("nickname")).isEqualTo("用户456789");
         }
+    }
+
+    private Map<String, String> safeSeedPlaceholders() {
+        return Map.of(
+                "seed_super_status", "DISABLED",
+                "seed_super_password_hash", "$2y$10$VtYIL778Ftr75pHOJ3dV0efoMsPK20vZncmZ/vB6tkYj3aW9fqT.i"
+        );
     }
 }

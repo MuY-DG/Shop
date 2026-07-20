@@ -3,6 +3,7 @@ package org.muybaby.shopserver.analytics;
 import jakarta.servlet.http.HttpServletRequest;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.security.web.ClientIpResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -44,13 +45,13 @@ public class AnalyticsRateLimiter {
 
     private final StringRedisTemplate redisTemplate;
     private final AnalyticsRateLimitProperties properties;
-    private final AnalyticsClientIpResolver clientIpResolver;
+    private final ClientIpResolver clientIpResolver;
     private final AtomicLong lastFailureLogAt = new AtomicLong(0L);
 
     public AnalyticsRateLimiter(
             StringRedisTemplate redisTemplate,
             AnalyticsRateLimitProperties properties,
-            AnalyticsClientIpResolver clientIpResolver
+            ClientIpResolver clientIpResolver
     ) {
         this.redisTemplate = redisTemplate;
         this.properties = properties;

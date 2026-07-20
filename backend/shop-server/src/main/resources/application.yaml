@@ -8,6 +8,13 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    placeholders:
+      seed_super_status: ${SHOP_DEFAULT_ADMIN_STATUS:DISABLED}
+      seed_super_password_hash: "${SHOP_DEFAULT_ADMIN_PASSWORD_HASH:$2a$10$dSCU.t56l8Z7MPya89bXnuiMIjScayWL.KeTgc92TqlfLu.woUoYm}"
+  data:
+    redis:
+      repositories:
+        enabled: false
   servlet:
     multipart:
       max-file-size: ${SHOP_MULTIPART_MAX_FILE_SIZE:50MB}
@@ -15,6 +22,7 @@ spring:
 
 server:
   port: 8080
+  forward-headers-strategy: none
 
 management:
   endpoints:
@@ -26,10 +34,13 @@ management:
       probes:
         enabled: true
 
+springdoc:
+  api-docs:
+    enabled: ${SHOP_OPENAPI_ENABLED:false}
+  swagger-ui:
+    enabled: ${SHOP_OPENAPI_ENABLED:false}
+
 shop:
-  api:
-    success-code: 200
-    success-message: success
   content:
     cache-enabled: ${SHOP_CONTENT_CACHE_ENABLED:true}
     home-cache-ttl: ${SHOP_HOME_CACHE_TTL:6h}
@@ -40,13 +51,26 @@ shop:
     admin-refresh-ttl: 7d
     app-access-ttl: 7d
     app-refresh-ttl: 30d
+    admin-login-protection:
+      enabled: ${SHOP_ADMIN_LOGIN_PROTECTION_ENABLED:true}
+      store: ${SHOP_ADMIN_LOGIN_PROTECTION_STORE:redis}
+      failure-window: ${SHOP_ADMIN_LOGIN_FAILURE_WINDOW:15m}
+      pair-failure-limit: ${SHOP_ADMIN_LOGIN_PAIR_FAILURE_LIMIT:5}
+      account-failure-limit: ${SHOP_ADMIN_LOGIN_ACCOUNT_FAILURE_LIMIT:12}
+      ip-failure-limit: ${SHOP_ADMIN_LOGIN_IP_FAILURE_LIMIT:30}
+      lock-duration: ${SHOP_ADMIN_LOGIN_LOCK_DURATION:15m}
+      memory-max-entries: ${SHOP_ADMIN_LOGIN_MEMORY_MAX_ENTRIES:100000}
+  security:
+    client-ip:
+      trusted-proxy-cidrs: ${SHOP_TRUSTED_PROXY_CIDRS:127.0.0.0/8,::1/128}
+      max-forwarded-hops: ${SHOP_MAX_FORWARDED_HOPS:20}
+      max-forwarded-header-length: ${SHOP_MAX_FORWARDED_HEADER_LENGTH:2048}
   analytics:
     rate-limit:
       enabled: ${SHOP_ANALYTICS_RATE_LIMIT_ENABLED:true}
       window: ${SHOP_ANALYTICS_RATE_LIMIT_WINDOW:1m}
       ip-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_IP_EVENTS:5000}
       visitor-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_VISITOR_EVENTS:1000}
-      trusted-proxy-cidrs: ${SHOP_ANALYTICS_TRUSTED_PROXY_CIDRS:127.0.0.0/8,::1/128}
     retention:
       enabled: ${SHOP_ANALYTICS_RETENTION_ENABLED:true}
       days: ${SHOP_ANALYTICS_RETENTION_DAYS:400}
@@ -66,6 +90,9 @@ shop:
       public-base-url: ${SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL:}
     limits:
       image-max-size: ${SHOP_STORAGE_IMAGE_MAX_SIZE:5MB}
+      image-max-width: ${SHOP_STORAGE_IMAGE_MAX_WIDTH:8192}
+      image-max-height: ${SHOP_STORAGE_IMAGE_MAX_HEIGHT:8192}
+      image-max-pixels: ${SHOP_STORAGE_IMAGE_MAX_PIXELS:25000000}
       video-max-size: ${SHOP_STORAGE_VIDEO_MAX_SIZE:50MB}
       private-file-max-size: ${SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE:1MB}
   wechat:
@@ -78,6 +105,22 @@ shop:
   pay:
     enabled: ${WECHAT_PAY_ENABLED:false}
     mock-enabled: ${WECHAT_PAY_MOCK_ENABLED:false}
+    notification:
+      max-timestamp-skew: ${SHOP_PAY_NOTIFICATION_MAX_TIMESTAMP_SKEW:5m}
+    initiation:
+      claim-timeout: ${SHOP_PAY_PREPAY_CLAIM_TIMEOUT:2m}
+    timeout-scan-enabled: ${SHOP_PAY_TIMEOUT_SCAN_ENABLED:true}
+    timeout-scan-delay: ${SHOP_PAY_TIMEOUT_SCAN_DELAY:60s}
+    timeout-scan-batch-size: ${SHOP_PAY_TIMEOUT_SCAN_BATCH_SIZE:50}
+    timeout-scan-claim-timeout: ${SHOP_PAY_TIMEOUT_SCAN_CLAIM_TIMEOUT:5m}
+    refund-recovery:
+      enabled: ${SHOP_REFUND_RECOVERY_ENABLED:true}
+      delay: ${SHOP_REFUND_RECOVERY_DELAY:60s}
+      batch-size: ${SHOP_REFUND_RECOVERY_BATCH_SIZE:20}
+      min-age: ${SHOP_REFUND_RECOVERY_MIN_AGE:1m}
+      claim-timeout: ${SHOP_REFUND_RECOVERY_CLAIM_TIMEOUT:5m}
+      base-retry-delay: ${SHOP_REFUND_RECOVERY_BASE_RETRY_DELAY:1m}
+      max-retry-delay: ${SHOP_REFUND_RECOVERY_MAX_RETRY_DELAY:30m}
     config-source: ${WECHAT_PAY_CONFIG_SOURCE:AUTO}
     app-id: ${WECHAT_PAY_APP_ID:}
     mch-id: ${WECHAT_PAY_MCH_ID:}
