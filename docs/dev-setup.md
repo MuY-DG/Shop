@@ -170,7 +170,7 @@ SHOP_STORAGE_CLEANUP_FIXED_DELAY=10m
 SHOP_STORAGE_CLEANUP_BATCH_SIZE=100
 ```
 
-Image uploads are rejected when the extension, declared MIME, and decoded format disagree, or when width, height, GIF logical canvas, frame count, or cumulative pixels exceed the validation limits. JPEG, PNG, GIF, and WebP are decoded through ImageIO; WebP support is an explicit runtime dependency. SVG is parsed with external entities disabled, checked for safe passive content and local fragment references, and bounded by its intrinsic dimensions or viewBox. Keep the byte-size limit as well: it controls transfer/storage size, while the dimension/frame limits protect the JVM from decompression-bomb memory pressure.
+Image uploads are rejected when the extension, declared MIME, and decoded format disagree, or when width, height, GIF logical canvas, frame count, or cumulative pixels exceed the validation limits. JPEG, PNG, GIF, and WebP are decoded through ImageIO; WebP support is an explicit runtime dependency. SVG is parsed with external entities disabled, allows standard W3C SVG doctypes and passive HTTP(S) namespace-alias entities used by design tools, checks for safe passive content and local fragment references, and is bounded by its intrinsic dimensions or viewBox. Keep the byte-size limit as well: it controls transfer/storage size, while the dimension/frame limits protect the JVM from decompression-bomb memory pressure.
 
 Tencent Cloud COS can also be supplied through environment defaults:
 

@@ -106,7 +106,11 @@ class StorageServiceTest {
     @Test
     void safeSvgImageIsValidatedAndPersistedWithIntrinsicDimensions() {
         byte[] svg = """
-                <svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 24 16">
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [
+                  <!ENTITY ns_ai "http://ns.adobe.com/AdobeIllustrator/10.0/">
+                ]>
+                <svg xmlns="http://www.w3.org/2000/svg" xmlns:i="&ns_ai;" width="120" height="80" viewBox="0 0 24 16">
                   <defs><linearGradient id="paint"><stop stop-color="#fff"/></linearGradient></defs>
                   <rect width="24" height="16" fill="url(#paint)"/>
                 </svg>
@@ -125,6 +129,7 @@ class StorageServiceTest {
     @Test
     void svgViewBoxProvidesDimensionsWhenWidthAndHeightAreResponsive() {
         byte[] svg = """
+                <!DOCTYPE svg>
                 <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 32 18">
                   <path d="M0 0h32v18H0z" fill="#fff"/>
                 </svg>
@@ -145,6 +150,7 @@ class StorageServiceTest {
                 "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>",
                 "<svg xmlns=\"http://www.w3.org/2000/svg\"><image href=\"https://example.com/a.png\"/></svg>",
                 "<?xml-stylesheet href=\"https://example.com/a.css\"?><svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+                "<!DOCTYPE svg SYSTEM \"https://example.com/evil.dtd\"><svg xmlns=\"http://www.w3.org/2000/svg\"/>",
                 "<!DOCTYPE svg [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><svg xmlns=\"http://www.w3.org/2000/svg\">&xxe;</svg>"
         );
 

@@ -46,10 +46,13 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 import org.w3c.dom.Document;
+import org.w3c.dom.DocumentType;
 import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
+import org.xml.sax.ErrorHandler;
 import org.xml.sax.SAXException;
+import org.xml.sax.SAXParseException;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -112,6 +115,34 @@ public class StorageService {
             "script", "foreignobject", "iframe", "object", "embed", "audio", "video",
             "animate", "animatemotion", "animatetransform", "set", "discard", "handler", "listener"
     );
+    private static final Map<String, String> SVG_ALLOWED_DOCTYPES = Map.of(
+            "-//W3C//DTD SVG 1.0//EN",
+            "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd",
+            "-//W3C//DTD SVG 1.1//EN",
+            "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd",
+            "-//W3C//DTD SVG 1.1 Basic//EN",
+            "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11-basic.dtd",
+            "-//W3C//DTD SVG 1.1 Tiny//EN",
+            "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11-tiny.dtd",
+            "-//W3C//DTD SVG 1.2 Tiny//EN",
+            "http://www.w3.org/Graphics/SVG/1.2/DTD/svg12-tiny.dtd"
+    );
+    private static final ErrorHandler SVG_XML_ERROR_HANDLER = new ErrorHandler() {
+        @Override
+        public void warning(SAXParseException exception) throws SAXException {
+            throw exception;
+        }
+
+        @Override
+        public void error(SAXParseException exception) throws SAXException {
+            throw exception;
+        }
+
+        @Override
+        public void fatalError(SAXParseException exception) throws SAXException {
+            throw exception;
+        }
+    };
     private static final Pattern SVG_LENGTH = Pattern.compile(
             "([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?)\\s*(px|pt|pc|mm|cm|in)?",
             Pattern.CASE_INSENSITIVE
@@ -122,6 +153,11 @@ public class StorageService {
     );
     private static final Pattern SVG_URL_REFERENCE = Pattern.compile(
             "url\\s*\\(([^)]*)\\)", Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern SVG_SAFE_INTERNAL_ENTITY_SUBSET = Pattern.compile(
+            "\\s*(?:<!ENTITY\\s+[A-Za-z_][A-Za-z0-9._:-]*\\s+"
+                    + "(?:\"https?://[^\"<>\\s]+\"|'https?://[^'<>\\s]+')\\s*>\\s*)*",
+            Pattern.CASE_INSENSITIVE
     );
 
     private final JdbcClient jdbcClient;
@@ -1380,14 +1416,15 @@ public class StorageService {
             factory.setXIncludeAware(false);
             factory.setExpandEntityReferences(false);
             factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
             factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
             factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
 
-            Document document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(bytes));
+            var documentBuilder = factory.newDocumentBuilder();
+            documentBuilder.setErrorHandler(SVG_XML_ERROR_HANDLER);
+            Document document = documentBuilder.parse(new ByteArrayInputStream(bytes));
             Element root = document.getDocumentElement();
             if (root == null
                     || !"svg".equalsIgnoreCase(root.getLocalName())
@@ -1395,6 +1432,7 @@ public class StorageService {
                 throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
             }
 
+            requireAllowedSvgDoctype(document.getDoctype());
             requireSafeSvgTree(document);
             double[] viewBox = parseSvgViewBox(root.getAttribute("viewBox"));
             Double declaredWidth = parseSvgLength(root.getAttribute("width"));
@@ -1423,6 +1461,32 @@ public class StorageService {
         } catch (BusinessException ex) {
             throw ex;
         } catch (ParserConfigurationException | SAXException | IOException | RuntimeException ex) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+    }
+
+    private void requireAllowedSvgDoctype(DocumentType doctype) {
+        if (doctype == null) {
+            return;
+        }
+        if (!"svg".equalsIgnoreCase(doctype.getName())) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        String internalSubset = doctype.getInternalSubset();
+        if (StringUtils.hasText(internalSubset)
+                && !SVG_SAFE_INTERNAL_ENTITY_SUBSET.matcher(internalSubset).matches()) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        if (!StringUtils.hasText(doctype.getPublicId()) && !StringUtils.hasText(doctype.getSystemId())) {
+            return;
+        }
+        String expectedSystemId = SVG_ALLOWED_DOCTYPES.get(doctype.getPublicId());
+        String secureSystemId = expectedSystemId == null
+                ? null
+                : expectedSystemId.replace("http://www.w3.org/", "https://www.w3.org/");
+        if (expectedSystemId == null
+                || (!Objects.equals(expectedSystemId, doctype.getSystemId())
+                && !Objects.equals(secureSystemId, doctype.getSystemId()))) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
     }
