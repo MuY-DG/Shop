@@ -1,18 +1,25 @@
 {
   "compilerOptions": {
     "strict": true,
-    "target": "ES2020",
+    "target": "ES2017",
     "module": "CommonJS",
     "moduleResolution": "Node",
     "types": ["miniprogram-api-typings"],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./*"]
-    },
-    "skipLibCheck": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "lib": ["ES2020"]
   },
-  "include": ["./**/*.ts"],
-  "exclude": ["./tests/**/*.ts"]
+  "include": [
+    "./miniprogram/**/*.ts",
+    "./typings/index.d.ts"
+  ],
+  "exclude": [
+    "./node_modules",
+    "./typings/types"
+  ]
 }

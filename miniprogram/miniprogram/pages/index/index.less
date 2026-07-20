@@ -1,0 +1,573 @@
+@import "../../styles/tokens.less";
+@import "../../styles/mixins.less";
+
+.home-page {
+  min-height: 100vh;
+  overflow: hidden;
+  color: @color-text-primary;
+  background:
+    radial-gradient(circle at 94% 3%, fade(@color-brand, 7%), transparent 29%),
+    radial-gradient(circle at 2% 56%, rgba(115, 80, 48, 0.045), transparent 27%),
+    linear-gradient(180deg, @color-page-top 0%, @color-page-middle 50%, @color-page-bottom 100%);
+}
+
+.hero-section {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #f6e8ce;
+}
+
+.hero-swiper {
+  width: 100%;
+  height: 750rpx;
+  background: #f4dfba;
+}
+
+.hero-item {
+  position: relative;
+  overflow: hidden;
+  transition: opacity @duration-fast @ease-standard;
+}
+
+.hero-item--pressed {
+  opacity: 0.88;
+}
+
+.hero-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hero-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: @color-gold-text;
+  background:
+    radial-gradient(circle at 50% 42%, fade(@color-brand, 9%), transparent 32%),
+    linear-gradient(145deg, #f6e4c7, #efe1ca);
+}
+
+.hero-placeholder__seal,
+.brand-intro__seal {
+  width: 92rpx;
+  height: 92rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3rpx solid fade(@color-brand, 74%);
+  border-radius: 48% 52% 46% 54%;
+  color: @color-brand;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 48rpx;
+  font-weight: 700;
+  background: fade(@color-surface, 78%);
+  transform: rotate(-4deg);
+}
+
+.hero-placeholder__title {
+  margin-top: @space-6;
+  color: @color-text-primary;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: @font-size-xl;
+  font-weight: 700;
+  letter-spacing: 5rpx;
+}
+
+.hero-placeholder__subtitle {
+  margin-top: @space-3;
+  color: @color-gold-text;
+  font-size: @font-size-xs;
+  letter-spacing: 4rpx;
+}
+
+.hero-copy {
+  position: absolute;
+  z-index: 2;
+  right: 48rpx;
+  bottom: 82rpx;
+  left: 48rpx;
+  color: @color-text-inverse;
+  text-shadow: 0 2rpx 12rpx fade(@color-text-primary, 62%);
+}
+
+.hero-copy__title {
+  font-family: "Songti SC", "STSong", serif;
+  font-size: @font-size-xl;
+  font-weight: 700;
+  line-height: @line-height-tight;
+  letter-spacing: 2rpx;
+}
+
+.hero-copy__subtitle {
+  margin-top: @space-2;
+  font-size: @font-size-sm;
+  line-height: @line-height-base;
+}
+
+.hero-top-wash {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 86rpx;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 247, 225, 0.16), transparent);
+}
+
+.hero-fade {
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: -2rpx;
+  left: 0;
+  height: 68rpx;
+  pointer-events: none;
+  background: linear-gradient(180deg, fade(@color-page, 0%), @color-page 96%);
+}
+
+.banner-dots {
+  position: absolute;
+  z-index: 5;
+  bottom: 50rpx;
+  left: 50%;
+  height: 28rpx;
+  padding: 0 11rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid rgba(255, 255, 255, 0.24);
+  border-radius: @radius-pill;
+  background: rgba(255, 249, 238, 0.64);
+  box-shadow: 0 4rpx 12rpx rgba(72, 38, 20, 0.08);
+  transform: translateX(-50%);
+  -webkit-backdrop-filter: blur(8rpx);
+  backdrop-filter: blur(8rpx);
+}
+
+.banner-dot {
+  width: 8rpx;
+  height: 8rpx;
+  margin: 0 6rpx;
+  border-radius: @radius-pill;
+  background: fade(@color-text-primary, 32%);
+  transition:
+    width @duration-base @ease-standard,
+    height @duration-base @ease-standard,
+    background @duration-base @ease-standard;
+}
+
+.banner-dot.is-active {
+  width: 12rpx;
+  height: 12rpx;
+  background: @color-brand;
+  box-shadow: 0 2rpx 8rpx fade(@color-brand, 24%);
+}
+
+.brand-intro {
+  display: flex;
+  align-items: center;
+  margin: @space-6 @page-gutter 0;
+  padding: @space-8;
+  overflow: hidden;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-xl;
+  background:
+    radial-gradient(circle at 88% 15%, fade(@color-brand, 9%), transparent 32%),
+    @color-surface;
+  box-shadow: @shadow-floating;
+}
+
+.brand-intro__seal {
+  width: 76rpx;
+  height: 76rpx;
+  flex: none;
+  font-size: @font-size-xl;
+}
+
+.brand-intro__copy {
+  min-width: 0;
+  margin-left: @space-6;
+}
+
+.brand-intro__title {
+  font-family: "Songti SC", "STSong", serif;
+  font-size: @font-size-lg;
+  font-weight: 700;
+  line-height: @line-height-tight;
+}
+
+.brand-intro__subtitle {
+  margin-top: @space-2;
+  color: @color-gold-text;
+  font-size: @font-size-xs;
+  letter-spacing: 3rpx;
+}
+
+.home-content {
+  .safe-bottom(@space-14);
+  position: relative;
+  z-index: 4;
+  min-height: 360rpx;
+}
+
+.home-content--overlap {
+  margin-top: -46rpx;
+}
+
+.home-content--after-intro {
+  margin-top: @space-6;
+}
+
+.ink-halo {
+  position: absolute;
+  z-index: -1;
+  width: 180rpx;
+  height: 180rpx;
+  border-radius: 50%;
+  opacity: 0.58;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(176, 112, 66, 0.08), transparent 70%);
+}
+
+.ink-halo--one {
+  top: 54rpx;
+  right: -76rpx;
+}
+
+.ink-halo--two {
+  top: 760rpx;
+  left: -88rpx;
+  background: radial-gradient(circle, rgba(103, 94, 57, 0.08), transparent 70%);
+}
+
+.category-card {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 @page-gutter;
+  padding: 18rpx 12rpx 16rpx;
+  overflow: hidden;
+  border: 1rpx solid fade(@color-gold, 14%);
+  border-radius: @radius-xl;
+  background: fade(@color-surface, 97%);
+  box-shadow: @shadow-floating;
+  animation: fade-up 360ms ease-out both;
+}
+
+.category-wash {
+  position: absolute;
+  top: -62rpx;
+  right: -42rpx;
+  width: 180rpx;
+  height: 180rpx;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, fade(@color-brand, 7%), transparent 68%);
+}
+
+.category-item {
+  position: relative;
+  z-index: 1;
+  width: 25%;
+  min-height: 148rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  border-radius: @radius-md;
+  transition:
+    transform @duration-fast @ease-standard,
+    background @duration-fast @ease-standard;
+}
+
+.category-item--pressed {
+  background: fade(@color-brand, 5%);
+  transform: scale(0.96);
+}
+
+.category-visual {
+  width: 96rpx;
+  height: 96rpx;
+  overflow: hidden;
+  border-radius: 50%;
+  background: @color-surface-muted;
+}
+
+.category-image,
+.category-placeholder {
+  width: 100%;
+  height: 100%;
+}
+
+.category-image {
+  display: block;
+}
+
+.category-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: @color-brand;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: @font-size-lg;
+  font-weight: 700;
+  background: radial-gradient(circle, @color-surface 4%, @color-gold-soft 100%);
+}
+
+.category-name {
+  max-width: 100%;
+  margin-top: 4rpx;
+  padding: 0 4rpx;
+  overflow: hidden;
+  color: #3d2920;
+  font-size: 23rpx;
+  font-weight: 500;
+  line-height: 32rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-block {
+  margin-right: @page-gutter;
+  margin-left: @page-gutter;
+}
+
+.product-showcase {
+  margin: 32rpx 12rpx 0;
+  padding: 22rpx 0 28rpx;
+  overflow: hidden;
+  border: 1rpx solid fade(@color-gold, 10%);
+  border-radius: 36rpx;
+  background: fade(@color-surface, 48%);
+  box-shadow:
+    0 8rpx 24rpx rgba(78, 43, 20, 0.035),
+    inset 0 1rpx 0 rgba(255, 255, 255, 0.42);
+}
+
+.product-showcase--separated {
+  margin-top: 20rpx;
+}
+
+.product-showcase .section-block {
+  margin-right: 11rpx;
+  margin-left: 11rpx;
+}
+
+.featured-section {
+  margin-top: 0;
+}
+
+.compact-section {
+  margin-top: 0;
+}
+
+.section-heading {
+  min-height: 64rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 @space-1;
+}
+
+.section-heading__mark {
+  flex: none;
+}
+
+.section-heading__copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  margin-left: 13rpx;
+}
+
+.section-heading__title {
+  flex: none;
+  color: @color-text-primary;
+  font-size: @font-size-lg;
+  font-weight: 700;
+  line-height: 42rpx;
+  letter-spacing: 1rpx;
+}
+
+.section-heading__rule {
+  min-width: 20rpx;
+  height: 2rpx;
+  flex: 1;
+  margin-left: @space-3;
+  background: linear-gradient(90deg, fade(@color-gold, 58%), transparent);
+}
+
+.section-heading__subtitle {
+  min-width: 0;
+  margin-left: @space-4;
+  overflow: hidden;
+  color: @color-text-muted;
+  font-size: 21rpx;
+  line-height: 29rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-heading__icon {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.featured-scroll {
+  width: 100%;
+  padding: @space-2 0 @space-6;
+  white-space: nowrap;
+}
+
+.featured-track {
+  display: flex;
+  padding-right: @page-gutter;
+}
+
+.featured-item {
+  width: 280rpx;
+  display: inline-block;
+  flex: none;
+  vertical-align: top;
+  white-space: normal;
+}
+
+.featured-item--spaced {
+  margin-left: @space-5;
+}
+
+.compact-grid {
+  display: flex;
+  flex-wrap: wrap;
+  padding-top: @space-2;
+  gap: @space-5;
+}
+
+.compact-item {
+  width: calc(50% - 10rpx);
+}
+
+.home-state-shell,
+.home-empty {
+  margin: @space-16 @page-gutter 0;
+  overflow: hidden;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-xl;
+  background: @color-surface;
+  box-shadow: @shadow-card;
+}
+
+.home-state-shell {
+  margin-top: 120rpx;
+}
+
+.bottom-ornament {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: @space-16 @page-gutter 0;
+  color: @color-text-muted;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 20rpx;
+  letter-spacing: 4rpx;
+}
+
+.bottom-ornament__line {
+  width: 76rpx;
+  height: 1rpx;
+  margin: 0 @space-4;
+  background: linear-gradient(90deg, transparent, fade(@color-gold, 48%));
+}
+
+.bottom-ornament__line:last-child {
+  background: linear-gradient(90deg, fade(@color-gold, 48%), transparent);
+}
+
+.home-skeleton {
+  min-height: 100vh;
+}
+
+.skeleton-block {
+  background: linear-gradient(
+    105deg,
+    fade(@color-gold, 7%) 20%,
+    fade(@color-surface, 78%) 38%,
+    fade(@color-gold, 7%) 56%
+  );
+  background-size: 320% 100%;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+.skeleton-hero {
+  height: 750rpx;
+}
+
+.skeleton-content {
+  position: relative;
+  z-index: 2;
+  margin-top: -42rpx;
+  padding: 0 @page-gutter @space-16;
+}
+
+.skeleton-categories {
+  height: 182rpx;
+  border-radius: @radius-xl;
+  box-shadow: @shadow-card;
+}
+
+.skeleton-heading {
+  display: flex;
+  align-items: center;
+  margin-top: @space-12;
+  padding: 0 @space-1;
+}
+
+.skeleton-heading__mark {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+}
+
+.skeleton-heading__copy {
+  width: 210rpx;
+  height: 58rpx;
+  margin-left: @space-4;
+  border-radius: @radius-sm;
+}
+
+.skeleton-products {
+  display: flex;
+  margin-top: @space-6;
+  overflow: hidden;
+}
+
+.skeleton-product {
+  width: 280rpx;
+  height: 462rpx;
+  flex: none;
+  margin-right: @space-5;
+  border-radius: @radius-lg;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

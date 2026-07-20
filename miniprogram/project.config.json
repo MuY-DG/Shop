@@ -1,42 +1,57 @@
 {
-  "description": "MuYbaby Mini Program",
-  "packOptions": {
-    "ignore": [],
-    "include": []
-  },
+  "description": "灶香集微信小程序",
+  "miniprogramRoot": "miniprogram/",
+  "compileType": "miniprogram",
   "setting": {
-    "urlCheck": false,
-    "es6": true,
-    "enhance": true,
     "useCompilerPlugins": [
-      "typescript"
+      "typescript",
+      "less"
     ],
-    "postcss": true,
-    "minified": true,
-    "compileHotReLoad": false,
-    "compileWorklet": false,
-    "uglifyFileName": false,
-    "uploadWithSourceMap": true,
-    "packNpmManually": false,
-    "packNpmRelationList": [],
-    "minifyWXSS": true,
-    "minifyWXML": true,
-    "localPlugins": false,
-    "disableUseStrict": false,
-    "condition": false,
-    "swc": false,
-    "disableSWC": true,
     "babelSetting": {
       "ignore": [],
       "disablePlugins": [],
       "outputPath": ""
-    }
+    },
+    "coverView": false,
+    "postcss": true,
+    "minified": true,
+    "enhance": true,
+    "showShadowRootInWxmlPanel": false,
+    "packNpmRelationList": [],
+    "ignoreUploadUnusedFiles": true,
+    "compileHotReLoad": false,
+    "skylineRenderEnable": false,
+    "es6": true,
+    "compileWorklet": false,
+    "uglifyFileName": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "minifyWXSS": true,
+    "minifyWXML": true,
+    "localPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "disableUseStrict": false
   },
-  "compileType": "miniprogram",
-  "libVersion": "latest",
-  "appid": "wx2c59f00275b9057a",
-  "projectname": "MuYbaby",
-  "condition": {},
+  "simulatorType": "wechat",
   "simulatorPluginLibVersion": {},
-  "editorSetting": {}
+  "condition": {},
+  "srcMiniprogramRoot": "miniprogram/",
+  "editorSetting": {
+    "tabIndent": "insertSpaces",
+    "tabSize": 2
+  },
+  "libVersion": "2.32.3",
+  "packOptions": {
+    "ignore": [
+      {
+        "value": "**/.DS_Store",
+        "type": "glob"
+      }
+    ],
+    "include": []
+  },
+  "appid": "wx2c59f00275b9057a",
+  "projectname": "灶香集小程序"
 }

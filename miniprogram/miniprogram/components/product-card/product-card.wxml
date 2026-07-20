@@ -1,0 +1,88 @@
+<view
+  class="product-card product-card--{{variant}}"
+  hover-class="product-card--pressed"
+  hover-stay-time="80"
+  bindtap="handleTap"
+  aria-role="button"
+  aria-label="{{product.title}}，{{product.hasPrice ? '¥' + product.priceText : '暂无报价'}}"
+>
+  <view class="product-card__image-wrap">
+    <image
+      wx:if="{{product.hasImage && !imageFailed}}"
+      class="product-card__image"
+      src="{{product.imageUrl}}"
+      mode="aspectFill"
+      lazy-load="{{variant !== 'featured'}}"
+      binderror="handleImageError"
+    />
+    <view wx:else class="product-card__placeholder" aria-label="商品暂无图片">
+      <text>{{product.placeholder || '灶'}}</text>
+    </view>
+    <view
+      wx:if="{{product.badgeText}}"
+      class="product-card__badge product-card__badge--{{product.badgeTone}}"
+    >
+      <text>{{product.badgeText}}</text>
+    </view>
+  </view>
+
+  <view class="product-card__body">
+    <view class="product-card__title">{{product.title}}</view>
+    <view wx:if="{{product.subtitle}}" class="product-card__subtitle">{{product.subtitle}}</view>
+
+    <view wx:if="{{product.features.length}}" class="product-card__features">
+      <block
+        wx:for="{{product.features}}"
+        wx:key="text"
+        wx:for-item="feature"
+      >
+        <view
+          wx:if="{{feature.kind === 'spice'}}"
+          class="product-card__fact-group"
+        >
+          <view class="product-card__fact product-card__fact--spice product-card__fact--{{feature.spiceTone}}">
+            <text>{{feature.text}}</text>
+          </view>
+          <image class="product-card__fact-icon" src="{{feature.iconPath}}" mode="aspectFit" />
+        </view>
+        <view
+          wx:elif="{{feature.kind === 'weight'}}"
+          class="product-card__fact product-card__fact--weight"
+        >
+          <text>{{feature.text}}</text>
+          <text wx:if="{{feature.servingText}}" class="product-card__serving">｜{{feature.servingText}}</text>
+        </view>
+        <view
+          wx:else
+          class="product-card__fact product-card__fact--default"
+        >{{feature.text}}</view>
+      </block>
+    </view>
+
+    <view class="product-card__footer">
+      <view wx:if="{{product.hasPrice}}" class="product-card__price-area">
+        <view class="product-card__price">
+          <text class="product-card__currency">¥</text>
+          <text class="product-card__price-integer">{{product.priceIntegerText}}</text>
+          <text class="product-card__price-decimal">{{product.priceDecimalText}}</text>
+          <block wx:if="{{product.hasPriceRange}}">
+            <text class="product-card__price-separator">–</text>
+            <text class="product-card__price-integer">{{product.rangePriceIntegerText}}</text>
+            <text class="product-card__price-decimal">{{product.rangePriceDecimalText}}</text>
+          </block>
+          <text wx:if="{{product.priceSuffixText}}" class="product-card__price-suffix">{{product.priceSuffixText}}</text>
+        </view>
+        <text wx:if="{{product.hasOriginalPrice}}" class="product-card__original-price">¥{{product.originalPriceText}}</text>
+      </view>
+      <view wx:else class="product-card__price-empty">暂无报价</view>
+      <view class="product-card__cart" aria-hidden="true">
+        <image class="product-card__cart-icon" src="/assets/icons/shopping-cart.svg" mode="aspectFit" />
+      </view>
+    </view>
+
+    <view class="product-card__meta">
+      <text class="product-card__sales">{{product.salesText}}</text>
+      <text wx:if="{{product.wholesaleText}}" class="product-card__wholesale">{{product.wholesaleText}}</text>
+    </view>
+  </view>
+</view>

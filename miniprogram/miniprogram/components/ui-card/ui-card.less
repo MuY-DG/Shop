@@ -1,0 +1,53 @@
+@import '../../styles/tokens.less';
+
+.ui-card {
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
+  border: 1rpx solid transparent;
+  border-radius: @radius-lg;
+  color: @color-text-primary;
+}
+
+.ui-card--default {
+  background: @color-surface;
+  box-shadow: @shadow-card;
+}
+
+.ui-card--outlined {
+  border-color: @color-border;
+  background: @color-surface;
+}
+
+.ui-card--plain {
+  border-radius: @radius-md;
+  background: transparent;
+}
+
+.ui-card--padding-none {
+  padding: 0;
+}
+
+.ui-card--padding-small {
+  padding: 20rpx;
+}
+
+.ui-card--padding-medium {
+  padding: 28rpx;
+}
+
+.ui-card--padding-large {
+  padding: 40rpx;
+}
+
+.ui-card--interactive {
+  transition:
+    opacity @duration-fast ease,
+    transform @duration-fast ease,
+    box-shadow @duration-fast ease;
+}
+
+.ui-card--pressed {
+  opacity: 0.88;
+  transform: scale(0.99);
+}

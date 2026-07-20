@@ -1,0 +1,129 @@
+@import '../../styles/tokens.less';
+
+.ui-state {
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 320rpx;
+  padding: 48rpx 32rpx;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.ui-state__visual {
+  display: flex;
+  width: 112rpx;
+  height: 112rpx;
+  margin-bottom: 24rpx;
+  align-items: center;
+  justify-content: center;
+}
+
+.ui-state__title {
+  color: @color-text-primary;
+  font-size: 30rpx;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ui-state__description {
+  max-width: 520rpx;
+  margin-top: 12rpx;
+  color: @color-text-muted;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.ui-state__action {
+  margin-top: 28rpx;
+}
+
+.ui-state__loading {
+  box-sizing: border-box;
+  width: 72rpx;
+  height: 72rpx;
+  border: 6rpx solid @color-brand-soft;
+  border-top-color: @color-brand;
+  border-radius: 50%;
+  animation: ui-state-spin 0.9s linear infinite;
+}
+
+.ui-state__empty-box {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  width: 92rpx;
+  height: 68rpx;
+  padding: 18rpx 20rpx;
+  border: 4rpx solid @color-border;
+  border-radius: @radius-sm;
+  background: @color-surface-muted;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.ui-state__empty-box::before {
+  position: absolute;
+  top: -18rpx;
+  left: 14rpx;
+  box-sizing: border-box;
+  width: 56rpx;
+  height: 22rpx;
+  border: 4rpx solid @color-border;
+  border-bottom: 0;
+  border-radius: @radius-sm @radius-sm 0 0;
+  background: @color-surface-muted;
+  content: '';
+}
+
+.ui-state__empty-line {
+  width: 34rpx;
+  height: 4rpx;
+  margin-top: 8rpx;
+  border-radius: @radius-pill;
+  background: @color-text-muted;
+  opacity: 0.55;
+}
+
+.ui-state__empty-line--long {
+  width: 50rpx;
+  margin-top: 0;
+}
+
+.ui-state__error-mark {
+  position: relative;
+  box-sizing: border-box;
+  width: 80rpx;
+  height: 80rpx;
+  border: 5rpx solid @color-danger;
+  border-radius: 50%;
+  background: @color-danger-soft;
+}
+
+.ui-state__error-mark::before,
+.ui-state__error-mark::after {
+  position: absolute;
+  top: 35rpx;
+  left: 18rpx;
+  width: 36rpx;
+  height: 5rpx;
+  border-radius: @radius-pill;
+  background: @color-danger;
+  content: '';
+}
+
+.ui-state__error-mark::before {
+  transform: rotate(45deg);
+}
+
+.ui-state__error-mark::after {
+  transform: rotate(-45deg);
+}
+
+@keyframes ui-state-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

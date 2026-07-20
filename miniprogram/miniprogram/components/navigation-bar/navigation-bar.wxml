@@ -1,0 +1,73 @@
+<view
+  class="navigation-bar"
+  style="height: {{totalHeight}}px; background: {{background}}; color: {{color}};"
+  aria-role="navigation"
+  aria-label="{{title ? title + '导航' : '页面导航'}}"
+>
+  <view class="navigation-bar__status" style="height: {{statusBarHeight}}px;"></view>
+
+  <view
+    class="navigation-bar__content {{showDivider ? 'navigation-bar__content--divider' : ''}}"
+    style="height: {{navigationHeight}}px;"
+  >
+    <view class="navigation-bar__left" style="width: {{sideWidth}}px;">
+      <view
+        wx:if="{{back}}"
+        class="navigation-bar__action"
+        bindtap="handleBack"
+        hover-class="navigation-bar__action--active"
+        hover-stay-time="80"
+        aria-role="button"
+        aria-label="返回上一页"
+      >
+        <view class="navigation-bar__back-icon" aria-hidden="true"></view>
+      </view>
+
+      <view
+        wx:if="{{home}}"
+        class="navigation-bar__action"
+        bindtap="handleHome"
+        hover-class="navigation-bar__action--active"
+        hover-stay-time="80"
+        aria-role="button"
+        aria-label="返回首页"
+      >
+        <view class="navigation-bar__home-icon" aria-hidden="true">
+          <view class="navigation-bar__home-roof"></view>
+          <view class="navigation-bar__home-body"></view>
+        </view>
+      </view>
+
+      <view class="navigation-bar__left-slot">
+        <slot name="left"></slot>
+      </view>
+    </view>
+
+    <view
+      class="navigation-bar__center"
+      style="left: {{sideWidth}}px; right: {{sideWidth}}px;"
+      aria-role="heading"
+      aria-level="1"
+    >
+      <view
+        wx:if="{{loading}}"
+        class="navigation-bar__loading"
+        aria-role="img"
+        aria-label="加载中"
+      ></view>
+
+      <text wx:if="{{title}}" class="navigation-bar__title">{{title}}</text>
+      <slot wx:else name="center"></slot>
+    </view>
+
+    <view class="navigation-bar__right" style="right: {{sideWidth}}px;">
+      <slot name="right"></slot>
+    </view>
+
+    <view
+      class="navigation-bar__capsule-spacer"
+      style="width: {{sideWidth}}px;"
+      aria-hidden="true"
+    ></view>
+  </view>
+</view>

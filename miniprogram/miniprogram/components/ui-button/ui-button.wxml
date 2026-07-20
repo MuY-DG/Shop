@@ -1,0 +1,10 @@
+<button
+  class="ui-button ui-button--{{variant}} ui-button--{{size}} {{block ? 'ui-button--block' : ''}} {{loading ? 'ui-button--loading' : ''}} {{disabled ? 'ui-button--disabled' : ''}}"
+  disabled="{{disabled || loading}}"
+  hover-class="{{disabled || loading ? 'none' : 'ui-button--pressed'}}"
+  hover-stay-time="80"
+  bindtap="handleTap"
+>
+  <view wx:if="{{loading}}" class="ui-button__spinner"></view>
+  <view class="ui-button__content"><slot /></view>
+</button>

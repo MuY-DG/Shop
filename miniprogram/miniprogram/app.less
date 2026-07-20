@@ -1,0 +1,62 @@
+@import "./styles/tokens.less";
+
+page {
+  min-height: 100%;
+  color: @color-text-primary;
+  background: @color-page;
+  font-family: @font-family-base;
+  font-size: @font-size-base;
+  line-height: @line-height-base;
+  -webkit-font-smoothing: antialiased;
+}
+
+view,
+scroll-view,
+swiper,
+image,
+button,
+input,
+textarea {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.page-container {
+  width: 100%;
+  max-width: @content-max-width;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding-right: @page-gutter;
+  padding-left: @page-gutter;
+  box-sizing: border-box;
+}
+
+.text-secondary {
+  color: @color-text-secondary;
+}
+
+.text-muted {
+  color: @color-text-muted;
+}
+
+.price-text {
+  color: @color-price;
+  font-family: @font-family-price;
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

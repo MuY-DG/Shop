@@ -1,0 +1,3 @@
+<view class="ui-tag ui-tag--{{tone}} ui-tag--{{size}} {{outline ? 'ui-tag--outline' : ''}}">
+  <slot />
+</view>
