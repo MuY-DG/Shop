@@ -37,7 +37,12 @@
         <view wx:if="{{!item.available}}" class="unavailable-text">{{item.unavailableText}}</view>
         <view class="item-meta">
           <view>
-            <view class="price">{{item.priceText}}</view>
+            <view class="item-price-row">
+              <view class="price">{{item.priceText}}</view>
+              <view wx:if="{{item.retailPriceText}}" class="retail-price">{{item.retailPriceText}}</view>
+            </view>
+            <view wx:if="{{item.wholesaleLabel}}" class="wholesale-label">{{item.wholesaleLabel}}</view>
+            <view wx:if="{{item.nextWholesaleText}}" class="next-wholesale">{{item.nextWholesaleText}}</view>
             <view class="stock">{{item.stockText}}</view>
           </view>
           <view class="quantity-row">

@@ -116,6 +116,12 @@ export interface ProductSku {
   weightGram: number;
   image: string;
   status: "ENABLED" | "DISABLED";
+  wholesaleTiers: WholesaleTier[];
+}
+
+export interface WholesaleTier {
+  minQuantity: number;
+  unitPriceCent: number;
 }
 
 export interface AddressResponse {
@@ -166,7 +172,12 @@ export interface CartItem {
   displayImage: string;
   specText: string;
   priceCent: number;
+  retailPriceCent: number;
   originalPriceCent: number;
+  wholesaleTierMinQuantity: number | null;
+  nextWholesaleTierMinQuantity: number | null;
+  nextWholesaleTierPriceCent: number | null;
+  nextWholesaleTierQuantityNeeded: number | null;
   quantity: number;
   lineAmountCent: number;
   stockAvailable: number;
@@ -345,6 +356,8 @@ export interface OrderPreviewItem {
   specText: string;
   originalPriceCent: number;
   unitPriceCent: number;
+  retailUnitPriceCent: number;
+  wholesaleTierMinQuantity: number | null;
   quantity: number;
   lineOriginalAmountCent: number;
   lineAmountCent: number;
@@ -422,6 +435,8 @@ export interface OrderItem {
   specText: string;
   originalPriceCent: number;
   unitPriceCent: number;
+  retailUnitPriceCent: number;
+  wholesaleTierMinQuantity: number | null;
   quantity: number;
   lineOriginalAmountCent: number;
   lineAmountCent: number;

@@ -152,7 +152,7 @@ class ProductQueryCountTest {
         int manySkuQueries = sqlCounter.count();
 
         assertThat(many.skus()).hasSize(20);
-        assertThat(singleSkuQueries).isEqualTo(9);
+        assertThat(singleSkuQueries).isEqualTo(10);
         assertThat(manySkuQueries).isEqualTo(singleSkuQueries);
     }
 

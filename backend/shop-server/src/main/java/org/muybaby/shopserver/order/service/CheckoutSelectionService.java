@@ -102,11 +102,19 @@ public class CheckoutSelectionService {
         List<OrderPreviewItemResponse> previewItems = new ArrayList<>(checkoutRows.size());
         List<CheckoutItem> checkoutItems = new ArrayList<>(checkoutRows.size());
         List<Long> unitCostCents = new ArrayList<>(checkoutRows.size());
+        Map<Long, List<WholesaleTierRow>> wholesaleTiersBySkuId = findWholesaleTiersBySkuIds(
+                checkoutRows.stream().map(CheckoutRow::skuId).distinct().toList()
+        );
         Map<Long, Long> freightAmountsByTemplate = new HashMap<>();
         long productOriginalAmountCent = 0L;
         long productAmountCent = 0L;
         for (CheckoutRow row : checkoutRows) {
             validateCheckoutRow(row);
+            ResolvedWholesalePrice resolvedPrice = resolveWholesalePrice(
+                    row.unitPriceCent(),
+                    row.quantity(),
+                    wholesaleTiersBySkuId.getOrDefault(row.skuId(), List.of())
+            );
             long templateFreightCent = resolveFreightCent(row);
             Long previousFreightCent = freightAmountsByTemplate.putIfAbsent(
                     row.freightTemplateId(),
@@ -116,7 +124,7 @@ public class CheckoutSelectionService {
                 throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
             }
             long lineOriginalAmountCent = Math.multiplyExact(row.originalPriceCent(), row.quantity().longValue());
-            long lineAmountCent = Math.multiplyExact(row.unitPriceCent(), row.quantity().longValue());
+            long lineAmountCent = Math.multiplyExact(resolvedPrice.unitPriceCent(), row.quantity().longValue());
             productOriginalAmountCent = Math.addExact(productOriginalAmountCent, lineOriginalAmountCent);
             productAmountCent = Math.addExact(productAmountCent, lineAmountCent);
             previewItems.add(new OrderPreviewItemResponse(
@@ -134,7 +142,9 @@ public class CheckoutSelectionService {
                     row.skuCode(),
                     row.specText(),
                     row.originalPriceCent(),
+                    resolvedPrice.unitPriceCent(),
                     row.unitPriceCent(),
+                    resolvedPrice.minQuantity(),
                     row.quantity(),
                     lineOriginalAmountCent,
                     lineAmountCent
@@ -569,6 +579,46 @@ public class CheckoutSelectionService {
         return row.freightFixedAmountCent();
     }
 
+    private Map<Long, List<WholesaleTierRow>> findWholesaleTiersBySkuIds(List<Long> skuIds) {
+        if (skuIds.isEmpty()) {
+            return Map.of();
+        }
+        List<WholesaleTierRow> rows = jdbcTemplate.query("""
+                        select sku_id, min_quantity, unit_price_cent
+                        from product_sku_wholesale_tier
+                        where sku_id in (:skuIds)
+                        order by sku_id, min_quantity, id
+                        """,
+                new MapSqlParameterSource().addValue("skuIds", skuIds),
+                (rs, rowNum) -> new WholesaleTierRow(
+                        rs.getLong("sku_id"),
+                        rs.getInt("min_quantity"),
+                        rs.getLong("unit_price_cent")
+                ));
+        Map<Long, List<WholesaleTierRow>> result = new HashMap<>();
+        for (WholesaleTierRow row : rows) {
+            result.computeIfAbsent(row.skuId(), ignored -> new ArrayList<>()).add(row);
+        }
+        return result;
+    }
+
+    private ResolvedWholesalePrice resolveWholesalePrice(
+            long retailUnitPriceCent,
+            int quantity,
+            List<WholesaleTierRow> tiers
+    ) {
+        long unitPriceCent = retailUnitPriceCent;
+        Integer minQuantity = null;
+        for (WholesaleTierRow tier : tiers) {
+            if (tier.minQuantity() > quantity) {
+                break;
+            }
+            unitPriceCent = tier.unitPriceCent();
+            minQuantity = tier.minQuantity();
+        }
+        return new ResolvedWholesalePrice(unitPriceCent, minQuantity);
+    }
+
     private CheckoutRow mapCheckoutRow(ResultSet rs, int rowNum) throws SQLException {
         return mapCheckoutRow(rs, rs.getObject("cart_item_id", Long.class), rs.getInt("quantity"));
     }
@@ -707,5 +757,11 @@ public class CheckoutSelectionService {
             String freightStatus,
             LocalDateTime freightDeletedAt
     ) {
+    }
+
+    private record WholesaleTierRow(Long skuId, Integer minQuantity, Long unitPriceCent) {
+    }
+
+    private record ResolvedWholesalePrice(Long unitPriceCent, Integer minQuantity) {
     }
 }

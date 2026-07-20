@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.product.dto;
 
+import java.util.List;
+
 public record AppSkuResponse(
         Long id,
         String skuCode,
@@ -11,6 +13,7 @@ public record AppSkuResponse(
         Integer weightGram,
         String image,
         Long imageFileId,
-        String status
+        String status,
+        List<WholesaleTierResponse> wholesaleTiers
 ) {
 }

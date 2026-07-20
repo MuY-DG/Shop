@@ -21,6 +21,7 @@ public record AdminSkuResponse(
         Boolean defaultSelected,
         String combinationKey,
         List<String> specValueKeys,
+        List<WholesaleTierResponse> wholesaleTiers,
         Integer sortOrder
 ) {
 }

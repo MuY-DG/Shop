@@ -16,6 +16,8 @@ public record OrderItemResponse(
         String specText,
         Long originalPriceCent,
         Long unitPriceCent,
+        Long retailUnitPriceCent,
+        Integer wholesaleTierMinQuantity,
         Integer quantity,
         Long lineOriginalAmountCent,
         Long lineAmountCent

@@ -14,9 +14,13 @@
       <view class="product-title">{{detail.title}}</view>
       <view class="product-subtitle">{{detail.subtitle}}</view>
       <view class="price-row">
-        <view class="price">{{selectedPriceText}}</view>
+        <view class="price-block">
+          <view class="price">{{selectedPriceText}}</view>
+          <view wx:if="{{selectedRetailPriceText}}" class="retail-price">常规 {{selectedRetailPriceText}}</view>
+        </view>
         <view class="stock">{{selectedStockText}}</view>
       </view>
+      <view wx:if="{{wholesaleApplied}}" class="wholesale-badge">批发价已生效</view>
       <view class="selling-points">
         <view
           wx:for="{{detail.sellingPoints}}"
@@ -25,6 +29,20 @@
           class="selling-point"
         >
           {{point}}
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{wholesaleTierViews.length}}" class="section wholesale-section">
+      <view class="section-title">批发阶梯价</view>
+      <view class="wholesale-grid">
+        <view
+          wx:for="{{wholesaleTierViews}}"
+          wx:key="minQuantity"
+          class="wholesale-tier {{item.active ? 'active' : ''}}"
+        >
+          <view>{{item.minQuantity}} 件起</view>
+          <view class="wholesale-price">{{item.priceText}} / 件</view>
         </view>
       </view>
     </view>
@@ -52,6 +70,7 @@
       <view>
         <view class="section-title quantity-title">购买数量</view>
         <view class="quantity-limit">最多可购 {{selectedQuantityMax}} 件</view>
+        <view wx:if="{{selectedWholesaleHint}}" class="quantity-wholesale-hint">{{selectedWholesaleHint}}</view>
       </view>
       <view class="quantity-control">
         <button

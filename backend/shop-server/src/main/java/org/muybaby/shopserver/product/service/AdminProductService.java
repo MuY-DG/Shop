@@ -20,6 +20,7 @@ import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuSpecGroupUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuSpecValueUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminStockAdjustmentRequest;
+import org.muybaby.shopserver.product.dto.AdminWholesaleTierUpsertRequest;
 import org.muybaby.shopserver.product.entity.ProductCategory;
 import org.muybaby.shopserver.product.entity.ProductSku;
 import org.muybaby.shopserver.product.entity.ProductSpu;
@@ -67,6 +68,7 @@ public class AdminProductService {
     private static final String ADMIN_OPERATOR_TYPE = "ADMIN";
     private static final Pattern SPEC_KEY_PATTERN = Pattern.compile("[A-Za-z0-9_-]{1,64}");
     private static final int MAX_SKU_COMBINATIONS = 100;
+    private static final int MAX_WHOLESALE_TIERS = 5;
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -810,6 +812,9 @@ public class AdminProductService {
 
     private void deleteProductPrivateRows(Long spuId, List<ProductSku> skus) {
         for (ProductSku sku : skus) {
+            jdbcClient.sql("delete from product_sku_wholesale_tier where sku_id = :skuId")
+                    .param("skuId", sku.id())
+                    .update();
             jdbcClient.sql("delete from product_sku_spec_value where sku_id = :skuId")
                     .param("skuId", sku.id())
                     .update();
@@ -1277,6 +1282,9 @@ public class AdminProductService {
         Integer lowStockThreshold = !request.lowStockThresholdSpecified() && existingSku != null
                 ? existingSku.lowStockThreshold()
                 : request.lowStockThreshold();
+        List<AdminWholesaleTierUpsertRequest> wholesaleTiers = !request.wholesaleTiersSpecified() && existingSku != null
+                ? findWholesaleTierRequests(existingSku.id())
+                : normalizeWholesaleTiers(request.wholesaleTiers());
         AdminSkuUpsertRequest normalized = new AdminSkuUpsertRequest(
                 request.id(),
                 request.skuCode(),
@@ -1301,6 +1309,7 @@ public class AdminProductService {
                 request.volumeCubicMeterSpecified()
         );
         normalized.setLowStockThreshold(lowStockThreshold == null ? 10 : lowStockThreshold);
+        normalized.setWholesaleTiers(wholesaleTiers);
         return normalized;
     }
 
@@ -1312,6 +1321,7 @@ public class AdminProductService {
                 preserveSpecValueKeys ? findSkuSpecValueKeys(sku.id()) : List.of(), false, false, false, false
         );
         request.setLowStockThreshold(sku.lowStockThreshold());
+        request.setWholesaleTiers(findWholesaleTierRequests(sku.id()));
         return request;
     }
 
@@ -1416,6 +1426,7 @@ public class AdminProductService {
                 );
             }
             replaceSkuSpecValues(skuId, snapshot.specValueIds());
+            replaceSkuWholesaleTiers(skuId, sku.wholesaleTiers());
             sku.setSkuCode(skuCode);
             sku.setImage(snapshot.image());
             sku.setImageFileId(snapshot.imageFileId());
@@ -1537,6 +1548,58 @@ public class AdminProductService {
             throw new BusinessException(ErrorCode.SKU_UNAVAILABLE);
         }
         return skuId;
+    }
+
+    private List<AdminWholesaleTierUpsertRequest> normalizeWholesaleTiers(
+            List<AdminWholesaleTierUpsertRequest> tiers
+    ) {
+        if (tiers == null || tiers.isEmpty()) {
+            return List.of();
+        }
+        if (tiers.stream().anyMatch(Objects::isNull)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return tiers.stream()
+                .sorted((left, right) -> Integer.compare(
+                        left.minQuantity() == null ? Integer.MAX_VALUE : left.minQuantity(),
+                        right.minQuantity() == null ? Integer.MAX_VALUE : right.minQuantity()
+                ))
+                .toList();
+    }
+
+    private List<AdminWholesaleTierUpsertRequest> findWholesaleTierRequests(Long skuId) {
+        return jdbcClient.sql("""
+                        select min_quantity, unit_price_cent
+                        from product_sku_wholesale_tier
+                        where sku_id = :skuId
+                        order by min_quantity, id
+                        """)
+                .param("skuId", skuId)
+                .query((rs, rowNum) -> new AdminWholesaleTierUpsertRequest(
+                        rs.getInt("min_quantity"),
+                        rs.getLong("unit_price_cent")
+                ))
+                .list();
+    }
+
+    private void replaceSkuWholesaleTiers(
+            Long skuId,
+            List<AdminWholesaleTierUpsertRequest> tiers
+    ) {
+        jdbcClient.sql("delete from product_sku_wholesale_tier where sku_id = :skuId")
+                .param("skuId", skuId)
+                .update();
+        for (AdminWholesaleTierUpsertRequest tier : tiers) {
+            jdbcClient.sql("""
+                            insert into product_sku_wholesale_tier
+                                (sku_id, min_quantity, unit_price_cent)
+                            values (:skuId, :minQuantity, :unitPriceCent)
+                            """)
+                    .param("skuId", skuId)
+                    .param("minQuantity", tier.minQuantity())
+                    .param("unitPriceCent", tier.unitPriceCent())
+                    .update();
+        }
     }
 
     private SkuSnapshot resolveSkuSnapshot(
@@ -2203,6 +2266,7 @@ public class AdminProductService {
                     || (sku.volumeCubicMeter() != null && sku.volumeCubicMeter().signum() < 0)) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
+            validateWholesaleTiers(sku);
             if (status == SkuStatus.ENABLED) {
                 enabledSkuCount++;
                 if (Boolean.TRUE.equals(sku.defaultSelected())) {
@@ -2231,6 +2295,29 @@ public class AdminProductService {
                 || enabledSkuCount == 0
                 || defaultSkuCount != 1)) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
+        }
+    }
+
+    private void validateWholesaleTiers(AdminSkuUpsertRequest sku) {
+        List<AdminWholesaleTierUpsertRequest> tiers = sku.wholesaleTiers();
+        if (tiers.size() > MAX_WHOLESALE_TIERS) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        int previousQuantity = 1;
+        long previousPriceCent = sku.priceCent();
+        for (AdminWholesaleTierUpsertRequest tier : tiers) {
+            if (tier == null
+                    || tier.minQuantity() == null
+                    || tier.minQuantity() < 2
+                    || tier.minQuantity() > 999
+                    || tier.minQuantity() <= previousQuantity
+                    || tier.unitPriceCent() == null
+                    || tier.unitPriceCent() <= 0
+                    || tier.unitPriceCent() >= previousPriceCent) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            previousQuantity = tier.minQuantity();
+            previousPriceCent = tier.unitPriceCent();
         }
     }
 

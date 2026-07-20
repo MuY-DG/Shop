@@ -338,6 +338,8 @@ public class AppOrderService {
                                spec_text,
                                original_price_cent,
                                unit_price_cent,
+                               retail_unit_price_cent,
+                               wholesale_tier_min_quantity,
                                quantity,
                                line_original_amount_cent,
                                line_amount_cent
@@ -649,14 +651,16 @@ public class AppOrderService {
                                 order_id, sku_id, spu_id, product_title, product_subtitle, main_image,
                                 main_image_file_id, sku_image, sku_image_file_id, display_image, display_image_file_id,
                                 sku_code, spec_text, original_price_cent,
-                                unit_price_cent, quantity, line_original_amount_cent, line_amount_cent,
+                                unit_price_cent, retail_unit_price_cent, wholesale_tier_min_quantity,
+                                quantity, line_original_amount_cent, line_amount_cent,
                                 unit_cost_cent, line_cost_cent, coupon_discount_allocated_cent,
                                 freight_allocated_cent, paid_amount_allocated_cent, created_at
                             )
                             values (
                                 :orderId, :skuId, :spuId, :productTitle, :productSubtitle, :mainImage,
                                 :mainImageFileId, :skuImage, :skuImageFileId, :displayImage, :displayImageFileId, :skuCode, :specText, :originalPriceCent,
-                                :unitPriceCent, :quantity, :lineOriginalAmountCent, :lineAmountCent,
+                                :unitPriceCent, :retailUnitPriceCent, :wholesaleTierMinQuantity,
+                                :quantity, :lineOriginalAmountCent, :lineAmountCent,
                                 :unitCostCent, :lineCostCent, :couponDiscountAllocatedCent,
                                 :freightAllocatedCent, :paidAmountAllocatedCent, :createdAt
                             )
@@ -677,6 +681,8 @@ public class AppOrderService {
                             .addValue("specText", defaultString(item.specText()))
                             .addValue("originalPriceCent", item.originalPriceCent())
                             .addValue("unitPriceCent", item.unitPriceCent())
+                            .addValue("retailUnitPriceCent", item.retailUnitPriceCent())
+                            .addValue("wholesaleTierMinQuantity", item.wholesaleTierMinQuantity())
                             .addValue("quantity", item.quantity())
                             .addValue("lineOriginalAmountCent", item.lineOriginalAmountCent())
                             .addValue("lineAmountCent", item.lineAmountCent())
@@ -1000,6 +1006,8 @@ public class AppOrderService {
                 rs.getString("spec_text"),
                 rs.getLong("original_price_cent"),
                 rs.getLong("unit_price_cent"),
+                rs.getLong("retail_unit_price_cent"),
+                rs.getObject("wholesale_tier_min_quantity", Integer.class),
                 rs.getInt("quantity"),
                 rs.getLong("line_original_amount_cent"),
                 rs.getLong("line_amount_cent")

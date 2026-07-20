@@ -9,6 +9,7 @@ import org.muybaby.shopserver.product.dto.AdminSpuDetailResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuListItemResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuSpecGroupResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuSpecValueResponse;
+import org.muybaby.shopserver.product.dto.WholesaleTierResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuQueryRequest;
 import org.muybaby.shopserver.product.dto.ProductImageResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -171,13 +172,15 @@ public class ProductReadMapper {
                 .query(this::mapAdminSku)
                 .list();
         Map<Long, List<String>> specValueKeysBySkuId = findSkuSpecValueKeysBySpuId(spuId);
+        Map<Long, List<WholesaleTierResponse>> wholesaleTiersBySkuId = findWholesaleTiersBySpuId(spuId);
         skus = skus.stream()
                 .map(sku -> new AdminSkuResponse(
                         sku.id(), sku.skuCode(), sku.specJson(), sku.specText(), sku.priceCent(),
                         sku.originalPriceCent(), sku.costPriceCent(), sku.stockAvailable(), sku.lowStockThreshold(), sku.weightGram(),
                         sku.volumeCubicMeter(), sku.image(), sku.imageFileId(), sku.status(),
                         sku.defaultSelected(), sku.combinationKey(),
-                        specValueKeysBySkuId.getOrDefault(sku.id(), List.of()), sku.sortOrder()
+                        specValueKeysBySkuId.getOrDefault(sku.id(), List.of()),
+                        wholesaleTiersBySkuId.getOrDefault(sku.id(), List.of()), sku.sortOrder()
                 ))
                 .toList();
 
@@ -371,8 +374,34 @@ public class ProductReadMapper {
                 rs.getBoolean("is_default"),
                 rs.getString("combination_key"),
                 List.of(),
+                List.of(),
                 rs.getInt("sort_order")
         );
+    }
+
+    private Map<Long, List<WholesaleTierResponse>> findWholesaleTiersBySpuId(Long spuId) {
+        List<WholesaleTierRow> rows = jdbcClient.sql("""
+                        select t.sku_id, t.min_quantity, t.unit_price_cent
+                        from product_sku_wholesale_tier t
+                        join product_sku k on k.id = t.sku_id
+                        where k.spu_id = :spuId
+                          and k.deleted_at is null
+                        order by t.sku_id, t.min_quantity, t.id
+                        """)
+                .param("spuId", spuId)
+                .query((rs, rowNum) -> new WholesaleTierRow(
+                        rs.getLong("sku_id"),
+                        new WholesaleTierResponse(
+                                rs.getInt("min_quantity"),
+                                rs.getLong("unit_price_cent")
+                        )
+                ))
+                .list();
+        Map<Long, List<WholesaleTierResponse>> result = new LinkedHashMap<>();
+        for (WholesaleTierRow row : rows) {
+            result.computeIfAbsent(row.skuId(), ignored -> new ArrayList<>()).add(row.tier());
+        }
+        return result;
     }
 
     private Map<Long, List<String>> findSkuSpecValueKeysBySpuId(Long spuId) {
@@ -433,6 +462,9 @@ public class ProductReadMapper {
     }
 
     private record SkuSpecValueKeyRow(Long skuId, String valueKey) {
+    }
+
+    private record WholesaleTierRow(Long skuId, WholesaleTierResponse tier) {
     }
 
     private record SpecGroupRow(

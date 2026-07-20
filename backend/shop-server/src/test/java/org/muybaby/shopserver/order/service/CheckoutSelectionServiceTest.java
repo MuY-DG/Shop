@@ -97,6 +97,40 @@ class CheckoutSelectionServiceTest {
     }
 
     @Test
+    void cartAndDirectApplyTheHighestReachedWholesaleTier() {
+        long userId = insertUser("selection-wholesale");
+        long skuId = insertSku("SELECTION-WHOLESALE", 1_000L, 1_200L, 100,
+                "ENABLED", "ON_SALE", "ENABLED");
+        jdbcClient.sql("""
+                        insert into product_sku_wholesale_tier (sku_id, min_quantity, unit_price_cent)
+                        values (:skuId, 10, 880), (:skuId, 50, 760)
+                        """)
+                .param("skuId", skuId)
+                .update();
+
+        CheckoutSelection belowTier = checkoutSelectionService.preview(userId,
+                new CheckoutRequest(CheckoutSource.DIRECT, List.of(), skuId, 9, null, null));
+        CheckoutSelection firstTier = checkoutSelectionService.preview(userId,
+                new CheckoutRequest(CheckoutSource.DIRECT, List.of(), skuId, 10, null, null));
+        long cartItemId = insertCartItem(userId, skuId, 50);
+        CheckoutSelection highestCartTier = checkoutSelectionService.preview(userId,
+                new CheckoutRequest(CheckoutSource.CART, List.of(cartItemId), null, null, null, null));
+
+        assertThat(belowTier.previewItems().getFirst().unitPriceCent()).isEqualTo(1_000L);
+        assertThat(belowTier.previewItems().getFirst().wholesaleTierMinQuantity()).isNull();
+        assertThat(firstTier.previewItems().getFirst().unitPriceCent()).isEqualTo(880L);
+        assertThat(firstTier.previewItems().getFirst().retailUnitPriceCent()).isEqualTo(1_000L);
+        assertThat(firstTier.previewItems().getFirst().wholesaleTierMinQuantity()).isEqualTo(10);
+        assertThat(highestCartTier.previewItems().getFirst().unitPriceCent()).isEqualTo(760L);
+        assertThat(highestCartTier.previewItems().getFirst().wholesaleTierMinQuantity()).isEqualTo(50);
+        assertThat(highestCartTier.productAmountCent()).isEqualTo(38_000L);
+        assertThat(checkoutSelectionService.lockForSubmit(userId,
+                new CheckoutRequest(CheckoutSource.CART, List.of(cartItemId), null, null, null, null)))
+                .usingRecursiveComparison()
+                .isEqualTo(highestCartTier);
+    }
+
+    @Test
     void directAndCartReportIdenticalDisabledAndSoldOutErrors() {
         long userId = insertUser("selection-errors");
         long skuId = insertSku("SELECTION-ERRORS", 3990L, 4990L, 5, "ENABLED", "ON_SALE", "ENABLED");

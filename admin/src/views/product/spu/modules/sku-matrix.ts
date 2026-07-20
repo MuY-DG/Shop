@@ -46,6 +46,7 @@ export const createEmptySku = (overrides: Partial<ProductEditorSku> = {}): Produ
   defaultSelected: true,
   combinationKey: 'SINGLE',
   specValueKeys: [],
+  wholesaleTiers: [],
   sortOrder: 0,
   ...overrides
 })

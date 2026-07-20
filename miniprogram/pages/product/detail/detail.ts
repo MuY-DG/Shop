@@ -12,6 +12,7 @@ import {
   trackPageView,
   trackProductView
 } from "../../../services/analytics";
+import { resolveWholesalePrice } from "../../../features/wholesale-pricing";
 
 interface DatasetEvent {
   currentTarget: {
@@ -29,6 +30,13 @@ interface SkuView extends ProductSku {
   stockText: string;
   selected: boolean;
   disabled: boolean;
+}
+
+interface WholesaleTierView {
+  minQuantity: number;
+  unitPriceCent: number;
+  priceText: string;
+  active: boolean;
 }
 
 function parsePositiveNumber(value: string | undefined): number {
@@ -67,6 +75,36 @@ function toSkuViews(skus: ProductSku[], selectedSkuId: number): SkuView[] {
   });
 }
 
+function selectedPricingData(sku: ProductSku | undefined, quantity: number) {
+  if (!sku) {
+    return {
+      selectedPriceText: "暂无价格",
+      selectedRetailPriceText: "",
+      selectedWholesaleHint: "",
+      wholesaleApplied: false,
+      wholesaleTierViews: [] as WholesaleTierView[]
+    };
+  }
+  const resolution = resolveWholesalePrice(sku, quantity);
+  const nextHint = resolution.nextTier && resolution.quantityNeeded
+    ? `再买 ${resolution.quantityNeeded} 件，每件 ${formatPrice(resolution.nextTier.unitPriceCent)}`
+    : "";
+  const appliedHint = resolution.appliedTier
+    ? `已享 ${resolution.appliedTier.minQuantity} 件起批发价`
+    : "";
+  return {
+    selectedPriceText: formatPrice(resolution.unitPriceCent),
+    selectedRetailPriceText: resolution.appliedTier ? formatPrice(sku.priceCent) : "",
+    selectedWholesaleHint: [appliedHint, nextHint].filter(Boolean).join(" · "),
+    wholesaleApplied: Boolean(resolution.appliedTier),
+    wholesaleTierViews: (sku.wholesaleTiers || []).map((tier) => ({
+      ...tier,
+      priceText: formatPrice(tier.unitPriceCent),
+      active: resolution.appliedTier?.minQuantity === tier.minQuantity
+    }))
+  };
+}
+
 Page({
   data: {
     detail: null as ProductDetail | null,
@@ -76,6 +114,10 @@ Page({
     selectedQuantity: 1,
     selectedQuantityMax: 0,
     selectedPriceText: "",
+    selectedRetailPriceText: "",
+    selectedWholesaleHint: "",
+    wholesaleApplied: false,
+    wholesaleTierViews: [] as WholesaleTierView[],
     selectedStockText: "",
     addingCart: false,
     buying: false,
@@ -115,7 +157,7 @@ Page({
         selectedQuantityMax: selectedSku
           ? Math.min(999, selectedSku.stockAvailable)
           : 0,
-        selectedPriceText: selectedSku ? formatPrice(selectedSku.priceCent) : "暂无价格",
+        ...selectedPricingData(selectedSku, 1),
         selectedStockText: selectedSku ? `库存 ${selectedSku.stockAvailable}` : "暂无可售规格"
       });
       trackProductView(detail.id, "/pages/product/detail/detail");
@@ -156,7 +198,10 @@ Page({
       ),
       selectedQuantityMax: Math.min(999, selectedSku.stockAvailable),
       skuViews: toSkuViews(this.data.detail.skus, selectedSku.id),
-      selectedPriceText: formatPrice(selectedSku.priceCent),
+      ...selectedPricingData(
+        selectedSku,
+        clampQuantity(this.data.selectedQuantity, selectedSku.stockAvailable)
+      ),
       selectedStockText: `库存 ${selectedSku.stockAvailable}`
     });
   },
@@ -165,24 +210,22 @@ Page({
     if (!selectedSku) {
       return;
     }
-    this.setData({
-      selectedQuantity: clampQuantity(
-        this.data.selectedQuantity - 1,
-        selectedSku.stockAvailable
-      )
-    });
+    const selectedQuantity = clampQuantity(
+      this.data.selectedQuantity - 1,
+      selectedSku.stockAvailable
+    );
+    this.setData({ selectedQuantity, ...selectedPricingData(selectedSku, selectedQuantity) });
   },
   onQuantityPlus() {
     const selectedSku = this.getSelectedSku();
     if (!selectedSku) {
       return;
     }
-    this.setData({
-      selectedQuantity: clampQuantity(
-        this.data.selectedQuantity + 1,
-        selectedSku.stockAvailable
-      )
-    });
+    const selectedQuantity = clampQuantity(
+      this.data.selectedQuantity + 1,
+      selectedSku.stockAvailable
+    );
+    this.setData({ selectedQuantity, ...selectedPricingData(selectedSku, selectedQuantity) });
   },
   async onAddCartTap() {
     if (this.data.addingCart) {

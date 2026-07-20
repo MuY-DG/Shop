@@ -43,7 +43,13 @@ export interface ProductEditorSku {
   defaultSelected: boolean
   combinationKey: string
   specValueKeys: string[]
+  wholesaleTiers: ProductEditorWholesaleTier[]
   sortOrder: number
+}
+
+export interface ProductEditorWholesaleTier {
+  minQuantity: number
+  unitPriceCent: number | null
 }
 
 export interface ProductEditorForm {
@@ -177,4 +183,25 @@ export const yuanToCent = (value: number | null | undefined): number | null => {
 export const centToYuan = (value: number | null | undefined): number | null => {
   if (value === null || value === undefined || !Number.isFinite(value)) return null
   return value / 100
+}
+
+export const validateWholesaleTiers = (
+  tiers: ProductEditorWholesaleTier[],
+  retailPriceCent: number | null
+): string | null => {
+  if (tiers.length > 5) return '每个规格最多设置 5 档批发价'
+  if (tiers.length && (!retailPriceCent || retailPriceCent < 1)) return '请先填写商品售价'
+  let previousQuantity = 1
+  let previousPriceCent = retailPriceCent ?? 0
+  for (const tier of tiers) {
+    if (!Number.isInteger(tier.minQuantity) || tier.minQuantity < 2 || tier.minQuantity > 999) {
+      return '批发起订数量须为 2 至 999 的整数'
+    }
+    if (tier.minQuantity <= previousQuantity) return '批发起订数量必须逐档增加'
+    if (!tier.unitPriceCent || tier.unitPriceCent < 1) return '请填写有效的批发单价'
+    if (tier.unitPriceCent >= previousPriceCent) return '后一档批发价必须低于前一档价格'
+    previousQuantity = tier.minQuantity
+    previousPriceCent = tier.unitPriceCent
+  }
+  return null
 }

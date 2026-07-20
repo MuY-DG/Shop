@@ -175,7 +175,7 @@ public class AssetModelMigrationTest {
                 .dataSource(jdbcUrl, username, password)
                 .placeholders(safeSeedPlaceholders())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("45");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("46");
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password);
              Statement statement = connection.createStatement()) {

@@ -10,6 +10,7 @@ import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuSpecGroupUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuSpecValueUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminStockAdjustmentRequest;
+import org.muybaby.shopserver.product.dto.AdminWholesaleTierUpsertRequest;
 import org.muybaby.shopserver.product.service.AdminProductService;
 import org.muybaby.shopserver.product.service.ProductReadMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,45 @@ class AdminProductServiceTest {
 
     @Autowired
     private JdbcClient jdbcClient;
+
+    @Test
+    void createSpuPersistsValidatedWholesaleTiers() {
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(
+                0L, "Wholesale Category", "", null, 1, "ENABLED"));
+        AdminSkuUpsertRequest sku = new AdminSkuUpsertRequest(
+                null, "WHOLESALE-SKU", "{}", "默认", 1_000L, 1_200L,
+                100, 100, "", null, "ENABLED", 0
+        );
+        sku.setWholesaleTiers(List.of(
+                new AdminWholesaleTierUpsertRequest(10, 880L),
+                new AdminWholesaleTierUpsertRequest(50, 760L)
+        ));
+
+        Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
+                categoryId, "Wholesale SPU", "", "https://example.test/wholesale.jpg", null,
+                "批量更优惠", "", 0, List.of(), List.of(sku)
+        ));
+
+        assertThat(productReadMapper.adminSpuDetail(spuId).skus().getFirst().wholesaleTiers())
+                .extracting("minQuantity", "unitPriceCent")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(10, 880L),
+                        org.assertj.core.groups.Tuple.tuple(50, 760L)
+                );
+
+        AdminSkuUpsertRequest invalidSku = new AdminSkuUpsertRequest(
+                null, "WHOLESALE-INVALID-SKU", "{}", "默认", 1_000L, 1_200L,
+                100, 100, "", null, "ENABLED", 0
+        );
+        invalidSku.setWholesaleTiers(List.of(new AdminWholesaleTierUpsertRequest(10, 1_000L)));
+        assertThatThrownBy(() -> adminProductService.createSpu(new AdminSpuUpsertRequest(
+                categoryId, "Invalid Wholesale SPU", "", "https://example.test/invalid-wholesale.jpg", null,
+                "", "", 0, List.of(), List.of(invalidSku)
+        )))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode")
+                .isEqualTo(ErrorCode.VALIDATION_FAILED);
+    }
 
     @Test
     void createSpuPersistsImagesSkusAndInitialStockLog() {

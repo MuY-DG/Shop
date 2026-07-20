@@ -163,6 +163,7 @@
       defaultSelected: boolean
       combinationKey: string
       specValueKeys: string[]
+      wholesaleTiers: Api.Product.WholesaleTier[]
     }>
 
   type DetailSpecValue = Partial<ProductEditorSpecValue> & {
@@ -317,6 +318,7 @@
     defaultSelected: sku.defaultSelected ?? index === 0,
     combinationKey: sku.combinationKey || (index === 0 ? 'SINGLE' : `LEGACY:${sku.id || index}`),
     specValueKeys: sku.specValueKeys || [],
+    wholesaleTiers: (sku.wholesaleTiers || []).map((tier) => ({ ...tier })),
     sortOrder: sku.sortOrder ?? index
   })
 
@@ -484,6 +486,10 @@
       defaultSelected: form.specType === 'SINGLE' ? true : sku.defaultSelected,
       combinationKey: form.specType === 'SINGLE' ? 'SINGLE' : sku.combinationKey,
       specValueKeys: form.specType === 'SINGLE' ? [] : sku.specValueKeys,
+      wholesaleTiers: sku.wholesaleTiers.map((tier) => ({
+        minQuantity: tier.minQuantity,
+        unitPriceCent: tier.unitPriceCent as number
+      })),
       sortOrder: index
     }))
 

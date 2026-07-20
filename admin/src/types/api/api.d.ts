@@ -302,7 +302,13 @@ declare namespace Api {
       defaultSelected: boolean
       combinationKey: string
       specValueKeys: string[]
+      wholesaleTiers: WholesaleTier[]
       sortOrder: number
+    }
+
+    interface WholesaleTier {
+      minQuantity: number
+      unitPriceCent: number
     }
 
     interface SpecValue {
@@ -1170,6 +1176,8 @@ declare namespace Api {
       specText: string
       originalPriceCent: number
       unitPriceCent: number
+      retailUnitPriceCent: number
+      wholesaleTierMinQuantity: number | null
       quantity: number
       lineOriginalAmountCent: number
       lineAmountCent: number

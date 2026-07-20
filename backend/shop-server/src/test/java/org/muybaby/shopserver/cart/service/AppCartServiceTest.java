@@ -120,6 +120,30 @@ class AppCartServiceTest {
                 .single()).isEqualTo(1);
     }
 
+    @Test
+    void cartReturnsAppliedAndNextWholesaleTierPricing() {
+        long userId = insertAppUser("cart-wholesale-openid");
+        long skuId = insertSellableSku("CART-WHOLESALE-SKU", 1_000L, 1_200L, 100);
+        jdbcClient.sql("""
+                        insert into product_sku_wholesale_tier (sku_id, min_quantity, unit_price_cent)
+                        values (:skuId, 10, 880), (:skuId, 50, 760)
+                        """)
+                .param("skuId", skuId)
+                .update();
+        AuthenticatedPrincipal principal = new AuthenticatedPrincipal(
+                TokenKind.APP, userId, "app-user", List.of(), List.of());
+
+        CartItemResponse response = appCartService.add(principal, new AddCartItemRequest(skuId, 10));
+
+        assertThat(response.priceCent()).isEqualTo(880L);
+        assertThat(response.retailPriceCent()).isEqualTo(1_000L);
+        assertThat(response.wholesaleTierMinQuantity()).isEqualTo(10);
+        assertThat(response.nextWholesaleTierMinQuantity()).isEqualTo(50);
+        assertThat(response.nextWholesaleTierPriceCent()).isEqualTo(760L);
+        assertThat(response.nextWholesaleTierQuantityNeeded()).isEqualTo(40);
+        assertThat(response.lineAmountCent()).isEqualTo(8_800L);
+    }
+
     private long insertAppUser(String openid) {
         long userId = Math.abs(openid.hashCode()) + 10000L;
         jdbcClient.sql("""

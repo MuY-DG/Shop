@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.product.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -54,6 +55,10 @@ public class AdminSkuUpsertRequest {
 
     private List<String> specValueKeys;
 
+    @Valid
+    @Size(max = 5)
+    private List<AdminWholesaleTierUpsertRequest> wholesaleTiers;
+
     private boolean imageFileIdSpecified;
 
     private boolean specValueKeysSpecified;
@@ -63,6 +68,8 @@ public class AdminSkuUpsertRequest {
     private boolean volumeCubicMeterSpecified;
 
     private boolean lowStockThresholdSpecified;
+
+    private boolean wholesaleTiersSpecified;
 
     public AdminSkuUpsertRequest() {
     }
@@ -113,6 +120,7 @@ public class AdminSkuUpsertRequest {
         this.status = status;
         this.sortOrder = sortOrder;
         this.specValueKeys = List.of();
+        this.wholesaleTiers = List.of();
         this.imageFileIdSpecified = imageFileIdSpecified;
     }
 
@@ -212,6 +220,7 @@ public class AdminSkuUpsertRequest {
         this.defaultSelected = defaultSelected;
         this.combinationKey = combinationKey;
         this.specValueKeys = specValueKeys == null ? List.of() : List.copyOf(specValueKeys);
+        this.wholesaleTiers = List.of();
         this.imageFileIdSpecified = imageFileIdSpecified;
         this.specValueKeysSpecified = specValueKeysSpecified;
         this.costPriceCentSpecified = costPriceCentSpecified;
@@ -385,5 +394,18 @@ public class AdminSkuUpsertRequest {
 
     public boolean lowStockThresholdSpecified() {
         return lowStockThresholdSpecified;
+    }
+
+    public List<AdminWholesaleTierUpsertRequest> wholesaleTiers() {
+        return wholesaleTiers == null ? List.of() : wholesaleTiers;
+    }
+
+    public void setWholesaleTiers(List<AdminWholesaleTierUpsertRequest> wholesaleTiers) {
+        this.wholesaleTiers = wholesaleTiers == null ? List.of() : List.copyOf(wholesaleTiers);
+        this.wholesaleTiersSpecified = true;
+    }
+
+    public boolean wholesaleTiersSpecified() {
+        return wholesaleTiersSpecified;
     }
 }

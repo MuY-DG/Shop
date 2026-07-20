@@ -120,6 +120,30 @@
   font-size: 30rpx;
 }
 
+.item-price-row {
+  display: flex;
+  gap: 10rpx;
+  align-items: baseline;
+}
+
+.retail-price {
+  color: #9a8d85;
+  font-size: 21rpx;
+  text-decoration: line-through;
+}
+
+.wholesale-label,
+.next-wholesale {
+  margin-top: 4rpx;
+  color: #b3261e;
+  font-size: 20rpx;
+  line-height: 28rpx;
+}
+
+.next-wholesale {
+  color: #8b5a09;
+}
+
 .line-amount {
   font-size: 28rpx;
 }

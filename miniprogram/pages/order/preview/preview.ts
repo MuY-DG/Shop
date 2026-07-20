@@ -23,6 +23,8 @@ import { getAnalyticsContext, trackPageView } from "../../../services/analytics"
 interface OrderPreviewItemView extends OrderPreviewItem {
   imageUrl: string;
   unitPriceText: string;
+  retailUnitPriceText: string;
+  wholesaleLabel: string;
   originalPriceText: string;
   lineAmountText: string;
   lineOriginalAmountText: string;
@@ -52,6 +54,12 @@ function toItemView(item: OrderPreviewItem): OrderPreviewItemView {
     ...item,
     imageUrl: item.displayImage || item.skuImage || item.mainImage,
     unitPriceText: formatPrice(item.unitPriceCent),
+    retailUnitPriceText: item.wholesaleTierMinQuantity
+      ? formatPrice(item.retailUnitPriceCent)
+      : "",
+    wholesaleLabel: item.wholesaleTierMinQuantity
+      ? `${item.wholesaleTierMinQuantity} 件起批发价`
+      : "",
     originalPriceText: formatPrice(item.originalPriceCent),
     lineAmountText: formatPrice(item.lineAmountCent),
     lineOriginalAmountText: formatPrice(item.lineOriginalAmountCent)

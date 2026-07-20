@@ -311,7 +311,12 @@
                   </template>
                 </ElTableColumn>
                 <ElTableColumn label="商品售价" width="140">
-                  <template #default="{ row }">{{ formatMoney(row.unitPriceCent) }}</template>
+                  <template #default="{ row }">
+                    <div>{{ formatMoney(row.unitPriceCent) }}</div>
+                    <ElTag v-if="row.wholesaleTierMinQuantity" size="small" type="danger" effect="plain">
+                      {{ row.wholesaleTierMinQuantity }} 件起批发价
+                    </ElTag>
+                  </template>
                 </ElTableColumn>
                 <ElTableColumn prop="quantity" label="购买数量" width="120" />
                 <ElTableColumn label="小计" width="140">

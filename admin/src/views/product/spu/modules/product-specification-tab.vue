@@ -145,6 +145,19 @@
       </ElForm>
     </section>
 
+    <section v-if="modelValue.specType === 'SINGLE'" class="editor-section">
+      <div class="editor-section__heading">
+        <h3>批发阶梯价</h3>
+        <span class="editor-section__hint">可选；数量达到档位后自动切换单价</span>
+      </div>
+      <WholesaleTierEditor
+        :model-value="singleSku.wholesaleTiers"
+        :retail-price-cent="singleSku.priceCent"
+        :disabled="disabled"
+        @update:model-value="updateSingleSku({ wholesaleTiers: $event })"
+      />
+    </section>
+
     <template v-else>
       <section class="editor-section">
         <div class="editor-section__heading">
@@ -244,10 +257,11 @@
     ProductEditorSpecTemplate,
     ProductSpecType
   } from './editor-model'
-  import { centToYuan, yuanToCent } from './editor-model'
+  import { centToYuan, validateWholesaleTiers, yuanToCent } from './editor-model'
   import SpecTreeEditor from './spec-tree-editor.vue'
   import SkuMatrix from './sku-matrix.vue'
   import CompactAssetField from './compact-asset-field.vue'
+  import WholesaleTierEditor from './wholesale-tier-editor.vue'
   import {
     MAX_SKU_COMBINATIONS,
     cloneTemplateGroups,
@@ -445,6 +459,8 @@
     if (sku.lowStockThreshold < 0) return '低库存预警值不能小于 0'
     if (sku.weightGram !== null && sku.weightGram < 0) return '重量不能小于 0'
     if (sku.volumeCubicMeter !== null && sku.volumeCubicMeter < 0) return '体积不能小于 0'
+    const wholesaleError = validateWholesaleTiers(sku.wholesaleTiers, sku.priceCent)
+    if (wholesaleError) return wholesaleError
     return null
   }
 
@@ -461,6 +477,10 @@
     if (props.modelValue.skus.some((sku) => sku.stockAvailable < 0)) return '库存不能小于 0'
     if (props.modelValue.skus.some((sku) => sku.lowStockThreshold < 0)) {
       return '低库存预警值不能小于 0'
+    }
+    for (const sku of props.modelValue.skus) {
+      const wholesaleError = validateWholesaleTiers(sku.wholesaleTiers, sku.priceCent)
+      if (wholesaleError) return `${sku.specText || '未命名规格'}：${wholesaleError}`
     }
     const enabled = props.modelValue.skus.filter((sku) => sku.status === 'ENABLED')
     if (!enabled.length) return '至少启用一个商品属性'

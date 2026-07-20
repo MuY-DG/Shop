@@ -101,6 +101,20 @@
         </template>
       </ElTableColumn>
 
+      <ElTableColumn label="批发价" width="120" align="center">
+        <template #default="{ row, $index }">
+          <ElButton
+            size="small"
+            :type="row.wholesaleTiers.length ? 'primary' : 'default'"
+            plain
+            :disabled="disabled"
+            @click="openWholesaleDialog($index)"
+          >
+            {{ row.wholesaleTiers.length ? `${row.wholesaleTiers.length} 档` : '设置' }}
+          </ElButton>
+        </template>
+      </ElTableColumn>
+
       <ElTableColumn label="库存" width="130">
         <template #default="{ row, $index }">
           <ElInputNumber
@@ -196,14 +210,38 @@
         </template>
       </ElTableColumn>
     </ElTable>
+
+    <ElDialog v-model="wholesaleDialogVisible" title="设置批发阶梯价" width="620px" align-center>
+      <div v-if="editingSku" class="wholesale-dialog-heading">
+        <b>{{ editingSku.specText }}</b>
+        <span>常规售价：{{ centToYuan(editingSku.priceCent)?.toFixed(2) || '-' }} 元</span>
+      </div>
+      <WholesaleTierEditor
+        v-if="editingSku"
+        v-model="wholesaleDraft"
+        :retail-price-cent="editingSku.priceCent"
+        :disabled="disabled"
+      />
+      <template #footer>
+        <ElButton @click="wholesaleDialogVisible = false">取消</ElButton>
+        <ElButton type="primary" @click="saveWholesaleTiers">确定</ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { computed } from 'vue'
+  import { computed, ref } from 'vue'
+  import { ElMessage } from 'element-plus'
   import AssetPicker from '@/components/business/asset-picker/index.vue'
-  import type { ProductEditorSku, ProductEditorSpecGroup, ProductSkuStatus } from './editor-model'
-  import { centToYuan, yuanToCent } from './editor-model'
+  import type {
+    ProductEditorSku,
+    ProductEditorSpecGroup,
+    ProductEditorWholesaleTier,
+    ProductSkuStatus
+  } from './editor-model'
+  import { centToYuan, validateWholesaleTiers, yuanToCent } from './editor-model'
+  import WholesaleTierEditor from './wholesale-tier-editor.vue'
   import { imageSpecFallback, MAX_SKU_COMBINATIONS, normalizeDefaultSku } from './sku-matrix'
 
   interface Props {
@@ -224,6 +262,9 @@
     stockDisabled: false
   })
   const emit = defineEmits<Emits>()
+  const wholesaleDialogVisible = ref(false)
+  const wholesaleEditingIndex = ref(-1)
+  const wholesaleDraft = ref<ProductEditorWholesaleTier[]>([])
 
   type MoneyField = 'priceCent' | 'costPriceCent' | 'originalPriceCent'
   type NullableNumberField = 'weightGram' | 'volumeCubicMeter'
@@ -231,6 +272,7 @@
   const defaultCombinationKey = computed(
     () => props.modelValue.find((sku) => sku.defaultSelected)?.combinationKey || ''
   )
+  const editingSku = computed(() => props.modelValue[wholesaleEditingIndex.value])
 
   const copyRows = () => props.modelValue.map((sku) => ({ ...sku }))
 
@@ -285,6 +327,26 @@
     commit(rows)
   }
 
+  const openWholesaleDialog = (index: number) => {
+    wholesaleEditingIndex.value = index
+    wholesaleDraft.value = props.modelValue[index].wholesaleTiers.map((tier) => ({ ...tier }))
+    wholesaleDialogVisible.value = true
+  }
+
+  const saveWholesaleTiers = () => {
+    const sku = editingSku.value
+    if (!sku) return
+    const error = validateWholesaleTiers(wholesaleDraft.value, sku.priceCent)
+    if (error) {
+      ElMessage.error(error)
+      return
+    }
+    updateRow(wholesaleEditingIndex.value, {
+      wholesaleTiers: wholesaleDraft.value.map((tier) => ({ ...tier }))
+    })
+    wholesaleDialogVisible.value = false
+  }
+
   const resolveValueName = (sku: ProductEditorSku, groupKey: string) => {
     const group = props.groups.find((item) => item.groupKey === groupKey)
     const value = group?.values.find((item) => sku.specValueKeys.includes(item.valueKey))
@@ -325,6 +387,14 @@
 
   .sku-matrix__required {
     color: var(--el-color-danger);
+  }
+
+  .wholesale-dialog-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+    color: var(--el-text-color-regular);
   }
 
   .sku-image-cell {

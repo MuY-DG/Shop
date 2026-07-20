@@ -19,6 +19,9 @@ interface DatasetEvent {
 
 interface CartItemView extends CartItem {
   priceText: string;
+  retailPriceText: string;
+  wholesaleLabel: string;
+  nextWholesaleText: string;
   lineAmountText: string;
   stockText: string;
   unavailableText: string;
@@ -41,6 +44,13 @@ function toCartItemView(item: CartItem): CartItemView {
   return {
     ...item,
     priceText: formatPrice(item.priceCent),
+    retailPriceText: item.wholesaleTierMinQuantity ? formatPrice(item.retailPriceCent) : "",
+    wholesaleLabel: item.wholesaleTierMinQuantity
+      ? `已享 ${item.wholesaleTierMinQuantity} 件起批发价`
+      : "",
+    nextWholesaleText: item.nextWholesaleTierQuantityNeeded && item.nextWholesaleTierPriceCent
+      ? `再买 ${item.nextWholesaleTierQuantityNeeded} 件，每件 ${formatPrice(item.nextWholesaleTierPriceCent)}`
+      : "",
     lineAmountText: formatPrice(item.lineAmountCent),
     stockText: `库存 ${item.stockAvailable}`,
     unavailableText: unavailableText(item)

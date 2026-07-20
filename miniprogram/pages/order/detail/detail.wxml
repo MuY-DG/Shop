@@ -56,7 +56,13 @@
             <view class="item-subtitle">{{item.productSubtitle}}</view>
             <view class="item-spec">{{item.specText}}</view>
             <view class="item-meta">
-              <view class="price">{{item.unitPriceText}}</view>
+              <view>
+                <view class="item-price-row">
+                  <view class="price">{{item.unitPriceText}}</view>
+                  <view wx:if="{{item.retailUnitPriceText}}" class="retail-price">{{item.retailUnitPriceText}}</view>
+                </view>
+                <view wx:if="{{item.wholesaleLabel}}" class="wholesale-label">{{item.wholesaleLabel}}</view>
+              </view>
               <view class="quantity">x{{item.quantity}}</view>
             </view>
             <view class="line-amount">{{item.lineAmountText}}</view>

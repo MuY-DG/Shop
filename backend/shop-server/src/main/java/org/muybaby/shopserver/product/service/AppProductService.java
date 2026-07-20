@@ -11,6 +11,7 @@ import org.muybaby.shopserver.product.dto.AppSkuResponse;
 import org.muybaby.shopserver.product.dto.AppSpuDetailResponse;
 import org.muybaby.shopserver.product.dto.AppSpuListItemResponse;
 import org.muybaby.shopserver.product.dto.ProductImageResponse;
+import org.muybaby.shopserver.product.dto.WholesaleTierResponse;
 import org.muybaby.shopserver.product.dto.ProductPageRequest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -164,6 +165,15 @@ public class AppProductService {
                 .param("status", SkuStatus.ENABLED.name())
                 .query(this::mapAppSku)
                 .list();
+        Map<Long, List<WholesaleTierResponse>> wholesaleTiersBySkuId = findWholesaleTiers(spuId);
+        skus = skus.stream()
+                .map(sku -> new AppSkuResponse(
+                        sku.id(), sku.skuCode(), sku.specJson(), sku.specText(), sku.priceCent(),
+                        sku.originalPriceCent(), sku.stockAvailable(), sku.weightGram(), sku.image(),
+                        sku.imageFileId(), sku.status(),
+                        wholesaleTiersBySkuId.getOrDefault(sku.id(), List.of())
+                ))
+                .toList();
 
         return new AppSpuDetailResponse(
                 spu.id(),
@@ -242,8 +252,36 @@ public class AppProductService {
                 rs.getObject("weight_gram", Integer.class),
                 rs.getString("image"),
                 rs.getObject("image_file_id", Long.class),
-                rs.getString("status")
+                rs.getString("status"),
+                List.of()
         );
+    }
+
+    private Map<Long, List<WholesaleTierResponse>> findWholesaleTiers(Long spuId) {
+        List<AppWholesaleTierRow> rows = jdbcClient.sql("""
+                        select t.sku_id, t.min_quantity, t.unit_price_cent
+                        from product_sku_wholesale_tier t
+                        join product_sku k on k.id = t.sku_id
+                        where k.spu_id = :spuId
+                          and k.status = :status
+                          and k.deleted_at is null
+                        order by t.sku_id, t.min_quantity, t.id
+                        """)
+                .param("spuId", spuId)
+                .param("status", SkuStatus.ENABLED.name())
+                .query((rs, rowNum) -> new AppWholesaleTierRow(
+                        rs.getLong("sku_id"),
+                        new WholesaleTierResponse(
+                                rs.getInt("min_quantity"),
+                                rs.getLong("unit_price_cent")
+                        )
+                ))
+                .list();
+        Map<Long, List<WholesaleTierResponse>> result = new java.util.LinkedHashMap<>();
+        for (AppWholesaleTierRow row : rows) {
+            result.computeIfAbsent(row.skuId(), ignored -> new java.util.ArrayList<>()).add(row.tier());
+        }
+        return result;
     }
 
     private String likeKeyword(String keyword) {
@@ -284,5 +322,8 @@ public class AppProductService {
             Long maxPriceCent,
             Integer totalStock
     ) {
+    }
+
+    private record AppWholesaleTierRow(Long skuId, WholesaleTierResponse tier) {
     }
 }

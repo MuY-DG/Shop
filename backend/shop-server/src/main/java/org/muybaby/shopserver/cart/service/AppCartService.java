@@ -370,8 +370,12 @@ public class AppCartService {
                        ci.updated_at,
                        k.spu_id,
                        k.spec_text,
-                       k.price_cent,
+                       COALESCE(applied_tier.unit_price_cent, k.price_cent) AS price_cent,
+                       k.price_cent AS retail_price_cent,
                        k.original_price_cent,
+                       applied_tier.min_quantity AS wholesale_tier_min_quantity,
+                       next_tier.min_quantity AS next_wholesale_tier_min_quantity,
+                       next_tier.unit_price_cent AS next_wholesale_tier_price_cent,
                        k.stock_available,
                        k.image AS sku_image,
                        k.status AS sku_status,
@@ -387,6 +391,22 @@ public class AppCartService {
                                       AND s.deleted_at IS NULL
                                       AND s.purged_at IS NULL
                 JOIN product_category c ON c.id = s.category_id
+                LEFT JOIN product_sku_wholesale_tier applied_tier
+                       ON applied_tier.sku_id = k.id
+                      AND applied_tier.min_quantity = (
+                          SELECT MAX(candidate.min_quantity)
+                          FROM product_sku_wholesale_tier candidate
+                          WHERE candidate.sku_id = k.id
+                            AND candidate.min_quantity <= ci.quantity
+                      )
+                LEFT JOIN product_sku_wholesale_tier next_tier
+                       ON next_tier.sku_id = k.id
+                      AND next_tier.min_quantity = (
+                          SELECT MIN(candidate.min_quantity)
+                          FROM product_sku_wholesale_tier candidate
+                          WHERE candidate.sku_id = k.id
+                            AND candidate.min_quantity > ci.quantity
+                      )
                 """;
     }
 
@@ -394,7 +414,11 @@ public class AppCartService {
         int quantity = rs.getInt("quantity");
         Long spuId = valueOrZero(rs.getObject("spu_id", Long.class));
         Long priceCent = valueOrZero(rs.getObject("price_cent", Long.class));
+        Long retailPriceCent = valueOrZero(rs.getObject("retail_price_cent", Long.class));
         Long originalPriceCent = valueOrZero(rs.getObject("original_price_cent", Long.class));
+        Integer wholesaleTierMinQuantity = rs.getObject("wholesale_tier_min_quantity", Integer.class);
+        Integer nextWholesaleTierMinQuantity = rs.getObject("next_wholesale_tier_min_quantity", Integer.class);
+        Long nextWholesaleTierPriceCent = rs.getObject("next_wholesale_tier_price_cent", Long.class);
         Integer stockAvailable = valueOrZero(rs.getObject("stock_available", Integer.class));
         String skuStatus = rs.getString("sku_status");
         String spuStatus = rs.getString("spu_status");
@@ -413,7 +437,12 @@ public class AppCartService {
                 StringUtils.hasText(skuImage) ? skuImage : mainImage,
                 defaultString(rs.getString("spec_text")),
                 priceCent,
+                retailPriceCent,
                 originalPriceCent,
+                wholesaleTierMinQuantity,
+                nextWholesaleTierMinQuantity,
+                nextWholesaleTierPriceCent,
+                nextWholesaleTierMinQuantity == null ? null : nextWholesaleTierMinQuantity - quantity,
                 quantity,
                 priceCent * quantity,
                 stockAvailable,

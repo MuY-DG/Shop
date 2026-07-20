@@ -286,6 +286,8 @@ public class AdminOrderService {
                                spec_text,
                                original_price_cent,
                                unit_price_cent,
+                               retail_unit_price_cent,
+                               wholesale_tier_min_quantity,
                                quantity,
                                line_original_amount_cent,
                                line_amount_cent
@@ -574,6 +576,8 @@ public class AdminOrderService {
                 rs.getString("spec_text"),
                 rs.getLong("original_price_cent"),
                 rs.getLong("unit_price_cent"),
+                rs.getLong("retail_unit_price_cent"),
+                rs.getObject("wholesale_tier_min_quantity", Integer.class),
                 rs.getInt("quantity"),
                 rs.getLong("line_original_amount_cent"),
                 rs.getLong("line_amount_cent")

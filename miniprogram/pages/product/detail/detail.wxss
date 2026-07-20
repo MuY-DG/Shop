@@ -82,6 +82,29 @@
   font-weight: 800;
 }
 
+.price-block {
+  display: flex;
+  gap: 14rpx;
+  align-items: baseline;
+}
+
+.retail-price {
+  color: #9a8d85;
+  font-size: 22rpx;
+  text-decoration: line-through;
+}
+
+.wholesale-badge {
+  display: inline-flex;
+  margin-top: 12rpx;
+  padding: 5rpx 10rpx;
+  border-radius: 6rpx;
+  background: #b3261e;
+  color: #ffffff;
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
 .stock {
   color: #7a6f68;
   font-size: 24rpx;
@@ -104,6 +127,40 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.wholesale-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.wholesale-tier {
+  padding: 16rpx;
+  border: 1rpx solid #ead9cf;
+  border-radius: 10rpx;
+  color: #7a6f68;
+  font-size: 23rpx;
+}
+
+.wholesale-tier.active {
+  border-color: #b3261e;
+  background: #fff3ef;
+  color: #b3261e;
+}
+
+.wholesale-price {
+  margin-top: 6rpx;
+  color: #b3261e;
+  font-size: 27rpx;
+  font-weight: 800;
+}
+
+.quantity-wholesale-hint {
+  margin-top: 12rpx;
+  color: #8b5a09;
+  font-size: 22rpx;
+  line-height: 32rpx;
 }
 
 .section-title {
