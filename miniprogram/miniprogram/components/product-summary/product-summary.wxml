@@ -1,11 +1,4 @@
 <view class="summary-card">
-  <view class="summary-topline">
-    <text class="category-pill">{{detail.categoryName}}</text>
-    <text class="stock-text">{{stockText}}</text>
-  </view>
-  <view class="product-title">{{detail.title}}</view>
-  <view wx:if="{{detail.subtitle}}" class="product-subtitle">{{detail.subtitle}}</view>
-
   <view class="price-row">
     <view wx:if="{{priceText}}" class="current-price">
       <text class="currency">¥</text>
@@ -15,11 +8,46 @@
     <text wx:else class="price-unavailable">暂无报价</text>
     <text wx:if="{{hasOriginalPrice}}" class="original-price">¥{{originalPriceText}}</text>
     <text wx:if="{{wholesaleApplied}}" class="wholesale-active">批发价已生效</text>
+    <text wx:if="{{salesText}}" class="sales-text">{{salesText}}</text>
   </view>
 
-  <view wx:if="{{detail.sellingPoints.length}}" class="selling-points">
-    <text wx:for="{{detail.sellingPoints}}" wx:key="*this" class="selling-point">
-      {{item}}
-    </text>
-  </view>
+  <view class="product-title">{{detail.title}}</view>
+  <view wx:if="{{detail.subtitle}}" class="product-subtitle">{{detail.subtitle}}</view>
+
+  <scroll-view
+    wx:if="{{weightParameter || spiceParameter || otherParameters.length}}"
+    class="parameter-strip"
+    scroll-x="{{true}}"
+    enhanced="{{true}}"
+    show-scrollbar="{{false}}"
+    enable-flex="{{true}}"
+  >
+    <view class="parameter-track">
+      <view wx:if="{{weightParameter}}" class="parameter-item">
+        <text class="parameter-name">净含量：</text>
+        <text class="parameter-value">{{weightParameter.value}}</text>
+      </view>
+      <view wx:if="{{weightParameter && weightParameter.fact.servingText}}" class="parameter-item">
+        <text class="parameter-value">{{weightParameter.fact.servingText}}</text>
+      </view>
+      <view wx:if="{{spiceParameter}}" class="parameter-item parameter-item--spice">
+        <text class="parameter-name">辣度：</text>
+        <text class="parameter-spice parameter-spice--{{spiceParameter.fact.spiceTone}}">{{spiceParameter.value}}</text>
+        <view class="parameter-icons">
+          <image
+            wx:for="{{spiceParameter.fact.spiceIconIndexes}}"
+            wx:for-item="iconIndex"
+            wx:key="*this"
+            class="parameter-icon"
+            src="{{spiceParameter.fact.iconPath}}"
+            mode="aspectFit"
+          />
+        </view>
+      </view>
+      <view wx:for="{{otherParameters}}" wx:key="id" class="parameter-item">
+        <text class="parameter-name">{{item.name}}：</text>
+        <text class="parameter-value">{{item.value}}</text>
+      </view>
+    </view>
+  </scroll-view>
 </view>

@@ -43,7 +43,15 @@
           <view class="product-card__fact product-card__fact--spice product-card__fact--{{feature.spiceTone}}">
             <text>{{feature.text}}</text>
           </view>
-          <image class="product-card__fact-icon" src="{{feature.iconPath}}" mode="aspectFit" />
+          <view class="product-card__fact-icons">
+            <image
+              wx:for="{{feature.spiceIconIndexes}}"
+              wx:key="*this"
+              class="product-card__fact-icon"
+              src="{{feature.iconPath}}"
+              mode="aspectFit"
+            />
+          </view>
         </view>
         <view
           wx:elif="{{feature.kind === 'weight'}}"

@@ -7,11 +7,14 @@ import {
   buildGalleryImages,
   buildParameterViews,
   buildProductListQuery,
+  buildSpecificationPreviewUrls,
   buildSkuOptions,
+  buildSkuSpecificationGroups,
   findDefaultSku,
   normalizeProductKeyword,
   parsePositiveId,
-  resolvePurchaseSelection
+  resolvePurchaseSelection,
+  resolveSkuSpecificationSelection
 } from "../miniprogram/features/product-catalog";
 import type {
   ProductCategory,
@@ -135,7 +138,8 @@ test("列表商品映射价格区间、库存和参数卡片语义", () => {
       tone: "orange",
       kind: "spice",
       spiceTone: "medium",
-      iconPath: "/assets/icons/chili-pepper-red.svg"
+      iconPath: "/assets/icons/chili-pepper-red.svg",
+      spiceIconIndexes: [0, 1]
     },
     {
       text: "500g",
@@ -143,6 +147,7 @@ test("列表商品映射价格区间、库存和参数卡片语义", () => {
       kind: "weight",
       spiceTone: "",
       iconPath: "",
+      spiceIconIndexes: [],
       servingText: "适合3-5人"
     }
   ]);
@@ -157,6 +162,7 @@ test("详情图片去重并将参数映射为展示数据", () => {
     id: 41,
     categoryId: 5,
     categoryName: "麻辣",
+    salesCount: 0,
     title: "经典牛油锅底",
     mainImage: "https://example.test/main.png",
     sellingPoints: [],
@@ -166,7 +172,14 @@ test("详情图片去重并将参数映射为展示数据", () => {
       { url: "https://example.test/a.png", sortOrder: 3 }
     ],
     skus: [],
-    parameters: [parameter()]
+    parameters: [parameter()],
+    freightTemplate: {
+      id: 1,
+      name: "全国包邮",
+      chargeMode: "FREE",
+      fixedAmountCent: 0
+    },
+    guaranteeServices: []
   };
   assert.deepEqual(
     buildGalleryImages(detail).map((image) => image.url),
@@ -176,6 +189,20 @@ test("详情图片去重并将参数映射为展示数据", () => {
   assert.equal(parameters.length, 1);
   assert.equal(parameters[0]?.name, "辣度");
   assert.equal(parameters[0]?.fact.kind, "spice");
+
+  const genericParameters = buildParameterViews([
+    parameter({
+      parameterId: 9,
+      parameterCode: "MATERIAL",
+      parameterName: "原料",
+      displayText: "精选牛油",
+      cardRenderer: "TEXT",
+      selectedOptions: []
+    })
+  ]);
+  assert.equal(genericParameters[0]?.fact.kind, "default");
+  assert.deepEqual(genericParameters[0]?.fact.spiceIconIndexes, []);
+  assert.deepEqual(buildParameterViews([]), []);
 });
 
 test("默认规格、库存禁用态和批发阶梯价随数量联动", () => {
@@ -193,6 +220,14 @@ test("默认规格、库存禁用态和批发阶梯价随数量联动", () => {
       { id: 101, selected: true, disabled: false }
     ]
   );
+
+  const fallbackImageOptions = buildSkuOptions(
+    [sku({ image: "" })],
+    101,
+    "https://example.test/fallback.png"
+  );
+  assert.equal(fallbackImageOptions[0]?.imageUrl, "https://example.test/fallback.png");
+  assert.equal(fallbackImageOptions[0]?.hasImage, true);
 
   const retail = resolvePurchaseSelection(available, 1);
   assert.equal(retail.priceText, "20.00");
@@ -215,4 +250,63 @@ test("默认规格、库存禁用态和批发阶梯价随数量联动", () => {
   const empty = resolvePurchaseSelection(unavailable, 1);
   assert.equal(empty.selectedSkuId, 0);
   assert.equal(empty.quantityMax, 0);
+});
+
+test("规格按名称和值分组并只允许选择真实可售组合", () => {
+  const variants = [
+    sku({ id: 201, specJson: "{\"颜色\":\"红色\",\"尺寸\":\"x\"}", specText: "红色 / x", image: "https://example.test/red.png", stockAvailable: 3 }),
+    sku({ id: 202, specJson: "{\"颜色\":\"红色\",\"尺寸\":\"l\"}", specText: "红色 / l", image: "https://example.test/red.png", stockAvailable: 5 }),
+    sku({ id: 203, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"x\"}", specText: "绿色 / x", image: "https://example.test/green.png", stockAvailable: 0 }),
+    sku({ id: 204, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"l\"}", specText: "绿色 / l", image: "https://example.test/green.png", stockAvailable: 4 })
+  ];
+
+  const redSmallGroups = buildSkuSpecificationGroups(variants, 201);
+  assert.deepEqual(redSmallGroups.map((group) => ({
+    name: group.name,
+    options: group.options.map((option) => ({
+      value: option.value,
+      selected: option.selected,
+      disabled: option.disabled
+    }))
+  })), [
+    {
+      name: "颜色",
+      options: [
+        { value: "红色", selected: true, disabled: false },
+        { value: "绿色", selected: false, disabled: true }
+      ]
+    },
+    {
+      name: "尺寸",
+      options: [
+        { value: "x", selected: true, disabled: false },
+        { value: "l", selected: false, disabled: false }
+      ]
+    }
+  ]);
+  assert.equal(redSmallGroups[0]?.hasImages, true);
+  assert.equal(redSmallGroups[0]?.options[0]?.imageUrl, "https://example.test/red.png");
+  assert.equal(redSmallGroups[1]?.hasImages, false);
+  assert.equal(redSmallGroups[1]?.options.every((option) => !option.hasImage), true);
+  assert.deepEqual(buildSpecificationPreviewUrls(redSmallGroups), [
+    "https://example.test/red.png",
+    "https://example.test/green.png"
+  ]);
+  assert.deepEqual(
+    buildSpecificationPreviewUrls(redSmallGroups, "https://example.test/green.png"),
+    ["https://example.test/green.png", "https://example.test/red.png"]
+  );
+
+  const redLarge = resolveSkuSpecificationSelection(variants, 201, "尺寸", "l");
+  assert.equal(redLarge?.id, 202);
+  const redLargeGroups = buildSkuSpecificationGroups(variants, redLarge?.id ?? 0);
+  assert.equal(redLargeGroups[0]?.options[1]?.disabled, false);
+  assert.equal(resolveSkuSpecificationSelection(variants, 202, "颜色", "绿色")?.id, 204);
+  assert.equal(resolveSkuSpecificationSelection(variants, 201, "颜色", "绿色"), undefined);
+
+  const legacyGroups = buildSkuSpecificationGroups([
+    sku({ id: 205, specJson: "invalid", specText: "500g 袋装" })
+  ], 205);
+  assert.equal(legacyGroups[0]?.name, "规格");
+  assert.equal(legacyGroups[0]?.options[0]?.value, "500g 袋装");
 });

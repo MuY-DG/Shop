@@ -3,6 +3,7 @@ import type { PageResult } from "./api";
 export type ProductParameterCardRole = "HIGHLIGHT" | "META";
 export type ProductParameterCardRenderer = "TEXT" | "PILL" | "LEVEL" | "SPICE";
 export type ProductSkuStatus = "ENABLED" | "DISABLED";
+export type ProductFreightChargeMode = "FREE" | "FIXED";
 
 export interface ProductCategory {
   id: number;
@@ -31,6 +32,22 @@ export interface ProductParameterValue {
   cardRenderer: ProductParameterCardRenderer;
   cardPriority: number;
   selectedOptions: ProductParameterOptionValue[];
+}
+
+export interface ProductFreightTemplate {
+  id: number;
+  name: string;
+  chargeMode: ProductFreightChargeMode;
+  fixedAmountCent: number;
+}
+
+export interface ProductGuaranteeService {
+  id: number;
+  termsName: string;
+  contentDescription: string;
+  icon: string;
+  iconFileId?: number;
+  sortOrder: number;
 }
 
 export interface ProductListItem {
@@ -90,9 +107,12 @@ export interface ProductDetail {
   subtitle?: string;
   mainImage?: string;
   mainImageFileId?: number;
+  salesCount: number;
   sellingPoints: string[];
   detailHtml?: string;
   images: ProductImage[];
   skus: ProductSku[];
   parameters: ProductParameterValue[];
+  freightTemplate: ProductFreightTemplate;
+  guaranteeServices: ProductGuaranteeService[];
 }

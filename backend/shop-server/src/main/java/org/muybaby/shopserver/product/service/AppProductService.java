@@ -3,9 +3,13 @@ package org.muybaby.shopserver.product.service;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.product.FreightChargeMode;
+import org.muybaby.shopserver.product.FreightTemplateStatus;
 import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.product.dto.AppCategoryResponse;
+import org.muybaby.shopserver.product.dto.AppFreightTemplateResponse;
+import org.muybaby.shopserver.product.dto.AppGuaranteeServiceResponse;
 import org.muybaby.shopserver.product.dto.AppProductParameterValueResponse;
 import org.muybaby.shopserver.product.dto.AppSkuResponse;
 import org.muybaby.shopserver.product.dto.AppSpuDetailResponse;
@@ -124,9 +128,21 @@ public class AppProductService {
         SpuDetailRow spu = jdbcClient.sql("""
                         SELECT s.id, s.category_id, c.name AS category_name, s.title, s.subtitle, s.main_image,
                                s.main_image_file_id,
-                               s.selling_points, s.detail_html
+                               s.virtual_sales + COALESCE((
+                                   SELECT SUM(oi.quantity)
+                                   FROM order_item oi
+                                   JOIN shop_order o ON o.id = oi.order_id
+                                   WHERE oi.spu_id = s.id AND o.paid_at IS NOT NULL
+                               ), 0) AS sales_count,
+                               s.selling_points, s.detail_html,
+                               f.id AS freight_template_id, f.name AS freight_template_name,
+                               f.charge_mode AS freight_charge_mode,
+                               f.fixed_amount_cent AS freight_fixed_amount_cent
                         FROM product_spu s
                         JOIN product_category c ON c.id = s.category_id
+                        JOIN freight_template f ON f.id = s.freight_template_id
+                            AND f.status = :freightStatus
+                            AND f.deleted_at IS NULL
                         WHERE s.id = :spuId
                           AND s.status = :status
                           AND s.deleted_at IS NULL
@@ -135,6 +151,7 @@ public class AppProductService {
                 .param("spuId", spuId)
                 .param("status", ProductStatus.ON_SALE.name())
                 .param("categoryStatus", "ENABLED")
+                .param("freightStatus", FreightTemplateStatus.ENABLED.name())
                 .query(this::mapSpuDetailRow)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE));
@@ -174,6 +191,7 @@ public class AppProductService {
                         wholesaleTiersBySkuId.getOrDefault(sku.id(), List.of())
                 ))
                 .toList();
+        List<AppGuaranteeServiceResponse> guaranteeServices = findGuaranteeServices(spuId);
 
         return new AppSpuDetailResponse(
                 spu.id(),
@@ -183,11 +201,14 @@ public class AppProductService {
                 spu.subtitle(),
                 spu.mainImage(),
                 spu.mainImageFileId(),
+                spu.salesCount(),
                 splitSellingPoints(spu.sellingPoints()),
                 spu.detailHtml(),
                 images,
                 skus,
-                productParameterService.displayValues(spuId, false)
+                productParameterService.displayValues(spuId, false),
+                spu.freightTemplate(),
+                guaranteeServices
         );
     }
 
@@ -226,8 +247,15 @@ public class AppProductService {
                 rs.getString("subtitle"),
                 rs.getString("main_image"),
                 rs.getObject("main_image_file_id", Long.class),
+                rs.getLong("sales_count"),
                 rs.getString("selling_points"),
-                rs.getString("detail_html")
+                rs.getString("detail_html"),
+                new AppFreightTemplateResponse(
+                        rs.getLong("freight_template_id"),
+                        rs.getString("freight_template_name"),
+                        FreightChargeMode.valueOf(rs.getString("freight_charge_mode")),
+                        rs.getLong("freight_fixed_amount_cent")
+                )
         );
     }
 
@@ -284,6 +312,29 @@ public class AppProductService {
         return result;
     }
 
+    private List<AppGuaranteeServiceResponse> findGuaranteeServices(Long spuId) {
+        return jdbcClient.sql("""
+                        select s.id, s.terms_name, s.content_description, s.icon, s.icon_file_id,
+                               binding.sort_order
+                        from product_spu_guarantee_service binding
+                        join product_guarantee_service s on s.id = binding.service_id
+                        where binding.spu_id = :spuId
+                          and s.visible = true
+                          and s.deleted_at is null
+                        order by binding.sort_order asc, s.sort_order asc, s.id asc
+                        """)
+                .param("spuId", spuId)
+                .query((rs, rowNum) -> new AppGuaranteeServiceResponse(
+                        rs.getLong("id"),
+                        rs.getString("terms_name"),
+                        rs.getString("content_description"),
+                        rs.getString("icon"),
+                        rs.getObject("icon_file_id", Long.class),
+                        rs.getInt("sort_order")
+                ))
+                .list();
+    }
+
     private String likeKeyword(String keyword) {
         return StringUtils.hasText(keyword) ? "%" + keyword.trim() + "%" : null;
     }
@@ -306,8 +357,10 @@ public class AppProductService {
             String subtitle,
             String mainImage,
             Long mainImageFileId,
+            Long salesCount,
             String sellingPoints,
-            String detailHtml
+            String detailHtml,
+            AppFreightTemplateResponse freightTemplate
     ) {
     }
 

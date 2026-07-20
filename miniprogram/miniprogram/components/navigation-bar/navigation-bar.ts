@@ -150,6 +150,10 @@ Component({
       type: Boolean,
       value: true,
     },
+    roundBack: {
+      type: Boolean,
+      value: false,
+    },
     delta: {
       type: Number,
       value: 1,

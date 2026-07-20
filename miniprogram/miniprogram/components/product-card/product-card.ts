@@ -24,6 +24,7 @@ interface ProductCardValue {
     kind: string;
     spiceTone: string;
     iconPath: string;
+    spiceIconIndexes?: number[];
     servingText?: string;
   }>;
   wholesaleText: string;

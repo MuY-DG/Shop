@@ -13,14 +13,19 @@
     <view class="navigation-bar__left" style="width: {{sideWidth}}px;">
       <view
         wx:if="{{back}}"
-        class="navigation-bar__action"
+        class="navigation-bar__action {{roundBack ? 'navigation-bar__action--round' : ''}}"
         bindtap="handleBack"
         hover-class="navigation-bar__action--active"
         hover-stay-time="80"
         aria-role="button"
         aria-label="返回上一页"
       >
-        <view class="navigation-bar__back-icon" aria-hidden="true"></view>
+        <image
+          class="navigation-bar__back-icon"
+          src="/assets/icons/chevron-left-medium.svg"
+          mode="aspectFit"
+          aria-hidden="true"
+        />
       </view>
 
       <view

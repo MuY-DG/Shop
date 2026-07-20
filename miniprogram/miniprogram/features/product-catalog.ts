@@ -61,8 +61,26 @@ export interface SkuOptionView {
   name: string;
   priceText: string;
   stockText: string;
+  imageUrl: string;
+  hasImage: boolean;
   selected: boolean;
   disabled: boolean;
+}
+
+export interface SkuSpecificationOptionView {
+  key: string;
+  value: string;
+  imageUrl: string;
+  hasImage: boolean;
+  selected: boolean;
+  disabled: boolean;
+}
+
+export interface SkuSpecificationGroupView {
+  key: string;
+  name: string;
+  hasImages: boolean;
+  options: SkuSpecificationOptionView[];
 }
 
 export interface WholesaleTierView {
@@ -317,13 +335,194 @@ function validSku(sku: ProductSku): boolean {
     nonNegativeInteger(sku.priceCent) !== undefined;
 }
 
+function skuSpecificationEntries(sku: ProductSku): Array<[string, string]> {
+  const specJson = cleanText(sku?.specJson);
+  if (specJson) {
+    try {
+      const parsed = JSON.parse(specJson) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const entries = Object.entries(parsed as Record<string, unknown>)
+          .map(([rawName, rawValue]) => {
+            const name = cleanText(rawName);
+            const value = typeof rawValue === "string" || typeof rawValue === "number"
+              ? String(rawValue).trim()
+              : "";
+            return [name, value] as [string, string];
+          })
+          .filter(([name, value]) => Boolean(name && value));
+        if (entries.length) {
+          return entries;
+        }
+      }
+    } catch {
+      // Legacy SKUs may carry malformed JSON; fall back to their display text.
+    }
+  }
+  const fallbackValue = cleanText(sku?.specText) || "默认规格";
+  return [["规格", fallbackValue]];
+}
+
+function skuSpecificationMap(sku: ProductSku): Map<string, string> {
+  return new Map(skuSpecificationEntries(sku));
+}
+
+function skuSpecificationImageGroup(
+  normalizedSkus: Array<{ sku: ProductSku; values: Map<string, string> }>,
+  groupNames: string[]
+): string {
+  let bestName = "";
+  let bestScore = 0;
+  groupNames.forEach((name) => {
+    const imagesByValue = new Map<string, Set<string>>();
+    normalizedSkus.forEach(({ sku, values }) => {
+      const value = values.get(name);
+      const imageUrl = cleanText(sku.image);
+      if (!value || !imageUrl) {
+        return;
+      }
+      const images = imagesByValue.get(value) ?? new Set<string>();
+      images.add(imageUrl);
+      imagesByValue.set(value, images);
+    });
+    const representativeImages = Array.from(imagesByValue.values())
+      .map((images) => Array.from(images)[0])
+      .filter(Boolean);
+    if (!representativeImages.length) {
+      return;
+    }
+    const stableValueCount = Array.from(imagesByValue.values())
+      .filter((images) => images.size === 1).length;
+    const distinctImageCount = new Set(representativeImages).size;
+    const ambiguityPenalty = Array.from(imagesByValue.values())
+      .reduce((total, images) => total + Math.max(0, images.size - 1), 0);
+    const score = representativeImages.length * 10 + distinctImageCount * 3 +
+      stableValueCount - ambiguityPenalty * 4;
+    if (score > bestScore) {
+      bestScore = score;
+      bestName = name;
+    }
+  });
+  return bestName;
+}
+
+export function buildSkuSpecificationGroups(
+  skus: ProductSku[],
+  selectedSkuId: number
+): SkuSpecificationGroupView[] {
+  const normalizedSkus = (Array.isArray(skus) ? skus : [])
+    .filter((sku) => positiveInteger(sku?.id))
+    .map((sku) => ({ sku, values: skuSpecificationMap(sku) }));
+  const selectedSku = normalizedSkus.find(({ sku }) => sku.id === selectedSkuId)?.sku
+    ?? normalizedSkus.find(({ sku }) => validSku(sku))?.sku;
+  const selectedValues = selectedSku ? skuSpecificationMap(selectedSku) : new Map<string, string>();
+  const groupNames: string[] = [];
+  normalizedSkus.forEach(({ values }) => {
+    values.forEach((_value, name) => {
+      if (!groupNames.includes(name)) {
+        groupNames.push(name);
+      }
+    });
+  });
+  const imageGroupName = skuSpecificationImageGroup(normalizedSkus, groupNames);
+
+  return groupNames.map((name, groupIndex) => {
+    const values: string[] = [];
+    normalizedSkus.forEach(({ values: specificationValues }) => {
+      const value = specificationValues.get(name);
+      if (value && !values.includes(value)) {
+        values.push(value);
+      }
+    });
+    return {
+      key: `${groupIndex}-${name}`,
+      name,
+      hasImages: name === imageGroupName,
+      options: values.map((value, optionIndex) => {
+        const available = normalizedSkus.some(({ sku, values: candidateValues }) => {
+          if (!validSku(sku) || candidateValues.get(name) !== value) {
+            return false;
+          }
+          return groupNames.every((otherName) => (
+            otherName === name ||
+            !selectedValues.has(otherName) ||
+            candidateValues.get(otherName) === selectedValues.get(otherName)
+          ));
+        });
+        const imageUrl = name === imageGroupName
+          ? cleanText(normalizedSkus.find(({ sku, values: candidateValues }) => (
+            candidateValues.get(name) === value && cleanText(sku.image)
+          ))?.sku.image)
+          : "";
+        return {
+          key: `${groupIndex}-${optionIndex}-${value}`,
+          value,
+          imageUrl,
+          hasImage: Boolean(imageUrl),
+          selected: selectedValues.get(name) === value,
+          disabled: !available
+        };
+      })
+    };
+  });
+}
+
+export function buildSpecificationPreviewUrls(
+  groups: SkuSpecificationGroupView[],
+  currentUrl: unknown = ""
+): string[] {
+  const imageGroup = (Array.isArray(groups) ? groups : [])
+    .find((group) => group?.hasImages);
+  if (!imageGroup) {
+    return [];
+  }
+  const urls = imageGroup.options
+    .filter((option) => option?.hasImage)
+    .map((option) => cleanText(option.imageUrl))
+    .filter((url, index, values) => Boolean(url) && values.indexOf(url) === index);
+  const current = cleanText(currentUrl);
+  return current && urls.includes(current)
+    ? [current, ...urls.filter((url) => url !== current)]
+    : urls;
+}
+
+export function resolveSkuSpecificationSelection(
+  skus: ProductSku[],
+  selectedSkuId: number,
+  specificationName: unknown,
+  specificationValue: unknown
+): ProductSku | undefined {
+  const name = cleanText(specificationName);
+  const value = cleanText(specificationValue);
+  if (!name || !value) {
+    return undefined;
+  }
+  const normalizedSkus = (Array.isArray(skus) ? skus : [])
+    .filter((sku) => positiveInteger(sku?.id));
+  const selectedSku = normalizedSkus.find((sku) => sku.id === selectedSkuId)
+    ?? normalizedSkus.find(validSku);
+  const selectedValues = selectedSku ? skuSpecificationMap(selectedSku) : new Map<string, string>();
+  return normalizedSkus.find((sku) => {
+    if (!validSku(sku)) {
+      return false;
+    }
+    const candidateValues = skuSpecificationMap(sku);
+    if (candidateValues.get(name) !== value) {
+      return false;
+    }
+    return Array.from(selectedValues.entries()).every(([otherName, otherValue]) => (
+      otherName === name || candidateValues.get(otherName) === otherValue
+    ));
+  });
+}
+
 export function findDefaultSku(skus: ProductSku[]): ProductSku | undefined {
   return (Array.isArray(skus) ? skus : []).find(validSku);
 }
 
 export function buildSkuOptions(
   skus: ProductSku[],
-  selectedSkuId: number
+  selectedSkuId: number,
+  fallbackImage = ""
 ): SkuOptionView[] {
   return (Array.isArray(skus) ? skus : [])
     .filter((sku) => positiveInteger(sku?.id))
@@ -334,6 +533,8 @@ export function buildSkuOptions(
         name: cleanText(sku.specText) || "默认规格",
         priceText: formatMoney(sku.priceCent),
         stockText: stock > 0 ? `库存 ${stock}` : "已售罄",
+        imageUrl: cleanText(sku.image) || cleanText(fallbackImage),
+        hasImage: Boolean(cleanText(sku.image) || cleanText(fallbackImage)),
         selected: sku.id === selectedSkuId,
         disabled: !validSku(sku)
       };

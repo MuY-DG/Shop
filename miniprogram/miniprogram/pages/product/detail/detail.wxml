@@ -1,12 +1,41 @@
 <view class="detail-page">
-  <navigation-bar
-    title="商品详情"
-    back="{{true}}"
-    home="{{true}}"
-    loading="{{loading}}"
-    background="#FAF2E4"
-    color="#2E1D16"
-  />
+  <view class="hero-navigation">
+    <navigation-bar
+      title=""
+      back="{{true}}"
+      home="{{false}}"
+      loading="{{loading}}"
+      background="transparent"
+      color="#2E1D16"
+      show-divider="{{false}}"
+      round-back="{{true}}"
+    >
+      <view wx:if="{{detail}}" slot="right" class="hero-actions">
+        <button
+          class="hero-action {{favorited ? 'hero-action--active' : ''}}"
+          bindtap="onFavoriteToggle"
+          hover-class="hero-action--pressed"
+          hover-stay-time="80"
+          aria-label="{{favorited ? '取消收藏' : '收藏商品'}}"
+        >
+          <image
+            class="hero-action__icon hero-action__icon--favorite {{favorited ? 'hero-action__icon--favorited' : ''}}"
+            src="{{favorited ? '/assets/icons/favorite-clarity-solid.svg' : '/assets/icons/favorite-clarity-line.svg'}}"
+            mode="aspectFit"
+          />
+        </button>
+        <button
+          class="hero-action"
+          open-type="share"
+          hover-class="hero-action--pressed"
+          hover-stay-time="80"
+          aria-label="分享商品"
+        >
+          <image class="hero-action__icon" src="/assets/icons/share-weui-outlined.svg" mode="aspectFit" />
+        </button>
+      </view>
+    </navigation-bar>
+  </view>
 
   <view wx:if="{{!loaded && loading}}" class="detail-state">
     <ui-state type="loading" title="正在准备商品详情" description="好味道马上呈现" />
@@ -23,39 +52,85 @@
   </view>
 
   <block wx:elif="{{detail}}">
-    <product-gallery images="{{galleryImages}}" />
+    <scroll-view
+      class="detail-scroll"
+      scroll-y="{{true}}"
+      enhanced="{{true}}"
+      bounces="{{false}}"
+      show-scrollbar="{{false}}"
+      refresher-enabled="{{false}}"
+    >
+      <view class="hero-section">
+        <product-gallery images="{{galleryImages}}" />
+      </view>
 
-    <view class="detail-content">
+      <view class="detail-content">
       <product-summary
         detail="{{detail}}"
-        stock-text="{{stockText}}"
         price-text="{{priceText}}"
         price-integer-text="{{priceIntegerText}}"
         price-decimal-text="{{priceDecimalText}}"
         original-price-text="{{originalPriceText}}"
         has-original-price="{{hasOriginalPrice}}"
         wholesale-applied="{{wholesaleApplied}}"
+        sales-text="已售 {{detail.salesCount}}+"
+        weight-parameter="{{weightParameter}}"
+        spice-parameter="{{spiceParameter}}"
+        other-parameters="{{otherParameterViews}}"
       />
 
-      <product-parameters
-        wx:if="{{parameterViews.length}}"
-        items="{{parameterViews}}"
-      />
+      <scroll-view
+        wx:if="{{benefitItems.length}}"
+        class="benefit-scroll"
+        scroll-x="{{true}}"
+        enhanced="{{true}}"
+        show-scrollbar="{{false}}"
+        enable-flex="{{true}}"
+      >
+        <view class="benefit-track">
+          <view
+            wx:for="{{benefitItems}}"
+            wx:key="key"
+            class="benefit-card {{item.interactive ? 'benefit-card--interactive' : 'benefit-card--plain'}}"
+            data-sheet="{{item.sheet}}"
+            bindtap="onInfoSheetOpen"
+            aria-role="{{item.interactive ? 'button' : 'text'}}"
+            aria-label="{{item.text}}"
+          >
+            <image wx:if="{{item.iconUrl}}" class="benefit-icon" src="{{item.iconUrl}}" mode="aspectFit" />
+            <text class="benefit-text">{{item.text}}</text>
+          </view>
+        </view>
+      </scroll-view>
 
-      <sku-selector options="{{skuOptions}}" bindselect="onSkuSelect" />
-
-      <wholesale-pricing
-        wx:if="{{wholesaleTiers.length}}"
-        tiers="{{wholesaleTiers}}"
-      />
-
-      <quantity-stepper
-        quantity="{{quantity}}"
-        maximum="{{quantityMax}}"
-        hint="{{wholesaleHint}}"
-        bindminus="onQuantityMinus"
-        bindplus="onQuantityPlus"
-      />
+      <view class="commerce-card">
+        <view
+          wx:if="{{wholesaleSummary}}"
+          class="commerce-row commerce-row--interactive"
+          data-sheet="wholesale"
+          bindtap="onInfoSheetOpen"
+          aria-role="button"
+          aria-label="查看全部批发价格"
+        >
+          <image class="commerce-icon" src="/assets/icons/sell-outline-rounded.svg" mode="aspectFit" />
+          <view class="commerce-value">
+            <text class="commerce-value__text">{{wholesaleSummary}}</text>
+          </view>
+          <image class="commerce-action-icon" src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
+        </view>
+        <view
+          class="commerce-row commerce-row--interactive"
+          bindtap="onChooseAddress"
+          aria-role="button"
+          aria-label="选择收货地址"
+        >
+          <image class="commerce-icon" src="/assets/icons/location-on-outline-rounded.svg" mode="aspectFit" />
+          <view class="commerce-value {{addressText ? '' : 'commerce-value--empty'}}">
+            <text class="commerce-value__text">{{addressText || '请选择收货地址'}}</text>
+          </view>
+          <image class="commerce-action-icon" src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
+        </view>
+      </view>
 
       <view wx:if="{{detail.detailHtml}}" class="detail-card rich-detail">
         <view class="section-heading">
@@ -63,10 +138,254 @@
         </view>
         <rich-text nodes="{{detail.detailHtml}}" />
       </view>
+      </view>
+    </scroll-view>
 
-      <view class="phase-note">
-        当前可查看规格与价格，购物车和购买服务即将开放。
+    <view class="purchase-bar">
+      <view class="purchase-utilities">
+        <button class="utility-action" open-type="contact" aria-label="联系客服">
+          <view class="utility-icon-frame">
+            <image class="utility-icon utility-icon--support" src="/assets/icons/support-agent-outline-rounded.svg" mode="aspectFit" />
+          </view>
+          <text class="utility-label">客服</text>
+        </button>
+        <button class="utility-action" bindtap="onGoToCart" aria-label="前往购物车">
+          <view class="utility-icon-frame">
+            <image class="utility-icon" src="/assets/icons/shopping-cart-brand.svg" mode="aspectFit" />
+          </view>
+          <text class="utility-label">购物车</text>
+        </button>
+      </view>
+      <view class="purchase-actions">
+        <button
+          class="purchase-action purchase-action--cart"
+          data-mode="CART"
+          bindtap="onOpenPurchase"
+        >加入购物车</button>
+        <button
+          class="purchase-action purchase-action--buy"
+          data-mode="BUY"
+          bindtap="onOpenPurchase"
+        >立即购买</button>
       </view>
     </view>
   </block>
+
+  <view
+    wx:if="{{activeSheet}}"
+    class="sheet-mask"
+    catchtap="onCloseSheet"
+    catchtouchmove="onPreventMove"
+  >
+    <view class="sheet-panel {{activeSheet === 'purchase' ? 'sheet-panel--purchase' : ''}}" catchtap="onPreventMove">
+      <block wx:if="{{activeSheet === 'purchase'}}">
+        <view class="purchase-sheet-header">
+          <view wx:if="{{purchaseImageUrl}}" class="purchase-image-wrap">
+            <image
+              class="purchase-image"
+              src="{{purchaseImageUrl}}"
+              mode="aspectFill"
+            />
+            <button
+              class="image-preview-button purchase-image-preview"
+              catchtap="onPreviewPurchaseImage"
+              aria-label="放大查看当前商品图片"
+            >
+              <image class="image-preview-button__icon" src="/assets/icons/zoom-in-material-symbols.svg" mode="aspectFit" />
+            </button>
+          </view>
+          <view class="purchase-sheet-summary">
+            <view wx:if="{{priceText}}" class="sheet-price">
+              <text class="sheet-price__currency">¥</text>
+              <text class="sheet-price__integer">{{priceIntegerText}}</text>
+              <text class="sheet-price__decimal">{{priceDecimalText}}</text>
+            </view>
+            <text wx:if="{{hasOriginalPrice}}" class="sheet-original-price">¥{{originalPriceText}}</text>
+            <text class="selected-spec">已选：{{selectedSkuName}}</text>
+            <text wx:if="{{wholesaleHint}}" class="sheet-wholesale-hint">{{wholesaleHint}}</text>
+          </view>
+          <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭规格选择">
+            <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
+          </button>
+        </view>
+
+        <scroll-view
+          class="purchase-sheet-scroll"
+          scroll-y="{{true}}"
+          enhanced="{{true}}"
+          bounces="{{false}}"
+          show-scrollbar="{{false}}"
+        >
+          <view wx:if="{{specificationGroups.length}}" class="sheet-section sheet-section--specifications">
+            <view
+              wx:for="{{specificationGroups}}"
+              wx:for-item="group"
+              wx:key="key"
+              class="specification-group"
+            >
+              <view class="specification-group__header">
+                <text class="sheet-section-title">{{group.name}}</text>
+                <button
+                  wx:if="{{group.hasImages}}"
+                  class="specification-view-toggle"
+                  catchtap="onSpecificationImageModeToggle"
+                  aria-label="{{specificationImageMode === 'list' ? '切换为规格大图' : '切换为规格列表'}}"
+                >
+                  <image
+                    class="specification-view-toggle__icon"
+                    src="{{specificationImageMode === 'list' ? '/assets/icons/view-grid-outline.svg' : '/assets/icons/view-list-rounded.svg'}}"
+                    mode="aspectFit"
+                  />
+                </button>
+              </view>
+              <view class="specification-options {{group.hasImages && specificationImageMode === 'image' ? 'specification-options--image' : ''}}">
+                <view
+                  wx:for="{{group.options}}"
+                  wx:for-item="option"
+                  wx:key="key"
+                  class="specification-option {{option.hasImage ? 'specification-option--with-image' : ''}} {{group.hasImages && specificationImageMode === 'image' ? 'specification-option--image-mode' : ''}} {{option.selected ? 'specification-option--selected' : ''}} {{option.disabled ? 'specification-option--disabled' : ''}}"
+                  data-spec-name="{{group.name}}"
+                  data-spec-value="{{option.value}}"
+                  bindtap="onSheetSpecificationSelect"
+                  aria-role="button"
+                  aria-label="{{group.name}}：{{option.value}}{{option.disabled ? '，暂不可选' : ''}}"
+                >
+                  <view wx:if="{{option.hasImage}}" class="specification-image-frame">
+                    <image
+                      class="specification-option__image"
+                      src="{{option.imageUrl}}"
+                      mode="aspectFill"
+                    />
+                    <button
+                      wx:if="{{group.hasImages && specificationImageMode === 'image'}}"
+                      class="image-preview-button specification-image-preview"
+                      data-image-url="{{option.imageUrl}}"
+                      catchtap="onPreviewSpecificationImage"
+                      aria-label="放大查看{{option.value}}规格图片"
+                    >
+                      <image class="image-preview-button__icon" src="/assets/icons/zoom-in-material-symbols.svg" mode="aspectFit" />
+                    </button>
+                  </view>
+                  <text class="specification-option__text">{{option.value}}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+          <view wx:if="{{wholesaleTiers.length}}" class="sheet-section">
+            <view class="sheet-section-heading">
+              <text class="sheet-section-title">批发价</text>
+              <text class="sheet-section-note">点击自动补足对应数量</text>
+            </view>
+            <view class="wholesale-shortcuts">
+              <view
+                wx:for="{{wholesaleTiers}}"
+                wx:key="minQuantity"
+                class="wholesale-shortcut {{item.active ? 'wholesale-shortcut--active' : ''}}"
+                data-quantity="{{item.minQuantity}}"
+                bindtap="onWholesaleQuantityTap"
+                aria-role="button"
+                aria-label="选择{{item.minQuantity}}件批发价，每件{{item.priceText}}元"
+              >
+                <text class="wholesale-shortcut__quantity">{{item.minQuantity}}件起</text>
+                <text class="wholesale-shortcut__price">¥{{item.priceText}}/件</text>
+              </view>
+            </view>
+          </view>
+
+          <view class="sheet-section quantity-section">
+            <view>
+              <text class="sheet-section-title">购买数量</text>
+              <text class="quantity-note">达到门槛自动享受对应批发价</text>
+            </view>
+            <view class="quantity-control">
+              <view
+                class="quantity-button {{quantity <= 1 ? 'quantity-button--disabled' : ''}}"
+                bindtap="onQuantityMinus"
+                aria-role="button"
+                aria-label="减少数量"
+              >−</view>
+              <text class="quantity-value">{{quantity}}</text>
+              <view
+                class="quantity-button {{quantityMax <= 0 || quantity >= quantityMax ? 'quantity-button--disabled' : ''}}"
+                bindtap="onQuantityPlus"
+                aria-role="button"
+                aria-label="增加数量"
+              >＋</view>
+            </view>
+          </view>
+        </scroll-view>
+
+        <view class="sheet-footer">
+          <button
+            class="sheet-confirm sheet-confirm--{{purchaseMode === 'CART' ? 'cart' : 'buy'}} {{!selectedSkuId || confirmLoading ? 'sheet-confirm--disabled' : ''}}"
+            disabled="{{!selectedSkuId || confirmLoading}}"
+            loading="{{confirmLoading}}"
+            bindtap="onPurchaseConfirm"
+          >{{purchaseActionText}}</button>
+        </view>
+      </block>
+
+      <block wx:elif="{{activeSheet === 'guarantee'}}">
+        <view class="info-sheet-header">
+          <view>
+            <text class="info-sheet-title">安心保障</text>
+            <text class="info-sheet-intro">我们用清晰的服务承诺，让每一次下单都更安心。</text>
+          </view>
+          <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭安心保障">
+            <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
+          </button>
+        </view>
+        <scroll-view class="info-sheet-scroll" scroll-y="{{true}}">
+          <view wx:for="{{detail.guaranteeServices}}" wx:key="id" class="guarantee-item">
+            <image wx:if="{{item.icon}}" class="guarantee-icon" src="{{item.icon}}" mode="aspectFit" />
+            <view class="guarantee-copy">
+              <text class="guarantee-name">{{item.termsName}}</text>
+              <text class="guarantee-description">{{item.contentDescription}}</text>
+            </view>
+          </view>
+        </scroll-view>
+      </block>
+
+      <block wx:elif="{{activeSheet === 'freight'}}">
+        <view class="info-sheet-header">
+          <view>
+            <text class="info-sheet-title">运费说明</text>
+            <text class="info-sheet-intro">费用以当前商品绑定的运费模板为准。</text>
+          </view>
+          <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭运费说明">
+            <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
+          </button>
+        </view>
+        <view class="freight-detail">
+          <view class="freight-detail-row">
+            <text class="freight-detail-label">模板</text>
+            <text class="freight-detail-value">{{detail.freightTemplate.name}}</text>
+          </view>
+          <view class="freight-detail-row">
+            <text class="freight-detail-label">计费方式</text>
+            <text class="freight-detail-value">{{freightChargeText}}</text>
+          </view>
+          <text class="freight-tip">最终运费会根据收货地址在结算时确认。</text>
+        </view>
+      </block>
+
+      <block wx:elif="{{activeSheet === 'wholesale'}}">
+        <view class="info-sheet-header">
+          <view>
+            <text class="info-sheet-title">批发价格</text>
+            <text class="info-sheet-intro">购买数量达到门槛后，系统会自动使用对应单价。</text>
+          </view>
+          <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭批发价格">
+            <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
+          </button>
+        </view>
+        <view class="wholesale-table">
+          <view wx:for="{{wholesaleTiers}}" wx:key="minQuantity" class="wholesale-table-row">
+            <text>{{item.minQuantity}} 件起</text>
+            <text class="wholesale-table-price">¥{{item.priceText}} / 件</text>
+          </view>
+        </view>
+      </block>
+    </view>
+  </view>
 </view>

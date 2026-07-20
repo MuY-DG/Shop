@@ -11,6 +11,10 @@ Component({
     priceDecimalText: { type: String, value: "" },
     originalPriceText: { type: String, value: "" },
     hasOriginalPrice: { type: Boolean, value: false },
-    wholesaleApplied: { type: Boolean, value: false }
+    wholesaleApplied: { type: Boolean, value: false },
+    salesText: { type: String, value: "" },
+    weightParameter: { type: Object, value: {} },
+    spiceParameter: { type: Object, value: {} },
+    otherParameters: { type: Array, value: [] }
   }
 });

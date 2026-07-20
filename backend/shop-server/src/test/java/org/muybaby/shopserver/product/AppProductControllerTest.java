@@ -96,6 +96,84 @@ class AppProductControllerTest {
     }
 
     @Test
+    void productDetailAggregatesFreightTemplateAndVisibleGuaranteeServices() throws Exception {
+        String suffix = Long.toString(System.nanoTime());
+        String freightName = "App 固定运费-" + suffix;
+        jdbcClient.sql("""
+                        insert into freight_template
+                            (name, charge_mode, fixed_amount_cent, status, sort_order)
+                        values (:name, 'FIXED', 1200, 'ENABLED', 3)
+                        """)
+                .param("name", freightName)
+                .update();
+        Long freightTemplateId = jdbcClient.sql("select id from freight_template where name = :name")
+                .param("name", freightName)
+                .query(Long.class)
+                .single();
+
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(
+                0L, "App 聚合分类-" + suffix, "", null, 4, "ENABLED"
+        ));
+        Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
+                categoryId,
+                "App 聚合商品-" + suffix,
+                "聚合运费模板和保障服务",
+                "https://example.test/app-aggregate-main.jpg",
+                null,
+                "保障,配送",
+                "<p>聚合详情</p>",
+                1,
+                List.of(new AdminProductImageUpsertRequest(
+                        "https://example.test/app-aggregate-gallery.jpg", null
+                )),
+                List.of(new AdminSkuUpsertRequest(
+                        null, "APP-AGGREGATE-SKU-" + suffix, "{}", "默认规格",
+                        4990L, 5990L, 8, 500,
+                        "https://example.test/app-aggregate-sku.jpg", null, "ENABLED", 1
+                ))
+        ));
+        jdbcClient.sql("update product_spu set freight_template_id = :templateId where id = :spuId")
+                .param("templateId", freightTemplateId)
+                .param("spuId", spuId)
+                .update();
+        jdbcClient.sql("update product_spu set virtual_sales = 37 where id = :spuId")
+                .param("spuId", spuId)
+                .update();
+
+        Long visibleServiceId = insertGuaranteeService(
+                "正品保障-" + suffix,
+                "本店商品均为正品",
+                "https://example.test/authentic.png",
+                true
+        );
+        Long hiddenServiceId = insertGuaranteeService(
+                "隐藏保障-" + suffix,
+                "不应返回",
+                "https://example.test/hidden.png",
+                false
+        );
+        bindGuaranteeService(spuId, hiddenServiceId, 0);
+        bindGuaranteeService(spuId, visibleServiceId, 7);
+        adminProductService.publishSpu(spuId);
+
+        mockMvc.perform(get("/app/product/spus/" + spuId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.freightTemplate.id").value(freightTemplateId))
+                .andExpect(jsonPath("$.data.freightTemplate.name").value(freightName))
+                .andExpect(jsonPath("$.data.freightTemplate.chargeMode").value("FIXED"))
+                .andExpect(jsonPath("$.data.freightTemplate.fixedAmountCent").value(1200))
+                .andExpect(jsonPath("$.data.salesCount").value(37))
+                .andExpect(jsonPath("$.data.guaranteeServices.length()").value(1))
+                .andExpect(jsonPath("$.data.guaranteeServices[0].id").value(visibleServiceId))
+                .andExpect(jsonPath("$.data.guaranteeServices[0].termsName").value("正品保障-" + suffix))
+                .andExpect(jsonPath("$.data.guaranteeServices[0].contentDescription")
+                        .value("本店商品均为正品"))
+                .andExpect(jsonPath("$.data.guaranteeServices[0].icon")
+                        .value("https://example.test/authentic.png"))
+                .andExpect(jsonPath("$.data.guaranteeServices[0].sortOrder").value(7));
+    }
+
+    @Test
     void productListKeepsPublishedSpuWhenAllSkusAreDisabledAndFiltersDisabledSkuData() throws Exception {
         Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Edge Category", "", null, 2, "ENABLED"));
         Long hiddenSkuSpuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
@@ -222,6 +300,39 @@ class AppProductControllerTest {
                 .single();
         assertThat(fileId).isNotNull();
         return new StoredFile(fileId, publicUrl);
+    }
+
+    private Long insertGuaranteeService(
+            String termsName,
+            String contentDescription,
+            String icon,
+            boolean visible
+    ) {
+        jdbcClient.sql("""
+                        insert into product_guarantee_service
+                            (terms_name, content_description, icon, icon_file_id, sort_order, visible)
+                        values (:termsName, :contentDescription, :icon, null, 0, :visible)
+                        """)
+                .param("termsName", termsName)
+                .param("contentDescription", contentDescription)
+                .param("icon", icon)
+                .param("visible", visible)
+                .update();
+        return jdbcClient.sql("select id from product_guarantee_service where terms_name = :termsName")
+                .param("termsName", termsName)
+                .query(Long.class)
+                .single();
+    }
+
+    private void bindGuaranteeService(Long spuId, Long serviceId, int sortOrder) {
+        jdbcClient.sql("""
+                        insert into product_spu_guarantee_service (spu_id, service_id, sort_order)
+                        values (:spuId, :serviceId, :sortOrder)
+                        """)
+                .param("spuId", spuId)
+                .param("serviceId", serviceId)
+                .param("sortOrder", sortOrder)
+                .update();
     }
 
     private com.fasterxml.jackson.databind.JsonNode findCategoryNode(String response, String name) throws Exception {

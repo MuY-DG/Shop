@@ -94,18 +94,28 @@
   transition: opacity @duration-fast ease, background-color @duration-fast ease;
 }
 
+.navigation-bar__action--round {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: @color-surface;
+  box-shadow: none;
+}
+
 .navigation-bar__action.navigation-bar__action--active {
   background: fade(@color-text-primary, 8%);
   opacity: 0.55;
 }
 
+.navigation-bar__action--round.navigation-bar__action--active {
+  background: @color-surface;
+}
+
 .navigation-bar__back-icon {
-  box-sizing: border-box;
-  width: 12px;
-  height: 12px;
-  border-bottom: 2px solid currentColor;
-  border-left: 2px solid currentColor;
-  transform: rotate(45deg);
+  width: 18px;
+  height: 18px;
 }
 
 .navigation-bar__home-icon {

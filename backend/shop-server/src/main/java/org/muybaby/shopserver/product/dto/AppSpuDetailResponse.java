@@ -10,10 +10,13 @@ public record AppSpuDetailResponse(
         String subtitle,
         String mainImage,
         Long mainImageFileId,
+        Long salesCount,
         List<String> sellingPoints,
         String detailHtml,
         List<ProductImageResponse> images,
         List<AppSkuResponse> skus,
-        List<AppProductParameterValueResponse> parameters
+        List<AppProductParameterValueResponse> parameters,
+        AppFreightTemplateResponse freightTemplate,
+        List<AppGuaranteeServiceResponse> guaranteeServices
 ) {
 }

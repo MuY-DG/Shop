@@ -9,5 +9,8 @@ export const API_ENDPOINTS = Object.freeze({
     categories: "/app/product/categories",
     list: "/app/product/spus",
     detail: (spuId: number): string => `/app/product/spus/${spuId}`
+  },
+  cart: {
+    items: "/app/cart/items"
   }
 });

@@ -179,7 +179,8 @@ test("schema v2 首页响应映射为可直接渲染的 view-model", () => {
       tone: "orange",
       kind: "spice",
       spiceTone: "medium",
-      iconPath: "/assets/icons/chili-pepper-red.svg"
+      iconPath: "/assets/icons/chili-pepper-red.svg",
+      spiceIconIndexes: [0, 1]
     },
     {
       text: "300g",
@@ -187,6 +188,7 @@ test("schema v2 首页响应映射为可直接渲染的 view-model", () => {
       kind: "weight",
       spiceTone: "",
       iconPath: "",
+      spiceIconIndexes: [],
       servingText: "适合3-5人"
     }
   ]);
@@ -253,7 +255,7 @@ test("价格格式化覆盖零分、区间、单边价格和非法边界", () =>
   assert.equal(formatPriceRange("1990", "2590"), "");
 });
 
-test("辣度参数按 level 从绿色过渡到红色并使用本地图标", () => {
+test("辣度参数按 level 从绿色过渡到红色并显示对应数量的本地图标", () => {
   const spiceFact = (level: number) => adaptProductFact({
     code: "SPICE",
     name: "辣度",
@@ -265,14 +267,28 @@ test("辣度参数按 level 从绿色过渡到红色并使用本地图标", () =
   assert.deepEqual(
     [1, 2, 3].map((level) => {
       const fact = spiceFact(level);
-      return fact && [fact.spiceTone, fact.tone, fact.iconPath];
+      return fact && [fact.spiceTone, fact.tone, fact.iconPath, fact.spiceIconIndexes];
     }),
     [
-      ["mild", "success", "/assets/icons/chili-pepper-red.svg"],
-      ["medium", "orange", "/assets/icons/chili-pepper-red.svg"],
-      ["hot", "brand", "/assets/icons/chili-pepper-red.svg"]
+      ["mild", "success", "/assets/icons/chili-pepper-red.svg", [0]],
+      ["medium", "orange", "/assets/icons/chili-pepper-red.svg", [0, 1]],
+      ["hot", "brand", "/assets/icons/chili-pepper-red.svg", [0, 1, 2]]
     ]
   );
+});
+
+test("辣度 level 未配置或非法时不显示辣椒图标", () => {
+  const spiceFact = (level?: number) => adaptProductFact({
+    code: "SPICE",
+    name: "辣度",
+    displayText: "辣度未知",
+    renderer: "SPICE",
+    ...(level === undefined ? {} : { level })
+  });
+
+  assert.deepEqual(spiceFact()?.spiceIconIndexes, []);
+  assert.deepEqual(spiceFact(Number.NaN)?.spiceIconIndexes, []);
+  assert.deepEqual(spiceFact(1.5)?.spiceIconIndexes, []);
 });
 
 test("重量参数按克数追加建议人数并保持独立类型", () => {
@@ -301,6 +317,7 @@ test("重量参数按克数追加建议人数并保持独立类型", () => {
     kind: "weight",
     spiceTone: "",
     iconPath: "",
+    spiceIconIndexes: [],
     servingText: "适合3-5人"
   });
 });

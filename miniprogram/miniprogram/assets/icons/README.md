@@ -2,7 +2,25 @@
 
 - `chili-pepper-red.svg`：[Iconify Game Icons `game-icons:chili-pepper`](https://icon-sets.iconify.design/game-icons/chili-pepper/)，作者 GameIcons，CC BY 3.0；使用 Iconify API 的 `#ff0000` 颜色参数本地化。
 - `shopping-cart.svg`：[Iconify Material Symbols `material-symbols:shopping-cart-outline`](https://icon-sets.iconify.design/material-symbols/shopping-cart-outline/)，Apache 2.0；使用 Iconify API 的 `#fdfdfd` 颜色参数本地化。
+- `shopping-cart-brand.svg`：同一 Material Symbols 图标的品牌红版本，用于浅色背景上的购物车入口。
+- `favorite-outline-rounded.svg`：[Iconify Material Symbols `material-symbols:favorite-outline-rounded`](https://icon-sets.iconify.design/material-symbols/favorite-outline-rounded/)，Apache 2.0，品牌红版本。
+- `share-outline-rounded.svg`：[Iconify Material Symbols `material-symbols:share-outline-rounded`](https://icon-sets.iconify.design/material-symbols/share-outline-rounded/)，Apache 2.0，品牌红版本。
+- `local-shipping-outline-rounded.svg`：[Iconify Material Symbols `material-symbols:local-shipping-outline-rounded`](https://icon-sets.iconify.design/material-symbols/local-shipping-outline-rounded/)，Apache 2.0，品牌红版本。
+- `location-on-outline-rounded.svg`：[Iconify Material Symbols `material-symbols:location-on-outline-rounded`](https://icon-sets.iconify.design/material-symbols/location-on-outline-rounded/)，Apache 2.0，品牌红版本。
+- `sell-outline-rounded.svg`：[Iconify Material Symbols `material-symbols:sell-outline-rounded`](https://icon-sets.iconify.design/material-symbols/sell-outline-rounded/)，Apache 2.0，品牌红版本。
+- `support-agent-outline-rounded.svg`：[Iconify Material Symbols `material-symbols:support-agent-outline-rounded`](https://icon-sets.iconify.design/material-symbols/support-agent-outline-rounded/)，Apache 2.0，品牌红版本。
+- `arrow-back-ios-new-rounded.svg`：[Iconify Material Symbols `material-symbols:arrow-back-ios-new-rounded`](https://icon-sets.iconify.design/material-symbols/arrow-back-ios-new-rounded/)，Apache 2.0，品牌红版本。
 - `section-hot.svg`：[Iconify IcoMoon Free `icomoon-free:fire`](https://icon-sets.iconify.design/icomoon-free/fire/)，GPL；使用 Iconify API 的 `#e00404` 颜色参数本地化。
 - `section-recommended.svg`：[Iconify @icons `at-icons:stars`](https://icon-sets.iconify.design/at-icons/stars/)，MIT；使用 Iconify API 的 `#f5d600` 颜色参数本地化。
+- `share-weui-outlined.svg`：[Iconify WeUI `weui:share-outlined`](https://icon-sets.iconify.design/weui/share-outlined/)，MIT，黑色版本。
+- `favorite-clarity-line.svg`：[Iconify Clarity `clarity:favorite-line`](https://icon-sets.iconify.design/clarity/favorite-line/)，MIT，未收藏时使用的黑色线框星形。
+- `favorite-clarity-solid.svg`：[Iconify Clarity `clarity:favorite-solid`](https://icon-sets.iconify.design/clarity/favorite-solid/)，MIT，收藏后使用的黄色实心星形。
+- `chevron-left-light.svg`：[Iconify MDI Light `mdi-light:chevron-left`](https://icon-sets.iconify.design/mdi-light/chevron-left/)，OFL，用于更细的返回图标。
+- `chevron-right-light.svg`：[Iconify MDI Light `mdi-light:chevron-right`](https://icon-sets.iconify.design/mdi-light/chevron-right/)，OFL，用于批发价与地址入口。
+- `close-material-symbols.svg`：[Iconify Material Symbols `material-symbols:close`](https://icon-sets.iconify.design/material-symbols/close/)，Apache 2.0，用于规格弹层关闭按钮。
+- `view-grid-outline.svg`：[Iconify Material Design Icons `mdi:view-grid-outline`](https://icon-sets.iconify.design/mdi/view-grid-outline/)，Apache 2.0，用于切换规格大图模式。
+- `view-list-rounded.svg`：[Iconify Material Symbols `material-symbols:view-list-rounded`](https://icon-sets.iconify.design/material-symbols/view-list-rounded/)，Apache 2.0，用于切换规格列表模式。
+- `chevron-left-medium.svg`：[Iconify Material Symbols `material-symbols:chevron-left`](https://icon-sets.iconify.design/material-symbols/chevron-left/)，Apache 2.0，用于中等线宽的返回图标。
+- `zoom-in-material-symbols.svg`：[Iconify Material Symbols `material-symbols:zoom-in-rounded`](https://icon-sets.iconify.design/material-symbols/zoom-in-rounded/)，Apache 2.0，用于规格图片和当前商品图的放大预览入口。
 
 图标已内置为小程序本地资源；运行时不请求 Iconify，也不需要配置图片域名白名单。

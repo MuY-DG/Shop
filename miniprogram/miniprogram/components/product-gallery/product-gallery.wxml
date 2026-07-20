@@ -1,17 +1,24 @@
 <view class="gallery-shell">
   <swiper
-    wx:if="{{displayImages.length}}"
+    wx:if="{{displayImages.length && swiperVisible}}"
     class="gallery"
     current="{{current}}"
     circular="{{displayImages.length > 1}}"
+    duration="300"
+    easing-function="easeOutCubic"
+    indicator-dots="{{false}}"
     bindchange="onChange"
+    bindtransition="onTransition"
+    bindanimationfinish="onAnimationFinish"
+    bindtouchend="onTouchEnd"
+    bindtouchcancel="onTouchCancel"
   >
     <swiper-item wx:for="{{displayImages}}" wx:key="key">
       <image
         wx:if="{{item.hasImage}}"
         class="gallery-image"
         src="{{item.url}}"
-        mode="aspectFit"
+        mode="aspectFill"
         data-index="{{index}}"
         binderror="onImageError"
       />
@@ -21,11 +28,16 @@
       </view>
     </swiper-item>
   </swiper>
-  <view wx:else class="gallery gallery-placeholder">
+  <view wx:if="{{displayImages.length && !swiperVisible}}" class="gallery" />
+  <view wx:if="{{displayImages.length > 1}}" class="gallery-indicators" aria-hidden="true">
+    <view
+      wx:for="{{displayImages}}"
+      wx:key="key"
+      class="gallery-indicator {{index === current ? 'gallery-indicator--active' : ''}}"
+    />
+  </view>
+  <view wx:if="{{!displayImages.length}}" class="gallery gallery-placeholder">
     <view class="gallery-placeholder__seal">灶</view>
     <text>好物图片准备中</text>
-  </view>
-  <view wx:if="{{displayImages.length > 1}}" class="gallery-count">
-    {{current + 1}} / {{displayImages.length}}
   </view>
 </view>
