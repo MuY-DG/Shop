@@ -175,7 +175,7 @@ public class AssetModelMigrationTest {
                 .dataSource(jdbcUrl, username, password)
                 .placeholders(safeSeedPlaceholders())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("43");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("45");
 
         try (Connection connection = DriverManager.getConnection(jdbcUrl, username, password);
              Statement statement = connection.createStatement()) {
@@ -186,7 +186,21 @@ public class AssetModelMigrationTest {
             assertThat(tableExists(statement, "storage_file")).isFalse();
             assertThat(tableExists(statement, "storage_asset_category")).isFalse();
             assertThat(tableExists(statement, "storage_file_usage")).isFalse();
-            assertThat(columnNames(statement, "payment_order")).contains("payment_config_fingerprint");
+            assertThat(columnNames(statement, "payment_order"))
+                    .contains("payment_config_fingerprint", "notification_route_token");
+            assertThat(columnNames(statement, "refund_order"))
+                    .contains("notification_route_token");
+            assertThat(columnNames(statement, "payment_callback_log"))
+                    .contains("route_mode", "route_digest");
+            assertThat(columnNames(statement, "payment_config"))
+                    .contains("secret_cipher_version", "secret_key_id", "secret_revision",
+                            "secret_reencrypted_at");
+            assertThat(columnNames(statement, "payment_config_snapshot"))
+                    .contains("secret_cipher_version", "secret_key_id", "secret_revision",
+                            "secret_reencrypted_at");
+            assertThat(columnNames(statement, "storage_runtime_setting"))
+                    .contains("secret_cipher_version", "secret_key_id", "secret_revision",
+                            "secret_reencrypted_at");
 
             assertThat(columnNames(statement, "storage_asset")).containsExactly(
                     "id", "scope", "media_kind", "folder_id", "visibility", "provider",
@@ -223,6 +237,14 @@ public class AssetModelMigrationTest {
                     "storage_asset_usage", "idx_storage_asset_usage_asset_status")).isTrue();
             assertThat(indexExists(connection,
                     "storage_asset_usage", "idx_storage_asset_usage_owner_status")).isTrue();
+            assertThat(indexExists(connection,
+                    "payment_order", "uk_payment_order_notification_route")).isTrue();
+            assertThat(indexExists(connection,
+                    "refund_order", "uk_refund_order_notification_route")).isTrue();
+            assertThat(indexExists(connection,
+                    "payment_config", "idx_payment_config_secret_key")).isTrue();
+            assertThat(indexExists(connection,
+                    "payment_config_snapshot", "idx_payment_config_snapshot_secret_key")).isTrue();
 
             assertThat(singleLong(statement, "select count(*) from storage_asset")).isZero();
             assertThat(singleLong(statement, "select count(*) from storage_asset_folder")).isZero();

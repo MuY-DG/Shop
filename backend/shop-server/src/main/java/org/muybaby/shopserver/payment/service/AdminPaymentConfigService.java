@@ -6,6 +6,7 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.PaymentConfigSource;
 import org.muybaby.shopserver.payment.config.PaymentConfigSourceSettingService;
+import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
@@ -53,6 +54,7 @@ public class AdminPaymentConfigService {
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final PaymentConfigResolver paymentConfigResolver;
     private final PaymentConfigSourceSettingService paymentConfigSourceSettingService;
+    private final PaymentNotificationRouteService paymentNotificationRouteService;
     private final PaymentSecretCipher paymentSecretCipher;
     private final PrivateStorageFileService privateStorageFileService;
     private final StorageUsageService storageUsageService;
@@ -64,6 +66,7 @@ public class AdminPaymentConfigService {
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             PaymentConfigResolver paymentConfigResolver,
             PaymentConfigSourceSettingService paymentConfigSourceSettingService,
+            PaymentNotificationRouteService paymentNotificationRouteService,
             PaymentSecretCipher paymentSecretCipher,
             PrivateStorageFileService privateStorageFileService,
             StorageUsageService storageUsageService,
@@ -73,6 +76,7 @@ public class AdminPaymentConfigService {
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.paymentConfigResolver = paymentConfigResolver;
         this.paymentConfigSourceSettingService = paymentConfigSourceSettingService;
+        this.paymentNotificationRouteService = paymentNotificationRouteService;
         this.paymentSecretCipher = paymentSecretCipher;
         this.privateStorageFileService = privateStorageFileService;
         this.storageUsageService = storageUsageService;
@@ -134,6 +138,7 @@ public class AdminPaymentConfigService {
             }
             PaymentConfigSource source = paymentConfigSourceSettingService.parse(request.source());
             ResolvedPaymentConfig resolved = paymentConfigResolver.resolve(source);
+            requireNotificationRouteReady(resolved);
             StoredConfigSnapshot storedConfig = resolved.source() == PaymentConfigSource.DB
                     ? inspectStoredConfig(resolved.configId(), true, resolved)
                     : null;
@@ -213,7 +218,7 @@ public class AdminPaymentConfigService {
                         .addValue("appId", validated.appId())
                         .addValue("mchId", validated.mchId())
                         .addValue("merchantSerialNo", validated.merchantSerialNo())
-                        .addValue("apiV3KeyCiphertext", validated.apiV3KeyCiphertext())
+                        .addValue("apiV3KeyCiphertext", "")
                         .addValue("privateKeyFileId", validated.privateKeyFileId())
                         .addValue("merchantCertificateFileId", validated.merchantCertificateFileId())
                         .addValue("verifyMode", validated.verifyMode().name())
@@ -224,6 +229,25 @@ public class AdminPaymentConfigService {
                 keyHolder,
                 new String[]{"id"});
         Long configId = requireGeneratedId(keyHolder);
+        PaymentSecretCipher.EncryptedSecret encryptedApiV3Key = paymentSecretCipher.encrypt(
+                PaymentConfigResolver.apiV3KeyContext(configId), validated.apiV3Key());
+        int encryptedRows = jdbcClient.sql("""
+                        update payment_config
+                        set api_v3_key_ciphertext = :ciphertext,
+                            secret_cipher_version = :cipherVersion,
+                            secret_key_id = :keyId,
+                            secret_revision = secret_revision + 1
+                        where id = :configId
+                          and api_v3_key_ciphertext = ''
+                        """)
+                .param("ciphertext", encryptedApiV3Key.ciphertext())
+                .param("cipherVersion", encryptedApiV3Key.version())
+                .param("keyId", encryptedApiV3Key.keyId())
+                .param("configId", configId)
+                .update();
+        if (encryptedRows != 1) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
         replaceProtectedUsages(configId, validated);
         privateStorageFileService.reconcilePaymentSecretRetention(currentSecretIds, List.of());
         return requireConfig(configId);
@@ -260,6 +284,14 @@ public class AdminPaymentConfigService {
         PaymentConfigRow locked = requireConfigRow(configId, true);
         requireUnchangedConfig(observed, locked);
         rejectReferencedConfigMutation(configId);
+        boolean secretChanged = validated.apiV3Key() != null;
+        PaymentSecretCipher.EncryptedSecret encryptedApiV3Key = secretChanged
+                ? paymentSecretCipher.encrypt(
+                        PaymentConfigResolver.apiV3KeyContext(configId), validated.apiV3Key())
+                : new PaymentSecretCipher.EncryptedSecret(
+                        locked.apiV3KeyCiphertext(),
+                        locked.secretCipherVersion(),
+                        locked.secretKeyId());
         int updatedRows = jdbcClient.sql("""
                         update payment_config
                         set config_name = :configName,
@@ -267,6 +299,14 @@ public class AdminPaymentConfigService {
                             mch_id = :mchId,
                             merchant_serial_no = :merchantSerialNo,
                             api_v3_key_ciphertext = :apiV3KeyCiphertext,
+                            secret_cipher_version = :secretCipherVersion,
+                            secret_key_id = :secretKeyId,
+                            secret_revision = secret_revision
+                                + case when :secretChanged then 1 else 0 end,
+                            secret_reencrypted_at = case
+                                when :secretChanged then null
+                                else secret_reencrypted_at
+                            end,
                             private_key_file_id = :privateKeyFileId,
                             merchant_certificate_file_id = :merchantCertificateFileId,
                             verify_mode = :verifyMode,
@@ -282,7 +322,10 @@ public class AdminPaymentConfigService {
                 .param("appId", validated.appId())
                 .param("mchId", validated.mchId())
                 .param("merchantSerialNo", validated.merchantSerialNo())
-                .param("apiV3KeyCiphertext", validated.apiV3KeyCiphertext())
+                .param("apiV3KeyCiphertext", encryptedApiV3Key.ciphertext())
+                .param("secretCipherVersion", encryptedApiV3Key.version())
+                .param("secretKeyId", encryptedApiV3Key.keyId())
+                .param("secretChanged", secretChanged)
                 .param("privateKeyFileId", validated.privateKeyFileId())
                 .param("merchantCertificateFileId", validated.merchantCertificateFileId())
                 .param("verifyMode", validated.verifyMode().name())
@@ -364,6 +407,7 @@ public class AdminPaymentConfigService {
                 ? paymentConfigResolver.resolveForPaymentConfigId(configId)
                 : previouslyResolved;
         requireResolvedConfig(observed, resolved);
+        requireNotificationRouteReady(resolved);
         PaymentConfigRow confirmed = requireConfigRow(configId, false);
         requireUnchangedConfig(observed, confirmed);
         List<PaymentSecretSnapshot> secretSnapshots = privateStorageFileService.inspectPaymentSecrets(
@@ -402,7 +446,7 @@ public class AdminPaymentConfigService {
                 && Objects.equals(row.appId(), resolved.appId())
                 && Objects.equals(row.mchId(), resolved.mchId())
                 && Objects.equals(row.merchantSerialNo(), resolved.merchantSerialNo())
-                && Objects.equals(paymentSecretCipher.decrypt(row.apiV3KeyCiphertext()), resolved.apiV3Key())
+                && Objects.equals(decryptApiV3Key(row), resolved.apiV3Key())
                 && row.verifyMode() == resolved.verifyMode()
                 && Objects.equals(row.wechatPublicKeyId(), resolved.wechatPublicKeyId())
                 && Objects.equals(row.privateKeyFileId(), resolved.privateKeyFileId())
@@ -413,6 +457,24 @@ public class AdminPaymentConfigService {
         if (!matches) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+    }
+
+    private void requireNotificationRouteReady(ResolvedPaymentConfig resolved) {
+        if (resolved == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        paymentNotificationRouteService.validateRoutedBaseUrl(resolved.notifyUrl());
+        paymentNotificationRouteService.validateRoutedBaseUrl(resolved.refundNotifyUrl());
+    }
+
+    private String decryptApiV3Key(PaymentConfigRow row) {
+        PaymentSecretCipher.DecryptedSecret decrypted = paymentSecretCipher.decrypt(
+                PaymentConfigResolver.apiV3KeyContext(row.id()), row.apiV3KeyCiphertext());
+        if (decrypted.version() != row.secretCipherVersion()
+                || !decrypted.keyId().equals(row.secretKeyId() == null ? "" : row.secretKeyId())) {
+            throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
+        }
+        return decrypted.plaintext();
     }
 
     private void requireUnchangedConfig(PaymentConfigRow observed, PaymentConfigRow current) {
@@ -443,6 +505,8 @@ public class AdminPaymentConfigService {
         );
         String notifyUrl = requireText(request.notifyUrl(), 255);
         String refundNotifyUrl = requireText(request.refundNotifyUrl(), 255);
+        paymentNotificationRouteService.validateRoutedBaseUrl(notifyUrl);
+        paymentNotificationRouteService.validateRoutedBaseUrl(refundNotifyUrl);
         PaymentVerifyMode verifyMode = parseVerifyMode(request.verifyMode());
         Long privateKeyFileId = requireFileId(request.privateKeyFileId());
         Long merchantCertificateFileId = optionalFileId(request.merchantCertificateFileId());
@@ -458,16 +522,13 @@ public class AdminPaymentConfigService {
             wechatPublicKeyFileId = requireFileId(wechatPublicKeyFileId);
         }
 
-        String apiV3KeyCiphertext;
         String apiV3Key = trimToNull(request.apiV3Key());
         if (apiV3Key == null) {
             if (existing == null) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
-            apiV3KeyCiphertext = existing.apiV3KeyCiphertext();
         } else {
             rejectMaskedPlaceholder(apiV3Key);
-            apiV3KeyCiphertext = paymentSecretCipher.encrypt(apiV3Key);
         }
 
         return new ValidatedConfig(
@@ -476,7 +537,6 @@ public class AdminPaymentConfigService {
                 mchId,
                 merchantSerialNo,
                 apiV3Key,
-                apiV3KeyCiphertext,
                 privateKeyFileId,
                 merchantCertificateFileId,
                 verifyMode,
@@ -537,7 +597,7 @@ public class AdminPaymentConfigService {
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                                private_key_file_id, merchant_certificate_file_id, verify_mode,
                                wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
-                               enabled, updated_at
+                               enabled, updated_at, secret_cipher_version, secret_key_id
                         from payment_config
                         where id = :configId
                           and status = 'ACTIVE'
@@ -558,7 +618,9 @@ public class AdminPaymentConfigService {
                         rs.getString("notify_url"),
                         rs.getString("refund_notify_url"),
                         rs.getBoolean("enabled"),
-                        rs.getObject("updated_at", LocalDateTime.class)
+                        rs.getObject("updated_at", LocalDateTime.class),
+                        rs.getInt("secret_cipher_version"),
+                        rs.getString("secret_key_id")
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
@@ -736,7 +798,9 @@ public class AdminPaymentConfigService {
             String notifyUrl,
             String refundNotifyUrl,
             boolean enabled,
-            LocalDateTime updatedAt
+            LocalDateTime updatedAt,
+            int secretCipherVersion,
+            String secretKeyId
     ) {
     }
 
@@ -752,7 +816,6 @@ public class AdminPaymentConfigService {
             String mchId,
             String merchantSerialNo,
             String apiV3Key,
-            String apiV3KeyCiphertext,
             Long privateKeyFileId,
             Long merchantCertificateFileId,
             PaymentVerifyMode verifyMode,

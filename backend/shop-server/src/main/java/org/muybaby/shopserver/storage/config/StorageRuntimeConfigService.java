@@ -78,8 +78,11 @@ public class StorageRuntimeConfigService {
             }
         }
 
-        String secretIdCiphertext = encryptIfPresent(cosSecretId);
-        String secretKeyCiphertext = encryptIfPresent(cosSecretKey);
+        PaymentSecretCipher.EncryptedSecret encryptedSecretId = encryptIfPresent(
+                "cos-secret-id", cosSecretId);
+        PaymentSecretCipher.EncryptedSecret encryptedSecretKey = encryptIfPresent(
+                "cos-secret-key", cosSecretKey);
+        EnvelopeMetadata envelope = requireSameEnvelope(encryptedSecretId, encryptedSecretKey);
         int updatedRows = jdbcClient.sql("""
                         update storage_runtime_setting
                         set provider = :provider,
@@ -89,6 +92,10 @@ public class StorageRuntimeConfigService {
                             cos_bucket = :cosBucket,
                             cos_secret_id_ciphertext = :cosSecretIdCiphertext,
                             cos_secret_key_ciphertext = :cosSecretKeyCiphertext,
+                            secret_cipher_version = :secretCipherVersion,
+                            secret_key_id = :secretKeyId,
+                            secret_revision = secret_revision + 1,
+                            secret_reencrypted_at = null,
                             updated_at = current_timestamp
                         where id = :id
                         """)
@@ -97,8 +104,10 @@ public class StorageRuntimeConfigService {
                 .param("localRoot", localRoot)
                 .param("cosRegion", cosRegion)
                 .param("cosBucket", cosBucket)
-                .param("cosSecretIdCiphertext", secretIdCiphertext)
-                .param("cosSecretKeyCiphertext", secretKeyCiphertext)
+                .param("cosSecretIdCiphertext", ciphertext(encryptedSecretId))
+                .param("cosSecretKeyCiphertext", ciphertext(encryptedSecretKey))
+                .param("secretCipherVersion", envelope.version())
+                .param("secretKeyId", envelope.keyId())
                 .param("id", SETTING_ID)
                 .update();
         if (updatedRows == 0) {
@@ -106,7 +115,7 @@ public class StorageRuntimeConfigService {
                             insert into storage_runtime_setting
                                 (id, provider, public_base_url, local_root, cos_region, cos_bucket,
                                  cos_secret_id_ciphertext, cos_secret_key_ciphertext)
-                            values
+                        values
                                 (:id, :provider, :publicBaseUrl, :localRoot, :cosRegion, :cosBucket,
                                  :cosSecretIdCiphertext, :cosSecretKeyCiphertext)
                             """)
@@ -116,8 +125,19 @@ public class StorageRuntimeConfigService {
                     .param("localRoot", localRoot)
                     .param("cosRegion", cosRegion)
                     .param("cosBucket", cosBucket)
-                    .param("cosSecretIdCiphertext", secretIdCiphertext)
-                    .param("cosSecretKeyCiphertext", secretKeyCiphertext)
+                    .param("cosSecretIdCiphertext", ciphertext(encryptedSecretId))
+                    .param("cosSecretKeyCiphertext", ciphertext(encryptedSecretKey))
+                    .update();
+            jdbcClient.sql("""
+                            update storage_runtime_setting
+                            set secret_cipher_version = :secretCipherVersion,
+                                secret_key_id = :secretKeyId,
+                                secret_revision = secret_revision + 1
+                            where id = :id
+                            """)
+                    .param("secretCipherVersion", envelope.version())
+                    .param("secretKeyId", envelope.keyId())
+                    .param("id", SETTING_ID)
                     .update();
         }
         return current();
@@ -137,7 +157,8 @@ public class StorageRuntimeConfigService {
     private Optional<StorageSettingRow> persistedRow() {
         return jdbcClient.sql("""
                         select provider, public_base_url, local_root, cos_region, cos_bucket,
-                               cos_secret_id_ciphertext, cos_secret_key_ciphertext
+                               cos_secret_id_ciphertext, cos_secret_key_ciphertext,
+                               secret_cipher_version, secret_key_id
                         from storage_runtime_setting
                         where id = :id
                         """)
@@ -153,8 +174,8 @@ public class StorageRuntimeConfigService {
                 row.localRoot(),
                 row.cosRegion(),
                 row.cosBucket(),
-                decryptIfPresent(row.cosSecretIdCiphertext()),
-                decryptIfPresent(row.cosSecretKeyCiphertext())
+                decryptIfPresent("cos-secret-id", row.cosSecretIdCiphertext(), row),
+                decryptIfPresent("cos-secret-key", row.cosSecretKeyCiphertext(), row)
         );
     }
 
@@ -257,12 +278,47 @@ public class StorageRuntimeConfigService {
         return normalized;
     }
 
-    private String encryptIfPresent(String value) {
-        return StringUtils.hasText(value) ? secretCipher.encrypt(value) : "";
+    private PaymentSecretCipher.EncryptedSecret encryptIfPresent(String fieldName, String value) {
+        return StringUtils.hasText(value)
+                ? secretCipher.encrypt(secretContext(fieldName), value)
+                : null;
     }
 
-    private String decryptIfPresent(String value) {
-        return StringUtils.hasText(value) ? secretCipher.decrypt(value) : "";
+    private String decryptIfPresent(String fieldName, String value, StorageSettingRow row) {
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        PaymentSecretCipher.DecryptedSecret decrypted = secretCipher.decrypt(
+                secretContext(fieldName), value);
+        if (decrypted.version() != row.secretCipherVersion()
+                || !decrypted.keyId().equals(row.secretKeyId() == null ? "" : row.secretKeyId())) {
+            throw validationFailure();
+        }
+        return decrypted.plaintext();
+    }
+
+    public static PaymentSecretCipher.SecretContext secretContext(String fieldName) {
+        return new PaymentSecretCipher.SecretContext(
+                "storage-runtime-setting", Long.toString(SETTING_ID), fieldName);
+    }
+
+    private EnvelopeMetadata requireSameEnvelope(
+            PaymentSecretCipher.EncryptedSecret first,
+            PaymentSecretCipher.EncryptedSecret second
+    ) {
+        PaymentSecretCipher.EncryptedSecret selected = first == null ? second : first;
+        if (selected == null) {
+            return new EnvelopeMetadata(1, "");
+        }
+        if (first != null && second != null
+                && (first.version() != second.version() || !first.keyId().equals(second.keyId()))) {
+            throw validationFailure();
+        }
+        return new EnvelopeMetadata(selected.version(), selected.keyId());
+    }
+
+    private String ciphertext(PaymentSecretCipher.EncryptedSecret secret) {
+        return secret == null ? "" : secret.ciphertext();
     }
 
     private String mask(String value) {
@@ -291,7 +347,9 @@ public class StorageRuntimeConfigService {
                 rs.getString("cos_region"),
                 rs.getString("cos_bucket"),
                 rs.getString("cos_secret_id_ciphertext"),
-                rs.getString("cos_secret_key_ciphertext")
+                rs.getString("cos_secret_key_ciphertext"),
+                rs.getInt("secret_cipher_version"),
+                rs.getString("secret_key_id")
         );
     }
 
@@ -302,7 +360,12 @@ public class StorageRuntimeConfigService {
             String cosRegion,
             String cosBucket,
             String cosSecretIdCiphertext,
-            String cosSecretKeyCiphertext
+            String cosSecretKeyCiphertext,
+            int secretCipherVersion,
+            String secretKeyId
     ) {
+    }
+
+    private record EnvelopeMetadata(int version, String keyId) {
     }
 }

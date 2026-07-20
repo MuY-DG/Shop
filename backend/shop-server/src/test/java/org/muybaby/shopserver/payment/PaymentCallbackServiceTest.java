@@ -163,7 +163,7 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                           and error_code = 'VERIFY_FAILED'
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(1);
+                .single()).isZero();
         assertThat(mockWechatPayProvider.payNotificationConfigAttempts(outTradeNo))
                 .containsExactly(91002L, 91001L);
     }
@@ -257,7 +257,7 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
     }
 
     @Test
-    void invalidPayNotificationReturnsFailureAndDoesNotPersistPlaintextSecretMaterial() throws Exception {
+    void invalidPayNotificationReturnsFailureWithoutPersistingUnverifiedInput() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-invalid-callback-user");
         SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
@@ -282,7 +282,7 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                           and resource_digest not like '%wx-transaction-secret%'
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(1);
+                .single()).isZero();
     }
 
     @Test

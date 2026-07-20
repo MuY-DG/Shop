@@ -947,7 +947,7 @@ Recommended backend checks:
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest='AppPaymentControllerTest,PaymentCallbackServiceTest,PaymentTimeoutCloseServiceTest,PaymentSchemaTest,PaymentConfigResolverTest,AdminPaymentConfigControllerTest' test
+./mvnw -Dtest='AppPaymentControllerTest,PaymentCallbackServiceTest,PaymentNotificationRouteIssuanceTest,PaymentNotificationRouteRejectionTest,PaymentNotificationConfigSelectorRouteTest,PaymentNotificationRouteServiceTest,PaymentTimeoutCloseServiceTest,PaymentSchemaTest,PaymentConfigResolverTest,AdminPaymentConfigControllerTest,AesGcmPaymentSecretCipherTest,PaymentSecretRotationServiceTest' test
 ```
 
 Optional local endpoint smoke can reuse the existing Order Smoke Checks setup: start the backend with the `test` profile, create product/cart/coupon/order data through the real local backend APIs, then call:
@@ -999,6 +999,9 @@ WECHAT_PAY_PUBLIC_KEY_ID=<wechat-pay-public-key-id>
 WECHAT_PAY_PUBLIC_KEY_PATH=<absolute-path-to-local-wechat-pay-public-key.pem>
 SHOP_PAY_EXPIRE_MINUTES=15
 SHOP_PAYMENT_SECRET_KEY=<local-32-byte-payment-secret-key>
+SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false
+SHOP_PAYMENT_SECRET_WRITE_VERSION=1
+SHOP_PAYMENT_SECRET_ROTATION_ENABLED=false
 SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
 ```
 
@@ -1013,7 +1016,7 @@ https://<public-tunnel-domain>/wxpay/refund/notify
 4. If using DB-managed credentials, upload each private key or certificate through `POST /admin/pay/configs/secret-files`, configure `/admin/pay/configs` with the returned secret asset IDs, set that DB config as the DB candidate, and save the admin runtime source as `DB`. Confirm `/admin/pay/configs/source` returns `DB` with `persisted=true`, and `/admin/pay/configs/effective` returns masked values and the same callback URLs.
 5. In a real mini program session, create an order and tap payment.
 6. Complete WeChat payment with the real payer account.
-7. Verify the backend receives `POST /wxpay/pay/notify`, the callback log reaches `SUCCESS`, and the order becomes `PAID`.
+7. Verify the backend receives `POST /wxpay/pay/notify` while route issuance is disabled, or `/wxpay/pay/notify/r/{opaque-token}` after the routed handlers are deployed everywhere and `SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=true`. Confirm the callback log reaches `SUCCESS` and the order becomes `PAID`.
 8. If the callback is delayed, call `POST /app/orders/{orderId}/payment/sync` from the mini program/backend client and verify final state still comes from the backend payment provider query.
 9. Verify `payment_transaction_id` is present before using this order for real WeChat shipping upload.
 
@@ -1052,7 +1055,7 @@ Automated refund checks use the backend mock provider and mock notifications; th
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest='AppAfterSaleControllerTest,AdminAfterSaleControllerTest,RefundCallbackServiceTest,AfterSaleSchemaTest' test
+./mvnw -Dtest='AppAfterSaleControllerTest,AdminAfterSaleControllerTest,RefundCallbackServiceTest,RefundRecoveryServiceTest,PaymentNotificationRouteIssuanceTest,AfterSaleSchemaTest' test
 ```
 
 Mini program and admin smoke:

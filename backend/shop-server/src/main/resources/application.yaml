@@ -107,6 +107,15 @@ shop:
     mock-enabled: ${WECHAT_PAY_MOCK_ENABLED:false}
     notification:
       max-timestamp-skew: ${SHOP_PAY_NOTIFICATION_MAX_TIMESTAMP_SKEW:5m}
+    notification-route:
+      enabled: ${SHOP_PAY_NOTIFICATION_ROUTE_ENABLED:false}
+    secret-encryption:
+      write-version: ${SHOP_PAYMENT_SECRET_WRITE_VERSION:1}
+      active-key-id: ${SHOP_PAYMENT_SECRET_ACTIVE_KEY_ID:}
+      key-ring: ${SHOP_PAYMENT_SECRET_KEY_RING:}
+      rotation-enabled: ${SHOP_PAYMENT_SECRET_ROTATION_ENABLED:false}
+      rotation-delay: ${SHOP_PAYMENT_SECRET_ROTATION_DELAY:1m}
+      rotation-batch-size: ${SHOP_PAYMENT_SECRET_ROTATION_BATCH_SIZE:50}
     initiation:
       claim-timeout: ${SHOP_PAY_PREPAY_CLAIM_TIMEOUT:2m}
     timeout-scan-enabled: ${SHOP_PAY_TIMEOUT_SCAN_ENABLED:true}

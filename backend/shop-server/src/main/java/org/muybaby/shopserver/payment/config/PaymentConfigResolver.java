@@ -73,7 +73,7 @@ public class PaymentConfigResolver {
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                                private_key_file_id, merchant_certificate_file_id, verify_mode,
                                wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
-                               enabled
+                               enabled, secret_cipher_version, secret_key_id
                         from payment_config
                         where id = :paymentConfigId
                         """)
@@ -164,7 +164,7 @@ public class PaymentConfigResolver {
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                                private_key_file_id, merchant_certificate_file_id, verify_mode,
                                wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
-                               enabled
+                               enabled, secret_cipher_version, secret_key_id
                         from payment_config
                         where id = :paymentConfigId
                           and status = 'ACTIVE'
@@ -181,7 +181,7 @@ public class PaymentConfigResolver {
                     && Objects.equals(locked.appId(), config.appId())
                     && Objects.equals(locked.mchId(), config.mchId())
                     && Objects.equals(locked.merchantSerialNo(), config.merchantSerialNo())
-                    && fingerprintsEqual(secretCipher.decrypt(locked.apiV3KeyCiphertext()), config.apiV3Key())
+                    && fingerprintsEqual(decryptApiV3Key(locked), config.apiV3Key())
                     && Objects.equals(locked.privateKeyFileId(), config.privateKeyFileId())
                     && Objects.equals(locked.merchantCertificateFileId(), config.merchantCertificateFileId())
                     && locked.verifyMode() == config.verifyMode()
@@ -283,7 +283,7 @@ public class PaymentConfigResolver {
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                                private_key_file_id, merchant_certificate_file_id, verify_mode,
                                wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
-                               enabled
+                               enabled, secret_cipher_version, secret_key_id
                         from payment_config
                         where enabled = true
                           and status = 'ACTIVE'
@@ -307,7 +307,7 @@ public class PaymentConfigResolver {
                 row.appId(),
                 row.mchId(),
                 row.merchantSerialNo(),
-                secretCipher.decrypt(row.apiV3KeyCiphertext()),
+                decryptApiV3Key(row),
                 readPrivateFile(row.privateKeyFileId()),
                 row.notifyUrl(),
                 row.refundNotifyUrl(),
@@ -426,8 +426,28 @@ public class PaymentConfigResolver {
                 nullableLong(rs, "wechat_public_key_file_id"),
                 rs.getString("notify_url"),
                 rs.getString("refund_notify_url"),
-                rs.getBoolean("enabled")
+                rs.getBoolean("enabled"),
+                rs.getInt("secret_cipher_version"),
+                rs.getString("secret_key_id")
         );
+    }
+
+    public static PaymentSecretCipher.SecretContext apiV3KeyContext(Long configId) {
+        if (configId == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return new PaymentSecretCipher.SecretContext(
+                "payment-config", configId.toString(), "api-v3-key");
+    }
+
+    private String decryptApiV3Key(PaymentConfigRow row) {
+        PaymentSecretCipher.DecryptedSecret decrypted = secretCipher.decrypt(
+                apiV3KeyContext(row.id()), row.apiV3KeyCiphertext());
+        if (decrypted.version() != row.secretCipherVersion()
+                || !decrypted.keyId().equals(nullToEmpty(row.secretKeyId()))) {
+            throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
+        }
+        return decrypted.plaintext();
     }
 
     private Long nullableLong(ResultSet rs, String columnLabel) throws SQLException {
@@ -449,7 +469,9 @@ public class PaymentConfigResolver {
             Long wechatPublicKeyFileId,
             String notifyUrl,
             String refundNotifyUrl,
-            boolean enabled
+            boolean enabled,
+            int secretCipherVersion,
+            String secretKeyId
     ) {
     }
 }

@@ -8,6 +8,7 @@ import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.payment.PaymentInitiationProperties;
 import org.muybaby.shopserver.payment.PaymentProperties;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
+import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.dto.WechatPaymentParamsResponse;
 import org.muybaby.shopserver.payment.provider.WechatJsapiPrepayRequest;
@@ -42,6 +43,7 @@ public class PaymentInitiationService {
     private final PaymentProperties paymentProperties;
     private final PaymentInitiationProperties initiationProperties;
     private final PaymentConfigResolver paymentConfigResolver;
+    private final PaymentNotificationRouteService paymentNotificationRouteService;
     private final WechatPayProvider wechatPayProvider;
     private final OrderStatusLogService orderStatusLogService;
     private final PaymentAttemptService paymentAttemptService;
@@ -54,6 +56,7 @@ public class PaymentInitiationService {
             PaymentProperties paymentProperties,
             PaymentInitiationProperties initiationProperties,
             PaymentConfigResolver paymentConfigResolver,
+            PaymentNotificationRouteService paymentNotificationRouteService,
             WechatPayProvider wechatPayProvider,
             OrderStatusLogService orderStatusLogService,
             PaymentAttemptService paymentAttemptService,
@@ -64,6 +67,7 @@ public class PaymentInitiationService {
         this.paymentProperties = paymentProperties;
         this.initiationProperties = initiationProperties;
         this.paymentConfigResolver = paymentConfigResolver;
+        this.paymentNotificationRouteService = paymentNotificationRouteService;
         this.wechatPayProvider = wechatPayProvider;
         this.orderStatusLogService = orderStatusLogService;
         this.paymentAttemptService = paymentAttemptService;
@@ -255,12 +259,18 @@ public class PaymentInitiationService {
         String payerOpenid = findOpenid(userId);
         String outTradeNo = outTradeNo(order);
         LocalDateTime expiresAt = claimedAt.plusMinutes(expireMinutes());
+        String notificationRouteToken = paymentNotificationRouteService.issueToken();
+        // Validate the exact callback URL before persisting a payment that would otherwise be
+        // permanently bound to an unusable immutable configuration.
+        paymentNotificationRouteService.payNotifyUrl(
+                config.notifyUrl(), notificationRouteToken);
         String requestDigest = requestDigest(
                 outTradeNo,
                 order.payableAmountCent(),
                 CURRENCY_CNY,
                 payerOpenid,
                 expiresAt,
+                notificationRouteToken,
                 config
         );
         String paymentConfigFingerprint = paymentConfigResolver.captureForPayment(config);
@@ -269,13 +279,13 @@ public class PaymentInitiationService {
         int insertedRows = jdbcClient.sql("""
                         insert into payment_order
                             (order_id, payment_config_id, payment_config_fingerprint,
-                             out_trade_no, prepay_id, payer_openid, status,
+                             notification_route_token, out_trade_no, prepay_id, payer_openid, status,
                              amount_cent, currency, request_digest, expires_at,
                              prepay_claim_token, prepay_claimed_at, prepay_attempts,
                              created_at, updated_at)
                         values
                             (:orderId, :paymentConfigId, :paymentConfigFingerprint,
-                             :outTradeNo, '', :payerOpenid, 'PREPARING',
+                             :notificationRouteToken, :outTradeNo, '', :payerOpenid, 'PREPARING',
                              :amountCent, :currency, :requestDigest, :expiresAt,
                              :claimToken, :claimedAt, 1,
                              :createdAt, :updatedAt)
@@ -283,6 +293,7 @@ public class PaymentInitiationService {
                 .param("orderId", order.orderId())
                 .param("paymentConfigId", config.configId())
                 .param("paymentConfigFingerprint", paymentConfigFingerprint)
+                .param("notificationRouteToken", notificationRouteToken)
                 .param("outTradeNo", outTradeNo)
                 .param("payerOpenid", payerOpenid)
                 .param("amountCent", order.payableAmountCent())
@@ -324,6 +335,7 @@ public class PaymentInitiationService {
                 order.payableAmountCent(),
                 CURRENCY_CNY,
                 expiresAt,
+                notificationRouteToken,
                 claimToken
         );
         return new InitiationPreparation(claimed, null);
@@ -465,6 +477,7 @@ public class PaymentInitiationService {
                                currency,
                                request_digest,
                                expires_at,
+                               notification_route_token,
                                prepay_claim_token,
                                prepay_claimed_at,
                                prepay_attempts
@@ -503,6 +516,7 @@ public class PaymentInitiationService {
                 payment.currency(),
                 payment.payerOpenid(),
                 payment.expiresAt(),
+                payment.notificationRouteToken(),
                 config
         );
         if (payment.amountCent() != order.payableAmountCent()
@@ -547,6 +561,7 @@ public class PaymentInitiationService {
                 payment.amountCent(),
                 payment.currency(),
                 payment.expiresAt(),
+                payment.notificationRouteToken(),
                 claimToken
         );
     }
@@ -558,7 +573,8 @@ public class PaymentInitiationService {
                 claimed.amountCent(),
                 claimed.currency(),
                 claimed.payerOpenid(),
-                config.notifyUrl(),
+                paymentNotificationRouteService.payNotifyUrl(
+                        config.notifyUrl(), claimed.notificationRouteToken()),
                 claimed.expiresAt()
         );
     }
@@ -628,9 +644,10 @@ public class PaymentInitiationService {
             String currency,
             String payerOpenid,
             LocalDateTime expiresAt,
+            String notificationRouteToken,
             ResolvedPaymentConfig config
     ) {
-        return sha256(String.join("|",
+        String stableRequest = String.join("|",
                 nullToEmpty(outTradeNo),
                 Long.toString(amountCent),
                 nullToEmpty(currency),
@@ -641,7 +658,11 @@ public class PaymentInitiationService {
                 nullToEmpty(config.appId()),
                 nullToEmpty(config.mchId()),
                 nullToEmpty(config.notifyUrl())
-        ));
+        );
+        if (StringUtils.hasText(notificationRouteToken)) {
+            stableRequest = stableRequest + "|" + notificationRouteToken;
+        }
+        return sha256(stableRequest);
     }
 
     private String outTradeNo(OrderInitiationRow order) {
@@ -721,6 +742,7 @@ public class PaymentInitiationService {
                 rs.getString("currency"),
                 rs.getString("request_digest"),
                 rs.getObject("expires_at", LocalDateTime.class),
+                rs.getString("notification_route_token"),
                 rs.getString("prepay_claim_token"),
                 rs.getObject("prepay_claimed_at", LocalDateTime.class),
                 rs.getInt("prepay_attempts")
@@ -770,6 +792,7 @@ public class PaymentInitiationService {
             long amountCent,
             String currency,
             LocalDateTime expiresAt,
+            String notificationRouteToken,
             String claimToken
     ) {
     }
@@ -790,6 +813,7 @@ public class PaymentInitiationService {
             String currency,
             String requestDigest,
             LocalDateTime expiresAt,
+            String notificationRouteToken,
             String claimToken,
             LocalDateTime claimedAt,
             int prepayAttempts

@@ -165,7 +165,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                           and error_code = 'VERIFY_FAILED'
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(1);
+                .single()).isZero();
         assertThat(mockWechatPayProvider.refundNotificationConfigAttempts(approved.outRefundNo()))
                 .containsExactly(91002L, 91001L);
     }
@@ -379,7 +379,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
     }
 
     @Test
-    void invalidRefundNotificationLogsFailedVerificationWithoutChangingRefundState() throws Exception {
+    void invalidRefundNotificationIsNotPersistedAndDoesNotChangeRefundState() throws Exception {
         ApprovedRefund approved = approveRefund("after-sale-refund-invalid", 6980L, 6980L);
 
         postRefundNotify(refundNotifyBody(
@@ -408,7 +408,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                           and resource_digest not like '%wx-refund-invalid%'
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(1);
+                .single()).isZero();
     }
 
     @Test

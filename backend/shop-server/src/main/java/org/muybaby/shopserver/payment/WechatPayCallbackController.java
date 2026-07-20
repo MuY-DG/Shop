@@ -6,6 +6,7 @@ import org.muybaby.shopserver.payment.service.PaymentCallbackService;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -34,6 +35,20 @@ public class WechatPayCallbackController {
         return ApiResponse.success();
     }
 
+    @PostMapping("/wxpay/pay/notify/r/{routeToken}")
+    public ApiResponse<Void> routedPayNotify(
+            @PathVariable String routeToken,
+            @RequestHeader(value = "Wechatpay-Timestamp", required = false) String timestamp,
+            @RequestHeader(value = "Wechatpay-Nonce", required = false) String nonce,
+            @RequestHeader(value = "Wechatpay-Serial", required = false) String serial,
+            @RequestHeader(value = "Wechatpay-Signature", required = false) String signature,
+            @RequestBody String body
+    ) {
+        paymentCallbackService.handlePayNotification(
+                routeToken, timestamp, nonce, serial, signature, body);
+        return ApiResponse.success();
+    }
+
     @PostMapping("/wxpay/refund/notify")
     public ApiResponse<Void> refundNotify(
             @RequestHeader(value = "Wechatpay-Timestamp", required = false) String timestamp,
@@ -43,6 +58,20 @@ public class WechatPayCallbackController {
             @RequestBody String body
     ) {
         refundCallbackService.handleRefundNotification(timestamp, nonce, serial, signature, body);
+        return ApiResponse.success();
+    }
+
+    @PostMapping("/wxpay/refund/notify/r/{routeToken}")
+    public ApiResponse<Void> routedRefundNotify(
+            @PathVariable String routeToken,
+            @RequestHeader(value = "Wechatpay-Timestamp", required = false) String timestamp,
+            @RequestHeader(value = "Wechatpay-Nonce", required = false) String nonce,
+            @RequestHeader(value = "Wechatpay-Serial", required = false) String serial,
+            @RequestHeader(value = "Wechatpay-Signature", required = false) String signature,
+            @RequestBody String body
+    ) {
+        refundCallbackService.handleRefundNotification(
+                routeToken, timestamp, nonce, serial, signature, body);
         return ApiResponse.success();
     }
 }

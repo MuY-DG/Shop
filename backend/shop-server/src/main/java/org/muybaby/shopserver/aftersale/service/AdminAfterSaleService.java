@@ -20,6 +20,7 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
+import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.provider.WechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatRefundRequest;
@@ -38,6 +39,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
@@ -51,6 +53,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -66,15 +69,19 @@ public class AdminAfterSaleService {
 
     private final JdbcClient jdbcClient;
     private final PaymentConfigResolver paymentConfigResolver;
+    private final PaymentNotificationRouteService paymentNotificationRouteService;
     private final WechatPayProvider wechatPayProvider;
     private final StorageProvider storageProvider;
     private final TransactionTemplate transactionTemplate;
+    private final TransactionTemplate refundStateTransaction;
+    private final TransactionTemplate withoutTransaction;
     private final OrderStatusLogService orderStatusLogService;
     private final RefundRecoveryService refundRecoveryService;
 
     public AdminAfterSaleService(
             JdbcClient jdbcClient,
             PaymentConfigResolver paymentConfigResolver,
+            PaymentNotificationRouteService paymentNotificationRouteService,
             WechatPayProvider wechatPayProvider,
             StorageProvider storageProvider,
             PlatformTransactionManager transactionManager,
@@ -83,9 +90,16 @@ public class AdminAfterSaleService {
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentConfigResolver = paymentConfigResolver;
+        this.paymentNotificationRouteService = paymentNotificationRouteService;
         this.wechatPayProvider = wechatPayProvider;
         this.storageProvider = storageProvider;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.refundStateTransaction = new TransactionTemplate(transactionManager);
+        this.refundStateTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.withoutTransaction = new TransactionTemplate(transactionManager);
+        this.withoutTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
         this.orderStatusLogService = orderStatusLogService;
         this.refundRecoveryService = refundRecoveryService;
     }
@@ -328,16 +342,12 @@ public class AdminAfterSaleService {
         Long adminUserId = requireAdminUser(principal);
         long approvedAmountCent = requireApprovedAmount(request == null ? null : request.approvedAmountCent());
         String auditNote = normalizeAuditNote(request == null ? null : request.auditNote());
-
-        PreparedRefundRequest refundContext = transactionTemplate.execute(status ->
-                prepareRefundRequest(adminUserId, afterSaleId, approvedAmountCent, auditNote)
-        );
-        if (refundContext == null) {
+        AfterSaleResponse response = withoutTransaction.execute(status -> approveOutsideTransaction(
+                adminUserId, afterSaleId, approvedAmountCent, auditNote));
+        if (response == null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-
-        submitRefund(refundContext);
-        return requireResponse(afterSaleId);
+        return response;
     }
 
     public AfterSaleResponse retryClosedRefund(
@@ -347,15 +357,12 @@ public class AdminAfterSaleService {
     ) {
         Long adminUserId = requireAdminUser(principal);
         String note = requireRefundOperationNote(request);
-        PreparedRefundRequest refundContext = transactionTemplate.execute(status ->
-                prepareClosedRefundRetry(adminUserId, afterSaleId, note)
-        );
-        if (refundContext == null) {
+        AfterSaleResponse response = withoutTransaction.execute(status ->
+                retryClosedRefundOutsideTransaction(adminUserId, afterSaleId, note));
+        if (response == null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-
-        submitRefund(refundContext);
-        return requireResponse(afterSaleId);
+        return response;
     }
 
     public AdminRefundOperationResponse queryRefundProvider(
@@ -557,15 +564,11 @@ public class AdminAfterSaleService {
     }
 
     private void submitRefund(PreparedRefundRequest refundContext) {
-        ResolvedPaymentConfig config;
-        WechatRefundRequest request;
         WechatRefundResult refundResult;
 
         try {
-            config = paymentConfigResolver.resolveForPayment(
-                    refundContext.paymentConfigId(), refundContext.paymentConfigFingerprint());
-            request = refundContext.toProviderRequest(config.refundNotifyUrl());
-            refundResult = wechatPayProvider.requestRefund(config, request);
+            refundResult = wechatPayProvider.requestRefund(
+                    refundContext.config(), refundContext.toProviderRequest());
         } catch (BusinessException ex) {
             markRefundRequestUncertain(refundContext, ex);
             throw new BusinessException(ErrorCode.WECHAT_REFUND_FAILED);
@@ -577,11 +580,167 @@ public class AdminAfterSaleService {
         markRefundProviderAccepted(refundContext, refundResult);
     }
 
-    private PreparedRefundRequest prepareRefundRequest(
+    private AfterSaleResponse approveOutsideTransaction(
             Long adminUserId,
             Long afterSaleId,
             long approvedAmountCent,
             String auditNote
+    ) {
+        RefundProviderPreflight providerPreflight = preflightRefundProvider(
+                afterSaleId, RefundPreflightMode.APPROVE, approvedAmountCent);
+        PreparedRefundRequest refundContext = refundStateTransaction.execute(status ->
+                prepareRefundRequest(
+                        adminUserId, afterSaleId, approvedAmountCent, auditNote, providerPreflight));
+        if (refundContext == null) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        submitRefund(refundContext);
+        return requireResponse(afterSaleId);
+    }
+
+    private AfterSaleResponse retryClosedRefundOutsideTransaction(
+            Long adminUserId,
+            Long afterSaleId,
+            String note
+    ) {
+        RefundProviderPreflight providerPreflight = preflightRefundProvider(
+                afterSaleId, RefundPreflightMode.CLOSED_RETRY, null);
+        PreparedRefundRequest refundContext = refundStateTransaction.execute(status ->
+                prepareClosedRefundRetry(adminUserId, afterSaleId, note, providerPreflight));
+        if (refundContext == null) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        submitRefund(refundContext);
+        return requireResponse(afterSaleId);
+    }
+
+    private RefundProviderPreflight preflightRefundProvider(
+            Long afterSaleId,
+            RefundPreflightMode mode,
+            Long approvedAmountCent
+    ) {
+        RefundPaymentIdentity identity = jdbcClient.sql("""
+                        select po.id as payment_order_id,
+                               po.payment_config_id,
+                               po.payment_config_fingerprint,
+                               po.amount_cent as payment_amount_cent,
+                               asr.status as after_sale_status,
+                               asr.requested_amount_cent,
+                               asr.approved_amount_cent,
+                               o.id as order_id,
+                               o.status as order_status,
+                               o.paid_amount_cent,
+                               ro.id as latest_refund_id,
+                               ro.order_id as latest_refund_order_id,
+                               ro.payment_order_id as latest_refund_payment_order_id,
+                               ro.refund_amount_cent as latest_refund_amount_cent,
+                               ro.status as latest_refund_status,
+                               ro.callback_status as latest_refund_callback_status,
+                               ro.recovery_claim_token,
+                               ro.recovery_claimed_at
+                        from after_sale_request asr
+                        join shop_order o on o.id = asr.order_id
+                        join payment_order po on po.order_id = asr.order_id
+                        left join refund_order ro on ro.id = (
+                            select max(latest_ro.id)
+                            from refund_order latest_ro
+                            where latest_ro.after_sale_id = asr.id
+                        )
+                        where asr.id = :afterSaleId
+                          and po.status = 'PAID'
+                        order by po.paid_at desc, po.id desc
+                        limit 1
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query((rs, rowNum) -> new RefundPaymentIdentity(
+                        rs.getLong("payment_order_id"),
+                        rs.getObject("payment_config_id", Long.class),
+                        rs.getString("payment_config_fingerprint"),
+                        rs.getLong("payment_amount_cent"),
+                        rs.getString("after_sale_status"),
+                        rs.getLong("requested_amount_cent"),
+                        rs.getObject("approved_amount_cent", Long.class),
+                        rs.getLong("order_id"),
+                        rs.getString("order_status"),
+                        rs.getLong("paid_amount_cent"),
+                        rs.getObject("latest_refund_id", Long.class),
+                        rs.getObject("latest_refund_order_id", Long.class),
+                        rs.getObject("latest_refund_payment_order_id", Long.class),
+                        rs.getObject("latest_refund_amount_cent", Long.class),
+                        rs.getString("latest_refund_status"),
+                        rs.getString("latest_refund_callback_status"),
+                        rs.getString("recovery_claim_token"),
+                        rs.getObject("recovery_claimed_at", LocalDateTime.class)))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+        requireEligibleRefundPreflight(mode, identity, approvedAmountCent);
+        ResolvedPaymentConfig resolvedConfig = paymentConfigResolver.resolveForPayment(
+                identity.paymentConfigId(), identity.paymentConfigFingerprint());
+        String notificationRouteToken = paymentNotificationRouteService.issueToken();
+        String refundNotifyUrl = paymentNotificationRouteService.refundNotifyUrl(
+                resolvedConfig.refundNotifyUrl(), notificationRouteToken);
+        return new RefundProviderPreflight(
+                identity, notificationRouteToken, resolvedConfig, refundNotifyUrl);
+    }
+
+    private void requireEligibleRefundPreflight(
+            RefundPreflightMode mode,
+            RefundPaymentIdentity identity,
+            Long approvedAmountCent
+    ) {
+        if (mode == RefundPreflightMode.APPROVE) {
+            if (!AUDITABLE_STATUSES.contains(identity.afterSaleStatus())
+                    || !REFUNDABLE_ORDER_STATUSES.contains(identity.orderStatus())
+                    || identity.latestRefundId() != null) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            if (approvedAmountCent == null
+                    || approvedAmountCent != identity.requestedAmountCent()
+                    || approvedAmountCent != identity.paidAmountCent()
+                    || approvedAmountCent != identity.paymentAmountCent()) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            return;
+        }
+        if (!AfterSaleStatus.REFUND_FAILED.name().equals(identity.afterSaleStatus())
+                || !OrderStatus.REFUNDING.name().equals(identity.orderStatus())
+                || identity.latestRefundId() == null
+                || identity.latestRefundId() <= 0
+                || !identity.orderId().equals(identity.latestRefundOrderId())
+                || !identity.paymentOrderId().equals(identity.latestRefundPaymentOrderId())
+                || !RefundOrderStatus.FAILED.name().equals(identity.latestRefundStatus())
+                || !"CLOSED".equals(identity.latestRefundCallbackStatus())
+                || identity.latestRefundAmountCent() == null
+                || identity.latestRefundAmountCent() <= 0
+                || identity.latestRefundAmountCent() != identity.requestedAmountCent()
+                || identity.latestRefundAmountCent() != identity.paidAmountCent()
+                || identity.latestRefundAmountCent() != identity.paymentAmountCent()
+                || !identity.latestRefundAmountCent().equals(identity.afterSaleApprovedAmountCent())
+                || refundRecoveryService.isRecoveryClaimActive(
+                identity.recoveryClaimToken(), identity.recoveryClaimedAt())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
+    private void requireMatchingPreflight(
+            PaymentOrderRow payment,
+            RefundProviderPreflight providerPreflight
+    ) {
+        RefundPaymentIdentity identity = providerPreflight.identity();
+        if (!Objects.equals(payment.id(), identity.paymentOrderId())
+                || !Objects.equals(payment.paymentConfigId(), identity.paymentConfigId())
+                || !Objects.equals(
+                payment.paymentConfigFingerprint(), identity.paymentConfigFingerprint())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
+    private PreparedRefundRequest prepareRefundRequest(
+            Long adminUserId,
+            Long afterSaleId,
+            long approvedAmountCent,
+            String auditNote,
+            RefundProviderPreflight providerPreflight
     ) {
         AfterSaleAuditRow afterSale = findAfterSaleForUpdate(afterSaleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
@@ -606,22 +765,27 @@ public class AdminAfterSaleService {
         if (!StringUtils.hasText(payment.transactionId()) && !StringUtils.hasText(payment.outTradeNo())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+        requireMatchingPreflight(payment, providerPreflight);
         rejectIfRefundOrderExists(afterSaleId);
 
         String outRefundNo = outRefundNo(afterSaleId, order.orderId(), payment.id());
+        String notificationRouteToken = providerPreflight.notificationRouteToken();
 
         LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into refund_order
-                            (after_sale_id, order_id, payment_order_id, out_refund_no, refund_id,
+                            (after_sale_id, order_id, payment_order_id, notification_route_token,
+                             out_refund_no, refund_id,
                              refund_amount_cent, status, callback_status, requested_at, created_at, updated_at)
                         values
-                            (:afterSaleId, :orderId, :paymentOrderId, :outRefundNo, :refundId,
+                            (:afterSaleId, :orderId, :paymentOrderId, :notificationRouteToken,
+                             :outRefundNo, :refundId,
                              :refundAmountCent, :status, :callbackStatus, :requestedAt, :createdAt, :updatedAt)
                         """)
                 .param("afterSaleId", afterSaleId)
                 .param("orderId", order.orderId())
                 .param("paymentOrderId", payment.id())
+                .param("notificationRouteToken", notificationRouteToken)
                 .param("outRefundNo", outRefundNo)
                 .param("refundId", "")
                 .param("refundAmountCent", approvedAmountCent)
@@ -676,8 +840,8 @@ public class AdminAfterSaleService {
         );
         return new PreparedRefundRequest(
                 refundOrderId,
-                payment.paymentConfigId(),
-                payment.paymentConfigFingerprint(),
+                providerPreflight.config(),
+                providerPreflight.notifyUrl(),
                 payment.outTradeNo(),
                 payment.transactionId(),
                 outRefundNo,
@@ -690,7 +854,8 @@ public class AdminAfterSaleService {
     private PreparedRefundRequest prepareClosedRefundRetry(
             Long adminUserId,
             Long afterSaleId,
-            String operationNote
+            String operationNote,
+            RefundProviderPreflight providerPreflight
     ) {
         AfterSaleAuditRow afterSale = findAfterSaleForUpdate(afterSaleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
@@ -709,6 +874,7 @@ public class AdminAfterSaleService {
         if (!StringUtils.hasText(payment.transactionId()) && !StringUtils.hasText(payment.outTradeNo())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+        requireMatchingPreflight(payment, providerPreflight);
 
         RefundRetrySource source = findLatestRefundForUpdate(afterSaleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
@@ -731,18 +897,22 @@ public class AdminAfterSaleService {
                 source.refundOrderId(), source.recoveryClaimToken(), source.recoveryClaimedAt());
 
         String outRefundNo = retryOutRefundNo(afterSaleId);
+        String notificationRouteToken = providerPreflight.notificationRouteToken();
         LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into refund_order
-                            (after_sale_id, order_id, payment_order_id, out_refund_no, refund_id,
+                            (after_sale_id, order_id, payment_order_id, notification_route_token,
+                             out_refund_no, refund_id,
                              refund_amount_cent, status, callback_status, requested_at, created_at, updated_at)
                         values
-                            (:afterSaleId, :orderId, :paymentOrderId, :outRefundNo, '',
+                            (:afterSaleId, :orderId, :paymentOrderId, :notificationRouteToken,
+                             :outRefundNo, '',
                              :refundAmountCent, :status, :callbackStatus, :requestedAt, :createdAt, :updatedAt)
                         """)
                 .param("afterSaleId", afterSaleId)
                 .param("orderId", order.orderId())
                 .param("paymentOrderId", payment.id())
+                .param("notificationRouteToken", notificationRouteToken)
                 .param("outRefundNo", outRefundNo)
                 .param("refundAmountCent", source.refundAmountCent())
                 .param("status", RefundOrderStatus.PROCESSING.name())
@@ -787,8 +957,8 @@ public class AdminAfterSaleService {
 
         return new PreparedRefundRequest(
                 refundOrderId,
-                payment.paymentConfigId(),
-                payment.paymentConfigFingerprint(),
+                providerPreflight.config(),
+                providerPreflight.notifyUrl(),
                 payment.outTradeNo(),
                 payment.transactionId(),
                 outRefundNo,
@@ -799,7 +969,7 @@ public class AdminAfterSaleService {
     }
 
     private void markRefundProviderAccepted(PreparedRefundRequest refundContext, WechatRefundResult refundResult) {
-        transactionTemplate.executeWithoutResult(status -> {
+        refundStateTransaction.executeWithoutResult(status -> {
             LocalDateTime now = LocalDateTime.now();
             String providerStatus = StringUtils.hasText(refundResult.status())
                     ? refundResult.status()
@@ -824,7 +994,7 @@ public class AdminAfterSaleService {
     }
 
     private void markRefundRequestUncertain(PreparedRefundRequest refundContext, RuntimeException failure) {
-        transactionTemplate.executeWithoutResult(status -> {
+        refundStateTransaction.executeWithoutResult(status -> {
             LocalDateTime now = LocalDateTime.now();
             jdbcClient.sql("""
                             update refund_order
@@ -1494,6 +1664,41 @@ public class AdminAfterSaleService {
     ) {
     }
 
+    private record RefundPaymentIdentity(
+            Long paymentOrderId,
+            Long paymentConfigId,
+            String paymentConfigFingerprint,
+            long paymentAmountCent,
+            String afterSaleStatus,
+            long requestedAmountCent,
+            Long afterSaleApprovedAmountCent,
+            Long orderId,
+            String orderStatus,
+            long paidAmountCent,
+            Long latestRefundId,
+            Long latestRefundOrderId,
+            Long latestRefundPaymentOrderId,
+            Long latestRefundAmountCent,
+            String latestRefundStatus,
+            String latestRefundCallbackStatus,
+            String recoveryClaimToken,
+            LocalDateTime recoveryClaimedAt
+    ) {
+    }
+
+    private enum RefundPreflightMode {
+        APPROVE,
+        CLOSED_RETRY
+    }
+
+    private record RefundProviderPreflight(
+            RefundPaymentIdentity identity,
+            String notificationRouteToken,
+            ResolvedPaymentConfig config,
+            String notifyUrl
+    ) {
+    }
+
     private record RefundRetrySource(
             Long refundOrderId,
             Long orderId,
@@ -1557,8 +1762,8 @@ public class AdminAfterSaleService {
 
     private record PreparedRefundRequest(
             Long refundOrderId,
-            Long paymentConfigId,
-            String paymentConfigFingerprint,
+            ResolvedPaymentConfig config,
+            String notifyUrl,
             String outTradeNo,
             String transactionId,
             String outRefundNo,
@@ -1566,7 +1771,7 @@ public class AdminAfterSaleService {
             long totalAmountCent,
             String reason
     ) {
-        private WechatRefundRequest toProviderRequest(String notifyUrl) {
+        private WechatRefundRequest toProviderRequest() {
             return new WechatRefundRequest(
                     outTradeNo,
                     transactionId,

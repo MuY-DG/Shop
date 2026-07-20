@@ -5,6 +5,7 @@ import org.muybaby.shopserver.aftersale.RefundRecoveryProperties;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
+import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.provider.WechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatRefundQueryResult;
@@ -35,6 +36,7 @@ public class RefundRecoveryService {
 
     private final JdbcClient jdbcClient;
     private final PaymentConfigResolver paymentConfigResolver;
+    private final PaymentNotificationRouteService paymentNotificationRouteService;
     private final WechatPayProvider wechatPayProvider;
     private final RefundFinalizationService refundFinalizationService;
     private final RefundRecoveryProperties properties;
@@ -45,6 +47,7 @@ public class RefundRecoveryService {
     public RefundRecoveryService(
             JdbcClient jdbcClient,
             PaymentConfigResolver paymentConfigResolver,
+            PaymentNotificationRouteService paymentNotificationRouteService,
             WechatPayProvider wechatPayProvider,
             RefundFinalizationService refundFinalizationService,
             RefundRecoveryProperties properties,
@@ -53,6 +56,7 @@ public class RefundRecoveryService {
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentConfigResolver = paymentConfigResolver;
+        this.paymentNotificationRouteService = paymentNotificationRouteService;
         this.wechatPayProvider = wechatPayProvider;
         this.refundFinalizationService = refundFinalizationService;
         this.properties = properties;
@@ -214,7 +218,8 @@ public class RefundRecoveryService {
                 claimedRefund.refundAmountCent(),
                 claimedRefund.totalAmountCent(),
                 claimedRefund.reason(),
-                config.refundNotifyUrl()
+                paymentNotificationRouteService.refundNotifyUrl(
+                        config.refundNotifyUrl(), claimedRefund.notificationRouteToken())
         );
         WechatRefundResult retryResult = wechatPayProvider.requestRefund(config, retryRequest);
         return new WechatRefundQueryResult(
@@ -253,6 +258,7 @@ public class RefundRecoveryService {
                                ro.status,
                                ro.callback_status,
                                ro.recovery_attempts,
+                               ro.notification_route_token,
                                po.payment_config_id,
                                po.payment_config_fingerprint,
                                po.out_trade_no,
@@ -320,6 +326,7 @@ public class RefundRecoveryService {
                 candidate.outRefundNo(),
                 candidate.paymentConfigId(),
                 candidate.paymentConfigFingerprint(),
+                candidate.notificationRouteToken(),
                 claimToken,
                 candidate.recoveryAttempts() + 1,
                 candidate.status(),
@@ -386,6 +393,7 @@ public class RefundRecoveryService {
                                ro.status,
                                ro.callback_status,
                                ro.recovery_attempts,
+                               ro.notification_route_token,
                                po.payment_config_id,
                                po.payment_config_fingerprint,
                                po.out_trade_no,
@@ -458,6 +466,7 @@ public class RefundRecoveryService {
                 candidate.outRefundNo(),
                 candidate.paymentConfigId(),
                 candidate.paymentConfigFingerprint(),
+                candidate.notificationRouteToken(),
                 claimToken,
                 candidate.recoveryAttempts() + 1,
                 candidate.status(),
@@ -686,6 +695,7 @@ public class RefundRecoveryService {
                 rs.getString("out_refund_no"),
                 nullableLong(rs, "payment_config_id"),
                 rs.getString("payment_config_fingerprint"),
+                rs.getString("notification_route_token"),
                 rs.getString("status"),
                 rs.getString("callback_status"),
                 rs.getInt("recovery_attempts"),
@@ -719,6 +729,7 @@ public class RefundRecoveryService {
             String outRefundNo,
             Long paymentConfigId,
             String paymentConfigFingerprint,
+            String notificationRouteToken,
             String status,
             String callbackStatus,
             int recoveryAttempts,
@@ -736,6 +747,7 @@ public class RefundRecoveryService {
             String outRefundNo,
             Long paymentConfigId,
             String paymentConfigFingerprint,
+            String notificationRouteToken,
             String claimToken,
             int recoveryAttempts,
             String status,

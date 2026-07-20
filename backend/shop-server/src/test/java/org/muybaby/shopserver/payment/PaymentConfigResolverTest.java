@@ -15,6 +15,7 @@ import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.PaymentConfigSource;
 import org.muybaby.shopserver.payment.config.PaymentConfigSourceSettingService;
 import org.muybaby.shopserver.payment.config.PaymentNotificationConfigSelector;
+import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
@@ -29,6 +30,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -364,7 +366,8 @@ class PaymentConfigResolverTest {
         PaymentNotificationConfigSelector selector = new PaymentNotificationConfigSelector(
                 jdbcClient,
                 rotatedResolver,
-                new PaymentConfigIdentityValidator(rotatedResolver));
+                new PaymentConfigIdentityValidator(rotatedResolver),
+                new PaymentNotificationRouteService(new PaymentNotificationRouteProperties(false)));
         PaymentNotificationConfigSelector.ParsedNotification<String> parsed = selector.parse(config -> {
             if (!"mch_notify_history".equals(config.mchId())) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
@@ -394,7 +397,7 @@ class PaymentConfigResolverTest {
                 "",
                 15,
                 ""
-        ));
+        ), legacyEncryptionProperties());
 
         assertThatThrownBy(() -> cipherWithoutKey.encrypt("api_v3_secret_test"))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
@@ -422,7 +425,8 @@ class PaymentConfigResolverTest {
                 sourceProperties.expireMinutes(),
                 ""
         );
-        PaymentSecretCipher cipherWithoutKey = new AesGcmPaymentSecretCipher(propertiesWithoutRootKey);
+        PaymentSecretCipher cipherWithoutKey = new AesGcmPaymentSecretCipher(
+                propertiesWithoutRootKey, legacyEncryptionProperties());
         PaymentConfigSnapshotStore storeWithoutKey = new PaymentConfigSnapshotStore(
                 jdbcClient, cipherWithoutKey);
         PaymentConfigResolver resolverWithoutKey = new PaymentConfigResolver(
@@ -507,6 +511,17 @@ class PaymentConfigResolverTest {
                 privateStorageFileService,
                 sourceSettingService,
                 snapshotStore
+        );
+    }
+
+    private PaymentSecretEncryptionProperties legacyEncryptionProperties() {
+        return new PaymentSecretEncryptionProperties(
+                1,
+                "",
+                "",
+                false,
+                Duration.ofMinutes(1),
+                50
         );
     }
 

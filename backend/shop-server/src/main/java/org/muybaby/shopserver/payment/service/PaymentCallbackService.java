@@ -49,30 +49,28 @@ public class PaymentCallbackService {
             String signature,
             String body
     ) {
+        handlePayNotification(null, timestamp, nonce, serial, signature, body);
+    }
+
+    public void handlePayNotification(
+            String routeToken,
+            String timestamp,
+            String nonce,
+            String serial,
+            String signature,
+            String body
+    ) {
         timestampValidator.validate(timestamp);
         String rawBodySha256 = sha256(body);
-        PaymentNotificationConfigSelector.ParsedNotification<WechatPayNotification> parsed;
-        try {
-            parsed = paymentNotificationConfigSelector.parse(
-                    config -> wechatPayProvider.parsePayNotification(
-                            config, timestamp, nonce, serial, signature, body),
-                    notification -> PaymentNotificationConfigSelector.NotificationRoute.payment(
-                            notification.outTradeNo())
-            );
-        } catch (BusinessException ex) {
-            insertCallbackLog(
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    rawBodySha256,
-                    "FAILED",
-                    "VERIFY_FAILED",
-                    "notification verification failed"
-            );
-            throw ex;
-        }
+        PaymentNotificationConfigSelector.ParsedNotification<WechatPayNotification> parsed =
+                paymentNotificationConfigSelector.parse(
+                        routeToken,
+                        PaymentNotificationConfigSelector.NotificationKind.PAY,
+                        config -> wechatPayProvider.parsePayNotification(
+                                config, timestamp, nonce, serial, signature, body),
+                        notification -> PaymentNotificationConfigSelector.NotificationRoute.payment(
+                                notification.outTradeNo())
+                );
         WechatPayNotification notification = parsed.notification();
 
         Long logId = insertCallbackLog(
@@ -82,6 +80,7 @@ public class PaymentCallbackService {
                 notification.eventType(),
                 notification.resourceDigest(),
                 rawBodySha256,
+                routeToken,
                 "PROCESSING",
                 "",
                 ""
@@ -115,6 +114,7 @@ public class PaymentCallbackService {
             String eventType,
             String resourceDigest,
             String rawBodySha256,
+            String routeToken,
             String status,
             String errorCode,
             String errorMessage
@@ -123,11 +123,13 @@ public class PaymentCallbackService {
         int insertedRows = jdbcClient.sql("""
                         insert into payment_callback_log
                             (callback_type, notify_id, out_trade_no, transaction_id, event_type,
-                             resource_digest, raw_body_sha256, status, error_code, error_message,
+                             resource_digest, raw_body_sha256, route_mode, route_digest,
+                             status, error_code, error_message,
                              created_at, updated_at)
                         values
                             (:callbackType, :notifyId, :outTradeNo, :transactionId, :eventType,
-                             :resourceDigest, :rawBodySha256, :status, :errorCode, :errorMessage,
+                             :resourceDigest, :rawBodySha256, :routeMode, :routeDigest,
+                             :status, :errorCode, :errorMessage,
                              :createdAt, :updatedAt)
                         """)
                 .param("callbackType", CALLBACK_TYPE_PAY)
@@ -137,6 +139,8 @@ public class PaymentCallbackService {
                 .param("eventType", nullToEmpty(eventType))
                 .param("resourceDigest", nullToEmpty(resourceDigest))
                 .param("rawBodySha256", rawBodySha256)
+                .param("routeMode", StringUtils.hasText(routeToken) ? "ROUTED" : "LEGACY")
+                .param("routeDigest", StringUtils.hasText(routeToken) ? sha256(routeToken.trim()) : "")
                 .param("status", status)
                 .param("errorCode", nullToEmpty(errorCode))
                 .param("errorMessage", nullToEmpty(errorMessage))
