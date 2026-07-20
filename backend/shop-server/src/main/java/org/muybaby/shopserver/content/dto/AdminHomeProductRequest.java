@@ -8,11 +8,6 @@ public record AdminHomeProductRequest(
         @NotNull Long spuId,
         Long imageFileId,
         @Min(0) Integer sortOrder,
-        @NotBlank String status,
-        String badgeMode,
-        String customBadgeText
+        @NotBlank String status
 ) {
-    public AdminHomeProductRequest(Long spuId, Long imageFileId, Integer sortOrder, String status) {
-        this(spuId, imageFileId, sortOrder, status, "AUTO", "");
-    }
 }

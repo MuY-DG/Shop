@@ -5,6 +5,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.content.PublicContentChangedEvent;
+import org.muybaby.shopserver.product.ProductParameterCardRenderer;
+import org.muybaby.shopserver.product.ProductParameterCardRole;
 import org.muybaby.shopserver.product.ProductParameterStatus;
 import org.muybaby.shopserver.product.ProductParameterValueType;
 import org.muybaby.shopserver.product.dto.AppProductParameterOptionValueResponse;
@@ -16,6 +19,7 @@ import org.muybaby.shopserver.product.dto.AdminProductParameterOptionResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuParameterValueRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuParameterValueResponse;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -47,15 +51,18 @@ public class ProductParameterService {
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ProductParameterService(
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     public List<AdminProductParameterDefinitionResponse> definitions(Long categoryId, boolean enabledOnly) {
@@ -69,6 +76,7 @@ public class ProductParameterService {
         JdbcClient.StatementSpec statement = jdbcClient.sql("""
                         select d.id, d.parameter_code, d.parameter_name, d.value_type, d.unit, d.description,
                                d.required_value, d.filterable, d.card_visible, d.detail_visible,
+                               d.card_role, d.card_renderer, d.card_priority,
                                d.sort_order, d.status, d.created_at, d.updated_at
                         from product_parameter_definition d
                         where 1 = 1
@@ -92,6 +100,9 @@ public class ProductParameterService {
                 rs.getBoolean("filterable"),
                 rs.getBoolean("card_visible"),
                 rs.getBoolean("detail_visible"),
+                rs.getString("card_role"),
+                rs.getString("card_renderer"),
+                rs.getInt("card_priority"),
                 rs.getInt("sort_order"),
                 rs.getString("status"),
                 rs.getObject("created_at", LocalDateTime.class),
@@ -131,6 +142,7 @@ public class ProductParameterService {
         DefinitionRow row = jdbcClient.sql("""
                         select id, parameter_code, parameter_name, value_type, unit, description,
                                required_value, filterable, card_visible, detail_visible,
+                               card_role, card_renderer, card_priority,
                                sort_order, status, created_at, updated_at
                         from product_parameter_definition
                         where id = :parameterId
@@ -141,6 +153,7 @@ public class ProductParameterService {
                         rs.getString("value_type"), rs.getString("unit"), rs.getString("description"),
                         rs.getBoolean("required_value"), rs.getBoolean("filterable"),
                         rs.getBoolean("card_visible"), rs.getBoolean("detail_visible"),
+                        rs.getString("card_role"), rs.getString("card_renderer"), rs.getInt("card_priority"),
                         rs.getInt("sort_order"), rs.getString("status"),
                         rs.getObject("created_at", LocalDateTime.class),
                         rs.getObject("updated_at", LocalDateTime.class)
@@ -158,10 +171,12 @@ public class ProductParameterService {
             namedParameterJdbcTemplate.update("""
                             insert into product_parameter_definition
                                 (parameter_code, parameter_name, value_type, unit, description,
-                                 required_value, filterable, card_visible, detail_visible, sort_order, status)
+                                 required_value, filterable, card_visible, detail_visible,
+                                 card_role, card_renderer, card_priority, sort_order, status)
                             values
                                 (:parameterCode, :parameterName, :valueType, :unit, :description,
-                                 :requiredValue, :filterable, :cardVisible, :detailVisible, :sortOrder, :status)
+                                 :requiredValue, :filterable, :cardVisible, :detailVisible,
+                                 :cardRole, :cardRenderer, :cardPriority, :sortOrder, :status)
                             """,
                     definitionParameters(normalized),
                     keyHolder,
@@ -176,6 +191,7 @@ public class ProductParameterService {
         Long parameterId = key.longValue();
         replaceOptions(parameterId, normalized.options());
         replaceCategoryBindings(parameterId, normalized.categoryIds());
+        publishHomeChanged();
         return parameterId;
     }
 
@@ -199,6 +215,9 @@ public class ProductParameterService {
                                 filterable = :filterable,
                                 card_visible = :cardVisible,
                                 detail_visible = :detailVisible,
+                                card_role = :cardRole,
+                                card_renderer = :cardRenderer,
+                                card_priority = :cardPriority,
                                 sort_order = :sortOrder,
                                 status = :status,
                                 updated_at = current_timestamp
@@ -215,6 +234,7 @@ public class ProductParameterService {
         }
         replaceOptions(parameterId, normalized.options());
         replaceCategoryBindings(parameterId, normalized.categoryIds());
+        publishHomeChanged();
     }
 
     @Transactional
@@ -229,6 +249,7 @@ public class ProductParameterService {
                 .param("parameterId", parameterId).update();
         jdbcClient.sql("delete from product_parameter_definition where id = :parameterId")
                 .param("parameterId", parameterId).update();
+        publishHomeChanged();
     }
 
     public List<AdminSpuParameterValueResponse> spuValues(Long spuId) {
@@ -298,13 +319,13 @@ public class ProductParameterService {
         List<DisplayParameterValueRow> rows = namedParameterJdbcTemplate.query("""
                         select v.spu_id, v.parameter_id, v.text_value, v.number_value, v.boolean_value,
                                v.option_codes_json, d.parameter_code, d.parameter_name,
-                               d.value_type, d.unit
+                               d.value_type, d.unit, d.card_role, d.card_renderer, d.card_priority
                         from product_spu_parameter_value v
                         join product_parameter_definition d on d.id = v.parameter_id
                         where v.spu_id in (:spuIds)
                           and d.status = 'ENABLED'
                           and %s = true
-                        order by v.spu_id, d.sort_order, d.id
+                        order by v.spu_id, d.card_priority, d.sort_order, d.id
                         """.formatted(visibilityColumn),
                 Map.of("spuIds", normalizedSpuIds),
                 (rs, rowNum) -> new DisplayParameterValueRow(
@@ -314,6 +335,9 @@ public class ProductParameterService {
                         rs.getString("parameter_name"),
                         ProductParameterValueType.valueOf(rs.getString("value_type")),
                         rs.getString("unit"),
+                        rs.getString("card_role"),
+                        rs.getString("card_renderer"),
+                        rs.getInt("card_priority"),
                         rs.getString("text_value"),
                         rs.getBigDecimal("number_value"),
                         rs.getObject("boolean_value", Boolean.class),
@@ -343,6 +367,9 @@ public class ProductParameterService {
                             row.unit(),
                             options.byCode()
                     ),
+                    row.cardRole(),
+                    row.cardRenderer(),
+                    row.cardPriority(),
                     selectedOptionValues(row.parameterId(), row.optionCodes(), options.byCode())
             ));
         }
@@ -392,6 +419,7 @@ public class ProductParameterService {
                     .param("optionCodesJson", writeOptionCodes(value.optionCodes()))
                     .update();
         }
+        publishHomeChanged();
     }
 
     public boolean requiredValuesComplete(Long spuId, Long categoryId) {
@@ -445,6 +473,9 @@ public class ProductParameterService {
                         row.filterable(),
                         row.cardVisible(),
                         row.detailVisible(),
+                        row.cardRole(),
+                        row.cardRenderer(),
+                        row.cardPriority(),
                         row.sortOrder(),
                         row.status(),
                         List.copyOf(categoryIdsByParameterId.getOrDefault(row.id(), List.of())),
@@ -471,6 +502,16 @@ public class ProductParameterService {
         }
         ProductParameterValueType valueType = parseEnum(request.valueType(), ProductParameterValueType.class);
         ProductParameterStatus status = parseEnum(request.status(), ProductParameterStatus.class);
+        ProductParameterCardRole cardRole = parseEnum(
+                StringUtils.hasText(request.cardRole()) ? request.cardRole() : ProductParameterCardRole.META.name(),
+                ProductParameterCardRole.class
+        );
+        ProductParameterCardRenderer cardRenderer = parseEnum(
+                StringUtils.hasText(request.cardRenderer())
+                        ? request.cardRenderer()
+                        : ProductParameterCardRenderer.TEXT.name(),
+                ProductParameterCardRenderer.class
+        );
         List<Long> categoryIds = new ArrayList<>(new LinkedHashSet<>(
                 request.categoryIds() == null ? List.of() : request.categoryIds()
         ));
@@ -507,8 +548,9 @@ public class ProductParameterService {
                 code, name, valueType, defaultString(request.unit()).trim(),
                 defaultString(request.description()).trim(), Boolean.TRUE.equals(request.required()),
                 Boolean.TRUE.equals(request.filterable()), Boolean.TRUE.equals(request.cardVisible()),
-                Boolean.TRUE.equals(request.detailVisible()), request.sortOrder() == null ? 0 : request.sortOrder(),
-                status, categoryIds, normalizedOptions
+                Boolean.TRUE.equals(request.detailVisible()), cardRole, cardRenderer,
+                request.cardPriority() == null ? 0 : request.cardPriority(),
+                request.sortOrder() == null ? 0 : request.sortOrder(), status, categoryIds, normalizedOptions
         );
     }
 
@@ -735,6 +777,9 @@ public class ProductParameterService {
                 .addValue("filterable", definition.filterable())
                 .addValue("cardVisible", definition.cardVisible())
                 .addValue("detailVisible", definition.detailVisible())
+                .addValue("cardRole", definition.cardRole().name())
+                .addValue("cardRenderer", definition.cardRenderer().name())
+                .addValue("cardPriority", definition.cardPriority())
                 .addValue("sortOrder", definition.sortOrder())
                 .addValue("status", definition.status().name());
     }
@@ -769,6 +814,10 @@ public class ProductParameterService {
         return value == null ? "" : value;
     }
 
+    private void publishHomeChanged() {
+        eventPublisher.publishEvent(PublicContentChangedEvent.home());
+    }
+
     private record DefinitionRow(
             Long id,
             String code,
@@ -780,6 +829,9 @@ public class ProductParameterService {
             Boolean filterable,
             Boolean cardVisible,
             Boolean detailVisible,
+            String cardRole,
+            String cardRenderer,
+            Integer cardPriority,
             Integer sortOrder,
             String status,
             LocalDateTime createdAt,
@@ -806,6 +858,9 @@ public class ProductParameterService {
             String parameterName,
             ProductParameterValueType valueType,
             String unit,
+            String cardRole,
+            String cardRenderer,
+            Integer cardPriority,
             String textValue,
             BigDecimal numberValue,
             Boolean booleanValue,
@@ -842,6 +897,9 @@ public class ProductParameterService {
             Boolean filterable,
             Boolean cardVisible,
             Boolean detailVisible,
+            ProductParameterCardRole cardRole,
+            ProductParameterCardRenderer cardRenderer,
+            Integer cardPriority,
             Integer sortOrder,
             ProductParameterStatus status,
             List<Long> categoryIds,

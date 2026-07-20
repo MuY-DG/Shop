@@ -27,6 +27,7 @@ class HomeDecorationSchemaTest {
         assertThat(tableExists("product_parameter_option")).isTrue();
         assertThat(tableExists("product_category_parameter")).isTrue();
         assertThat(tableExists("product_spu_parameter_value")).isTrue();
+        assertThat(tableExists("product_spu_tag")).isFalse();
 
         assertThat(columnNames("home_category_item")).containsExactly(
                 "id", "category_id", "image_file_id", "image_url", "sort_order", "status",
@@ -34,8 +35,11 @@ class HomeDecorationSchemaTest {
         );
         assertThat(columnNames("home_product_item")).containsExactly(
                 "id", "section_type", "spu_id", "image_file_id", "image_url", "sort_order", "status",
-                "created_at", "updated_at", "badge_mode", "custom_badge_text"
+                "created_at", "updated_at"
         );
+        assertThat(columnNames("product_spu")).contains("display_badge_text", "display_badge_tone");
+        assertThat(columnNames("product_parameter_definition"))
+                .contains("card_role", "card_renderer", "card_priority");
         assertThat(columnNames("app_contact_setting")).containsExactly(
                 "id", "phone_number", "updated_at"
         );

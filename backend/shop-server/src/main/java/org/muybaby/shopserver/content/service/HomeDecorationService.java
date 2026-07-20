@@ -4,7 +4,6 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.content.HomeBannerStatus;
-import org.muybaby.shopserver.content.HomeBadgeMode;
 import org.muybaby.shopserver.content.HomeProductSection;
 import org.muybaby.shopserver.content.PublicContentChangedEvent;
 import org.muybaby.shopserver.content.dto.AdminHomeCategoryOptionResponse;
@@ -166,8 +165,9 @@ public class HomeDecorationService {
                                s.subtitle as product_subtitle, s.status as product_status,
                                c.name as category_name, i.image_file_id, i.image_url,
                                s.main_image as product_image_url,
+                               s.display_badge_text, s.display_badge_tone,
                                min(k.price_cent) as min_price_cent, max(k.price_cent) as max_price_cent,
-                               i.sort_order, i.status, i.badge_mode, i.custom_badge_text,
+                               i.sort_order, i.status,
                                i.created_at, i.updated_at
                         from home_product_item i
                         join product_spu s on s.id = i.spu_id
@@ -177,7 +177,7 @@ public class HomeDecorationService {
                         where i.section_type = :sectionType
                         group by i.id, i.section_type, i.spu_id, s.title, s.subtitle, s.status,
                                  c.name, i.image_file_id, i.image_url, s.main_image,
-                                 i.sort_order, i.status, i.badge_mode, i.custom_badge_text,
+                                 s.display_badge_text, s.display_badge_tone, i.sort_order, i.status,
                                  i.created_at, i.updated_at
                         order by i.sort_order asc, i.id desc
                         """)
@@ -197,35 +197,21 @@ public class HomeDecorationService {
                             rs.getObject("max_price_cent", Long.class),
                             rs.getInt("sort_order"),
                             rs.getString("status"),
-                            rs.getString("badge_mode"),
-                            rs.getString("custom_badge_text"),
+                            rs.getString("display_badge_text"),
+                            rs.getString("display_badge_tone"),
                             rs.getObject("created_at", LocalDateTime.class),
                             rs.getObject("updated_at", LocalDateTime.class)
                     ))
                 .list();
         List<AdminHomeProductResponse> result = new ArrayList<>();
-        int visiblePosition = 0;
         for (HomeProductRow row : rows) {
-            List<String> tags = productTags(row.spuId());
-            boolean visible = HomeBannerStatus.ENABLED.name().equals(row.status())
-                    && "ON_SALE".equals(row.productStatus());
-            String resolvedBadge = resolveBadge(
-                    section,
-                    visible ? visiblePosition : -1,
-                    tags,
-                    parseBadgeMode(row.badgeMode()),
-                    row.customBadgeText()
-            );
-            if (visible) {
-                visiblePosition++;
-            }
             String displayImage = StringUtils.hasText(row.imageUrl()) ? row.imageUrl() : row.productImageUrl();
             result.add(new AdminHomeProductResponse(
                     row.id(), row.sectionType(), row.spuId(), row.productTitle(), row.productSubtitle(),
                     row.productStatus(), row.categoryName(), row.imageFileId(), row.imageUrl(),
                     row.productImageUrl(), displayImage, row.minPriceCent(), row.maxPriceCent(),
-                    row.sortOrder(), row.status(), tags, row.badgeMode(), row.customBadgeText(),
-                    resolvedBadge, row.createdAt(), row.updatedAt()
+                    row.sortOrder(), row.status(), row.displayBadgeText(), row.displayBadgeTone(),
+                    row.createdAt(), row.updatedAt()
             ));
         }
         return result;
@@ -237,18 +223,14 @@ public class HomeDecorationService {
         ProductSnapshot product = requireProduct(request.spuId(), status == HomeBannerStatus.ENABLED);
         requireUniqueProduct(section, request.spuId(), null);
         int sortOrder = normalizeSortOrder(request.sortOrder());
-        HomeBadgeMode badgeMode = parseBadgeMode(request.badgeMode());
-        String customBadgeText = normalizeCustomBadgeText(badgeMode, request.customBadgeText());
         String imageUrl = request.imageFileId() == null ? "" : resolveImageUrl(request.imageFileId());
         KeyHolder keyHolder = new GeneratedKeyHolder();
         try {
             namedParameterJdbcTemplate.update("""
                             insert into home_product_item
-                                (section_type, spu_id, image_file_id, image_url, sort_order, status,
-                                 badge_mode, custom_badge_text)
+                                (section_type, spu_id, image_file_id, image_url, sort_order, status)
                             values
-                                (:sectionType, :spuId, :imageFileId, :imageUrl, :sortOrder, :status,
-                                 :badgeMode, :customBadgeText)
+                                (:sectionType, :spuId, :imageFileId, :imageUrl, :sortOrder, :status)
                             """,
                     new MapSqlParameterSource()
                             .addValue("sectionType", section.name())
@@ -256,9 +238,7 @@ public class HomeDecorationService {
                             .addValue("imageFileId", request.imageFileId())
                             .addValue("imageUrl", imageUrl)
                             .addValue("sortOrder", sortOrder)
-                            .addValue("status", status.name())
-                            .addValue("badgeMode", badgeMode.name())
-                            .addValue("customBadgeText", customBadgeText),
+                            .addValue("status", status.name()),
                     keyHolder,
                     new String[]{"id"});
         } catch (DataIntegrityViolationException ex) {
@@ -277,8 +257,6 @@ public class HomeDecorationService {
         ProductSnapshot product = requireProduct(request.spuId(), status == HomeBannerStatus.ENABLED);
         requireUniqueProduct(section, request.spuId(), itemId);
         int sortOrder = normalizeSortOrder(request.sortOrder());
-        HomeBadgeMode badgeMode = parseBadgeMode(request.badgeMode());
-        String customBadgeText = normalizeCustomBadgeText(badgeMode, request.customBadgeText());
         String imageUrl = request.imageFileId() == null ? "" : resolveImageUrl(request.imageFileId());
         try {
             int updated = jdbcClient.sql("""
@@ -288,8 +266,6 @@ public class HomeDecorationService {
                                 image_url = :imageUrl,
                                 sort_order = :sortOrder,
                                 status = :status,
-                                badge_mode = :badgeMode,
-                                custom_badge_text = :customBadgeText,
                                 updated_at = current_timestamp
                             where id = :itemId and section_type = :sectionType
                             """)
@@ -298,8 +274,6 @@ public class HomeDecorationService {
                     .param("imageUrl", imageUrl)
                     .param("sortOrder", sortOrder)
                     .param("status", status.name())
-                    .param("badgeMode", badgeMode.name())
-                    .param("customBadgeText", customBadgeText)
                     .param("itemId", itemId)
                     .param("sectionType", section.name())
                     .update();
@@ -362,10 +336,9 @@ public class HomeDecorationService {
         for (AutoFillCandidate candidate : selected) {
             jdbcClient.sql("""
                             insert into home_product_item
-                                (section_type, spu_id, image_file_id, image_url, sort_order, status,
-                                 badge_mode, custom_badge_text)
+                                (section_type, spu_id, image_file_id, image_url, sort_order, status)
                             values
-                                (:sectionType, :spuId, null, '', :sortOrder, 'ENABLED', 'AUTO', '')
+                                (:sectionType, :spuId, null, '', :sortOrder, 'ENABLED')
                             """)
                     .param("sectionType", section.name())
                     .param("spuId", candidate.spuId())
@@ -667,15 +640,13 @@ public class HomeDecorationService {
                 .param("salesSince", salesSince)
                 .param("sectionType", section.name())
                 .query((rs, rowNum) -> {
-                    Long spuId = rs.getLong("spu_id");
                     return new AutoFillCandidate(
-                            spuId,
+                            rs.getLong("spu_id"),
                             rs.getLong("category_id"),
                             rs.getInt("sort_order"),
                             rs.getLong("total_stock"),
                             rs.getLong("recent_sales"),
-                            rs.getLong("total_sales"),
-                            productTags(spuId)
+                            rs.getLong("total_sales")
                     );
                 })
                 .list();
@@ -689,12 +660,10 @@ public class HomeDecorationService {
         Comparator<AutoFillCandidate> comparator = section == HomeProductSection.HOT
                 ? Comparator.comparingLong(AutoFillCandidate::recentSales).reversed()
                 .thenComparing(Comparator.comparingLong(AutoFillCandidate::totalSales).reversed())
-                .thenComparing(Comparator.comparingInt(this::hotTagPriority).reversed())
                 .thenComparing(Comparator.comparingLong(AutoFillCandidate::totalStock).reversed())
                 .thenComparingInt(AutoFillCandidate::sortOrder)
                 .thenComparing(Comparator.comparingLong(AutoFillCandidate::spuId).reversed())
-                : Comparator.comparingInt(this::recommendedTagPriority).reversed()
-                .thenComparing(Comparator.comparingLong(AutoFillCandidate::recentSales).reversed())
+                : Comparator.comparingLong(AutoFillCandidate::recentSales).reversed()
                 .thenComparing(Comparator.comparingLong(AutoFillCandidate::totalSales).reversed())
                 .thenComparing(Comparator.comparingLong(AutoFillCandidate::totalStock).reversed())
                 .thenComparingInt(AutoFillCandidate::sortOrder)
@@ -724,93 +693,6 @@ public class HomeDecorationService {
             emptyCategories.forEach(byCategory::remove);
         }
         return diversified;
-    }
-
-    private int hotTagPriority(AutoFillCandidate candidate) {
-        if (candidate.tags().contains("HOT_RANK")) return 5;
-        if (candidate.tags().contains("HOT_SALE")) return 4;
-        if (candidate.tags().contains("PREMIUM")) return 3;
-        if (candidate.tags().contains("PROMOTION")) return 2;
-        if (candidate.tags().contains("NEW_ARRIVAL")) return 1;
-        return 0;
-    }
-
-    private int recommendedTagPriority(AutoFillCandidate candidate) {
-        if (candidate.tags().contains("PREMIUM")) return 5;
-        if (candidate.tags().contains("NEW_ARRIVAL")) return 4;
-        if (candidate.tags().contains("PROMOTION")) return 3;
-        if (candidate.tags().contains("HOT_SALE")) return 2;
-        if (candidate.tags().contains("HOT_RANK")) return 1;
-        return 0;
-    }
-
-    private List<String> productTags(Long spuId) {
-        return jdbcClient.sql("""
-                        select tag_code from product_spu_tag
-                        where spu_id = :spuId
-                        order by tag_code
-                        """)
-                .param("spuId", spuId)
-                .query(String.class)
-                .list();
-    }
-
-    private String resolveBadge(
-            HomeProductSection section,
-            int visiblePosition,
-            List<String> tags,
-            HomeBadgeMode mode,
-            String customBadgeText
-    ) {
-        if (mode == HomeBadgeMode.HIDDEN) {
-            return "";
-        }
-        if (mode == HomeBadgeMode.CUSTOM) {
-            return defaultString(customBadgeText);
-        }
-        if (section == HomeProductSection.HOT && visiblePosition == 0) {
-            return "TOP 1";
-        }
-        List<Map.Entry<String, String>> priorities = section == HomeProductSection.HOT
-                ? List.of(
-                Map.entry("HOT_RANK", "热门榜单"),
-                Map.entry("HOT_SALE", "人气爆款"),
-                Map.entry("PREMIUM", "精选好物"),
-                Map.entry("PROMOTION", "优惠"),
-                Map.entry("NEW_ARRIVAL", "新品")
-        )
-                : List.of(
-                Map.entry("NEW_ARRIVAL", "新品"),
-                Map.entry("PROMOTION", "优惠"),
-                Map.entry("PREMIUM", "精选好物"),
-                Map.entry("HOT_SALE", "热卖"),
-                Map.entry("HOT_RANK", "热门榜单")
-        );
-        for (Map.Entry<String, String> priority : priorities) {
-            if (tags.contains(priority.getKey())) {
-                return priority.getValue();
-            }
-        }
-        return "";
-    }
-
-    private HomeBadgeMode parseBadgeMode(String value) {
-        if (!StringUtils.hasText(value)) {
-            return HomeBadgeMode.AUTO;
-        }
-        try {
-            return HomeBadgeMode.valueOf(value.trim().toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-    }
-
-    private String normalizeCustomBadgeText(HomeBadgeMode mode, String value) {
-        String normalized = defaultString(value).trim();
-        if (normalized.length() > 12 || (mode == HomeBadgeMode.CUSTOM && !StringUtils.hasText(normalized))) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        return mode == HomeBadgeMode.CUSTOM ? normalized : "";
     }
 
     private String defaultString(String value) {
@@ -887,8 +769,8 @@ public class HomeDecorationService {
             Long maxPriceCent,
             Integer sortOrder,
             String status,
-            String badgeMode,
-            String customBadgeText,
+            String displayBadgeText,
+            String displayBadgeTone,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
@@ -900,8 +782,7 @@ public class HomeDecorationService {
             Integer sortOrder,
             Long totalStock,
             Long recentSales,
-            Long totalSales,
-            List<String> tags
+            Long totalSales
     ) {
     }
 }

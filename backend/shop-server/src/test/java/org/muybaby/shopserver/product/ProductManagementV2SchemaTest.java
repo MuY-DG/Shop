@@ -24,8 +24,7 @@ class ProductManagementV2SchemaTest {
             "product_spu_coupon",
             "product_spu_guarantee_service",
             "product_spu_spec_group",
-            "product_spu_spec_value",
-            "product_spu_tag"
+            "product_spu_spec_value"
     );
 
     private static final List<String> V13_PERMISSIONS = List.of(
@@ -61,8 +60,7 @@ class ProductManagementV2SchemaTest {
                             'product_spu_coupon',
                             'product_spu_guarantee_service',
                             'product_spu_spec_group',
-                            'product_spu_spec_value',
-                            'product_spu_tag'
+                            'product_spu_spec_value'
                           )
                         order by table_name
                         """)
@@ -89,15 +87,15 @@ class ProductManagementV2SchemaTest {
                 "id", "terms_name", "content_description", "icon", "icon_file_id", "sort_order", "visible",
                 "deleted_at", "created_at", "updated_at");
         assertColumns("product_spu_guarantee_service", "spu_id", "service_id", "sort_order", "created_at");
-        assertColumns("product_spu_tag", "spu_id", "tag_code", "created_at");
         assertColumns("product_spu_coupon", "spu_id", "coupon_template_id", "created_at");
+        assertThat(tableExists("product_spu_tag")).isFalse();
     }
 
     @Test
     void v13ExtendsSpuAndSkuWithCompatibleDefaultsAndTypes() {
         assertThat(columns("product_spu")).contains(
                 "spec_type", "main_video", "main_video_file_id", "freight_template_id",
-                "virtual_sales", "deleted_at", "purged_at");
+                "virtual_sales", "deleted_at", "purged_at", "display_badge_text", "display_badge_tone");
         assertThat(columns("product_sku")).contains(
                 "cost_price_cent", "volume_cubic_meter", "is_default", "combination_key", "deleted_at");
 
@@ -164,7 +162,6 @@ class ProductManagementV2SchemaTest {
                 "idx_product_spu_guarantee_service_service",
                 "idx_product_spu_spec_group_spu_deleted_sort",
                 "idx_product_spu_spec_value_group_deleted_sort",
-                "idx_product_spu_tag_code_spu",
                 "uk_product_sku_spu_combination",
                 "uk_product_spec_template_group_key",
                 "uk_product_spec_template_name",
@@ -280,6 +277,17 @@ class ProductManagementV2SchemaTest {
                 .param("tableName", tableName)
                 .query(String.class)
                 .list();
+    }
+
+    private boolean tableExists(String tableName) {
+        Integer count = jdbcClient.sql("""
+                        select count(*) from information_schema.tables
+                        where table_schema = 'public' and table_name = :tableName
+                        """)
+                .param("tableName", tableName)
+                .query(Integer.class)
+                .single();
+        return count != null && count == 1;
     }
 
     private String columnValue(String tableName, String columnName, String metadataColumn) {

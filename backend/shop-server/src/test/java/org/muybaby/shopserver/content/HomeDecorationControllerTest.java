@@ -59,6 +59,13 @@ class HomeDecorationControllerTest {
         Asset categoryImage = insertPublicImage("home-category.png");
         Asset hotImage = insertPublicImage("home-hot.png");
         Product product = insertOnSaleProduct("首页编排商品", "商品副标题", "http://localhost/product-main.png", 1990, 2590);
+        insertSpiceCardFeature(product);
+        jdbcClient.sql("""
+                        insert into product_sku_wholesale_tier (sku_id, min_quantity, unit_price_cent)
+                        values (:skuId, 10, 1490)
+                        """)
+                .param("skuId", product.firstSkuId())
+                .update();
 
         long categoryItemId = responseId(mockMvc.perform(post("/admin/home/categories")
                         .header("Authorization", "Bearer " + token)
@@ -83,8 +90,7 @@ class HomeDecorationControllerTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"spuId":%d,"imageFileId":null,"sortOrder":1,"status":"ENABLED",
-                                 "badgeMode":"CUSTOM","customBadgeText":"限时尝鲜"}
+                                {"spuId":%d,"imageFileId":null,"sortOrder":1,"status":"ENABLED"}
                                 """.formatted(product.spuId())))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString());
@@ -107,8 +113,8 @@ class HomeDecorationControllerTest {
                 .andExpect(jsonPath("$.data[0].displayImageUrl").value(hotImage.url()))
                 .andExpect(jsonPath("$.data[0].minPriceCent").value(1990))
                 .andExpect(jsonPath("$.data[0].maxPriceCent").value(2590))
-                .andExpect(jsonPath("$.data[0].badgeMode").value("AUTO"))
-                .andExpect(jsonPath("$.data[0].resolvedBadgeText").value("TOP 1"));
+                .andExpect(jsonPath("$.data[0].displayBadgeText").value("店长推荐"))
+                .andExpect(jsonPath("$.data[0].displayBadgeTone").value("ORANGE"));
 
         mockMvc.perform(get("/admin/home/recommended-products")
                         .header("Authorization", "Bearer " + token))
@@ -117,9 +123,8 @@ class HomeDecorationControllerTest {
                 .andExpect(jsonPath("$.data[0].sectionType").value("RECOMMENDED"))
                 .andExpect(jsonPath("$.data[0].imageFileId").doesNotExist())
                 .andExpect(jsonPath("$.data[0].displayImageUrl").value(product.mainImage()))
-                .andExpect(jsonPath("$.data[0].badgeMode").value("CUSTOM"))
-                .andExpect(jsonPath("$.data[0].customBadgeText").value("限时尝鲜"))
-                .andExpect(jsonPath("$.data[0].resolvedBadgeText").value("限时尝鲜"));
+                .andExpect(jsonPath("$.data[0].displayBadgeText").value("店长推荐"))
+                .andExpect(jsonPath("$.data[0].displayBadgeTone").value("ORANGE"));
 
         mockMvc.perform(get("/admin/home/options/categories")
                         .header("Authorization", "Bearer " + token))
@@ -140,16 +145,34 @@ class HomeDecorationControllerTest {
         insertCurrentBanner(categoryImage);
         mockMvc.perform(get("/app/home"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.schemaVersion").value(2))
                 .andExpect(jsonPath("$.data.banners[0].title").value("聚合轮播"))
                 .andExpect(jsonPath("$.data.categories[0].categoryId").value(product.categoryId()))
                 .andExpect(jsonPath("$.data.categories[0].path")
                         .value("/pages/product/list/list?categoryId=" + product.categoryId()))
-                .andExpect(jsonPath("$.data.hotProducts[0].spuId").value(product.spuId()))
-                .andExpect(jsonPath("$.data.hotProducts[0].imageUrl").value(hotImage.url()))
-                .andExpect(jsonPath("$.data.hotProducts[0].path")
+                .andExpect(jsonPath("$.data.productSections[0].code").value("HOT"))
+                .andExpect(jsonPath("$.data.productSections[0].presentation").value("FEATURED"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].spuId").value(product.spuId()))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].imageUrl").value(hotImage.url()))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].price.minPriceCent").value(1990))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].price.originalPriceCent").value(2990))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].badge.text").value("店长推荐"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].badge.source").value("MANUAL"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].badge.tone").value("ORANGE"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].highlights[0].code").value("SPICE"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].highlights[0].displayText").value("中辣"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].highlights[0].renderer").value("SPICE"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].highlights[0].level").value(2))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].metaFacts").isEmpty())
+                .andExpect(jsonPath("$.data.productSections[0].products[0].wholesaleSummary.label")
+                        .value("支持批量价"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].displaySales").value(7))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].path")
                         .value("/pages/product/detail/detail?id=" + product.spuId()))
-                .andExpect(jsonPath("$.data.recommendedProducts[0].spuId").value(product.spuId()))
-                .andExpect(jsonPath("$.data.recommendedProducts[0].imageUrl").value(product.mainImage()));
+                .andExpect(jsonPath("$.data.productSections[1].code").value("RECOMMENDED"))
+                .andExpect(jsonPath("$.data.productSections[1].presentation").value("COMPACT"))
+                .andExpect(jsonPath("$.data.productSections[1].products[0].spuId").value(product.spuId()))
+                .andExpect(jsonPath("$.data.productSections[1].products[0].imageUrl").value(product.mainImage()));
 
         assertThat(activeUsage(categoryItemId, "HOME_CATEGORY_ITEM", "HOME_CATEGORY_IMAGE")).isEqualTo(1);
         assertThat(activeUsage(hotItemId, "HOME_PRODUCT_ITEM", "HOME_PRODUCT_IMAGE")).isEqualTo(1);
@@ -372,10 +395,11 @@ class HomeDecorationControllerTest {
         jdbcClient.sql("""
                         insert into product_spu
                             (category_id, title, subtitle, main_image, selling_points, detail_html,
+                             display_badge_text, display_badge_tone,
                              sort_order, status, spec_type, freight_template_id, virtual_sales)
                         values
                             (:categoryId, :title, :subtitle, :mainImage, '', '',
-                             0, 'ON_SALE', 'MULTI', 1, 0)
+                             '店长推荐', 'ORANGE', 0, 'ON_SALE', 'MULTI', 1, 7)
                         """)
                 .param("categoryId", categoryId)
                 .param("title", title)
@@ -391,16 +415,59 @@ class HomeDecorationControllerTest {
                             (spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
                              stock_available, weight_gram, image, status, sort_order, is_default, combination_key)
                         values
-                            (:spuId, :firstCode, '{}', '默认', :firstPrice, :firstPrice, 10, 0, '', 'ENABLED', 0, true, 'default'),
-                            (:spuId, :secondCode, '{}', '大份', :secondPrice, :secondPrice, 10, 0, '', 'ENABLED', 1, false, 'large')
+                            (:spuId, :firstCode, '{}', '默认', :firstPrice, :firstOriginalPrice, 10, 0, '', 'ENABLED', 0, true, 'default'),
+                            (:spuId, :secondCode, '{}', '大份', :secondPrice, :secondOriginalPrice, 10, 0, '', 'ENABLED', 1, false, 'large')
                         """)
                 .param("spuId", spuId)
                 .param("firstCode", "HOME-FIRST-" + spuId)
                 .param("secondCode", "HOME-SECOND-" + spuId)
                 .param("firstPrice", firstPrice)
+                .param("firstOriginalPrice", firstPrice + 1000)
                 .param("secondPrice", secondPrice)
+                .param("secondOriginalPrice", secondPrice + 1000)
                 .update();
-        return new Product(spuId, categoryId, categoryName, title, mainImage);
+        Long firstSkuId = jdbcClient.sql("select id from product_sku where sku_code = :skuCode")
+                .param("skuCode", "HOME-FIRST-" + spuId)
+                .query(Long.class)
+                .single();
+        return new Product(spuId, categoryId, categoryName, title, mainImage, firstSkuId);
+    }
+
+    private void insertSpiceCardFeature(Product product) {
+        jdbcClient.sql("""
+                        insert into product_parameter_definition
+                            (parameter_code, parameter_name, value_type, required_value, filterable,
+                             card_visible, detail_visible, card_role, card_renderer, card_priority,
+                             sort_order, status)
+                        values
+                            ('SPICE', '辣度', 'SINGLE_SELECT', false, false,
+                             true, true, 'HIGHLIGHT', 'SPICE', 0, 0, 'ENABLED')
+                        """).update();
+        Long parameterId = jdbcClient.sql("select id from product_parameter_definition where parameter_code = 'SPICE'")
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into product_category_parameter (category_id, parameter_id)
+                        values (:categoryId, :parameterId)
+                        """)
+                .param("categoryId", product.categoryId())
+                .param("parameterId", parameterId)
+                .update();
+        jdbcClient.sql("""
+                        insert into product_parameter_option
+                            (parameter_id, option_code, option_label, display_level, sort_order)
+                        values (:parameterId, 'MEDIUM', '中辣', 2, 0)
+                        """)
+                .param("parameterId", parameterId)
+                .update();
+        jdbcClient.sql("""
+                        insert into product_spu_parameter_value
+                            (spu_id, parameter_id, option_codes_json)
+                        values (:spuId, :parameterId, '["MEDIUM"]')
+                        """)
+                .param("spuId", product.spuId())
+                .param("parameterId", parameterId)
+                .update();
     }
 
     private void insertCurrentBanner(Asset image) {
@@ -440,6 +507,13 @@ class HomeDecorationControllerTest {
     private record Asset(Long id, String url) {
     }
 
-    private record Product(Long spuId, Long categoryId, String categoryName, String title, String mainImage) {
+    private record Product(
+            Long spuId,
+            Long categoryId,
+            String categoryName,
+            String title,
+            String mainImage,
+            Long firstSkuId
+    ) {
     }
 }

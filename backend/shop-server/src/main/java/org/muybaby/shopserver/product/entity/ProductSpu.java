@@ -21,6 +21,8 @@ public record ProductSpu(
         Long virtualSales,
         String sellingPoints,
         String detailHtml,
+        String displayBadgeText,
+        String displayBadgeTone,
         Integer sortOrder,
         String status,
         LocalDateTime deletedAt,

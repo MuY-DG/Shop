@@ -20,7 +20,7 @@ import java.time.temporal.ChronoUnit;
 @Service
 public class PublicContentCacheService {
 
-    public static final String HOME_CACHE_KEY = "shop:public:home:v1";
+    public static final String HOME_CACHE_KEY = "shop:public:home:v2";
     public static final String CONTACT_CACHE_KEY = "shop:public:contact:v1";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PublicContentCacheService.class);
@@ -48,8 +48,11 @@ public class PublicContentCacheService {
     public AppHomeResponse homePage() {
         if (Boolean.TRUE.equals(properties.cacheEnabled())) {
             AppHomeResponse cached = read(HOME_CACHE_KEY, AppHomeResponse.class);
-            if (cached != null) {
+            if (cached != null && hasCurrentHomePriceShape(cached)) {
                 return cached;
+            }
+            if (cached != null) {
+                delete(HOME_CACHE_KEY);
             }
         }
 
@@ -58,6 +61,28 @@ public class PublicContentCacheService {
             write(HOME_CACHE_KEY, loaded.response(), homeTtl(loaded.nextTransitionAt()));
         }
         return loaded.response();
+    }
+
+    private boolean hasCurrentHomePriceShape(AppHomeResponse response) {
+        if (response.productSections() == null) {
+            return false;
+        }
+        for (var section : response.productSections()) {
+            if (section == null || section.products() == null) {
+                continue;
+            }
+            for (var product : section.products()) {
+                if (product == null || product.price() == null) {
+                    continue;
+                }
+                boolean hasCurrentPrice = product.price().minPriceCent() != null
+                        || product.price().maxPriceCent() != null;
+                if (hasCurrentPrice && product.price().originalPriceCent() == null) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     public ContactResponse contact() {

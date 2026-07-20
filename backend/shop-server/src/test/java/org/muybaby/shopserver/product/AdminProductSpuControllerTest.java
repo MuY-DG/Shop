@@ -596,7 +596,8 @@ class AdminProductSpuControllerTest {
                                       {"valueKey": "controller-blue", "valueName": "蓝色", "sortOrder": 1}
                                     ]
                                   }],
-                                  "tags": ["HOT_SALE"],
+                                  "displayBadgeText": "热卖",
+                                  "displayBadgeTone": "RED",
                                   "guaranteeServiceIds": [%d],
                                   "skus": [
                                     {
@@ -677,7 +678,8 @@ class AdminProductSpuControllerTest {
                 .andExpect(jsonPath("$.data.title").value("Controller Legacy V2 SPU Updated"))
                 .andExpect(jsonPath("$.data.specGroups.length()").value(1))
                 .andExpect(jsonPath("$.data.specGroups[0].values.length()").value(2))
-                .andExpect(jsonPath("$.data.tags[0]").value("HOT_SALE"))
+                .andExpect(jsonPath("$.data.displayBadgeText").value("热卖"))
+                .andExpect(jsonPath("$.data.displayBadgeTone").value("RED"))
                 .andExpect(jsonPath("$.data.guaranteeServiceIds[0]").value(guaranteeServiceId))
                 .andExpect(jsonPath("$.data.skus[0].specValueKeys[0]").value("controller-red"))
                 .andExpect(jsonPath("$.data.skus[0].costPriceCent").value(1200))
@@ -701,7 +703,8 @@ class AdminProductSpuControllerTest {
                                   "specType": "MULTI",
                                   "sortOrder": 0,
                                   "specGroups": [],
-                                  "tags": [],
+                                  "displayBadgeText": "",
+                                  "displayBadgeTone": "NEUTRAL",
                                   "guaranteeServiceIds": [],
                                   "skus": [
                                     {
@@ -735,7 +738,8 @@ class AdminProductSpuControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.specGroups.length()").value(0))
-                .andExpect(jsonPath("$.data.tags.length()").value(0))
+                .andExpect(jsonPath("$.data.displayBadgeText").value(""))
+                .andExpect(jsonPath("$.data.displayBadgeTone").value("NEUTRAL"))
                 .andExpect(jsonPath("$.data.guaranteeServiceIds.length()").value(0))
                 .andExpect(jsonPath("$.data.skus[0].specValueKeys.length()").value(0))
                 .andExpect(jsonPath("$.data.skus[1].specValueKeys.length()").value(0));

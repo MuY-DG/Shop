@@ -140,7 +140,7 @@ class AdminProductSpecRenameTest {
         return new AdminSpuUpsertRequest(
                 categoryId, title, "", "https://example.test/spec-rename-main.jpg", null,
                 "", null, "MULTI", 1L, 0L, "", "", 0, List.of(),
-                skus, List.of(group), List.of(), List.of(), false, false, true
+                skus, List.of(group), "", "NEUTRAL", List.of(), false, false, true
         );
     }
 

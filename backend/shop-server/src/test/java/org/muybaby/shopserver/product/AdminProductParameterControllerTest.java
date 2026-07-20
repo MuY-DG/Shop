@@ -54,6 +54,9 @@ class AdminProductParameterControllerTest {
                                   "filterable":false,
                                   "cardVisible":true,
                                   "detailVisible":true,
+                                  "cardRole":"HIGHLIGHT",
+                                  "cardRenderer":"SPICE",
+                                  "cardPriority":1,
                                   "sortOrder":0,
                                   "status":"ENABLED",
                                   "categoryIds":[%d],
@@ -75,6 +78,9 @@ class AdminProductParameterControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value(parameterId))
                 .andExpect(jsonPath("$.data[0].parameterCode").value("SPICINESS_TEST"))
+                .andExpect(jsonPath("$.data[0].cardRole").value("HIGHLIGHT"))
+                .andExpect(jsonPath("$.data[0].cardRenderer").value("SPICE"))
+                .andExpect(jsonPath("$.data[0].cardPriority").value(1))
                 .andExpect(jsonPath("$.data[0].categoryIds[0]").value(hotpotCategoryId))
                 .andExpect(jsonPath("$.data[0].options[1].optionLabel").value("中辣"))
                 .andExpect(jsonPath("$.data[0].options[1].displayLevel").value(2));
@@ -146,6 +152,8 @@ class AdminProductParameterControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.parameters[0].parameterName").value("辣度"))
                 .andExpect(jsonPath("$.data.parameters[0].displayText").value("中辣"))
+                .andExpect(jsonPath("$.data.parameters[0].cardRole").value("HIGHLIGHT"))
+                .andExpect(jsonPath("$.data.parameters[0].cardRenderer").value("SPICE"))
                 .andExpect(jsonPath("$.data.parameters[0].selectedOptions[0].optionCode")
                         .value("MEDIUM"))
                 .andExpect(jsonPath("$.data.parameters[0].selectedOptions[0].displayLevel").value(2));

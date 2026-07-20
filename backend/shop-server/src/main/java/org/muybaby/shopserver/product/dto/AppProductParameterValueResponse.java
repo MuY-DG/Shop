@@ -9,6 +9,9 @@ public record AppProductParameterValueResponse(
         String valueType,
         String unit,
         String displayText,
+        String cardRole,
+        String cardRenderer,
+        Integer cardPriority,
         List<AppProductParameterOptionValueResponse> selectedOptions
 ) {
 }

@@ -140,7 +140,8 @@ public class ProductReadMapper {
                         select s.id, s.category_id, c.name as category_name, s.title, s.subtitle, s.main_image,
                                s.main_image_file_id, s.main_video, s.main_video_file_id, s.spec_type,
                                s.freight_template_id, s.virtual_sales,
-                               s.selling_points, s.detail_html, s.sort_order, s.status, s.created_at, s.updated_at
+                               s.selling_points, s.detail_html, s.display_badge_text, s.display_badge_tone,
+                               s.sort_order, s.status, s.created_at, s.updated_at
                         from product_spu s
                         join product_category c on c.id = s.category_id
                         where s.id = :spuId and s.deleted_at is null
@@ -235,13 +236,6 @@ public class ProductReadMapper {
                         List.copyOf(specValuesByGroupId.getOrDefault(group.id(), List.of()))
                 ))
                 .toList();
-        List<String> tags = jdbcClient.sql("""
-                        select tag_code from product_spu_tag
-                        where spu_id = :spuId order by tag_code
-                        """)
-                .param("spuId", spuId)
-                .query(String.class)
-                .list();
         List<Long> guaranteeServiceIds = jdbcClient.sql("""
                         select gs.service_id
                         from product_spu_guarantee_service gs
@@ -275,12 +269,13 @@ public class ProductReadMapper {
                 spu.virtualSales(),
                 spu.sellingPoints(),
                 spu.detailHtml(),
+                spu.displayBadgeText(),
+                spu.displayBadgeTone(),
                 spu.sortOrder(),
                 spu.status(),
                 images,
                 skus,
                 specGroups,
-                tags,
                 guaranteeServiceIds,
                 couponTemplateIds,
                 spu.createdAt(),
@@ -339,6 +334,8 @@ public class ProductReadMapper {
                 rs.getLong("virtual_sales"),
                 rs.getString("selling_points"),
                 rs.getString("detail_html"),
+                rs.getString("display_badge_text"),
+                rs.getString("display_badge_tone"),
                 rs.getInt("sort_order"),
                 rs.getString("status"),
                 rs.getObject("created_at", LocalDateTime.class),
@@ -454,6 +451,8 @@ public class ProductReadMapper {
             Long virtualSales,
             String sellingPoints,
             String detailHtml,
+            String displayBadgeText,
+            String displayBadgeTone,
             Integer sortOrder,
             String status,
             LocalDateTime createdAt,

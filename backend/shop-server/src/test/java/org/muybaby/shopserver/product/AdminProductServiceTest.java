@@ -561,7 +561,8 @@ class AdminProductServiceTest {
                 List.of(),
                 List.of(redSku, blueSku),
                 List.of(colorGroup),
-                List.of("HOT_SALE", "NEW_ARRIVAL"),
+                "人气爆款",
+                "RED",
                 List.of(),
                 false,
                 false,
@@ -615,10 +616,10 @@ class AdminProductServiceTest {
                 .containsEntry("COST_PRICE_CENT", 2500L)
                 .containsEntry("WEIGHT_GRAM", null);
         assertThat(skuRows.get(0).get("VOLUME_CUBIC_METER").toString()).isEqualTo("0.001200");
-        assertThat(jdbcClient.sql("select count(*) from product_spu_tag where spu_id = :spuId")
+        assertThat(jdbcClient.sql("select display_badge_text from product_spu where id = :spuId")
                 .param("spuId", spuId)
-                .query(Integer.class)
-                .single()).isEqualTo(2);
+                .query(String.class)
+                .single()).isEqualTo("人气爆款");
 
         var detail = productReadMapper.adminSpuDetail(spuId);
         assertThat(detail.specType()).isEqualTo("MULTI");
@@ -626,7 +627,8 @@ class AdminProductServiceTest {
         assertThat(detail.specGroups()).hasSize(1);
         assertThat(detail.specGroups().get(0).values()).extracting("valueKey").containsExactly("red", "blue");
         assertThat(detail.skus()).extracting("combinationKey").containsExactly("red", "blue");
-        assertThat(detail.tags()).containsExactly("HOT_SALE", "NEW_ARRIVAL");
+        assertThat(detail.displayBadgeText()).isEqualTo("人气爆款");
+        assertThat(detail.displayBadgeTone()).isEqualTo("RED");
     }
 
     @Test
@@ -665,7 +667,7 @@ class AdminProductServiceTest {
                         new AdminSkuUpsertRequest(null, "LEGACY-V2-BLUE", null, null, 2090L, 0L, 3, null,
                                 null, null, "", null, "ENABLED", 1, false, null, List.of("legacy-blue"), false)
                 ),
-                List.of(colorGroup), List.of("HOT_SALE"), List.of(guaranteeServiceId),
+                List.of(colorGroup), "热卖", "ORANGE", List.of(guaranteeServiceId),
                 false, false, true
         ));
         var created = productReadMapper.adminSpuDetail(spuId);
@@ -695,7 +697,8 @@ class AdminProductServiceTest {
         assertThat(preserved.specGroups().getFirst().values())
                 .extracting("valueKey")
                 .containsExactly("legacy-red", "legacy-blue");
-        assertThat(preserved.tags()).containsExactly("HOT_SALE");
+        assertThat(preserved.displayBadgeText()).isEqualTo("热卖");
+        assertThat(preserved.displayBadgeTone()).isEqualTo("ORANGE");
         assertThat(preserved.guaranteeServiceIds()).containsExactly(guaranteeServiceId);
         assertThat(preserved.skus()).extracting("specValueKeys")
                 .containsExactly(List.of("legacy-red"), List.of("legacy-blue"));
@@ -715,12 +718,13 @@ class AdminProductServiceTest {
                                 sku.defaultSelected(), sku.combinationKey(), List.of(), true
                         ))
                         .toList(),
-                List.of(), List.of(), List.of(), true, true, true
+                List.of(), "", "NEUTRAL", List.of(), true, true, true
         ));
 
         var cleared = productReadMapper.adminSpuDetail(spuId);
         assertThat(cleared.specGroups()).isEmpty();
-        assertThat(cleared.tags()).isEmpty();
+        assertThat(cleared.displayBadgeText()).isEmpty();
+        assertThat(cleared.displayBadgeTone()).isEqualTo("NEUTRAL");
         assertThat(cleared.guaranteeServiceIds()).isEmpty();
         assertThat(cleared.skus()).allSatisfy(sku -> assertThat(sku.specValueKeys()).isEmpty());
         assertThat(jdbcClient.sql("""
@@ -754,7 +758,7 @@ class AdminProductServiceTest {
                         new AdminSkuUpsertRequest(null, "REPLACE-SPEC-BLUE", null, null, 2090L, 0L, 1, null,
                                 null, null, "", null, "ENABLED", 1, false, null, List.of("old-blue"), false)
                 ),
-                List.of(originalGroup), List.of(), List.of(), false, false, true
+                List.of(originalGroup), "", "NEUTRAL", List.of(), false, false, true
         ));
         Map<String, Object> originalIds = jdbcClient.sql("""
                         select max(case when spec_text = '红色' then id end) as red_id,
@@ -782,7 +786,7 @@ class AdminProductServiceTest {
                         new AdminSkuUpsertRequest(null, "REPLACE-SPEC-BLUE-V2", null, null, 2290L, 0L, 1, null,
                                 null, null, "", null, "ENABLED", 1, false, null, List.of("new-blue"), false)
                 ),
-                List.of(replacementGroup), List.of(), List.of(), false, false, true
+                List.of(replacementGroup), "", "NEUTRAL", List.of(), false, false, true
         ));
 
         List<Map<String, Object>> updatedSkus = jdbcClient.sql("""
@@ -820,7 +824,7 @@ class AdminProductServiceTest {
                         null, "SPEC-IMAGE-FALLBACK-SKU", null, null, 1990L, 0L, 1, null,
                         null, null, "", null, "ENABLED", 0, true, null, List.of("fallback-red"), false
                 )),
-                List.of(group), List.of(), List.of(), false, false, true
+                List.of(group), "", "NEUTRAL", List.of(), false, false, true
         ));
         Map<String, Object> sku = jdbcClient.sql("""
                         select id, image, image_file_id

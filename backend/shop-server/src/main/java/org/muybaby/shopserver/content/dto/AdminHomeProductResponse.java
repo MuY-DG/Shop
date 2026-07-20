@@ -1,8 +1,6 @@
 package org.muybaby.shopserver.content.dto;
 
 import java.time.LocalDateTime;
-import java.util.List;
-
 public record AdminHomeProductResponse(
         Long id,
         String sectionType,
@@ -19,10 +17,8 @@ public record AdminHomeProductResponse(
         Long maxPriceCent,
         Integer sortOrder,
         String status,
-        List<String> productTags,
-        String badgeMode,
-        String customBadgeText,
-        String resolvedBadgeText,
+        String displayBadgeText,
+        String displayBadgeTone,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {

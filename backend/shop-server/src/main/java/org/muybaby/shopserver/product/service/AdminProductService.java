@@ -7,9 +7,9 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.content.PublicContentChangedEvent;
 import org.muybaby.shopserver.product.CategoryStatus;
+import org.muybaby.shopserver.product.ProductBadgeTone;
 import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.ProductSpecType;
-import org.muybaby.shopserver.product.ProductTag;
 import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.product.dto.AdminCategoryPositionRequest;
@@ -297,6 +297,8 @@ public class AdminProductService {
                             virtual_sales = :virtualSales,
                             selling_points = :sellingPoints,
                             detail_html = :detailHtml,
+                            display_badge_text = :displayBadgeText,
+                            display_badge_tone = :displayBadgeTone,
                             sort_order = :sortOrder,
                             status = :status,
                             updated_at = :updatedAt
@@ -314,6 +316,8 @@ public class AdminProductService {
                 .param("virtualSales", normalizedRequest.virtualSales())
                 .param("sellingPoints", defaultString(normalizedRequest.sellingPoints()))
                 .param("detailHtml", defaultString(normalizedRequest.detailHtml()))
+                .param("displayBadgeText", normalizedRequest.displayBadgeText())
+                .param("displayBadgeTone", normalizedRequest.displayBadgeTone())
                 .param("sortOrder", normalizedRequest.sortOrder())
                 .param("status", existingSpu.status())
                 .param("updatedAt", LocalDateTime.now())
@@ -477,6 +481,8 @@ public class AdminProductService {
                             virtual_sales = 0,
                             selling_points = '',
                             detail_html = '',
+                            display_badge_text = '',
+                            display_badge_tone = 'NEUTRAL',
                             sort_order = 0,
                             status = :status,
                             purged_at = :purgedAt,
@@ -838,9 +844,6 @@ public class AdminProductService {
         jdbcClient.sql("delete from product_spu_image where spu_id = :spuId")
                 .param("spuId", spuId)
                 .update();
-        jdbcClient.sql("delete from product_spu_tag where spu_id = :spuId")
-                .param("spuId", spuId)
-                .update();
         jdbcClient.sql("delete from product_spu_guarantee_service where spu_id = :spuId")
                 .param("spuId", spuId)
                 .update();
@@ -943,12 +946,12 @@ public class AdminProductService {
                         INSERT INTO product_spu (
                             category_id, title, subtitle, main_image, main_image_file_id,
                             main_video, main_video_file_id, spec_type, freight_template_id, virtual_sales,
-                            selling_points, detail_html, sort_order, status
+                            selling_points, detail_html, display_badge_text, display_badge_tone, sort_order, status
                         )
                         VALUES (
                             :categoryId, :title, :subtitle, :mainImage, :mainImageFileId,
                             :mainVideo, :mainVideoFileId, :specType, :freightTemplateId, :virtualSales,
-                            :sellingPoints, :detailHtml, :sortOrder, :status
+                            :sellingPoints, :detailHtml, :displayBadgeText, :displayBadgeTone, :sortOrder, :status
                         )
                         """,
                 new MapSqlParameterSource()
@@ -964,6 +967,8 @@ public class AdminProductService {
                         .addValue("virtualSales", request.virtualSales())
                         .addValue("sellingPoints", defaultString(request.sellingPoints()))
                         .addValue("detailHtml", defaultString(request.detailHtml()))
+                        .addValue("displayBadgeText", request.displayBadgeText())
+                        .addValue("displayBadgeTone", request.displayBadgeTone())
                         .addValue("sortOrder", request.sortOrder())
                         .addValue("status", ProductStatus.DRAFT.name()),
                 keyHolder,
@@ -1116,13 +1121,15 @@ public class AdminProductService {
                 request.images() == null ? List.of() : request.images(),
                 normalizedSkus,
                 request.specGroups(),
-                request.tags(),
+                normalizeBadgeText(request.displayBadgeText()),
+                normalizeBadgeTone(request.displayBadgeTone()),
                 request.guaranteeServiceIds(),
                 request.mainImageFileIdSpecified(),
                 request.mainVideoFileIdSpecified(),
                 request.specTypeSpecified(),
                 request.specGroupsSpecified(),
-                request.tagsSpecified(),
+                request.displayBadgeTextSpecified(),
+                request.displayBadgeToneSpecified(),
                 request.guaranteeServiceIdsSpecified()
         );
     }
@@ -1187,9 +1194,12 @@ public class AdminProductService {
         List<AdminSpuSpecGroupUpsertRequest> normalizedSpecGroups = request.specGroupsSpecified()
                 ? request.specGroups()
                 : findActiveSpecGroupRequests(existingSpu.id());
-        List<String> normalizedTags = request.tagsSpecified()
-                ? request.tags()
-                : findProductTags(existingSpu.id());
+        String normalizedBadgeText = request.displayBadgeTextSpecified()
+                ? normalizeBadgeText(request.displayBadgeText())
+                : existingSpu.displayBadgeText();
+        String normalizedBadgeTone = request.displayBadgeToneSpecified()
+                ? normalizeBadgeTone(request.displayBadgeTone())
+                : existingSpu.displayBadgeTone();
         List<Long> normalizedGuaranteeServiceIds = request.guaranteeServiceIdsSpecified()
                 ? request.guaranteeServiceIds()
                 : findGuaranteeServiceIds(existingSpu.id());
@@ -1215,13 +1225,15 @@ public class AdminProductService {
                 normalizedImages,
                 normalizedSkus,
                 normalizedSpecGroups,
-                normalizedTags,
+                normalizedBadgeText,
+                normalizedBadgeTone,
                 normalizedGuaranteeServiceIds,
                 request.mainImageFileIdSpecified(),
                 request.mainVideoFileIdSpecified(),
                 request.specTypeSpecified(),
                 request.specGroupsSpecified(),
-                request.tagsSpecified(),
+                request.displayBadgeTextSpecified(),
+                request.displayBadgeToneSpecified(),
                 request.guaranteeServiceIdsSpecified()
         );
     }
@@ -1762,18 +1774,6 @@ public class AdminProductService {
                 .list();
     }
 
-    private List<String> findProductTags(Long spuId) {
-        return jdbcClient.sql("""
-                        select tag_code
-                        from product_spu_tag
-                        where spu_id = :spuId
-                        order by tag_code
-                        """)
-                .param("spuId", spuId)
-                .query(String.class)
-                .list();
-    }
-
     private List<Long> findGuaranteeServiceIds(Long spuId) {
         return jdbcClient.sql("""
                         select service_id
@@ -2129,20 +2129,6 @@ public class AdminProductService {
     }
 
     private void replaceProductAssociations(Long spuId, AdminSpuUpsertRequest request) {
-        if (request.tagsSpecified()) {
-            jdbcClient.sql("delete from product_spu_tag where spu_id = :spuId").param("spuId", spuId).update();
-            Set<String> tags = new LinkedHashSet<>();
-            for (String tag : request.tags()) {
-                String normalizedTag = parseEnum(tag, ProductTag.class, ErrorCode.VALIDATION_FAILED).name();
-                if (tags.add(normalizedTag)) {
-                    jdbcClient.sql("insert into product_spu_tag (spu_id, tag_code) values (:spuId, :tagCode)")
-                            .param("spuId", spuId)
-                            .param("tagCode", normalizedTag)
-                            .update();
-                }
-            }
-        }
-
         if (request.guaranteeServiceIdsSpecified()) {
             List<Long> serviceIds = new java.util.ArrayList<>(new LinkedHashSet<>(request.guaranteeServiceIds()));
             jdbcClient.sql("delete from product_spu_guarantee_service where spu_id = :spuId")
@@ -2286,9 +2272,6 @@ public class AdminProductService {
             }
         } else if (!request.specGroups().isEmpty() || skus.stream().anyMatch(sku -> !sku.specValueKeys().isEmpty())) {
             validateStructuredMultiSpec(request, skus);
-        }
-        for (String tag : request.tags()) {
-            parseEnum(tag, ProductTag.class, ErrorCode.VALIDATION_FAILED);
         }
         if (publishing && (!StringUtils.hasText(request.title())
                 || !StringUtils.hasText(request.mainImage())
@@ -2607,7 +2590,8 @@ public class AdminProductService {
         return jdbcClient.sql("""
                         SELECT id, category_id, title, subtitle, main_image, main_image_file_id,
                                main_video, main_video_file_id, spec_type, freight_template_id, virtual_sales,
-                               selling_points, detail_html, sort_order, status, deleted_at, purged_at, created_at, updated_at
+                               selling_points, detail_html, display_badge_text, display_badge_tone,
+                               sort_order, status, deleted_at, purged_at, created_at, updated_at
                         FROM product_spu
                         WHERE id = :spuId
                         """)
@@ -2620,7 +2604,8 @@ public class AdminProductService {
         return jdbcClient.sql("""
                         SELECT id, category_id, title, subtitle, main_image, main_image_file_id,
                                main_video, main_video_file_id, spec_type, freight_template_id, virtual_sales,
-                               selling_points, detail_html, sort_order, status, deleted_at, purged_at, created_at, updated_at
+                               selling_points, detail_html, display_badge_text, display_badge_tone,
+                               sort_order, status, deleted_at, purged_at, created_at, updated_at
                         FROM product_spu
                         WHERE id = :spuId AND deleted_at IS NULL AND purged_at IS NULL
                         FOR UPDATE
@@ -2634,7 +2619,8 @@ public class AdminProductService {
         return jdbcClient.sql("""
                         SELECT id, category_id, title, subtitle, main_image, main_image_file_id,
                                main_video, main_video_file_id, spec_type, freight_template_id, virtual_sales,
-                               selling_points, detail_html, sort_order, status, deleted_at, purged_at, created_at, updated_at
+                               selling_points, detail_html, display_badge_text, display_badge_tone,
+                               sort_order, status, deleted_at, purged_at, created_at, updated_at
                         FROM product_spu
                         WHERE id = :spuId AND deleted_at IS NOT NULL AND purged_at IS NULL
                         FOR UPDATE
@@ -2755,6 +2741,25 @@ public class AdminProductService {
         return value == null ? "" : value;
     }
 
+    private String normalizeBadgeText(String value) {
+        String normalized = defaultString(value).trim();
+        if (normalized.length() > 12) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return normalized;
+    }
+
+    private String normalizeBadgeTone(String value) {
+        if (!StringUtils.hasText(value)) {
+            return ProductBadgeTone.NEUTRAL.name();
+        }
+        return parseEnum(
+                value.trim().toUpperCase(Locale.ROOT),
+                ProductBadgeTone.class,
+                ErrorCode.VALIDATION_FAILED
+        ).name();
+    }
+
     private boolean sameUrlSnapshot(String requestUrl, String existingUrl) {
         return defaultString(requestUrl).equals(defaultString(existingUrl));
     }
@@ -2788,6 +2793,8 @@ public class AdminProductService {
                 rs.getLong("virtual_sales"),
                 rs.getString("selling_points"),
                 rs.getString("detail_html"),
+                rs.getString("display_badge_text"),
+                rs.getString("display_badge_tone"),
                 rs.getInt("sort_order"),
                 rs.getString("status"),
                 rs.getObject("deleted_at", LocalDateTime.class),

@@ -61,7 +61,6 @@ class AdminProductRecycleBinControllerTest {
                 .containsEntry("specGroups", 1)
                 .containsEntry("specValues", 1)
                 .containsEntry("skuSpecValues", 1)
-                .containsEntry("tags", 1)
                 .containsEntry("guarantees", 1)
                 .containsEntry("coupons", 1)
                 .containsEntry("activeUsages", 4);
@@ -111,7 +110,6 @@ class AdminProductRecycleBinControllerTest {
                 .containsEntry("specGroups", 1)
                 .containsEntry("specValues", 1)
                 .containsEntry("skuSpecValues", 1)
-                .containsEntry("tags", 1)
                 .containsEntry("guarantees", 1)
                 .containsEntry("coupons", 1)
                 .containsEntry("activeUsages", 4);
@@ -299,7 +297,6 @@ class AdminProductRecycleBinControllerTest {
         assertThat(count("product_spu_spec_group", "spu_id", fixture.spuId())).isZero();
         assertThat(count("product_spu_spec_value", "group_id", fixture.specGroupId())).isZero();
         assertThat(count("product_sku_spec_value", "sku_id", fixture.skuId())).isZero();
-        assertThat(count("product_spu_tag", "spu_id", fixture.spuId())).isZero();
         assertThat(count("product_spu_guarantee_service", "spu_id", fixture.spuId())).isZero();
         assertThat(count("product_spu_coupon", "spu_id", fixture.spuId())).isZero();
         assertThat(count("cart_item", "sku_id", fixture.skuId())).isZero();
@@ -527,9 +524,6 @@ class AdminProductRecycleBinControllerTest {
                         """)
                 .param("spuId", spuId)
                 .param("serviceId", guaranteeServiceId)
-                .update();
-        jdbcClient.sql("insert into product_spu_tag (spu_id, tag_code) values (:spuId, 'HOT_SALE')")
-                .param("spuId", spuId)
                 .update();
         jdbcClient.sql("""
                         insert into product_spu_coupon (spu_id, coupon_template_id)
@@ -808,7 +802,6 @@ class AdminProductRecycleBinControllerTest {
                 "specGroups", activeCount("product_spu_spec_group", "spu_id", fixture.spuId()),
                 "specValues", activeCount("product_spu_spec_value", "group_id", fixture.specGroupId()),
                 "skuSpecValues", count("product_sku_spec_value", "sku_id", fixture.skuId()),
-                "tags", count("product_spu_tag", "spu_id", fixture.spuId()),
                 "guarantees", count("product_spu_guarantee_service", "spu_id", fixture.spuId()),
                 "coupons", count("product_spu_coupon", "spu_id", fixture.spuId()),
                 "activeUsages", activeProductUsageCount(fixture.spuId(), fixture.skuId(), fixture.specValueId())

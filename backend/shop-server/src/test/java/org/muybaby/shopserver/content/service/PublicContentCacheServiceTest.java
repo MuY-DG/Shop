@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.content.ContentProperties;
 import org.muybaby.shopserver.content.PublicContentChangedEvent;
 import org.muybaby.shopserver.content.dto.AppHomeResponse;
+import org.muybaby.shopserver.content.dto.AppHomeProductPriceResponse;
+import org.muybaby.shopserver.content.dto.AppHomeProductResponse;
+import org.muybaby.shopserver.content.dto.AppHomeProductSectionResponse;
 import org.muybaby.shopserver.content.dto.ContactResponse;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
@@ -56,6 +59,47 @@ class PublicContentCacheServiceTest {
         );
         assertThat(fixture.service().homeTtl(LocalDateTime.now().plusMinutes(10)))
                 .isBetween(Duration.ofMinutes(9), Duration.ofMinutes(10));
+    }
+
+    @Test
+    void cachedHomeWithoutOriginalPriceIsRebuiltUnderTheSameV2Key() throws Exception {
+        Fixture fixture = fixture();
+        AppHomeResponse stale = new AppHomeResponse(
+                2,
+                List.of(),
+                List.of(),
+                List.of(new AppHomeProductSectionResponse(
+                        "HOT",
+                        "FEATURED",
+                        List.of(new AppHomeProductResponse(
+                                1L,
+                                1L,
+                                "商品",
+                                "",
+                                "",
+                                new AppHomeProductPriceResponse(1990L, 2590L, null),
+                                null,
+                                List.of(),
+                                List.of(),
+                                null,
+                                0L,
+                                "/pages/product/detail/detail?id=1"
+                        ))
+                ))
+        );
+        AppHomeResponse assembled = emptyHome();
+        when(fixture.values().get(PublicContentCacheService.HOME_CACHE_KEY))
+                .thenReturn(fixture.objectMapper().writeValueAsString(stale));
+        when(fixture.homeQuery().load()).thenReturn(new HomePageQueryService.HomePageLoad(assembled, null));
+
+        assertThat(fixture.service().homePage()).isEqualTo(assembled);
+
+        verify(fixture.redis()).delete(PublicContentCacheService.HOME_CACHE_KEY);
+        verify(fixture.values()).set(
+                eq(PublicContentCacheService.HOME_CACHE_KEY),
+                eq(fixture.objectMapper().writeValueAsString(assembled)),
+                any(Duration.class)
+        );
     }
 
     @Test
@@ -111,7 +155,7 @@ class PublicContentCacheServiceTest {
     }
 
     private AppHomeResponse emptyHome() {
-        return new AppHomeResponse(List.of(), List.of(), List.of(), List.of());
+        return new AppHomeResponse(2, List.of(), List.of(), List.of());
     }
 
     private record Fixture(

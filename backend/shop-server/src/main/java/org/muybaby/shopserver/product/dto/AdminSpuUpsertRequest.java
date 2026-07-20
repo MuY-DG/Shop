@@ -51,7 +51,10 @@ public class AdminSpuUpsertRequest {
     @Valid
     private List<AdminSpuSpecGroupUpsertRequest> specGroups;
 
-    private List<String> tags;
+    @Size(max = 12)
+    private String displayBadgeText;
+
+    private String displayBadgeTone;
 
     private List<Long> guaranteeServiceIds;
 
@@ -63,7 +66,9 @@ public class AdminSpuUpsertRequest {
 
     private boolean specGroupsSpecified;
 
-    private boolean tagsSpecified;
+    private boolean displayBadgeTextSpecified;
+
+    private boolean displayBadgeToneSpecified;
 
     private boolean guaranteeServiceIdsSpecified;
 
@@ -129,7 +134,8 @@ public class AdminSpuUpsertRequest {
             List<AdminProductImageUpsertRequest> images,
             List<AdminSkuUpsertRequest> skus,
             List<AdminSpuSpecGroupUpsertRequest> specGroups,
-            List<String> tags,
+            String displayBadgeText,
+            String displayBadgeTone,
             List<Long> guaranteeServiceIds,
             boolean mainImageFileIdSpecified,
             boolean mainVideoFileIdSpecified,
@@ -138,8 +144,9 @@ public class AdminSpuUpsertRequest {
         this(
                 categoryId, title, subtitle, mainImage, mainImageFileId, mainVideo, mainVideoFileId, specType,
                 freightTemplateId, virtualSales, sellingPoints, detailHtml, sortOrder, images, skus, specGroups,
-                tags, guaranteeServiceIds, mainImageFileIdSpecified, mainVideoFileIdSpecified,
-                specTypeSpecified, specGroups != null, tags != null, guaranteeServiceIds != null
+                displayBadgeText, displayBadgeTone, guaranteeServiceIds, mainImageFileIdSpecified,
+                mainVideoFileIdSpecified, specTypeSpecified, specGroups != null, displayBadgeText != null,
+                displayBadgeTone != null, guaranteeServiceIds != null
         );
     }
 
@@ -160,13 +167,15 @@ public class AdminSpuUpsertRequest {
             List<AdminProductImageUpsertRequest> images,
             List<AdminSkuUpsertRequest> skus,
             List<AdminSpuSpecGroupUpsertRequest> specGroups,
-            List<String> tags,
+            String displayBadgeText,
+            String displayBadgeTone,
             List<Long> guaranteeServiceIds,
             boolean mainImageFileIdSpecified,
             boolean mainVideoFileIdSpecified,
             boolean specTypeSpecified,
             boolean specGroupsSpecified,
-            boolean tagsSpecified,
+            boolean displayBadgeTextSpecified,
+            boolean displayBadgeToneSpecified,
             boolean guaranteeServiceIdsSpecified
     ) {
         this.categoryId = categoryId;
@@ -185,13 +194,15 @@ public class AdminSpuUpsertRequest {
         this.images = images;
         this.skus = skus;
         this.specGroups = specGroups;
-        this.tags = tags;
+        this.displayBadgeText = displayBadgeText;
+        this.displayBadgeTone = displayBadgeTone;
         this.guaranteeServiceIds = guaranteeServiceIds;
         this.mainImageFileIdSpecified = mainImageFileIdSpecified;
         this.mainVideoFileIdSpecified = mainVideoFileIdSpecified;
         this.specTypeSpecified = specTypeSpecified;
         this.specGroupsSpecified = specGroupsSpecified;
-        this.tagsSpecified = tagsSpecified;
+        this.displayBadgeTextSpecified = displayBadgeTextSpecified;
+        this.displayBadgeToneSpecified = displayBadgeToneSpecified;
         this.guaranteeServiceIdsSpecified = guaranteeServiceIdsSpecified;
     }
 
@@ -327,13 +338,22 @@ public class AdminSpuUpsertRequest {
         this.specGroupsSpecified = true;
     }
 
-    public List<String> tags() {
-        return tags == null ? List.of() : tags;
+    public String displayBadgeText() {
+        return displayBadgeText;
     }
 
-    public void setTags(List<String> tags) {
-        this.tags = tags;
-        this.tagsSpecified = true;
+    public void setDisplayBadgeText(String displayBadgeText) {
+        this.displayBadgeText = displayBadgeText;
+        this.displayBadgeTextSpecified = true;
+    }
+
+    public String displayBadgeTone() {
+        return displayBadgeTone;
+    }
+
+    public void setDisplayBadgeTone(String displayBadgeTone) {
+        this.displayBadgeTone = displayBadgeTone;
+        this.displayBadgeToneSpecified = true;
     }
 
     public List<Long> guaranteeServiceIds() {
@@ -361,8 +381,12 @@ public class AdminSpuUpsertRequest {
         return specGroupsSpecified;
     }
 
-    public boolean tagsSpecified() {
-        return tagsSpecified;
+    public boolean displayBadgeTextSpecified() {
+        return displayBadgeTextSpecified;
+    }
+
+    public boolean displayBadgeToneSpecified() {
+        return displayBadgeToneSpecified;
     }
 
     public boolean guaranteeServiceIdsSpecified() {

@@ -1,13 +1,17 @@
 package org.muybaby.shopserver.content.dto;
 
 public record AppHomeProductResponse(
-        Long id,
+        Long placementId,
         Long spuId,
         String title,
         String subtitle,
         String imageUrl,
-        Long minPriceCent,
-        Long maxPriceCent,
+        AppHomeProductPriceResponse price,
+        AppHomeProductBadgeResponse badge,
+        java.util.List<AppHomeProductFeatureResponse> highlights,
+        java.util.List<AppHomeProductFeatureResponse> metaFacts,
+        AppHomeWholesaleSummaryResponse wholesaleSummary,
+        Long displaySales,
         String path
 ) {
 }
