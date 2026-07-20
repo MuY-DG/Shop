@@ -166,26 +166,11 @@
             @change="handleImageChange"
           />
           <div class="field-tip">
-            不选择时自动使用商品主图。{{ imageGuidance }}，支持 JPG、PNG、WebP
+            不选择时自动使用商品主图。{{ imageGuidance }}，支持 JPG、PNG、WebP、SVG
           </div>
         </ElFormItem>
         <ElFormItem label="排序" prop="sortOrder">
           <ElInputNumber v-model="formData.sortOrder" :min="0" :precision="0" />
-        </ElFormItem>
-        <ElFormItem label="位置角标" prop="badgeMode">
-          <ElRadioGroup v-model="formData.badgeMode">
-            <ElRadioButton value="AUTO">自动</ElRadioButton>
-            <ElRadioButton value="CUSTOM">自定义</ElRadioButton>
-            <ElRadioButton value="HIDDEN">不显示</ElRadioButton>
-          </ElRadioGroup>
-        </ElFormItem>
-        <ElFormItem v-if="formData.badgeMode === 'CUSTOM'" label="角标文字" prop="customBadgeText">
-          <ElInput
-            v-model="formData.customBadgeText"
-            maxlength="12"
-            show-word-limit
-            placeholder="例如：店长推荐"
-          />
         </ElFormItem>
         <ElFormItem label="状态" prop="status">
           <ElSwitch
@@ -258,9 +243,7 @@
     imageFileId: null,
     imageUrl: '',
     sortOrder: 0,
-    status: 'ENABLED',
-    badgeMode: 'AUTO',
-    customBadgeText: ''
+    status: 'ENABLED'
   })
   const formData = reactive<EditorForm>(defaultForm())
   const usedProductIds = computed(() => new Set(items.value.map((item) => item.spuId)))
@@ -270,19 +253,7 @@
       : '建议使用约 1.23:1 横图，推荐 1200 × 980 px'
   )
   const rules: FormRules<EditorForm> = {
-    spuId: [{ required: true, message: '请选择商品', trigger: 'change' }],
-    customBadgeText: [
-      {
-        validator: (_rule, value, callback) => {
-          if (formData.badgeMode === 'CUSTOM' && !String(value || '').trim()) {
-            callback(new Error('请输入自定义角标文字'))
-            return
-          }
-          callback()
-        },
-        trigger: 'blur'
-      }
-    ]
+    spuId: [{ required: true, message: '请选择商品', trigger: 'change' }]
   }
 
   const loadItems = async () => {
@@ -315,9 +286,7 @@
               spuId: item.spuId,
               imageFileId: item.imageFileId ?? null,
               sortOrder: item.sortOrder,
-              status: item.status,
-              badgeMode: item.badgeMode,
-              customBadgeText: item.customBadgeText
+              status: item.status
             }),
             false
           )
@@ -363,9 +332,7 @@
         imageFileId: item.imageFileId ?? null,
         imageUrl: item.imageUrl || '',
         sortOrder: item.sortOrder,
-        status: item.status,
-        badgeMode: item.badgeMode,
-        customBadgeText: item.customBadgeText
+        status: item.status
       })
     }
     editorVisible.value = true
@@ -428,9 +395,7 @@
           spuId: item.spuId,
           imageFileId: item.imageFileId ?? null,
           sortOrder: item.sortOrder,
-          status: isEnabled ? 'ENABLED' : 'DISABLED',
-          badgeMode: item.badgeMode,
-          customBadgeText: item.customBadgeText
+          status: isEnabled ? 'ENABLED' : 'DISABLED'
         })
       )
       await loadItems()

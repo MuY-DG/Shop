@@ -433,7 +433,7 @@ class StorageControllerTest {
         String token = adminToken();
 
         mockMvc.perform(multipart("/admin/assets/upload")
-                        .file(new MockMultipartFile("file", "not-image.svg", "image/svg+xml", "<svg/>".getBytes()))
+                        .file(new MockMultipartFile("file", "not-image.bmp", "image/bmp", "broken".getBytes()))
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED.code()));

@@ -7,24 +7,17 @@ import {
 } from "../../features/home";
 import { getHome } from "../../services/home";
 import { isApiError } from "../../utils/api-error";
+import { syncCustomTabBar } from "../../utils/tab-bar";
 
-interface IndexedTapEvent {
-  currentTarget: {
-    dataset: {
-      index?: number | string;
-    };
-  };
-}
-
-interface SwiperChangeEvent {
-  detail: {
-    current: number;
-  };
-}
-
-interface ProductSelectEvent {
+interface BusinessPathEvent {
   detail: {
     path?: string;
+  };
+}
+
+interface IndexedComponentEvent {
+  detail: {
+    index?: number | string;
   };
 }
 
@@ -50,8 +43,8 @@ function homeErrorMessage(error: unknown): string {
   }
 }
 
-function eventIndex(event: IndexedTapEvent, length: number): number | undefined {
-  const index = Number(event.currentTarget.dataset.index);
+function eventIndex(event: IndexedComponentEvent, length: number): number | undefined {
+  const index = Number(event.detail.index);
   return Number.isInteger(index) && index >= 0 && index < length
     ? index
     : undefined;
@@ -62,7 +55,6 @@ Page({
     loading: true,
     loaded: false,
     errorText: "",
-    currentBanner: 0,
     banners: [] as HomeBannerView[],
     categories: [] as HomeCategoryView[],
     featuredProducts: [] as HomeProductCardView[],
@@ -72,6 +64,10 @@ Page({
 
   onLoad() {
     void this.loadHome();
+  },
+
+  onShow() {
+    syncCustomTabBar(this, 0);
   },
 
   onUnload() {
@@ -96,12 +92,8 @@ Page({
       if (requestId !== latestHomeRequest) {
         return;
       }
-      const nextBanner = this.data.currentBanner < viewModel.banners.length
-        ? this.data.currentBanner
-        : 0;
       this.setData({
         ...viewModel,
-        currentBanner: nextBanner,
         loaded: true,
         loading: false,
         errorText: ""
@@ -135,30 +127,7 @@ Page({
     void this.loadHome();
   },
 
-  onBannerChange(event: SwiperChangeEvent) {
-    const current = Number(event.detail.current);
-    if (Number.isInteger(current) && current >= 0) {
-      this.setData({ currentBanner: current });
-    }
-  },
-
-  onBannerTap(event: IndexedTapEvent) {
-    const index = eventIndex(event, this.data.banners.length);
-    if (index === undefined) {
-      return;
-    }
-    this.openBusinessPath(this.data.banners[index]?.navigationPath);
-  },
-
-  onCategoryTap(event: IndexedTapEvent) {
-    const index = eventIndex(event, this.data.categories.length);
-    if (index === undefined) {
-      return;
-    }
-    this.openBusinessPath(this.data.categories[index]?.navigationPath);
-  },
-
-  onProductSelect(event: ProductSelectEvent) {
+  onBusinessPathSelect(event: BusinessPathEvent) {
     this.openBusinessPath(event.detail.path);
   },
 
@@ -178,7 +147,7 @@ Page({
     });
   },
 
-  onBannerImageError(event: IndexedTapEvent) {
+  onBannerImageError(event: IndexedComponentEvent) {
     const index = eventIndex(event, this.data.banners.length);
     if (index === undefined) {
       return;
@@ -189,7 +158,7 @@ Page({
     this.setData({ banners });
   },
 
-  onCategoryImageError(event: IndexedTapEvent) {
+  onCategoryImageError(event: IndexedComponentEvent) {
     const index = eventIndex(event, this.data.categories.length);
     if (index === undefined) {
       return;

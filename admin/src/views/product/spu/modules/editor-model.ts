@@ -1,6 +1,5 @@
 export type ProductSpecType = 'SINGLE' | 'MULTI'
 export type ProductSkuStatus = 'ENABLED' | 'DISABLED'
-export type ProductTagCode = 'PROMOTION' | 'HOT_SALE' | 'HOT_RANK' | 'PREMIUM' | 'NEW_ARRIVAL'
 
 export interface ProductEditorImage {
   url: string
@@ -65,11 +64,12 @@ export interface ProductEditorForm {
   specType: ProductSpecType
   freightTemplateId: number | null
   virtualSales: number
+  displayBadgeText: string
+  displayBadgeTone: Api.Product.ProductBadgeTone
   sortOrder: number
   images: ProductEditorImage[]
   skus: ProductEditorSku[]
   specGroups: ProductEditorSpecGroup[]
-  tags: ProductTagCode[]
   guaranteeServiceIds: number[]
   couponTemplateIds: number[]
   parameterValues: Api.Product.SpuParameterValue[]
@@ -126,14 +126,6 @@ export interface ProductEditorCoupon {
   validEndAt?: string
 }
 
-export const PRODUCT_TAG_OPTIONS: Array<{ label: string; value: ProductTagCode }> = [
-  { label: '促销单品', value: 'PROMOTION' },
-  { label: '热卖商品', value: 'HOT_SALE' },
-  { label: '热门榜单', value: 'HOT_RANK' },
-  { label: '精选好物', value: 'PREMIUM' },
-  { label: '新品', value: 'NEW_ARRIVAL' }
-]
-
 export const createEmptyImage = (): ProductEditorImage => ({
   url: '',
   fileId: null
@@ -152,11 +144,12 @@ export const createDefaultForm = (): ProductEditorForm => ({
   specType: 'SINGLE',
   freightTemplateId: null,
   virtualSales: 0,
+  displayBadgeText: '',
+  displayBadgeTone: 'NEUTRAL',
   sortOrder: 0,
   images: [],
   skus: [],
   specGroups: [],
-  tags: [],
   guaranteeServiceIds: [],
   couponTemplateIds: [],
   parameterValues: []

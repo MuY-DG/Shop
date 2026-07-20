@@ -19,7 +19,8 @@ public class UploadPolicy {
             "jpeg", "image/jpeg",
             "png", "image/png",
             "webp", "image/webp",
-            "gif", "image/gif"
+            "gif", "image/gif",
+            "svg", "image/svg+xml"
     );
     private static final Set<String> DOCUMENT_EXTENSIONS = Set.of("pem", "crt", "cer", "txt");
     private static final Map<String, String> VIDEO_CONTENT_TYPES = Map.of(

@@ -1,0 +1,16 @@
+<view class="catalog-page">
+  <navigation-bar
+    title="选购火锅底料"
+    back="{{true}}"
+    home="{{true}}"
+    background="#FAF2E4"
+    color="#2E1D16"
+  />
+  <catalog-browser
+    wx:if="{{ready}}"
+    id="catalog"
+    initial-category-id="{{initialCategoryId}}"
+    initial-keyword="{{initialKeyword}}"
+    bindproductselect="onProductSelect"
+  />
+</view>

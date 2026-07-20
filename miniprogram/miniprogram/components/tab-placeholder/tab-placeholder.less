@@ -1,0 +1,40 @@
+@import "../../styles/tokens.less";
+
+.tab-placeholder {
+  min-height: 100vh;
+  padding-bottom: calc(@tab-bar-height + 36rpx + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 90% 4%, fade(@color-brand, 7%), transparent 28%),
+    linear-gradient(180deg, @color-page-top, @color-page-bottom);
+}
+
+.tab-placeholder__brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 94rpx;
+  color: @color-gold-text;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: @font-size-lg;
+  font-weight: 700;
+  letter-spacing: 5rpx;
+  gap: 20rpx;
+}
+
+.tab-placeholder__seal {
+  width: 70rpx;
+  height: 70rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3rpx solid fade(@color-brand, 70%);
+  border-radius: 48% 52% 46% 54%;
+  color: @color-brand;
+  font-size: 38rpx;
+  background: fade(@color-surface, 76%);
+  transform: rotate(-4deg);
+}
+
+.tab-placeholder__state {
+  padding: 90rpx @page-gutter 0;
+}

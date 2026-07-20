@@ -1,0 +1,31 @@
+<view class="gallery-shell">
+  <swiper
+    wx:if="{{displayImages.length}}"
+    class="gallery"
+    current="{{current}}"
+    circular="{{displayImages.length > 1}}"
+    bindchange="onChange"
+  >
+    <swiper-item wx:for="{{displayImages}}" wx:key="key">
+      <image
+        wx:if="{{item.hasImage}}"
+        class="gallery-image"
+        src="{{item.url}}"
+        mode="aspectFit"
+        data-index="{{index}}"
+        binderror="onImageError"
+      />
+      <view wx:else class="gallery-placeholder">
+        <view class="gallery-placeholder__seal">灶</view>
+        <text>商品图片加载失败</text>
+      </view>
+    </swiper-item>
+  </swiper>
+  <view wx:else class="gallery gallery-placeholder">
+    <view class="gallery-placeholder__seal">灶</view>
+    <text>好物图片准备中</text>
+  </view>
+  <view wx:if="{{displayImages.length > 1}}" class="gallery-count">
+    {{current + 1}} / {{displayImages.length}}
+  </view>
+</view>

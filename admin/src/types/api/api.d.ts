@@ -205,7 +205,9 @@ declare namespace Api {
       | 'MULTI_SELECT'
       | 'BOOLEAN'
     type ProductParameterStatus = 'ENABLED' | 'DISABLED'
-    type ProductTag = 'PROMOTION' | 'HOT_SALE' | 'HOT_RANK' | 'PREMIUM' | 'NEW_ARRIVAL'
+    type ProductBadgeTone = 'RED' | 'ORANGE' | 'GREEN' | 'NEUTRAL'
+    type ProductParameterCardRole = 'HIGHLIGHT' | 'META'
+    type ProductParameterCardRenderer = 'TEXT' | 'PILL' | 'LEVEL' | 'SPICE'
     type FreightChargeMode = 'FREE' | 'FIXED'
     type FreightTemplateStatus = 'ENABLED' | 'DISABLED'
 
@@ -362,12 +364,13 @@ declare namespace Api {
       virtualSales: number
       sellingPoints: string
       detailHtml: string
+      displayBadgeText: string
+      displayBadgeTone: ProductBadgeTone
       sortOrder: number
       status: ProductStatus
       images: ProductImage[]
       skus: Sku[]
       specGroups: SpecGroup[]
-      tags: ProductTag[]
       guaranteeServiceIds: number[]
       couponTemplateIds: number[]
       createdAt: string
@@ -387,11 +390,12 @@ declare namespace Api {
       virtualSales: number
       sellingPoints: string
       detailHtml: string
+      displayBadgeText: string
+      displayBadgeTone: ProductBadgeTone
       sortOrder: number
       images: ProductImageForm[]
       skus: Sku[]
       specGroups: SpecGroupForm[]
-      tags: ProductTag[]
       guaranteeServiceIds: number[]
     }
 
@@ -414,6 +418,9 @@ declare namespace Api {
       filterable: boolean
       cardVisible: boolean
       detailVisible: boolean
+      cardRole: ProductParameterCardRole
+      cardRenderer: ProductParameterCardRenderer
+      cardPriority: number
       sortOrder: number
       status: ProductParameterStatus
       categoryIds: number[]
@@ -432,6 +439,9 @@ declare namespace Api {
       filterable: boolean
       cardVisible: boolean
       detailVisible: boolean
+      cardRole: ProductParameterCardRole
+      cardRenderer: ProductParameterCardRenderer
+      cardPriority: number
       sortOrder: number
       status: ProductParameterStatus
       categoryIds: number[]
@@ -780,7 +790,6 @@ declare namespace Api {
 
     type HomeItemStatus = 'ENABLED' | 'DISABLED'
     type HomeProductSection = 'HOT' | 'RECOMMENDED'
-    type HomeBadgeMode = 'AUTO' | 'CUSTOM' | 'HIDDEN'
 
     interface HomeCategoryItem {
       id: number
@@ -838,10 +847,8 @@ declare namespace Api {
       maxPriceCent?: number | null
       sortOrder: number
       status: HomeItemStatus
-      productTags: Api.Product.ProductTag[]
-      badgeMode: HomeBadgeMode
-      customBadgeText: string
-      resolvedBadgeText: string
+      displayBadgeText: string
+      displayBadgeTone: Api.Product.ProductBadgeTone
       createdAt: string
       updatedAt: string
     }
@@ -851,8 +858,6 @@ declare namespace Api {
       imageFileId: number | null
       sortOrder: number
       status: HomeItemStatus
-      badgeMode: HomeBadgeMode
-      customBadgeText: string
     }
 
     interface HomeProductOption {

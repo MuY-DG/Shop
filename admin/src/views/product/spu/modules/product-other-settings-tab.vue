@@ -41,23 +41,30 @@
         />
       </ElFormItem>
 
-      <ElFormItem label="商品语义标签">
-        <div class="semantic-tag-field">
-          <ElCheckboxGroup
-            :model-value="modelValue.tags"
+      <ElFormItem label="商品卡片角标">
+        <div class="badge-field">
+          <ElInput
+            :model-value="modelValue.displayBadgeText"
+            maxlength="12"
+            show-word-limit
+            clearable
             :disabled="disabled"
-            class="tag-options"
-            @update:model-value="updateTags"
+            placeholder="选填，例如：店长推荐"
+            @update:model-value="patchForm({ displayBadgeText: $event })"
+          />
+          <ElSelect
+            :model-value="modelValue.displayBadgeTone"
+            :disabled="disabled || !modelValue.displayBadgeText.trim()"
+            @update:model-value="patchForm({ displayBadgeTone: $event })"
           >
-            <ElCheckboxButton
-              v-for="option in PRODUCT_TAG_OPTIONS"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </ElCheckboxButton>
-          </ElCheckboxGroup>
-          <small>由运营手动设置；“新品”不会根据首次上架时间自动计算。</small>
+            <ElOption label="红色" value="RED" />
+            <ElOption label="橙色" value="ORANGE" />
+            <ElOption label="绿色" value="GREEN" />
+            <ElOption label="中性" value="NEUTRAL" />
+          </ElSelect>
+          <small
+            >这是商品级人工展示角标，会随商品出现在首页卡片中；不会自动生成促销或榜单文案。</small
+          >
         </div>
       </ElFormItem>
 
@@ -220,7 +227,7 @@
   import { fetchCouponTemplates } from '@/api/coupon'
   import { createProductSpuCoupon, fetchProductSpuCoupons } from '@/api/product'
   import type { ProductEditorCoupon, ProductEditorForm } from './editor-model'
-  import { PRODUCT_TAG_OPTIONS, yuanToCent } from './editor-model'
+  import { yuanToCent } from './editor-model'
 
   interface Props {
     modelValue: ProductEditorForm
@@ -276,16 +283,6 @@
 
   const patchForm = (patch: Partial<ProductEditorForm>) => {
     emit('update:modelValue', { ...props.modelValue, ...patch })
-  }
-
-  const updateTags = (values: Array<string | number>) => {
-    const allowed = new Set(PRODUCT_TAG_OPTIONS.map((item) => item.value))
-    patchForm({
-      tags: values.filter(
-        (value): value is ProductEditorForm['tags'][number] =>
-          typeof value === 'string' && allowed.has(value as ProductEditorForm['tags'][number])
-      )
-    })
   }
 
   const loadCoupons = async () => {
@@ -432,23 +429,14 @@
     width: 220px;
   }
 
-  .tag-options {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-
-    :deep(.el-checkbox-button__inner) {
-      border: 1px solid var(--el-border-color);
-      border-radius: 8px;
-      box-shadow: none;
-    }
-  }
-
-  .semantic-tag-field {
+  .badge-field {
     display: grid;
-    gap: 8px;
+    grid-template-columns: minmax(240px, 1fr) 140px;
+    gap: 8px 12px;
+    width: min(100%, 560px);
 
     small {
+      grid-column: 1 / -1;
       color: var(--el-text-color-secondary);
     }
   }

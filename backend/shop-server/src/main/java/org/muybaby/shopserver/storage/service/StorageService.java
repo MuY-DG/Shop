@@ -45,8 +45,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
+import org.xml.sax.SAXException;
 
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReadParam;
@@ -54,6 +57,9 @@ import javax.imageio.ImageReader;
 import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.stream.ImageInputStream;
 import javax.imageio.stream.MemoryCacheImageInputStream;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -80,6 +86,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class StorageService {
@@ -97,6 +105,24 @@ public class StorageService {
     private static final long IMAGE_VALIDATION_MAX_DECODED_PIXELS = 1_000_000L;
     private static final int IMAGE_VALIDATION_MAX_FRAMES = 16;
     private static final long IMAGE_VALIDATION_MAX_TOTAL_SOURCE_PIXELS = 100_000_000L;
+    private static final String SVG_CONTENT_TYPE = "image/svg+xml";
+    private static final String SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+    private static final int SVG_VALIDATION_MAX_ELEMENTS = 100_000;
+    private static final Set<String> SVG_FORBIDDEN_ELEMENTS = Set.of(
+            "script", "foreignobject", "iframe", "object", "embed", "audio", "video",
+            "animate", "animatemotion", "animatetransform", "set", "discard", "handler", "listener"
+    );
+    private static final Pattern SVG_LENGTH = Pattern.compile(
+            "([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?)\\s*(px|pt|pc|mm|cm|in)?",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern SVG_PERCENTAGE_LENGTH = Pattern.compile(
+            "[+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?%",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Pattern SVG_URL_REFERENCE = Pattern.compile(
+            "url\\s*\\(([^)]*)\\)", Pattern.CASE_INSENSITIVE
+    );
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -1293,6 +1319,9 @@ public class StorageService {
         if (mediaKind != StorageMediaKind.IMAGE) {
             return null;
         }
+        if (SVG_CONTENT_TYPE.equals(expectedContentType)) {
+            return readSvgMetadata(bytes);
+        }
         try (ImageInputStream imageInput = new MemoryCacheImageInputStream(new ByteArrayInputStream(bytes))) {
             Iterator<ImageReader> readers = ImageIO.getImageReaders(imageInput);
             if (!readers.hasNext()) {
@@ -1342,6 +1371,171 @@ public class StorageService {
         } catch (RuntimeException ex) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
+    }
+
+    private ImageMetadata readSvgMetadata(byte[] bytes) {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setXIncludeAware(false);
+            factory.setExpandEntityReferences(false);
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+
+            Document document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(bytes));
+            Element root = document.getDocumentElement();
+            if (root == null
+                    || !"svg".equalsIgnoreCase(root.getLocalName())
+                    || !SVG_NAMESPACE.equals(root.getNamespaceURI())) {
+                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+            }
+
+            requireSafeSvgTree(document);
+            double[] viewBox = parseSvgViewBox(root.getAttribute("viewBox"));
+            Double declaredWidth = parseSvgLength(root.getAttribute("width"));
+            Double declaredHeight = parseSvgLength(root.getAttribute("height"));
+            double width = declaredWidth != null ? declaredWidth : 300d;
+            double height = declaredHeight != null ? declaredHeight : 150d;
+            if (viewBox != null) {
+                if (declaredWidth == null && declaredHeight == null) {
+                    width = viewBox[0];
+                    height = viewBox[1];
+                } else if (declaredWidth == null) {
+                    width = declaredHeight * viewBox[0] / viewBox[1];
+                } else if (declaredHeight == null) {
+                    height = declaredWidth * viewBox[1] / viewBox[0];
+                }
+            }
+            if (!Double.isFinite(width) || !Double.isFinite(height)
+                    || width <= 0 || height <= 0
+                    || width > Integer.MAX_VALUE || height > Integer.MAX_VALUE) {
+                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+            }
+            int pixelWidth = (int) Math.ceil(width);
+            int pixelHeight = (int) Math.ceil(height);
+            uploadPolicy.requireAllowedImageDimensions(pixelWidth, pixelHeight);
+            return new ImageMetadata(pixelWidth, pixelHeight);
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (ParserConfigurationException | SAXException | IOException | RuntimeException ex) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+    }
+
+    private void requireSafeSvgTree(Node root) {
+        ArrayDeque<Node> pending = new ArrayDeque<>();
+        pending.add(root);
+        int elementCount = 0;
+        while (!pending.isEmpty()) {
+            Node node = pending.removeFirst();
+            if (node.getNodeType() == Node.PROCESSING_INSTRUCTION_NODE) {
+                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+            }
+            if (node.getNodeType() == Node.ELEMENT_NODE) {
+                elementCount++;
+                if (elementCount > SVG_VALIDATION_MAX_ELEMENTS) {
+                    throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+                }
+                String localName = node.getLocalName() == null ? node.getNodeName() : node.getLocalName();
+                String normalizedName = localName.toLowerCase(Locale.ROOT);
+                if (SVG_FORBIDDEN_ELEMENTS.contains(normalizedName)) {
+                    throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+                }
+                NamedNodeMap attributes = node.getAttributes();
+                for (int index = 0; index < attributes.getLength(); index++) {
+                    Node attribute = attributes.item(index);
+                    String attributeName = attribute.getLocalName() == null
+                            ? attribute.getNodeName()
+                            : attribute.getLocalName();
+                    String normalizedAttributeName = attributeName.toLowerCase(Locale.ROOT);
+                    String value = attribute.getNodeValue() == null ? "" : attribute.getNodeValue().trim();
+                    if (normalizedAttributeName.startsWith("on")
+                            || (("href".equals(normalizedAttributeName) || "src".equals(normalizedAttributeName))
+                            && !isSafeSvgReference(value))) {
+                        throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+                    }
+                    requireSafeSvgCss(value);
+                }
+                if ("style".equals(normalizedName)) {
+                    requireSafeSvgCss(node.getTextContent());
+                }
+            }
+            for (Node child = node.getFirstChild(); child != null; child = child.getNextSibling()) {
+                pending.addLast(child);
+            }
+        }
+    }
+
+    private boolean isSafeSvgReference(String reference) {
+        return reference.isEmpty() || reference.startsWith("#");
+    }
+
+    private void requireSafeSvgCss(String value) {
+        String normalized = value == null ? "" : value.toLowerCase(Locale.ROOT);
+        if (normalized.contains("javascript:")
+                || normalized.contains("@import")
+                || normalized.contains("expression(")
+                || normalized.contains("-moz-binding")) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        Matcher matcher = SVG_URL_REFERENCE.matcher(value == null ? "" : value);
+        while (matcher.find()) {
+            String target = matcher.group(1).trim();
+            if (target.length() >= 2
+                    && ((target.startsWith("\"") && target.endsWith("\""))
+                    || (target.startsWith("'") && target.endsWith("'")))) {
+                target = target.substring(1, target.length() - 1).trim();
+            }
+            if (!target.startsWith("#")) {
+                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+            }
+        }
+    }
+
+    private double[] parseSvgViewBox(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        String[] parts = value.trim().split("[\\s,]+");
+        if (parts.length != 4) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        double width = Double.parseDouble(parts[2]);
+        double height = Double.parseDouble(parts[3]);
+        if (!Double.isFinite(width) || !Double.isFinite(height) || width <= 0 || height <= 0) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        return new double[]{width, height};
+    }
+
+    private Double parseSvgLength(String value) {
+        if (!StringUtils.hasText(value) || SVG_PERCENTAGE_LENGTH.matcher(value.trim()).matches()) {
+            return null;
+        }
+        Matcher matcher = SVG_LENGTH.matcher(value.trim());
+        if (!matcher.matches()) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        double amount = Double.parseDouble(matcher.group(1));
+        String unit = matcher.group(2) == null ? "" : matcher.group(2).toLowerCase(Locale.ROOT);
+        double pixels = switch (unit) {
+            case "", "px" -> amount;
+            case "pt" -> amount * 96d / 72d;
+            case "pc" -> amount * 16d;
+            case "mm" -> amount * 96d / 25.4d;
+            case "cm" -> amount * 96d / 2.54d;
+            case "in" -> amount * 96d;
+            default -> throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        };
+        if (!Double.isFinite(pixels) || pixels <= 0) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        return pixels;
     }
 
     private void requireExpectedImageFormat(String readerFormat, String expectedContentType) {

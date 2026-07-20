@@ -97,11 +97,14 @@
                     <img :src="product.displayImageUrl" :alt="product.productTitle" />
                     <i class="image-fade" />
                     <span
-                      v-if="product.resolvedBadgeText"
+                      v-if="product.displayBadgeText"
                       class="marketing-tag"
-                      :class="`marketing-tag--${index}`"
+                      :class="[
+                        `marketing-tag--${index}`,
+                        `badge-tone--${product.displayBadgeTone.toLowerCase()}`
+                      ]"
                     >
-                      {{ product.resolvedBadgeText }}
+                      {{ product.displayBadgeText }}
                     </span>
                   </div>
                   <div class="popular-info">
@@ -153,11 +156,14 @@
                     <img :src="product.displayImageUrl" :alt="product.productTitle" />
                     <i class="image-fade" />
                     <span
-                      v-if="product.resolvedBadgeText"
+                      v-if="product.displayBadgeText"
                       class="campaign-tag"
-                      :class="`campaign-tag--${index}`"
+                      :class="[
+                        `campaign-tag--${index}`,
+                        `badge-tone--${product.displayBadgeTone.toLowerCase()}`
+                      ]"
                     >
-                      {{ product.resolvedBadgeText }}
+                      {{ product.displayBadgeText }}
                     </span>
                   </div>
                   <div class="recommend-info">
@@ -776,6 +782,22 @@
     &--2 {
       background: linear-gradient(100deg, #733025, #aa5540);
     }
+  }
+
+  .badge-tone--red {
+    background: linear-gradient(100deg, #a81617, #db442e);
+  }
+
+  .badge-tone--orange {
+    background: linear-gradient(100deg, #a33c25, #cf6c39);
+  }
+
+  .badge-tone--green {
+    background: linear-gradient(100deg, #476143, #718161);
+  }
+
+  .badge-tone--neutral {
+    background: linear-gradient(100deg, #5e5b57, #89827a);
   }
 
   .popular-info,

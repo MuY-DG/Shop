@@ -155,7 +155,7 @@
             <div class="image-guidance">
               <ArtSvgIcon icon="ri:information-line" />
               <span>
-                建议使用 1:1 方图，推荐 480 × 480 px；透明背景的 PNG 或 WebP
+                建议使用 1:1 方图，推荐 480 × 480 px；透明背景的 PNG、WebP 或 SVG
                 效果更佳，主体四周请适当留白
               </span>
             </div>

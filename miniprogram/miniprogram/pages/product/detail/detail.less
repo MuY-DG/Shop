@@ -1,0 +1,52 @@
+@import "../../../styles/tokens.less";
+
+.detail-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 94% 2%, fade(@color-brand, 7%), transparent 28%),
+    linear-gradient(180deg, @color-page-top, @color-page-bottom);
+}
+
+.detail-state {
+  padding: 160rpx @page-gutter;
+}
+
+.detail-content {
+  position: relative;
+  z-index: 2;
+  margin-top: -26rpx;
+  padding: 0 @page-gutter calc(44rpx + env(safe-area-inset-bottom));
+}
+
+.detail-card {
+  margin-top: 22rpx;
+  padding: 28rpx;
+  overflow: hidden;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-lg;
+  color: @color-text-secondary;
+  font-size: @font-size-sm;
+  line-height: @line-height-relaxed;
+  background: @color-surface;
+  box-shadow: @shadow-card;
+}
+
+.section-heading { margin-bottom: 22rpx; }
+
+.section-heading__title {
+  color: @color-text-primary;
+  font-size: @font-size-md;
+  font-weight: 700;
+}
+
+.phase-note {
+  margin-top: 24rpx;
+  padding: 20rpx 24rpx;
+  border: 1rpx dashed fade(@color-gold, 42%);
+  border-radius: @radius-md;
+  color: @color-gold-text;
+  font-size: @font-size-xs;
+  line-height: @line-height-base;
+  text-align: center;
+  background: fade(@color-gold-soft, 52%);
+}

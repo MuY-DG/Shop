@@ -97,7 +97,7 @@
               <ArtSvgIcon icon="ri:information-line" />
               <span>
                 建议使用 1:1 方图，推荐 1500 × 1500 px（最低 750 × 750 px），支持
-                JPG、PNG、WebP，建议不超过 2 MB
+                JPG、PNG、WebP、SVG，建议不超过 2 MB
               </span>
             </div>
           </div>

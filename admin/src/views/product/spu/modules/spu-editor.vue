@@ -129,8 +129,7 @@
     ProductEditorSku,
     ProductEditorSpecGroup,
     ProductEditorSpecValue,
-    ProductSkuStatus,
-    ProductTagCode
+    ProductSkuStatus
   } from './editor-model'
   import { createDefaultForm } from './editor-model'
   import {
@@ -183,7 +182,8 @@
       freightTemplateId: number | null
       virtualSales: number
       specGroups: DetailSpecGroup[]
-      tags: ProductTagCode[]
+      displayBadgeText: string
+      displayBadgeTone: Api.Product.ProductBadgeTone
       guaranteeServiceIds: number[]
       couponTemplateIds: number[]
       parameterValues: Api.Product.SpuParameterValue[]
@@ -395,6 +395,8 @@
       specType,
       freightTemplateId: detail.freightTemplateId ?? null,
       virtualSales: detail.virtualSales ?? 0,
+      displayBadgeText: detail.displayBadgeText || '',
+      displayBadgeTone: detail.displayBadgeTone || 'NEUTRAL',
       sortOrder: detail.sortOrder ?? 0,
       images: (detail.images || []).map((image) => ({
         url: image.url || '',
@@ -402,7 +404,6 @@
       })),
       skus,
       specGroups,
-      tags: detail.tags || [],
       guaranteeServiceIds: detail.guaranteeServiceIds || [],
       couponTemplateIds: detail.couponTemplateIds || [],
       parameterValues: detail.parameterValues || []
@@ -506,6 +507,8 @@
       specType: form.specType,
       freightTemplateId: form.freightTemplateId,
       virtualSales: form.virtualSales,
+      displayBadgeText: form.displayBadgeText.trim(),
+      displayBadgeTone: form.displayBadgeTone,
       sortOrder: form.sortOrder,
       images: form.images
         .map((image) => ({ url: image.url.trim(), fileId: image.fileId }))
@@ -526,7 +529,6 @@
           sortOrder: valueIndex
         }))
       })),
-      tags: form.tags,
       guaranteeServiceIds: form.guaranteeServiceIds
     } as Api.Product.SpuForm
   }

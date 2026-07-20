@@ -22,7 +22,7 @@
       wx:if="{{product.badgeText}}"
       class="product-card__badge product-card__badge--{{product.badgeTone}}"
     >
-      <text>{{product.badgeText}}</text>
+      <text class="product-card__badge-text">{{product.badgeText}}</text>
     </view>
   </view>
 

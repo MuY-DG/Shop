@@ -1,0 +1,24 @@
+<view class="detail-card">
+  <view class="section-heading">
+    <text class="section-heading__title">选择规格</text>
+    <text class="section-heading__subtitle">价格与库存随规格变化</text>
+  </view>
+  <view class="sku-grid">
+    <view
+      wx:for="{{options}}"
+      wx:key="id"
+      class="sku-option {{item.selected ? 'sku-option--selected' : ''}} {{item.disabled ? 'sku-option--disabled' : ''}}"
+      data-id="{{item.id}}"
+      bindtap="onSelect"
+      hover-class="{{item.disabled ? 'none' : 'sku-option--pressed'}}"
+      aria-role="button"
+      aria-label="{{item.name}}，¥{{item.priceText}}，{{item.stockText}}"
+    >
+      <text class="sku-name">{{item.name}}</text>
+      <view class="sku-meta">
+        <text>¥{{item.priceText}}</text>
+        <text>{{item.stockText}}</text>
+      </view>
+    </view>
+  </view>
+</view>

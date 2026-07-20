@@ -1,0 +1,104 @@
+<view class="catalog-browser {{tabPage ? 'catalog-browser--tab' : ''}}">
+  <view class="catalog-tools">
+    <view class="search-box">
+      <view class="search-icon" aria-hidden="true"></view>
+      <input
+        class="search-input"
+        value="{{searchInput}}"
+        maxlength="80"
+        placeholder="搜索锅底、口味或商品名"
+        confirm-type="search"
+        bindinput="onSearchInput"
+        bindconfirm="onSearchConfirm"
+      />
+      <view
+        wx:if="{{searchInput || activeKeyword}}"
+        class="search-clear"
+        bindtap="onSearchClear"
+        aria-role="button"
+        aria-label="清除搜索"
+      >清除</view>
+      <view
+        class="search-submit"
+        bindtap="onSearchTap"
+        hover-class="search-submit--pressed"
+        aria-role="button"
+      >搜索</view>
+    </view>
+
+    <scroll-view
+      class="category-scroll"
+      scroll-x="{{true}}"
+      enhanced="{{true}}"
+      show-scrollbar="{{false}}"
+      enable-flex="{{true}}"
+    >
+      <view class="category-track">
+        <view
+          wx:for="{{categoryTabs}}"
+          wx:key="id"
+          class="category-tab {{item.selected ? 'category-tab--active' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="onCategoryTap"
+          hover-class="category-tab--pressed"
+          aria-role="button"
+          aria-label="{{item.name}}{{item.selected ? '，已选择' : ''}}"
+        >{{item.name}}</view>
+      </view>
+    </scroll-view>
+
+    <view wx:if="{{activeKeyword}}" class="search-summary">
+      “{{activeKeyword}}”的搜索结果
+    </view>
+  </view>
+
+  <view class="catalog-content">
+    <view wx:if="{{!loaded && loading}}" class="catalog-state">
+      <ui-state type="loading" title="正在挑选好味道" description="商品马上就来" />
+    </view>
+
+    <view wx:elif="{{!loaded && errorText}}" class="catalog-state">
+      <ui-state
+        type="error"
+        title="商品加载失败"
+        description="{{errorText}}"
+        action-text="重新加载"
+        bindaction="onRetry"
+      />
+    </view>
+
+    <view wx:elif="{{loaded && !products.length}}" class="catalog-state">
+      <ui-state
+        type="empty"
+        title="暂时没有找到商品"
+        description="{{activeKeyword ? '换个关键词试试，或清除搜索查看全部商品。' : '这个分类的好物还在准备中。'}}"
+        action-text="{{activeKeyword ? '清除搜索' : '重新加载'}}"
+        bindaction="onEmptyAction"
+      />
+    </view>
+
+    <block wx:else>
+      <view class="catalog-grid">
+        <view wx:for="{{products}}" wx:key="spuId" class="catalog-item">
+          <product-card
+            product="{{item}}"
+            variant="compact"
+            bindselect="onProductSelect"
+          />
+        </view>
+      </view>
+
+      <view wx:if="{{loadingMore}}" class="catalog-footer">正在加载更多…</view>
+      <view
+        wx:elif="{{errorText}}"
+        class="catalog-footer catalog-footer--error"
+        bindtap="onRetry"
+        aria-role="button"
+      >{{errorText}}，点击重试</view>
+      <view
+        wx:elif="{{products.length && products.length >= total}}"
+        class="catalog-footer catalog-footer--done"
+      >好味道都在这里了</view>
+    </block>
+  </view>
+</view>

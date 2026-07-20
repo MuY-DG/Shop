@@ -1,223 +1,93 @@
-<block>
-  <view class="home-page">
-    <view wx:if="{{!loaded && loading}}" class="home-skeleton" aria-label="首页加载中">
-      <view class="skeleton-block skeleton-hero"></view>
-      <view class="skeleton-content">
-        <view class="skeleton-block skeleton-categories"></view>
-        <view class="skeleton-heading">
-          <view class="skeleton-block skeleton-heading__mark"></view>
-          <view class="skeleton-block skeleton-heading__copy"></view>
-        </view>
-        <view class="skeleton-products">
-          <view class="skeleton-block skeleton-product"></view>
-          <view class="skeleton-block skeleton-product"></view>
-          <view class="skeleton-block skeleton-product"></view>
-        </view>
+<view class="home-page">
+  <view wx:if="{{!loaded && loading}}" class="home-skeleton" aria-label="首页加载中">
+    <view class="skeleton-block skeleton-hero"></view>
+    <view class="skeleton-content">
+      <view class="skeleton-block skeleton-categories"></view>
+      <view class="skeleton-heading">
+        <view class="skeleton-block skeleton-heading__mark"></view>
+        <view class="skeleton-block skeleton-heading__copy"></view>
+      </view>
+      <view class="skeleton-products">
+        <view class="skeleton-block skeleton-product"></view>
+        <view class="skeleton-block skeleton-product"></view>
+        <view class="skeleton-block skeleton-product"></view>
       </view>
     </view>
-
-    <view wx:elif="{{!loaded && errorText}}" class="home-state-shell">
-      <ui-state
-        type="error"
-        title="首页加载失败"
-        description="{{errorText}}"
-        action-text="重新加载"
-        bindaction="onRetry"
-      />
-    </view>
-
-    <block wx:else>
-      <view wx:if="{{banners.length}}" class="hero-section">
-        <swiper
-          class="hero-swiper"
-          current="{{currentBanner}}"
-          autoplay="{{banners.length > 1}}"
-          circular="{{banners.length > 1}}"
-          interval="4500"
-          duration="650"
-          easing-function="easeInOutCubic"
-          bindchange="onBannerChange"
-        >
-          <swiper-item
-            wx:for="{{banners}}"
-            wx:key="id"
-            class="hero-item"
-            data-index="{{index}}"
-            bindtap="onBannerTap"
-            hover-class="{{item.navigationPath ? 'hero-item--pressed' : 'none'}}"
-            aria-role="{{item.navigationPath ? 'button' : 'img'}}"
-            aria-label="{{item.ariaLabel}}"
-          >
-            <image
-              wx:if="{{item.hasImage}}"
-              class="hero-image"
-              src="{{item.imageUrl}}"
-              mode="aspectFit"
-              data-index="{{index}}"
-              binderror="onBannerImageError"
-            />
-            <view wx:else class="hero-placeholder">
-              <view class="hero-placeholder__seal">灶</view>
-              <view class="hero-placeholder__title">灶香集</view>
-              <view class="hero-placeholder__subtitle">地道川味 · 真材实料</view>
-            </view>
-
-            <view wx:if="{{item.title || item.subtitle}}" class="hero-copy">
-              <view wx:if="{{item.title}}" class="hero-copy__title">{{item.title}}</view>
-              <view wx:if="{{item.subtitle}}" class="hero-copy__subtitle">{{item.subtitle}}</view>
-            </view>
-          </swiper-item>
-        </swiper>
-        <view class="hero-top-wash"></view>
-        <view class="hero-fade"></view>
-        <view
-          wx:if="{{banners.length > 1}}"
-          class="banner-dots"
-          aria-label="轮播图位置，第 {{currentBanner + 1}} 张，共 {{banners.length}} 张"
-        >
-          <view
-            wx:for="{{banners}}"
-            wx:key="id"
-            class="banner-dot {{currentBanner === index ? 'is-active' : ''}}"
-          ></view>
-        </view>
-      </view>
-
-      <view wx:elif="{{hasContent}}" class="brand-intro">
-        <view class="brand-intro__seal">灶</view>
-        <view class="brand-intro__copy">
-          <view class="brand-intro__title">一锅好味，从好料开始</view>
-          <view class="brand-intro__subtitle">灶香集 · 地道川味</view>
-        </view>
-      </view>
-
-      <view class="home-content {{banners.length && categories.length ? 'home-content--overlap' : ''}} {{!banners.length && hasContent ? 'home-content--after-intro' : ''}}">
-        <view class="ink-halo ink-halo--one"></view>
-        <view class="ink-halo ink-halo--two"></view>
-
-        <view wx:if="{{categories.length}}" class="category-card">
-          <view class="category-wash"></view>
-          <view
-            wx:for="{{categories}}"
-            wx:key="id"
-            class="category-item"
-            hover-class="category-item--pressed"
-            hover-stay-time="90"
-            data-index="{{index}}"
-            bindtap="onCategoryTap"
-            aria-role="button"
-            aria-label="进入{{item.name}}分类"
-          >
-            <view class="category-visual">
-              <image
-                wx:if="{{item.hasImage}}"
-                class="category-image"
-                src="{{item.imageUrl}}"
-                mode="aspectFit"
-                lazy-load="{{true}}"
-                data-index="{{index}}"
-                binderror="onCategoryImageError"
-              />
-              <view wx:else class="category-placeholder">{{item.placeholder}}</view>
-            </view>
-            <text class="category-name">{{item.name}}</text>
-          </view>
-        </view>
-
-        <view
-          wx:if="{{featuredProducts.length}}"
-          class="product-showcase product-showcase--featured"
-        >
-          <view class="section-block featured-section">
-            <view class="section-heading">
-              <image
-                class="section-heading__mark section-heading__icon"
-                src="/assets/icons/section-hot.svg"
-                mode="aspectFit"
-                aria-hidden="true"
-              />
-              <view class="section-heading__copy">
-                <text class="section-heading__title">热门商品</text>
-                <text class="section-heading__subtitle">大家都在买的川味好料</text>
-                <view class="section-heading__rule"></view>
-              </view>
-            </view>
-
-            <scroll-view
-              class="featured-scroll"
-              scroll-x="{{true}}"
-              enhanced="{{true}}"
-              show-scrollbar="{{false}}"
-              enable-flex="{{true}}"
-            >
-              <view class="featured-track">
-                <view
-                  wx:for="{{featuredProducts}}"
-                  wx:key="placementId"
-                  class="featured-item {{index > 0 ? 'featured-item--spaced' : ''}}"
-                >
-                  <product-card
-                    product="{{item}}"
-                    variant="featured"
-                    bindselect="onProductSelect"
-                  />
-                </view>
-              </view>
-            </scroll-view>
-          </view>
-        </view>
-
-        <view
-          wx:if="{{compactProducts.length}}"
-          class="product-showcase product-showcase--compact {{featuredProducts.length ? 'product-showcase--separated' : ''}}"
-        >
-          <view class="section-block compact-section">
-            <view class="section-heading">
-              <image
-                class="section-heading__mark section-heading__icon"
-                src="/assets/icons/section-recommended.svg"
-                mode="aspectFit"
-                aria-hidden="true"
-              />
-              <view class="section-heading__copy">
-                <text class="section-heading__title">为你推荐</text>
-                <text class="section-heading__subtitle">更多值得尝试的川味好料</text>
-                <view class="section-heading__rule"></view>
-              </view>
-            </view>
-
-            <view class="compact-grid">
-              <view
-                wx:for="{{compactProducts}}"
-                wx:key="placementId"
-                class="compact-item"
-              >
-                <product-card
-                  product="{{item}}"
-                  variant="compact"
-                  bindselect="onProductSelect"
-                />
-              </view>
-            </view>
-          </view>
-        </view>
-
-        <view wx:if="{{!hasContent}}" class="home-empty">
-          <ui-state
-            type="empty"
-            title="好物正在上架"
-            description="首页内容还在准备中，下拉页面可以重新加载。"
-            action-text="重新加载"
-            bindaction="onRetry"
-          />
-        </view>
-
-        <view wx:if="{{hasContent}}" class="bottom-ornament" aria-hidden="true">
-          <view class="bottom-ornament__line"></view>
-          <text>地道川味 · 真材实料</text>
-          <view class="bottom-ornament__line"></view>
-        </view>
-      </view>
-    </block>
   </view>
-</block>
+
+  <view wx:elif="{{!loaded && errorText}}" class="home-state-shell">
+    <ui-state
+      type="error"
+      title="首页加载失败"
+      description="{{errorText}}"
+      action-text="重新加载"
+      bindaction="onRetry"
+    />
+  </view>
+
+  <block wx:else>
+    <home-banner
+      wx:if="{{banners.length}}"
+      banners="{{banners}}"
+      bindselect="onBusinessPathSelect"
+      bindimageerror="onBannerImageError"
+    />
+
+    <view wx:elif="{{hasContent}}" class="brand-intro">
+      <view class="brand-intro__seal">灶</view>
+      <view class="brand-intro__copy">
+        <view class="brand-intro__title">一锅好味，从好料开始</view>
+        <view class="brand-intro__subtitle">灶香集 · 地道川味</view>
+      </view>
+    </view>
+
+    <view class="home-content {{banners.length && categories.length ? 'home-content--overlap' : ''}} {{!banners.length && hasContent ? 'home-content--after-intro' : ''}}">
+      <view class="ink-halo ink-halo--one"></view>
+      <view class="ink-halo ink-halo--two"></view>
+
+      <home-category-grid
+        wx:if="{{categories.length}}"
+        categories="{{categories}}"
+        bindselect="onBusinessPathSelect"
+        bindimageerror="onCategoryImageError"
+      />
+
+      <home-product-section
+        wx:if="{{featuredProducts.length}}"
+        title="热门商品"
+        subtitle="大家都在买的川味好料"
+        icon-path="/assets/icons/section-hot.svg"
+        presentation="featured"
+        products="{{featuredProducts}}"
+        bindselect="onBusinessPathSelect"
+      />
+
+      <home-product-section
+        wx:if="{{compactProducts.length}}"
+        title="为你推荐"
+        subtitle="更多值得尝试的川味好料"
+        icon-path="/assets/icons/section-recommended.svg"
+        presentation="compact"
+        products="{{compactProducts}}"
+        separated="{{featuredProducts.length > 0}}"
+        bindselect="onBusinessPathSelect"
+      />
+
+      <view wx:if="{{!hasContent}}" class="home-empty">
+        <ui-state
+          type="empty"
+          title="好物正在上架"
+          description="首页内容还在准备中，下拉页面可以重新加载。"
+          action-text="重新加载"
+          bindaction="onRetry"
+        />
+      </view>
+
+      <view wx:if="{{hasContent}}" class="bottom-ornament" aria-hidden="true">
+        <view class="bottom-ornament__line"></view>
+        <text>地道川味 · 真材实料</text>
+        <view class="bottom-ornament__line"></view>
+      </view>
+    </view>
+  </block>
+</view>

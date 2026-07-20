@@ -346,10 +346,12 @@
   const mediaKindHint = computed(() =>
     mediaKind.value === 'VIDEO'
       ? '支持 MP4、WebM，最大 50 MB'
-      : '支持 JPG、PNG、WebP、GIF，最大 5 MB'
+      : '支持 JPG、PNG、WebP、GIF、SVG，最大 5 MB'
   )
   const uploadAccept = computed(() =>
-    mediaKind.value === 'VIDEO' ? 'video/mp4,video/webm,.mp4,.webm' : 'image/*'
+    mediaKind.value === 'VIDEO'
+      ? 'video/mp4,video/webm,.mp4,.webm'
+      : 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.jpg,.jpeg,.png,.webp,.gif,.svg'
   )
   const modelValue = computed(() => props.modelValue || { fileId: null, url: '' })
   const previewUrl = computed(() => modelValue.value.url || resolveAssetUrl(selectedAsset.value))
@@ -475,8 +477,8 @@
       ElMessage.error('请选择图片文件')
       return false
     }
-    if (!['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(extension || '')) {
-      ElMessage.error('图片仅支持 JPG、PNG、WebP 或 GIF')
+    if (!['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(extension || '')) {
+      ElMessage.error('图片仅支持 JPG、PNG、WebP、GIF 或 SVG')
       return false
     }
     if (file.size > 5 * 1024 * 1024) {

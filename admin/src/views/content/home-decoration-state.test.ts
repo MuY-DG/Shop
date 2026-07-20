@@ -18,17 +18,13 @@ test('builds category and product payloads without leaking display fields', () =
       spuId: 36,
       imageFileId: null,
       sortOrder: 5,
-      status: 'DISABLED',
-      badgeMode: 'CUSTOM',
-      customBadgeText: ' 店长推荐 '
+      status: 'DISABLED'
     }),
     {
       spuId: 36,
       imageFileId: null,
       sortOrder: 5,
-      status: 'DISABLED',
-      badgeMode: 'CUSTOM',
-      customBadgeText: '店长推荐'
+      status: 'DISABLED'
     }
   )
 })

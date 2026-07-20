@@ -1,0 +1,72 @@
+<view class="detail-page">
+  <navigation-bar
+    title="商品详情"
+    back="{{true}}"
+    home="{{true}}"
+    loading="{{loading}}"
+    background="#FAF2E4"
+    color="#2E1D16"
+  />
+
+  <view wx:if="{{!loaded && loading}}" class="detail-state">
+    <ui-state type="loading" title="正在准备商品详情" description="好味道马上呈现" />
+  </view>
+
+  <view wx:elif="{{!loaded && errorText}}" class="detail-state">
+    <ui-state
+      type="error"
+      title="商品详情加载失败"
+      description="{{errorText}}"
+      action-text="重新加载"
+      bindaction="onRetry"
+    />
+  </view>
+
+  <block wx:elif="{{detail}}">
+    <product-gallery images="{{galleryImages}}" />
+
+    <view class="detail-content">
+      <product-summary
+        detail="{{detail}}"
+        stock-text="{{stockText}}"
+        price-text="{{priceText}}"
+        price-integer-text="{{priceIntegerText}}"
+        price-decimal-text="{{priceDecimalText}}"
+        original-price-text="{{originalPriceText}}"
+        has-original-price="{{hasOriginalPrice}}"
+        wholesale-applied="{{wholesaleApplied}}"
+      />
+
+      <product-parameters
+        wx:if="{{parameterViews.length}}"
+        items="{{parameterViews}}"
+      />
+
+      <sku-selector options="{{skuOptions}}" bindselect="onSkuSelect" />
+
+      <wholesale-pricing
+        wx:if="{{wholesaleTiers.length}}"
+        tiers="{{wholesaleTiers}}"
+      />
+
+      <quantity-stepper
+        quantity="{{quantity}}"
+        maximum="{{quantityMax}}"
+        hint="{{wholesaleHint}}"
+        bindminus="onQuantityMinus"
+        bindplus="onQuantityPlus"
+      />
+
+      <view wx:if="{{detail.detailHtml}}" class="detail-card rich-detail">
+        <view class="section-heading">
+          <text class="section-heading__title">商品详情</text>
+        </view>
+        <rich-text nodes="{{detail.detailHtml}}" />
+      </view>
+
+      <view class="phase-note">
+        当前可查看规格与价格，购物车和购买服务即将开放。
+      </view>
+    </view>
+  </block>
+</view>

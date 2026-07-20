@@ -37,6 +37,10 @@
                 <ElTag v-if="row.required" size="small" type="danger">必填</ElTag>
                 <ElTag v-if="row.filterable" size="small" type="warning">可筛选</ElTag>
                 <ElTag v-if="row.cardVisible" size="small" type="success">商品卡片</ElTag>
+                <ElTag v-if="row.cardVisible" size="small" effect="plain">
+                  {{ row.cardRole === 'HIGHLIGHT' ? '主特征' : '辅助信息' }} ·
+                  {{ cardRendererLabel(row.cardRenderer) }}
+                </ElTag>
                 <ElTag v-if="row.detailVisible" size="small" type="info">商品详情</ElTag>
                 <span v-if="!hasUsage(row)" class="muted">未设置</span>
               </div>
@@ -144,6 +148,28 @@
           <ElCheckbox v-model="formData.detailVisible">商品详情展示</ElCheckbox>
         </ElFormItem>
 
+        <ElFormItem v-if="formData.cardVisible" label="卡片呈现">
+          <div class="card-presentation-field">
+            <ElSelect v-model="formData.cardRole" placeholder="信息位置">
+              <ElOption label="主特征（每张卡最多 1 项）" value="HIGHLIGHT" />
+              <ElOption label="辅助信息（每张卡最多 2 项）" value="META" />
+            </ElSelect>
+            <ElSelect v-model="formData.cardRenderer" placeholder="展示方式">
+              <ElOption label="普通文本" value="TEXT" />
+              <ElOption label="胶囊标签" value="PILL" />
+              <ElOption label="等级刻度" value="LEVEL" />
+              <ElOption label="辣度" value="SPICE" />
+            </ElSelect>
+            <ElInputNumber
+              v-model="formData.cardPriority"
+              :min="0"
+              :precision="0"
+              placeholder="优先级"
+            />
+            <small>数值越小越优先。辣度仍是统一卡片中的可选特征，不会生成另一套卡片类型。</small>
+          </div>
+        </ElFormItem>
+
         <ElFormItem v-if="selectable" label="参数选项" required>
           <div class="option-editor">
             <div v-for="(option, index) in formData.options" :key="index" class="option-row">
@@ -234,6 +260,9 @@
     filterable: false,
     cardVisible: false,
     detailVisible: true,
+    cardRole: 'META',
+    cardRenderer: 'TEXT',
+    cardPriority: 0,
     sortOrder: 0,
     status: 'ENABLED',
     categoryIds: [],
@@ -274,6 +303,9 @@
       MULTI_SELECT: '多选',
       BOOLEAN: '是/否'
     })[value]
+
+  const cardRendererLabel = (value: Api.Product.ProductParameterCardRenderer) =>
+    ({ TEXT: '文本', PILL: '标签', LEVEL: '等级', SPICE: '辣度' })[value]
 
   const hasUsage = (item: Api.Product.ProductParameterDefinition) =>
     item.required || item.filterable || item.cardVisible || item.detailVisible
@@ -333,6 +365,9 @@
         filterable: item.filterable,
         cardVisible: item.cardVisible,
         detailVisible: item.detailVisible,
+        cardRole: item.cardRole || 'META',
+        cardRenderer: item.cardRenderer || 'TEXT',
+        cardPriority: item.cardPriority ?? 0,
         sortOrder: item.sortOrder,
         status: item.status,
         categoryIds: [...item.categoryIds],
@@ -473,6 +508,17 @@
     gap: 6px;
 
     small {
+      color: var(--el-text-color-secondary);
+    }
+  }
+  .card-presentation-field {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr) 120px;
+    gap: 8px;
+    width: 100%;
+
+    small {
+      grid-column: 1 / -1;
       color: var(--el-text-color-secondary);
     }
   }

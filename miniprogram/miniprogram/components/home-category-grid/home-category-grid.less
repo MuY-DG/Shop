@@ -1,0 +1,91 @@
+@import "../../styles/tokens.less";
+
+.category-card {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 @page-gutter;
+  padding: 18rpx 12rpx 16rpx;
+  overflow: hidden;
+  border: 1rpx solid fade(@color-gold, 14%);
+  border-radius: @radius-xl;
+  background: fade(@color-surface, 97%);
+  box-shadow: @shadow-floating;
+  animation: fade-up 360ms ease-out both;
+}
+
+.category-wash {
+  position: absolute;
+  top: -62rpx;
+  right: -42rpx;
+  width: 180rpx;
+  height: 180rpx;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, fade(@color-brand, 7%), transparent 68%);
+}
+
+.category-item {
+  position: relative;
+  z-index: 1;
+  width: 25%;
+  min-height: 148rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  border-radius: @radius-md;
+  transition:
+    transform @duration-fast @ease-standard,
+    background @duration-fast @ease-standard;
+}
+
+.category-item--pressed {
+  background: fade(@color-brand, 5%);
+  transform: scale(0.96);
+}
+
+.category-visual {
+  width: 96rpx;
+  height: 96rpx;
+  overflow: hidden;
+  border-radius: 50%;
+  background: @color-surface-muted;
+}
+
+.category-image,
+.category-placeholder {
+  width: 100%;
+  height: 100%;
+}
+
+.category-image { display: block; }
+
+.category-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: @color-brand;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: @font-size-lg;
+  font-weight: 700;
+  background: radial-gradient(circle, @color-surface 4%, @color-gold-soft 100%);
+}
+
+.category-name {
+  max-width: 100%;
+  margin-top: 4rpx;
+  padding: 0 4rpx;
+  overflow: hidden;
+  color: #3d2920;
+  font-size: 23rpx;
+  font-weight: 500;
+  line-height: 32rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(18rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}

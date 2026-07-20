@@ -1,0 +1,12 @@
+<view class="category-page">
+  <navigation-bar
+    title="分类"
+    background="#FAF2E4"
+    color="#2E1D16"
+  />
+  <catalog-browser
+    id="catalog"
+    tab-page="{{true}}"
+    bindproductselect="onProductSelect"
+  />
+</view>

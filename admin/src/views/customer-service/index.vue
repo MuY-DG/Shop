@@ -254,7 +254,7 @@
                 ref="imageInputRef"
                 class="image-input"
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.svg"
                 @change="handleImageSelected"
               />
               <ElButton

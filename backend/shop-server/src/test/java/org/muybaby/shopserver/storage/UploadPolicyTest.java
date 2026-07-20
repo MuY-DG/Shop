@@ -141,8 +141,6 @@ class UploadPolicyTest {
     @Test
     void policyRejectsMismatchedUnreadableEmptyAndOversizedFiles() {
         assertValidationFailure(() -> uploadPolicy.requireAllowed(StorageUploadProfile.LIBRARY_IMAGE,
-                "not-image.svg", "image/svg+xml", 512, true));
-        assertValidationFailure(() -> uploadPolicy.requireAllowed(StorageUploadProfile.LIBRARY_IMAGE,
                 "wrong-type.jpg", "application/octet-stream", 512, true));
         assertValidationFailure(() -> uploadPolicy.requireAllowed(StorageUploadProfile.LIBRARY_IMAGE,
                 "empty.jpg", "image/jpeg", 0, true));
@@ -158,11 +156,34 @@ class UploadPolicyTest {
     void genericLibraryDetectionAcceptsOnlyCompatibleImagesAndVideos() {
         assertThat(uploadPolicy.detectLibraryProfile("cover.PNG", "image/png"))
                 .isEqualTo(StorageUploadProfile.LIBRARY_IMAGE);
+        assertThat(uploadPolicy.detectLibraryProfile("icon.SVG", "image/svg+xml; charset=utf-8"))
+                .isEqualTo(StorageUploadProfile.LIBRARY_IMAGE);
         assertThat(uploadPolicy.detectLibraryProfile("demo.webm", "video/webm; charset=binary"))
                 .isEqualTo(StorageUploadProfile.LIBRARY_VIDEO);
 
         assertValidationFailure(() -> uploadPolicy.detectLibraryProfile("merchant.pem", "text/plain"));
         assertValidationFailure(() -> uploadPolicy.detectLibraryProfile("fake.jpg", "video/mp4"));
+    }
+
+    @Test
+    void svgUsesTheImageProfileAndRequiresMatchingMimeType() {
+        UploadPolicy.UploadDecision decision = uploadPolicy.requireAllowed(
+                StorageUploadProfile.LIBRARY_IMAGE,
+                "product-icon.SVG",
+                "image/svg+xml; charset=utf-8",
+                1024,
+                true
+        );
+
+        assertThat(decision.extension()).isEqualTo("svg");
+        assertThat(decision.contentType()).isEqualTo("image/svg+xml");
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(
+                StorageUploadProfile.LIBRARY_IMAGE,
+                "product-icon.svg",
+                "text/xml",
+                1024,
+                true
+        ));
     }
 
     @Test

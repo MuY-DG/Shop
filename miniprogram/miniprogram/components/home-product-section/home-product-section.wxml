@@ -1,0 +1,50 @@
+<view class="product-showcase {{separated ? 'product-showcase--separated' : ''}}">
+  <view class="section-block">
+    <view class="section-heading">
+      <image
+        class="section-heading__icon"
+        src="{{iconPath}}"
+        mode="aspectFit"
+        aria-hidden="true"
+      />
+      <view class="section-heading__copy">
+        <text class="section-heading__title">{{title}}</text>
+        <text class="section-heading__subtitle">{{subtitle}}</text>
+        <view class="section-heading__rule"></view>
+      </view>
+    </view>
+
+    <scroll-view
+      wx:if="{{presentation === 'featured'}}"
+      class="featured-scroll"
+      scroll-x="{{true}}"
+      enhanced="{{true}}"
+      show-scrollbar="{{false}}"
+      enable-flex="{{true}}"
+    >
+      <view class="featured-track">
+        <view
+          wx:for="{{products}}"
+          wx:key="placementId"
+          class="featured-item {{index > 0 ? 'featured-item--spaced' : ''}}"
+        >
+          <product-card
+            product="{{item}}"
+            variant="featured"
+            bindselect="onProductSelect"
+          />
+        </view>
+      </view>
+    </scroll-view>
+
+    <view wx:else class="compact-grid">
+      <view wx:for="{{products}}" wx:key="placementId" class="compact-item">
+        <product-card
+          product="{{item}}"
+          variant="compact"
+          bindselect="onProductSelect"
+        />
+      </view>
+    </view>
+  </view>
+</view>

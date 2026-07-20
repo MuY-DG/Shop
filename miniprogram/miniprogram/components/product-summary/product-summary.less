@@ -1,0 +1,111 @@
+@import "../../styles/tokens.less";
+
+.summary-card {
+  padding: 30rpx;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-lg;
+  background: @color-surface;
+  box-shadow: @shadow-card;
+}
+
+.summary-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.category-pill {
+  max-width: 62%;
+  padding: 7rpx 16rpx;
+  overflow: hidden;
+  border-radius: @radius-pill;
+  color: @color-brand-dark;
+  font-size: @font-size-xs;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: @color-brand-soft;
+}
+
+.stock-text {
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.product-title {
+  margin-top: 20rpx;
+  color: @color-text-primary;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: @font-size-xl;
+  font-weight: 700;
+  line-height: @line-height-tight;
+}
+
+.product-subtitle {
+  margin-top: 10rpx;
+  color: @color-text-secondary;
+  font-size: @font-size-sm;
+  line-height: @line-height-base;
+}
+
+.price-row {
+  min-height: 64rpx;
+  display: flex;
+  align-items: baseline;
+  margin-top: 24rpx;
+}
+
+.current-price {
+  display: flex;
+  align-items: baseline;
+  color: @color-price;
+  font-family: @font-family-price;
+  font-weight: 700;
+}
+
+.currency { margin-right: 3rpx; font-size: 26rpx; }
+.price-integer { font-size: 52rpx; }
+.price-decimal { font-size: 36rpx; }
+
+.price-unavailable {
+  color: @color-text-muted;
+  font-size: @font-size-base;
+}
+
+.original-price {
+  margin-left: 16rpx;
+  color: @color-text-placeholder;
+  font-family: @font-family-price;
+  font-size: @font-size-xs;
+  text-decoration: line-through;
+}
+
+.wholesale-active {
+  margin-left: auto;
+  padding: 6rpx 12rpx;
+  border-radius: @radius-pill;
+  color: @color-success-text;
+  font-size: 20rpx;
+  font-weight: 600;
+  background: @color-success-soft;
+}
+
+.selling-points {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 18rpx;
+  gap: 10rpx;
+}
+
+.selling-point {
+  max-width: 100%;
+  padding: 6rpx 12rpx;
+  overflow: hidden;
+  border-radius: @radius-xs;
+  color: @color-gold-text;
+  font-size: @font-size-xs;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: @color-gold-soft;
+}

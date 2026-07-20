@@ -1,0 +1,25 @@
+<view class="summary-card">
+  <view class="summary-topline">
+    <text class="category-pill">{{detail.categoryName}}</text>
+    <text class="stock-text">{{stockText}}</text>
+  </view>
+  <view class="product-title">{{detail.title}}</view>
+  <view wx:if="{{detail.subtitle}}" class="product-subtitle">{{detail.subtitle}}</view>
+
+  <view class="price-row">
+    <view wx:if="{{priceText}}" class="current-price">
+      <text class="currency">¥</text>
+      <text class="price-integer">{{priceIntegerText}}</text>
+      <text class="price-decimal">{{priceDecimalText}}</text>
+    </view>
+    <text wx:else class="price-unavailable">暂无报价</text>
+    <text wx:if="{{hasOriginalPrice}}" class="original-price">¥{{originalPriceText}}</text>
+    <text wx:if="{{wholesaleApplied}}" class="wholesale-active">批发价已生效</text>
+  </view>
+
+  <view wx:if="{{detail.sellingPoints.length}}" class="selling-points">
+    <text wx:for="{{detail.sellingPoints}}" wx:key="*this" class="selling-point">
+      {{item}}
+    </text>
+  </view>
+</view>

@@ -47,7 +47,9 @@
   const fileInput = ref<HTMLInputElement | null>(null)
   const uploading = ref(false)
   const uploadAccept = computed(() =>
-    props.mediaKind === 'VIDEO' ? 'video/mp4,video/webm,.mp4,.webm' : 'image/*'
+    props.mediaKind === 'VIDEO'
+      ? 'video/mp4,video/webm,.mp4,.webm'
+      : 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.jpg,.jpeg,.png,.webp,.gif,.svg'
   )
 
   const openFilePicker = () => {
@@ -62,7 +64,7 @@
     }
     return (
       file.type.startsWith('image/') &&
-      ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(extension) &&
+      ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(extension) &&
       file.size <= 5 * 1024 * 1024
     )
   }

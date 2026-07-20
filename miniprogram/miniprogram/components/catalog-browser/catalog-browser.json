@@ -1,0 +1,8 @@
+{
+  "component": true,
+  "styleIsolation": "isolated",
+  "usingComponents": {
+    "product-card": "/components/product-card/product-card",
+    "ui-state": "/components/ui-state/ui-state"
+  }
+}

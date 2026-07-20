@@ -1,0 +1,22 @@
+<view class="detail-card">
+  <view>
+    <text class="section-title">购买数量</text>
+    <text class="quantity-limit">最多可选 {{maximum}} 件</text>
+    <view wx:if="{{hint}}" class="wholesale-hint">{{hint}}</view>
+  </view>
+  <view class="quantity-control">
+    <view
+      class="quantity-button {{quantity <= 1 ? 'quantity-button--disabled' : ''}}"
+      bindtap="onMinus"
+      aria-role="button"
+      aria-label="减少数量"
+    >−</view>
+    <text class="quantity-value">{{quantity}}</text>
+    <view
+      class="quantity-button {{maximum <= 0 || quantity >= maximum ? 'quantity-button--disabled' : ''}}"
+      bindtap="onPlus"
+      aria-role="button"
+      aria-label="增加数量"
+    >＋</view>
+  </view>
+</view>

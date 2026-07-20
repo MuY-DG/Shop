@@ -1,0 +1,15 @@
+{
+  "usingComponents": {
+    "navigation-bar": "/components/navigation-bar/navigation-bar",
+    "product-gallery": "/components/product-gallery/product-gallery",
+    "product-summary": "/components/product-summary/product-summary",
+    "product-parameters": "/components/product-parameters/product-parameters",
+    "sku-selector": "/components/sku-selector/sku-selector",
+    "wholesale-pricing": "/components/wholesale-pricing/wholesale-pricing",
+    "quantity-stepper": "/components/quantity-stepper/quantity-stepper",
+    "ui-state": "/components/ui-state/ui-state"
+  },
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#FAF2E4",
+  "backgroundTextStyle": "dark"
+}

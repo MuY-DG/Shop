@@ -1,0 +1,28 @@
+<view class="category-card">
+  <view class="category-wash"></view>
+  <view
+    wx:for="{{categories}}"
+    wx:key="id"
+    class="category-item"
+    hover-class="category-item--pressed"
+    hover-stay-time="90"
+    data-index="{{index}}"
+    bindtap="onCategoryTap"
+    aria-role="button"
+    aria-label="进入{{item.name}}分类"
+  >
+    <view class="category-visual">
+      <image
+        wx:if="{{item.hasImage}}"
+        class="category-image"
+        src="{{item.imageUrl}}"
+        mode="aspectFit"
+        lazy-load="{{true}}"
+        data-index="{{index}}"
+        binderror="onCategoryImageError"
+      />
+      <view wx:else class="category-placeholder">{{item.placeholder}}</view>
+    </view>
+    <text class="category-name">{{item.name}}</text>
+  </view>
+</view>

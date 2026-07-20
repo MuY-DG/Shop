@@ -1,0 +1,10 @@
+{
+  "usingComponents": {
+    "navigation-bar": "/components/navigation-bar/navigation-bar",
+    "catalog-browser": "/components/catalog-browser/catalog-browser"
+  },
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#FAF2E4",
+  "backgroundTextStyle": "dark",
+  "onReachBottomDistance": 160
+}

@@ -1,0 +1,218 @@
+@import "../styles/tokens.less";
+
+.tab-bar {
+  position: fixed;
+  z-index: 1000;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: 1rpx solid fade(@color-gold, 18%);
+  background: fade(@color-surface, 98%);
+  box-shadow: 0 -12rpx 34rpx rgba(78, 43, 20, 0.08);
+  backdrop-filter: blur(18rpx);
+}
+
+.tab-bar__items {
+  height: @tab-bar-height;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.tab-bar__item {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: @color-text-muted;
+  transition:
+    color @duration-fast @ease-standard,
+    opacity @duration-fast @ease-standard,
+    transform @duration-fast @ease-standard;
+}
+
+.tab-bar__item--selected {
+  color: @color-brand;
+}
+
+.tab-bar__item--pressed {
+  opacity: 0.72;
+  transform: scale(0.96);
+}
+
+.tab-bar__icon {
+  position: relative;
+  width: 48rpx;
+  height: 48rpx;
+  flex: none;
+}
+
+.tab-bar__label {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  font-weight: 500;
+  line-height: 28rpx;
+}
+
+.tab-bar__item--selected .tab-bar__label {
+  font-weight: 700;
+}
+
+.tab-bar__badge {
+  position: absolute;
+  top: -6rpx;
+  right: -12rpx;
+  min-width: 28rpx;
+  height: 28rpx;
+  padding: 0 7rpx;
+  border: 3rpx solid @color-surface;
+  border-radius: @radius-pill;
+  color: @color-text-inverse;
+  font-size: 17rpx;
+  line-height: 28rpx;
+  text-align: center;
+  background: @color-danger;
+}
+
+.home-icon__roof {
+  position: absolute;
+  top: 7rpx;
+  left: 9rpx;
+  width: 28rpx;
+  height: 28rpx;
+  border-top: 4rpx solid currentColor;
+  border-left: 4rpx solid currentColor;
+  border-radius: 5rpx 0 0;
+  transform: rotate(45deg);
+}
+
+.home-icon__body {
+  position: absolute;
+  right: 9rpx;
+  bottom: 5rpx;
+  left: 9rpx;
+  height: 26rpx;
+  border: 4rpx solid currentColor;
+  border-top: 0;
+  border-radius: 0 0 7rpx 7rpx;
+}
+
+.home-icon__body::after {
+  position: absolute;
+  right: 7rpx;
+  bottom: -4rpx;
+  width: 8rpx;
+  height: 17rpx;
+  border: 4rpx solid currentColor;
+  border-bottom: 0;
+  border-radius: 4rpx 4rpx 0 0;
+  content: "";
+}
+
+.category-icon__cell {
+  position: absolute;
+  width: 15rpx;
+  height: 15rpx;
+  border: 4rpx solid currentColor;
+  border-radius: 5rpx;
+}
+
+.category-icon__cell--one { top: 4rpx; left: 4rpx; }
+.category-icon__cell--two { top: 4rpx; right: 4rpx; }
+.category-icon__cell--three { bottom: 4rpx; left: 4rpx; }
+.category-icon__cell--four { right: 4rpx; bottom: 4rpx; }
+
+.message-icon__bubble {
+  position: absolute;
+  top: 6rpx;
+  right: 4rpx;
+  bottom: 9rpx;
+  left: 4rpx;
+  border: 4rpx solid currentColor;
+  border-radius: 13rpx;
+}
+
+.message-icon__bubble::after {
+  position: absolute;
+  bottom: -10rpx;
+  left: 9rpx;
+  width: 12rpx;
+  height: 12rpx;
+  border-bottom: 4rpx solid currentColor;
+  border-left: 4rpx solid currentColor;
+  background: @color-surface;
+  content: "";
+  transform: skewY(-35deg);
+}
+
+.message-icon__dot {
+  position: absolute;
+  z-index: 2;
+  top: 22rpx;
+  width: 5rpx;
+  height: 5rpx;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.message-icon__dot--one { left: 14rpx; }
+.message-icon__dot--two { left: 22rpx; }
+.message-icon__dot--three { left: 30rpx; }
+
+.cart-icon__handle {
+  position: absolute;
+  top: 7rpx;
+  left: 3rpx;
+  width: 10rpx;
+  height: 4rpx;
+  border-radius: @radius-pill;
+  background: currentColor;
+  transform: rotate(12deg);
+}
+
+.cart-icon__basket {
+  position: absolute;
+  top: 11rpx;
+  right: 5rpx;
+  left: 9rpx;
+  height: 22rpx;
+  border: 4rpx solid currentColor;
+  border-top-width: 5rpx;
+  border-radius: 5rpx 5rpx 9rpx 9rpx;
+  transform: skewX(-6deg);
+}
+
+.cart-icon__wheel {
+  position: absolute;
+  bottom: 4rpx;
+  width: 7rpx;
+  height: 7rpx;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.cart-icon__wheel--one { left: 15rpx; }
+.cart-icon__wheel--two { right: 9rpx; }
+
+.profile-icon__head {
+  position: absolute;
+  top: 5rpx;
+  left: 16rpx;
+  width: 16rpx;
+  height: 16rpx;
+  border: 4rpx solid currentColor;
+  border-radius: 50%;
+}
+
+.profile-icon__body {
+  position: absolute;
+  right: 7rpx;
+  bottom: 4rpx;
+  left: 7rpx;
+  height: 18rpx;
+  border: 4rpx solid currentColor;
+  border-bottom: 0;
+  border-radius: 20rpx 20rpx 0 0;
+}

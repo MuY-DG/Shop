@@ -31,6 +31,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
@@ -103,8 +104,62 @@ class StorageServiceTest {
     }
 
     @Test
+    void safeSvgImageIsValidatedAndPersistedWithIntrinsicDimensions() {
+        byte[] svg = """
+                <svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 24 16">
+                  <defs><linearGradient id="paint"><stop stop-color="#fff"/></linearGradient></defs>
+                  <rect width="24" height="16" fill="url(#paint)"/>
+                </svg>
+                """.getBytes(StandardCharsets.UTF_8);
+
+        var response = storageService.uploadLibrary(
+                adminPrincipal(), null,
+                TrackingMultipartFile.withBytes("product-icon.svg", "image/svg+xml", svg));
+
+        assertThat(response.width()).isEqualTo(120);
+        assertThat(response.height()).isEqualTo(80);
+        assertThat(response.extension()).isEqualTo("svg");
+        assertThat(response.contentType()).isEqualTo("image/svg+xml");
+    }
+
+    @Test
+    void svgViewBoxProvidesDimensionsWhenWidthAndHeightAreResponsive() {
+        byte[] svg = """
+                <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 32 18">
+                  <path d="M0 0h32v18H0z" fill="#fff"/>
+                </svg>
+                """.getBytes(StandardCharsets.UTF_8);
+
+        var response = storageService.uploadLibrary(
+                adminPrincipal(), null,
+                TrackingMultipartFile.withBytes("responsive.svg", "image/svg+xml", svg));
+
+        assertThat(response.width()).isEqualTo(32);
+        assertThat(response.height()).isEqualTo(18);
+    }
+
+    @Test
+    void svgWithActiveContentOrExternalReferencesIsRejected() {
+        List<String> unsafeSvgFiles = List.of(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" onload=\"alert(1)\"/>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\"><image href=\"https://example.com/a.png\"/></svg>",
+                "<?xml-stylesheet href=\"https://example.com/a.css\"?><svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+                "<!DOCTYPE svg [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><svg xmlns=\"http://www.w3.org/2000/svg\">&xxe;</svg>"
+        );
+
+        for (String svg : unsafeSvgFiles) {
+            TrackingMultipartFile file = TrackingMultipartFile.withBytes(
+                    "unsafe.svg", "image/svg+xml", svg.getBytes(StandardCharsets.UTF_8));
+            assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
+                    .isInstanceOfSatisfying(BusinessException.class, ex ->
+                            assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED));
+        }
+    }
+
+    @Test
     void unsupportedLibraryTypeIsRejectedBeforeReadingBytes() {
-        TrackingMultipartFile file = TrackingMultipartFile.rejectIfRead("not-image.svg", "image/svg+xml", 512);
+        TrackingMultipartFile file = TrackingMultipartFile.rejectIfRead("not-image.bmp", "image/bmp", 512);
 
         assertThatThrownBy(() -> storageService.uploadLibrary(adminPrincipal(), null, file))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->

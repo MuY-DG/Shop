@@ -62,7 +62,7 @@
         <template #label>
           <span class="field-label">
             商品封面图
-            <ElTooltip content="支持 JPG、PNG、WebP、GIF，单张最大 5 MB" placement="top">
+            <ElTooltip content="支持 JPG、PNG、WebP、GIF、SVG，单张最大 5 MB" placement="top">
               <ElIcon class="field-label__help"><WarningFilled /></ElIcon>
             </ElTooltip>
           </span>

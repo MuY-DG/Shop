@@ -1,6 +1,8 @@
 {
   "usingComponents": {
-    "product-card": "/components/product-card/product-card",
+    "home-banner": "/components/home-banner/home-banner",
+    "home-category-grid": "/components/home-category-grid/home-category-grid",
+    "home-product-section": "/components/home-product-section/home-product-section",
     "ui-state": "/components/ui-state/ui-state"
   },
   "enablePullDownRefresh": true,
