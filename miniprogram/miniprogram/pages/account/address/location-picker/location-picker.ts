@@ -270,6 +270,7 @@ Page({
     loading: true,
     ready: false,
     locating: false,
+    dragging: false,
     resolving: false,
     searching: false,
     loadErrorText: "",
@@ -309,7 +310,7 @@ Page({
     try {
       const config = await getAmapClientConfig();
       if (!config.enabled || !config.miniProgramKey) {
-        throw new Error("后台尚未启用高德地图选址，请手动填写地址");
+        throw new Error("后台尚未启用高德地图选址，请联系管理员或稍后重试");
       }
       amapClient = new AMapWXConstructor({ key: config.miniProgramKey });
       this.setData({ loading: false, ready: true });
@@ -358,9 +359,17 @@ Page({
   },
 
   onMapRegionChange(event: RegionChangeEvent) {
-    if (event.type !== "end" || event.causedBy === "update") {
+    if (event.type === "begin") {
+      if (event.causedBy !== "update") {
+        if (mapRefreshTimer) clearTimeout(mapRefreshTimer);
+        this.setData({ dragging: true });
+      }
       return;
     }
+    if (event.causedBy === "update") {
+      return;
+    }
+    this.setData({ dragging: false });
     if (mapRefreshTimer) clearTimeout(mapRefreshTimer);
     mapRefreshTimer = setTimeout(() => {
       void getMapCenter()

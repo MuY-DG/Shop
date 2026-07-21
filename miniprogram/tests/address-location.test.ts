@@ -46,8 +46,11 @@ test("收货地址使用高德微信小程序 SDK 完成地图选址", () => {
   assert.equal(API_ENDPOINTS.location.config, "/app/location/config");
   assert.match(editLogic, /location-picker\/location-picker/);
   assert.match(editLogic, /addressSelected/);
-  assert.match(editTemplate, /附近地点/);
-  assert.match(editTemplate, /高德地图/);
+  assert.match(editLogic, /composeAddressDetail/);
+  assert.match(editTemplate, /点击地图选择收货地址/);
+  assert.match(editTemplate, /门牌号/);
+  assert.match(editTemplate, /onDoorplateInput/);
+  assert.doesNotMatch(editTemplate, /mode="region"/);
   assert.match(pickerLogic, /type: "gcj02"/);
   assert.match(pickerLogic, /new AMapWXConstructor/);
   assert.match(pickerLogic, /getRegeo/);
@@ -57,6 +60,9 @@ test("收货地址使用高德微信小程序 SDK 完成地图选址", () => {
   assert.match(pickerLogic, /event\.causedBy === "update"/);
   assert.match(pickerLogic, /this\.data\.selected\.longitude/);
   assert.match(pickerTemplate, /<map/);
+  assert.match(pickerTemplate, /回到当前位置/);
+  assert.match(pickerTemplate, /center-pin__head/);
+  assert.match(pickerTemplate, /拖动地图，让指针落在目标位置/);
   assert.match(pickerTemplate, /搜索小区、大厦、街道或门店/);
   assert.match(pickerTemplate, /使用该地址/);
   assert.match(amapSdk, /restapi\.amap\.com\/v3\/geocode\/regeo/);

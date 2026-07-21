@@ -49,16 +49,20 @@
         enable-rotate="{{false}}"
         bindregionchange="onMapRegionChange"
       >
-        <cover-view class="center-pin">
-          <cover-image
-            class="center-pin__image"
-            src="/assets/icons/location-on-outline-rounded.svg"
-          />
+        <cover-view class="center-pin {{dragging ? 'center-pin--dragging' : ''}}">
+          <cover-view class="center-pin__head">
+            <cover-view class="center-pin__dot"></cover-view>
+          </cover-view>
+          <cover-view class="center-pin__stem"></cover-view>
+          <cover-view class="center-pin__shadow"></cover-view>
         </cover-view>
         <cover-view class="map-locate" bindtap="onLocateTap">
-          {{locating ? '定位中' : '重新定位'}}
+          <cover-view class="map-locate__icon">◎</cover-view>
+          <cover-view>{{locating ? '定位中…' : '回到当前位置'}}</cover-view>
         </cover-view>
-        <cover-view wx:if="{{resolving}}" class="map-resolving">正在识别此处地址</cover-view>
+        <cover-view class="map-tip">
+          {{resolving ? '正在识别此处地址…' : '拖动地图，让指针落在目标位置'}}
+        </cover-view>
       </map>
     </view>
 

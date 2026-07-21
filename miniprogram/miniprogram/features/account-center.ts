@@ -267,6 +267,15 @@ export function normalizeAddressForm(value: AddressFormValue): AddressUpsertRequ
   };
 }
 
+export function composeAddressDetail(baseAddress: unknown, doorplate: unknown): string {
+  const base = cleanText(baseAddress).replace(/\s+/g, " ");
+  const supplement = cleanText(doorplate).replace(/\s+/g, " ");
+  if (!supplement || base.endsWith(supplement)) {
+    return base;
+  }
+  return `${base} ${supplement}`.trim();
+}
+
 export function validateAddressForm(value: AddressFormValue): string {
   const normalized = normalizeAddressForm(value);
   if (!normalized.receiverName) {
@@ -282,10 +291,10 @@ export function validateAddressForm(value: AddressFormValue): string {
     return "请填写有效的联系电话";
   }
   if (!normalized.province || !normalized.city || !normalized.district) {
-    return "请选择省市区";
+    return "请通过地图选择完整地址";
   }
   if (!normalized.detailAddress) {
-    return "请填写详细地址";
+    return "请通过地图选择详细地址";
   }
   if (normalized.detailAddress.length > 255) {
     return "详细地址不能超过 255 个字";

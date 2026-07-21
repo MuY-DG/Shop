@@ -1,4 +1,5 @@
 import {
+  composeAddressDetail,
   normalizeAddressForm,
   parseAddressId,
   validateAddressForm,
@@ -12,10 +13,7 @@ import {
 import type { AddressLocationSelection } from "../../../../types/location";
 import { isApiError } from "../../../../utils/api-error";
 
-type AddressTextField =
-  | "receiverName"
-  | "receiverPhone"
-  | "detailAddress";
+type AddressTextField = "receiverName" | "receiverPhone";
 
 interface InputEvent {
   detail: {
@@ -25,12 +23,6 @@ interface InputEvent {
     dataset: {
       field?: string;
     };
-  };
-}
-
-interface RegionEvent {
-  detail: {
-    value: string[];
   };
 }
 
@@ -61,9 +53,15 @@ function actionError(error: unknown, fallback: string): string {
 }
 
 function isTextField(value: unknown): value is AddressTextField {
-  return value === "receiverName" ||
-    value === "receiverPhone" ||
-    value === "detailAddress";
+  return value === "receiverName" || value === "receiverPhone";
+}
+
+function addressDisplay(value: AddressFormValue): string {
+  const region = [value.province, value.city, value.district]
+    .map((item) => item.trim())
+    .filter((item, index, values) => item && values.indexOf(item) === index)
+    .join(" ");
+  return [region, value.detailAddress.trim()].filter(Boolean).join(" ");
 }
 
 Page({
@@ -71,7 +69,8 @@ Page({
     addressId: "",
     navigationTitle: "新增地址",
     form: { ...EMPTY_FORM } as AddressFormValue,
-    region: [] as string[],
+    addressDisplay: "",
+    doorplate: "",
     loading: false,
     loaded: true,
     saving: false,
@@ -133,7 +132,8 @@ Page({
       };
       this.setData({
         form,
-        region: [address.province, address.city, address.district],
+        addressDisplay: addressDisplay(form),
+        doorplate: "",
         loading: false,
         loaded: true,
         loadErrorText: ""
@@ -163,20 +163,6 @@ Page({
     });
   },
 
-  onRegionChange(event: RegionEvent) {
-    const [province = "", city = "", district = ""] = event.detail.value;
-    this.setData({
-      form: {
-        ...this.data.form,
-        province,
-        city,
-        district
-      },
-      region: [province, city, district],
-      validationErrorText: ""
-    });
-  },
-
   onDefaultChange(event: SwitchEvent) {
     this.setData({
       form: {
@@ -188,6 +174,13 @@ Page({
 
   onLocateTap() {
     this.openLocationPicker();
+  },
+
+  onDoorplateInput(event: InputEvent) {
+    this.setData({
+      doorplate: event.detail.value,
+      validationErrorText: ""
+    });
   },
 
   openLocationPicker() {
@@ -217,18 +210,19 @@ Page({
     const complete = Boolean(
       selected.province && selected.city && selected.district && selected.detailAddress
     );
+    const form: AddressFormValue = {
+      ...this.data.form,
+      province: selected.province,
+      city: selected.city,
+      district: selected.district,
+      detailAddress: selected.detailAddress
+    };
     this.setData({
-      form: {
-        ...this.data.form,
-        province: selected.province,
-        city: selected.city,
-        district: selected.district,
-        detailAddress: selected.detailAddress
-      },
-      region: [selected.province, selected.city, selected.district],
+      form,
+      addressDisplay: addressDisplay(form),
       locationStatusText: complete
-        ? `已选择：${selected.poiName || selected.formattedAddress}`
-        : "已回填地图位置，请补充门牌和房间号",
+        ? "已通过地图选择，可继续填写楼栋、单元或房间号"
+        : "地址信息不完整，请重新选择地图位置",
       validationErrorText: ""
     });
     wx.showToast({
@@ -245,7 +239,14 @@ Page({
     if (this.data.saving) {
       return;
     }
-    const validationErrorText = validateAddressForm(this.data.form);
+    const formForSave: AddressFormValue = {
+      ...this.data.form,
+      detailAddress: composeAddressDetail(
+        this.data.form.detailAddress,
+        this.data.doorplate
+      )
+    };
+    const validationErrorText = validateAddressForm(formForSave);
     if (validationErrorText) {
       this.setData({ validationErrorText });
       wx.showToast({ title: validationErrorText, icon: "none" });
@@ -253,7 +254,7 @@ Page({
     }
     this.setData({ saving: true, validationErrorText: "" });
     try {
-      const payload = normalizeAddressForm(this.data.form);
+      const payload = normalizeAddressForm(formForSave);
       const addressId = parseAddressId(this.data.addressId);
       if (addressId) {
         await updateAddress(addressId, payload);

@@ -42,69 +42,6 @@
   font-size: @font-size-xs;
 }
 
-.location-assist {
-  padding: @space-4 0 @space-2;
-  border-bottom: 1rpx solid @color-divider;
-}
-
-button.location-assist__button {
-  display: flex;
-  width: 100%;
-  min-height: 104rpx;
-  margin: 0;
-  padding: @space-3 @space-4;
-  border: 1rpx solid fade(@color-brand, 20%);
-  border-radius: @radius-md;
-  align-items: center;
-  gap: @space-3;
-  color: @color-text-primary;
-  background: @color-brand-soft;
-  line-height: normal;
-  text-align: left;
-}
-
-button.location-assist__button::after {
-  border: 0;
-}
-
-button.location-assist__button[disabled] {
-  opacity: 0.65;
-}
-
-.location-assist__icon {
-  width: 44rpx;
-  height: 44rpx;
-  flex: none;
-}
-
-.location-assist__copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.location-assist__title {
-  color: @color-brand-dark;
-  font-size: @font-size-sm;
-  font-weight: 700;
-}
-
-.location-assist__subtitle,
-.location-assist__status {
-  margin-top: @space-1;
-  color: @color-text-muted;
-  font-size: @font-size-xs;
-  line-height: 1.5;
-}
-
-.location-assist__chevron {
-  color: @color-brand;
-  font-size: 36rpx;
-}
-
-.location-assist__status {
-  padding: 0 @space-1 @space-2;
-}
-
 .form-field {
   display: flex;
   min-height: 104rpx;
@@ -122,8 +59,7 @@ button.location-assist__button[disabled] {
 }
 
 .form-field__input,
-.form-field__value,
-.form-field__textarea {
+.form-field__value {
   min-width: 0;
   flex: 1;
   color: @color-text-primary;
@@ -150,15 +86,54 @@ button.location-assist__button[disabled] {
   font-size: 36rpx;
 }
 
-.form-field--textarea {
-  padding: @space-5 0;
-  align-items: flex-start;
+.form-field__label--optional {
+  display: flex;
+  align-items: center;
+  gap: @space-2;
 }
 
-.form-field__textarea {
-  min-height: 120rpx;
+.form-field__optional {
+  color: @color-text-placeholder;
+  font-size: @font-size-xs;
+  font-weight: 400;
+}
+
+button.form-field--address {
+  width: 100%;
+  margin: 0;
+  padding: @space-4 0;
+  border: 0;
+  border-bottom: 1rpx solid @color-divider;
+  border-radius: 0;
+  align-items: flex-start;
+  background: transparent;
+  line-height: normal;
+  text-align: left;
+}
+
+button.form-field--address::after {
+  border: 0;
+}
+
+button.form-field--address[disabled] {
+  opacity: 0.65;
+}
+
+.address-value {
+  min-width: 0;
+  flex: 1;
+}
+
+.address-value .form-field__value {
   line-height: 1.6;
-  text-align: right;
+  text-align: left;
+}
+
+.address-value__hint {
+  margin-top: @space-1;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  line-height: 1.5;
 }
 
 .form-field--switch {

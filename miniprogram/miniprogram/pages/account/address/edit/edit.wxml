@@ -19,24 +19,7 @@
     <view wx:else class="address-form">
       <view class="form-heading">
         <view class="form-heading__title">配送信息</view>
-        <view class="form-heading__subtitle">请填写真实、完整的收货信息</view>
-      </view>
-
-      <view class="location-assist">
-        <button
-          class="location-assist__button"
-          loading="{{locating}}"
-          disabled="{{locating || saving}}"
-          bindtap="onLocateTap"
-        >
-          <image class="location-assist__icon" src="/assets/icons/location-on-outline-rounded.svg" mode="aspectFit" />
-          <view class="location-assist__copy">
-            <view class="location-assist__title">{{locating ? '正在打开地图' : '高德地图选择收货地址'}}</view>
-            <view class="location-assist__subtitle">支持当前定位、拖动选点、附近地点和关键词搜索</view>
-          </view>
-          <text class="location-assist__chevron">›</text>
-        </button>
-        <view wx:if="{{locationStatusText}}" class="location-assist__status">{{locationStatusText}}</view>
+        <view class="form-heading__subtitle">地图选择地址，再补充楼栋、单元或房间号</view>
       </view>
 
       <view class="form-field">
@@ -63,26 +46,34 @@
           bindinput="onInput"
         />
       </view>
-      <picker mode="region" value="{{region}}" bindchange="onRegionChange">
-        <view class="form-field form-field--picker">
-          <text class="form-field__label">所在地区</text>
-          <view class="form-field__value {{form.province ? '' : 'form-field__placeholder'}}">
-            {{form.province ? form.province + ' ' + form.city + ' ' + form.district : '请选择省市区'}}
+      <button
+        class="form-field form-field--address"
+        disabled="{{locating || saving}}"
+        bindtap="onLocateTap"
+      >
+        <text class="form-field__label">地址</text>
+        <view class="address-value">
+          <view class="form-field__value {{addressDisplay ? '' : 'form-field__placeholder'}}">
+            {{locating ? '正在打开地图…' : (addressDisplay || '点击地图选择收货地址')}}
           </view>
-          <text class="form-field__chevron">›</text>
+          <view wx:if="{{locationStatusText}}" class="address-value__hint">
+            {{locationStatusText}}
+          </view>
         </view>
-      </picker>
-      <view class="form-field form-field--textarea">
-        <text class="form-field__label">详细地址</text>
-        <textarea
-          class="form-field__textarea"
-          value="{{form.detailAddress}}"
-          data-field="detailAddress"
-          maxlength="255"
-          auto-height="{{true}}"
-          placeholder="街道、门牌号、小区、楼栋和房间号"
+        <text class="form-field__chevron">›</text>
+      </button>
+      <view class="form-field">
+        <view class="form-field__label form-field__label--optional">
+          <text>门牌号</text>
+          <text class="form-field__optional">选填</text>
+        </view>
+        <input
+          class="form-field__input"
+          value="{{doorplate}}"
+          maxlength="96"
+          placeholder="例如 3 栋 2 单元 201"
           placeholder-class="form-field__placeholder"
-          bindinput="onInput"
+          bindinput="onDoorplateInput"
         />
       </view>
       <view class="form-field form-field--switch">

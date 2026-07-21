@@ -32,7 +32,7 @@
       >
         <ElFormItem label="启用定位辅助" prop="enabled">
           <ElSwitch v-model="formData.enabled" />
-          <div class="form-tip">关闭后，小程序仍可继续手工填写收货地址。</div>
+          <div class="form-tip">关闭后，已有地址仍可查看和编辑，但小程序无法新增或重新选择地图地址。</div>
         </ElFormItem>
 
         <ElFormItem label="微信小程序 Key" prop="miniProgramKey">

@@ -8,6 +8,7 @@ import {
   buildFavoriteProductViews,
   buildHistoryProductViews,
   buildUserCouponViews,
+  composeAddressDetail,
   normalizeAddressForm,
   parseAddressId,
   parseCouponStatusFilter,
@@ -45,11 +46,14 @@ test("地址表单规范空白并校验姓名、电话、地区和详细地址",
   });
   assert.equal(validateAddressForm({ ...validAddress, receiverName: "" }), "请填写收货人姓名");
   assert.equal(validateAddressForm({ ...validAddress, receiverPhone: "abc" }), "请填写有效的联系电话");
-  assert.equal(validateAddressForm({ ...validAddress, district: "" }), "请选择省市区");
-  assert.equal(validateAddressForm({ ...validAddress, detailAddress: "" }), "请填写详细地址");
+  assert.equal(validateAddressForm({ ...validAddress, district: "" }), "请通过地图选择完整地址");
+  assert.equal(validateAddressForm({ ...validAddress, detailAddress: "" }), "请通过地图选择详细地址");
   assert.equal(parseAddressId("9007199254740993123"), "9007199254740993123");
   assert.equal(parseAddressId("0"), "");
   assert.equal(parseAddressId("12x"), "");
+  assert.equal(composeAddressDetail("春熙路 1 号", "3 栋 201"), "春熙路 1 号 3 栋 201");
+  assert.equal(composeAddressDetail("春熙路 1 号 3 栋 201", "3 栋 201"), "春熙路 1 号 3 栋 201");
+  assert.equal(composeAddressDetail("春熙路 1 号", ""), "春熙路 1 号");
 });
 
 test("收藏与浏览记录映射价格、下架状态和足迹文案", () => {

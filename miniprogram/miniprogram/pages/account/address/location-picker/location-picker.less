@@ -89,39 +89,90 @@ button.search-box__clear::after {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 64rpx;
-  height: 76rpx;
-  margin: -72rpx 0 0 -32rpx;
+  z-index: 3;
+  width: 72rpx;
+  height: 108rpx;
+  margin: -98rpx 0 0 -36rpx;
+  pointer-events: none;
+  transition: transform @duration-fast @ease-standard;
 }
 
-.center-pin__image {
-  width: 64rpx;
-  height: 64rpx;
+.center-pin--dragging {
+  transform: translateY(-12rpx);
+}
+
+.center-pin__head {
+  display: flex;
+  width: 54rpx;
+  height: 54rpx;
+  margin: 0 auto;
+  border: 6rpx solid @color-surface;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  background: @color-brand;
+  box-shadow: @shadow-action;
+}
+
+.center-pin__dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: @color-text-inverse;
+}
+
+.center-pin__stem {
+  width: 8rpx;
+  height: 30rpx;
+  margin: -2rpx auto 0;
+  border-radius: @radius-pill;
+  background: @color-brand;
+}
+
+.center-pin__shadow {
+  width: 34rpx;
+  height: 10rpx;
+  margin: 2rpx auto 0;
+  border-radius: 50%;
+  background: fade(@color-text-primary, 18%);
 }
 
 .map-locate,
-.map-resolving {
+.map-tip {
   position: absolute;
+  z-index: 4;
   border-radius: @radius-pill;
   color: @color-text-primary;
-  background: fade(@color-surface, 94%);
+  background: @color-surface;
   box-shadow: @shadow-floating;
   font-size: @font-size-xs;
 }
 
 .map-locate {
+  display: flex;
   right: @space-4;
   bottom: @space-4;
-  padding: @space-2 @space-4;
+  min-height: 64rpx;
+  padding: 0 @space-4;
+  align-items: center;
+  gap: @space-2;
   color: @color-brand-dark;
   font-weight: 700;
 }
 
-.map-resolving {
+.map-locate__icon {
+  color: @color-brand;
+  font-size: 34rpx;
+  font-weight: 700;
+}
+
+.map-tip {
   top: @space-4;
   left: 50%;
   padding: @space-2 @space-3;
   transform: translateX(-50%);
+  color: @color-text-secondary;
+  white-space: nowrap;
 }
 
 .result-panel {
