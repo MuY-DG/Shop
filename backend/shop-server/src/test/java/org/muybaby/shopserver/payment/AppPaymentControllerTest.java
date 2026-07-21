@@ -22,8 +22,11 @@ import java.time.LocalDateTime;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.lessThanOrEqualTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -108,6 +111,12 @@ class AppPaymentControllerTest extends PaymentTestSupport {
                 .param("orderId", order.orderId())
                 .query(String.class)
                 .optional()).isEmpty();
+        mockMvc.perform(get("/app/orders/{orderId}", order.orderId())
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.paymentExpiresAt").isNotEmpty())
+                .andExpect(jsonPath("$.data.paymentRemainingSeconds").value(greaterThanOrEqualTo(14 * 60)))
+                .andExpect(jsonPath("$.data.paymentRemainingSeconds").value(lessThanOrEqualTo(15 * 60)));
         assertThat(jdbcClient.sql("""
                         select count(*)
                         from order_status_log

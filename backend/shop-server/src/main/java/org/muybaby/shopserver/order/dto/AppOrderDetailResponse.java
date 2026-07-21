@@ -25,6 +25,8 @@ public record AppOrderDetailResponse(
         String paymentTransactionId,
         String merchantTradeNo,
         String paymentStatus,
+        LocalDateTime paymentExpiresAt,
+        Long paymentRemainingSeconds,
         String outTradeNo,
         String transactionId,
         LocalDateTime paidAt,

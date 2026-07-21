@@ -1,6 +1,6 @@
 <view class="detail-page">
   <navigation-bar
-    title="订单详情"
+    title="{{navigationTitle}}"
     back="{{true}}"
     home="{{true}}"
     background="#FAF2E4"
@@ -23,10 +23,13 @@
       </view>
 
       <view class="status-card status-card--{{detail.statusTone}}">
-        <view class="status-card__icon">{{detail.status === 'COMPLETED' ? '✓' : '灶'}}</view>
+        <view class="status-card__icon">{{detail.status === 'CLOSED' ? '×' : detail.canPay ? '时' : detail.status === 'COMPLETED' ? '✓' : '灶'}}</view>
         <view>
           <view class="status-card__title">{{detail.statusText}}</view>
-          <view class="status-card__description">{{detail.statusDescription}}</view>
+          <view wx:if="{{detail.canPay && hasCountdown}}" class="status-card__description">
+            请在 <text class="status-card__countdown">{{countdownText}}</text> 内完成支付，超时订单自动取消
+          </view>
+          <view wx:else class="status-card__description">{{detail.canPay ? '支付时限正在确认，请尽快完成支付' : detail.statusDescription}}</view>
         </view>
       </view>
 
@@ -81,11 +84,6 @@
           <text>{{detail.hasCouponDiscount ? '-' + detail.couponDiscountText : '未使用'}}</text>
         </view>
         <view class="amount-row"><text>运费</text><text>{{detail.freightText}}</text></view>
-        <view class="amount-divider"></view>
-        <view class="amount-row amount-row--total">
-          <text>{{detail.paidAmountCent > 0 ? '实付金额' : '应付金额'}}</text>
-          <text>{{detail.paidAmountCent > 0 ? detail.paidAmountText : detail.payableAmountText}}</text>
-        </view>
       </view>
 
       <view class="detail-card order-info">
@@ -101,32 +99,40 @@
     </block>
   </view>
 
-  <view wx:if="{{detail && (detail.canPay || detail.canConfirmReceipt)}}" class="detail-actions">
+  <view wx:if="{{detail && (detail.canPay || detail.canConfirmReceipt || detail.canDelete || detail.canRebuy)}}" class="detail-actions">
     <button
       wx:if="{{detail.canCancel}}"
-      class="detail-action detail-action--secondary"
-      disabled="{{actionType}}"
+      class="detail-action detail-action--secondary detail-action--minor"
+      loading="{{actionType === 'cancel' || actionType === 'expire'}}"
+      disabled="{{actionType !== ''}}"
       bindtap="onCancelTap"
     >取消订单</button>
     <button
-      wx:if="{{detail.canSyncPayment}}"
-      class="detail-action detail-action--secondary"
-      loading="{{actionType === 'sync'}}"
-      disabled="{{actionType}}"
-      bindtap="onSyncTap"
-    >同步结果</button>
-    <button
       wx:if="{{detail.canPay}}"
-      class="detail-action detail-action--primary"
+      class="detail-action detail-action--primary detail-action--major"
       loading="{{actionType === 'pay'}}"
-      disabled="{{actionType}}"
+      disabled="{{actionType !== '' || paymentExpired}}"
       bindtap="onPayTap"
-    >{{detail.paymentActionText}}</button>
+    >支付 {{detail.payableAmountText}}</button>
+    <button
+      wx:if="{{detail.canDelete}}"
+      class="detail-action detail-action--secondary detail-action--minor"
+      loading="{{actionType === 'delete'}}"
+      disabled="{{actionType !== ''}}"
+      bindtap="onDeleteTap"
+    >删除订单</button>
+    <button
+      wx:if="{{detail.canRebuy}}"
+      class="detail-action detail-action--primary detail-action--major"
+      loading="{{actionType === 'rebuy'}}"
+      disabled="{{actionType !== ''}}"
+      bindtap="onRebuyTap"
+    >再次购买</button>
     <button
       wx:if="{{detail.canConfirmReceipt}}"
-      class="detail-action detail-action--primary"
+      class="detail-action detail-action--primary detail-action--major"
       loading="{{actionType === 'confirm'}}"
-      disabled="{{actionType}}"
+      disabled="{{actionType !== ''}}"
       bindtap="onConfirmTap"
     >确认收货</button>
   </view>

@@ -53,6 +53,8 @@ import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -81,6 +83,7 @@ public class AppOrderService {
     private final AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy;
     private final WechatShippingUploadRecovery shippingUploadRecovery;
     private final OrderStatusLogService orderStatusLogService;
+    private final Clock clock;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
     public AppOrderService(
@@ -92,7 +95,8 @@ public class AppOrderService {
             AppAfterSaleService appAfterSaleService,
             AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
             WechatShippingUploadRecovery shippingUploadRecovery,
-            OrderStatusLogService orderStatusLogService
+            OrderStatusLogService orderStatusLogService,
+            Clock clock
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -103,6 +107,7 @@ public class AppOrderService {
         this.afterSaleFulfillmentPolicy = afterSaleFulfillmentPolicy;
         this.shippingUploadRecovery = shippingUploadRecovery;
         this.orderStatusLogService = orderStatusLogService;
+        this.clock = clock;
     }
 
     public OrderPreviewResponse preview(AuthenticatedPrincipal principal, AppOrderPreviewRequest request) {
@@ -232,6 +237,7 @@ public class AppOrderService {
                         select count(*)
                         from shop_order
                         where user_id = :userId
+                          and app_deleted_at is null
                           and (:status is null or status = :status)
                           and (:allStatuses = true or status in (:groupedStatuses))
                         """)
@@ -266,6 +272,7 @@ public class AppOrderService {
                                o.created_at
                         from shop_order o
                         where o.user_id = :userId
+                          and o.app_deleted_at is null
                           and (:status is null or o.status = :status)
                           and (:allStatuses = true or o.status in (:groupedStatuses))
                         order by o.created_at desc, o.id desc
@@ -314,6 +321,7 @@ public class AppOrderService {
                         from shop_order
                         where id = :orderId
                           and user_id = :userId
+                          and app_deleted_at is null
                         """)
                 .param("orderId", orderId)
                 .param("userId", userId)
@@ -352,6 +360,14 @@ public class AppOrderService {
                 .list();
 
         PaymentOrderSnapshot paymentOrder = findLatestPaymentOrder(orderId);
+        Long paymentRemainingSeconds = null;
+        if (paymentOrder != null && paymentOrder.expiresAt() != null) {
+            long remainingMillis = Duration.between(
+                    LocalDateTime.now(clock), paymentOrder.expiresAt()).toMillis();
+            paymentRemainingSeconds = remainingMillis <= 0L
+                    ? 0L
+                    : (remainingMillis + 999L) / 1000L;
+        }
         String transactionId = nonBlank(
                 paymentOrder == null ? null : paymentOrder.transactionId(),
                 header.paymentTransactionId()
@@ -384,6 +400,8 @@ public class AppOrderService {
                 transactionId,
                 header.merchantTradeNo(),
                 paymentOrder == null ? null : paymentOrder.status(),
+                paymentOrder == null ? null : paymentOrder.expiresAt(),
+                paymentRemainingSeconds,
                 outTradeNo,
                 transactionId,
                 paidAt,
@@ -398,6 +416,51 @@ public class AppOrderService {
                 latestAfterSale,
                 items
         );
+    }
+
+    @Transactional
+    public void deleteClosed(AuthenticatedPrincipal principal, Long orderId) {
+        Long userId = requireAppUser(principal);
+        DeletableOrder order = jdbcClient.sql("""
+                        select id as order_id,
+                               status,
+                               app_deleted_at
+                        from shop_order
+                        where id = :orderId
+                          and user_id = :userId
+                        for update
+                        """)
+                .param("orderId", orderId)
+                .param("userId", userId)
+                .query((rs, rowNum) -> new DeletableOrder(
+                        rs.getLong("order_id"),
+                        rs.getString("status"),
+                        rs.getObject("app_deleted_at", LocalDateTime.class)
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        if (!OrderStatus.CLOSED.name().equals(order.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        if (order.appDeletedAt() != null) {
+            return;
+        }
+        int updatedRows = jdbcClient.sql("""
+                        update shop_order
+                        set app_deleted_at = :deletedAt,
+                            updated_at = :deletedAt
+                        where id = :orderId
+                          and user_id = :userId
+                          and status = 'CLOSED'
+                          and app_deleted_at is null
+                        """)
+                .param("deletedAt", LocalDateTime.now())
+                .param("orderId", order.orderId())
+                .param("userId", userId)
+                .update();
+        if (updatedRows != 1) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
     }
 
     @Transactional
@@ -1019,7 +1082,8 @@ public class AppOrderService {
                         select out_trade_no,
                                transaction_id,
                                status,
-                               paid_at
+                               paid_at,
+                               expires_at
                         from payment_order
                         where order_id = :orderId
                         order by updated_at desc, id desc
@@ -1030,7 +1094,8 @@ public class AppOrderService {
                         rs.getString("out_trade_no"),
                         rs.getString("transaction_id"),
                         rs.getString("status"),
-                        rs.getObject("paid_at", LocalDateTime.class)
+                        rs.getObject("paid_at", LocalDateTime.class),
+                        rs.getObject("expires_at", LocalDateTime.class)
                 ))
                 .optional()
                 .orElse(null);
@@ -1270,8 +1335,12 @@ public class AppOrderService {
             String outTradeNo,
             String transactionId,
             String status,
-            LocalDateTime paidAt
+            LocalDateTime paidAt,
+            LocalDateTime expiresAt
     ) {
+    }
+
+    private record DeletableOrder(Long orderId, String status, LocalDateTime appDeletedAt) {
     }
 
     private record ReceiptOrder(

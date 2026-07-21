@@ -52,6 +52,14 @@ export function getOrderDetail(orderId: number): Promise<AppOrderDetailResponse>
   });
 }
 
+export function deleteOrder(orderId: number): Promise<void> {
+  return request<void>({
+    url: API_ENDPOINTS.orders.delete(orderId),
+    method: "DELETE",
+    expectData: false
+  });
+}
+
 export function initiateOrderPayment(
   orderId: number
 ): Promise<WechatPaymentParamsResponse> {

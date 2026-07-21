@@ -1,5 +1,8 @@
+import { buildCartCheckoutUrl } from "../../../features/checkout";
 import {
   buildOrderDetailView,
+  buildOrderListUrl,
+  formatPaymentCountdown,
   positiveOrderId,
   type OrderDetailView
 } from "../../../features/order-center";
@@ -7,9 +10,11 @@ import {
   executeOrderPayment,
   recoverOrderPayment
 } from "../../../features/order-payment";
+import { addCartItem } from "../../../services/cart";
 import {
   cancelOrder,
   confirmOrderReceipt,
+  deleteOrder,
   getOrderDetail
 } from "../../../services/order";
 import { isApiError } from "../../../utils/api-error";
@@ -23,6 +28,8 @@ interface DatasetEvent {
 }
 
 let latestDetailRequest = 0;
+let countdownTimer: ReturnType<typeof setInterval> | null = null;
+let countdownDeadlineMs = 0;
 
 function actionError(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -45,10 +52,26 @@ function confirmAction(title: string, content: string, confirmText: string): Pro
   });
 }
 
+function navigationTitle(detail: OrderDetailView): string {
+  if (detail.canPay) {
+    return "待付款";
+  }
+  if (detail.status === "CLOSED") {
+    return "已取消";
+  }
+  return "订单详情";
+}
+
 Page({
   data: {
     orderId: 0,
     detail: null as OrderDetailView | null,
+    navigationTitle: "待付款",
+    countdownText: "",
+    hasCountdown: false,
+    paymentExpired: false,
+    expiryAttempted: false,
+    countdownConfirmed: false,
     loading: true,
     loaded: false,
     errorText: "",
@@ -70,12 +93,20 @@ Page({
 
   onShow() {
     if (this.data.loaded && this.data.detail?.status === "PAYING" && !this.data.actionType) {
-      void this.recoverPayment(false);
+      void this.recoverPayment();
+    } else if (this.data.detail?.canPay && countdownDeadlineMs > 0) {
+      this.startCountdownTimer();
     }
+  },
+
+  onHide() {
+    this.stopCountdownTimer();
   },
 
   onUnload() {
     latestDetailRequest += 1;
+    this.stopCountdownTimer();
+    countdownDeadlineMs = 0;
   },
 
   async onPullDownRefresh() {
@@ -98,20 +129,117 @@ Page({
       if (requestId !== latestDetailRequest) {
         return;
       }
+      const detail = buildOrderDetailView(response);
       this.setData({
-        detail: buildOrderDetailView(response),
+        detail,
+        navigationTitle: navigationTitle(detail),
         loading: false,
         loaded: true,
         errorText: ""
       });
+      this.configureCountdown(detail);
     } catch (error) {
-      if (requestId === latestDetailRequest) {
-        this.setData({
-          loading: false,
-          loaded: this.data.detail !== null,
-          errorText: actionError(error, "订单详情加载失败")
-        });
+      if (requestId !== latestDetailRequest) {
+        return;
       }
+      this.setData({
+        loading: false,
+        loaded: this.data.detail !== null,
+        errorText: actionError(error, "订单详情加载失败")
+      });
+    }
+  },
+
+  configureCountdown(detail: OrderDetailView) {
+    this.stopCountdownTimer();
+    if (!detail.canPay) {
+      countdownDeadlineMs = 0;
+      this.setData({
+        countdownText: "",
+        hasCountdown: false,
+        paymentExpired: false,
+        expiryAttempted: false,
+        countdownConfirmed: false
+      });
+      return;
+    }
+    const value = Number(detail.paymentRemainingSeconds);
+    if (!Number.isFinite(value)) {
+      countdownDeadlineMs = 0;
+      this.setData({
+        countdownText: "",
+        hasCountdown: false,
+        paymentExpired: false,
+        countdownConfirmed: false
+      });
+      return;
+    }
+    const remainingSeconds = Math.max(0, Math.floor(value));
+    countdownDeadlineMs = Date.now() + remainingSeconds * 1000;
+    this.setData({
+      countdownText: formatPaymentCountdown(remainingSeconds),
+      hasCountdown: true,
+      paymentExpired: remainingSeconds === 0,
+      expiryAttempted: remainingSeconds > 0 ? false : this.data.expiryAttempted,
+      countdownConfirmed: remainingSeconds > 0 || this.data.countdownConfirmed
+    });
+    this.startCountdownTimer();
+  },
+
+  startCountdownTimer() {
+    this.stopCountdownTimer();
+    this.updateCountdown();
+    if (countdownDeadlineMs > Date.now()) {
+      countdownTimer = setInterval(() => this.updateCountdown(), 1000);
+    }
+  },
+
+  stopCountdownTimer() {
+    if (countdownTimer !== null) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+  },
+
+  updateCountdown() {
+    if (!this.data.detail?.canPay || countdownDeadlineMs <= 0) {
+      this.stopCountdownTimer();
+      return;
+    }
+    const remainingSeconds = Math.max(
+      0,
+      Math.ceil((countdownDeadlineMs - Date.now()) / 1000)
+    );
+    this.setData({
+      countdownText: formatPaymentCountdown(remainingSeconds),
+      hasCountdown: true,
+      paymentExpired: remainingSeconds === 0
+    });
+    if (remainingSeconds === 0) {
+      this.stopCountdownTimer();
+      if (
+        this.data.countdownConfirmed &&
+        !this.data.expiryAttempted &&
+        !this.data.actionType
+      ) {
+        this.setData({ expiryAttempted: true });
+        void this.expireCurrentOrder();
+      }
+    }
+  },
+
+  async expireCurrentOrder() {
+    if (!this.data.orderId || this.data.actionType || !this.data.detail?.canPay) {
+      return;
+    }
+    this.setData({ actionType: "expire" });
+    try {
+      await cancelOrder(this.data.orderId);
+    } catch {
+      // 服务端超时任务仍会关闭订单；刷新用于识别支付恰好成功的竞争结果。
+    } finally {
+      this.setData({ actionType: "" });
+      await this.refreshDetail();
     }
   },
 
@@ -120,13 +248,20 @@ Page({
   },
 
   async payOrder() {
-    if (!this.data.orderId || this.data.actionType) {
+    if (
+      !this.data.orderId ||
+      this.data.actionType ||
+      this.data.paymentExpired ||
+      !this.data.detail?.canPay
+    ) {
       return;
     }
     this.setData({ actionType: "pay" });
+    let paid = false;
     try {
       const outcome = await executeOrderPayment(this.data.orderId);
-      if (outcome === "PAID") {
+      paid = outcome === "PAID";
+      if (paid) {
         wx.showToast({ title: "支付成功", icon: "success" });
       } else if (outcome === "PENDING") {
         wx.showToast({ title: "正在确认支付结果", icon: "none" });
@@ -140,38 +275,54 @@ Page({
       });
     } finally {
       this.setData({ actionType: "" });
-      await this.refreshDetail();
+      if (paid) {
+        this.redirectPaymentSuccess();
+      } else {
+        await this.refreshDetail();
+      }
     }
   },
 
-  onSyncTap() {
-    void this.recoverPayment(true);
-  },
-
-  async recoverPayment(showResult: boolean) {
+  async recoverPayment() {
     if (!this.data.orderId || this.data.actionType) {
       return;
     }
     this.setData({ actionType: "sync" });
+    let paid = false;
     try {
       const response = await recoverOrderPayment(this.data.orderId);
-      if (showResult || response.status === "PAID") {
-        wx.showToast({
-          title: response.status === "PAID" ? "支付成功" : "暂未查询到支付结果",
-          icon: response.status === "PAID" ? "success" : "none"
-        });
+      paid = response.status === "PAID";
+      if (paid) {
+        wx.showToast({ title: "支付成功", icon: "success" });
       }
-    } catch (error) {
-      if (showResult) {
-        wx.showToast({
-          title: actionError(error, "支付结果同步失败"),
-          icon: "none"
-        });
-      }
+    } catch {
+      // 页面仍会读取服务端订单状态，不向用户暴露支付查询实现细节。
     } finally {
       this.setData({ actionType: "" });
-      await this.refreshDetail();
+      if (paid) {
+        this.redirectPaymentSuccess();
+      } else {
+        await this.refreshDetail();
+      }
     }
+  },
+
+  redirectPaymentSuccess() {
+    const detail = this.data.detail;
+    if (!detail) {
+      void this.refreshDetail();
+      return;
+    }
+    const query = [
+      `order_id=${encodeURIComponent(String(detail.orderId))}`,
+      `order_no=${encodeURIComponent(detail.orderNo)}`,
+      `amount=${encodeURIComponent(String(detail.payableAmountCent))}`,
+      "payment_status=PAID"
+    ].join("&");
+    wx.redirectTo({
+      url: `/pages/order/created/created?${query}`,
+      fail: () => void this.refreshDetail()
+    });
   },
 
   onCancelTap() {
@@ -182,6 +333,7 @@ Page({
     if (
       !this.data.orderId ||
       this.data.actionType ||
+      !this.data.detail?.canCancel ||
       !await confirmAction("取消订单", "取消后库存和优惠券会释放，订单不能恢复。", "确认取消")
     ) {
       return;
@@ -199,6 +351,80 @@ Page({
       this.setData({ actionType: "" });
       await this.refreshDetail();
     }
+  },
+
+  onDeleteTap() {
+    void this.deleteCurrentOrder();
+  },
+
+  async deleteCurrentOrder() {
+    if (
+      !this.data.orderId ||
+      this.data.actionType ||
+      !this.data.detail?.canDelete ||
+      !await confirmAction("删除订单", "删除后将不再在订单列表中显示。", "确认删除")
+    ) {
+      return;
+    }
+    this.setData({ actionType: "delete" });
+    try {
+      await deleteOrder(this.data.orderId);
+      wx.showToast({ title: "订单已删除", icon: "success" });
+      wx.redirectTo({
+        url: buildOrderListUrl("ALL"),
+        fail: () => {
+          this.setData({ actionType: "" });
+          wx.switchTab({ url: "/pages/profile/profile" });
+        }
+      });
+    } catch (error) {
+      this.setData({ actionType: "" });
+      wx.showToast({
+        title: actionError(error, "订单删除失败"),
+        icon: "none"
+      });
+    }
+  },
+
+  onRebuyTap() {
+    void this.rebuyCurrentOrder();
+  },
+
+  async rebuyCurrentOrder() {
+    const detail = this.data.detail;
+    if (!detail?.canRebuy || this.data.actionType) {
+      return;
+    }
+    this.setData({ actionType: "rebuy" });
+    const cartItemIds: number[] = [];
+    let firstError: unknown = null;
+    for (const item of detail.items) {
+      try {
+        const cartItem = await addCartItem({
+          skuId: item.skuId,
+          quantity: item.quantity
+        });
+        cartItemIds.push(cartItem.id);
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+    if (!cartItemIds.length) {
+      this.setData({ actionType: "" });
+      wx.showToast({
+        title: actionError(firstError, "商品暂时无法再次购买"),
+        icon: "none"
+      });
+      return;
+    }
+    this.setData({ actionType: "" });
+    if (cartItemIds.length < detail.items.length) {
+      wx.showToast({ title: "部分商品暂不可购买", icon: "none" });
+    }
+    wx.redirectTo({
+      url: buildCartCheckoutUrl(cartItemIds),
+      fail: () => wx.switchTab({ url: "/pages/cart/cart" })
+    });
   },
 
   onConfirmTap() {

@@ -6,6 +6,7 @@ import {
   buildOrderDetailView,
   buildOrderListUrl,
   buildOrderSummaryView,
+  formatPaymentCountdown,
   orderStatusText,
   parseOrderStatusGroup,
   positiveOrderId
@@ -52,6 +53,8 @@ function detail(status: OrderStatus = "PAYING"): AppOrderDetailResponse {
     receiverName: "小灶",
     receiverPhone: "13800000000",
     receiverAddress: "四川省成都市武侯区灶香路 1 号",
+    paymentExpiresAt: "2026-07-20T12:45:00",
+    paymentRemainingSeconds: 899,
     createdAt: "2026-07-20T12:30:00",
     items: [{
       orderItemId: 901,
@@ -74,7 +77,7 @@ function detail(status: OrderStatus = "PAYING"): AppOrderDetailResponse {
 
 test("订单状态映射稳定并只开放合法操作", () => {
   const created = buildOrderSummaryView(summary("CREATED"));
-  assert.equal(created.statusText, "待支付");
+  assert.equal(created.statusText, "等待支付");
   assert.equal(created.canPay, true);
   assert.equal(created.canCancel, true);
   assert.equal(created.canSyncPayment, false);
@@ -94,6 +97,11 @@ test("订单状态映射稳定并只开放合法操作", () => {
   assert.equal(completed.statusText, "已完成");
   assert.equal(completed.canConfirmReceipt, false);
   assert.equal(orderStatusText("REFUNDED"), "已退款");
+
+  const closed = buildOrderSummaryView(summary("CLOSED"));
+  assert.equal(closed.statusText, "已取消");
+  assert.equal(closed.canDelete, true);
+  assert.equal(closed.canRebuy, true);
 });
 
 test("订单详情使用零售金额与真实批发成交价生成可核对明细", () => {
@@ -107,6 +115,13 @@ test("订单详情使用零售金额与真实批发成交价生成可核对明�
   assert.equal(view.items[0]?.unitPriceText, "¥16.80");
   assert.equal(view.items[0]?.wholesaleText, "3 件起批发价");
   assert.equal(view.canSyncPayment, true);
+});
+
+test("支付倒计时稳定显示时分秒并收敛非法输入", () => {
+  assert.equal(formatPaymentCountdown(899), "00时14分59秒");
+  assert.equal(formatPaymentCountdown(3661), "01时01分01秒");
+  assert.equal(formatPaymentCountdown(-1), "00时00分00秒");
+  assert.equal(formatPaymentCountdown("invalid"), "00时00分00秒");
 });
 
 test("订单中心路由和查询参数拒绝非法订单 ID 与状态组", () => {

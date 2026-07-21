@@ -74,6 +74,8 @@ export interface AppOrderDetailResponse {
   paymentTransactionId?: string;
   merchantTradeNo?: string;
   paymentStatus?: string;
+  paymentExpiresAt?: string;
+  paymentRemainingSeconds?: number;
   outTradeNo?: string;
   transactionId?: string;
   paidAt?: string;

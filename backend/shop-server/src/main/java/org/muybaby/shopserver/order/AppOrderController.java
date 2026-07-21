@@ -14,6 +14,7 @@ import org.muybaby.shopserver.order.service.AppOrderService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -63,6 +64,15 @@ public class AppOrderController {
             @PathVariable Long orderId
     ) {
         return ApiResponse.success(appOrderService.detail(principal, orderId));
+    }
+
+    @DeleteMapping("/{orderId}")
+    public ApiResponse<Void> delete(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId
+    ) {
+        appOrderService.deleteClosed(principal, orderId);
+        return ApiResponse.success();
     }
 
     @PostMapping("/{orderId}/confirm-receipt")

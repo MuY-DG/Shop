@@ -51,6 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -883,6 +884,46 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + owner.token()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400001));
+    }
+
+    @Test
+    void userCanSoftDeleteOnlyOwnedClosedOrders() throws Exception {
+        AppLoginSession owner = appLogin("order-delete-owner");
+        AppLoginSession other = appLogin("order-delete-other");
+        long skuId = createPublishedSku("ORDER-DELETE-SKU", 3990L, 4990L, 10, "ENABLED");
+        insertOrderSnapshot(9301L, "ORD-DELETE-CLOSED", owner.userId(), skuId, 9931L, "Closed Item");
+        insertOrderSnapshot(9302L, "ORD-DELETE-CREATED", owner.userId(), skuId, 9932L, "Created Item");
+        jdbcClient.sql("update shop_order set status = 'CLOSED' where id = 9301").update();
+
+        mockMvc.perform(delete("/app/orders/{orderId}", 9301L)
+                        .header("Authorization", "Bearer " + other.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        mockMvc.perform(delete("/app/orders/{orderId}", 9302L)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        mockMvc.perform(delete("/app/orders/{orderId}", 9301L)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(delete("/app/orders/{orderId}", 9301L)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/app/orders/{orderId}", 9301L)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        mockMvc.perform(get("/app/orders")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(1))
+                .andExpect(jsonPath("$.data.records[0].orderId").value(9302L));
     }
 
     private String longestValidReceiverAddress() {

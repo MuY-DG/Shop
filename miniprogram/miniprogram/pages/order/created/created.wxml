@@ -1,54 +1,28 @@
 <view class="created-page">
   <navigation-bar
-    title="{{pageTitle}}"
+    title="支付成功"
     home="{{true}}"
     background="#FAF2E4"
     color="#2E1D16"
     loading="{{loading}}"
   />
 
-  <view class="created-content {{resultType === 'PENDING' ? 'created-content--pending' : ''}}">
-    <view class="result-mark result-mark--{{resultType === 'SUCCESS' ? 'success' : resultType === 'CLOSED' ? 'closed' : 'pending'}}" aria-hidden="true">
-      {{resultType === 'SUCCESS' ? '✓' : resultType === 'CLOSED' ? '×' : '¥'}}
-    </view>
-    <view class="result-title">{{pageTitle}}</view>
-    <view class="result-subtitle">
-      {{resultType === 'SUCCESS' ? '支付已确认，商家将尽快为你安排发货' : resultType === 'CLOSED' ? '订单已取消，库存和优惠券已释放' : '订单已创建，支付完成后我们会立即确认订单'}}
-    </view>
+  <view class="created-content">
+    <view class="success-mark" aria-hidden="true">✓</view>
+    <view class="result-title">支付成功</view>
+    <view class="result-subtitle">支付已确认，商家将尽快为你安排发货</view>
 
-    <view wx:if="{{resultType !== 'CLOSED'}}" class="result-amount">
-      <text>{{resultType === 'SUCCESS' ? '支付金额' : '待支付金额'}}</text>
-      <view>{{payableAmountText}}</view>
+    <view class="result-amount">
+      <text>支付金额</text>
+      <view>{{paymentAmountText}}</view>
     </view>
 
     <view class="order-card">
       <view class="order-row"><text>订单号</text><text>{{orderNo || '已创建'}}</text></view>
-      <view class="order-row"><text>订单状态</text><text class="status-tag status-tag--{{resultType === 'SUCCESS' ? 'success' : resultType === 'CLOSED' ? 'closed' : 'pending'}}">{{statusText}}</text></view>
+      <view class="order-row"><text>订单状态</text><text class="status-tag">{{statusText}}</text></view>
     </view>
 
-    <view wx:if="{{resultType === 'PENDING'}}" class="payment-note">
-      <view class="payment-note__title">微信安全支付</view>
-      <view class="payment-note__copy">本次支付尚未完成，你可以继续支付，也可以取消订单。</view>
-    </view>
-
-    <view wx:if="{{resultType !== 'PENDING'}}" class="result-actions">
-      <button class="secondary-action" bindtap="onDetailTap">查看订单详情</button>
-      <button class="text-action" bindtap="onHomeTap">返回首页</button>
-    </view>
-  </view>
-
-  <view wx:if="{{resultType === 'PENDING'}}" class="pending-actions">
-    <button
-      class="pending-actions__cancel"
-      loading="{{actionType === 'cancel'}}"
-      disabled="{{actionType !== ''}}"
-      bindtap="onCancelTap"
-    >取消订单</button>
-    <button
-      class="pending-actions__pay"
-      loading="{{actionType === 'pay'}}"
-      disabled="{{actionType !== ''}}"
-      bindtap="onPayTap"
-    >{{status === 'PAYING' ? '继续支付 ' : '立即支付 '}}{{payableAmountText}}</button>
+    <button class="secondary-action" bindtap="onDetailTap">查看订单详情</button>
+    <button class="text-action" bindtap="onHomeTap">返回首页</button>
   </view>
 </view>

@@ -146,6 +146,10 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
     resolve(sourceRoot, "pages/order/detail/detail.wxml"),
     "utf8"
   );
+  const detailLogic = readFileSync(
+    resolve(sourceRoot, "pages/order/detail/detail.ts"),
+    "utf8"
+  );
   const paymentAdapter = readFileSync(
     resolve(sourceRoot, "utils/wechat-payment.ts"),
     "utf8"
@@ -153,14 +157,19 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
 
   assert.ok(appConfig.pages.includes("pages/order/list/list"));
   assert.ok(appConfig.pages.includes("pages/order/detail/detail"));
-  assert.match(createdTemplate, /bindtap="onPayTap"/);
-  assert.match(createdTemplate, /bindtap="onCancelTap"/);
+  assert.match(createdTemplate, /支付成功/);
   assert.match(createdTemplate, /支付金额/);
-  assert.match(createdTemplate, /待支付金额/);
-  assert.doesNotMatch(createdTemplate, /应付金额|订单提交成功|同步支付结果/);
+  assert.doesNotMatch(createdTemplate, /待支付金额|应付金额|订单提交成功|同步支付结果/);
   assert.match(listTemplate, /bindtap="onOrderTap"/);
   assert.match(listTemplate, /catchtap="onCancelTap"/);
   assert.match(detailTemplate, /bindtap="onConfirmTap"/);
+  assert.match(detailTemplate, /countdownText/);
+  assert.match(detailTemplate, /bindtap="onDeleteTap"/);
+  assert.match(detailTemplate, /bindtap="onRebuyTap"/);
+  assert.doesNotMatch(detailTemplate, /应付金额|同步结果/);
+  assert.match(detailTemplate, /title="{{navigationTitle}}"/);
+  assert.match(detailLogic, /return "待付款"/);
+  assert.match(detailLogic, /return "已取消"/);
   assert.match(paymentAdapter, /wx\.requestPayment/);
 });
 

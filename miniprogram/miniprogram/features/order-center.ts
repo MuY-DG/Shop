@@ -25,6 +25,8 @@ interface OrderActions {
   canCancel: boolean;
   canSyncPayment: boolean;
   canConfirmReceipt: boolean;
+  canDelete: boolean;
+  canRebuy: boolean;
   paymentActionText: string;
 }
 
@@ -78,9 +80,8 @@ function dateTimeText(value?: string): string {
 export function orderStatusText(status: OrderStatus): string {
   switch (status) {
     case "CREATED":
-      return "待支付";
     case "PAYING":
-      return "支付中";
+      return "等待支付";
     case "PAID":
       return "待发货";
     case "SHIPPED":
@@ -88,7 +89,7 @@ export function orderStatusText(status: OrderStatus): string {
     case "COMPLETED":
       return "已完成";
     case "CLOSED":
-      return "已关闭";
+      return "已取消";
     case "REFUNDING":
       return "退款中";
     case "REFUNDED":
@@ -114,9 +115,8 @@ function orderStatusTone(status: OrderStatus): string {
 function statusDescription(status: OrderStatus): string {
   switch (status) {
     case "CREATED":
-      return "订单已创建，请尽快完成支付";
     case "PAYING":
-      return "支付单已生成，可继续支付或同步结果";
+      return "请尽快完成支付，超时订单将自动取消";
     case "PAID":
       return "支付成功，正在等待商家发货";
     case "SHIPPED":
@@ -124,7 +124,7 @@ function statusDescription(status: OrderStatus): string {
     case "COMPLETED":
       return "订单已完成，感谢你的购买";
     case "CLOSED":
-      return "订单已取消或超时关闭";
+      return "订单已取消，库存与优惠券已释放";
     case "REFUNDING":
       return "退款正在处理中";
     case "REFUNDED":
@@ -139,8 +139,22 @@ function actions(status: OrderStatus): OrderActions {
     canCancel: canPay,
     canSyncPayment: status === "PAYING",
     canConfirmReceipt: status === "SHIPPED",
+    canDelete: status === "CLOSED",
+    canRebuy: status === "CLOSED",
     paymentActionText: status === "PAYING" ? "继续支付" : "立即支付"
   };
+}
+
+export function formatPaymentCountdown(value: unknown): string {
+  const parsed = Number(value);
+  const totalSeconds = Number.isFinite(parsed)
+    ? Math.max(0, Math.floor(parsed))
+    : 0;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const twoDigits = (part: number): string => String(part).padStart(2, "0");
+  return `${twoDigits(hours)}时${twoDigits(minutes)}分${twoDigits(seconds)}秒`;
 }
 
 export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummaryView {

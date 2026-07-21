@@ -10,6 +10,7 @@ import {
   type OrderPreviewView
 } from "../../../features/checkout";
 import { executeOrderPayment } from "../../../features/order-payment";
+import { buildOrderDetailUrl } from "../../../features/order-center";
 import { createAddress, getAddresses } from "../../../services/address";
 import { getAvailableCoupons } from "../../../services/coupon";
 import { previewOrder, submitOrder } from "../../../services/order";
@@ -427,14 +428,17 @@ Page({
           icon: "none"
         });
       }
-      const query = [
+      const successQuery = [
         `order_id=${encodeURIComponent(String(response.orderId))}`,
         `order_no=${encodeURIComponent(response.orderNo)}`,
         `amount=${encodeURIComponent(String(response.payableAmountCent))}`,
-        `payment_status=${paymentStatus}`
+        "payment_status=PAID"
       ].join("&");
+      const targetUrl = paymentStatus === "PAID"
+        ? `/pages/order/created/created?${successQuery}`
+        : buildOrderDetailUrl(Number(response.orderId));
       wx.redirectTo({
-        url: `/pages/order/created/created?${query}`,
+        url: targetUrl,
         fail: () => {
           this.setData({ submitting: false });
           wx.showToast({ title: "订单已创建，请到订单中心查看", icon: "none" });
