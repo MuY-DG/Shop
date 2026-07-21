@@ -33,6 +33,39 @@
       </view>
     </view>
 
+    <view class="service-card">
+      <view class="service-card__heading">
+        <view class="service-card__title">常用服务</view>
+        <view class="service-card__subtitle">管理账户资料与购物足迹</view>
+      </view>
+      <view class="service-grid">
+        <view
+          wx:for="{{accountServices}}"
+          wx:key="path"
+          class="service-item"
+          data-path="{{item.path}}"
+          bindtap="onAccountServiceTap"
+          aria-role="button"
+        >
+          <view class="service-item__icon">{{item.icon}}</view>
+          <text>{{item.label}}</text>
+        </view>
+      </view>
+      <button
+        class="customer-service"
+        open-type="contact"
+        hover-class="customer-service--pressed"
+        aria-label="联系在线客服"
+      >
+        <view class="customer-service__icon">客</view>
+        <view class="customer-service__body">
+          <view class="customer-service__title">在线客服</view>
+          <view class="customer-service__copy">商品、配送或订单问题，随时联系我们</view>
+        </view>
+        <text class="customer-service__chevron">›</text>
+      </button>
+    </view>
+
     <view class="profile-note">
       <view class="profile-note__mark">安</view>
       <view>

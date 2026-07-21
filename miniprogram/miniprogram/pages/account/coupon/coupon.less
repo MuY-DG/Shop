@@ -1,0 +1,241 @@
+@import "../../../styles/tokens.less";
+@import "../../../styles/mixins.less";
+
+.coupon-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, @color-page-top 0, @color-page 100%);
+}
+
+.coupon-section-tabs {
+  display: grid;
+  margin: @space-5 @page-gutter 0;
+  padding: 6rpx;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-pill;
+  background: fade(@color-surface, 92%);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.coupon-section-tab {
+  padding: @space-3 @space-4;
+  border-radius: @radius-pill;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  text-align: center;
+}
+
+.coupon-section-tab--active {
+  color: @color-text-inverse;
+  background: @color-brand;
+  font-weight: 700;
+}
+
+.coupon-status-tabs {
+  margin-top: @space-4;
+  white-space: nowrap;
+}
+
+.coupon-status-tabs__inner {
+  display: inline-flex;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 0 @page-gutter;
+}
+
+.coupon-status-tab {
+  position: relative;
+  min-width: 120rpx;
+  padding: @space-3;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  text-align: center;
+}
+
+.coupon-status-tab--active {
+  color: @color-brand;
+  font-weight: 700;
+}
+
+.coupon-status-tab--active::after {
+  position: absolute;
+  right: 30rpx;
+  bottom: 0;
+  left: 30rpx;
+  height: 4rpx;
+  border-radius: @radius-pill;
+  background: @color-brand;
+  content: "";
+}
+
+.coupon-content {
+  padding: @space-5 @page-gutter @space-12;
+}
+
+.coupon-state {
+  .card-surface();
+  min-height: 480rpx;
+}
+
+.coupon-card {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  min-height: 190rpx;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-lg;
+  background: @color-surface;
+  box-shadow: @shadow-card;
+}
+
+.coupon-card + .coupon-card {
+  margin-top: @space-4;
+}
+
+.coupon-card--muted {
+  opacity: 0.72;
+}
+
+.coupon-card__amount {
+  display: flex;
+  width: 190rpx;
+  padding: @space-5 @space-3;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: @color-brand;
+  background: linear-gradient(145deg, @color-brand-soft, fade(@color-gold-soft, 70%));
+  text-align: center;
+}
+
+.coupon-card__amount view {
+  font-family: @font-family-price;
+  font-size: 46rpx;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.coupon-card__amount view text {
+  margin-right: 2rpx;
+  font-size: 22rpx;
+}
+
+.coupon-card__amount > text {
+  margin-top: @space-1;
+  font-size: 20rpx;
+}
+
+.coupon-card__body {
+  min-width: 0;
+  display: flex;
+  padding: @space-4;
+  flex: 1;
+  flex-direction: column;
+}
+
+.coupon-card__heading,
+.coupon-card__footer,
+.inline-error {
+  display: flex;
+  align-items: center;
+}
+
+.coupon-card__heading,
+.coupon-card__footer {
+  justify-content: space-between;
+  gap: @space-3;
+}
+
+.coupon-card__name {
+  .text-ellipsis(1);
+  min-width: 0;
+  color: @color-text-primary;
+  font-size: @font-size-base;
+  font-weight: 700;
+}
+
+.coupon-card__status {
+  flex: none;
+  padding: 3rpx @space-2;
+  border-radius: @radius-pill;
+  font-size: 20rpx;
+}
+
+.coupon-card__status--brand {
+  color: @color-brand;
+  background: @color-brand-soft;
+}
+
+.coupon-card__status--warning {
+  color: @color-warning-text;
+  background: @color-warning-soft;
+}
+
+.coupon-card__status--muted {
+  color: @color-text-muted;
+  background: @color-surface-muted;
+}
+
+.coupon-card__description {
+  .text-ellipsis(1);
+  margin-top: @space-2;
+  color: @color-text-secondary;
+  font-size: @font-size-xs;
+}
+
+.coupon-card__footer {
+  margin-top: auto;
+  color: @color-text-muted;
+  font-size: 20rpx;
+}
+
+.coupon-card__action {
+  width: auto;
+  min-width: 116rpx;
+  height: 52rpx;
+  margin: 0;
+  padding: 0 @space-3;
+  border-radius: @radius-pill;
+  font-size: 20rpx;
+  line-height: 52rpx;
+}
+
+.coupon-card__action--brand {
+  color: @color-text-inverse;
+  background: @color-brand;
+}
+
+.coupon-card__action--warning,
+.coupon-card__action--muted {
+  color: @color-text-muted;
+  background: @color-surface-muted;
+}
+
+.coupon-card__action::after,
+.inline-error button::after {
+  border: 0;
+}
+
+.coupon-card__action[disabled] {
+  opacity: 0.65;
+}
+
+.inline-error {
+  margin-bottom: @space-4;
+  padding: @space-4 @space-5;
+  border-radius: @radius-sm;
+  justify-content: space-between;
+  color: @color-danger;
+  background: @color-danger-soft;
+  font-size: @font-size-sm;
+}
+
+.inline-error button {
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font-size: @font-size-sm;
+}

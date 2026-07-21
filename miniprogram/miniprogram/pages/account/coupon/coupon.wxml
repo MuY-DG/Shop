@@ -1,0 +1,64 @@
+<view class="coupon-page">
+  <navigation-bar title="优惠券" back="{{true}}" home="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
+
+  <view class="coupon-section-tabs">
+    <view
+      wx:for="{{sections}}"
+      wx:key="value"
+      class="coupon-section-tab {{activeSection === item.value ? 'coupon-section-tab--active' : ''}}"
+      data-section="{{item.value}}"
+      bindtap="onSectionTap"
+    >{{item.label}}</view>
+  </view>
+
+  <scroll-view wx:if="{{activeSection === 'MINE'}}" class="coupon-status-tabs" scroll-x="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
+    <view class="coupon-status-tabs__inner">
+      <view
+        wx:for="{{statusTabs}}"
+        wx:key="value"
+        class="coupon-status-tab {{activeStatus === item.value ? 'coupon-status-tab--active' : ''}}"
+        data-status="{{item.value}}"
+        bindtap="onStatusTap"
+      >{{item.label}}</view>
+    </view>
+  </scroll-view>
+
+  <view class="coupon-content">
+    <view wx:if="{{!loaded && loading}}" class="coupon-state">
+      <ui-state type="loading" title="正在加载优惠券" description="请稍候" />
+    </view>
+    <view wx:elif="{{!loaded && errorText}}" class="coupon-state">
+      <ui-state type="error" title="优惠券加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
+    </view>
+    <view wx:elif="{{loaded && !coupons.length}}" class="coupon-state">
+      <ui-state type="empty" title="{{emptyTitle}}" description="{{emptyDescription}}" />
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{errorText}}" class="inline-error"><text>{{errorText}}</text><button bindtap="onRetry">重试</button></view>
+      <view wx:for="{{coupons}}" wx:key="id" class="coupon-card coupon-card--{{item.statusTone}}">
+        <view class="coupon-card__amount">
+          <view><text>¥</text>{{item.amountText}}</view>
+          <text>{{item.conditionText}}</text>
+        </view>
+        <view class="coupon-card__body">
+          <view class="coupon-card__heading">
+            <text class="coupon-card__name">{{item.name}}</text>
+            <text class="coupon-card__status coupon-card__status--{{item.statusTone}}">{{item.statusText}}</text>
+          </view>
+          <view wx:if="{{item.description}}" class="coupon-card__description">{{item.description}}</view>
+          <view class="coupon-card__footer">
+            <text>{{item.validityText}}</text>
+            <button
+              class="coupon-card__action coupon-card__action--{{item.statusTone}}"
+              data-id="{{item.id}}"
+              disabled="{{item.actionDisabled || claimingTemplateId}}"
+              loading="{{claimingTemplateId === item.id}}"
+              bindtap="onCouponActionTap"
+            >{{item.actionText}}</button>
+          </view>
+        </view>
+      </view>
+    </block>
+  </view>
+</view>

@@ -2,9 +2,14 @@
   "pages": [
     "pages/index/index",
     "pages/category/category",
-    "pages/message/message",
     "pages/cart/cart",
     "pages/profile/profile",
+    "pages/account/address/list/list",
+    "pages/account/address/edit/edit",
+    "pages/account/address/location-picker/location-picker",
+    "pages/account/coupon/coupon",
+    "pages/account/favorites/favorites",
+    "pages/account/history/history",
     "pages/product/list/list",
     "pages/product/detail/detail",
     "pages/order/preview/preview",
@@ -18,6 +23,14 @@
     "backgroundColor": "#F6EDDF",
     "backgroundTextStyle": "dark"
   },
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于定位并辅助填写收货地址"
+    }
+  },
+  "requiredPrivateInfos": [
+    "getLocation"
+  ],
   "style": "v2",
   "componentFramework": "glass-easel",
   "tabBar": {

@@ -1314,6 +1314,20 @@ declare namespace Api {
     }
   }
 
+  namespace Amap {
+    interface Config {
+      enabled: boolean
+      keyConfigured: boolean
+      miniProgramKeyMasked: string
+      updatedAt?: string | null
+    }
+
+    interface ConfigForm {
+      enabled: boolean
+      miniProgramKey?: string
+    }
+  }
+
   namespace Payment {
     type ConfigSource = 'AUTO' | 'ENV' | 'DB'
     /** Only PUBLIC_KEY is selectable; legacy DB values can still appear through Config.verifyMode as string. */

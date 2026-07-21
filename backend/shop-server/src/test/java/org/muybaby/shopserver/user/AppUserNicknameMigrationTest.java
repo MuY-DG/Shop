@@ -36,7 +36,7 @@ class AppUserNicknameMigrationTest {
                 .load();
         flyway.migrate();
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("49");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("52");
         try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
              Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("""

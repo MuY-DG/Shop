@@ -1,8 +1,8 @@
 {
-  "component": true,
-  "styleIsolation": "isolated",
   "usingComponents": {
     "navigation-bar": "/components/navigation-bar/navigation-bar",
     "ui-state": "/components/ui-state/ui-state"
-  }
+  },
+  "backgroundColor": "#F6EDDF",
+  "disableScroll": true
 }

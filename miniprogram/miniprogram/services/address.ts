@@ -16,3 +16,36 @@ export function createAddress(data: AddressUpsertRequest): Promise<AddressRespon
     data
   });
 }
+
+export function getAddress(addressId: string): Promise<AddressResponse> {
+  return request<AddressResponse>({
+    url: API_ENDPOINTS.addresses.item(addressId),
+    method: "GET"
+  });
+}
+
+export function updateAddress(
+  addressId: string,
+  data: AddressUpsertRequest
+): Promise<AddressResponse> {
+  return request<AddressResponse, AddressUpsertRequest>({
+    url: API_ENDPOINTS.addresses.item(addressId),
+    method: "PUT",
+    data
+  });
+}
+
+export function deleteAddress(addressId: string): Promise<void> {
+  return request<void>({
+    url: API_ENDPOINTS.addresses.item(addressId),
+    method: "DELETE",
+    expectData: false
+  });
+}
+
+export function setDefaultAddress(addressId: string): Promise<AddressResponse> {
+  return request<AddressResponse>({
+    url: API_ENDPOINTS.addresses.setDefault(addressId),
+    method: "POST"
+  });
+}

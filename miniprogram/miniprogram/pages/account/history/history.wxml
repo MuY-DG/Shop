@@ -1,0 +1,51 @@
+<view class="account-page">
+  <navigation-bar title="浏览记录" back="{{true}}" home="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
+
+  <view class="account-content">
+    <view class="account-heading">
+      <view>
+        <view class="account-heading__title">浏览记录</view>
+        <view class="account-heading__subtitle">最近看过的商品，共 {{total}} 件</view>
+      </view>
+      <button wx:if="{{items.length}}" class="account-heading__action" loading="{{clearing}}" disabled="{{clearing || actionSpuId}}" bindtap="onClearTap">清空记录</button>
+    </view>
+
+    <view wx:if="{{!loaded && loading}}" class="account-state">
+      <ui-state type="loading" title="正在加载浏览记录" description="请稍候" />
+    </view>
+    <view wx:elif="{{!loaded && errorText}}" class="account-state">
+      <ui-state type="error" title="浏览记录加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
+    </view>
+    <view wx:elif="{{loaded && !items.length}}" class="account-state">
+      <ui-state type="empty" title="还没有浏览记录" description="浏览过的商品会自动保存在这里" />
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{errorText}}" class="inline-error"><text>{{errorText}}</text><button bindtap="onRetry">重试</button></view>
+      <view
+        wx:for="{{items}}"
+        wx:key="spuId"
+        class="account-product {{item.available ? '' : 'account-product--disabled'}}"
+        data-id="{{item.spuId}}"
+        bindtap="onProductTap"
+      >
+        <view class="account-product__image-wrap">
+          <image wx:if="{{item.hasImage}}" class="account-product__image" src="{{item.imageUrl}}" mode="aspectFill" data-index="{{index}}" binderror="onImageError" />
+          <view wx:else class="account-product__placeholder">{{item.placeholder}}</view>
+          <view wx:if="{{item.availabilityText}}" class="account-product__unavailable">{{item.availabilityText}}</view>
+        </view>
+        <view class="account-product__body">
+          <view class="account-product__title">{{item.title}}</view>
+          <view wx:if="{{item.subtitle}}" class="account-product__subtitle">{{item.subtitle}}</view>
+          <view class="account-product__price">{{item.priceText}}</view>
+          <view class="account-product__footer">
+            <text class="account-product__meta">{{item.metaText}}</text>
+            <button class="account-product__action" data-id="{{item.spuId}}" disabled="{{actionSpuId || clearing}}" loading="{{actionSpuId === item.spuId}}" catchtap="onDeleteTap">删除</button>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{loadingMore}}" class="list-footer">正在加载更多…</view>
+      <view wx:elif="{{items.length && !hasMore}}" class="list-footer">没有更多记录了</view>
+    </block>
+  </view>
+</view>

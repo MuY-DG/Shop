@@ -1,0 +1,204 @@
+@import "../../../../styles/tokens.less";
+@import "../../../../styles/mixins.less";
+
+.address-edit-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, @color-page-top 0, @color-page 100%);
+}
+
+.address-edit-content {
+  padding: @space-5 @page-gutter @space-12;
+}
+
+.edit-state,
+.address-form {
+  .card-surface();
+}
+
+.edit-state {
+  min-height: 480rpx;
+}
+
+.address-form {
+  overflow: hidden;
+  padding: @space-6;
+}
+
+.form-heading {
+  padding-bottom: @space-5;
+  border-bottom: 1rpx solid @color-divider;
+}
+
+.form-heading__title {
+  color: @color-text-primary;
+  font-size: @font-size-md;
+  font-weight: 700;
+}
+
+.form-heading__subtitle,
+.form-field__hint {
+  margin-top: @space-1;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.location-assist {
+  padding: @space-4 0 @space-2;
+  border-bottom: 1rpx solid @color-divider;
+}
+
+button.location-assist__button {
+  display: flex;
+  width: 100%;
+  min-height: 104rpx;
+  margin: 0;
+  padding: @space-3 @space-4;
+  border: 1rpx solid fade(@color-brand, 20%);
+  border-radius: @radius-md;
+  align-items: center;
+  gap: @space-3;
+  color: @color-text-primary;
+  background: @color-brand-soft;
+  line-height: normal;
+  text-align: left;
+}
+
+button.location-assist__button::after {
+  border: 0;
+}
+
+button.location-assist__button[disabled] {
+  opacity: 0.65;
+}
+
+.location-assist__icon {
+  width: 44rpx;
+  height: 44rpx;
+  flex: none;
+}
+
+.location-assist__copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.location-assist__title {
+  color: @color-brand-dark;
+  font-size: @font-size-sm;
+  font-weight: 700;
+}
+
+.location-assist__subtitle,
+.location-assist__status {
+  margin-top: @space-1;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  line-height: 1.5;
+}
+
+.location-assist__chevron {
+  color: @color-brand;
+  font-size: 36rpx;
+}
+
+.location-assist__status {
+  padding: 0 @space-1 @space-2;
+}
+
+.form-field {
+  display: flex;
+  min-height: 104rpx;
+  border-bottom: 1rpx solid @color-divider;
+  align-items: center;
+  gap: @space-4;
+}
+
+.form-field__label {
+  width: 136rpx;
+  flex: none;
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  font-weight: 600;
+}
+
+.form-field__input,
+.form-field__value,
+.form-field__textarea {
+  min-width: 0;
+  flex: 1;
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+}
+
+.form-field__input {
+  height: 104rpx;
+  text-align: right;
+}
+
+.form-field__value {
+  line-height: 1.5;
+  text-align: right;
+}
+
+.form-field__placeholder {
+  color: @color-text-placeholder;
+}
+
+.form-field__chevron {
+  flex: none;
+  color: @color-text-placeholder;
+  font-size: 36rpx;
+}
+
+.form-field--textarea {
+  padding: @space-5 0;
+  align-items: flex-start;
+}
+
+.form-field__textarea {
+  min-height: 120rpx;
+  line-height: 1.6;
+  text-align: right;
+}
+
+.form-field--switch {
+  justify-content: space-between;
+}
+
+.form-field--switch .form-field__label {
+  width: auto;
+}
+
+.form-field--switch switch {
+  transform: scale(0.82);
+  transform-origin: right center;
+}
+
+.validation-error {
+  margin-top: @space-4;
+  padding: @space-3 @space-4;
+  border-radius: @radius-sm;
+  color: @color-danger;
+  background: @color-danger-soft;
+  font-size: @font-size-xs;
+}
+
+.save-button {
+  height: 96rpx;
+  margin-top: @space-6;
+  border: 0;
+  border-radius: @radius-pill;
+  color: @color-text-inverse;
+  background: linear-gradient(135deg, @color-brand 0, @color-brand-dark 100%);
+  font-size: @font-size-base;
+  font-weight: 700;
+  line-height: 96rpx;
+}
+
+.save-button::after {
+  border: 0;
+}
+
+.save-button[disabled] {
+  opacity: 0.55;
+}

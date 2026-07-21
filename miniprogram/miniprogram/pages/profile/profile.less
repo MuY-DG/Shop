@@ -14,6 +14,7 @@
 
 .member-card,
 .order-center-card,
+.service-card,
 .profile-note {
   .card-surface();
 }
@@ -120,6 +121,120 @@
   background: @color-brand-soft;
   font-size: @font-size-base;
   font-weight: 700;
+}
+
+.service-card {
+  margin-top: @space-5;
+  padding: @space-5;
+}
+
+.service-card__heading {
+  padding-bottom: @space-4;
+  border-bottom: 1rpx solid @color-divider;
+}
+
+.service-card__title {
+  color: @color-text-primary;
+  font-size: @font-size-md;
+  font-weight: 700;
+}
+
+.service-card__subtitle {
+  margin-top: @space-1;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.service-grid {
+  display: grid;
+  padding: @space-5 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: @space-2;
+}
+
+.service-item {
+  display: flex;
+  min-width: 0;
+  padding: @space-2 0;
+  flex-direction: column;
+  align-items: center;
+  color: @color-text-secondary;
+  font-size: @font-size-xs;
+  gap: @space-3;
+}
+
+.service-item__icon,
+.customer-service__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: @color-brand;
+  background: @color-brand-soft;
+  font-weight: 700;
+}
+
+.service-item__icon {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: @radius-md;
+  font-size: @font-size-base;
+}
+
+.customer-service {
+  display: flex;
+  width: 100%;
+  min-height: 104rpx;
+  margin: 0;
+  padding: @space-4;
+  border: 0;
+  border-radius: @radius-md;
+  align-items: center;
+  color: @color-text-primary;
+  background: @color-surface-muted;
+  text-align: left;
+  transition: opacity @duration-fast @ease-standard;
+}
+
+.customer-service::after {
+  border: 0;
+}
+
+.customer-service--pressed {
+  opacity: 0.75;
+}
+
+.customer-service__icon {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  flex: none;
+  font-size: @font-size-sm;
+}
+
+.customer-service__body {
+  min-width: 0;
+  margin-left: @space-4;
+  flex: 1;
+}
+
+.customer-service__title {
+  font-size: @font-size-sm;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.customer-service__copy {
+  margin-top: @space-1;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  line-height: 1.45;
+}
+
+.customer-service__chevron {
+  margin-left: @space-3;
+  flex: none;
+  color: @color-text-placeholder;
+  font-size: 36rpx;
 }
 
 .profile-note {

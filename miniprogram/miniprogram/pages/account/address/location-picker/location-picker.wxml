@@ -1,0 +1,138 @@
+<view class="location-picker-page">
+  <navigation-bar
+    title="地图选择收货地址"
+    back="{{true}}"
+    home="{{false}}"
+    background="#FAF2E4"
+    color="#2E1D16"
+    loading="{{loading || resolving}}"
+  />
+
+  <view wx:if="{{loading}}" class="picker-state">
+    <ui-state type="loading" title="正在加载高德地图" description="请稍候" />
+  </view>
+  <view wx:elif="{{!ready}}" class="picker-state">
+    <ui-state
+      type="error"
+      title="地图选址暂不可用"
+      description="{{loadErrorText}}"
+      action-text="重新加载"
+      bindaction="onRetry"
+    />
+  </view>
+
+  <view wx:else class="picker-content">
+    <view class="search-box">
+      <text class="search-box__icon">⌕</text>
+      <input
+        class="search-box__input"
+        value="{{keyword}}"
+        confirm-type="search"
+        placeholder="搜索小区、大厦、街道或门店"
+        placeholder-class="search-box__placeholder"
+        bindinput="onSearchInput"
+      />
+      <text wx:if="{{searching}}" class="search-box__status">搜索中</text>
+      <button wx:elif="{{keyword}}" class="search-box__clear" bindtap="onClearSearch">×</button>
+    </view>
+
+    <view class="map-shell">
+      <map
+        id="address-map"
+        class="address-map"
+        longitude="{{longitude}}"
+        latitude="{{latitude}}"
+        scale="{{scale}}"
+        show-location="{{true}}"
+        enable-zoom="{{true}}"
+        enable-scroll="{{true}}"
+        enable-rotate="{{false}}"
+        bindregionchange="onMapRegionChange"
+      >
+        <cover-view class="center-pin">
+          <cover-image
+            class="center-pin__image"
+            src="/assets/icons/location-on-outline-rounded.svg"
+          />
+        </cover-view>
+        <cover-view class="map-locate" bindtap="onLocateTap">
+          {{locating ? '定位中' : '重新定位'}}
+        </cover-view>
+        <cover-view wx:if="{{resolving}}" class="map-resolving">正在识别此处地址</cover-view>
+      </map>
+    </view>
+
+    <view class="result-panel">
+      <view wx:if="{{searchTips.length || (keyword && !searching)}}" class="search-results">
+        <view class="panel-heading">
+          <text class="panel-heading__title">搜索结果</text>
+          <text class="panel-heading__meta">{{searchTips.length}}个</text>
+        </view>
+        <scroll-view wx:if="{{searchTips.length}}" class="place-list" scroll-y="{{true}}">
+          <button
+            wx:for="{{searchTips}}"
+            wx:key="index"
+            class="place-row"
+            data-index="{{index}}"
+            bindtap="onTipTap"
+          >
+            <view class="place-row__pin">●</view>
+            <view class="place-row__body">
+              <view class="place-row__name">{{item.name}}</view>
+              <view class="place-row__address">{{item.district}} {{item.address}}</view>
+            </view>
+            <text class="place-row__chevron">›</text>
+          </button>
+        </scroll-view>
+        <view wx:else class="empty-result">暂未找到可选地点，请更换关键词</view>
+      </view>
+
+      <block wx:else>
+        <view class="selected-address">
+          <view class="selected-address__badge">当前选点</view>
+          <view class="selected-address__title">
+            {{selected ? (selected.poiName || selected.detailAddress || '地图中心位置') : '请移动地图选择地址'}}
+          </view>
+          <view class="selected-address__detail">
+            {{selected ? selected.formattedAddress : locationHint}}
+          </view>
+          <view wx:if="{{selected && locationHint}}" class="selected-address__hint">{{locationHint}}</view>
+        </view>
+
+        <view class="panel-heading panel-heading--nearby">
+          <text class="panel-heading__title">附近地点</text>
+          <text class="panel-heading__meta">{{nearbyPlaces.length}}个</text>
+        </view>
+        <scroll-view class="place-list place-list--nearby" scroll-y="{{true}}">
+          <button
+            wx:for="{{nearbyPlaces}}"
+            wx:key="id"
+            class="place-row {{selectedPlaceId === item.id ? 'place-row--selected' : ''}}"
+            data-index="{{index}}"
+            bindtap="onPlaceTap"
+          >
+            <view class="place-row__pin">{{index + 1}}</view>
+            <view class="place-row__body">
+              <view class="place-row__name">{{item.name}}</view>
+              <view class="place-row__address">{{item.address}}</view>
+            </view>
+            <text wx:if="{{item.distanceText}}" class="place-row__distance">{{item.distanceText}}</text>
+          </button>
+          <view wx:if="{{!nearbyPlaces.length && !resolving}}" class="empty-result">
+            附近暂无可选地点，可拖动地图或使用搜索
+          </view>
+        </scroll-view>
+      </block>
+    </view>
+
+    <view class="confirm-bar">
+      <button
+        class="confirm-button"
+        disabled="{{!selected || resolving}}"
+        bindtap="onConfirmTap"
+      >
+        使用该地址
+      </button>
+    </view>
+  </view>
+</view>

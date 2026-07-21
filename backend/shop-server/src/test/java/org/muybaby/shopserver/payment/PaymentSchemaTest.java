@@ -100,15 +100,15 @@ class PaymentSchemaTest {
     }
 
     @Test
-    void developerConfigMenuHasSeparateStorageAndPaymentChildren() {
+    void configManagementMenuHasStoragePaymentAndAmapChildren() {
         Integer parentMenuCount = jdbcClient.sql("""
                         select count(*)
                         from admin_menu
                         where id = 800
-                          and name = 'DeveloperConfig'
+                          and name = 'ConfigManagement'
                           and path = '/development'
                           and component = '/index/index'
-                          and title = '开发配置'
+                          and title = '配置管理'
                         """)
                 .query(Integer.class)
                 .single();
@@ -119,6 +119,7 @@ class PaymentSchemaTest {
                           and (
                             (id = 801 and path = 'storage' and component = '/development/storage' and title = '对象存储配置')
                             or (id = 802 and path = 'payment' and component = '/payment/config' and title = '支付配置')
+                            or (id = 803 and path = 'amap' and component = '/configuration/amap' and title = '高德地图配置')
                           )
                         """)
                 .query(Integer.class)
@@ -128,13 +129,14 @@ class PaymentSchemaTest {
                         from admin_menu_permission
                         where (menu_id = 801 and permission_id in (15001, 15002))
                            or (menu_id = 802 and permission_id in (8001, 8002, 8003))
+                           or (menu_id = 803 and permission_id in (18001, 18002))
                         """)
                 .query(Integer.class)
                 .single();
 
         assertThat(parentMenuCount).isEqualTo(1);
-        assertThat(childMenuCount).isEqualTo(2);
-        assertThat(childPermissionCount).isEqualTo(5);
+        assertThat(childMenuCount).isEqualTo(3);
+        assertThat(childPermissionCount).isEqualTo(7);
     }
 
     @Test

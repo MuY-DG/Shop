@@ -140,6 +140,8 @@ class AdminAuthControllerTest {
                         "payment:config:enable",
                         "storage:config:read",
                         "storage:config:write",
+                        "amap:config:read",
+                        "amap:config:write",
                         "aftersale:read",
                         "aftersale:audit",
                         "asset:upload",

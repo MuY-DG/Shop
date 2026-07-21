@@ -6,7 +6,6 @@
 
 - `navigation-bar`：自定义顶部导航
 - `ui-button`、`ui-card`、`ui-state`、`ui-tag`：基础视觉组件
-- `tab-placeholder`：尚未接通业务的 Tab 根页面状态
 
 ## 商品与首页业务组件
 

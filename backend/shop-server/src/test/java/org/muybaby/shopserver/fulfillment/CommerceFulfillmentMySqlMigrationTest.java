@@ -46,7 +46,7 @@ class CommerceFulfillmentMySqlMigrationTest {
                 .dataSource(CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword())
                 .placeholders(CommerceFulfillmentMigrationTest.safeSeedPlaceholders())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("49");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("52");
         AssetModelMigrationTest.assertFinalAssetSchema(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
         assertAdminCustomerCouponQueryIsCollationSafe();

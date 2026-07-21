@@ -79,6 +79,43 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
   assert.doesNotThrow(() => syncCustomTabBar({}, 0));
 });
 
+test("账户中心注册真实页面、移除消息中心并提供在线客服", () => {
+  const appConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "app.json"), "utf8")
+  ) as AppConfig;
+  const accountPages = [
+    "pages/account/address/list/list",
+    "pages/account/address/edit/edit",
+    "pages/account/coupon/coupon",
+    "pages/account/favorites/favorites",
+    "pages/account/history/history"
+  ];
+  accountPages.forEach((pagePath) => {
+    assert.ok(appConfig.pages.includes(pagePath));
+    ["json", "ts", "wxml", "less"].forEach((extension) => {
+      assert.equal(existsSync(resolve(sourceRoot, `${pagePath}.${extension}`)), true);
+    });
+  });
+  assert.equal(appConfig.pages.includes("pages/message/message"), false);
+  assert.equal(existsSync(resolve(sourceRoot, "pages/message/message.wxml")), false);
+
+  const profileTemplate = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.wxml"),
+    "utf8"
+  );
+  const profileLogic = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.ts"),
+    "utf8"
+  );
+  assert.match(profileLogic, /收货地址/);
+  assert.match(profileLogic, /优惠券/);
+  assert.match(profileLogic, /我的收藏/);
+  assert.match(profileLogic, /浏览记录/);
+  assert.match(profileTemplate, /open-type="contact"/);
+  assert.match(profileTemplate, /在线客服/);
+  assert.match(profileLogic, /accountNavigationPath/);
+});
+
 test("商品详情关闭下拉刷新并将规格选择收进购买弹层", () => {
   const detailPageRoot = resolve(sourceRoot, "pages/product/detail/detail");
   const detailConfig = JSON.parse(

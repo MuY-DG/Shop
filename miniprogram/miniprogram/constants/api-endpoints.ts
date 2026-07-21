@@ -27,10 +27,18 @@ export const API_ENDPOINTS = Object.freeze({
     item: (cartItemId: number): string => `/app/cart/items/${cartItemId}`
   },
   addresses: {
-    list: "/app/addresses"
+    list: "/app/addresses",
+    item: (addressId: string): string => `/app/addresses/${addressId}`,
+    setDefault: (addressId: string): string => `/app/addresses/${addressId}/default`
+  },
+  location: {
+    config: "/app/location/config"
   },
   coupons: {
-    available: "/app/coupons/available"
+    available: "/app/coupons/available",
+    claimable: "/app/coupons/claimable",
+    mine: "/app/coupons/mine",
+    claim: (templateId: number): string => `/app/coupons/templates/${templateId}/claim`
   },
   orders: {
     list: "/app/orders",
