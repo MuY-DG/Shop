@@ -141,5 +141,5 @@ shop:
     verify-mode: ${WECHAT_PAY_VERIFY_MODE:PUBLIC_KEY}
     public-key-id: ${WECHAT_PAY_PUBLIC_KEY_ID:}
     public-key-path: ${WECHAT_PAY_PUBLIC_KEY_PATH:}
-    expire-minutes: ${SHOP_PAY_EXPIRE_MINUTES:15}
+    expire-minutes: ${SHOP_PAY_EXPIRE_MINUTES:1440}
     secret-key: ${SHOP_PAYMENT_SECRET_KEY:}

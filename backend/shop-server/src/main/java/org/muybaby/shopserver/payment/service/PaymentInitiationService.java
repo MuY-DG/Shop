@@ -38,6 +38,7 @@ public class PaymentInitiationService {
 
     private static final String CURRENCY_CNY = "CNY";
     private static final String OPERATOR_TYPE_APP = "APP";
+    private static final int DEFAULT_PAYMENT_EXPIRE_MINUTES = 24 * 60;
 
     private final JdbcClient jdbcClient;
     private final PaymentProperties paymentProperties;
@@ -672,7 +673,7 @@ public class PaymentInitiationService {
 
     private int expireMinutes() {
         return paymentProperties.expireMinutes() == null || paymentProperties.expireMinutes() < 1
-                ? 15
+                ? DEFAULT_PAYMENT_EXPIRE_MINUTES
                 : paymentProperties.expireMinutes();
     }
 

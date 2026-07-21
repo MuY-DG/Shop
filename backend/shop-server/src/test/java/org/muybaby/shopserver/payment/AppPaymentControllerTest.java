@@ -115,8 +115,8 @@ class AppPaymentControllerTest extends PaymentTestSupport {
                         .header("Authorization", "Bearer " + session.token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.paymentExpiresAt").isNotEmpty())
-                .andExpect(jsonPath("$.data.paymentRemainingSeconds").value(greaterThanOrEqualTo(14 * 60)))
-                .andExpect(jsonPath("$.data.paymentRemainingSeconds").value(lessThanOrEqualTo(15 * 60)));
+                .andExpect(jsonPath("$.data.paymentRemainingSeconds").value(greaterThanOrEqualTo(23 * 60 * 60)))
+                .andExpect(jsonPath("$.data.paymentRemainingSeconds").value(lessThanOrEqualTo(24 * 60 * 60)));
         assertThat(jdbcClient.sql("""
                         select count(*)
                         from order_status_log
