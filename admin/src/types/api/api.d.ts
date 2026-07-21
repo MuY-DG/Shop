@@ -210,6 +210,7 @@ declare namespace Api {
     type ProductParameterCardRenderer = 'TEXT' | 'PILL' | 'LEVEL' | 'SPICE'
     type FreightChargeMode = 'FREE' | 'FIXED'
     type FreightTemplateStatus = 'ENABLED' | 'DISABLED'
+    type ProductReviewStatus = 'PUBLISHED' | 'HIDDEN'
 
     interface Category {
       id: number
@@ -540,6 +541,43 @@ declare namespace Api {
 
     interface GuaranteeServiceVisibilityForm {
       visible: boolean
+    }
+
+    type ProductReviewList = Api.Common.PaginatedResponse<ProductReview>
+
+    interface ProductReview {
+      id: number
+      spuId: number
+      productTitle: string
+      productImage: string
+      userId: number
+      reviewerName: string
+      orderId: number
+      orderNo: string
+      orderItemId: number
+      specText: string
+      rating: number
+      content: string
+      anonymous: boolean
+      status: ProductReviewStatus
+      createdAt: string
+      updatedAt: string
+      moderatedByAdminUserId?: number | null
+      moderatedAt?: string | null
+    }
+
+    type ProductReviewSearchParams = Partial<
+      Api.Common.CommonSearchParams & {
+        spuId: number
+        productTitle: string
+        rating: number
+        status: ProductReviewStatus
+        anonymous: boolean
+      }
+    >
+
+    interface ProductReviewStatusForm {
+      status: ProductReviewStatus
     }
 
     interface FreightTemplate {

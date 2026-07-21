@@ -239,6 +239,24 @@ export function updateProductGuaranteeServiceVisibility(
   })
 }
 
+export function fetchProductReviews(params: Api.Product.ProductReviewSearchParams) {
+  return request.get<Api.Product.ProductReviewList>({
+    url: '/admin/product/reviews',
+    params
+  })
+}
+
+export function updateProductReviewStatus(
+  reviewId: number,
+  data: Api.Product.ProductReviewStatusForm
+) {
+  return request.put<void>({
+    url: `/admin/product/reviews/${reviewId}/status`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
 export function deleteProductGuaranteeService(serviceId: number) {
   return request.del<void>({
     url: `/admin/product/guarantee-services/${serviceId}`,

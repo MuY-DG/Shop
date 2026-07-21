@@ -14,8 +14,36 @@ import {
   type SkuSpecificationGroupView,
   type WholesaleTierView
 } from "../../../features/product-catalog";
+import {
+  buildMyProductReviewViews,
+  buildProductReviewSummaryView,
+  buildPublicProductReviewViews,
+  buildRatingStars,
+  buildReviewableOrderItemViews,
+  normalizeRating,
+  normalizeReviewContent,
+  type MyProductReviewView,
+  type ProductReviewSummaryView,
+  type PublicProductReviewView,
+  type RatingStarView,
+  type ReviewableOrderItemView
+} from "../../../features/product-review";
 import { addCartItem } from "../../../services/cart";
-import { getProductDetail } from "../../../services/product";
+import {
+  createProductReview,
+  deleteProductReview,
+  getMyProductReviews,
+  getProductDetail,
+  getProductReviewEligibility,
+  getProductReviews,
+  updateProductReview
+} from "../../../services/product";
+import {
+  addFavorite,
+  getFavoriteStatus,
+  recordProductBrowse,
+  removeFavorite
+} from "../../../services/product-preference";
 import type {
   ProductDetail,
   ProductFreightTemplate,
@@ -28,6 +56,7 @@ interface PageOptions {
 }
 
 type InfoSheet = "guarantee" | "freight" | "wholesale";
+type ActiveSheet = "" | "purchase" | InfoSheet | "reviews" | "reviewManage";
 
 interface DatasetEvent {
   currentTarget: {
@@ -39,7 +68,22 @@ interface DatasetEvent {
       specName?: string;
       specValue?: string;
       imageUrl?: string;
+      orderItemId?: number | string;
+      rating?: number | string;
+      reviewId?: number | string;
     };
+  };
+}
+
+interface TextareaEvent {
+  detail: {
+    value: string;
+  };
+}
+
+interface SwitchEvent {
+  detail: {
+    value: boolean;
   };
 }
 
@@ -72,7 +116,14 @@ const EMPTY_SELECTION: PurchaseSelectionView = {
   wholesaleTiers: []
 };
 
+const EMPTY_REVIEW_SUMMARY = buildProductReviewSummaryView();
+const REVIEW_PREVIEW_SIZE = 2;
+const REVIEW_PAGE_SIZE = 10;
+
 let latestDetailRequest = 0;
+let latestReviewPreviewRequest = 0;
+let latestReviewPageRequest = 0;
+let latestReviewManagementRequest = 0;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -165,10 +216,6 @@ function wholesaleSummary(tiers: WholesaleTierView[]): string {
     .join(" · ");
 }
 
-function favoriteStorageKey(productId: number): string {
-  return `zaoxiangji:favorite:product:${productId}`;
-}
-
 function cachePreviewImage(url: string): Promise<string> {
   return new Promise((resolve) => {
     wx.getImageInfo({
@@ -217,8 +264,32 @@ Page({
     freightChargeText: "",
     wholesaleSummary: "",
     addressText: "",
+    reviewSummary: EMPTY_REVIEW_SUMMARY as ProductReviewSummaryView,
+    reviewPreview: [] as PublicProductReviewView[],
+    reviewPreviewLoading: false,
+    reviewPreviewErrorText: "",
+    reviewRecords: [] as PublicProductReviewView[],
+    reviewCurrent: 0,
+    reviewTotal: 0,
+    reviewHasMore: false,
+    reviewLoading: false,
+    reviewErrorText: "",
+    reviewManagementLoading: false,
+    reviewManagementErrorText: "",
+    reviewOrderItems: [] as ReviewableOrderItemView[],
+    myReviews: [] as MyProductReviewView[],
+    reviewFormMode: "create" as "create" | "update",
+    reviewEditingId: 0,
+    reviewSelectedOrderItemId: 0,
+    reviewRating: 5,
+    reviewFormStars: buildRatingStars(5) as RatingStarView[],
+    reviewContent: "",
+    reviewAnonymous: false,
+    reviewSubmitting: false,
+    reviewDeletingId: 0,
     favorited: false,
-    activeSheet: "" as "" | "purchase" | "guarantee" | "freight" | "wholesale",
+    favoriteLoading: false,
+    activeSheet: "" as ActiveSheet,
     purchaseMode: "BUY" as "CART" | "BUY",
     purchaseActionText: "立即购买",
     confirmLoading: false,
@@ -237,18 +308,15 @@ Page({
       });
       return;
     }
-    let favorited = false;
-    try {
-      favorited = wx.getStorageSync(favoriteStorageKey(productId)) === true;
-    } catch {
-      favorited = false;
-    }
-    this.setData({ productId, favorited });
+    this.setData({ productId, favorited: false });
     void this.loadDetail();
   },
 
   onUnload() {
     latestDetailRequest += 1;
+    latestReviewPreviewRequest += 1;
+    latestReviewPageRequest += 1;
+    latestReviewManagementRequest += 1;
   },
 
   onShareAppMessage() {
@@ -306,10 +374,16 @@ Page({
         freightSummary: freight.summary,
         freightChargeText: freight.chargeText,
         wholesaleSummary: wholesaleSummary(selection.wholesaleTiers),
+        reviewSummary: buildProductReviewSummaryView(normalizedDetail.reviewSummary),
+        reviewPreview: [],
+        reviewPreviewLoading: true,
+        reviewPreviewErrorText: "",
         loading: false,
         loaded: true,
         errorText: ""
       });
+      void this.refreshProductEngagement();
+      void this.loadReviewPreview();
     } catch (error) {
       if (requestId !== latestDetailRequest) {
         return;
@@ -325,6 +399,16 @@ Page({
         specificationGroups: [],
         specificationImageMode: "list",
         ...EMPTY_SELECTION,
+        reviewSummary: EMPTY_REVIEW_SUMMARY,
+        reviewPreview: [],
+        reviewPreviewLoading: false,
+        reviewPreviewErrorText: "",
+        reviewRecords: [],
+        reviewCurrent: 0,
+        reviewTotal: 0,
+        reviewHasMore: false,
+        reviewLoading: false,
+        reviewErrorText: "",
         loading: false,
         loaded: false,
         errorText: detailErrorMessage(error)
@@ -334,6 +418,20 @@ Page({
 
   onRetry() {
     void this.loadDetail();
+  },
+
+  async refreshProductEngagement() {
+    const productId = this.data.productId;
+    if (!productId) {
+      return;
+    }
+    const [favoriteResult] = await Promise.all([
+      getFavoriteStatus(productId).catch(() => null),
+      recordProductBrowse(productId).catch(() => null)
+    ]);
+    if (favoriteResult && productId === this.data.productId) {
+      this.setData({ favorited: favoriteResult.favorited });
+    }
   },
 
   onInfoSheetOpen(event: DatasetEvent) {
@@ -357,7 +455,11 @@ Page({
   },
 
   onCloseSheet() {
-    if (!this.data.confirmLoading) {
+    if (
+      !this.data.confirmLoading &&
+      !this.data.reviewSubmitting &&
+      !this.data.reviewDeletingId
+    ) {
       this.setData({ activeSheet: "" });
     }
   },
@@ -459,14 +561,26 @@ Page({
     }
   },
 
-  onFavoriteToggle() {
+  async onFavoriteToggle() {
+    if (this.data.favoriteLoading || !this.data.productId) {
+      return;
+    }
     const favorited = !this.data.favorited;
+    this.setData({ favoriteLoading: true });
     try {
-      wx.setStorageSync(favoriteStorageKey(this.data.productId), favorited);
-      this.setData({ favorited });
+      if (favorited) {
+        await addFavorite(this.data.productId);
+      } else {
+        await removeFavorite(this.data.productId);
+      }
+      this.setData({ favorited, favoriteLoading: false });
       wx.showToast({ title: favorited ? "已收藏" : "已取消收藏", icon: "none" });
-    } catch {
-      wx.showToast({ title: "收藏状态保存失败", icon: "none" });
+    } catch (error) {
+      this.setData({ favoriteLoading: false });
+      wx.showToast({
+        title: isApiError(error) ? error.message : "收藏状态保存失败",
+        icon: "none"
+      });
     }
   },
 
@@ -491,6 +605,305 @@ Page({
         }
       }
     });
+  },
+
+  async loadReviewPreview() {
+    const productId = this.data.productId;
+    if (!productId) {
+      return;
+    }
+    const requestId = ++latestReviewPreviewRequest;
+    this.setData({ reviewPreviewLoading: true, reviewPreviewErrorText: "" });
+    try {
+      const result = await getProductReviews(productId, 1, REVIEW_PREVIEW_SIZE);
+      if (requestId !== latestReviewPreviewRequest || productId !== this.data.productId) {
+        return;
+      }
+      this.setData({
+        reviewSummary: buildProductReviewSummaryView(result.summary),
+        reviewPreview: buildPublicProductReviewViews(result.page.records),
+        reviewPreviewLoading: false,
+        reviewPreviewErrorText: ""
+      });
+    } catch {
+      if (requestId !== latestReviewPreviewRequest || productId !== this.data.productId) {
+        return;
+      }
+      this.setData({
+        reviewPreviewLoading: false,
+        reviewPreviewErrorText: "评价暂时无法加载"
+      });
+    }
+  },
+
+  onReviewPreviewRetry() {
+    void this.loadReviewPreview();
+  },
+
+  onReviewListOpen() {
+    this.setData({ activeSheet: "reviews" });
+    void this.loadReviewPage(true);
+  },
+
+  onReviewListRetry() {
+    void this.loadReviewPage(true);
+  },
+
+  onReviewLoadMore() {
+    if (this.data.reviewHasMore && !this.data.reviewLoading) {
+      void this.loadReviewPage(false);
+    }
+  },
+
+  async loadReviewPage(reset: boolean) {
+    const productId = this.data.productId;
+    if (!productId || (!reset && (this.data.reviewLoading || !this.data.reviewHasMore))) {
+      return;
+    }
+    const requestId = ++latestReviewPageRequest;
+    const current = reset ? 1 : this.data.reviewCurrent + 1;
+    this.setData({
+      reviewLoading: true,
+      reviewErrorText: "",
+      ...(reset ? {
+        reviewRecords: [],
+        reviewCurrent: 0,
+        reviewTotal: 0,
+        reviewHasMore: false
+      } : {})
+    });
+    try {
+      const result = await getProductReviews(productId, current, REVIEW_PAGE_SIZE);
+      if (requestId !== latestReviewPageRequest || productId !== this.data.productId) {
+        return;
+      }
+      const incoming = buildPublicProductReviewViews(result.page.records);
+      const reviewRecords = reset
+        ? incoming
+        : [...this.data.reviewRecords, ...incoming];
+      this.setData({
+        reviewSummary: buildProductReviewSummaryView(result.summary),
+        reviewRecords,
+        reviewCurrent: result.page.current,
+        reviewTotal: result.page.total,
+        reviewHasMore: reviewRecords.length < result.page.total,
+        reviewLoading: false,
+        reviewErrorText: ""
+      });
+    } catch {
+      if (requestId !== latestReviewPageRequest || productId !== this.data.productId) {
+        return;
+      }
+      this.setData({
+        reviewLoading: false,
+        reviewErrorText: "评价加载失败，请点击重试"
+      });
+    }
+  },
+
+  onReviewManageOpen() {
+    this.setData({ activeSheet: "reviewManage" });
+    void this.loadReviewManagement();
+  },
+
+  onReviewManagementRetry() {
+    void this.loadReviewManagement();
+  },
+
+  async loadReviewManagement() {
+    const productId = this.data.productId;
+    if (!productId) {
+      return;
+    }
+    const requestId = ++latestReviewManagementRequest;
+    this.setData({
+      reviewManagementLoading: true,
+      reviewManagementErrorText: ""
+    });
+    try {
+      const [eligibility, mine] = await Promise.all([
+        getProductReviewEligibility(productId),
+        getMyProductReviews(1, 50)
+      ]);
+      if (requestId !== latestReviewManagementRequest || productId !== this.data.productId) {
+        return;
+      }
+      const reviewOrderItems = buildReviewableOrderItemViews(eligibility.orderItems);
+      const myReviews = buildMyProductReviewViews(
+        mine.records.filter((review) => review.spuId === productId)
+      );
+      this.setData({
+        reviewManagementLoading: false,
+        reviewManagementErrorText: "",
+        reviewOrderItems,
+        myReviews,
+        reviewFormMode: "create",
+        reviewEditingId: 0,
+        reviewSelectedOrderItemId: reviewOrderItems[0]?.orderItemId ?? 0,
+        reviewRating: 5,
+        reviewFormStars: buildRatingStars(5),
+        reviewContent: "",
+        reviewAnonymous: false
+      });
+    } catch (error) {
+      if (requestId !== latestReviewManagementRequest || productId !== this.data.productId) {
+        return;
+      }
+      this.setData({
+        reviewManagementLoading: false,
+        reviewManagementErrorText: this.reviewActionErrorMessage(
+          error,
+          "评价资格加载失败，请稍后重试"
+        )
+      });
+    }
+  },
+
+  onReviewOrderSelect(event: DatasetEvent) {
+    const orderItemId = parsePositiveId(event.currentTarget.dataset.orderItemId);
+    if (this.data.reviewOrderItems.some((item) => item.orderItemId === orderItemId)) {
+      this.setData({ reviewSelectedOrderItemId: orderItemId });
+    }
+  },
+
+  onReviewRatingSelect(event: DatasetEvent) {
+    const reviewRating = normalizeRating(event.currentTarget.dataset.rating);
+    this.setData({
+      reviewRating,
+      reviewFormStars: buildRatingStars(reviewRating)
+    });
+  },
+
+  onReviewContentInput(event: TextareaEvent) {
+    this.setData({ reviewContent: event.detail.value.slice(0, 1000) });
+  },
+
+  onReviewAnonymousChange(event: SwitchEvent) {
+    this.setData({ reviewAnonymous: event.detail.value });
+  },
+
+  onReviewEdit(event: DatasetEvent) {
+    const reviewId = parsePositiveId(event.currentTarget.dataset.reviewId);
+    const review = this.data.myReviews.find((item) => item.id === reviewId);
+    if (!review) {
+      return;
+    }
+    this.setData({
+      reviewFormMode: "update",
+      reviewEditingId: review.id,
+      reviewRating: review.rating,
+      reviewFormStars: buildRatingStars(review.rating),
+      reviewContent: review.content,
+      reviewAnonymous: review.anonymous
+    });
+  },
+
+  onReviewEditCancel() {
+    this.resetReviewForm();
+  },
+
+  async onReviewSubmit() {
+    if (this.data.reviewSubmitting) {
+      return;
+    }
+    const isUpdate = this.data.reviewFormMode === "update";
+    if (!isUpdate && !this.data.reviewSelectedOrderItemId) {
+      wx.showToast({ title: "暂无可评价订单", icon: "none" });
+      return;
+    }
+    this.setData({ reviewSubmitting: true });
+    try {
+      const payload = {
+        rating: this.data.reviewRating,
+        content: normalizeReviewContent(this.data.reviewContent),
+        anonymous: this.data.reviewAnonymous
+      };
+      if (isUpdate) {
+        await updateProductReview(this.data.reviewEditingId, payload);
+      } else {
+        await createProductReview(this.data.productId, {
+          orderItemId: this.data.reviewSelectedOrderItemId,
+          ...payload
+        });
+      }
+      this.setData({ reviewSubmitting: false });
+      wx.showToast({ title: isUpdate ? "评价已更新" : "评价已发布", icon: "success" });
+      await Promise.all([
+        this.loadReviewPreview(),
+        this.loadReviewManagement()
+      ]);
+    } catch (error) {
+      this.setData({ reviewSubmitting: false });
+      wx.showToast({
+        title: this.reviewActionErrorMessage(error, "评价保存失败，请稍后重试"),
+        icon: "none"
+      });
+    }
+  },
+
+  onReviewDelete(event: DatasetEvent) {
+    const reviewId = parsePositiveId(event.currentTarget.dataset.reviewId);
+    if (!reviewId || this.data.reviewDeletingId || this.data.reviewSubmitting) {
+      return;
+    }
+    wx.showModal({
+      title: "删除评价",
+      content: "删除后该订单可重新评价，确定继续吗？",
+      confirmText: "删除",
+      confirmColor: "#B72B22",
+      success: (result) => {
+        if (result.confirm) {
+          void this.deleteOwnedReview(reviewId);
+        }
+      }
+    });
+  },
+
+  async deleteOwnedReview(reviewId: number) {
+    this.setData({ reviewDeletingId: reviewId });
+    try {
+      await deleteProductReview(reviewId);
+      this.setData({ reviewDeletingId: 0 });
+      wx.showToast({ title: "评价已删除", icon: "success" });
+      await Promise.all([
+        this.loadReviewPreview(),
+        this.loadReviewManagement()
+      ]);
+    } catch (error) {
+      this.setData({ reviewDeletingId: 0 });
+      wx.showToast({
+        title: this.reviewActionErrorMessage(error, "评价删除失败，请稍后重试"),
+        icon: "none"
+      });
+    }
+  },
+
+  resetReviewForm() {
+    this.setData({
+      reviewFormMode: "create",
+      reviewEditingId: 0,
+      reviewSelectedOrderItemId: this.data.reviewOrderItems[0]?.orderItemId ?? 0,
+      reviewRating: 5,
+      reviewFormStars: buildRatingStars(5),
+      reviewContent: "",
+      reviewAnonymous: false
+    });
+  },
+
+  reviewActionErrorMessage(error: unknown, fallback: string): string {
+    if (!isApiError(error)) {
+      return fallback;
+    }
+    if (error.code === 200201) {
+      return "仅已完成订单可以评价";
+    }
+    if (error.code === 200202) {
+      return "该订单商品已经评价过了";
+    }
+    if (error.code === 200200) {
+      return "评价不存在或已被删除";
+    }
+    return error.message || fallback;
   },
 
   applySelection(sku: ProductSku, quantity: number) {

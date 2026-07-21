@@ -17,6 +17,7 @@ public record AppSpuDetailResponse(
         List<AppSkuResponse> skus,
         List<AppProductParameterValueResponse> parameters,
         AppFreightTemplateResponse freightTemplate,
-        List<AppGuaranteeServiceResponse> guaranteeServices
+        List<AppGuaranteeServiceResponse> guaranteeServices,
+        AppProductReviewSummaryResponse reviewSummary
 ) {
 }

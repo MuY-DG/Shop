@@ -853,6 +853,12 @@ public class AdminProductService {
         jdbcClient.sql("delete from product_spu_parameter_value where spu_id = :spuId")
                 .param("spuId", spuId)
                 .update();
+        jdbcClient.sql("delete from user_product_favorite where spu_id = :spuId")
+                .param("spuId", spuId)
+                .update();
+        jdbcClient.sql("delete from user_product_browse_history where spu_id = :spuId")
+                .param("spuId", spuId)
+                .update();
     }
 
     private void tombstoneSkus(List<ProductSku> skus, LocalDateTime purgedAt) {

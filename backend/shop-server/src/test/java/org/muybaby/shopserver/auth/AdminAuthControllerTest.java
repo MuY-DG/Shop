@@ -110,6 +110,8 @@ class AdminAuthControllerTest {
                         "product:guarantee:visibility",
                         "product:parameter:read",
                         "product:parameter:write",
+                        "product:review:read",
+                        "product:review:moderate",
                         "product:freight:create",
                         "product:freight:update",
                         "product:coupon:bind",

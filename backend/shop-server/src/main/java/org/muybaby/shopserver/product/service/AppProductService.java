@@ -11,6 +11,7 @@ import org.muybaby.shopserver.product.dto.AppCategoryResponse;
 import org.muybaby.shopserver.product.dto.AppFreightTemplateResponse;
 import org.muybaby.shopserver.product.dto.AppGuaranteeServiceResponse;
 import org.muybaby.shopserver.product.dto.AppProductParameterValueResponse;
+import org.muybaby.shopserver.product.dto.AppProductReviewSummaryResponse;
 import org.muybaby.shopserver.product.dto.AppSkuResponse;
 import org.muybaby.shopserver.product.dto.AppSpuDetailResponse;
 import org.muybaby.shopserver.product.dto.AppSpuListItemResponse;
@@ -23,6 +24,8 @@ import org.springframework.util.StringUtils;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -208,8 +211,30 @@ public class AppProductService {
                 skus,
                 productParameterService.displayValues(spuId, false),
                 spu.freightTemplate(),
-                guaranteeServices
+                guaranteeServices,
+                reviewSummary(spuId)
         );
+    }
+
+    private AppProductReviewSummaryResponse reviewSummary(Long spuId) {
+        return jdbcClient.sql("""
+                        SELECT COUNT(*) AS review_count,
+                               COALESCE(AVG(rating), 0) AS average_rating,
+                               COALESCE(SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END), 0) AS good_review_count
+                        FROM product_review
+                        WHERE spu_id = :spuId AND status = 'PUBLISHED'
+                        """)
+                .param("spuId", spuId)
+                .query((rs, rowNum) -> new AppProductReviewSummaryResponse(
+                        rs.getLong("review_count"),
+                        normalizedRating(rs.getBigDecimal("average_rating")),
+                        rs.getLong("good_review_count")
+                ))
+                .single();
+    }
+
+    private BigDecimal normalizedRating(BigDecimal rating) {
+        return (rating == null ? BigDecimal.ZERO : rating).setScale(1, RoundingMode.HALF_UP);
     }
 
     private AppCategoryResponse mapCategory(ResultSet rs, int rowNum) throws SQLException {

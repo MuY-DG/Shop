@@ -115,4 +115,11 @@ export interface ProductDetail {
   parameters: ProductParameterValue[];
   freightTemplate: ProductFreightTemplate;
   guaranteeServices: ProductGuaranteeService[];
+  reviewSummary?: ProductReviewSummary;
+}
+
+export interface ProductReviewSummary {
+  reviewCount: number;
+  averageRating: number;
+  goodReviewCount: number;
 }

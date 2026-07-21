@@ -18,6 +18,7 @@ interface AppConfig {
 
 interface DetailPageConfig {
   enablePullDownRefresh?: boolean;
+  disableScroll?: boolean;
 }
 
 const sourceRoot = resolve(process.cwd(), "miniprogram");
@@ -86,6 +87,30 @@ test("商品详情关闭下拉刷新并将规格选择收进购买弹层", () =>
   assert.match(detailTemplate, /data-mode="CART"/);
   assert.match(detailTemplate, /data-mode="BUY"/);
   assert.match(detailTemplate, /activeSheet === 'purchase'/);
+  assert.match(detailTemplate, />商品评价</);
+  assert.match(detailTemplate, /activeSheet === 'reviews'/);
+  assert.match(detailTemplate, /activeSheet === 'reviewManage'/);
+  assert.match(detailTemplate, /bindscrolltolower="onReviewLoadMore"/);
+  assert.match(detailTemplate, /bindtap="onReviewSubmit"/);
+  assert.doesNotMatch(detailTemplate, /bounces="{{false}}"/);
+  assert.match(detailTemplate, /class="detail-scroll-content"/);
+  assert.match(detailTemplate, /class="purchase-sheet-scroll-content"/);
+});
+
+test("首页使用微信原生下拉刷新图标", () => {
+  const homePageRoot = resolve(sourceRoot, "pages/index/index");
+  const homeConfig = JSON.parse(
+    readFileSync(`${homePageRoot}.json`, "utf8")
+  ) as DetailPageConfig;
+  const homeTemplate = readFileSync(`${homePageRoot}.wxml`, "utf8");
+  const homeLogic = readFileSync(`${homePageRoot}.ts`, "utf8");
+
+  assert.equal(homeConfig.enablePullDownRefresh, true);
+  assert.equal(homeConfig.disableScroll, undefined);
+  assert.doesNotMatch(homeTemplate, /refresher-/);
+  assert.doesNotMatch(homeTemplate, /refreshText/);
+  assert.match(homeLogic, /onPullDownRefresh\(\)[\s\S]*loadHome\(true\)/);
+  assert.match(homeLogic, /wx\.stopPullDownRefresh\(\)/);
 });
 
 test("商品轮播延后同步当前位置并在手势中断时恢复吸附", () => {

@@ -14,6 +14,7 @@
         <button
           class="hero-action {{favorited ? 'hero-action--active' : ''}}"
           bindtap="onFavoriteToggle"
+          disabled="{{favoriteLoading}}"
           hover-class="hero-action--pressed"
           hover-stay-time="80"
           aria-label="{{favorited ? '取消收藏' : '收藏商品'}}"
@@ -56,10 +57,12 @@
       class="detail-scroll"
       scroll-y="{{true}}"
       enhanced="{{true}}"
-      bounces="{{false}}"
+      bounces="{{true}}"
+      enable-passive="{{true}}"
       show-scrollbar="{{false}}"
       refresher-enabled="{{false}}"
     >
+      <view class="detail-scroll-content">
       <view class="hero-section">
         <product-gallery images="{{galleryImages}}" />
       </view>
@@ -132,11 +135,86 @@
         </view>
       </view>
 
+      <view class="detail-card review-card">
+        <view class="review-card__header">
+          <view>
+            <text class="section-heading__title">商品评价</text>
+            <text class="review-card__count">{{reviewSummary.reviewCountText}}</text>
+          </view>
+          <button
+            class="review-card__all"
+            bindtap="onReviewListOpen"
+            aria-label="查看全部商品评价"
+          >
+            <text>查看全部</text>
+            <image class="review-card__chevron" src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
+          </button>
+        </view>
+
+        <view class="review-score">
+          <view class="review-score__primary">
+            <text class="review-score__number">{{reviewSummary.averageRatingText}}</text>
+            <text class="review-score__unit">/ 5</text>
+          </view>
+          <view class="review-score__meta">
+            <text class="review-score__good">{{reviewSummary.goodRateText}}</text>
+            <text class="review-score__hint">评价均来自已完成订单</text>
+          </view>
+        </view>
+
+        <view wx:if="{{reviewPreviewLoading}}" class="review-inline-state">
+          <text>正在加载真实买家评价…</text>
+        </view>
+        <view wx:elif="{{reviewPreviewErrorText}}" class="review-inline-state review-inline-state--error">
+          <text>{{reviewPreviewErrorText}}</text>
+          <button class="review-inline-retry" bindtap="onReviewPreviewRetry">重试</button>
+        </view>
+        <view wx:elif="{{reviewPreview.length}}" class="review-preview-list">
+          <view
+            wx:for="{{reviewPreview}}"
+            wx:for-item="review"
+            wx:key="id"
+            class="review-item"
+          >
+            <view class="review-item__header">
+              <view class="review-user">
+                <view class="review-user__avatar">{{review.reviewerInitial}}</view>
+                <view class="review-user__copy">
+                  <text class="review-user__name">{{review.reviewerName}}</text>
+                  <view class="review-stars" aria-label="评分{{review.rating}}星">
+                    <text
+                      wx:for="{{review.stars}}"
+                      wx:for-item="star"
+                      wx:key="value"
+                      class="review-star {{star.filled ? 'review-star--filled' : ''}}"
+                    >★</text>
+                  </view>
+                </view>
+              </view>
+              <text class="review-item__date">{{review.createdAtText}}</text>
+            </view>
+            <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">
+              {{review.hasContent ? review.content : '此用户没有填写文字评价'}}
+            </text>
+            <view class="review-item__meta">
+              <text wx:if="{{review.verifiedPurchase}}" class="review-verified">已购</text>
+              <text wx:if="{{review.skuSpecText}}">{{review.skuSpecText}}</text>
+            </view>
+          </view>
+        </view>
+        <view wx:else class="review-empty-preview">
+          <text class="review-empty-preview__title">还没有买家评价</text>
+          <text class="review-empty-preview__description">完成订单后，欢迎分享真实体验</text>
+        </view>
+
+      </view>
+
       <view wx:if="{{detail.detailHtml}}" class="detail-card rich-detail">
         <view class="section-heading">
           <text class="section-heading__title">商品详情</text>
         </view>
         <rich-text nodes="{{detail.detailHtml}}" />
+      </view>
       </view>
       </view>
     </scroll-view>
@@ -213,9 +291,11 @@
           class="purchase-sheet-scroll"
           scroll-y="{{true}}"
           enhanced="{{true}}"
-          bounces="{{false}}"
+          bounces="{{true}}"
+          enable-passive="{{true}}"
           show-scrollbar="{{false}}"
         >
+          <view class="purchase-sheet-scroll-content">
           <view wx:if="{{specificationGroups.length}}" class="sheet-section sheet-section--specifications">
             <view
               wx:for="{{specificationGroups}}"
@@ -313,6 +393,7 @@
               >＋</view>
             </view>
           </view>
+          </view>
         </scroll-view>
 
         <view class="sheet-footer">
@@ -335,7 +416,13 @@
             <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
           </button>
         </view>
-        <scroll-view class="info-sheet-scroll" scroll-y="{{true}}">
+        <scroll-view
+          class="info-sheet-scroll"
+          scroll-y="{{true}}"
+          enhanced="{{true}}"
+          bounces="{{true}}"
+          enable-passive="{{true}}"
+        >
           <view wx:for="{{detail.guaranteeServices}}" wx:key="id" class="guarantee-item">
             <image wx:if="{{item.icon}}" class="guarantee-icon" src="{{item.icon}}" mode="aspectFit" />
             <view class="guarantee-copy">
@@ -385,6 +472,248 @@
             <text class="wholesale-table-price">¥{{item.priceText}} / 件</text>
           </view>
         </view>
+      </block>
+
+      <block wx:elif="{{activeSheet === 'reviews'}}">
+        <view class="review-sheet-header">
+          <view>
+            <text class="info-sheet-title">全部评价</text>
+            <text class="info-sheet-intro">{{reviewSummary.reviewCountText}} · {{reviewSummary.goodRateText}}</text>
+          </view>
+          <button class="review-sheet-write" bindtap="onReviewManageOpen">写评价</button>
+          <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭全部评价">
+            <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
+          </button>
+        </view>
+        <scroll-view
+          class="review-sheet-scroll"
+          scroll-y="{{true}}"
+          enhanced="{{true}}"
+          bounces="{{true}}"
+          enable-passive="{{true}}"
+          show-scrollbar="{{false}}"
+          lower-threshold="120"
+          bindscrolltolower="onReviewLoadMore"
+        >
+          <view wx:if="{{reviewLoading && !reviewRecords.length}}" class="review-sheet-state">
+            <text>正在加载评价…</text>
+          </view>
+          <view wx:elif="{{reviewErrorText && !reviewRecords.length}}" class="review-sheet-state">
+            <text>{{reviewErrorText}}</text>
+            <button class="review-state-action" bindtap="onReviewListRetry">重新加载</button>
+          </view>
+          <view wx:elif="{{!reviewRecords.length}}" class="review-sheet-state">
+            <text class="review-sheet-state__title">暂无评价</text>
+            <text>完成订单后即可发布第一条评价</text>
+          </view>
+          <view wx:else class="review-sheet-list">
+            <view
+              wx:for="{{reviewRecords}}"
+              wx:for-item="review"
+              wx:key="id"
+              class="review-item review-item--sheet"
+            >
+              <view class="review-item__header">
+                <view class="review-user">
+                  <view class="review-user__avatar">{{review.reviewerInitial}}</view>
+                  <view class="review-user__copy">
+                    <text class="review-user__name">{{review.reviewerName}}</text>
+                    <view class="review-stars" aria-label="评分{{review.rating}}星">
+                      <text
+                        wx:for="{{review.stars}}"
+                        wx:for-item="star"
+                        wx:key="value"
+                        class="review-star {{star.filled ? 'review-star--filled' : ''}}"
+                      >★</text>
+                    </view>
+                  </view>
+                </view>
+                <text class="review-item__date">{{review.createdAtText}}</text>
+              </view>
+              <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">
+                {{review.hasContent ? review.content : '此用户没有填写文字评价'}}
+              </text>
+              <view class="review-item__meta">
+                <text wx:if="{{review.verifiedPurchase}}" class="review-verified">已购</text>
+                <text wx:if="{{review.skuSpecText}}">{{review.skuSpecText}}</text>
+              </view>
+            </view>
+            <view class="review-list-footer">
+              <text wx:if="{{reviewLoading}}">正在加载更多…</text>
+              <button wx:elif="{{reviewErrorText}}" class="review-state-action" bindtap="onReviewLoadMore">加载失败，点击重试</button>
+              <text wx:elif="{{reviewHasMore}}">继续上拉加载</text>
+              <text wx:else>已显示全部 {{reviewTotal}} 条评价</text>
+            </view>
+          </view>
+        </scroll-view>
+      </block>
+
+      <block wx:elif="{{activeSheet === 'reviewManage'}}">
+        <view class="review-sheet-header review-sheet-header--manage">
+          <view>
+            <text class="info-sheet-title">我的商品评价</text>
+            <text class="info-sheet-intro">只有已完成订单可以评价，内容将公开展示。</text>
+          </view>
+          <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭评价管理">
+            <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
+          </button>
+        </view>
+        <scroll-view
+          class="review-manage-scroll"
+          scroll-y="{{true}}"
+          enhanced="{{true}}"
+          bounces="{{true}}"
+          enable-passive="{{true}}"
+          show-scrollbar="{{false}}"
+        >
+          <view wx:if="{{reviewManagementLoading}}" class="review-sheet-state">
+            <text>正在检查可评价订单…</text>
+          </view>
+          <view wx:elif="{{reviewManagementErrorText}}" class="review-sheet-state">
+            <text>{{reviewManagementErrorText}}</text>
+            <button class="review-state-action" bindtap="onReviewManagementRetry">重新加载</button>
+          </view>
+          <block wx:else>
+            <view
+              wx:if="{{reviewFormMode === 'update' || reviewOrderItems.length}}"
+              class="review-form"
+            >
+              <view class="review-form__heading">
+                <text class="review-form__title">{{reviewFormMode === 'update' ? '修改评价' : '发表评价'}}</text>
+                <button
+                  wx:if="{{reviewFormMode === 'update'}}"
+                  class="review-form__cancel"
+                  bindtap="onReviewEditCancel"
+                >取消修改</button>
+              </view>
+
+              <view wx:if="{{reviewFormMode === 'create'}}" class="review-form__field">
+                <text class="review-form__label">选择已完成订单</text>
+                <scroll-view
+                  class="review-order-scroll"
+                  scroll-x="{{true}}"
+                  enhanced="{{true}}"
+                  show-scrollbar="{{false}}"
+                  enable-flex="{{true}}"
+                >
+                  <view class="review-order-track">
+                    <view
+                      wx:for="{{reviewOrderItems}}"
+                      wx:for-item="orderItem"
+                      wx:key="orderItemId"
+                      class="review-order-option {{reviewSelectedOrderItemId === orderItem.orderItemId ? 'review-order-option--selected' : ''}}"
+                      data-order-item-id="{{orderItem.orderItemId}}"
+                      bindtap="onReviewOrderSelect"
+                      aria-role="button"
+                      aria-label="选择{{orderItem.label}}订单"
+                    >
+                      <text class="review-order-option__spec">{{orderItem.label}}</text>
+                      <text class="review-order-option__date">完成于 {{orderItem.completedAtText}}</text>
+                    </view>
+                  </view>
+                </scroll-view>
+              </view>
+
+              <view class="review-form__field">
+                <text class="review-form__label">商品评分</text>
+                <view class="review-form-stars">
+                  <button
+                    wx:for="{{reviewFormStars}}"
+                    wx:for-item="star"
+                    wx:key="value"
+                    class="review-form-star {{star.filled ? 'review-form-star--filled' : ''}}"
+                    data-rating="{{star.value}}"
+                    bindtap="onReviewRatingSelect"
+                    aria-label="评分{{star.value}}星"
+                  >★</button>
+                  <text class="review-form-rating">{{reviewRating}} 星</text>
+                </view>
+              </view>
+
+              <view class="review-form__field">
+                <view class="review-form__label-row">
+                  <text class="review-form__label">评价内容</text>
+                  <text class="review-form__counter">{{reviewContent.length}} / 1000</text>
+                </view>
+                <textarea
+                  class="review-textarea"
+                  value="{{reviewContent}}"
+                  maxlength="1000"
+                  auto-height="{{false}}"
+                  cursor-spacing="24"
+                  placeholder="说说口味、分量、包装或配送体验（选填）"
+                  bindinput="onReviewContentInput"
+                />
+              </view>
+
+              <view class="review-anonymous-row">
+                <view>
+                  <text class="review-form__label">匿名评价</text>
+                  <text class="review-anonymous-row__hint">开启后其他用户看不到你的昵称</text>
+                </view>
+                <switch
+                  checked="{{reviewAnonymous}}"
+                  color="#B72B22"
+                  bindchange="onReviewAnonymousChange"
+                />
+              </view>
+
+              <button
+                class="review-submit {{reviewSubmitting ? 'review-submit--disabled' : ''}}"
+                disabled="{{reviewSubmitting}}"
+                loading="{{reviewSubmitting}}"
+                bindtap="onReviewSubmit"
+              >{{reviewFormMode === 'update' ? '保存修改' : '发布评价'}}</button>
+            </view>
+
+            <view wx:if="{{myReviews.length}}" class="my-review-section">
+              <text class="review-form__title">已发布评价</text>
+              <view
+                wx:for="{{myReviews}}"
+                wx:for-item="review"
+                wx:key="id"
+                class="my-review-item"
+              >
+                <view class="my-review-item__top">
+                  <view class="review-stars" aria-label="评分{{review.rating}}星">
+                    <text
+                      wx:for="{{review.stars}}"
+                      wx:for-item="star"
+                      wx:key="value"
+                      class="review-star {{star.filled ? 'review-star--filled' : ''}}"
+                    >★</text>
+                  </view>
+                  <text class="review-item__date">{{review.createdAtText}}</text>
+                </view>
+                <text class="my-review-item__content">{{review.hasContent ? review.content : '未填写文字评价'}}</text>
+                <view class="review-item__meta">
+                  <text class="review-verified">已购</text>
+                  <text wx:if="{{review.skuSpecText}}">{{review.skuSpecText}}</text>
+                  <text wx:if="{{review.anonymous}}">匿名发布</text>
+                </view>
+                <view class="my-review-item__actions">
+                  <button
+                    class="my-review-action"
+                    data-review-id="{{review.id}}"
+                    bindtap="onReviewEdit"
+                  >修改</button>
+                  <button
+                    class="my-review-action my-review-action--danger"
+                    data-review-id="{{review.id}}"
+                    disabled="{{reviewDeletingId === review.id}}"
+                    loading="{{reviewDeletingId === review.id}}"
+                    bindtap="onReviewDelete"
+                  >删除</button>
+                </view>
+              </view>
+            </view>
+
+            <view wx:if="{{!reviewOrderItems.length && reviewFormMode !== 'update'}}" class="review-sheet-state review-sheet-state--compact">
+              <text class="review-sheet-state__title">暂无待评价订单</text>
+              <text>{{myReviews.length ? '新的订单完成后可继续评价' : '购买并完成订单后即可发表评价'}}</text>
+            </view>
+          </block>
+        </scroll-view>
       </block>
     </view>
   </view>

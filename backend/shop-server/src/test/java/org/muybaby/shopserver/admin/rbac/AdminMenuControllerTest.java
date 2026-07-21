@@ -89,7 +89,8 @@ class AdminMenuControllerTest {
                         "spu",
                         "spec-template",
                         "guarantee-service",
-                        "parameter"
+                        "parameter",
+                        "review"
                 )))
                 .andExpect(jsonPath("$.data[1].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "product:category:create",
@@ -121,6 +122,10 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[1].children[4].meta.authList[*].authMark", containsInAnyOrder(
                         "product:parameter:read",
                         "product:parameter:write"
+                )))
+                .andExpect(jsonPath("$.data[1].children[5].meta.authList[*].authMark", containsInAnyOrder(
+                        "product:review:read",
+                        "product:review:moderate"
                 )))
                 .andExpect(jsonPath("$.data[2].path").value("/marketing"))
                 .andExpect(jsonPath("$.data[2].children[*].path", contains("coupon")))
