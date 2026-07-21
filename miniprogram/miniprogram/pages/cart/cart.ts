@@ -55,7 +55,7 @@ Page({
   },
 
   onShow() {
-    syncCustomTabBar(this, 3);
+    syncCustomTabBar(this, 2);
     void this.loadCart();
   },
 

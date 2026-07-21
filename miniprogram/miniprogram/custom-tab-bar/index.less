@@ -16,7 +16,7 @@
 .tab-bar__items {
   height: @tab-bar-height;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: stretch;
 }
 
@@ -123,43 +123,6 @@
 .category-icon__cell--two { top: 4rpx; right: 4rpx; }
 .category-icon__cell--three { bottom: 4rpx; left: 4rpx; }
 .category-icon__cell--four { right: 4rpx; bottom: 4rpx; }
-
-.message-icon__bubble {
-  position: absolute;
-  top: 6rpx;
-  right: 4rpx;
-  bottom: 9rpx;
-  left: 4rpx;
-  border: 4rpx solid currentColor;
-  border-radius: 13rpx;
-}
-
-.message-icon__bubble::after {
-  position: absolute;
-  bottom: -10rpx;
-  left: 9rpx;
-  width: 12rpx;
-  height: 12rpx;
-  border-bottom: 4rpx solid currentColor;
-  border-left: 4rpx solid currentColor;
-  background: @color-surface;
-  content: "";
-  transform: skewY(-35deg);
-}
-
-.message-icon__dot {
-  position: absolute;
-  z-index: 2;
-  top: 22rpx;
-  width: 5rpx;
-  height: 5rpx;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.message-icon__dot--one { left: 14rpx; }
-.message-icon__dot--two { left: 22rpx; }
-.message-icon__dot--three { left: 30rpx; }
 
 .cart-icon__handle {
   position: absolute;

@@ -23,14 +23,13 @@ interface DetailPageConfig {
 
 const sourceRoot = resolve(process.cwd(), "miniprogram");
 
-test("自定义底部导航注册五个可用的 Tab 根页面", () => {
+test("自定义底部导航注册四个可用的 Tab 根页面", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")
   ) as AppConfig;
   const expectedTabs = [
     ["pages/index/index", "首页"],
     ["pages/category/category", "分类"],
-    ["pages/message/message", "消息"],
     ["pages/cart/cart", "购物车"],
     ["pages/profile/profile", "我的"]
   ];
@@ -71,6 +70,11 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
     })
   }, 3);
   assert.equal(selected, 3);
+
+  const cartLogic = readFileSync(resolve(sourceRoot, "pages/cart/cart.ts"), "utf8");
+  const profileLogic = readFileSync(resolve(sourceRoot, "pages/profile/profile.ts"), "utf8");
+  assert.match(cartLogic, /syncCustomTabBar\(this, 2\)/);
+  assert.match(profileLogic, /syncCustomTabBar\(this, 3\)/);
 
   assert.doesNotThrow(() => syncCustomTabBar({}, 0));
 });

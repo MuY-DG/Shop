@@ -1,7 +1,7 @@
 interface TabItem {
   pagePath: string;
   text: string;
-  icon: "home" | "category" | "message" | "cart" | "profile";
+  icon: "home" | "category" | "cart" | "profile";
   badge: string;
 }
 
@@ -16,7 +16,6 @@ interface TabTapEvent {
 const TAB_ITEMS: TabItem[] = [
   { pagePath: "/pages/index/index", text: "首页", icon: "home", badge: "" },
   { pagePath: "/pages/category/category", text: "分类", icon: "category", badge: "" },
-  { pagePath: "/pages/message/message", text: "消息", icon: "message", badge: "" },
   { pagePath: "/pages/cart/cart", text: "购物车", icon: "cart", badge: "" },
   { pagePath: "/pages/profile/profile", text: "我的", icon: "profile", badge: "" }
 ];

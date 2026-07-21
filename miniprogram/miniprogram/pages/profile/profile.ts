@@ -20,7 +20,7 @@ Page({
   },
 
   onShow() {
-    syncCustomTabBar(this, 4);
+    syncCustomTabBar(this, 3);
     const user = getSessionState().user;
     if (user?.nickname) {
       this.setData({ nickname: user.nickname });

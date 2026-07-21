@@ -36,10 +36,6 @@
         "text": "分类"
       },
       {
-        "pagePath": "pages/message/message",
-        "text": "消息"
-      },
-      {
         "pagePath": "pages/cart/cart",
         "text": "购物车"
       },
