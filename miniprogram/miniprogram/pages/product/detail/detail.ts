@@ -1,4 +1,7 @@
 import {
+  buildDirectBuyUrl
+} from "../../../features/checkout";
+import {
   buildGalleryImages,
   buildParameterViews,
   buildSpecificationPreviewUrls,
@@ -541,7 +544,16 @@ Page({
     }
     if (this.data.purchaseMode === "BUY") {
       this.setData({ activeSheet: "" });
-      wx.showToast({ title: `已选择 ${this.data.quantity} 件，结算页即将开放`, icon: "none" });
+      try {
+        wx.navigateTo({
+          url: buildDirectBuyUrl(this.data.selectedSkuId, this.data.quantity)
+        });
+      } catch (error) {
+        wx.showToast({
+          title: error instanceof Error ? error.message : "结算参数无效",
+          icon: "none"
+        });
+      }
       return;
     }
     this.setData({ confirmLoading: true });

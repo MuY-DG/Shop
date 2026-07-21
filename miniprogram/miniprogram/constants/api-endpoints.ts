@@ -22,6 +22,24 @@ export const API_ENDPOINTS = Object.freeze({
     browseRecord: (spuId: number): string => `/app/users/me/browse-history/${spuId}`
   },
   cart: {
-    items: "/app/cart/items"
+    items: "/app/cart/items",
+    quantity: (cartItemId: number): string => `/app/cart/items/${cartItemId}/quantity`,
+    item: (cartItemId: number): string => `/app/cart/items/${cartItemId}`
+  },
+  addresses: {
+    list: "/app/addresses"
+  },
+  coupons: {
+    available: "/app/coupons/available"
+  },
+  orders: {
+    list: "/app/orders",
+    preview: "/app/orders/preview",
+    submit: "/app/orders",
+    detail: (orderId: number): string => `/app/orders/${orderId}`,
+    pay: (orderId: number): string => `/app/orders/${orderId}/pay`,
+    cancel: (orderId: number): string => `/app/orders/${orderId}/cancel`,
+    paymentSync: (orderId: number): string => `/app/orders/${orderId}/payment/sync`,
+    confirmReceipt: (orderId: number): string => `/app/orders/${orderId}/confirm-receipt`
   }
 });

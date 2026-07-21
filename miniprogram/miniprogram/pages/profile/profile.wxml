@@ -1,5 +1,44 @@
-<tab-placeholder
-  title="我的"
-  state-title="个人中心正在准备"
-  description="订单、地址、优惠券、售后和账户信息将在这里集中管理。"
-/>
+<view class="profile-page">
+  <navigation-bar title="我的" background="#FAF2E4" color="#2E1D16" />
+
+  <view class="profile-content">
+    <view class="member-card">
+      <view class="member-card__avatar">灶</view>
+      <view>
+        <view class="member-card__name">{{nickname}}</view>
+        <view class="member-card__copy">安心选好物，订单进度随时掌握</view>
+      </view>
+    </view>
+
+    <view class="order-center-card">
+      <view class="order-center-card__heading" bindtap="onAllOrdersTap" aria-role="button">
+        <view>
+          <view class="order-center-card__title">我的订单</view>
+          <view class="order-center-card__subtitle">支付、发货与收货进度</view>
+        </view>
+        <view class="order-center-card__all">全部订单 <text>›</text></view>
+      </view>
+      <view class="order-shortcuts">
+        <view
+          wx:for="{{orderShortcuts}}"
+          wx:key="group"
+          class="order-shortcut"
+          data-group="{{item.group}}"
+          bindtap="onOrderShortcutTap"
+          aria-role="button"
+        >
+          <view class="order-shortcut__icon">{{item.icon}}</view>
+          <text>{{item.label}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="profile-note">
+      <view class="profile-note__mark">安</view>
+      <view>
+        <view class="profile-note__title">交易保障</view>
+        <view class="profile-note__copy">支付结果以微信和服务端同步状态为准，异常订单可重新同步。</view>
+      </view>
+    </view>
+  </view>
+</view>

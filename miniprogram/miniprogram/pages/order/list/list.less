@@ -1,0 +1,240 @@
+@import "../../../styles/tokens.less";
+@import "../../../styles/mixins.less";
+
+.orders-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, @color-page-top 0, @color-page 100%);
+}
+
+.status-tabs {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  border-bottom: 1rpx solid @color-divider;
+  white-space: nowrap;
+  background: fade(@color-surface, 96%);
+}
+
+.status-tabs__inner {
+  display: inline-flex;
+  min-width: 100%;
+  padding: 0 @page-gutter;
+  box-sizing: border-box;
+}
+
+.status-tab {
+  position: relative;
+  min-width: 118rpx;
+  padding: @space-5 @space-3;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  text-align: center;
+}
+
+.status-tab--active {
+  color: @color-brand;
+  font-weight: 700;
+}
+
+.status-tab--active::after {
+  position: absolute;
+  right: 28rpx;
+  bottom: 0;
+  left: 28rpx;
+  height: 5rpx;
+  border-radius: @radius-pill;
+  background: @color-brand;
+  content: "";
+}
+
+.orders-content {
+  padding: @space-5 @page-gutter @space-12;
+}
+
+.orders-state {
+  .card-surface();
+  min-height: 480rpx;
+}
+
+.inline-error {
+  display: flex;
+  margin-bottom: @space-4;
+  padding: @space-4 @space-5;
+  border-radius: @radius-sm;
+  align-items: center;
+  justify-content: space-between;
+  color: @color-danger;
+  background: @color-danger-soft;
+  font-size: @font-size-sm;
+}
+
+.inline-error button {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font-size: @font-size-sm;
+  line-height: 1.4;
+}
+
+.inline-error button::after,
+.order-action::after {
+  border: 0;
+}
+
+.order-card {
+  .card-surface();
+  padding: @space-5;
+}
+
+.order-card + .order-card {
+  margin-top: @space-4;
+}
+
+.order-card__heading,
+.order-card__product,
+.order-card__actions {
+  display: flex;
+  align-items: center;
+}
+
+.order-card__heading {
+  justify-content: space-between;
+  gap: @space-5;
+}
+
+.order-card__no {
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  font-weight: 650;
+}
+
+.order-card__time,
+.order-card__count,
+.order-card__amount text {
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.order-card__time {
+  margin-top: @space-1;
+}
+
+.order-status {
+  flex: none;
+  padding: 4rpx @space-3;
+  border-radius: @radius-pill;
+  font-size: @font-size-xs;
+}
+
+.order-status--warning {
+  color: @color-warning-text;
+  background: @color-warning-soft;
+}
+
+.order-status--brand {
+  color: @color-brand;
+  background: @color-brand-soft;
+}
+
+.order-status--success {
+  color: @color-success-text;
+  background: @color-success-soft;
+}
+
+.order-status--muted {
+  color: @color-text-muted;
+  background: @color-surface-muted;
+}
+
+.order-card__product {
+  margin-top: @space-5;
+  padding: @space-4;
+  border-radius: @radius-md;
+  background: @color-surface-muted;
+  gap: @space-4;
+}
+
+.order-card__product-mark {
+  display: flex;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: @radius-md;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: @color-brand;
+  background: @color-brand-soft;
+  font-family: serif;
+  font-size: @font-size-lg;
+}
+
+.order-card__product-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.order-card__title {
+  .text-ellipsis(1);
+  color: @color-text-primary;
+  font-size: @font-size-base;
+  font-weight: 650;
+}
+
+.order-card__count {
+  margin-top: @space-1;
+}
+
+.order-card__amount {
+  flex: none;
+  text-align: right;
+}
+
+.order-card__amount view {
+  margin-top: @space-1;
+  color: @color-price;
+  font-family: @font-family-price;
+  font-size: @font-size-md;
+  font-weight: 700;
+}
+
+.order-card__actions {
+  margin-top: @space-4;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: @space-3;
+}
+
+button.order-action {
+  width: auto;
+  min-width: 148rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0 @space-5;
+  border-radius: @radius-pill;
+  font-size: @font-size-sm;
+  line-height: 64rpx;
+}
+
+button.order-action--secondary {
+  border: 1rpx solid @color-border;
+  color: @color-text-secondary;
+  background: @color-surface;
+}
+
+button.order-action--primary {
+  color: @color-text-inverse;
+  background: linear-gradient(135deg, @color-brand 0, @color-brand-dark 100%);
+}
+
+button.order-action[disabled] {
+  opacity: 0.5;
+}
+
+.list-footer {
+  padding: @space-8 0;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  text-align: center;
+}

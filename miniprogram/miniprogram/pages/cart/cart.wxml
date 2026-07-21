@@ -1,5 +1,165 @@
-<tab-placeholder
-  title="购物车"
-  state-title="购物车功能正在接入"
-  description="即将支持规格商品、数量调整、批发价与结算。"
-/>
+<view class="cart-page">
+  <navigation-bar
+    title="购物车"
+    background="#FAF2E4"
+    color="#2E1D16"
+    loading="{{loaded && loading}}"
+  />
+
+  <view class="cart-content">
+    <view wx:if="{{loaded && rawItems.length}}" class="cart-heading">
+      <view>
+        <view class="cart-heading__title">这一锅，慢慢挑</view>
+        <view class="cart-heading__meta">
+          {{rawItems.length}} 种商品<text wx:if="{{unavailableCount}}"> · {{unavailableCount}} 件失效</text>
+        </view>
+      </view>
+      <button
+        class="text-action"
+        loading="{{clearing}}"
+        disabled="{{clearing || deletingId}}"
+        bindtap="onClearTap"
+      >清空</button>
+    </view>
+
+    <view wx:if="{{!loaded && loading}}" class="cart-state">
+      <ui-state type="loading" title="正在准备购物车" description="好味道马上就来" />
+    </view>
+
+    <view wx:elif="{{!loaded && errorText}}" class="cart-state">
+      <ui-state
+        type="error"
+        title="购物车加载失败"
+        description="{{errorText}}"
+        action-text="重新加载"
+        bindaction="onRetry"
+      />
+    </view>
+
+    <view wx:elif="{{loaded && !rawItems.length}}" class="cart-state cart-state--empty">
+      <view class="empty-seal" aria-hidden="true">灶</view>
+      <ui-state
+        type="empty"
+        title="购物车还是空的"
+        description="先去挑几款地道川味，让下一锅更有滋味。"
+        action-text="去逛商品"
+        bindaction="onBrowse"
+      />
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{errorText}}" class="inline-error">
+        <text>{{errorText}}</text>
+        <button class="inline-error__action" bindtap="onRetry">重试</button>
+      </view>
+
+      <view class="cart-list">
+        <view
+          wx:for="{{items}}"
+          wx:key="id"
+          class="cart-card {{item.available ? '' : 'cart-card--unavailable'}}"
+        >
+          <view
+            class="selection {{item.selected ? 'selection--checked' : ''}} {{item.available ? '' : 'selection--disabled'}}"
+            data-id="{{item.id}}"
+            catchtap="onSelectionToggle"
+            aria-role="checkbox"
+            aria-checked="{{item.selected}}"
+            aria-label="{{item.selected ? '取消选择' : '选择'}}{{item.productTitle}}"
+          >
+            <text wx:if="{{item.selected}}">✓</text>
+          </view>
+
+          <view
+            class="cart-card__image-shell"
+            data-id="{{item.id}}"
+            bindtap="onProductTap"
+          >
+            <image
+              wx:if="{{item.hasImage}}"
+              class="cart-card__image"
+              src="{{item.imageUrl}}"
+              mode="aspectFill"
+              data-id="{{item.id}}"
+              binderror="onImageError"
+            />
+            <view wx:else class="cart-card__fallback">灶</view>
+          </view>
+
+          <view class="cart-card__body">
+            <view
+              class="cart-card__title"
+              data-id="{{item.id}}"
+              bindtap="onProductTap"
+            >{{item.productTitle}}</view>
+            <view wx:if="{{item.specText}}" class="cart-card__spec">{{item.specText}}</view>
+            <view wx:if="{{!item.available}}" class="unavailable-tag">{{item.unavailableText}}</view>
+
+            <view class="price-row">
+              <text class="price-row__current">{{item.priceText}}</text>
+              <text wx:if="{{item.hasRetailPrice}}" class="price-row__retail">{{item.retailPriceText}}</text>
+            </view>
+            <view wx:if="{{item.wholesaleText}}" class="wholesale-copy">{{item.wholesaleText}}</view>
+            <view wx:if="{{item.nextWholesaleText}}" class="next-tier-copy">{{item.nextWholesaleText}}</view>
+
+            <view class="cart-card__footer">
+              <view>
+                <view class="line-amount">小计 {{item.lineAmountText}}</view>
+                <view class="stock-copy">{{item.stockText}}</view>
+              </view>
+              <view class="quantity-stepper">
+                <button
+                  class="quantity-stepper__button"
+                  data-id="{{item.id}}"
+                  disabled="{{!item.available || item.quantity <= 1 || updatingId || deletingId || clearing}}"
+                  catchtap="onQuantityMinus"
+                >−</button>
+                <view class="quantity-stepper__value">
+                  <view wx:if="{{updatingId === item.id}}" class="mini-spinner"></view>
+                  <text wx:else>{{item.quantity}}</text>
+                </view>
+                <button
+                  class="quantity-stepper__button"
+                  data-id="{{item.id}}"
+                  disabled="{{!item.available || item.quantity >= item.stockAvailable || updatingId || deletingId || clearing}}"
+                  catchtap="onQuantityPlus"
+                >+</button>
+              </view>
+            </view>
+
+            <button
+              class="remove-action"
+              data-id="{{item.id}}"
+              loading="{{deletingId === item.id}}"
+              disabled="{{deletingId || clearing}}"
+              catchtap="onDeleteTap"
+            >移除</button>
+          </view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{loaded && rawItems.length}}" class="settlement-bar">
+    <view
+      class="select-all"
+      bindtap="onSelectAllToggle"
+      aria-role="checkbox"
+      aria-checked="{{allAvailableSelected}}"
+    >
+      <view class="selection selection--compact {{allAvailableSelected ? 'selection--checked' : ''}}">
+        <text wx:if="{{allAvailableSelected}}">✓</text>
+      </view>
+      <text>全选</text>
+    </view>
+    <view class="settlement-total">
+      <view><text class="settlement-total__label">合计</text><text class="settlement-total__amount">{{selectedAmountText}}</text></view>
+      <view class="settlement-total__hint">已选 {{selectedQuantity}} 件，优惠将在结算页计算</view>
+    </view>
+    <button
+      class="checkout-action"
+      disabled="{{checkoutDisabled || loading}}"
+      bindtap="onCheckoutTap"
+    >去结算</button>
+  </view>
+</view>

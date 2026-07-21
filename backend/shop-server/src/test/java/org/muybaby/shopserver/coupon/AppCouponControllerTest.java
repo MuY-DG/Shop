@@ -270,6 +270,19 @@ class AppCouponControllerTest {
                 .andExpect(jsonPath("$.data.coupons[0].discountAmountCent").value(1000))
                 .andExpect(jsonPath("$.data.coupons[1].userCouponId").value(userCouponA))
                 .andExpect(jsonPath("$.data.coupons[1].discountAmountCent").value(500));
+
+        mockMvc.perform(post("/app/coupons/available")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"source":"DIRECT","skuId":%d,"quantity":2}
+                                """.formatted(skuId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.cartAmountCent").value(7980))
+                .andExpect(jsonPath("$.data.bestUserCouponId").value(userCouponB))
+                .andExpect(jsonPath("$.data.bestDiscountCent").value(1000))
+                .andExpect(jsonPath("$.data.payableAmountCent").value(6980))
+                .andExpect(jsonPath("$.data.coupons.length()").value(2));
     }
 
     private String appLoginAndExtractToken(String code) throws Exception {

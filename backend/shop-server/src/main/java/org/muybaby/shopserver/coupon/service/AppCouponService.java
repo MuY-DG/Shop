@@ -12,6 +12,10 @@ import org.muybaby.shopserver.coupon.dto.AppUserCouponResponse;
 import org.muybaby.shopserver.coupon.dto.AvailableCouponItemResponse;
 import org.muybaby.shopserver.coupon.dto.AvailableCouponRequest;
 import org.muybaby.shopserver.coupon.dto.AvailableCouponResponse;
+import org.muybaby.shopserver.order.CheckoutSource;
+import org.muybaby.shopserver.order.service.CheckoutRequest;
+import org.muybaby.shopserver.order.service.CheckoutSelection;
+import org.muybaby.shopserver.order.service.CheckoutSelectionService;
 import org.muybaby.shopserver.promotion.CheckoutContext;
 import org.muybaby.shopserver.promotion.CheckoutItem;
 import org.muybaby.shopserver.promotion.CouponCandidate;
@@ -44,11 +48,17 @@ public class AppCouponService {
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
+    private final CheckoutSelectionService checkoutSelectionService;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
-    public AppCouponService(JdbcClient jdbcClient, NamedParameterJdbcTemplate namedParameterJdbcTemplate) {
+    public AppCouponService(
+            JdbcClient jdbcClient,
+            NamedParameterJdbcTemplate namedParameterJdbcTemplate,
+            CheckoutSelectionService checkoutSelectionService
+    ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
+        this.checkoutSelectionService = checkoutSelectionService;
     }
 
     public List<AppClaimableCouponResponse> claimable(AuthenticatedPrincipal principal) {
@@ -239,14 +249,7 @@ public class AppCouponService {
 
     public AvailableCouponResponse available(AuthenticatedPrincipal principal, AvailableCouponRequest request) {
         Long userId = requireAppUser(principal);
-        List<Long> cartItemIds = request == null || request.cartItemIds() == null ? List.of() : request.cartItemIds();
-        List<CartCouponRow> cartRows = findEligibleCartRows(userId, cartItemIds);
-        CheckoutContext context = new CheckoutContext(
-                userId,
-                cartRows.stream()
-                        .map(row -> new CheckoutItem(row.skuId(), row.spuId(), row.lineAmountCent(), row.quantity()))
-                        .toList()
-        );
+        CheckoutContext context = resolveCheckoutContext(userId, request);
         long cartAmountCent = context.totalAmountCent();
 
         List<AvailableCouponCandidate> evaluated = findAvailableUserCoupons(userId, LocalDateTime.now()).stream()
@@ -274,6 +277,64 @@ public class AppCouponService {
                 Math.max(cartAmountCent - bestDiscountCent, 0L),
                 coupons
         );
+    }
+
+    private CheckoutContext resolveCheckoutContext(Long userId, AvailableCouponRequest request) {
+        if (isLegacyWholeCartRequest(request)) {
+            return resolveLegacyCartContext(userId, List.of());
+        }
+        CheckoutRequest checkoutRequest = new CheckoutRequest(
+                request.source(),
+                request.cartItemIds(),
+                request.skuId(),
+                request.quantity(),
+                null,
+                null
+        );
+        try {
+            CheckoutSelection selection = checkoutSelectionService.preview(userId, checkoutRequest);
+            return selection.context();
+        } catch (BusinessException exception) {
+            if (checkoutRequest.source() == CheckoutSource.CART
+                    && isRecoverableCartSelectionError(exception.errorCode())) {
+                return resolveLegacyCartContext(userId, checkoutRequest.cartItemIds());
+            }
+            throw exception;
+        }
+    }
+
+    private boolean isRecoverableCartSelectionError(ErrorCode errorCode) {
+        return errorCode == ErrorCode.CART_ITEM_NOT_FOUND
+                || errorCode == ErrorCode.PRODUCT_UNAVAILABLE
+                || errorCode == ErrorCode.SKU_UNAVAILABLE
+                || errorCode == ErrorCode.STOCK_SHORTAGE;
+    }
+
+    private CheckoutContext resolveLegacyCartContext(Long userId, List<Long> cartItemIds) {
+        List<CartCouponRow> cartRows = findEligibleCartRows(userId, cartItemIds);
+        return new CheckoutContext(
+                userId,
+                cartRows.stream()
+                        .map(row -> new CheckoutItem(
+                                row.skuId(),
+                                row.spuId(),
+                                row.lineAmountCent(),
+                                row.quantity()
+                        ))
+                        .toList()
+        );
+    }
+
+    private boolean isLegacyWholeCartRequest(AvailableCouponRequest request) {
+        if (request == null) {
+            return true;
+        }
+        boolean cartSource = request.source() == null || request.source() == CheckoutSource.CART;
+        boolean emptyCartSelection = request.cartItemIds() == null || request.cartItemIds().isEmpty();
+        return cartSource
+                && emptyCartSelection
+                && request.skuId() == null
+                && request.quantity() == null;
     }
 
     private Optional<CouponTemplateRow> findActiveTemplateForUpdate(Long templateId, LocalDateTime now) {

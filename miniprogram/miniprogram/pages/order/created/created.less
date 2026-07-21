@@ -1,0 +1,223 @@
+@import "../../../styles/tokens.less";
+@import "../../../styles/mixins.less";
+
+.created-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% 8%, fade(@color-gold, 11%) 0, transparent 32%),
+    linear-gradient(180deg, @color-page-top 0, @color-page 100%);
+}
+
+.created-content {
+  padding: @space-12 @page-gutter @space-16;
+  text-align: center;
+}
+
+.created-content--pending {
+  padding-bottom: 188rpx;
+}
+
+.result-mark {
+  display: flex;
+  width: 116rpx;
+  height: 116rpx;
+  margin: 0 auto;
+  border: 6rpx solid;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  font-size: 58rpx;
+  font-weight: 750;
+}
+
+.result-mark--success {
+  border-color: @color-success;
+  color: @color-success;
+  background: @color-success-soft;
+}
+
+.result-mark--pending {
+  border-color: @color-warning;
+  color: @color-warning;
+  background: @color-warning-soft;
+}
+
+.result-mark--closed {
+  border-color: @color-text-placeholder;
+  color: @color-text-muted;
+  background: @color-surface-muted;
+}
+
+.result-title {
+  margin-top: @space-6;
+  color: @color-text-primary;
+  font-size: @font-size-xl;
+  font-weight: 750;
+}
+
+.result-subtitle {
+  margin: @space-3 auto 0;
+  max-width: 590rpx;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  line-height: @line-height-relaxed;
+}
+
+.result-amount {
+  margin-top: @space-8;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.result-amount view {
+  margin-top: @space-2;
+  color: @color-price;
+  font-family: @font-family-price;
+  font-size: 54rpx;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.order-card,
+.payment-note {
+  .card-surface();
+  margin-top: @space-8;
+  text-align: left;
+}
+
+.order-card {
+  padding: @space-5;
+}
+
+.order-row {
+  display: flex;
+  padding: @space-3 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: @space-5;
+  color: @color-text-secondary;
+  font-size: @font-size-sm;
+}
+
+.order-row + .order-row {
+  border-top: 1rpx solid @color-divider;
+}
+
+.order-row text:last-child {
+  color: @color-text-primary;
+  text-align: right;
+}
+
+.status-tag {
+  padding: 3rpx @space-3;
+  border-radius: @radius-pill;
+  font-size: @font-size-xs;
+}
+
+.status-tag--pending {
+  color: @color-warning-text !important;
+  background: @color-warning-soft;
+}
+
+.status-tag--success {
+  color: @color-success-text !important;
+  background: @color-success-soft;
+}
+
+.status-tag--closed {
+  color: @color-text-muted !important;
+  background: @color-surface-muted;
+}
+
+.payment-note {
+  padding: @space-5;
+  border-color: fade(@color-gold, 32%);
+  background: @color-gold-soft;
+  box-shadow: none;
+}
+
+.payment-note__title {
+  color: @color-gold-text;
+  font-size: @font-size-base;
+  font-weight: 700;
+}
+
+.payment-note__copy {
+  margin-top: @space-2;
+  color: @color-text-secondary;
+  font-size: @font-size-sm;
+  line-height: 1.6;
+}
+
+.result-actions {
+  margin-top: @space-8;
+}
+
+button.secondary-action,
+button.text-action,
+button.pending-actions__cancel,
+button.pending-actions__pay {
+  height: 86rpx;
+  margin: 0;
+  border-radius: @radius-pill;
+  font-size: @font-size-base;
+  font-weight: 700;
+  line-height: 86rpx;
+}
+
+button.secondary-action {
+  width: 100%;
+  border: 1rpx solid @color-border;
+  color: @color-text-primary;
+  background: @color-surface;
+}
+
+button.text-action {
+  width: 100%;
+  margin-top: @space-3;
+  color: @color-text-muted;
+  background: transparent;
+  font-size: @font-size-sm;
+}
+
+.pending-actions {
+  position: fixed;
+  z-index: 30;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  min-height: 120rpx;
+  padding: @space-4 @page-gutter calc(@space-4 + env(safe-area-inset-bottom));
+  border-top: 1rpx solid @color-border;
+  align-items: center;
+  background: fade(@color-surface, 98%);
+  box-shadow: 0 -10rpx 30rpx rgba(68, 44, 32, 0.08);
+  grid-template-columns: 190rpx minmax(0, 1fr);
+  gap: @space-4;
+}
+
+button.pending-actions__cancel {
+  border: 1rpx solid @color-border;
+  color: @color-text-secondary;
+  background: @color-surface;
+}
+
+button.pending-actions__pay {
+  color: @color-text-inverse;
+  background: linear-gradient(135deg, @color-brand 0, @color-brand-dark 100%);
+  box-shadow: @shadow-action;
+}
+
+button.secondary-action::after,
+button.text-action::after,
+button.pending-actions__cancel::after,
+button.pending-actions__pay::after {
+  border: 0;
+}
+
+button.pending-actions__cancel[disabled],
+button.pending-actions__pay[disabled] {
+  box-shadow: none;
+  opacity: 0.5;
+}

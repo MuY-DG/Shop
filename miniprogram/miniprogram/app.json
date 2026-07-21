@@ -6,7 +6,11 @@
     "pages/cart/cart",
     "pages/profile/profile",
     "pages/product/list/list",
-    "pages/product/detail/detail"
+    "pages/product/detail/detail",
+    "pages/order/preview/preview",
+    "pages/order/created/created",
+    "pages/order/list/list",
+    "pages/order/detail/detail"
   ],
   "window": {
     "navigationBarTextStyle": "black",

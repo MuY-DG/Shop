@@ -1,0 +1,220 @@
+<view class="preview-page">
+  <navigation-bar
+    title="确认订单"
+    back="{{true}}"
+    home="{{true}}"
+    background="#FAF2E4"
+    color="#2E1D16"
+    loading="{{loaded && loading}}"
+  />
+
+  <view class="preview-content">
+    <view wx:if="{{!loaded && loading}}" class="preview-state">
+      <ui-state type="loading" title="正在核对订单" description="价格、库存与优惠正在实时计算" />
+    </view>
+
+    <view wx:elif="{{!loaded && errorText}}" class="preview-state">
+      <ui-state
+        type="error"
+        title="订单预览失败"
+        description="{{errorText}}"
+        action-text="重新加载"
+        bindaction="onRetry"
+      />
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{errorText}}" class="inline-error">
+        <text>{{errorText}}</text>
+        <button bindtap="onRetry">重试</button>
+      </view>
+
+      <view class="address-card" bindtap="onAddressTap" aria-role="button" aria-label="选择收货地址">
+        <view class="address-card__marker">收</view>
+        <view wx:if="{{selectedAddress}}" class="address-card__body">
+          <view class="address-card__receiver">
+            <text>{{selectedAddress.receiverName}}</text>
+            <text>{{selectedAddress.receiverPhone}}</text>
+            <text wx:if="{{selectedAddress.isDefault}}" class="default-tag">默认</text>
+          </view>
+          <view class="address-card__detail">{{selectedAddress.formattedAddress}}</view>
+        </view>
+        <view wx:else class="address-card__empty">
+          <view>请选择收货地址</view>
+          <text>可从微信地址快速导入</text>
+        </view>
+        <view class="address-card__arrow">›</view>
+      </view>
+
+      <view wx:if="{{preview}}" class="preview-section">
+        <view class="section-heading">
+          <text class="section-heading__title">商品清单</text>
+          <text class="section-heading__meta">{{preview.items.length}} 种商品</text>
+        </view>
+        <view class="preview-items">
+          <view wx:for="{{preview.items}}" wx:key="skuId" class="preview-item">
+            <view class="preview-item__image-shell">
+              <image
+                wx:if="{{item.hasImage}}"
+                class="preview-item__image"
+                src="{{item.imageUrl}}"
+                mode="aspectFill"
+                data-index="{{index}}"
+                binderror="onPreviewImageError"
+              />
+              <view wx:else class="preview-item__fallback">灶</view>
+            </view>
+            <view class="preview-item__body">
+              <view class="preview-item__title">{{item.productTitle}}</view>
+              <view wx:if="{{item.productSubtitle}}" class="preview-item__subtitle">{{item.productSubtitle}}</view>
+              <view wx:if="{{item.specText}}" class="preview-item__spec">{{item.specText}}</view>
+              <view class="preview-item__price-row">
+                <view>
+                  <text class="preview-item__price">{{item.unitPriceText}}</text>
+                  <view wx:if="{{item.wholesaleText}}" class="preview-item__wholesale">{{item.wholesaleText}}</view>
+                </view>
+                <text class="preview-item__quantity">×{{item.quantity}}</text>
+              </view>
+              <view class="preview-item__subtotal">小计 {{item.lineAmountText}}</view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{preview}}" class="preview-section amount-section">
+        <view class="section-heading">
+          <text class="section-heading__title">金额明细</text>
+          <text class="section-heading__meta">提交前将再次校验</text>
+        </view>
+        <view class="amount-row"><text>商品金额</text><text>{{preview.productAmountText}}</text></view>
+        <view class="amount-row {{preview.hasWholesaleDiscount ? 'amount-row--discount' : ''}}">
+          <text>批发优惠</text>
+          <text>{{preview.hasWholesaleDiscount ? '-' + preview.wholesaleDiscountText : '暂无优惠'}}</text>
+        </view>
+        <view
+          class="amount-row amount-row--interactive {{preview.hasCouponDiscount ? 'amount-row--discount' : ''}}"
+          bindtap="onCouponTap"
+          aria-role="button"
+          aria-label="选择优惠券"
+        >
+          <text>优惠券</text>
+          <view class="amount-row__choice">
+            <text wx:if="{{couponLoading && !couponLoaded}}">加载中</text>
+            <text wx:elif="{{couponErrorText}}">加载失败</text>
+            <text wx:elif="{{preview.hasCouponDiscount}}">-{{preview.couponDiscountText}}</text>
+            <text wx:else>无可用</text>
+            <text class="amount-row__arrow">›</text>
+          </view>
+        </view>
+        <view class="amount-row"><text>运费</text><text>{{preview.freightText}}</text></view>
+      </view>
+
+      <view class="service-note">
+        <view class="service-note__seal">灶</view>
+        <view>
+          <view class="service-note__title">放心下单</view>
+          <view class="service-note__copy">库存、批发价与最优优惠券均由服务端实时确认</view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{loaded && preview}}" class="submit-bar">
+    <button
+      class="submit-action"
+      loading="{{submitting}}"
+      disabled="{{loading || submitting}}"
+      bindtap="onPayTap"
+    >{{selectedAddress ? '立即支付 ' + preview.payableAmountText : '请选择收货地址'}}</button>
+  </view>
+
+  <view wx:if="{{addressSheetOpen}}" class="sheet-layer" catchtouchmove="onSheetTouchMove">
+    <view class="sheet-mask" bindtap="onAddressSheetClose"></view>
+    <view class="address-sheet">
+      <view class="address-sheet__handle"></view>
+      <view class="address-sheet__heading">
+        <view>
+          <view class="address-sheet__title">选择收货地址</view>
+          <view class="address-sheet__subtitle">地址会保存到灶香集账户</view>
+        </view>
+        <button disabled="{{importingAddress}}" bindtap="onAddressSheetClose">关闭</button>
+      </view>
+
+      <scroll-view wx:if="{{addresses.length}}" class="address-options" scroll-y="{{true}}">
+        <view
+          wx:for="{{addresses}}"
+          wx:key="id"
+          class="address-option {{selectedAddress && selectedAddress.id === item.id ? 'address-option--selected' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="onAddressSelect"
+        >
+          <view class="address-option__check">{{selectedAddress && selectedAddress.id === item.id ? '✓' : ''}}</view>
+          <view class="address-option__body">
+            <view class="address-option__receiver">
+              <text>{{item.receiverName}}</text>
+              <text>{{item.receiverPhone}}</text>
+              <text wx:if="{{item.isDefault}}" class="default-tag">默认</text>
+            </view>
+            <view class="address-option__detail">{{item.formattedAddress}}</view>
+          </view>
+        </view>
+      </scroll-view>
+      <view wx:else class="address-options-empty">还没有保存的地址</view>
+
+      <button
+        class="import-address-action"
+        loading="{{importingAddress}}"
+        disabled="{{importingAddress}}"
+        bindtap="onImportAddress"
+      >从微信地址导入</button>
+    </view>
+  </view>
+
+  <view wx:if="{{couponSheetOpen}}" class="sheet-layer" catchtouchmove="onSheetTouchMove">
+    <view class="sheet-mask" bindtap="onCouponSheetClose"></view>
+    <view class="address-sheet coupon-sheet">
+      <view class="address-sheet__handle"></view>
+      <view class="address-sheet__heading">
+        <view>
+          <view class="address-sheet__title">选择优惠券</view>
+          <view class="address-sheet__subtitle">{{couponAvailableCount}} 张符合当前订单条件</view>
+        </view>
+        <button disabled="{{couponSelectingId}}" bindtap="onCouponSheetClose">关闭</button>
+      </view>
+
+      <view wx:if="{{couponLoading && !couponLoaded}}" class="coupon-sheet-state">正在加载优惠券…</view>
+      <view wx:elif="{{couponErrorText}}" class="coupon-sheet-state coupon-sheet-state--error">
+        <text>{{couponErrorText}}</text>
+        <button bindtap="onCouponRetry">重新加载</button>
+      </view>
+      <scroll-view wx:elif="{{coupons.length}}" class="coupon-options" scroll-y="{{true}}">
+        <view
+          wx:for="{{coupons}}"
+          wx:key="userCouponId"
+          class="coupon-option {{item.available ? '' : 'coupon-option--disabled'}} {{item.selected ? 'coupon-option--selected' : ''}}"
+          data-id="{{item.userCouponId}}"
+          bindtap="onCouponSelect"
+          aria-role="button"
+          aria-disabled="{{!item.available}}"
+        >
+          <view class="coupon-option__value">
+            <text>减</text>
+            <view>{{item.discountText}}</view>
+          </view>
+          <view class="coupon-option__body">
+            <view class="coupon-option__name">{{item.name}}</view>
+            <view class="coupon-option__condition">{{item.conditionText}}</view>
+            <view class="coupon-option__validity">{{item.validityText}}</view>
+            <view wx:if="{{item.unavailableText}}" class="coupon-option__unavailable">{{item.unavailableText}}</view>
+          </view>
+          <view class="coupon-option__status">
+            <text wx:if="{{couponSelectingId === item.userCouponId}}">选择中</text>
+            <text wx:elif="{{item.selected}}" class="coupon-option__selected-mark">✓</text>
+            <text wx:elif="{{item.available}}">可用</text>
+          </view>
+        </view>
+      </scroll-view>
+      <view wx:else class="coupon-sheet-state">暂无可用优惠券</view>
+    </view>
+  </view>
+</view>

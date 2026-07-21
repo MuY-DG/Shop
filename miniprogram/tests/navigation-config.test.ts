@@ -81,6 +81,7 @@ test("商品详情关闭下拉刷新并将规格选择收进购买弹层", () =>
     readFileSync(`${detailPageRoot}.json`, "utf8")
   ) as DetailPageConfig;
   const detailTemplate = readFileSync(`${detailPageRoot}.wxml`, "utf8");
+  const detailLogic = readFileSync(`${detailPageRoot}.ts`, "utf8");
 
   assert.equal(detailConfig.enablePullDownRefresh, false);
   assert.doesNotMatch(detailTemplate, /<sku-selector|stock-text=|categoryName/);
@@ -95,6 +96,72 @@ test("商品详情关闭下拉刷新并将规格选择收进购买弹层", () =>
   assert.doesNotMatch(detailTemplate, /bounces="{{false}}"/);
   assert.match(detailTemplate, /class="detail-scroll-content"/);
   assert.match(detailTemplate, /class="purchase-sheet-scroll-content"/);
+  assert.match(detailLogic, /buildDirectBuyUrl/);
+});
+
+test("购物车与结算页注册真实交易路径", () => {
+  const appConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "app.json"), "utf8")
+  ) as AppConfig;
+  const cartTemplate = readFileSync(
+    resolve(sourceRoot, "pages/cart/cart.wxml"),
+    "utf8"
+  );
+  const previewTemplate = readFileSync(
+    resolve(sourceRoot, "pages/order/preview/preview.wxml"),
+    "utf8"
+  );
+  const previewLogic = readFileSync(
+    resolve(sourceRoot, "pages/order/preview/preview.ts"),
+    "utf8"
+  );
+
+  assert.ok(appConfig.pages.includes("pages/order/preview/preview"));
+  assert.ok(appConfig.pages.includes("pages/order/created/created"));
+  assert.doesNotMatch(cartTemplate, /tab-placeholder|正在接入/);
+  assert.match(cartTemplate, /bindtap="onCheckoutTap"/);
+  assert.match(previewTemplate, /bindtap="onImportAddress"/);
+  assert.match(previewTemplate, /bindtap="onPayTap"/);
+  assert.match(previewTemplate, /立即支付/);
+  assert.doesNotMatch(previewTemplate, /应付金额|提交订单/);
+  assert.match(previewLogic, /executeOrderPayment/);
+  assert.doesNotMatch(previewLogic, /wx\.showModal/);
+  assert.doesNotMatch(previewTemplate, /商品原价|批发\/活动优惠/);
+  assert.match(previewTemplate, /优惠券/);
+});
+
+test("微信支付与订单中心注册真实页面和关键操作", () => {
+  const appConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "app.json"), "utf8")
+  ) as AppConfig;
+  const createdTemplate = readFileSync(
+    resolve(sourceRoot, "pages/order/created/created.wxml"),
+    "utf8"
+  );
+  const listTemplate = readFileSync(
+    resolve(sourceRoot, "pages/order/list/list.wxml"),
+    "utf8"
+  );
+  const detailTemplate = readFileSync(
+    resolve(sourceRoot, "pages/order/detail/detail.wxml"),
+    "utf8"
+  );
+  const paymentAdapter = readFileSync(
+    resolve(sourceRoot, "utils/wechat-payment.ts"),
+    "utf8"
+  );
+
+  assert.ok(appConfig.pages.includes("pages/order/list/list"));
+  assert.ok(appConfig.pages.includes("pages/order/detail/detail"));
+  assert.match(createdTemplate, /bindtap="onPayTap"/);
+  assert.match(createdTemplate, /bindtap="onCancelTap"/);
+  assert.match(createdTemplate, /支付金额/);
+  assert.match(createdTemplate, /待支付金额/);
+  assert.doesNotMatch(createdTemplate, /应付金额|订单提交成功|同步支付结果/);
+  assert.match(listTemplate, /bindtap="onOrderTap"/);
+  assert.match(listTemplate, /catchtap="onCancelTap"/);
+  assert.match(detailTemplate, /bindtap="onConfirmTap"/);
+  assert.match(paymentAdapter, /wx\.requestPayment/);
 });
 
 test("首页使用微信原生下拉刷新图标", () => {

@@ -1,0 +1,133 @@
+<view class="detail-page">
+  <navigation-bar
+    title="订单详情"
+    back="{{true}}"
+    home="{{true}}"
+    background="#FAF2E4"
+    color="#2E1D16"
+    loading="{{loaded && loading}}"
+  />
+
+  <view class="detail-content">
+    <view wx:if="{{!loaded && loading}}" class="detail-state">
+      <ui-state type="loading" title="正在读取订单" description="支付与履约状态正在同步" />
+    </view>
+    <view wx:elif="{{!loaded && errorText}}" class="detail-state">
+      <ui-state type="error" title="订单详情加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
+    </view>
+
+    <block wx:elif="{{detail}}">
+      <view wx:if="{{errorText}}" class="inline-error">
+        <text>{{errorText}}</text>
+        <button bindtap="onRetry">重试</button>
+      </view>
+
+      <view class="status-card status-card--{{detail.statusTone}}">
+        <view class="status-card__icon">{{detail.status === 'COMPLETED' ? '✓' : '灶'}}</view>
+        <view>
+          <view class="status-card__title">{{detail.statusText}}</view>
+          <view class="status-card__description">{{detail.statusDescription}}</view>
+        </view>
+      </view>
+
+      <view class="detail-card receiver-card">
+        <view class="receiver-card__marker">收</view>
+        <view>
+          <view class="receiver-card__person">{{detail.receiverName}}　{{detail.receiverPhone}}</view>
+          <view class="receiver-card__address">{{detail.receiverAddress}}</view>
+        </view>
+      </view>
+
+      <view class="detail-card">
+        <view class="section-heading">商品清单</view>
+        <view
+          wx:for="{{detail.items}}"
+          wx:key="orderItemId"
+          class="detail-item"
+        >
+          <view class="detail-item__image-shell">
+            <image
+              wx:if="{{item.hasImage}}"
+              class="detail-item__image"
+              src="{{item.imageUrl}}"
+              mode="aspectFill"
+              data-index="{{index}}"
+              binderror="onItemImageError"
+            />
+            <view wx:else class="detail-item__fallback">灶</view>
+          </view>
+          <view class="detail-item__body">
+            <view class="detail-item__title">{{item.productTitle}}</view>
+            <view wx:if="{{item.specText}}" class="detail-item__spec">{{item.specText}}</view>
+            <view wx:if="{{item.wholesaleText}}" class="detail-item__wholesale">{{item.wholesaleText}}</view>
+            <view class="detail-item__price-row">
+              <text>{{item.unitPriceText}}</text>
+              <text>×{{item.quantity}}</text>
+            </view>
+            <view class="detail-item__subtotal">小计 {{item.lineAmountText}}</view>
+          </view>
+        </view>
+      </view>
+
+      <view class="detail-card amount-card">
+        <view class="section-heading">金额明细</view>
+        <view class="amount-row"><text>商品金额</text><text>{{detail.productAmountText}}</text></view>
+        <view class="amount-row {{detail.hasWholesaleDiscount ? 'amount-row--discount' : ''}}">
+          <text>批发优惠</text>
+          <text>{{detail.hasWholesaleDiscount ? '-' + detail.wholesaleDiscountText : '暂无优惠'}}</text>
+        </view>
+        <view class="amount-row {{detail.hasCouponDiscount ? 'amount-row--discount' : ''}}">
+          <text>优惠券<text wx:if="{{detail.couponName}}">（{{detail.couponName}}）</text></text>
+          <text>{{detail.hasCouponDiscount ? '-' + detail.couponDiscountText : '未使用'}}</text>
+        </view>
+        <view class="amount-row"><text>运费</text><text>{{detail.freightText}}</text></view>
+        <view class="amount-divider"></view>
+        <view class="amount-row amount-row--total">
+          <text>{{detail.paidAmountCent > 0 ? '实付金额' : '应付金额'}}</text>
+          <text>{{detail.paidAmountCent > 0 ? detail.paidAmountText : detail.payableAmountText}}</text>
+        </view>
+      </view>
+
+      <view class="detail-card order-info">
+        <view class="section-heading">订单信息</view>
+        <view class="info-row"><text>订单编号</text><text>{{detail.orderNo}}</text></view>
+        <view class="info-row"><text>下单时间</text><text>{{detail.createdAtText}}</text></view>
+        <view wx:if="{{detail.paidAtText}}" class="info-row"><text>支付时间</text><text>{{detail.paidAtText}}</text></view>
+        <view wx:if="{{detail.shippedAtText}}" class="info-row"><text>发货时间</text><text>{{detail.shippedAtText}}</text></view>
+        <view wx:if="{{detail.completedAtText}}" class="info-row"><text>完成时间</text><text>{{detail.completedAtText}}</text></view>
+        <view wx:if="{{detail.closeReason}}" class="info-row"><text>关闭原因</text><text>{{detail.closeReason}}</text></view>
+        <view wx:if="{{detail.transactionId}}" class="info-row"><text>微信支付单号</text><text>{{detail.transactionId}}</text></view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{detail && (detail.canPay || detail.canConfirmReceipt)}}" class="detail-actions">
+    <button
+      wx:if="{{detail.canCancel}}"
+      class="detail-action detail-action--secondary"
+      disabled="{{actionType}}"
+      bindtap="onCancelTap"
+    >取消订单</button>
+    <button
+      wx:if="{{detail.canSyncPayment}}"
+      class="detail-action detail-action--secondary"
+      loading="{{actionType === 'sync'}}"
+      disabled="{{actionType}}"
+      bindtap="onSyncTap"
+    >同步结果</button>
+    <button
+      wx:if="{{detail.canPay}}"
+      class="detail-action detail-action--primary"
+      loading="{{actionType === 'pay'}}"
+      disabled="{{actionType}}"
+      bindtap="onPayTap"
+    >{{detail.paymentActionText}}</button>
+    <button
+      wx:if="{{detail.canConfirmReceipt}}"
+      class="detail-action detail-action--primary"
+      loading="{{actionType === 'confirm'}}"
+      disabled="{{actionType}}"
+      bindtap="onConfirmTap"
+    >确认收货</button>
+  </view>
+</view>
