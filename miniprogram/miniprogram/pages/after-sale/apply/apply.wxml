@@ -1,5 +1,5 @@
 <view class="apply-page">
-  <navigation-bar title="申请退款" back="{{true}}" home="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
+  <navigation-bar title="申请退款" back="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
 
   <view class="apply-content">
     <view wx:if="{{!loaded && loading}}" class="apply-state">

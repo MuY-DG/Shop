@@ -7,6 +7,7 @@ import {
 } from "../../../../features/account-center";
 import {
   createAddress,
+  deleteAddress,
   getAddress,
   updateAddress
 } from "../../../../services/address";
@@ -57,11 +58,85 @@ function isTextField(value: unknown): value is AddressTextField {
 }
 
 function addressDisplay(value: AddressFormValue): string {
-  const region = [value.province, value.city, value.district]
-    .map((item) => item.trim())
-    .filter((item, index, values) => item && values.indexOf(item) === index)
-    .join(" ");
-  return [region, value.detailAddress.trim()].filter(Boolean).join(" ");
+  return value.detailAddress.trim();
+}
+
+function isCancelled(error: unknown): boolean {
+  return Boolean(
+    error &&
+    typeof error === "object" &&
+    "errMsg" in error &&
+    String(error.errMsg || "").includes("cancel")
+  );
+}
+
+function wechatAddressErrorText(error: unknown): string {
+  if (!error || typeof error !== "object" || !("errMsg" in error)) {
+    return "微信地址暂不可用，请手动填写";
+  }
+  const message = String(error.errMsg || "").toLowerCase();
+  if (message.includes("need to be declared")) {
+    return "微信地址能力配置尚未生效，请退出小程序后重新进入再试";
+  }
+  if (
+    message.includes("api permission") ||
+    message.includes("permission not open") ||
+    message.includes("no permission")
+  ) {
+    return "请先在小程序后台开通“收货地址”接口权限，再重新尝试";
+  }
+  if (
+    message.includes("auth deny") ||
+    message.includes("authorize") ||
+    message.includes("permission") ||
+    message.includes("privacy")
+  ) {
+    return "请在微信设置中允许使用通讯地址后重试，也可手动填写";
+  }
+  if (message.includes("not support") || message.includes("unsupported")) {
+    return "当前微信环境不支持地址导入，请手动填写";
+  }
+  return "请确认微信中已保存通讯地址后重试，也可手动填写";
+}
+
+function showWechatAddressError(error: unknown): void {
+  const content = wechatAddressErrorText(error);
+  const needsSetting = /设置中允许/.test(content);
+  wx.showModal({
+    title: "暂时无法导入",
+    content,
+    confirmText: needsSetting ? "去设置" : "我知道了",
+    cancelText: "手动填写",
+    showCancel: needsSetting,
+    success: (result) => {
+      if (needsSetting && result.confirm) {
+        wx.openSetting({});
+      }
+    }
+  });
+}
+
+function chooseWechatAddress(): Promise<WechatMiniprogram.ChooseAddressSuccessCallbackResult> {
+  return new Promise((resolve, reject) => {
+    if (!wx.canIUse("chooseAddress")) {
+      reject({ errMsg: "chooseAddress:fail not support" });
+      return;
+    }
+    wx.chooseAddress({ success: resolve, fail: reject });
+  });
+}
+
+function confirmDelete(): Promise<boolean> {
+  return new Promise((resolve) => {
+    wx.showModal({
+      title: "删除收货地址",
+      content: "删除后无法恢复，确定继续吗？",
+      confirmText: "删除",
+      confirmColor: "#B72B22",
+      success: (result) => resolve(result.confirm),
+      fail: () => resolve(false)
+    });
+  });
 }
 
 Page({
@@ -74,6 +149,8 @@ Page({
     loading: false,
     loaded: true,
     saving: false,
+    deleting: false,
+    importing: false,
     locating: false,
     locationStatusText: "",
     loadErrorText: "",
@@ -176,6 +253,53 @@ Page({
     this.openLocationPicker();
   },
 
+  onWechatImportTap() {
+    void this.importWechatAddress();
+  },
+
+  async importWechatAddress() {
+    if (this.data.importing || this.data.saving || this.data.deleting) {
+      return;
+    }
+    this.setData({ importing: true, validationErrorText: "" });
+    try {
+      const address = await chooseWechatAddress();
+      const province = String(address.provinceName || "").trim();
+      const city = String(address.cityName || "").trim() || province;
+      const district = String(address.countyName || "").trim() || city;
+      const receiverName = String(address.userName || "").trim();
+      const receiverPhone = String(address.telNumber || "").trim();
+      const detailAddress = String(
+        address.detailInfoNew || address.detailInfo || address.streetName || ""
+      ).trim();
+      if (!receiverName || !receiverPhone || !province || !detailAddress) {
+        throw new Error("微信地址信息不完整");
+      }
+      const form: AddressFormValue = {
+        ...this.data.form,
+        receiverName,
+        receiverPhone,
+        province,
+        city,
+        district,
+        detailAddress
+      };
+      this.setData({
+        form,
+        addressDisplay: addressDisplay(form),
+        doorplate: "",
+        importing: false,
+        locationStatusText: ""
+      });
+      wx.showToast({ title: "微信地址已导入", icon: "success" });
+    } catch (error) {
+      this.setData({ importing: false });
+      if (!isCancelled(error)) {
+        showWechatAddressError(error);
+      }
+    }
+  },
+
   onDoorplateInput(event: InputEvent) {
     this.setData({
       doorplate: event.detail.value,
@@ -220,9 +344,7 @@ Page({
     this.setData({
       form,
       addressDisplay: addressDisplay(form),
-      locationStatusText: complete
-        ? "已通过地图选择，可继续填写楼栋、单元或房间号"
-        : "地址信息不完整，请重新选择地图位置",
+      locationStatusText: "",
       validationErrorText: ""
     });
     wx.showToast({
@@ -235,8 +357,33 @@ Page({
     void this.saveAddress();
   },
 
+  onDeleteTap() {
+    void this.removeAddress();
+  },
+
+  async removeAddress() {
+    const addressId = parseAddressId(this.data.addressId);
+    if (!addressId || this.data.saving || this.data.deleting) {
+      return;
+    }
+    if (!await confirmDelete()) {
+      return;
+    }
+    this.setData({ deleting: true, validationErrorText: "" });
+    try {
+      await deleteAddress(addressId);
+      this.setData({ deleting: false });
+      wx.showToast({ title: "地址已删除", icon: "success" });
+      wx.navigateBack({ delta: 1 });
+    } catch (error) {
+      const message = actionError(error, "地址删除失败，请稍后重试");
+      this.setData({ deleting: false, validationErrorText: message });
+      wx.showToast({ title: message, icon: "none" });
+    }
+  },
+
   async saveAddress() {
-    if (this.data.saving) {
+    if (this.data.saving || this.data.importing || this.data.deleting) {
       return;
     }
     const formForSave: AddressFormValue = {

@@ -46,7 +46,7 @@ test("地址表单规范空白并校验姓名、电话、地区和详细地址",
     isDefault: true
   });
   assert.equal(validateAddressForm({ ...validAddress, receiverName: "" }), "请填写收货人姓名");
-  assert.equal(validateAddressForm({ ...validAddress, receiverPhone: "abc" }), "请填写有效的联系电话");
+  assert.equal(validateAddressForm({ ...validAddress, receiverPhone: "abc" }), "请填写有效的手机号码");
   assert.equal(validateAddressForm({ ...validAddress, district: "" }), "请通过地图选择完整地址");
   assert.equal(validateAddressForm({ ...validAddress, detailAddress: "" }), "请通过地图选择详细地址");
   assert.equal(parseAddressId("9007199254740993123"), "9007199254740993123");

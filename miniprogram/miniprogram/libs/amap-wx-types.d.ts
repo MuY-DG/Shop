@@ -57,7 +57,19 @@ export interface AMapClient {
     location?: string;
     querykeywords?: string;
     querytypes?: string;
+    pageNumber?: number;
+    pageSize?: number;
     success: (data: { poisData?: AMapPoi[] }) => void;
+    fail: (error: AMapFailure) => void;
+  }): void;
+
+  getPoiKeywords(options: {
+    keywords: string;
+    city?: string;
+    citylimit?: boolean;
+    pageNumber?: number;
+    pageSize?: number;
+    success: (data: { poisData?: AMapPoi[]; count?: number }) => void;
     fail: (error: AMapFailure) => void;
   }): void;
 

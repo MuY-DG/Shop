@@ -1,5 +1,5 @@
 <view class="coupon-page">
-  <navigation-bar title="优惠券" back="{{true}}" home="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
+  <navigation-bar title="优惠券" back="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
 
   <view class="coupon-section-tabs">
     <view

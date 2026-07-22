@@ -37,5 +37,8 @@
 - `service-phone.svg`：[Iconify Material Symbols `material-symbols:phone-in-talk-outline-rounded`](https://icon-sets.iconify.design/material-symbols/phone-in-talk-outline-rounded/)，Apache 2.0，用于读取公开联系电话后发起微信拨号。
 - `member-crown.svg`：[Iconify Material Symbols `material-symbols:crown-rounded`](https://icon-sets.iconify.design/material-symbols/crown-rounded/)，Apache 2.0，用于昵称右侧的金牌会员标签。
 - `member-v-diamond.svg`：用户提供的钻石 V 会员 SVG，用于头像右下角的会员身份标识。
+- `navigation-back.svg`、`address-search.svg`、`location-target-active.svg`、`location-target-idle.svg`：用户提供的收货地址与全局导航 SVG，分别用于统一返回、地址搜索和地图定位状态；`navigation-back.png` 是地图原生层为兼容真机渲染使用的透明 PNG 版本。
+- `address-edit.svg`、`address-check.svg`：[Material Symbols](https://fonts.google.com/icons)，Apache 2.0，用于编辑地址和附近地点选中态。
+- `wechat.svg`：[Simple Icons WeChat](https://simpleicons.org/?q=wechat)，CC0 1.0，用于从微信导入收货地址。
 
 图标已内置为小程序本地资源；运行时不请求 Iconify，也不需要配置图片域名白名单。

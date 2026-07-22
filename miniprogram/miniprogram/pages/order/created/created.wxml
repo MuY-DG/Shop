@@ -1,7 +1,6 @@
 <view class="created-page">
   <navigation-bar
     title="支付成功"
-    home="{{true}}"
     background="#FAF2E4"
     color="#2E1D16"
     loading="{{loading}}"

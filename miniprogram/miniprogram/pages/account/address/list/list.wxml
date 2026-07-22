@@ -2,21 +2,12 @@
   <navigation-bar
     title="收货地址"
     back="{{true}}"
-    home="{{true}}"
-    background="#FAF2E4"
+    background="#F6EDDF"
     color="#2E1D16"
     loading="{{loaded && loading}}"
   />
 
   <view class="address-content">
-    <view class="page-heading">
-      <view>
-        <view class="page-heading__title">收货地址</view>
-        <view class="page-heading__subtitle">管理结算时可选择的配送地址</view>
-      </view>
-      <button class="page-heading__action" bindtap="onAddTap">新增地址</button>
-    </view>
-
     <view wx:if="{{!loaded && loading}}" class="address-state">
       <ui-state type="loading" title="正在加载地址" description="请稍候" />
     </view>
@@ -24,7 +15,7 @@
       <ui-state type="error" title="地址加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
     </view>
     <view wx:elif="{{loaded && !addresses.length}}" class="address-state">
-      <ui-state type="empty" title="还没有收货地址" description="新增地址后，下单时可以直接选择" action-text="新增地址" bindaction="onAddTap" />
+      <ui-state type="empty" title="还没有收货地址" description="新增后可在下单时直接使用" />
     </view>
 
     <block wx:else>
@@ -32,29 +23,25 @@
         <text>{{errorText}}</text>
         <button bindtap="onRetry">重试</button>
       </view>
-      <view wx:for="{{addresses}}" wx:key="id" class="address-card">
-        <view class="address-card__heading">
-          <view class="address-card__identity">
-            <text class="address-card__name">{{item.receiverName}}</text>
-            <text class="address-card__phone">{{item.receiverPhone}}</text>
-            <text wx:if="{{item.isDefault}}" class="default-tag">默认</text>
+      <view class="address-list">
+        <view wx:for="{{addresses}}" wx:key="id" class="address-row" data-id="{{item.id}}" bindtap="onEditTap">
+          <view class="address-row__body">
+            <view class="address-row__detail">{{item.detailDisplay}}</view>
+            <view class="address-row__identity">
+              <text wx:if="{{item.isDefault}}" class="default-tag">默认</text>
+              <text class="address-row__name">{{item.receiverName}}</text>
+              <text class="address-row__phone">{{item.phoneDisplay}}</text>
+            </view>
           </view>
-        </view>
-        <view class="address-card__detail">{{item.formattedAddress}}</view>
-        <view class="address-card__actions">
-          <button
-            wx:if="{{!item.isDefault}}"
-            class="address-action"
-            data-id="{{item.id}}"
-            disabled="{{actionAddressId}}"
-            loading="{{actionAddressId === item.id}}"
-            bindtap="onDefaultTap"
-          >设为默认</button>
-          <view class="address-card__spacer"></view>
-          <button class="address-action" data-id="{{item.id}}" disabled="{{actionAddressId}}" bindtap="onEditTap">编辑</button>
-          <button class="address-action address-action--danger" data-id="{{item.id}}" disabled="{{actionAddressId}}" bindtap="onDeleteTap">删除</button>
+          <view class="address-row__edit" data-id="{{item.id}}" catchtap="onEditTap" aria-role="button" aria-label="编辑收货地址">
+            <image class="address-row__edit-icon" src="/assets/icons/address-edit.svg" mode="aspectFit" />
+          </view>
         </view>
       </view>
     </block>
+  </view>
+
+  <view class="address-footer">
+    <button class="add-address-button" bindtap="onAddTap">新增收货地址</button>
   </view>
 </view>

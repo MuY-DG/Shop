@@ -287,10 +287,10 @@ export function validateAddressForm(value: AddressFormValue): string {
     return "收货人姓名不能超过 64 个字";
   }
   if (!normalized.receiverPhone) {
-    return "请填写联系电话";
+    return "请填写手机号码";
   }
   if (!/^[0-9+()\-\s]{6,32}$/.test(normalized.receiverPhone)) {
-    return "请填写有效的联系电话";
+    return "请填写有效的手机号码";
   }
   if (!normalized.province || !normalized.city || !normalized.district) {
     return "请通过地图选择完整地址";

@@ -34,7 +34,8 @@
     }
   },
   "requiredPrivateInfos": [
-    "getLocation"
+    "getLocation",
+    "chooseAddress"
   ],
   "style": "v2",
   "componentFramework": "glass-easel",

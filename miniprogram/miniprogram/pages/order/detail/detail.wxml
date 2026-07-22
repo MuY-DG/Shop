@@ -2,7 +2,6 @@
   <navigation-bar
     title="{{navigationTitle}}"
     back="{{true}}"
-    home="{{true}}"
     background="#FAF2E4"
     color="#2E1D16"
     loading="{{loaded && loading}}"

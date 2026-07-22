@@ -128,6 +128,26 @@ test("账户中心注册真实页面、移除消息中心并提供在线客服",
   );
 });
 
+test("全局导航统一返回图标且不再显示首页按钮", () => {
+  const navigationTemplate = readFileSync(
+    resolve(sourceRoot, "components/navigation-bar/navigation-bar.wxml"),
+    "utf8"
+  );
+  const navigationLogic = readFileSync(
+    resolve(sourceRoot, "components/navigation-bar/navigation-bar.ts"),
+    "utf8"
+  );
+  const addressListTemplate = readFileSync(
+    resolve(sourceRoot, "pages/account/address/list/list.wxml"),
+    "utf8"
+  );
+
+  assert.match(navigationTemplate, /navigation-back\.svg/);
+  assert.doesNotMatch(navigationTemplate, /navigation-bar__home|handleHome/);
+  assert.doesNotMatch(navigationLogic, /\bhome:\s*\{|handleHome\(/);
+  assert.doesNotMatch(addressListTemplate, /\bhome=/);
+});
+
 test("商品详情关闭下拉刷新并将规格选择收进购买弹层", () => {
   const detailPageRoot = resolve(sourceRoot, "pages/product/detail/detail");
   const detailConfig = JSON.parse(

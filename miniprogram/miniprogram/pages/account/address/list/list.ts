@@ -1,9 +1,5 @@
 import { parseAddressId } from "../../../../features/account-center";
-import {
-  deleteAddress,
-  getAddresses,
-  setDefaultAddress
-} from "../../../../services/address";
+import { getAddresses } from "../../../../services/address";
 import type { AddressResponse } from "../../../../types/checkout";
 import { isApiError } from "../../../../utils/api-error";
 
@@ -13,6 +9,11 @@ interface DatasetEvent {
       id?: string;
     };
   };
+}
+
+interface AddressListItem extends AddressResponse {
+  detailDisplay: string;
+  phoneDisplay: string;
 }
 
 let latestRequest = 0;
@@ -25,32 +26,31 @@ function actionError(error: unknown, fallback: string): string {
       : fallback;
 }
 
-function confirmDelete(): Promise<boolean> {
-  return new Promise((resolve) => {
-    wx.showModal({
-      title: "删除地址",
-      content: "删除后无法恢复，是否继续？",
-      confirmText: "删除",
-      confirmColor: "#B72B22",
-      success: (result) => resolve(result.confirm),
-      fail: () => resolve(false)
-    });
-  });
+function maskPhone(value: string): string {
+  const normalized = value.trim();
+  return /^\d{11}$/.test(normalized)
+    ? `${normalized.slice(0, 3)}****${normalized.slice(-4)}`
+    : normalized;
+}
+
+function addressListItem(address: AddressResponse): AddressListItem {
+  return {
+    ...address,
+    detailDisplay: address.detailAddress.trim() || address.formattedAddress.trim(),
+    phoneDisplay: maskPhone(address.receiverPhone)
+  };
 }
 
 Page({
   data: {
-    addresses: [] as AddressResponse[],
+    addresses: [] as AddressListItem[],
     loading: true,
     loaded: false,
-    errorText: "",
-    actionAddressId: ""
+    errorText: ""
   },
 
   onShow() {
-    if (!this.data.actionAddressId) {
-      void this.loadAddresses();
-    }
+    void this.loadAddresses();
   },
 
   onUnload() {
@@ -75,7 +75,7 @@ Page({
         return;
       }
       this.setData({
-        addresses,
+        addresses: addresses.map(addressListItem),
         loading: false,
         loaded: true,
         errorText: ""
@@ -100,65 +100,6 @@ Page({
     if (addressId) {
       wx.navigateTo({
         url: `/pages/account/address/edit/edit?id=${encodeURIComponent(addressId)}`
-      });
-    }
-  },
-
-  onDefaultTap(event: DatasetEvent) {
-    const addressId = parseAddressId(event.currentTarget.dataset.id);
-    if (addressId) {
-      void this.setDefault(addressId);
-    }
-  },
-
-  async setDefault(addressId: string) {
-    if (this.data.actionAddressId) {
-      return;
-    }
-    this.setData({ actionAddressId: addressId });
-    try {
-      const updated = await setDefaultAddress(addressId);
-      this.setData({
-        addresses: this.data.addresses.map((address) => ({
-          ...address,
-          isDefault: address.id === updated.id
-        })),
-        actionAddressId: ""
-      });
-      wx.showToast({ title: "已设为默认", icon: "success" });
-    } catch (error) {
-      this.setData({ actionAddressId: "" });
-      wx.showToast({
-        title: actionError(error, "设置失败，请重试"),
-        icon: "none"
-      });
-    }
-  },
-
-  onDeleteTap(event: DatasetEvent) {
-    const addressId = parseAddressId(event.currentTarget.dataset.id);
-    if (addressId) {
-      void this.removeAddress(addressId);
-    }
-  },
-
-  async removeAddress(addressId: string) {
-    if (this.data.actionAddressId || !await confirmDelete()) {
-      return;
-    }
-    this.setData({ actionAddressId: addressId });
-    try {
-      await deleteAddress(addressId);
-      this.setData({
-        addresses: this.data.addresses.filter((address) => address.id !== addressId),
-        actionAddressId: ""
-      });
-      wx.showToast({ title: "地址已删除", icon: "success" });
-    } catch (error) {
-      this.setData({ actionAddressId: "" });
-      wx.showToast({
-        title: actionError(error, "删除失败，请重试"),
-        icon: "none"
       });
     }
   }

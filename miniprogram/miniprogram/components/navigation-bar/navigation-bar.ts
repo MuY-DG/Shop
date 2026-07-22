@@ -130,10 +130,6 @@ Component({
       type: Boolean,
       value: false,
     },
-    home: {
-      type: Boolean,
-      value: false,
-    },
     loading: {
       type: Boolean,
       value: false,
@@ -206,13 +202,6 @@ Component({
           this.reLaunchHome()
         },
       })
-    },
-
-    handleHome() {
-      const url = normalizeHomePath(this.data.homePath)
-
-      this.triggerEvent('home', { url })
-      this.reLaunchHome()
     },
 
     reLaunchHome() {

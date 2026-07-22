@@ -22,25 +22,10 @@
       >
         <image
           class="navigation-bar__back-icon"
-          src="/assets/icons/chevron-left-medium.svg"
+          src="/assets/icons/navigation-back.svg"
           mode="aspectFit"
           aria-hidden="true"
         />
-      </view>
-
-      <view
-        wx:if="{{home}}"
-        class="navigation-bar__action"
-        bindtap="handleHome"
-        hover-class="navigation-bar__action--active"
-        hover-stay-time="80"
-        aria-role="button"
-        aria-label="返回首页"
-      >
-        <view class="navigation-bar__home-icon" aria-hidden="true">
-          <view class="navigation-bar__home-roof"></view>
-          <view class="navigation-bar__home-body"></view>
-        </view>
       </view>
 
       <view class="navigation-bar__left-slot">
