@@ -10,6 +10,7 @@ export const API_ENDPOINTS = Object.freeze({
     avatar: "/app/users/me/avatar"
   },
   home: "/app/home",
+  contact: "/app/contact",
   product: {
     categories: "/app/product/categories",
     list: "/app/product/spus",
@@ -55,5 +56,11 @@ export const API_ENDPOINTS = Object.freeze({
     cancel: (orderId: number): string => `/app/orders/${orderId}/cancel`,
     paymentSync: (orderId: number): string => `/app/orders/${orderId}/payment/sync`,
     confirmReceipt: (orderId: number): string => `/app/orders/${orderId}/confirm-receipt`
+  },
+  afterSales: {
+    list: "/app/after-sales",
+    detail: (afterSaleId: number): string => `/app/after-sales/${afterSaleId}`,
+    forOrder: (orderId: number): string => `/app/orders/${orderId}/after-sales`,
+    evidence: (orderId: number): string => `/app/orders/${orderId}/after-sale-evidence`
   }
 });

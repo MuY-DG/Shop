@@ -1,0 +1,306 @@
+@import "../../../styles/tokens.less";
+@import "../../../styles/mixins.less";
+
+.after-sale-detail-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, @color-page-top 0, @color-page 100%);
+}
+
+.detail-content {
+  padding: @space-5 @page-gutter 154rpx;
+}
+
+.detail-state,
+.status-card,
+.detail-card {
+  .card-surface();
+}
+
+.detail-state {
+  min-height: 520rpx;
+}
+
+.inline-error {
+  margin-bottom: @space-4;
+  padding: @space-4 @space-5;
+  border-radius: @radius-md;
+  color: @color-danger;
+  background: @color-danger-soft;
+  font-size: @font-size-sm;
+}
+
+.status-card {
+  display: flex;
+  min-height: 144rpx;
+  padding: @space-6;
+  align-items: center;
+  gap: @space-5;
+}
+
+.status-card__icon {
+  display: flex;
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  font-size: @font-size-lg;
+  font-weight: 750;
+}
+
+.status-card--warning .status-card__icon {
+  color: @color-warning-text;
+  background: @color-warning-soft;
+}
+
+.status-card--brand .status-card__icon {
+  color: @color-brand;
+  background: @color-brand-soft;
+}
+
+.status-card--success .status-card__icon {
+  color: @color-success-text;
+  background: @color-success-soft;
+}
+
+.status-card--danger .status-card__icon {
+  color: @color-danger;
+  background: @color-danger-soft;
+}
+
+.status-card--muted .status-card__icon {
+  color: @color-text-muted;
+  background: @color-surface-muted;
+}
+
+.status-card__body {
+  min-width: 0;
+}
+
+.status-card__title {
+  color: @color-text-primary;
+  font-size: @font-size-xl;
+  font-weight: 750;
+}
+
+.status-card__description {
+  margin-top: @space-2;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  line-height: @line-height-base;
+}
+
+.detail-card {
+  margin-top: @space-4;
+  padding: @space-5;
+}
+
+.section-heading {
+  margin-bottom: @space-4;
+  color: @color-text-primary;
+  font-size: @font-size-md;
+  font-weight: 700;
+}
+
+.progress-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.progress-step {
+  min-width: 0;
+  text-align: center;
+}
+
+.progress-step__track {
+  position: relative;
+  display: flex;
+  height: 52rpx;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-step__dot {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  width: 44rpx;
+  height: 44rpx;
+  border: 2rpx solid @color-border;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  color: @color-text-placeholder;
+  background: @color-surface;
+  font-size: @font-size-xs;
+}
+
+.progress-step__line {
+  position: absolute;
+  z-index: 1;
+  top: 25rpx;
+  left: 50%;
+  width: 100%;
+  height: 3rpx;
+  background: @color-border;
+}
+
+.progress-step--done .progress-step__dot,
+.progress-step--current .progress-step__dot {
+  border-color: @color-brand;
+  color: @color-text-inverse;
+  background: @color-brand;
+}
+
+.progress-step--done .progress-step__line {
+  background: @color-brand;
+}
+
+.progress-step--error .progress-step__dot {
+  border-color: @color-danger;
+  color: @color-text-inverse;
+  background: @color-danger;
+}
+
+.progress-step__label {
+  margin-top: @space-2;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.progress-step--done .progress-step__label,
+.progress-step--current .progress-step__label {
+  color: @color-text-primary;
+  font-weight: 650;
+}
+
+.progress-step--error .progress-step__label {
+  color: @color-danger;
+  font-weight: 650;
+}
+
+.audit-card--danger,
+.audit-card--muted {
+  border-color: fade(@color-danger, 18%);
+  background: fade(@color-danger-soft, 58%);
+}
+
+.audit-card__copy {
+  color: @color-text-secondary;
+  font-size: @font-size-sm;
+  line-height: @line-height-relaxed;
+}
+
+.info-row {
+  display: flex;
+  padding: @space-3 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: @space-5;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.info-row > text:last-child {
+  max-width: 450rpx;
+  color: @color-text-primary;
+  text-align: right;
+  word-break: break-all;
+}
+
+.info-row .price-text {
+  color: @color-price;
+  font-family: @font-family-price;
+  font-size: @font-size-base;
+  font-weight: 750;
+}
+
+.description-block {
+  margin-top: @space-3;
+  padding: @space-4;
+  border-radius: @radius-md;
+  color: @color-text-muted;
+  background: @color-surface-muted;
+  font-size: @font-size-sm;
+}
+
+.description-block text {
+  display: block;
+  margin-top: @space-2;
+  color: @color-text-primary;
+  line-height: @line-height-relaxed;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.evidence-list {
+  margin-top: @space-2;
+}
+
+.evidence-file {
+  display: flex;
+  padding: @space-3 0;
+  border-top: 1rpx solid @color-divider;
+  align-items: center;
+  gap: @space-3;
+  color: @color-text-secondary;
+  font-size: @font-size-sm;
+}
+
+.evidence-file__icon {
+  display: flex;
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: @radius-sm;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: @color-brand;
+  background: @color-brand-soft;
+  font-size: @font-size-xs;
+  font-weight: 700;
+}
+
+.evidence-file text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.privacy-note {
+  margin-top: @space-3;
+  color: @color-text-placeholder;
+  font-size: @font-size-xs;
+  line-height: @line-height-base;
+}
+
+.detail-actions {
+  position: fixed;
+  z-index: 30;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: @space-4 @page-gutter calc(@space-4 + env(safe-area-inset-bottom));
+  border-top: 1rpx solid @color-border;
+  background: fade(@color-surface, 98%);
+  box-shadow: 0 -10rpx 30rpx rgba(68, 44, 32, 0.08);
+}
+
+button.order-button {
+  width: 100%;
+  height: 82rpx;
+  margin: 0;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-pill;
+  color: @color-brand;
+  background: @color-surface;
+  font-size: @font-size-base;
+  font-weight: 700;
+  line-height: 82rpx;
+}
+
+button.order-button::after {
+  border: 0;
+}

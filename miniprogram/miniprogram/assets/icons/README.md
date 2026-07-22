@@ -22,5 +22,20 @@
 - `view-list-rounded.svg`：[Iconify Material Symbols `material-symbols:view-list-rounded`](https://icon-sets.iconify.design/material-symbols/view-list-rounded/)，Apache 2.0，用于切换规格列表模式。
 - `chevron-left-medium.svg`：[Iconify Material Symbols `material-symbols:chevron-left`](https://icon-sets.iconify.design/material-symbols/chevron-left/)，Apache 2.0，用于中等线宽的返回图标。
 - `zoom-in-material-symbols.svg`：[Iconify Material Symbols `material-symbols:zoom-in-rounded`](https://icon-sets.iconify.design/material-symbols/zoom-in-rounded/)，Apache 2.0，用于规格图片和当前商品图的放大预览入口。
+- `profile-coupon.svg`：[Iconify Material Symbols `material-symbols:confirmation-number-outline-rounded`](https://icon-sets.iconify.design/material-symbols/confirmation-number-outline-rounded/)，Apache 2.0，用于个人中心优惠券入口。
+- `profile-footprint.svg`：[Iconify Material Symbols `material-symbols:footprint-outline-rounded`](https://icon-sets.iconify.design/material-symbols/footprint-outline-rounded/)，Apache 2.0，用于个人中心浏览足迹入口。
+- `order-wallet.svg`：用户提供的待付款 SVG，仅用于个人中心订单入口。
+- `order-package.svg`：用户提供的待发货 SVG，仅用于个人中心订单入口。
+- `order-receive.svg`：用户提供的待收货 SVG，仅用于个人中心订单入口。
+- `order-review.svg`：用户提供的评价 SVG，仅用于个人中心订单入口。
+- `order-after-sale.svg`：用户提供的售后 SVG，仅用于个人中心订单入口。
+- `account-after-sale.svg`：[Iconify Material Design Icons `mdi:cash-refund`](https://icon-sets.iconify.design/mdi/cash-refund/)，Apache 2.0，用于退款与售后入口。
+- `tab-home.svg` / `tab-home-active.svg`：[Iconify Material Symbols `material-symbols:home-outline-rounded`](https://icon-sets.iconify.design/material-symbols/home-outline-rounded/)，Apache 2.0，底部首页导航的默认与选中版本。
+- `tab-category.svg` / `tab-category-active.svg`：[Iconify Material Symbols `material-symbols:grid-view-outline-rounded`](https://icon-sets.iconify.design/material-symbols/grid-view-outline-rounded/)，Apache 2.0，底部分类导航的默认与选中版本。
+- `tab-cart.svg` / `tab-cart-active.svg`：[Iconify Material Symbols `material-symbols:shopping-cart-outline-rounded`](https://icon-sets.iconify.design/material-symbols/shopping-cart-outline-rounded/)，Apache 2.0，底部购物车导航的默认与选中版本。
+- `tab-profile.svg` / `tab-profile-active.svg`：[Iconify Material Symbols `material-symbols:person-outline-rounded`](https://icon-sets.iconify.design/material-symbols/person-outline-rounded/)，Apache 2.0，底部个人中心导航的默认与选中版本。
+- `service-phone.svg`：[Iconify Material Symbols `material-symbols:phone-in-talk-outline-rounded`](https://icon-sets.iconify.design/material-symbols/phone-in-talk-outline-rounded/)，Apache 2.0，用于读取公开联系电话后发起微信拨号。
+- `member-crown.svg`：[Iconify Material Symbols `material-symbols:crown-rounded`](https://icon-sets.iconify.design/material-symbols/crown-rounded/)，Apache 2.0，用于昵称右侧的金牌会员标签。
+- `member-v-diamond.svg`：用户提供的钻石 V 会员 SVG，用于头像右下角的会员身份标识。
 
 图标已内置为小程序本地资源；运行时不请求 Iconify，也不需要配置图片域名白名单。

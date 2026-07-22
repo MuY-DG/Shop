@@ -1,5 +1,16 @@
 <view class="profile-page">
-  <navigation-bar title="我的" background="#FAF2E4" color="#2E1D16" />
+  <image
+    class="profile-page__background"
+    src="/assets/images/profile-watercolor-background.png"
+    mode="aspectFill"
+    aria-hidden="true"
+  />
+  <navigation-bar
+    title=""
+    background="transparent"
+    color="#2E1D16"
+    show-divider="{{false}}"
+  />
 
   <view class="profile-content">
     <view
@@ -7,81 +18,135 @@
       bindtap="onMemberTap"
       hover-class="member-card--pressed"
       aria-role="button"
-      aria-label="{{loggedIn ? '编辑个人资料' : '前往登录'}}"
+      aria-label="{{loggedIn ? '查看个人资料' : '前往登录'}}"
     >
-      <image
-        class="member-card__avatar"
-        src="{{avatarUrl}}"
-        mode="{{avatarMode}}"
-      />
+      <view class="member-card__avatar-shell">
+        <image
+          class="member-card__avatar"
+          src="{{avatarUrl}}"
+          mode="{{avatarMode}}"
+        />
+        <image
+          wx:if="{{loggedIn}}"
+          class="member-card__vip-mark"
+          src="/assets/icons/member-v-diamond.svg"
+          mode="aspectFit"
+          aria-label="钻石 V 会员"
+        />
+      </view>
       <view class="member-card__body">
-        <view class="member-card__name">{{nickname}}</view>
+        <view class="member-card__identity">
+          <view class="member-card__name">{{nickname}}</view>
+          <view wx:if="{{loggedIn}}" class="member-card__member-badge" aria-label="金牌会员">
+            <image
+              class="member-card__member-crown"
+              src="/assets/icons/member-crown.svg"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
+            <text>金牌会员</text>
+          </view>
+        </view>
         <view class="member-card__copy">{{memberCopy}}</view>
       </view>
-      <view wx:if="{{!loggedIn}}" class="member-card__login">登录</view>
+    </view>
+
+    <view class="account-metrics">
+      <view
+        wx:for="{{accountMetrics}}"
+        wx:key="path"
+        class="account-metric"
+        data-path="{{item.path}}"
+        bindtap="onAccountServiceTap"
+        hover-class="account-metric--pressed"
+        aria-role="button"
+        aria-label="{{item.ariaLabel}} {{item.value}}"
+      >
+        <view class="account-metric__identity">
+          <image
+            class="account-metric__icon"
+            src="{{item.iconPath}}"
+            mode="aspectFit"
+            aria-hidden="true"
+          />
+          <text class="account-metric__label">{{item.label}}</text>
+        </view>
+        <text class="account-metric__value">{{item.value}}</text>
+      </view>
     </view>
 
     <view class="order-center-card">
-      <view class="order-center-card__heading" bindtap="onAllOrdersTap" aria-role="button">
-        <view>
-          <view class="order-center-card__title">我的订单</view>
-          <view class="order-center-card__subtitle">支付、发货与收货进度</view>
+      <view
+        class="order-center-card__heading"
+        bindtap="onAllOrdersTap"
+        hover-class="order-center-card__heading--pressed"
+        aria-role="button"
+      >
+        <view class="order-center-card__title">我的订单</view>
+        <view class="order-center-card__all">
+          <text>查看全部订单</text>
+          <image
+            class="order-center-card__chevron"
+            src="/assets/icons/chevron-right-light.svg"
+            mode="aspectFit"
+            aria-hidden="true"
+          />
         </view>
-        <view class="order-center-card__all">全部订单 <text>›</text></view>
       </view>
       <view class="order-shortcuts">
         <view
           wx:for="{{orderShortcuts}}"
-          wx:key="group"
+          wx:key="label"
           class="order-shortcut"
           data-group="{{item.group}}"
+          data-path="{{item.path}}"
           bindtap="onOrderShortcutTap"
+          hover-class="order-shortcut--pressed"
           aria-role="button"
+          aria-label="{{item.ariaLabel || item.label}}"
         >
-          <view class="order-shortcut__icon">{{item.icon}}</view>
-          <text>{{item.label}}</text>
+          <view class="order-shortcut__visual">
+            <image
+              class="order-shortcut__icon"
+              src="{{item.iconPath}}"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
+            <text wx:if="{{item.badge}}" class="order-shortcut__badge">{{item.badge}}</text>
+          </view>
+          <text class="order-shortcut__label">{{item.label}}</text>
         </view>
       </view>
     </view>
 
     <view class="service-card">
-      <view class="service-card__heading">
-        <view class="service-card__title">常用服务</view>
-        <view class="service-card__subtitle">管理账户资料与购物足迹</view>
-      </view>
+      <view class="service-card__title">常用服务</view>
       <view class="service-grid">
         <view
-          wx:for="{{accountServices}}"
-          wx:key="path"
+          wx:for="{{serviceItems}}"
+          wx:key="label"
           class="service-item"
           data-path="{{item.path}}"
-          bindtap="onAccountServiceTap"
+          data-kind="{{item.kind}}"
+          bindtap="onServiceItemTap"
+          hover-class="service-item--pressed"
           aria-role="button"
+          aria-label="{{item.label}}"
         >
-          <view class="service-item__icon">{{item.icon}}</view>
-          <text>{{item.label}}</text>
+          <image
+            class="service-item__icon"
+            src="{{item.iconPath}}"
+            mode="aspectFit"
+            aria-hidden="true"
+          />
+          <text class="service-item__label">{{item.label}}</text>
+          <button
+            wx:if="{{item.kind === 'contact'}}"
+            class="service-item__contact-hit"
+            open-type="contact"
+            aria-label="在线客服"
+          />
         </view>
-      </view>
-      <button
-        class="customer-service"
-        open-type="contact"
-        hover-class="customer-service--pressed"
-        aria-label="联系在线客服"
-      >
-        <view class="customer-service__icon">客</view>
-        <view class="customer-service__body">
-          <view class="customer-service__title">在线客服</view>
-          <view class="customer-service__copy">商品、配送或订单问题，随时联系我们</view>
-        </view>
-        <text class="customer-service__chevron">›</text>
-      </button>
-    </view>
-
-    <view class="profile-note">
-      <view class="profile-note__mark">安</view>
-      <view>
-        <view class="profile-note__title">交易保障</view>
-        <view class="profile-note__copy">支付结果以微信和服务端同步状态为准，异常订单可重新同步。</view>
       </view>
     </view>
   </view>

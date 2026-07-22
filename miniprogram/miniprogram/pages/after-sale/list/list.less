@@ -1,0 +1,159 @@
+@import "../../../styles/tokens.less";
+@import "../../../styles/mixins.less";
+
+.after-sale-list-page {
+  min-height: 100vh;
+  background: linear-gradient(180deg, @color-page-top 0, @color-page 100%);
+}
+
+.list-content {
+  padding: @space-5 @page-gutter @space-12;
+}
+
+.list-state,
+.record-card {
+  .card-surface();
+}
+
+.list-state {
+  min-height: 520rpx;
+}
+
+.inline-error {
+  display: flex;
+  margin-bottom: @space-4;
+  padding: @space-4 @space-5;
+  border-radius: @radius-md;
+  align-items: center;
+  justify-content: space-between;
+  gap: @space-4;
+  color: @color-danger;
+  background: @color-danger-soft;
+  font-size: @font-size-sm;
+}
+
+.inline-error button {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font-size: @font-size-sm;
+  line-height: @line-height-base;
+}
+
+.inline-error button::after {
+  border: 0;
+}
+
+.record-card {
+  margin-bottom: @space-4;
+  padding: @space-5;
+}
+
+.record-card__heading,
+.record-card__body,
+.record-card__footer {
+  display: flex;
+  justify-content: space-between;
+  gap: @space-4;
+}
+
+.record-card__heading {
+  align-items: flex-start;
+}
+
+.record-card__order {
+  color: @color-text-primary;
+  font-size: @font-size-base;
+  font-weight: 700;
+}
+
+.record-card__time {
+  margin-top: @space-1;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.record-card__status {
+  padding: @space-1 @space-3;
+  border-radius: @radius-pill;
+  flex: none;
+  font-size: @font-size-xs;
+}
+
+.record-card__status--warning {
+  color: @color-warning-text;
+  background: @color-warning-soft;
+}
+
+.record-card__status--brand {
+  color: @color-brand;
+  background: @color-brand-soft;
+}
+
+.record-card__status--success {
+  color: @color-success-text;
+  background: @color-success-soft;
+}
+
+.record-card__status--danger {
+  color: @color-danger;
+  background: @color-danger-soft;
+}
+
+.record-card__status--muted {
+  color: @color-text-muted;
+  background: @color-surface-muted;
+}
+
+.record-card__body {
+  margin-top: @space-5;
+  align-items: flex-end;
+}
+
+.record-card__type {
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  font-weight: 650;
+}
+
+.record-card__reason {
+  margin-top: @space-2;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.record-card__amount {
+  color: @color-price;
+  font-family: @font-family-price;
+  font-size: @font-size-lg;
+  font-weight: 750;
+}
+
+.record-card__footer {
+  margin-top: @space-5;
+  padding-top: @space-4;
+  border-top: 1rpx solid @color-divider;
+  align-items: center;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  line-height: @line-height-base;
+}
+
+.record-card__footer > text:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.record-card__chevron {
+  color: @color-text-placeholder;
+  font-size: @font-size-lg;
+}
+
+.page-tip {
+  padding: @space-4 0;
+  color: @color-text-placeholder;
+  font-size: @font-size-xs;
+  text-align: center;
+}

@@ -15,6 +15,7 @@ import type { ApiResponse } from "../miniprogram/types/api";
 import type { AppSessionResponse } from "../miniprogram/types/auth";
 import { isApiError } from "../miniprogram/utils/api-error";
 import { request } from "../miniprogram/utils/request";
+import { uploadFile as uploadAuthenticatedFile } from "../miniprogram/utils/upload";
 import { getHome } from "../miniprogram/services/home";
 import {
   updateMyProfile,
@@ -413,6 +414,39 @@ test("受保护请求的并发 401 共用一次刷新并各自只重试一次", 
 
   assert.deepEqual(await Promise.all([first, second]), [{ ok: true }, { ok: true }]);
   assert.equal(pendingRequests.length, 0);
+});
+
+test("售后凭证上传在 401 后刷新会话并只重试一次", async () => {
+  await establishSession("1");
+  const upload = uploadAuthenticatedFile<{ id: number }>({
+    url: "/app/orders/101/after-sale-evidence",
+    filePath: "/tmp/evidence.png"
+  });
+  await flushTasks();
+
+  const firstUpload = takeUpload("/app/orders/101/after-sale-evidence");
+  assert.equal(firstUpload.header?.Authorization, "Bearer access-1");
+  respondUpload(firstUpload, 401, { code: 100001, msg: "unauthorized" });
+  await flushTasks();
+
+  const refreshCall = takeRequest("/app/auth/refresh");
+  respond(refreshCall, 200, {
+    code: 200,
+    msg: "success",
+    data: sessionResponse("2")
+  });
+  await flushTasks();
+
+  const retryUpload = takeUpload("/app/orders/101/after-sale-evidence");
+  assert.equal(retryUpload.header?.Authorization, "Bearer access-2");
+  respondUpload(retryUpload, 200, {
+    code: 200,
+    msg: "success",
+    data: { id: 801 }
+  });
+
+  assert.deepEqual(await upload, { id: 801 });
+  assert.equal(pendingUploads.length, 0);
 });
 
 test("非 void 成功响应缺少 data 时报告协议错误", async () => {

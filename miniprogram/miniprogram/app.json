@@ -17,7 +17,10 @@
     "pages/order/preview/preview",
     "pages/order/created/created",
     "pages/order/list/list",
-    "pages/order/detail/detail"
+    "pages/order/detail/detail",
+    "pages/after-sale/apply/apply",
+    "pages/after-sale/list/list",
+    "pages/after-sale/detail/detail"
   ],
   "window": {
     "navigationBarTextStyle": "black",

@@ -2,288 +2,414 @@
 @import "../../styles/mixins.less";
 
 .profile-page {
+  position: relative;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 12% 2%, fade(@color-gold, 10%) 0, transparent 28%),
-    linear-gradient(180deg, @color-page-top 0, @color-page 100%);
+  overflow: hidden;
+  background-color: #fbf3e8;
+}
+
+.profile-page__background {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .profile-content {
-  padding: @space-6 @page-gutter calc(@tab-bar-height + @space-12);
+  position: relative;
+  z-index: 1;
+  min-height: calc(100vh - @navigation-height);
+  padding: 92rpx 34rpx calc(@tab-bar-height + @space-12);
 }
 
 .member-card,
+.account-metrics,
 .order-center-card,
-.service-card,
-.profile-note {
-  .card-surface();
+.service-card {
+  border: 1rpx solid rgba(255, 255, 255, 0.72);
+  border-radius: @radius-lg;
+  box-shadow: 0 14rpx 38rpx rgba(90, 55, 28, 0.09);
 }
 
 .member-card {
+  position: relative;
   display: flex;
-  min-height: 150rpx;
-  padding: @space-6;
+  min-height: 226rpx;
+  padding: 30rpx 34rpx;
+  overflow: hidden;
   align-items: center;
-  gap: @space-5;
-  background:
-    linear-gradient(135deg, fade(@color-gold-soft, 88%) 0, @color-surface 74%);
+  gap: 28rpx;
+  background: transparent;
   transition: opacity @duration-fast @ease-standard;
 }
 
-.member-card__avatar {
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: 50%;
-  flex: none;
-  overflow: hidden;
-  background: @color-gold-soft;
+.member-card::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 78%;
+  border-radius: @radius-lg 0 0 @radius-lg;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 250, 240, 0.9) 0%,
+    rgba(255, 248, 236, 0.76) 62%,
+    rgba(255, 248, 236, 0) 100%
+  );
+  content: "";
+  pointer-events: none;
 }
 
-.member-card--pressed {
-  opacity: 0.78;
+.member-card--pressed,
+.account-metric--pressed,
+.order-shortcut--pressed,
+.service-item--pressed,
+.order-center-card__heading--pressed {
+  opacity: 0.7;
+}
+
+.member-card__avatar-shell {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 154rpx;
+  height: 154rpx;
+  padding: 0;
+  border: 5rpx solid #d6a04a;
+  border-radius: 50%;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  box-shadow: 12rpx 12rpx 28rpx rgba(82, 40, 16, 0.2);
+}
+
+.member-card__avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.member-card__vip-mark {
+  position: absolute;
+  right: -10rpx;
+  bottom: -9rpx;
+  z-index: 3;
+  width: 40rpx;
+  height: 40rpx;
+  filter: drop-shadow(0 3rpx 5rpx rgba(54, 30, 8, 0.22));
 }
 
 .member-card__body {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   flex: 1;
 }
 
+.member-card__identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10rpx;
+}
+
 .member-card__name {
-  color: @color-text-primary;
-  font-size: @font-size-lg;
-  font-weight: 750;
+  min-width: 0;
+  overflow: hidden;
+  flex-shrink: 1;
+  color: #2b1b14;
+  font-family: "Songti SC", "STSong", @font-family-base;
+  font-size: 38rpx;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-card__member-badge {
+  display: inline-flex;
+  height: 36rpx;
+  padding: 0 12rpx 0 10rpx;
+  border: 0;
+  border-radius: @radius-pill;
+  flex: none;
+  align-items: center;
+  color: rgba(0, 0, 0, 0.75);
+  background: linear-gradient(135deg, #f9cc94 0%, #edb76c 100%);
+  font-size: 18rpx;
+  font-weight: 350;
+  letter-spacing: 1rpx;
+  line-height: 36rpx;
+  gap: 4rpx;
+}
+
+.member-card__member-crown {
+  width: 19rpx;
+  height: 19rpx;
+  flex: none;
+  opacity: 0.78;
 }
 
 .member-card__copy {
-  margin-top: @space-2;
-  color: @color-text-muted;
-  font-size: @font-size-sm;
+  margin-top: 16rpx;
+  overflow: hidden;
+  color: rgba(76, 53, 42, 0.76);
+  font-size: 23rpx;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.member-card__login {
+.account-metrics {
+  display: grid;
+  min-height: 164rpx;
+  margin-top: 24rpx;
+  padding: 22rpx 10rpx;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  background: rgba(255, 253, 249, 0.82);
+  -webkit-backdrop-filter: blur(12rpx);
+  backdrop-filter: blur(12rpx);
+}
+
+.account-metric {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  padding: 6rpx 20rpx;
+  grid-template-columns: 64rpx minmax(24rpx, 1fr);
+  column-gap: 14rpx;
+  align-items: center;
+  transition: opacity @duration-fast @ease-standard;
+}
+
+.account-metric + .account-metric::before {
+  position: absolute;
+  top: 14rpx;
+  bottom: 14rpx;
+  left: 0;
+  width: 1rpx;
+  background: rgba(107, 74, 51, 0.11);
+  content: "";
+}
+
+.account-metric__identity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.account-metric__icon {
+  width: 52rpx;
+  height: 52rpx;
   flex: none;
-  padding: @space-2 @space-4;
-  border: 1rpx solid fade(@color-brand, 30%);
-  border-radius: @radius-pill;
+}
+
+.account-metric__value {
+  min-width: 0;
   color: @color-brand;
-  background: fade(@color-surface, 72%);
-  font-size: @font-size-xs;
+  font-family: @font-family-price;
+  font-size: 36rpx;
   font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  justify-self: end;
+  line-height: 1;
+}
+
+.account-metric__label {
+  color: @color-text-primary;
+  font-size: 22rpx;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.order-center-card,
+.service-card {
+  background: rgba(255, 253, 250, 0.9);
+  -webkit-backdrop-filter: blur(14rpx);
+  backdrop-filter: blur(14rpx);
 }
 
 .order-center-card {
-  margin-top: @space-5;
-  padding: @space-5;
+  margin-top: 24rpx;
+  padding: 28rpx 26rpx 26rpx;
 }
 
 .order-center-card__heading {
   display: flex;
-  padding-bottom: @space-5;
-  border-bottom: 1rpx solid @color-divider;
+  min-height: 48rpx;
   align-items: center;
   justify-content: space-between;
-  gap: @space-4;
+  gap: 24rpx;
+  transition: opacity @duration-fast @ease-standard;
 }
 
-.order-center-card__title {
-  color: @color-text-primary;
-  font-size: @font-size-md;
+.order-center-card__title,
+.service-card__title {
+  color: #241711;
+  font-family: "Songti SC", "STSong", @font-family-base;
+  font-size: 31rpx;
   font-weight: 700;
-}
-
-.order-center-card__subtitle {
-  margin-top: @space-1;
-  color: @color-text-muted;
-  font-size: @font-size-xs;
+  letter-spacing: 1rpx;
 }
 
 .order-center-card__all {
+  display: flex;
+  min-width: 0;
+  align-items: center;
   color: @color-text-secondary;
-  font-size: @font-size-sm;
+  font-size: 23rpx;
+  gap: 8rpx;
 }
 
-.order-center-card__all text {
-  margin-left: @space-2;
-  color: @color-text-placeholder;
-  font-size: 34rpx;
+.order-center-card__chevron {
+  width: 28rpx;
+  height: 28rpx;
+  flex: none;
 }
 
 .order-shortcuts {
   display: grid;
-  padding-top: @space-5;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: @space-2;
+  padding-top: 28rpx;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4rpx;
 }
 
 .order-shortcut {
   display: flex;
-  padding: @space-3 0;
+  min-width: 0;
+  padding: 10rpx 0 6rpx;
   flex-direction: column;
   align-items: center;
-  color: @color-text-secondary;
-  font-size: @font-size-xs;
-  gap: @space-3;
+  color: @color-text-primary;
+  transition: opacity @duration-fast @ease-standard;
+}
+
+.order-shortcut__visual {
+  position: relative;
+  width: 62rpx;
+  height: 62rpx;
 }
 
 .order-shortcut__icon {
-  display: flex;
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: @radius-md;
-  align-items: center;
-  justify-content: center;
-  color: @color-brand;
-  background: @color-brand-soft;
-  font-size: @font-size-base;
-  font-weight: 700;
+  width: 62rpx;
+  height: 62rpx;
+}
+
+.order-shortcut__badge {
+  position: absolute;
+  top: -9rpx;
+  right: -13rpx;
+  min-width: 29rpx;
+  height: 29rpx;
+  padding: 0 6rpx;
+  border: 3rpx solid rgba(255, 253, 250, 0.94);
+  border-radius: @radius-pill;
+  color: @color-text-inverse;
+  font-size: 18rpx;
+  line-height: 29rpx;
+  text-align: center;
+  background: @color-danger;
+}
+
+.order-shortcut__label {
+  margin-top: 16rpx;
+  overflow: hidden;
+  font-size: 22rpx;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .service-card {
-  margin-top: @space-5;
-  padding: @space-5;
-}
-
-.service-card__heading {
-  padding-bottom: @space-4;
-  border-bottom: 1rpx solid @color-divider;
-}
-
-.service-card__title {
-  color: @color-text-primary;
-  font-size: @font-size-md;
-  font-weight: 700;
-}
-
-.service-card__subtitle {
-  margin-top: @space-1;
-  color: @color-text-muted;
-  font-size: @font-size-xs;
+  margin-top: 24rpx;
+  padding: 28rpx 26rpx 32rpx;
 }
 
 .service-grid {
   display: grid;
-  padding: @space-5 0;
+  margin-top: 28rpx;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: @space-2;
+  justify-content: stretch;
+  gap: 0;
 }
 
 .service-item {
-  display: flex;
-  min-width: 0;
-  padding: @space-2 0;
-  flex-direction: column;
-  align-items: center;
-  color: @color-text-secondary;
-  font-size: @font-size-xs;
-  gap: @space-3;
-}
-
-.service-item__icon,
-.customer-service__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: @color-brand;
-  background: @color-brand-soft;
-  font-weight: 700;
-}
-
-.service-item__icon {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: @radius-md;
-  font-size: @font-size-base;
-}
-
-.customer-service {
+  position: relative;
   display: flex;
   width: 100%;
-  min-height: 104rpx;
+  min-width: 0;
+  min-height: 112rpx;
   margin: 0;
-  padding: @space-4;
+  padding: 4rpx 0;
   border: 0;
   border-radius: @radius-md;
+  flex-direction: column;
   align-items: center;
+  justify-content: flex-start;
   color: @color-text-primary;
-  background: @color-surface-muted;
-  text-align: left;
+  background: transparent;
+  line-height: 1.4;
   transition: opacity @duration-fast @ease-standard;
 }
 
-.customer-service::after {
+.service-item__contact-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+}
+
+.service-item__contact-hit::after {
   border: 0;
 }
 
-.customer-service--pressed {
-  opacity: 0.75;
-}
-
-.customer-service__icon {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 50%;
+.service-item__icon {
+  width: 62rpx;
+  height: 62rpx;
   flex: none;
-  font-size: @font-size-sm;
 }
 
-.customer-service__body {
-  min-width: 0;
-  margin-left: @space-4;
-  flex: 1;
+.service-item__label {
+  max-width: 100%;
+  margin-top: 14rpx;
+  overflow: hidden;
+  font-size: 22rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.customer-service__title {
-  font-size: @font-size-sm;
-  font-weight: 700;
-  line-height: 1.4;
-}
+@media (max-width: 340px) {
+  .profile-content {
+    padding-right: 24rpx;
+    padding-left: 24rpx;
+  }
 
-.customer-service__copy {
-  margin-top: @space-1;
-  color: @color-text-muted;
-  font-size: @font-size-xs;
-  line-height: 1.45;
-}
+  .member-card {
+    padding-right: 26rpx;
+    padding-left: 26rpx;
+  }
 
-.customer-service__chevron {
-  margin-left: @space-3;
-  flex: none;
-  color: @color-text-placeholder;
-  font-size: 36rpx;
-}
+  .account-metric {
+    padding-right: 12rpx;
+    padding-left: 12rpx;
+    grid-template-columns: 60rpx minmax(22rpx, 1fr);
+    column-gap: 8rpx;
+  }
 
-.profile-note {
-  display: flex;
-  margin-top: @space-5;
-  padding: @space-5;
-  align-items: center;
-  gap: @space-4;
-  box-shadow: none;
-}
-
-.profile-note__mark {
-  display: flex;
-  width: 52rpx;
-  height: 52rpx;
-  border: 2rpx solid fade(@color-success, 45%);
-  border-radius: @radius-sm;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  color: @color-success-text;
-  font-family: serif;
-  transform: rotate(-4deg);
-}
-
-.profile-note__title {
-  color: @color-text-primary;
-  font-size: @font-size-sm;
-  font-weight: 650;
-}
-
-.profile-note__copy {
-  margin-top: @space-1;
-  color: @color-text-muted;
-  font-size: @font-size-xs;
-  line-height: 1.55;
 }

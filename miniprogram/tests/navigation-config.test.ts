@@ -115,6 +115,17 @@ test("账户中心注册真实页面、移除消息中心并提供在线客服",
   assert.match(profileTemplate, /open-type="contact"/);
   assert.match(profileTemplate, /在线客服/);
   assert.match(profileLogic, /accountNavigationPath/);
+  assert.match(profileLogic, /profile-default-avatar\.png/);
+  assert.match(profileTemplate, /profile-watercolor-background\.png/);
+  assert.doesNotMatch(`${profileLogic}\n${profileTemplate}`, /\.webp/);
+  assert.equal(
+    existsSync(resolve(sourceRoot, "assets/images/profile-default-avatar.png")),
+    true
+  );
+  assert.equal(
+    existsSync(resolve(sourceRoot, "assets/images/profile-watercolor-background.png")),
+    true
+  );
 });
 
 test("商品详情关闭下拉刷新并将规格选择收进购买弹层", () => {

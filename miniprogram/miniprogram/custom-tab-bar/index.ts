@@ -1,7 +1,8 @@
 interface TabItem {
   pagePath: string;
   text: string;
-  icon: "home" | "category" | "cart" | "profile";
+  iconPath: string;
+  activeIconPath: string;
   badge: string;
 }
 
@@ -14,10 +15,34 @@ interface TabTapEvent {
 }
 
 const TAB_ITEMS: TabItem[] = [
-  { pagePath: "/pages/index/index", text: "首页", icon: "home", badge: "" },
-  { pagePath: "/pages/category/category", text: "分类", icon: "category", badge: "" },
-  { pagePath: "/pages/cart/cart", text: "购物车", icon: "cart", badge: "" },
-  { pagePath: "/pages/profile/profile", text: "我的", icon: "profile", badge: "" }
+  {
+    pagePath: "/pages/index/index",
+    text: "首页",
+    iconPath: "/assets/icons/tab-home.svg",
+    activeIconPath: "/assets/icons/tab-home-active.svg",
+    badge: ""
+  },
+  {
+    pagePath: "/pages/category/category",
+    text: "分类",
+    iconPath: "/assets/icons/tab-category.svg",
+    activeIconPath: "/assets/icons/tab-category-active.svg",
+    badge: ""
+  },
+  {
+    pagePath: "/pages/cart/cart",
+    text: "购物车",
+    iconPath: "/assets/icons/tab-cart.svg",
+    activeIconPath: "/assets/icons/tab-cart-active.svg",
+    badge: ""
+  },
+  {
+    pagePath: "/pages/profile/profile",
+    text: "我的",
+    iconPath: "/assets/icons/tab-profile.svg",
+    activeIconPath: "/assets/icons/tab-profile-active.svg",
+    badge: ""
+  }
 ];
 
 Component({

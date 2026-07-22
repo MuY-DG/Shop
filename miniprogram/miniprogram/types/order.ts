@@ -1,3 +1,5 @@
+import type { AfterSaleResponse } from "./after-sale";
+
 export type OrderStatus =
   | "CREATED"
   | "PAYING"
@@ -87,7 +89,7 @@ export interface AppOrderDetailResponse {
   refundingAt?: string;
   refundedAt?: string;
   shipment?: unknown;
-  latestAfterSale?: unknown;
+  latestAfterSale?: AfterSaleResponse;
   items: OrderItemResponse[];
 }
 

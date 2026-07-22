@@ -1083,16 +1083,16 @@ curl -s "http://localhost:8080/admin/assets/${AFTER_SALE_EVIDENCE_ID}" \
 - The server fixes the evidence contract to `ATTACHMENT + IMAGE + PRIVATE`, binds it to `AFTER_SALE_ORDER_ID`, and returns a 24-hour staging expiry.
 - In MySQL, verify `TIMESTAMPDIFF(MINUTE, CURRENT_TIMESTAMP, expires_at)` is about `120` for the staged secret and `1440` for the staged evidence. A negative value indicates a JVM/database clock regression and must block cutover.
 - Mini program applies refund-only through `POST /app/orders/{orderId}/after-sales` with `afterSaleType=REFUND_ONLY`, `requestedAmountCent`, `reason`, and `evidenceFileIds`.
-- Mini program applies return-refund through the same endpoint with `afterSaleType=RETURN_REFUND` against a shipped order.
+- The current full-order-refund policy rejects `RETURN_REFUND` and partial amounts; the mini program exposes only `REFUND_ONLY` with the immutable full paid amount.
 - Admin rejects one request through `POST /admin/after-sales/{afterSaleId}/reject` and verifies status `REJECTED` while the order remains paid or shipped.
 - Admin approves one request through `POST /admin/after-sales/{afterSaleId}/approve` with `approvedAmountCent`; with the mock provider, verify the after-sale moves to `REFUNDING` and `refund_order.status` starts as `PROCESSING`.
 - Backend mock refund callback tests verify successful callback transitions to after-sale `REFUNDED`, refund order `SUCCESS`, and order `REFUNDED`.
 
 Real local WeChat refund smoke:
 
-- Start from a real paid or shipped order created through the real payment smoke.
+- Start from a real paid, shipped, or completed order created through the real payment smoke.
 - Use HTTPS tunnel callback URL `https://<public-tunnel-domain>/wxpay/refund/notify`.
-- Upload order-scoped evidence, then apply refund-only or return-refund from the mini program with the returned evidence asset IDs.
+- Upload order-scoped evidence, then apply the full-order refund-only request from the mini program with the returned evidence asset IDs.
 - Approve the after-sale in admin and verify WeChat accepts the refund request.
 - Wait for `POST /wxpay/refund/notify`.
 - Verify refund callback log reaches `SUCCESS`, `refund_order.status` becomes `SUCCESS`, after-sale status becomes `REFUNDED`, and order status becomes `REFUNDED`.

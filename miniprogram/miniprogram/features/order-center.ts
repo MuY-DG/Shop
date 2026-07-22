@@ -6,6 +6,12 @@ import type {
   OrderStatusGroup,
   OrderSummaryResponse
 } from "../types/order";
+import {
+  buildAfterSaleView,
+  canApplyAfterSale,
+  isActiveAfterSale,
+  type AfterSaleView
+} from "./after-sale";
 
 export interface OrderStatusTab {
   value: OrderStatusGroup;
@@ -64,6 +70,10 @@ export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
   paidAtText: string;
   shippedAtText: string;
   completedAtText: string;
+  hasAfterSale: boolean;
+  canApplyAfterSale: boolean;
+  afterSaleActionText: string;
+  latestAfterSaleView?: AfterSaleView;
 }
 
 function money(cent: unknown): string {
@@ -194,9 +204,16 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     retailProductAmountCent - order.productAmountCent,
     0
   );
+  const latestAfterSaleView = order.latestAfterSale
+    ? buildAfterSaleView(order.latestAfterSale)
+    : undefined;
+  const orderActions = actions(order.status);
+  const fulfillmentBlocked = order.latestAfterSale
+    ? isActiveAfterSale(order.latestAfterSale.status)
+    : false;
   return {
     ...order,
-    ...actions(order.status),
+    ...orderActions,
     items: order.items.map(buildOrderItemView),
     statusText: orderStatusText(order.status),
     statusTone: orderStatusTone(order.status),
@@ -213,7 +230,12 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     createdAtText: dateTimeText(order.createdAt),
     paidAtText: dateTimeText(order.paidAt),
     shippedAtText: dateTimeText(order.shippedAt),
-    completedAtText: dateTimeText(order.completedAt)
+    completedAtText: dateTimeText(order.completedAt),
+    canConfirmReceipt: orderActions.canConfirmReceipt && !fulfillmentBlocked,
+    hasAfterSale: Boolean(latestAfterSaleView),
+    canApplyAfterSale: canApplyAfterSale(order.status, order.latestAfterSale),
+    afterSaleActionText: latestAfterSaleView?.status === "REJECTED" ? "重新申请售后" : "申请售后",
+    latestAfterSaleView
   };
 }
 

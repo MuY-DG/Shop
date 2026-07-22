@@ -14,7 +14,8 @@ export const ACCOUNT_ROUTES = Object.freeze({
   addresses: "/pages/account/address/list/list",
   coupons: "/pages/account/coupon/coupon",
   favorites: "/pages/account/favorites/favorites",
-  history: "/pages/account/history/history"
+  history: "/pages/account/history/history",
+  afterSales: "/pages/after-sale/list/list"
 });
 
 export const COUPON_STATUS_TABS = Object.freeze([

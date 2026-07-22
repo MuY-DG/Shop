@@ -1,5 +1,9 @@
 import { buildCartCheckoutUrl } from "../../../features/checkout";
 import {
+  buildAfterSaleApplyUrl,
+  buildAfterSaleDetailUrl
+} from "../../../features/after-sale";
+import {
   buildOrderDetailView,
   buildOrderListUrl,
   formatPaymentCountdown,
@@ -96,6 +100,8 @@ Page({
       void this.recoverPayment();
     } else if (this.data.detail?.canPay && countdownDeadlineMs > 0) {
       this.startCountdownTimer();
+    } else if (this.data.loaded && !this.data.actionType) {
+      void this.refreshDetail();
     }
   },
 
@@ -452,6 +458,22 @@ Page({
       this.setData({ actionType: "" });
       await this.refreshDetail();
     }
+  },
+
+  onApplyAfterSaleTap() {
+    const detail = this.data.detail;
+    if (!detail?.canApplyAfterSale || this.data.actionType) {
+      return;
+    }
+    wx.navigateTo({ url: buildAfterSaleApplyUrl(detail.orderId) });
+  },
+
+  onAfterSaleDetailTap() {
+    const afterSaleId = this.data.detail?.latestAfterSaleView?.id;
+    if (!afterSaleId || this.data.actionType) {
+      return;
+    }
+    wx.navigateTo({ url: buildAfterSaleDetailUrl(afterSaleId) });
   },
 
   onItemImageError(event: DatasetEvent) {

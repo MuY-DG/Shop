@@ -86,6 +86,25 @@
         <view class="amount-row"><text>运费</text><text>{{detail.freightText}}</text></view>
       </view>
 
+      <view
+        wx:if="{{detail.hasAfterSale}}"
+        class="detail-card after-sale-card"
+        bindtap="onAfterSaleDetailTap"
+        aria-role="button"
+      >
+        <view class="after-sale-card__heading">
+          <view>
+            <view class="section-heading">退款售后</view>
+            <view class="after-sale-card__meta">{{detail.latestAfterSaleView.typeText}} · {{detail.latestAfterSaleView.requestedAmountText}}</view>
+          </view>
+          <view class="after-sale-card__status after-sale-card__status--{{detail.latestAfterSaleView.statusTone}}">
+            {{detail.latestAfterSaleView.statusText}}
+          </view>
+        </view>
+        <view class="after-sale-card__description">{{detail.latestAfterSaleView.statusDescription}}</view>
+        <view class="after-sale-card__link">查看处理进度 <text>›</text></view>
+      </view>
+
       <view class="detail-card order-info">
         <view class="section-heading">订单信息</view>
         <view class="info-row"><text>订单编号</text><text>{{detail.orderNo}}</text></view>
@@ -99,7 +118,7 @@
     </block>
   </view>
 
-  <view wx:if="{{detail && (detail.canPay || detail.canConfirmReceipt || detail.canDelete || detail.canRebuy)}}" class="detail-actions">
+  <view wx:if="{{detail && (detail.canPay || detail.canConfirmReceipt || detail.canDelete || detail.canRebuy || detail.canApplyAfterSale)}}" class="detail-actions">
     <button
       wx:if="{{detail.canCancel}}"
       class="detail-action detail-action--secondary detail-action--minor"
@@ -128,6 +147,12 @@
       disabled="{{actionType !== ''}}"
       bindtap="onRebuyTap"
     >再次购买</button>
+    <button
+      wx:if="{{detail.canApplyAfterSale}}"
+      class="detail-action detail-action--secondary detail-action--minor"
+      disabled="{{actionType !== ''}}"
+      bindtap="onApplyAfterSaleTap"
+    >{{detail.afterSaleActionText}}</button>
     <button
       wx:if="{{detail.canConfirmReceipt}}"
       class="detail-action detail-action--primary detail-action--major"
