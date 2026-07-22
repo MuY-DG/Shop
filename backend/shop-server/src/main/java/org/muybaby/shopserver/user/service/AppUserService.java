@@ -114,9 +114,30 @@ public class AppUserService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
     }
 
+    public AppUser updateAvatar(Long userId, String avatarUrl) {
+        if (!StringUtils.hasText(avatarUrl) || avatarUrl.length() > 1024) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+        int updatedRows = jdbcClient.sql("""
+                        UPDATE app_user
+                        SET avatar_url = :avatarUrl, updated_at = :updatedAt
+                        WHERE id = :id AND status = :status
+                        """)
+                .param("avatarUrl", avatarUrl)
+                .param("updatedAt", LocalDateTime.now())
+                .param("id", userId)
+                .param("status", ENABLED_STATUS)
+                .update();
+        if (updatedRows != 1) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        return findEnabledById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+    }
+
     private Optional<AppUser> findByOpenid(String openid) {
         return jdbcClient.sql("""
-                        SELECT id, openid, unionid, nickname, phone_number, phone_country_code, phone_authorized,
+                        SELECT id, openid, unionid, nickname, avatar_url, phone_number, phone_country_code, phone_authorized,
                                status, last_login_at, created_at, updated_at
                         FROM app_user
                         WHERE openid = :openid
@@ -128,7 +149,7 @@ public class AppUserService {
 
     private Optional<AppUser> findById(Long userId) {
         return jdbcClient.sql("""
-                        SELECT id, openid, unionid, nickname, phone_number, phone_country_code, phone_authorized,
+                        SELECT id, openid, unionid, nickname, avatar_url, phone_number, phone_country_code, phone_authorized,
                                status, last_login_at, created_at, updated_at
                         FROM app_user
                         WHERE id = :id
@@ -159,6 +180,7 @@ public class AppUserService {
                 rs.getString("openid"),
                 rs.getString("unionid"),
                 resolvedNickname(rs.getLong("id"), rs.getString("nickname")),
+                rs.getString("avatar_url"),
                 rs.getString("phone_number"),
                 rs.getString("phone_country_code"),
                 rs.getBoolean("phone_authorized"),

@@ -7,6 +7,22 @@
   />
 
   <view class="cart-content">
+    <view wx:if="{{loginRequired}}" class="cart-login-state">
+      <image
+        class="cart-login-state__emblem"
+        src="/assets/images/zaoxiangji-login-emblem.png"
+        mode="aspectFit"
+      />
+      <view class="cart-login-state__title">登录后查看购物车</view>
+      <view class="cart-login-state__description">商品清单与结算信息会安全地保存在你的账户中</view>
+      <button
+        class="cart-login-state__action"
+        bindtap="onLoginTap"
+        hover-class="cart-login-state__action--pressed"
+      >去登录</button>
+    </view>
+
+    <block wx:else>
     <view wx:if="{{loaded && rawItems.length}}" class="cart-heading">
       <view>
         <view class="cart-heading__title">这一锅，慢慢挑</view>
@@ -138,9 +154,10 @@
         </view>
       </view>
     </block>
+    </block>
   </view>
 
-  <view wx:if="{{loaded && rawItems.length}}" class="settlement-bar">
+  <view wx:if="{{!loginRequired && loaded && rawItems.length}}" class="settlement-bar">
     <view
       class="select-all"
       bindtap="onSelectAllToggle"

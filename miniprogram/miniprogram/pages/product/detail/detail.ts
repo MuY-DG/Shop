@@ -47,12 +47,14 @@ import {
   recordProductBrowse,
   removeFavorite
 } from "../../../services/product-preference";
+import { getSessionState } from "../../../services/session";
 import type {
   ProductDetail,
   ProductFreightTemplate,
   ProductSku
 } from "../../../types/product";
 import { isApiError } from "../../../utils/api-error";
+import { openLoginPage } from "../../../utils/login-navigation";
 
 interface PageOptions {
   id?: string;
@@ -449,6 +451,9 @@ Page({
       wx.showToast({ title: "暂无可售规格", icon: "none" });
       return;
     }
+    if (!this.requireLogin()) {
+      return;
+    }
     const purchaseMode = event.currentTarget.dataset.mode === "CART" ? "CART" : "BUY";
     this.setData({
       activeSheet: "purchase",
@@ -575,6 +580,9 @@ Page({
 
   async onFavoriteToggle() {
     if (this.data.favoriteLoading || !this.data.productId) {
+      return;
+    }
+    if (!this.requireLogin()) {
       return;
     }
     const favorited = !this.data.favorited;
@@ -714,6 +722,9 @@ Page({
   },
 
   onReviewManageOpen() {
+    if (!this.requireLogin()) {
+      return;
+    }
     this.setData({ activeSheet: "reviewManage" });
     void this.loadReviewManagement();
   },
@@ -916,6 +927,18 @@ Page({
       return "评价不存在或已被删除";
     }
     return error.message || fallback;
+  },
+
+  requireLogin(): boolean {
+    const session = getSessionState();
+    if (session.user && (session.accessToken || session.refreshToken)) {
+      return true;
+    }
+    const redirect = this.data.productId
+      ? `/pages/product/detail/detail?id=${this.data.productId}`
+      : "/pages/index/index";
+    openLoginPage(redirect);
+    return false;
   },
 
   applySelection(sku: ProductSku, quantity: number) {

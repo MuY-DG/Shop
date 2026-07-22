@@ -27,6 +27,7 @@ const validAddress: AddressFormValue = {
 };
 
 test("账户中心只允许注册页面并拒绝可疑路由", () => {
+  assert.equal(accountNavigationPath(ACCOUNT_ROUTES.profile), ACCOUNT_ROUTES.profile);
   assert.equal(accountNavigationPath(ACCOUNT_ROUTES.addresses), ACCOUNT_ROUTES.addresses);
   assert.equal(accountNavigationPath(ACCOUNT_ROUTES.coupons), ACCOUNT_ROUTES.coupons);
   assert.equal(accountNavigationPath("/pages/message/message"), "");

@@ -3,6 +3,7 @@ export type UserId = string;
 export interface AppUserProfile {
   userId: UserId;
   nickname: string;
+  avatarUrl?: string;
   openidMasked: string;
   phoneAuthorized: boolean;
   phoneNumberMasked?: string;
@@ -17,6 +18,14 @@ export interface AppSessionResponse {
 
 export interface AppLoginRequest extends WechatMiniprogram.IAnyObject {
   code: string;
+}
+
+export interface PhoneAuthorizeRequest extends WechatMiniprogram.IAnyObject {
+  code: string;
+}
+
+export interface UpdateAppUserProfileRequest extends WechatMiniprogram.IAnyObject {
+  nickname: string;
 }
 
 export interface RefreshTokenRequest extends WechatMiniprogram.IAnyObject {

@@ -1,0 +1,73 @@
+<view class="user-profile-page">
+  <image
+    class="profile-page-background"
+    src="/assets/images/user-profile-background.png"
+    mode="aspectFill"
+  />
+  <navigation-bar
+    title="个人资料"
+    back="{{true}}"
+    round-back="{{true}}"
+    show-divider="{{false}}"
+    background="transparent"
+    color="#333333"
+    loading="{{loading || saving || loggingOut}}"
+  />
+
+  <view class="user-profile-content">
+    <view class="profile-card">
+      <view class="avatar-slot">
+        <image
+          class="avatar-button__image"
+          src="{{avatarUrl}}"
+          mode="aspectFill"
+        />
+        <button
+          class="avatar-button"
+          open-type="chooseAvatar"
+          disabled="{{saving || loggingOut}}"
+          bindchooseavatar="onAvatarChoose"
+          aria-label="使用微信头像"
+        ></button>
+      </view>
+      <view class="profile-field">
+        <text class="profile-field__label">昵称</text>
+        <input
+          class="profile-field__input"
+          type="nickname"
+          value="{{nickname}}"
+          maxlength="32"
+          confirm-type="done"
+          disabled="{{saving || loggingOut}}"
+          placeholder="选择微信昵称"
+          placeholder-class="profile-field__placeholder"
+          bindinput="onNicknameInput"
+        />
+      </view>
+      <view class="profile-field profile-field--last">
+        <text class="profile-field__label">手机号</text>
+        <view class="profile-field__value">{{phoneNumberMasked}}</view>
+      </view>
+    </view>
+
+    <view wx:if="{{loadErrorText}}" class="profile-sync-note">{{loadErrorText}}</view>
+    <view wx:if="{{validationErrorText}}" class="profile-error">{{validationErrorText}}</view>
+
+    <view class="profile-actions">
+      <button
+        class="save-button {{saving || loggingOut ? 'save-button--disabled' : ''}}"
+        loading="{{saving}}"
+        disabled="{{saving || loggingOut}}"
+        hover-class="save-button--pressed"
+        bindtap="onSaveTap"
+      >保存</button>
+
+      <button
+        class="logout-button {{saving || loggingOut ? 'logout-button--disabled' : ''}}"
+        loading="{{loggingOut}}"
+        disabled="{{saving || loggingOut}}"
+        bindtap="onLogoutTap"
+      >退出登录</button>
+    </view>
+  </view>
+</view>

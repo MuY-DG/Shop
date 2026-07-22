@@ -12,6 +12,7 @@ public class AppUserProfileMapper {
         return new AppUserProfile(
                 user.id(),
                 user.nickname(),
+                user.avatarUrl(),
                 mask(user.openid(), 4, 4),
                 authorized,
                 authorized ? mask(user.phoneNumber(), 3, 4) : null

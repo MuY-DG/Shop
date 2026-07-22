@@ -10,6 +10,7 @@ public record AppUser(
         String openid,
         String unionid,
         String nickname,
+        String avatarUrl,
         String phoneNumber,
         String phoneCountryCode,
         Boolean phoneAuthorized,

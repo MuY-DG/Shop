@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -23,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -42,6 +45,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class AppAuthControllerTest {
+
+    private static final byte[] TINY_PNG = Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4x8AAAAASUVORK5CYII="
+    );
 
     @Autowired
     private MockMvc mockMvc;
@@ -120,6 +127,30 @@ class AppAuthControllerTest {
                         .content("{\"code\":\"nickname-profile-user\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.user.nickname").value("山茶花用户"));
+    }
+
+    @Test
+    void appUserCanUploadWechatChosenAvatarAndReadItFromLaterProfiles() throws Exception {
+        AppSession login = login("avatar-profile-user");
+
+        MvcResult uploadResult = mockMvc.perform(multipart("/app/users/me/avatar")
+                        .file(new MockMultipartFile("file", "wechat-avatar.png", "image/png", TINY_PNG))
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.avatarUrl", startsWith("http://localhost:8080/files/public/")))
+                .andReturn();
+        String avatarUrl = read(uploadResult, "/data/avatarUrl").asText();
+
+        mockMvc.perform(get("/app/users/me")
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.avatarUrl").value(avatarUrl));
+
+        mockMvc.perform(post("/app/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"code\":\"avatar-profile-user\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.user.avatarUrl").value(avatarUrl));
     }
 
     @Test

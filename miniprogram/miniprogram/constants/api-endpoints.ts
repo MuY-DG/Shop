@@ -2,7 +2,12 @@ export const API_ENDPOINTS = Object.freeze({
   auth: {
     login: "/app/auth/login",
     refresh: "/app/auth/refresh",
+    phone: "/app/auth/phone",
     logout: "/app/auth/logout"
+  },
+  user: {
+    me: "/app/users/me",
+    avatar: "/app/users/me/avatar"
   },
   home: "/app/home",
   product: {

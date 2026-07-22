@@ -27,21 +27,25 @@
   gap: @space-5;
   background:
     linear-gradient(135deg, fade(@color-gold-soft, 88%) 0, @color-surface 74%);
+  transition: opacity @duration-fast @ease-standard;
 }
 
 .member-card__avatar {
-  display: flex;
   width: 88rpx;
   height: 88rpx;
-  border: 2rpx solid fade(@color-brand, 22%);
   border-radius: 50%;
   flex: none;
-  align-items: center;
-  justify-content: center;
-  color: @color-brand;
-  background: @color-brand-soft;
-  font-family: serif;
-  font-size: @font-size-xl;
+  overflow: hidden;
+  background: @color-gold-soft;
+}
+
+.member-card--pressed {
+  opacity: 0.78;
+}
+
+.member-card__body {
+  min-width: 0;
+  flex: 1;
 }
 
 .member-card__name {
@@ -54,6 +58,17 @@
   margin-top: @space-2;
   color: @color-text-muted;
   font-size: @font-size-sm;
+}
+
+.member-card__login {
+  flex: none;
+  padding: @space-2 @space-4;
+  border: 1rpx solid fade(@color-brand, 30%);
+  border-radius: @radius-pill;
+  color: @color-brand;
+  background: fade(@color-surface, 72%);
+  font-size: @font-size-xs;
+  font-weight: 650;
 }
 
 .order-center-card {

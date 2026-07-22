@@ -10,7 +10,7 @@ import org.muybaby.shopserver.user.entity.AppUser;
 public interface AppUserMapper extends BaseMapper<AppUser> {
 
     @Select("""
-            SELECT id, openid, unionid, nickname, phone_number, phone_country_code, phone_authorized,
+            SELECT id, openid, unionid, nickname, avatar_url, phone_number, phone_country_code, phone_authorized,
                    status, last_login_at, created_at, updated_at
             FROM app_user
             WHERE id = #{userId}

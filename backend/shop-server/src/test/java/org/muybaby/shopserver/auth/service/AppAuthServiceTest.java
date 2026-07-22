@@ -313,7 +313,7 @@ class AppAuthServiceTest {
     ) {
         LocalDateTime now = LocalDateTime.now();
         return new AppUser(
-                id, openid, null, nickname, phoneNumber, "86", phoneAuthorized,
+                id, openid, null, nickname, null, phoneNumber, "86", phoneAuthorized,
                 "ENABLED", now, now, now
         );
     }

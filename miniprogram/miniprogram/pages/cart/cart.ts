@@ -12,8 +12,10 @@ import {
   getCartItems,
   updateCartItemQuantity
 } from "../../services/cart";
+import { getSessionState } from "../../services/session";
 import type { CartItemResponse } from "../../types/cart";
 import { isApiError } from "../../utils/api-error";
+import { openLoginPage } from "../../utils/login-navigation";
 import { syncCustomTabBar } from "../../utils/tab-bar";
 
 interface DatasetEvent {
@@ -38,6 +40,7 @@ Page({
   data: {
     loaded: false,
     loading: false,
+    loginRequired: false,
     errorText: "",
     rawItems: [] as CartItemResponse[],
     items: [] as CartItemView[],
@@ -56,6 +59,17 @@ Page({
 
   onShow() {
     syncCustomTabBar(this, 2);
+    const session = getSessionState();
+    if (!session.user || (!session.accessToken && !session.refreshToken)) {
+      this.setData({
+        loaded: false,
+        loading: false,
+        loginRequired: true,
+        errorText: ""
+      });
+      return;
+    }
+    this.setData({ loginRequired: false });
     void this.loadCart();
   },
 
@@ -64,7 +78,9 @@ Page({
   },
 
   async onPullDownRefresh() {
-    await this.loadCart();
+    if (!this.data.loginRequired) {
+      await this.loadCart();
+    }
     wx.stopPullDownRefresh();
   },
 
@@ -101,6 +117,7 @@ Page({
       this.setData({
         loaded: this.data.rawItems.length > 0,
         loading: false,
+        loginRequired: isApiError(error) && error.kind === "AUTH",
         errorText: actionError(error, "购物车加载失败，请稍后重试")
       });
     }
@@ -112,6 +129,10 @@ Page({
 
   onBrowse() {
     wx.switchTab({ url: "/pages/category/category" });
+  },
+
+  onLoginTap() {
+    openLoginPage("/pages/cart/cart");
   },
 
   onSelectionToggle(event: DatasetEvent) {

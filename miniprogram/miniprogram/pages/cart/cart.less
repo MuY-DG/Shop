@@ -12,6 +12,60 @@
   padding: @space-6 @page-gutter calc(@tab-bar-height + 210rpx);
 }
 
+.cart-login-state {
+  .card-surface();
+  display: flex;
+  min-height: 620rpx;
+  padding: @space-16 @space-8;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.cart-login-state__emblem {
+  width: 136rpx;
+  height: 136rpx;
+  border-radius: 50%;
+}
+
+.cart-login-state__title {
+  margin-top: @space-8;
+  color: @color-text-primary;
+  font-size: @font-size-lg;
+  font-weight: 700;
+}
+
+.cart-login-state__description {
+  max-width: 480rpx;
+  margin-top: @space-3;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  line-height: 1.6;
+}
+
+button.cart-login-state__action {
+  width: 280rpx;
+  height: 80rpx;
+  margin: @space-8 0 0;
+  padding: 0;
+  border-radius: @radius-pill;
+  color: @color-text-inverse;
+  background: @color-brand;
+  box-shadow: @shadow-action;
+  font-size: @font-size-base;
+  font-weight: 700;
+  line-height: 80rpx;
+}
+
+button.cart-login-state__action::after {
+  border: 0;
+}
+
+.cart-login-state__action--pressed {
+  opacity: 0.8;
+}
+
 .cart-heading {
   display: flex;
   align-items: center;

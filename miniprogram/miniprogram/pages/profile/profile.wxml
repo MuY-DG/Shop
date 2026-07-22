@@ -2,12 +2,23 @@
   <navigation-bar title="我的" background="#FAF2E4" color="#2E1D16" />
 
   <view class="profile-content">
-    <view class="member-card">
-      <view class="member-card__avatar">灶</view>
-      <view>
+    <view
+      class="member-card {{loggedIn ? '' : 'member-card--guest'}}"
+      bindtap="onMemberTap"
+      hover-class="member-card--pressed"
+      aria-role="button"
+      aria-label="{{loggedIn ? '编辑个人资料' : '前往登录'}}"
+    >
+      <image
+        class="member-card__avatar"
+        src="{{avatarUrl}}"
+        mode="{{avatarMode}}"
+      />
+      <view class="member-card__body">
         <view class="member-card__name">{{nickname}}</view>
-        <view class="member-card__copy">安心选好物，订单进度随时掌握</view>
+        <view class="member-card__copy">{{memberCopy}}</view>
       </view>
+      <view wx:if="{{!loggedIn}}" class="member-card__login">登录</view>
     </view>
 
     <view class="order-center-card">

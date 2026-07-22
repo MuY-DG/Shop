@@ -2,19 +2,24 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
 import {
+  authorizePhoneNumber,
   clearSession,
   clearSessionIfCurrent,
   getSessionState,
+  loginWithWechat,
   logoutSession,
   recoverAfterUnauthorized,
-  refreshSession,
-  silentLogin
+  refreshSession
 } from "../miniprogram/services/session";
 import type { ApiResponse } from "../miniprogram/types/api";
 import type { AppSessionResponse } from "../miniprogram/types/auth";
 import { isApiError } from "../miniprogram/utils/api-error";
 import { request } from "../miniprogram/utils/request";
 import { getHome } from "../miniprogram/services/home";
+import {
+  updateMyProfile,
+  uploadWechatAvatar
+} from "../miniprogram/services/user-profile";
 
 interface FakeRequestResponse {
   data: unknown;
@@ -37,8 +42,24 @@ interface FakeLoginOptions {
   fail?: (error: { errMsg: string }) => void;
 }
 
+interface FakeUploadResponse {
+  data: string;
+  statusCode: number;
+  header: Record<string, string>;
+}
+
+interface FakeUploadCall {
+  url: string;
+  filePath: string;
+  name: string;
+  header?: Record<string, string>;
+  success?: (response: FakeUploadResponse) => void;
+  fail?: (error: { errMsg: string }) => void;
+}
+
 const storage = new Map<string, unknown>();
 const pendingRequests: FakeRequestCall[] = [];
+const pendingUploads: FakeUploadCall[] = [];
 let loginCallCount = 0;
 
 const wxMock = {
@@ -61,6 +82,10 @@ const wxMock = {
   request(options: FakeRequestCall): WechatMiniprogram.RequestTask {
     pendingRequests.push(options);
     return {} as WechatMiniprogram.RequestTask;
+  },
+  uploadFile(options: FakeUploadCall): WechatMiniprogram.UploadTask {
+    pendingUploads.push(options);
+    return {} as WechatMiniprogram.UploadTask;
   }
 } as unknown as WechatMiniprogram.Wx;
 
@@ -92,6 +117,14 @@ function takeRequest(path: string): FakeRequestCall {
   return call;
 }
 
+function takeUpload(path: string): FakeUploadCall {
+  const index = pendingUploads.findIndex((call) => call.url.endsWith(path));
+  assert.notEqual(index, -1, `没有找到上传请求 ${path}`);
+  const [call] = pendingUploads.splice(index, 1);
+  assert.ok(call);
+  return call;
+}
+
 function respond<T>(
   call: FakeRequestCall,
   statusCode: number,
@@ -106,12 +139,25 @@ function respond<T>(
   });
 }
 
+function respondUpload<T>(
+  call: FakeUploadCall,
+  statusCode: number,
+  body: ApiResponse<T>
+): void {
+  assert.ok(call.success, `上传请求 ${call.url} 缺少 success 回调`);
+  call.success({
+    data: JSON.stringify(body),
+    statusCode,
+    header: {}
+  });
+}
+
 async function flushTasks(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 async function establishSession(suffix: string): Promise<void> {
-  const login = silentLogin();
+  const login = loginWithWechat();
   await flushTasks();
   respond(
     takeRequest("/app/auth/login"),
@@ -125,12 +171,13 @@ beforeEach(() => {
   clearSession();
   storage.clear();
   pendingRequests.length = 0;
+  pendingUploads.length = 0;
   loginCallCount = 0;
 });
 
-test("并发静默登录只交换一次微信 code", async () => {
-  const first = silentLogin();
-  const second = silentLogin();
+test("并发主动登录只交换一次微信 code", async () => {
+  const first = loginWithWechat();
+  const second = loginWithWechat();
   await flushTasks();
 
   assert.equal(loginCallCount, 1);
@@ -192,7 +239,7 @@ test("退出后的旧 401 不会触发重新登录", async () => {
 });
 
 test("无 token 的延迟 401 不会取消进行中的新登录", async () => {
-  const login = silentLogin();
+  const login = loginWithWechat();
   await flushTasks();
   const loginCall = takeRequest("/app/auth/login");
 
@@ -213,7 +260,7 @@ test("退出立即清理本地态且不覆盖随后建立的新会话", async ()
   const logoutCall = takeRequest("/app/auth/logout");
   assert.equal(getSessionState().accessToken, "");
 
-  const newLogin = silentLogin();
+  const newLogin = loginWithWechat();
   await flushTasks();
   respond(
     takeRequest("/app/auth/login"),
@@ -225,6 +272,112 @@ test("退出立即清理本地态且不覆盖随后建立的新会话", async ()
   respond(logoutCall, 200, { code: 200, msg: "success" });
   await logout;
   assert.equal(getSessionState().accessToken, "access-2");
+});
+
+test("未登录的受保护请求要求用户主动登录且不会调用 wx.login", async () => {
+  await assert.rejects(
+    request<{ ok: boolean }>({ url: "/app/protected" }),
+    (error: unknown) => {
+      assert.ok(isApiError(error));
+      assert.equal(error.kind, "AUTH");
+      assert.equal(error.message, "请先登录");
+      return true;
+    }
+  );
+
+  assert.equal(loginCallCount, 0);
+  assert.equal(pendingRequests.length, 0);
+});
+
+test("刷新令牌失效后不再静默调用 wx.login", async () => {
+  await establishSession("1");
+  const refresh = refreshSession();
+  await flushTasks();
+  respond(
+    takeRequest("/app/auth/refresh"),
+    401,
+    { code: 100001, msg: "unauthorized" }
+  );
+
+  await assert.rejects(refresh, (error: unknown) => {
+    assert.ok(isApiError(error));
+    assert.equal(error.kind, "AUTH");
+    assert.equal(error.message, "登录状态已失效，请重新登录");
+    return true;
+  });
+  assert.equal(loginCallCount, 1);
+  assert.equal(getSessionState().accessToken, "");
+  assert.equal(pendingRequests.length, 0);
+});
+
+test("手机号授权更新当前用户且不会重新登录", async () => {
+  await establishSession("1");
+  const authorization = authorizePhoneNumber("phone-code");
+  await flushTasks();
+  const phoneCall = takeRequest("/app/auth/phone");
+  assert.deepEqual(phoneCall.data, { code: "phone-code" });
+  assert.equal(phoneCall.header?.Authorization, "Bearer access-1");
+  respond(phoneCall, 200, {
+    code: 200,
+    msg: "success",
+    data: {
+      userId: "1",
+      nickname: "用户1",
+      openidMasked: "openid****",
+      phoneAuthorized: true,
+      phoneNumberMasked: "138****5678"
+    }
+  });
+
+  const profile = await authorization;
+  assert.equal(profile.phoneAuthorized, true);
+  assert.equal(getSessionState().user?.phoneNumberMasked, "138****5678");
+  assert.equal(loginCallCount, 1);
+});
+
+test("微信昵称和头像更新会同步到当前会话", async () => {
+  await establishSession("1");
+  const nicknameUpdate = updateMyProfile("灶香集会员");
+  await flushTasks();
+  const profileCall = takeRequest("/app/users/me");
+  assert.equal(profileCall.method, "PUT");
+  assert.deepEqual(profileCall.data, { nickname: "灶香集会员" });
+  respond(profileCall, 200, {
+    code: 200,
+    msg: "success",
+    data: {
+      userId: "1",
+      nickname: "灶香集会员",
+      openidMasked: "openid****",
+      phoneAuthorized: true,
+      phoneNumberMasked: "138****5678"
+    }
+  });
+  await nicknameUpdate;
+
+  const avatarUpdate = uploadWechatAvatar("/tmp/wechat-avatar.png");
+  await flushTasks();
+  const avatarCall = takeUpload("/app/users/me/avatar");
+  assert.equal(avatarCall.filePath, "/tmp/wechat-avatar.png");
+  assert.equal(avatarCall.name, "file");
+  respondUpload(avatarCall, 200, {
+    code: 200,
+    msg: "success",
+    data: {
+      userId: "1",
+      nickname: "灶香集会员",
+      avatarUrl: "https://oss.example.test/avatar.png",
+      openidMasked: "openid****",
+      phoneAuthorized: true,
+      phoneNumberMasked: "138****5678"
+    }
+  });
+
+  const profile = await avatarUpdate;
+  assert.equal(profile.avatarUrl, "https://oss.example.test/avatar.png");
+  assert.equal(getSessionState().user?.nickname, "灶香集会员");
+  assert.equal(getSessionState().user?.avatarUrl, profile.avatarUrl);
+  assert.equal(loginCallCount, 1);
 });
 
 test("受保护请求的并发 401 共用一次刷新并各自只重试一次", async () => {

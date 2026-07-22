@@ -84,6 +84,7 @@ test("账户中心注册真实页面、移除消息中心并提供在线客服",
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")
   ) as AppConfig;
   const accountPages = [
+    "pages/account/profile/profile",
     "pages/account/address/list/list",
     "pages/account/address/edit/edit",
     "pages/account/coupon/coupon",

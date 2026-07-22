@@ -1,0 +1,145 @@
+@import "../../../styles/tokens.less";
+
+.login-page {
+  min-height: 100vh;
+  color: @color-text-primary;
+  background: @color-page-top;
+}
+
+.login-content {
+  box-sizing: border-box;
+  display: flex;
+  min-height: calc(100vh - 128rpx);
+  padding: 148rpx 80rpx calc(env(safe-area-inset-bottom) + 72rpx);
+  flex-direction: column;
+  align-items: center;
+}
+
+.brand-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.brand-block__emblem {
+  width: 176rpx;
+  height: 176rpx;
+  overflow: hidden;
+  border-radius: 50%;
+}
+
+.brand-block__name {
+  margin-top: @space-5;
+  font-family: serif;
+  font-size: @font-size-xl;
+  font-weight: 650;
+  letter-spacing: 4rpx;
+}
+
+.login-copy {
+  width: 100%;
+  margin-top: 132rpx;
+  text-align: center;
+}
+
+.login-copy__title {
+  font-size: @font-size-lg;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.login-copy__description {
+  margin-top: @space-10;
+  color: @color-text-placeholder;
+  font-size: @font-size-sm;
+  line-height: 1.6;
+}
+
+.login-actions {
+  width: 100%;
+  margin-top: @space-6;
+}
+
+button.primary-action {
+  width: 100%;
+  height: 96rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: @radius-md;
+  color: @color-text-inverse;
+  background: @color-brand;
+  box-shadow: @shadow-action;
+  font-size: @font-size-lg;
+  font-weight: 650;
+  line-height: 96rpx;
+  transition: opacity @duration-fast @ease-standard,
+    transform @duration-fast @ease-standard;
+}
+
+button.primary-action::after,
+button.skip-action::after {
+  border: 0;
+}
+
+button.primary-action[disabled] {
+  color: @color-text-inverse;
+  background: @color-brand;
+  opacity: 0.64;
+}
+
+.primary-action--pressed {
+  opacity: 0.82;
+  transform: scale(0.99);
+}
+
+.agreement {
+  width: 100%;
+  margin-top: @space-6;
+}
+
+.agreement__label {
+  display: flex;
+  align-items: flex-start;
+}
+
+.agreement__checkbox {
+  margin-top: 1rpx;
+  transform: scale(0.86);
+  transform-origin: top left;
+}
+
+.agreement__copy {
+  margin-left: 2rpx;
+  flex: 1;
+  color: @color-text-secondary;
+  font-size: @font-size-xs;
+  line-height: 1.65;
+}
+
+.agreement__link {
+  color: @color-brand;
+}
+
+button.skip-action {
+  min-width: 220rpx;
+  margin: auto 0 0;
+  padding: @space-4 @space-6;
+  color: @color-text-placeholder;
+  background: transparent;
+  font-size: @font-size-base;
+  line-height: 1.4;
+}
+
+@media (max-height: 700px) {
+  .login-content {
+    padding-top: 84rpx;
+  }
+
+  .login-copy {
+    margin-top: 72rpx;
+  }
+
+  button.skip-action {
+    margin-top: 72rpx;
+  }
+}

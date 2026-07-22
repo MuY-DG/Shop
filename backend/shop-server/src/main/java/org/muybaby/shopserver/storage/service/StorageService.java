@@ -248,6 +248,28 @@ public class StorageService {
         });
     }
 
+    public StorageAssetResponse uploadUserAvatar(
+            AuthenticatedPrincipal principal,
+            MultipartFile file
+    ) {
+        return outsideTransaction(() -> {
+            requirePrincipal(principal, TokenKind.APP);
+            if (file == null || file.isEmpty() || file.getSize() > 2L * 1024 * 1024) {
+                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+            }
+            return upload(
+                    principal,
+                    StorageUploadProfile.USER_AVATAR,
+                    null,
+                    "APP_USER_AVATAR",
+                    principal.subjectId(),
+                    null,
+                    file,
+                    UploadedByType.APP
+            );
+        });
+    }
+
     public StorageAssetResponse uploadCustomerServiceImage(
             AuthenticatedPrincipal principal,
             Long conversationId,
@@ -305,6 +327,7 @@ public class StorageService {
         StringBuilder predicate = new StringBuilder("""
                 where a.scope = 'LIBRARY'
                   and a.status = 'ACTIVE'
+                  and a.uploaded_by_type = 'ADMIN'
                 """);
         MapSqlParameterSource params = new MapSqlParameterSource();
 
@@ -1235,6 +1258,8 @@ public class StorageService {
                             union all
                             select id from order_item
                             where main_image = :publicUrl or sku_image = :publicUrl or display_image = :publicUrl
+                            union all
+                            select id from app_user where avatar_url = :publicUrl
                         ) local_url_reference
                         """)
                 .param("publicUrl", publicUrl)

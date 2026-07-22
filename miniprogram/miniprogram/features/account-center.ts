@@ -10,6 +10,7 @@ import type {
 } from "../types/product-engagement";
 
 export const ACCOUNT_ROUTES = Object.freeze({
+  profile: "/pages/account/profile/profile",
   addresses: "/pages/account/address/list/list",
   coupons: "/pages/account/coupon/coupon",
   favorites: "/pages/account/favorites/favorites",
