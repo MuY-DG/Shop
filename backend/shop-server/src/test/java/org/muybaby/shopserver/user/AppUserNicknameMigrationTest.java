@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.muybaby.shopserver.support.MigrationTestSupport.latestMigrationVersion;
 
 class AppUserNicknameMigrationTest {
 
@@ -36,7 +37,7 @@ class AppUserNicknameMigrationTest {
                 .load();
         flyway.migrate();
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("52");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo(latestMigrationVersion());
         try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
              Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery("""

@@ -27,6 +27,7 @@ import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.muybaby.shopserver.support.MigrationTestSupport.latestMigrationVersion;
 
 @Testcontainers
 class CommerceFulfillmentMySqlMigrationTest {
@@ -46,7 +47,7 @@ class CommerceFulfillmentMySqlMigrationTest {
                 .dataSource(CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword())
                 .placeholders(CommerceFulfillmentMigrationTest.safeSeedPlaceholders())
                 .load();
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("52");
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo(latestMigrationVersion());
         AssetModelMigrationTest.assertFinalAssetSchema(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
         assertAdminCustomerCouponQueryIsCollationSafe();
