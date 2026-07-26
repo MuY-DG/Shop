@@ -7,7 +7,9 @@ import org.muybaby.shopserver.auth.dto.CurrentAdminUserResponse;
 import org.muybaby.shopserver.auth.dto.LoginTokenResponse;
 import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
 import org.muybaby.shopserver.auth.service.AdminAuthService;
+import org.muybaby.shopserver.auth.service.AdminLoginResult;
 import org.muybaby.shopserver.common.api.ApiResponse;
+import org.muybaby.shopserver.common.web.RequestLogContext;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.security.web.ClientIpResolver;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -34,7 +36,18 @@ public class AdminAuthController {
             @Valid @RequestBody AdminLoginRequest request,
             HttpServletRequest servletRequest
     ) {
-        return ApiResponse.success(adminAuthService.login(request, clientIpResolver.resolve(servletRequest)));
+        String username = request.userName().strip();
+        RequestLogContext.markLoginCandidate(servletRequest, username);
+        AdminLoginResult result = adminAuthService.login(
+                request,
+                clientIpResolver.resolve(servletRequest)
+        );
+        RequestLogContext.markLoginSuccess(
+                servletRequest,
+                result.adminUserId(),
+                result.username()
+        );
+        return ApiResponse.success(result.tokens());
     }
 
     @PostMapping("/refresh")

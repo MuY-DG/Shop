@@ -24,12 +24,14 @@ class RequestIdFilterTest {
         request.addHeader(RequestIdFilter.HEADER_NAME, "req-123");
         doAnswer(invocation -> {
             assertThat(MDC.get(MDC_KEY)).isEqualTo("req-123");
+            assertThat(request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE)).isEqualTo("req-123");
             return null;
         }).when(chain).doFilter(request, response);
 
         filter.doFilter(request, response, chain);
 
         assertThat(response.getHeader(RequestIdFilter.HEADER_NAME)).isEqualTo("req-123");
+        assertThat(request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE)).isEqualTo("req-123");
         assertThat(MDC.get(MDC_KEY)).isNull();
         verify(chain).doFilter(request, response);
     }
@@ -42,6 +44,7 @@ class RequestIdFilterTest {
         FilterChain chain = mock(FilterChain.class);
         doAnswer(invocation -> {
             assertThat(MDC.get(MDC_KEY)).isNotBlank();
+            assertThat(request.getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE)).isEqualTo(MDC.get(MDC_KEY));
             return null;
         }).when(chain).doFilter(request, response);
 

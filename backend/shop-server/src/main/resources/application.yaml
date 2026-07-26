@@ -27,6 +27,10 @@ server:
   port: 8080
   forward-headers-strategy: none # 禁止容器自动改写代理头，由项目自己的可信代理逻辑统一处理。
 
+logging:
+  pattern:
+    level: "%5p [requestId=%X{requestId:-}]" # 将请求 ID 写入控制台日志，便于后台摘要关联 1Panel 中的完整日志。
+
 management: # Spring Boot Actuator 运维端点配置入口。
   endpoints: # 配置所有 Actuator 端点的暴露方式。
     web: # 配置通过 HTTP 暴露的 Actuator 端点。
@@ -65,9 +69,16 @@ shop: # 商城项目自定义业务配置的统一入口。
       memory-max-entries: ${SHOP_ADMIN_LOGIN_MEMORY_MAX_ENTRIES:100000} # 使用内存存储时最多保留 100000 个计数项。
   security: # 商城应用层安全配置入口。
     client-ip: # 可信代理链和真实客户端 IP 解析配置。
-      trusted-proxy-cidrs: ${SHOP_TRUSTED_PROXY_CIDRS:127.0.0.0/8,::1/128} # 默认只信任本机 Caddy 写入的代理头。
+      trusted-proxy-cidrs: ${SHOP_TRUSTED_PROXY_CIDRS:127.0.0.0/8,::1/128} # 默认只信任本机反向代理写入的代理头；容器生产网关必须显式配置精确 /32。
       max-forwarded-hops: ${SHOP_MAX_FORWARDED_HOPS:20} # 最多解析 20 层代理转发地址。
       max-forwarded-header-length: ${SHOP_MAX_FORWARDED_HEADER_LENGTH:2048} # 限制转发头最大长度为 2048 字符。
+  admin-system-log: # 后台系统日志的运维配置。
+    retention: # 系统日志定期清理配置。
+      enabled: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_ENABLED:true} # 默认启用过期系统日志清理任务。
+      days: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_DAYS:400} # 默认保留最近 400 天的系统日志。
+      batch-size: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_BATCH_SIZE:5000} # 每批最多删除 5000 条过期记录。
+      max-batches-per-run: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_MAX_BATCHES:100} # 单次任务最多执行 100 个删除批次。
+      cron: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_CRON:0 45 3 * * *} # 默认按北京时间每天凌晨 3:45 执行。
   analytics: # 访问统计、限流和历史数据保留配置。
     rate-limit: # 访问统计事件写入的限流配置。
       enabled: ${SHOP_ANALYTICS_RATE_LIMIT_ENABLED:true} # 默认启用统计事件限流。

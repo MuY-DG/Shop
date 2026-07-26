@@ -36,6 +36,9 @@ shop:
       enabled: false
     retention:
       enabled: false
+  admin-system-log:
+    retention:
+      enabled: false
   storage:
     provider: local
     public-base-url: http://localhost:8080

@@ -1,6 +1,8 @@
 package org.muybaby.shopserver.security;
 
+import org.muybaby.shopserver.admin.log.web.AdminSystemLogFilter;
 import org.muybaby.shopserver.analytics.AppUserDailyActivityFilter;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -25,7 +27,8 @@ public class SecurityConfig {
             ApiAuthenticationEntryPoint apiAuthenticationEntryPoint,
             ApiAccessDeniedHandler apiAccessDeniedHandler,
             TokenAuthenticationFilter tokenAuthenticationFilter,
-            AppUserDailyActivityFilter appUserDailyActivityFilter
+            AppUserDailyActivityFilter appUserDailyActivityFilter,
+            AdminSystemLogFilter adminSystemLogFilter
     ) throws Exception {
         return http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -35,6 +38,7 @@ public class SecurityConfig {
                         .accessDeniedHandler(apiAccessDeniedHandler))
                 .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(appUserDailyActivityFilter, TokenAuthenticationFilter.class)
+                .addFilterAfter(adminSystemLogFilter, AppUserDailyActivityFilter.class)
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers(
                                 "/admin/auth/login",
@@ -60,6 +64,16 @@ public class SecurityConfig {
                         .requestMatchers("/admin/**", "/app/**").authenticated()
                         .anyRequest().denyAll())
                 .build();
+    }
+
+    @Bean
+    FilterRegistrationBean<AdminSystemLogFilter> adminSystemLogFilterRegistration(
+            AdminSystemLogFilter adminSystemLogFilter
+    ) {
+        FilterRegistrationBean<AdminSystemLogFilter> registration =
+                new FilterRegistrationBean<>(adminSystemLogFilter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean

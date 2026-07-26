@@ -1,10 +1,12 @@
 package org.muybaby.shopserver.health;
 
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.admin.log.service.AdminSystemLogRecorder;
 import org.muybaby.shopserver.admin.rbac.service.AdminRbacService;
 import org.muybaby.shopserver.analytics.AppUserDailyActivityService;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.security.PathTokenKindResolver;
+import org.muybaby.shopserver.security.web.ClientIpResolver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -34,6 +36,12 @@ class HealthControllerTest {
 
     @MockitoBean
     private AppUserDailyActivityService appUserDailyActivityService;
+
+    @MockitoBean
+    private AdminSystemLogRecorder adminSystemLogRecorder;
+
+    @MockitoBean
+    private ClientIpResolver clientIpResolver;
 
     @Test
     void appHealthReturnsStandardEnvelope() throws Exception {

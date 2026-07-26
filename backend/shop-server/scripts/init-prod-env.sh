@@ -110,6 +110,21 @@ upsert_property "$prod_file" SHOP_REDIS_DATABASE 0 "生产 Redis 逻辑数据库
 upsert_property "$prod_file" SHOP_REDIS_USERNAME '' "当前 requirepass 模式不使用 Redis ACL 用户名。"
 upsert_property "$prod_file" SHOP_REDIS_PASSWORD "$redis_password" "生产 Redis 密码。"
 
+if [[ -z "$(read_property "$prod_file" SHOP_TRUSTED_PROXY_CIDRS)" ]]; then
+  upsert_property \
+    "$prod_file" \
+    SHOP_TRUSTED_PROXY_CIDRS \
+    '127.0.0.0/8,::1/128,<docker-edge-gateway-ip>/32' \
+    "实机核验后填写 OpenResty 进入容器时看到的单个 Docker bridge 网关 /32。"
+fi
+if [[ -z "$(read_property "$prod_file" SHOP_MAX_FORWARDED_HOPS)" ]]; then
+  upsert_property \
+    "$prod_file" \
+    SHOP_MAX_FORWARDED_HOPS \
+    1 \
+    "OpenResty 覆盖 X-Forwarded-For 后只接受一跳转发。"
+fi
+
 chmod 600 "$prod_file" "$infra_file"
 
 printf '生产环境文件已准备并设为 600 权限；敏感值未打印。\n'

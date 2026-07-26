@@ -222,6 +222,12 @@ class AdminMenuControllerTest {
                         "amap:config:write"
                 )))
                 .andExpect(jsonPath("$.data[7].path").value("/system"))
+                .andExpect(jsonPath("$.data[7].children[*].path", contains(
+                        "user",
+                        "role",
+                        "menu",
+                        "log"
+                )))
                 .andExpect(jsonPath("$.data[7].children[0].path").value("user"))
                 .andExpect(jsonPath("$.data[7].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "system:user:read",
@@ -239,6 +245,11 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[7].children[2].path").value("menu"))
                 .andExpect(jsonPath("$.data[7].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "system:menu:read"
+                )))
+                .andExpect(jsonPath("$.data[7].children[3].path").value("log"))
+                .andExpect(jsonPath("$.data[7].children[3].component").value("/system/log"))
+                .andExpect(jsonPath("$.data[7].children[3].meta.authList[*].authMark", containsInAnyOrder(
+                        "system:log:read"
                 )));
     }
 

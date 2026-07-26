@@ -61,6 +61,18 @@ export const systemRoutes: AppRouteRecord = {
       }
     },
     {
+      path: 'log',
+      name: 'SystemLog',
+      component: '/system/log',
+      meta: {
+        title: 'menus.system.log',
+        icon: 'ri:file-list-3-line',
+        keepAlive: true,
+        roles: ['R_SUPER'],
+        authList: [{ title: '查看日志', authMark: 'system:log:read' }]
+      }
+    },
+    {
       path: 'nested',
       name: 'Nested',
       component: '',

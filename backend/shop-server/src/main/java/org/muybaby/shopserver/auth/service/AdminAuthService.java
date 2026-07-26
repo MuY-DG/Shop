@@ -31,20 +31,23 @@ public class AdminAuthService {
     private final PasswordEncoder passwordEncoder;
     private final OpaqueTokenService opaqueTokenService;
     private final AdminLoginGuard adminLoginGuard;
+    private final AdminLastLoginService adminLastLoginService;
 
     public AdminAuthService(
             AdminRbacService adminRbacService,
             PasswordEncoder passwordEncoder,
             OpaqueTokenService opaqueTokenService,
-            AdminLoginGuard adminLoginGuard
+            AdminLoginGuard adminLoginGuard,
+            AdminLastLoginService adminLastLoginService
     ) {
         this.adminRbacService = adminRbacService;
         this.passwordEncoder = passwordEncoder;
         this.opaqueTokenService = opaqueTokenService;
         this.adminLoginGuard = adminLoginGuard;
+        this.adminLastLoginService = adminLastLoginService;
     }
 
-    public LoginTokenResponse login(AdminLoginRequest request, String clientIp) {
+    public AdminLoginResult login(AdminLoginRequest request, String clientIp) {
         String username = request.userName().strip();
         AdminLoginAttempt suppliedIdentityAttempt = adminLoginGuard.start(username, clientIp);
         Optional<AdminUser> userResult = adminRbacService.findEnabledUserByUsername(username);
@@ -59,7 +62,10 @@ public class AdminAuthService {
         }
 
         adminLoginGuard.recordSuccess(attempt);
-        return issueSession(userResult.get(), null);
+        AdminUser user = userResult.get();
+        LoginTokenResponse tokens = issueSession(user, null);
+        adminLastLoginService.updateBestEffort(user.id());
+        return new AdminLoginResult(tokens, user.id(), user.username());
     }
 
     public LoginTokenResponse refresh(RefreshTokenRequest request) {

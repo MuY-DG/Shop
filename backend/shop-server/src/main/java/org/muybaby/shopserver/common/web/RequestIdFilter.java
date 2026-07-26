@@ -21,6 +21,8 @@ import java.util.regex.Pattern;
 public class RequestIdFilter implements Filter {
 
     public static final String HEADER_NAME = "X-Request-Id";
+    public static final String REQUEST_ID_ATTRIBUTE =
+            RequestIdFilter.class.getName() + ".requestId";
     private static final String MDC_KEY = "requestId";
     private static final int MAX_REQUEST_ID_LENGTH = 128;
     private static final Pattern SAFE_REQUEST_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
@@ -33,6 +35,7 @@ public class RequestIdFilter implements Filter {
         String requestId = resolveRequestId(request);
 
         MDC.put(MDC_KEY, requestId);
+        request.setAttribute(REQUEST_ID_ATTRIBUTE, requestId);
         response.setHeader(HEADER_NAME, requestId);
         try {
             chain.doFilter(request, response);

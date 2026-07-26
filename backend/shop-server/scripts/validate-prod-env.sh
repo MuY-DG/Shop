@@ -42,6 +42,8 @@ for key in \
   SHOP_REDIS_HOST \
   SHOP_REDIS_PORT \
   SHOP_REDIS_PASSWORD \
+  SHOP_TRUSTED_PROXY_CIDRS \
+  SHOP_MAX_FORWARDED_HOPS \
   SHOP_DEFAULT_ADMIN_PASSWORD_HASH \
   SHOP_PAYMENT_SECRET_KEY \
   SHOP_PAYMENT_SECRET_ACTIVE_KEY_ID \
@@ -71,6 +73,48 @@ fi
 
 if [[ "$(read_property "$prod_file" SHOP_REDIS_HOST)" != redis ]]; then
   printf 'SHOP_REDIS_HOST 必须连接 Compose 服务名 redis。\n' >&2
+  exit 1
+fi
+
+if [[ "$(read_property "$prod_file" SHOP_MAX_FORWARDED_HOPS)" != 1 ]]; then
+  printf 'SHOP_MAX_FORWARDED_HOPS 必须为 1，OpenResty 需覆盖客户端转发头。\n' >&2
+  exit 1
+fi
+
+trusted_proxy_cidrs="$(read_property "$prod_file" SHOP_TRUSTED_PROXY_CIDRS)"
+trusted_gateway_count=0
+IFS=',' read -r -a trusted_proxy_entries <<<"$trusted_proxy_cidrs"
+for trusted_proxy_entry in "${trusted_proxy_entries[@]}"; do
+  case "$trusted_proxy_entry" in
+    127.0.0.0/8 | ::1/128)
+      continue
+      ;;
+  esac
+
+  if [[ ! "$trusted_proxy_entry" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/32$ ]]; then
+    printf 'SHOP_TRUSTED_PROXY_CIDRS 仅允许回环地址和一个精确的 IPv4 网关 /32。\n' >&2
+    exit 1
+  fi
+
+  trusted_gateway_ip="${trusted_proxy_entry%/32}"
+  IFS='.' read -r gateway_octet_1 gateway_octet_2 gateway_octet_3 gateway_octet_4 \
+    <<<"$trusted_gateway_ip"
+  for gateway_octet in \
+    "$gateway_octet_1" "$gateway_octet_2" "$gateway_octet_3" "$gateway_octet_4"; do
+    if ((10#$gateway_octet > 255)); then
+      printf 'SHOP_TRUSTED_PROXY_CIDRS 包含无效的 IPv4 网关地址。\n' >&2
+      exit 1
+    fi
+  done
+  if [[ "$gateway_octet_1" == 127 ]]; then
+    printf 'Docker bridge 网关不能使用回环地址冒充，请填写实机核验的网关 /32。\n' >&2
+    exit 1
+  fi
+  trusted_gateway_count=$((trusted_gateway_count + 1))
+done
+
+if ((trusted_gateway_count != 1)); then
+  printf 'SHOP_TRUSTED_PROXY_CIDRS 必须且只能包含一个实机核验的 Docker bridge 网关 /32。\n' >&2
   exit 1
 fi
 

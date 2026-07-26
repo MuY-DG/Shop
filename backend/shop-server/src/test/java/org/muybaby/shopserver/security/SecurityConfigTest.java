@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -46,6 +48,9 @@ class SecurityConfigTest {
     @Autowired
     private JdbcClient jdbcClient;
 
+    @Autowired
+    private ApplicationContext applicationContext;
+
     @Test
     void appHealthIsPublic() throws Exception {
         mockMvc.perform(get("/app/health"))
@@ -58,6 +63,30 @@ class SecurityConfigTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code", is(100001)))
                 .andExpect(jsonPath("$.msg", is("Authentication required")));
+    }
+
+    @Test
+    void adminSystemLogFilterIsSecurityChainOnlyAndSkipsAnonymousProbes() throws Exception {
+        FilterRegistrationBean<?> registration = applicationContext.getBean(
+                "adminSystemLogFilterRegistration",
+                FilterRegistrationBean.class
+        );
+        assertThat(registration.isEnabled()).isFalse();
+
+        String anonymousRequestId = "security-log-anonymous";
+        mockMvc.perform(get("/admin/probe")
+                        .header("X-Request-Id", anonymousRequestId))
+                .andExpect(status().isUnauthorized());
+        assertThat(logCount(anonymousRequestId)).isZero();
+
+        String authenticatedRequestId = "security-log-authenticated";
+        String token = adminToken(List.of("R_SUPER"), List.of("product:read"));
+        mockMvc.perform(get("/admin/probe")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Request-Id", authenticatedRequestId))
+                .andExpect(status().isOk());
+
+        assertThat(logCount(authenticatedRequestId)).isEqualTo(1);
     }
 
     @Test
@@ -273,6 +302,17 @@ class SecurityConfigTest {
                 Instant.now()
         );
         return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
+    }
+
+    private long logCount(String requestId) {
+        return jdbcClient.sql("""
+                        select count(*)
+                        from admin_system_log
+                        where request_id = :requestId
+                        """)
+                .param("requestId", requestId)
+                .query(Long.class)
+                .single();
     }
 
     private void assertNotAuthenticationBlocked(String path) throws Exception {

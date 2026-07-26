@@ -62,7 +62,7 @@ class AdminMenuRouteServiceTest {
 
         assertThat(menuRouteService.routesForUser(1L))
                 .extracting(AdminRouteResponse::id)
-                .doesNotContain(201L, 202L, 203L);
+                .doesNotContain(201L, 202L, 203L, 204L);
     }
 
     @Test

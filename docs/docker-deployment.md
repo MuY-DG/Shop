@@ -154,6 +154,28 @@ OpenResty 在 1Panel 应用商店安装。创建“反向代理”网站：
 - 代理地址：`http://127.0.0.1:8080`。
 - HTTPS：选择 1Panel 申请或导入的证书并开启自动续签。
 - WebSocket：开启或保留升级头，项目包含 WebSocket 接口。
+- 覆盖客户端来源头：`proxy_set_header X-Forwarded-For $remote_addr;`，不要直接透传
+  客户端提交的 `X-Forwarded-For`。
+
+Docker 发布端口转发到容器后，应用看到的对端通常是 bridge 网关而不是
+`127.0.0.1`。部署完成后先定位 `shop-server` 容器，再检查它所在网络的 `Gateway`：
+
+```bash
+shop_container_id="$(sudo docker compose -f compose.prod.yaml ps -q shop-server)"
+sudo docker inspect "$shop_container_id" --format '{{json .NetworkSettings.Networks}}'
+```
+
+将实际承载宿主机转发流量的单个网关地址以 `/32` 写入 `.env.prod.local`，并把转发跳数
+限制为 1，例如：
+
+```properties
+SHOP_TRUSTED_PROXY_CIDRS=127.0.0.0/8,::1/128,<核验出的网关-IP>/32
+SHOP_MAX_FORWARDED_HOPS=1
+```
+
+不要信任整个 `172.16.0.0/12`、整个 bridge 子网或 `0.0.0.0/0`。Docker 网络重建后
+应重新核验网关。上线烟测时，从公网携带伪造的 `X-Forwarded-For` 请求一次后台接口，
+日志中仍必须显示真实客户端 IP；验证失败时保留网关 IP，也不要临时放宽可信网段。
 
 同一时刻只能有一个服务监听 `80/443`。当前 OpenResty 已接管这两个端口，Caddy 的
 配置仍保留但服务已禁用，可作为人工回滚方案。1Panel 应用安装后的 OpenResty 主端口

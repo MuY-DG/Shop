@@ -22,6 +22,7 @@ class ApplicationYamlSafetyTest {
                 .containsEntry("spring.data.redis.host", "${SHOP_REDIS_HOST:127.0.0.1}")
                 .containsEntry("spring.data.redis.port", "${SHOP_REDIS_PORT:6379}")
                 .containsEntry("spring.data.redis.database", "${SHOP_REDIS_DATABASE:0}")
+                .containsEntry("logging.pattern.level", "%5p [requestId=%X{requestId:-}]")
                 .containsEntry(
                         "spring.flyway.placeholders.seed_super_status",
                         "${SHOP_DEFAULT_ADMIN_STATUS:DISABLED}"

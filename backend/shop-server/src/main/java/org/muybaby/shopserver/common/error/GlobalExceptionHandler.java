@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.common.error;
 
 import org.muybaby.shopserver.common.api.ApiResponse;
+import org.muybaby.shopserver.common.web.RequestLogContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -30,6 +31,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException ex) {
         ErrorCode errorCode = ex.errorCode();
+        RequestLogContext.markError(errorCode);
         ResponseEntity.BodyBuilder response = ResponseEntity.status(statusFor(errorCode));
         if (ex instanceof RateLimitException rateLimitException) {
             response.header("Retry-After", Long.toString(rateLimitException.retryAfterSeconds()));
@@ -40,6 +42,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidationException() {
         ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
@@ -48,6 +51,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<ApiResponse<Void>> handleMaxUploadSizeExceededException() {
         ErrorCode errorCode = ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED;
+        RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
@@ -64,6 +68,7 @@ public class GlobalExceptionHandler {
     })
     public ResponseEntity<ApiResponse<Void>> handleRequestBindingException() {
         ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
@@ -72,6 +77,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
     public ResponseEntity<ApiResponse<Void>> handleHttpMediaTypeNotSupportedException() {
         ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
@@ -80,6 +86,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<ApiResponse<Void>> handleHttpRequestMethodNotSupportedException(HttpRequestMethodNotSupportedException ex) {
         ErrorCode errorCode = ErrorCode.VALIDATION_FAILED;
+        RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.METHOD_NOT_ALLOWED)
                 .headers(ex.getHeaders())
@@ -91,6 +98,7 @@ public class GlobalExceptionHandler {
         log.debug("Request resource not found: method={}, path={}",
                 ex.getHttpMethod(), ex.getResourcePath());
         ErrorCode errorCode = ErrorCode.RESOURCE_NOT_FOUND;
+        RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
@@ -99,6 +107,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ApiResponse<Void>> handleAuthenticationException() {
         ErrorCode errorCode = ErrorCode.AUTHENTICATION_REQUIRED;
+        RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.UNAUTHORIZED)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
@@ -107,6 +116,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAccessDeniedException() {
         ErrorCode errorCode = ErrorCode.PERMISSION_DENIED;
+        RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
@@ -116,6 +126,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleUnexpectedException(Exception ex) {
         log.error("Unhandled request failure", ex);
         ErrorCode errorCode = ErrorCode.INTERNAL_ERROR;
+        RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
