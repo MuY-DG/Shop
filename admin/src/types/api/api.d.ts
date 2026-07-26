@@ -1328,6 +1328,37 @@ declare namespace Api {
     }
   }
 
+  namespace ImageCompression {
+    type ConfigSource = 'AUTO' | 'ENV' | 'DB'
+    type OutputFormat = 'WEBP'
+
+    interface Config {
+      requestedEnabled: boolean
+      effectiveEnabled: boolean
+      configSource: ConfigSource
+      persisted: boolean
+      defaultConfigSource: ConfigSource
+      keyConfigured: boolean
+      apiKeyMasked: string
+      outputFormat: OutputFormat
+      preserveMetadata: false
+      monthlyLimit: number | null
+      compressionCount: number | null
+      remainingCount: number | null
+      quotaPeriod: string | null
+      lastCheckedAt: string | null
+      autoDisabledReason: string | null
+      updatedAt: string | null
+    }
+
+    interface ConfigForm {
+      requestedEnabled: boolean
+      configSource: ConfigSource
+      apiKey?: string
+      monthlyLimit?: number | null
+    }
+  }
+
   namespace Payment {
     type ConfigSource = 'AUTO' | 'ENV' | 'DB'
     /** Only PUBLIC_KEY is selectable; legacy DB values can still appear through Config.verifyMode as string. */

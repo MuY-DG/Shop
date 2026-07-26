@@ -98,6 +98,10 @@ public class UploadPolicy {
         }
     }
 
+    public long imageMaxSizeBytes() {
+        return storageProperties.limits().imageMaxSize().toBytes();
+    }
+
     private void requireAllowedImage(String extension, String contentType, long sizeBytes, boolean imageReadable) {
         if (!contentType.equals(IMAGE_CONTENT_TYPES_BY_EXTENSION.get(extension)) || !imageReadable) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);

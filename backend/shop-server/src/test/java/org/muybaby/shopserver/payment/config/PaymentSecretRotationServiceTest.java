@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.payment.PaymentProperties;
 import org.muybaby.shopserver.payment.PaymentSecretEncryptionProperties;
+import org.muybaby.shopserver.storage.compression.config.ImageCompressionRuntimeConfigService;
 import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,7 @@ class PaymentSecretRotationServiceTest {
     private static final String PUBLIC_KEY = "legacy-public-key-pem";
     private static final String COS_SECRET_ID = "legacy-cos-secret-id";
     private static final String COS_SECRET_KEY = "legacy-cos-secret-key";
+    private static final String TINIFY_API_KEY = "legacy-tinify-api-key";
 
     @Autowired
     private JdbcClient jdbcClient;
@@ -74,9 +76,11 @@ class PaymentSecretRotationServiceTest {
                 .param("damagedId", CONFIG_ID - 1)
                 .update();
         jdbcClient.sql("delete from storage_runtime_setting").update();
+        jdbcClient.sql("delete from image_compression_runtime_setting").update();
         resetCheckpoint("payment-config", "0");
         resetCheckpoint("payment-config-snapshot", "");
         resetCheckpoint("storage-runtime-setting", "0");
+        resetCheckpoint("image-compression-runtime-setting", "0");
         legacyCipher = new AesGcmPaymentSecretCipher(
                 paymentProperties,
                 new PaymentSecretEncryptionProperties(
@@ -183,6 +187,29 @@ class PaymentSecretRotationServiceTest {
         assertThat(snapshotEnvelope.version()).isEqualTo(1);
         assertThat(snapshotEnvelope.keyId()).isEmpty();
         assertThat(snapshotEnvelope.ciphertext()).startsWith("v1:");
+    }
+
+    @Test
+    void rotatesPersistedImageCompressionApiKey() {
+        seedLegacyImageCompressionConfig();
+
+        assertThat(rotationService.rotateBatch()).isEqualTo(4);
+
+        SecretEnvelope envelope = jdbcClient.sql("""
+                        select api_key_ciphertext as ciphertext,
+                               secret_cipher_version, secret_key_id
+                        from image_compression_runtime_setting
+                        where id = 1
+                        """)
+                .query((rs, rowNum) -> new SecretEnvelope(
+                        rs.getString("ciphertext"),
+                        rs.getInt("secret_cipher_version"),
+                        rs.getString("secret_key_id")))
+                .single();
+        assertActiveEnvelope(envelope);
+        assertThat(activeCipher.decrypt(
+                ImageCompressionRuntimeConfigService.secretContext(),
+                envelope.ciphertext()).plaintext()).isEqualTo(TINIFY_API_KEY);
     }
 
     @Test
@@ -359,6 +386,21 @@ class PaymentSecretRotationServiceTest {
                         """)
                 .param("secretId", secretId.ciphertext())
                 .param("secretKey", secretKey.ciphertext())
+                .update();
+    }
+
+    private void seedLegacyImageCompressionConfig() {
+        PaymentSecretCipher.EncryptedSecret apiKey = legacyCipher.encrypt(
+                ImageCompressionRuntimeConfigService.secretContext(),
+                TINIFY_API_KEY);
+        jdbcClient.sql("""
+                        insert into image_compression_runtime_setting
+                            (id, requested_enabled, config_source, api_key_ciphertext,
+                             monthly_limit, secret_cipher_version, secret_key_id)
+                        values
+                            (1, true, 'DB', :apiKey, 500, 1, '')
+                        """)
+                .param("apiKey", apiKey.ciphertext())
                 .update();
     }
 

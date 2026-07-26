@@ -189,6 +189,23 @@ SHOP_STORAGE_CLEANUP_BATCH_SIZE=100
 
 Image uploads are rejected when the extension, declared MIME, and decoded format disagree, or when width, height, GIF logical canvas, frame count, or cumulative pixels exceed the validation limits. JPEG, PNG, GIF, and WebP are decoded through ImageIO; WebP support is an explicit runtime dependency. SVG is parsed with external entities disabled, allows standard W3C SVG doctypes and passive HTTP(S) namespace-alias entities used by design tools, checks for safe passive content and local fragment references, and is bounded by its intrinsic dimensions or viewBox. Keep the byte-size limit as well: it controls transfer/storage size, while the dimension/frame limits protect the JVM from decompression-bomb memory pressure.
 
+### Tinify Image Compression
+
+JPEG, PNG, and WebP uploads can pass through Tinify before they are written to the active storage provider. Compression is requested by default, and its environment defaults can be configured with:
+
+```properties
+SHOP_IMAGE_COMPRESSION_ENABLED=true
+SHOP_IMAGE_COMPRESSION_CONFIG_SOURCE=AUTO
+TINIFY_API_KEY=<tinify-api-key>
+SHOP_IMAGE_COMPRESSION_MONTHLY_LIMIT=500
+```
+
+The admin `开发配置 -> 图片压缩配置` page controls the runtime switch, key source, database key, and monthly budget without restarting the backend. `AUTO` uses a configured `TINIFY_API_KEY` first and otherwise falls back to the database key; `ENV` requires the environment key; `DB` requires the key saved from the admin page. Until an administrator saves an explicit override, `SHOP_IMAGE_COMPRESSION_ENABLED`, `SHOP_IMAGE_COMPRESSION_CONFIG_SOURCE`, and `SHOP_IMAGE_COMPRESSION_MONTHLY_LIMIT` remain the active defaults even after provider usage has been recorded. A database key is envelope-encrypted with the payment secret key infrastructure and is returned to the admin UI only as a mask; never commit a Tinify key to an environment example or tracked configuration file.
+
+Tinify output requests are fixed to WebP. The integration does not send Tinify's `preserve` option, so metadata such as copyright, capture time, and GPS is not retained in a successfully processed result. JPEG and PNG usually consume two Tinify compression counts because shrinking and WebP conversion are separate provider operations; an already-WebP image usually consumes one. GIF and SVG bypass Tinify and retain their original formats.
+
+The admin page shows the latest provider count and estimated remaining monthly budget. Refreshing the count sends Tinify a non-billable empty-input credential probe and reads the provider count from its response. If the known remaining budget is insufficient for the next operation, or Tinify reports that the quota is exhausted, compression is automatically made ineffective for following uploads. The current upload still proceeds with the validated original image, so a provider, key, or quota problem does not interrupt normal uploads; fallback originals retain their original format and metadata.
+
 Tencent Cloud COS can also be supplied through environment defaults:
 
 ```properties

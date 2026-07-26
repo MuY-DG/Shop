@@ -94,6 +94,11 @@ shop: # 商城项目自定义业务配置的统一入口。
   storage: # 图片、视频和私有文件的素材存储配置。
     provider: ${SHOP_STORAGE_PROVIDER:LOCAL} # 选择存储提供方，默认使用服务器本地磁盘。
     public-base-url: ${SHOP_STORAGE_PUBLIC_BASE_URL:http://localhost:8080} # 设置本地存储文件对外返回的基础 URL。
+    image-compression: # 上传图片写入对象存储前的 Tinify 压缩配置。
+      requested-enabled: ${SHOP_IMAGE_COMPRESSION_ENABLED:true} # 管理员尚未保存数据库配置时默认请求启用压缩。
+      config-source: ${SHOP_IMAGE_COMPRESSION_CONFIG_SOURCE:AUTO} # AUTO 优先使用有效环境密钥，否则使用数据库密钥。
+      api-key: ${TINIFY_API_KEY:} # Tinify 密钥仅从环境变量读取，禁止提交明文。
+      monthly-limit: ${SHOP_IMAGE_COMPRESSION_MONTHLY_LIMIT:500} # 本系统每月可使用的压缩次数预算。
     local: # 本地磁盘存储提供方配置。
       root: ${SHOP_STORAGE_LOCAL_ROOT:var/uploads} # 设置上传文件根目录，默认是工作目录下 var/uploads。
     tencent-cos: # 腾讯云 COS 存储提供方配置。
@@ -108,7 +113,7 @@ shop: # 商城项目自定义业务配置的统一入口。
       image-max-height: ${SHOP_STORAGE_IMAGE_MAX_HEIGHT:8192} # 图片最大高度限制为 8192 像素。
       image-max-pixels: ${SHOP_STORAGE_IMAGE_MAX_PIXELS:25000000} # 图片总像素数最大限制为 2500 万。
       video-max-size: ${SHOP_STORAGE_VIDEO_MAX_SIZE:50MB} # 单个视频最大允许 50MB。
-      private-file-max-size: ${SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE:1MB} # 私有文件最大允许 1MB。
+      private-file-max-size: ${SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE:10MB} # 私有文件最大允许 10MB。
   wechat: # 微信平台相关功能配置入口。
     mini-program: # 微信小程序登录和接口调用配置。
       app-id: ${WECHAT_MINI_PROGRAM_APP_ID:} # 从环境变量读取小程序 AppID。

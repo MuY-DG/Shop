@@ -42,6 +42,11 @@ shop:
   storage:
     provider: local
     public-base-url: http://localhost:8080
+    image-compression:
+      requested-enabled: true
+      config-source: AUTO
+      api-key:
+      monthly-limit: 500
     local:
       root: ${java.io.tmpdir}/shop-server-test-uploads
     tencent-cos:

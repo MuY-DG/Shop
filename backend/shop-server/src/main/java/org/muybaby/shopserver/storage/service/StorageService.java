@@ -14,6 +14,7 @@ import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.StorageUploadProfile;
 import org.muybaby.shopserver.storage.UploadedByType;
+import org.muybaby.shopserver.storage.compression.UploadImageCompressionCoordinator;
 import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
 import org.muybaby.shopserver.storage.dto.StorageAssetFolderPositionRequest;
@@ -164,6 +165,7 @@ public class StorageService {
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final StorageProvider storageProvider;
     private final UploadPolicy uploadPolicy;
+    private final UploadImageCompressionCoordinator imageCompressionCoordinator;
     private final StorageObjectKeyGenerator storageObjectKeyGenerator;
     private final StorageUsageService storageUsageService;
     private final StorageRuntimeConfigService storageRuntimeConfigService;
@@ -178,6 +180,7 @@ public class StorageService {
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             StorageProvider storageProvider,
             UploadPolicy uploadPolicy,
+            UploadImageCompressionCoordinator imageCompressionCoordinator,
             StorageObjectKeyGenerator storageObjectKeyGenerator,
             StorageUsageService storageUsageService,
             StorageRuntimeConfigService storageRuntimeConfigService,
@@ -190,6 +193,7 @@ public class StorageService {
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageProvider = storageProvider;
         this.uploadPolicy = uploadPolicy;
+        this.imageCompressionCoordinator = imageCompressionCoordinator;
         this.storageObjectKeyGenerator = storageObjectKeyGenerator;
         this.storageUsageService = storageUsageService;
         this.storageRuntimeConfigService = storageRuntimeConfigService;
@@ -755,34 +759,39 @@ public class StorageService {
         UploadPolicy.UploadDecision preflight = uploadPolicy.requireAllowed(
                 profile, originalFilename, contentType, file.getSize(), true);
 
-        byte[] bytes = readBytes(file);
-        ImageMetadata image = readImageMetadataIfNeeded(
-                bytes, profile.mediaKind(), preflight.contentType());
-        UploadPolicy.UploadDecision decision = uploadPolicy.requireAllowed(
+        byte[] sourceBytes = readBytes(file);
+        ImageMetadata sourceImage = readImageMetadataIfNeeded(
+                sourceBytes, profile.mediaKind(), preflight.contentType());
+        UploadPolicy.UploadDecision sourceDecision = uploadPolicy.requireAllowed(
                 profile,
                 originalFilename,
                 contentType,
-                bytes.length,
-                profile.mediaKind() != StorageMediaKind.IMAGE || image != null
+                sourceBytes.length,
+                profile.mediaKind() != StorageMediaKind.IMAGE || sourceImage != null
         );
+        PreparedUpload prepared = prepareCompressedUpload(
+                profile, originalFilename, sourceBytes, sourceImage, sourceDecision);
 
-        String objectKey = storageObjectKeyGenerator.nextKey(profile, decision.extension(), LocalDate.now());
+        String objectKey = storageObjectKeyGenerator.nextKey(
+                profile, prepared.decision().extension(), LocalDate.now());
         ResolvedStorageConfig storageConfig = storageRuntimeConfigService.effective();
         StorageObjectLocation objectLocation = objectLocation(storageConfig, objectKey);
-        String publicUrl = decision.visibility() == FileVisibility.PUBLIC ? publicUrl(storageConfig, objectKey) : null;
+        String publicUrl = prepared.decision().visibility() == FileVisibility.PUBLIC
+                ? publicUrl(storageConfig, objectKey)
+                : null;
 
         Long assetId = requiresNewTransaction.execute(status -> insertPendingUpload(
                 principal,
-                decision,
+                prepared.decision(),
                 folderId,
                 uploadContextType,
                 uploadContextId,
                 expiresAt,
                 uploadedByType,
-                originalFilename,
+                prepared.filename(),
                 objectLocation,
-                bytes,
-                image
+                prepared.bytes(),
+                prepared.image()
         ));
         if (assetId == null) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
@@ -791,9 +800,9 @@ public class StorageService {
         try {
             storageProvider.put(
                     objectLocation,
-                    decision.contentType(),
-                    new ByteArrayInputStream(bytes),
-                    bytes.length
+                    prepared.decision().contentType(),
+                    new ByteArrayInputStream(prepared.bytes()),
+                    prepared.bytes().length
             );
         } catch (RuntimeException ex) {
             scheduleUploadCleanup(assetId, "provider put failed");
@@ -810,6 +819,60 @@ public class StorageService {
             throw ex;
         }
         return toResponse(findAssetRow(assetId), List.of());
+    }
+
+    private PreparedUpload prepareCompressedUpload(
+            StorageUploadProfile profile,
+            String sourceFilename,
+            byte[] sourceBytes,
+            ImageMetadata sourceImage,
+            UploadPolicy.UploadDecision sourceDecision
+    ) {
+        PreparedUpload source = new PreparedUpload(
+                sourceFilename, sourceBytes, sourceImage, sourceDecision);
+        if (profile.mediaKind() != StorageMediaKind.IMAGE) {
+            return source;
+        }
+
+        UploadImageCompressionCoordinator.CompressionOutcome outcome =
+                imageCompressionCoordinator.compress(
+                        sourceBytes,
+                        sourceDecision.contentType(),
+                        uploadPolicy.imageMaxSizeBytes()
+                );
+        if (!outcome.compressed()) {
+            return source;
+        }
+
+        byte[] compressedBytes = outcome.content();
+        try {
+            String compressedFilename = replaceFilenameExtension(sourceFilename, "webp");
+            ImageMetadata compressedImage = readImageMetadataIfNeeded(
+                    compressedBytes, StorageMediaKind.IMAGE, outcome.contentType());
+            if (compressedImage == null
+                    || sourceImage == null
+                    || compressedImage.width() != sourceImage.width()
+                    || compressedImage.height() != sourceImage.height()
+                    || !Objects.equals(outcome.providerWidth(), compressedImage.width())
+                    || !Objects.equals(outcome.providerHeight(), compressedImage.height())) {
+                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+            }
+            UploadPolicy.UploadDecision compressedDecision = uploadPolicy.requireAllowed(
+                    profile,
+                    compressedFilename,
+                    outcome.contentType(),
+                    compressedBytes.length,
+                    true
+            );
+            return new PreparedUpload(
+                    compressedFilename, compressedBytes, compressedImage, compressedDecision);
+        } catch (BusinessException ex) {
+            log.warn(
+                    "Tinify output failed local image validation; retaining the source image (type={})",
+                    sourceDecision.contentType()
+            );
+            return source;
+        }
     }
 
     private Long insertPendingUpload(
@@ -1675,6 +1738,16 @@ public class StorageService {
         return trimmed;
     }
 
+    private String replaceFilenameExtension(String filename, String extension) {
+        int dotIndex = filename.lastIndexOf('.');
+        String stem = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
+        String convertedFilename = stem + "." + extension;
+        if (convertedFilename.length() > 255) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        return convertedFilename;
+    }
+
     private String displayFilename(String displayName, String extension) {
         if (!StringUtils.hasText(displayName)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
@@ -1816,6 +1889,14 @@ public class StorageService {
     }
 
     private record ImageMetadata(int width, int height) {
+    }
+
+    private record PreparedUpload(
+            String filename,
+            byte[] bytes,
+            ImageMetadata image,
+            UploadPolicy.UploadDecision decision
+    ) {
     }
 
     private record FolderEdge(Long id, Long parentId) {
