@@ -29,9 +29,11 @@ services:
     ports:
       # 仅服务器回环地址可访问；配合 SSH 隧道供本机数据库工具连接，公网无法直连。
       - "127.0.0.1:3306:3306"
-    # 应用仍通过 Compose 内部网络中的 mysql:3306 访问数据库。
+    # 应用仍通过隔离的 data 网络访问；ops 仅作为回环端口发布所需的默认网关。
     networks:
-      - data
+      data:
+      ops:
+        gw_priority: 1
     # 为应用、1Panel 和操作系统预留足够内存。
     mem_limit: 1g
     # 禁止容器进程获得额外 Linux 权限。
@@ -70,9 +72,11 @@ services:
     ports:
       # 仅服务器回环地址可访问；配合 SSH 隧道供本机 Redis 工具连接，公网无法直连。
       - "127.0.0.1:6379:6379"
-    # 应用仍通过 Compose 内部网络中的 redis:6379 访问 Redis。
+    # 应用仍通过隔离的 data 网络访问；ops 仅作为回环端口发布所需的默认网关。
     networks:
-      - data
+      data:
+      ops:
+        gw_priority: 1
     # Redis 主要保存会话和安全计数，限制内存防止挤占 JVM/MySQL。
     mem_limit: 256m
     # 禁止容器进程获得额外 Linux 权限。
@@ -156,11 +160,16 @@ services:
         max-size: 20m
         max-file: "5"
 
-# MySQL 与 Redis 只允许 Compose 内部服务访问。
+# data 隔离业务数据流量；ops 为 MySQL/Redis 的宿主机回环端口提供默认网关。
 networks:
   data:
     internal: true
   edge:
+  ops:
+    driver: bridge
+    driver_opts:
+      # 即使将来端口短语法漏写 Host IP，也默认只绑定服务器回环地址。
+      com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
 
 # 命名卷由 Docker 管理，并可由 1Panel 进行查看和备份。
 volumes:

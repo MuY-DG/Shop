@@ -17,7 +17,8 @@ Local Mac
 ```
 
 MySQL 和 Redis 只发布到宿主机回环地址，公网不能直接访问 `3306`/`6379`。
-Spring Boot 通过 Compose 内部网络访问；本机数据库工具必须通过 SSH 隧道访问。
+Spring Boot 通过隔离的 `data` 网络访问；`ops` 网络只负责 Docker 回环端口发布所需的
+默认网关，本机数据库工具必须通过 SSH 隧道访问。
 
 ## 文件分工
 
