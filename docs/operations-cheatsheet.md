@@ -118,17 +118,29 @@ sudo docker compose -f compose.prod.yaml logs -f --tail=200 shop-server
 sudo docker compose -f compose.prod.yaml restart shop-server
 ```
 
-## 1Panel
+## 1Panel、MySQL 与 Redis 隧道
 
-本地建立安全隧道：
+本地用一条命令同时建立 1Panel、MySQL 和 Redis 安全隧道：
 
 ```bash
-ssh -N -L 18080:127.0.0.1:18080 txcloud
+ssh -o ExitOnForwardFailure=yes -N \
+  -L 18080:127.0.0.1:18080 \
+  -L 13306:127.0.0.1:3306 \
+  -L 16379:127.0.0.1:6379 \
+  txcloud
 ```
 
 登录地址和凭据保存在 `backend/shop-server/.1panel.local`。使用结束后在隧道终端按
 `Ctrl+C`。1Panel 负责 OpenResty、HTTPS 证书、日志和监控；不要在其中重复创建同名
 Compose 编排。
+
+隧道运行期间，本机连接地址如下：
+
+| 服务 | 本机地址 |
+| --- | --- |
+| 1Panel | `127.0.0.1:18080` |
+| MySQL | `127.0.0.1:13306` |
+| Redis | `127.0.0.1:16379` |
 
 ## MySQL
 
@@ -147,6 +159,19 @@ cd /opt/shop/shop-server
 sudo docker compose -f compose.prod.yaml exec mysql \
   mysql -ushop -p hotpot_shop
 ```
+
+使用 DataGrip 或 IDEA 时填写：
+
+```text
+Host: 127.0.0.1
+Port: 13306
+Database: hotpot_shop
+User: shop
+Password: MYSQL_PASSWORD 的值
+```
+
+Redis GUI 使用 `127.0.0.1:16379`，密码为 `.env.infrastructure.local` 中
+`REDIS_PASSWORD` 的值。
 
 手动备份：
 

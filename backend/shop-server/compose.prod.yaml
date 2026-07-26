@@ -26,7 +26,10 @@ services:
       timeout: 5s
       retries: 20
       start_period: 60s
-    # 数据库只加入内部网络，不发布 3306 到宿主机或公网。
+    ports:
+      # 仅服务器回环地址可访问；配合 SSH 隧道供本机数据库工具连接，公网无法直连。
+      - "127.0.0.1:3306:3306"
+    # 应用仍通过 Compose 内部网络中的 mysql:3306 访问数据库。
     networks:
       - data
     # 为应用、1Panel 和操作系统预留足够内存。
@@ -64,7 +67,10 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
-    # Redis 只加入内部网络，不发布 6379 到宿主机或公网。
+    ports:
+      # 仅服务器回环地址可访问；配合 SSH 隧道供本机 Redis 工具连接，公网无法直连。
+      - "127.0.0.1:6379:6379"
+    # 应用仍通过 Compose 内部网络中的 redis:6379 访问 Redis。
     networks:
       - data
     # Redis 主要保存会话和安全计数，限制内存防止挤占 JVM/MySQL。

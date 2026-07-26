@@ -9,10 +9,15 @@ Internet
   -> shop-server 容器 :8080
        -> mysql 容器 :3306（内部网络）
        -> redis 容器 :6379（内部网络）
+
+Local Mac
+  -> SSH tunnel
+       -> 宿主机 127.0.0.1:3306 -> mysql 容器 :3306
+       -> 宿主机 127.0.0.1:6379 -> redis 容器 :6379
 ```
 
-MySQL 和 Redis 不发布宿主机端口，因此公网和同机其他进程都不能直接访问
-`3306`/`6379`。只有 Spring Boot 容器能通过 Compose 内部网络访问它们。
+MySQL 和 Redis 只发布到宿主机回环地址，公网不能直接访问 `3306`/`6379`。
+Spring Boot 通过 Compose 内部网络访问；本机数据库工具必须通过 SSH 隧道访问。
 
 ## 文件分工
 
