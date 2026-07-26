@@ -7,6 +7,7 @@ public enum ErrorCode {
     TOKEN_EXPIRED(100004, "Token expired"),
     ADMIN_LOGIN_RATE_LIMITED(100005, "Too many login attempts; try again later"),
     VALIDATION_FAILED(100400, "Validation failed"),
+    RESOURCE_NOT_FOUND(100404, "Resource not found"),
     AUTHENTICATION_TEMPORARILY_UNAVAILABLE(100503, "Authentication temporarily unavailable"),
     INTERNAL_ERROR(100500, "Internal server error"),
     ANALYTICS_RATE_LIMITED(100429, "Too many analytics events"),

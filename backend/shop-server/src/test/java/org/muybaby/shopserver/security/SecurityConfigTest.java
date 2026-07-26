@@ -129,6 +129,17 @@ class SecurityConfigTest {
     }
 
     @Test
+    void validAdminTokenGetsNotFoundEnvelopeForUnknownAdminApi() throws Exception {
+        String token = adminToken(List.of("R_SUPER"), List.of("product:read"));
+
+        mockMvc.perform(get("/admin/missing-api")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code", is(100404)))
+                .andExpect(jsonPath("$.msg", is("Resource not found")));
+    }
+
+    @Test
     void validAppTokenAuthenticatesAppApi() throws Exception {
         String token = appToken();
 

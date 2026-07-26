@@ -2,8 +2,10 @@ package org.muybaby.shopserver.common.error;
 
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -107,6 +109,22 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().msg()).isEqualTo("Validation failed");
         assertThat(response.getBody().data()).isNull();
         assertThat(response.getHeaders().getAllow()).containsExactly(org.springframework.http.HttpMethod.GET);
+    }
+
+    @Test
+    void missingResourceReturnsNotFoundEnvelope() {
+        GlobalExceptionHandler handler = new GlobalExceptionHandler();
+        NoResourceFoundException exception =
+                new NoResourceFoundException(HttpMethod.GET, "admin/missing");
+
+        ResponseEntity<ApiResponse<Void>> response =
+                handler.handleNoResourceFoundException(exception);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(404);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(100404);
+        assertThat(response.getBody().msg()).isEqualTo("Resource not found");
+        assertThat(response.getBody().data()).isNull();
     }
 
     @Test
