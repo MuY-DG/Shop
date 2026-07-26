@@ -1,5 +1,7 @@
 import request from '@/utils/http'
 
+const ASSET_UPLOAD_TIMEOUT_MS = 120_000
+
 export function uploadAsset(
   data: Api.Storage.AssetUploadPayload,
   options: { showSuccessMessage?: boolean } = {}
@@ -14,6 +16,7 @@ export function uploadAsset(
   return request.post<Api.Storage.Asset>({
     url: '/admin/assets/upload',
     data: formData,
+    timeout: ASSET_UPLOAD_TIMEOUT_MS,
     showSuccessMessage: options.showSuccessMessage ?? true
   })
 }
