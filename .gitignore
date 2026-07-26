@@ -20,6 +20,8 @@ logs/
 *.jks
 backend/shop-server/secrets/
 backend/shop-server/*.tar
+backend/shop-server/backups/
+backend/shop-server/.1panel.local
 
 # Java / Spring Boot
 target/

@@ -12,9 +12,11 @@ COPY pom.xml ./
 COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 \
     mvn --batch-mode -Dmaven.test.skip=true package \
-    && cp target/shop-server-*.jar /workspace/shop-server.jar
+    && cp target/shop-server-*.jar /workspace/application.jar \
+    && java -Djarmode=tools -jar /workspace/application.jar \
+        extract --layers --destination /workspace/extracted
 
-# 生产镜像只保留 JRE、健康检查工具和应用 JAR。
+# 生产镜像只保留 JRE、健康检查工具和 Spring Boot 分层文件。
 FROM eclipse-temurin:21-jre-jammy AS runtime
 
 RUN apt-get update \
@@ -24,12 +26,16 @@ RUN apt-get update \
     && useradd --system --uid 10001 --gid shop \
         --home-dir /nonexistent --shell /usr/sbin/nologin shop
 
-WORKDIR /opt/shop/shop-server
+WORKDIR /app
 
-COPY --from=build --chown=shop:shop /workspace/shop-server.jar /app/shop-server.jar
+# 按稳定性从高到低复制 Spring Boot 层；业务代码变化时可复用依赖层。
+COPY --from=build --chown=10001:10001 /workspace/extracted/dependencies/ ./
+COPY --from=build --chown=10001:10001 /workspace/extracted/spring-boot-loader/ ./
+COPY --from=build --chown=10001:10001 /workspace/extracted/snapshot-dependencies/ ./
+COPY --from=build --chown=10001:10001 /workspace/extracted/application/ ./
 
 # 容器不包含任何生产环境变量、证书或上传文件。
 USER 10001:10001
 EXPOSE 8080
 
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/shop-server.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/application.jar"]
