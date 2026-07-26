@@ -7,11 +7,21 @@ service_dir="$(cd -- "${script_dir}/.." && pwd)"
 repository_dir="$(cd -- "${service_dir}/../.." && pwd)"
 ssh_target="${1:-txcloud}"
 platform="${SHOP_DEPLOY_PLATFORM:-linux/amd64}"
+transport="${SHOP_DEPLOY_TRANSPORT:-remote-build}"
 revision="$(git -C "$repository_dir" rev-parse --short=12 HEAD)"
 timestamp="$(date -u +%Y%m%d%H%M%S)"
 release_image="shop-server:${revision}-${timestamp}"
 
-for command in docker ssh tar gzip; do
+case "$transport" in
+  remote-build|image-stream) ;;
+  *)
+    printf '不支持的 SHOP_DEPLOY_TRANSPORT：%s\n' "$transport" >&2
+    printf '可选值：remote-build、image-stream。\n' >&2
+    exit 2
+    ;;
+esac
+
+for command in ssh tar; do
   command -v "$command" >/dev/null 2>&1 || {
     printf '缺少命令：%s\n' "$command" >&2
     exit 1
@@ -24,15 +34,8 @@ if [[ "${SHOP_DEPLOY_SKIP_TESTS:-false}" != true ]]; then
   (cd "$service_dir" && ./mvnw test)
 fi
 
-printf '正在构建 %s（%s）。\n' "$release_image" "$platform"
-docker buildx build \
-  --platform "$platform" \
-  --load \
-  --tag "$release_image" \
-  "$service_dir"
-
 printf '正在通过 SSH 上传部署配置。\n'
-tar -C "$service_dir" -czf - \
+COPYFILE_DISABLE=1 tar -C "$service_dir" -czf - \
   compose.prod.yaml \
   .env.prod.local \
   .env.infrastructure.local \
@@ -56,10 +59,50 @@ tar -C "$service_dir" -czf - \
     sudo find /opt/shop/shop-server/secrets -type f -exec chmod 600 {} \;
   '
 
-printf '正在传输容器镜像；SSH 直传会发送完整压缩镜像。\n'
-docker image save "$release_image" |
-  gzip -1 |
-  ssh "$ssh_target" 'gzip -dc | sudo docker image load'
+case "$transport" in
+  remote-build)
+    printf '正在上传精简构建上下文，并由服务器构建 %s（%s）。\n' \
+      "$release_image" "$platform"
+    COPYFILE_DISABLE=1 tar -C "$service_dir" -czf - \
+      Dockerfile \
+      .dockerignore \
+      pom.xml \
+      mvnw \
+      .mvn \
+      src |
+      ssh "$ssh_target" "
+        set -eu
+        build_dir=\"\$(mktemp -d /tmp/shop-build.XXXXXX)\"
+        cleanup() {
+          rm -rf \"\$build_dir\"
+        }
+        trap cleanup EXIT
+        tar -xzf - -C \"\$build_dir\"
+        sudo docker build \
+          --platform '$platform' \
+          --tag '$release_image' \
+          \"\$build_dir\"
+      "
+    ;;
+  image-stream)
+    for command in docker gzip; do
+      command -v "$command" >/dev/null 2>&1 || {
+        printf '缺少命令：%s\n' "$command" >&2
+        exit 1
+      }
+    done
+    printf '正在本机构建 %s（%s）。\n' "$release_image" "$platform"
+    docker buildx build \
+      --platform "$platform" \
+      --load \
+      --tag "$release_image" \
+      "$service_dir"
+    printf '正在通过 SSH 传输完整压缩镜像。\n'
+    docker image save "$release_image" |
+      gzip -1 |
+      ssh "$ssh_target" 'gzip -dc | sudo docker image load'
+    ;;
+esac
 
 printf '正在远程启动 MySQL、Redis 和生产后端。\n'
 ssh "$ssh_target" "sudo /opt/shop/shop-server/scripts/remote-deploy.sh '$release_image'"

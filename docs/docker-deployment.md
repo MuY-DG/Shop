@@ -80,13 +80,12 @@ backend/shop-server/scripts/deploy-prod.sh txcloud
 
 1. 校验两个生产环境文件及重复密码是否一致。
 2. 运行后端完整测试。
-3. 为服务器构建 `linux/amd64` 分层镜像。
+3. 默认只上传精简源码，由服务器构建 `linux/amd64` 分层镜像。
 4. 通过 SSH 安全上传 Compose、环境文件和运维脚本。
-5. 通过 SSH 流式加载版本镜像。
-6. 先启动并等待 MySQL/Redis 健康。
-7. 停止旧 systemd Java 服务，启动 `prod` Profile 容器。
-8. 检查 `127.0.0.1:8080/actuator/health`。
-9. 健康后禁用旧 Java 服务；失败则自动恢复旧服务。
+5. 先启动并等待 MySQL/Redis 健康。
+6. 停止旧 systemd Java 服务，启动 `prod` Profile 容器。
+7. 检查 `127.0.0.1:8080/actuator/health`。
+8. 健康后禁用旧 Java 服务；失败则自动恢复旧服务。
 
 只有在已经单独运行过测试时，才可跳过测试：
 
@@ -109,9 +108,18 @@ Dockerfile 使用 Spring Boot `jarmode=tools` 将可执行 JAR 拆成：
 3. `snapshot-dependencies`
 4. `application`
 
-业务代码变化时，本地构建会复用前三层。使用私有镜像仓库 push/pull 时，网络也只传输
-变化的层；当前 SSH `docker save | docker load` 模式仍会传输完整压缩镜像。需要进一步
-减少上传流量时，可接入腾讯云 TCR 或 GHCR，Compose 本身无需重构。
+业务代码变化时，同一构建端会复用前三层。使用私有镜像仓库 push/pull 时，网络也只传输
+变化的层。默认 `remote-build` 模式只上传精简源码，并复用服务器 Maven 与 Docker
+缓存，适合本机到服务器上传较慢的情况。
+
+如需改回本机构建并通过 SSH 传输完整压缩镜像：
+
+```bash
+SHOP_DEPLOY_TRANSPORT=image-stream backend/shop-server/scripts/deploy-prod.sh txcloud
+```
+
+该模式使用 `docker save | docker load`，不会只发送变化层。以后需要分层传输时，可接入
+腾讯云 TCR 或 GHCR，Compose 本身无需重构。
 
 ## 1Panel 与 OpenResty
 
