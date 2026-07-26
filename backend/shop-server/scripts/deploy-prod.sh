@@ -35,7 +35,8 @@ if [[ "${SHOP_DEPLOY_SKIP_TESTS:-false}" != true ]]; then
 fi
 
 printf '正在通过 SSH 上传部署配置。\n'
-COPYFILE_DISABLE=1 tar -C "$service_dir" -czf - \
+COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
+  -C "$service_dir" -czf - \
   compose.prod.yaml \
   .env.prod.local \
   .env.infrastructure.local \
@@ -63,7 +64,8 @@ case "$transport" in
   remote-build)
     printf '正在上传精简构建上下文，并由服务器构建 %s（%s）。\n' \
       "$release_image" "$platform"
-    COPYFILE_DISABLE=1 tar -C "$service_dir" -czf - \
+    COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
+      -C "$service_dir" -czf - \
       Dockerfile \
       .dockerignore \
       pom.xml \
