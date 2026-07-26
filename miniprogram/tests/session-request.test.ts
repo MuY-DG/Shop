@@ -8,6 +8,7 @@ import {
   getSessionState,
   loginWithWechat,
   logoutSession,
+  onSessionExpired,
   recoverAfterUnauthorized,
   refreshSession
 } from "../miniprogram/services/session";
@@ -292,6 +293,10 @@ test("未登录的受保护请求要求用户主动登录且不会调用 wx.logi
 
 test("刷新令牌失效后不再静默调用 wx.login", async () => {
   await establishSession("1");
+  let expirationCount = 0;
+  const stopListening = onSessionExpired(() => {
+    expirationCount += 1;
+  });
   const refresh = refreshSession();
   await flushTasks();
   respond(
@@ -309,6 +314,42 @@ test("刷新令牌失效后不再静默调用 wx.login", async () => {
   assert.equal(loginCallCount, 1);
   assert.equal(getSessionState().accessToken, "");
   assert.equal(pendingRequests.length, 0);
+  assert.equal(expirationCount, 1);
+  stopListening();
+});
+
+test("受保护请求和刷新同时 401 时只通知一次会话失效", async () => {
+  await establishSession("1");
+  let expirationCount = 0;
+  const stopListening = onSessionExpired(() => {
+    expirationCount += 1;
+  });
+  const protectedRequest = request<{ ok: boolean }>({
+    url: "/app/protected"
+  });
+  await flushTasks();
+
+  respond(
+    takeRequest("/app/protected"),
+    401,
+    { code: 100001, msg: "unauthorized" }
+  );
+  await flushTasks();
+  respond(
+    takeRequest("/app/auth/refresh"),
+    401,
+    { code: 100001, msg: "unauthorized" }
+  );
+
+  await assert.rejects(protectedRequest, (error: unknown) => {
+    assert.ok(isApiError(error));
+    assert.equal(error.kind, "AUTH");
+    return true;
+  });
+  assert.equal(getSessionState().accessToken, "");
+  assert.equal(getSessionState().refreshToken, "");
+  assert.equal(expirationCount, 1);
+  stopListening();
 });
 
 test("手机号授权更新当前用户且不会重新登录", async () => {

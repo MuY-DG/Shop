@@ -27,6 +27,7 @@ let state = emptySession();
 let restored = false;
 let authEpoch = 0;
 let renewalFlight: Promise<SessionState> | null = null;
+const sessionExpiredListeners = new Set<() => void>();
 
 function emptySession(): SessionState {
   return {
@@ -170,6 +171,23 @@ function clearSessionInternal(detachRenewal = true): void {
   removeStoredSession();
 }
 
+function expireSessionInternal(detachRenewal = true): void {
+  const hadSession = Boolean(
+    state.accessToken || state.refreshToken || state.user
+  );
+  clearSessionInternal(detachRenewal);
+  if (!hadSession) {
+    return;
+  }
+  sessionExpiredListeners.forEach((listener) => {
+    try {
+      listener();
+    } catch {
+      // 会话清理不能被页面跳转或提示失败阻塞。
+    }
+  });
+}
+
 function errorFromResult<T>(result: RawHttpResult<T>): ApiError {
   const status = result.statusCode;
   return new ApiError({
@@ -289,7 +307,7 @@ async function performRenewal(preferRefresh: boolean): Promise<SessionState> {
       if (!isApiError(error) || error.kind !== "AUTH") {
         throw error;
       }
-      clearSessionInternal(false);
+      expireSessionInternal(false);
       throw loginRequiredError("登录状态已失效，请重新登录");
     }
   }
@@ -344,8 +362,15 @@ export function clearSessionIfCurrent(accessToken: string | null): void {
     !renewalFlight &&
     state.accessToken === accessToken
   ) {
-    clearSessionInternal();
+    expireSessionInternal();
   }
+}
+
+export function onSessionExpired(listener: () => void): () => void {
+  sessionExpiredListeners.add(listener);
+  return () => {
+    sessionExpiredListeners.delete(listener);
+  };
 }
 
 export async function ensureSession(): Promise<SessionState> {
@@ -358,6 +383,10 @@ export async function ensureSession(): Promise<SessionState> {
   }
   if (current.refreshToken) {
     return renewSession(true);
+  }
+  if (current.accessToken || current.user) {
+    expireSessionInternal();
+    throw loginRequiredError("登录状态已失效，请重新登录");
   }
   throw loginRequiredError();
 }
@@ -383,7 +412,7 @@ export async function recoverAfterUnauthorized(
     return current;
   }
   if (!current.refreshToken) {
-    clearSessionInternal();
+    expireSessionInternal();
     throw loginRequiredError("登录状态已失效，请重新登录");
   }
   return renewSession(true);

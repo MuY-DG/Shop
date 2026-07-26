@@ -46,3 +46,26 @@ export function openLoginPage(redirect?: string): boolean {
   });
   return true;
 }
+
+export function replaceWithExpiredSessionLogin(redirect?: string): boolean {
+  const page = currentPage();
+  const currentRoute = page?.route ? `/${page.route.replace(/^\//, "")}` : "";
+  if (currentRoute === LOGIN_ROUTE || navigationPending) {
+    return false;
+  }
+
+  navigationPending = true;
+  wx.showToast({
+    title: "登录状态已失效，请重新登录",
+    icon: "none"
+  });
+  wx.redirectTo({
+    url: buildLoginUrl(redirect || currentPageUrl(page)),
+    complete: () => {
+      setTimeout(() => {
+        navigationPending = false;
+      }, 300);
+    }
+  });
+  return true;
+}

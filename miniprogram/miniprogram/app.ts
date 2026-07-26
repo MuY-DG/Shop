@@ -3,7 +3,11 @@ import {
   assertRuntimeConfig,
   type MiniProgramEnvVersion
 } from "./config/app-config";
-import { restoreSession } from "./services/session";
+import {
+  onSessionExpired,
+  restoreSession
+} from "./services/session";
+import { replaceWithExpiredSessionLogin } from "./utils/login-navigation";
 import { getAppLayoutMetrics } from "./utils/system";
 
 function getEnvVersion(): MiniProgramEnvVersion {
@@ -22,5 +26,8 @@ App<IAppOption>({
   onLaunch() {
     assertRuntimeConfig(getEnvVersion());
     restoreSession();
+    onSessionExpired(() => {
+      replaceWithExpiredSessionLogin();
+    });
   }
 });
