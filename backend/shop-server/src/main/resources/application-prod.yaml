@@ -1,0 +1,10 @@
+spring:
+  config:
+    import: file:.env.prod.local[.properties] # prod 强制读取生产变量，文件缺失时拒绝启动。
+  datasource: # 生产 MySQL 数据源配置，所有凭据必须来自服务器环境文件。
+    url: ${SHOP_DB_URL} # 生产数据库 JDBC 地址必须由 .env.prod.local 提供。
+    username: ${SHOP_DB_USERNAME} # 生产数据库账号必须由 .env.prod.local 提供。
+    password: ${SHOP_DB_PASSWORD} # 生产数据库密码必须由 .env.prod.local 提供且不提交 Git。
+
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1} # 直接运行 JAR 时只监听本机；Docker 内由 Compose 覆盖为 0.0.0.0。

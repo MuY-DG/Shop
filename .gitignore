@@ -18,6 +18,8 @@ logs/
 *.key
 *.p12
 *.jks
+backend/shop-server/secrets/
+backend/shop-server/*.tar
 
 # Java / Spring Boot
 target/

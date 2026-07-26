@@ -1,0 +1,54 @@
+name: shop
+
+services:
+  shop-server:
+    # 本地直传默认使用 shop-server:local；镜像仓库部署时通过 SHOP_IMAGE 覆盖。
+    image: ${SHOP_IMAGE:-shop-server:local}
+    # 本地直传不访问镜像仓库；仓库部署时设置 SHOP_IMAGE_PULL_POLICY=always。
+    pull_policy: ${SHOP_IMAGE_PULL_POLICY:-never}
+    restart: unless-stopped
+    init: true
+    working_dir: /opt/shop/shop-server
+
+    environment:
+      # 容器始终启用生产 Profile。
+      SPRING_PROFILES_ACTIVE: prod
+      # 容器内部必须监听所有容器网卡，端口仍只发布到宿主机回环地址。
+      SERVER_ADDRESS: 0.0.0.0
+
+    ports:
+      # 只有宿主机上的 Caddy/运维检查可以访问，公网不能直接访问 8080。
+      - "127.0.0.1:${SHOP_HOST_PORT:-8080}:8080"
+
+    volumes:
+      # Spring Boot 强制读取生产变量；文件只读挂载且绝不写进镜像。
+      - type: bind
+        source: ./.env.prod.local
+        target: /opt/shop/shop-server/.env.prod.local
+        read_only: true
+      # 微信支付私钥和公钥只读挂载，路径与 .env.prod.local 保持一致。
+      - type: bind
+        source: ./secrets
+        target: /opt/shop/shop-server/secrets
+        read_only: true
+      # LOCAL 存储回退和私密上传需要持久化；使用 COS 时仍保留应急目录。
+      - type: bind
+        source: ./var
+        target: /opt/shop/shop-server/var
+
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+    # 根文件系统只读，仅 /tmp 和显式挂载目录允许写入。
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s

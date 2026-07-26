@@ -18,6 +18,23 @@ Shop/
 
 ## Backend Checks
 
+Environment-specific secrets are selected by the active Spring profile:
+
+- `dev` imports the optional ignored file `backend/shop-server/.env.dev.local`.
+- `prod` requires the ignored file `backend/shop-server/.env.prod.local`.
+- `test` uses `src/test/resources/application-test.yaml`.
+
+Choose the profile externally rather than storing `spring.profiles.active` in either
+environment file:
+
+```bash
+cd backend/shop-server
+./mvnw -Dspring-boot.run.profiles=dev spring-boot:run
+```
+
+Production systemd must pass `--spring.profiles.active=prod`. Do not edit the common
+`application.yaml` when switching environments.
+
 Focused authentication/RBAC tests:
 
 ```bash
@@ -103,7 +120,7 @@ Use this rolling deployment order:
 
 ## Local WeChat Mini Program Credentials
 
-The backend imports an optional local properties file from `backend/shop-server/.env.local`. This file is ignored by Git and should hold real mini program credentials for local integration checks:
+The `dev` profile imports the optional local properties file `backend/shop-server/.env.dev.local`. This file is ignored by Git and should hold real mini program credentials for local integration checks:
 
 ```properties
 WECHAT_MINI_PROGRAM_APP_ID=your-app-id
@@ -114,7 +131,7 @@ The `dev` profile uses the real WeChat client. The `test` profile keeps the mock
 
 ## Local WeChat Pay Credentials
 
-Keep local WeChat Pay credentials in `backend/shop-server/.env.local` or configure them through the admin payment configuration screen. Use placeholders in documentation and commits only:
+Keep local WeChat Pay credentials in `backend/shop-server/.env.dev.local` or configure them through the admin payment configuration screen. Use placeholders in documentation and commits only:
 
 ```properties
 WECHAT_PAY_ENABLED=true
@@ -141,17 +158,17 @@ SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
 
 The configured callback bases must be complete public HTTPS paths with no query, fragment, or user-info. With route issuance disabled, callbacks use `/wxpay/pay/notify` and `/wxpay/refund/notify`. With it enabled, the backend gives WeChat the corresponding `/r/{token}` path per payment/refund; do not pre-append a token in configuration. A real local WeChat Pay smoke check needs an HTTPS tunnel to the local backend.
 
-`WECHAT_PAY_CONFIG_SOURCE=AUTO` is the startup/default source: it uses complete environment credentials first and otherwise falls back to the enabled database payment config. Use `ENV` when the local `.env.local` values should be mandatory, or `DB` when payment credentials are managed through `/admin/pay/configs`.
+`WECHAT_PAY_CONFIG_SOURCE=AUTO` is the startup/default source: it uses complete environment credentials first and otherwise falls back to the enabled database payment config. Use `ENV` when the active profile's environment-file values should be mandatory, or `DB` when payment credentials are managed through `/admin/pay/configs`.
 
-The `开发配置 -> 支付配置` menu has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from `.env.local`. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
+The `开发配置 -> 支付配置` menu has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from the active profile's environment file. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
 
 For DB config, upload the required merchant private key and WeChat Pay public key, plus the optional merchant certificate, only through the payment-owned `/admin/pay/configs/secret-files` endpoint. Updating a config with a null merchant-certificate ID explicitly clears that optional reference; the old secret enters its 24-hour release window after its final active reference is removed. These secret assets never appear in the reusable asset library; do not commit uploaded files or the local upload directory.
 
-Never commit `.env.local`, merchant certificates, private keys, APIv3 keys, public-key files, local upload roots, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
+Never commit `.env.*.local`, merchant certificates, private keys, APIv3 keys, public-key files, local upload roots, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
 
 ## Object Storage
 
-The admin `开发配置 -> 对象存储配置` page selects the active provider at runtime. Its database setting takes effect without restarting the backend; when no database row exists, the backend falls back to `backend/shop-server/.env.local`.
+The admin `开发配置 -> 对象存储配置` page selects the active provider at runtime. Its database setting takes effect without restarting the backend; when no database row exists, the backend falls back to the active profile's `.env.dev.local` or `.env.prod.local`.
 
 Local storage defaults can be configured with:
 

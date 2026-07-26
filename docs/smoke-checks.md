@@ -9,7 +9,7 @@ cd backend/shop-server
 
 Before running the backend, start local MySQL and create the dev database expected by the `dev` profile. The default credentials are `root` / `123456`; override them with `SHOP_DB_URL`, `SHOP_DB_USERNAME`, and `SHOP_DB_PASSWORD` when needed.
 
-For mini program login and phone authorization against real WeChat APIs, keep `backend/shop-server/.env.local` populated with the local mini program credentials.
+For mini program login and phone authorization against real WeChat APIs, keep `backend/shop-server/.env.dev.local` populated with the local mini program credentials.
 
 ```bash
 mysql -uroot -p123456 -e "CREATE DATABASE IF NOT EXISTS hotpot_shop DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
@@ -982,7 +982,7 @@ Automated verification points:
 
 This is manual real smoke, not automated. Do not mark it passed until a real mini program payment completes against a local backend exposed through HTTPS.
 
-1. Fill `backend/shop-server/.env.local` with local-only placeholders replaced by real local credentials:
+1. Fill `backend/shop-server/.env.dev.local` with local-only placeholders replaced by real local credentials:
 
 ```properties
 WECHAT_PAY_ENABLED=true
@@ -1020,7 +1020,7 @@ https://<public-tunnel-domain>/wxpay/refund/notify
 8. If the callback is delayed, call `POST /app/orders/{orderId}/payment/sync` from the mini program/backend client and verify final state still comes from the backend payment provider query.
 9. Verify `payment_transaction_id` is present before using this order for real WeChat shipping upload.
 
-Do not commit `.env.local`, certificate/key files, upload directories, or screenshots/logs containing credential values, certificate paths, public key IDs, merchant identifiers, AppIDs, callback domains, or payment responses with sensitive data.
+Do not commit `.env.*.local`, certificate/key files, upload directories, or screenshots/logs containing credential values, certificate paths, public key IDs, merchant identifiers, AppIDs, callback domains, or payment responses with sensitive data.
 
 ## Shipment Smoke Checklist
 

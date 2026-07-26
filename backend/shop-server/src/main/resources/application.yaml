@@ -1,145 +1,148 @@
 spring:
   application:
     name: shop-server
-  config:
-    import: optional:file:.env.local[.properties]
   jackson:
-    default-property-inclusion: non_null
+    default-property-inclusion: non_null # 返回 JSON 时省略值为 null 的字段。
   flyway:
-    enabled: true
-    locations: classpath:db/migration
-    placeholders:
-      seed_super_status: ${SHOP_DEFAULT_ADMIN_STATUS:DISABLED}
-      seed_super_password_hash: "${SHOP_DEFAULT_ADMIN_PASSWORD_HASH:$2a$10$dSCU.t56l8Z7MPya89bXnuiMIjScayWL.KeTgc92TqlfLu.woUoYm}"
+    enabled: true # 应用启动时自动校验并执行尚未运行的迁移脚本。
+    locations: classpath:db/migration # 从 jar 内的 db/migration 目录读取迁移脚本。
+    placeholders: # 为 Flyway SQL 脚本提供可被替换的占位符。
+      seed_super_status: ${SHOP_DEFAULT_ADMIN_STATUS:DISABLED} # 仅控制全新数据库执行 V36 时的 Super 状态，默认停用。
+      seed_super_password_hash: "${SHOP_DEFAULT_ADMIN_PASSWORD_HASH:$2a$10$dSCU.t56l8Z7MPya89bXnuiMIjScayWL.KeTgc92TqlfLu.woUoYm}" # 默认写入不可公开登录的安全占位哈希，生产首次引导值由 .env.prod.local 覆盖。
   data:
     redis:
-      repositories:
-        enabled: false
-  servlet:
-    multipart:
-      max-file-size: ${SHOP_MULTIPART_MAX_FILE_SIZE:50MB}
-      max-request-size: ${SHOP_MULTIPART_MAX_REQUEST_SIZE:51MB}
+      host: ${SHOP_REDIS_HOST:127.0.0.1} # 所有环境默认连接本机 Redis，可由各自环境文件覆盖。
+      port: ${SHOP_REDIS_PORT:6379} # 所有环境默认使用 Redis 6379 端口。
+      database: ${SHOP_REDIS_DATABASE:0} # 所有环境默认使用 Redis 逻辑数据库 0。
+      username: ${SHOP_REDIS_USERNAME:} # Redis 启用 ACL 后从环境文件读取用户名，默认留空。
+      password: ${SHOP_REDIS_PASSWORD:} # Redis 启用认证后从环境文件读取密码，默认留空。
+      repositories: # 控制是否启用 Redis Repository 自动实现。
+        enabled: false # 项目直接使用 RedisTemplate，因此关闭未使用的 Repository 扫描。
+  servlet: # Servlet Web 容器的相关配置入口。
+    multipart: # 配置 multipart/form-data 文件上传限制。
+      max-file-size: ${SHOP_MULTIPART_MAX_FILE_SIZE:50MB} # 限制单个上传文件大小，默认 50MB。
+      max-request-size: ${SHOP_MULTIPART_MAX_REQUEST_SIZE:51MB} # 限制整个上传请求大小，默认 51MB。
 
 server:
   port: 8080
-  forward-headers-strategy: none
+  forward-headers-strategy: none # 禁止容器自动改写代理头，由项目自己的可信代理逻辑统一处理。
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
-  endpoint:
-    health:
-      probes:
-        enabled: true
+management: # Spring Boot Actuator 运维端点配置入口。
+  endpoints: # 配置所有 Actuator 端点的暴露方式。
+    web: # 配置通过 HTTP 暴露的 Actuator 端点。
+      exposure: # 定义允许通过 Web 访问的端点范围。
+        include: health,info # 仅暴露健康检查和应用信息端点。
+  endpoint: # 配置单个 Actuator 端点的行为。
+    health: # 配置 health 健康检查端点。
+      probes: # 配置存活和就绪探针支持。
+        enabled: true # 启用 liveness/readiness 健康探针。
 
-springdoc:
-  api-docs:
-    enabled: ${SHOP_OPENAPI_ENABLED:false}
-  swagger-ui:
-    enabled: ${SHOP_OPENAPI_ENABLED:false}
+springdoc: # Springdoc OpenAPI 文档功能配置入口。
+  api-docs: # OpenAPI JSON 描述端点配置。
+    enabled: ${SHOP_OPENAPI_ENABLED:false} # 默认关闭接口描述端点，可通过环境变量显式开启。
+  swagger-ui: # Swagger UI 浏览页面配置。
+    enabled: ${SHOP_OPENAPI_ENABLED:false} # 默认关闭接口浏览页面，可通过环境变量显式开启。
 
-shop:
-  content:
-    cache-enabled: ${SHOP_CONTENT_CACHE_ENABLED:true}
-    home-cache-ttl: ${SHOP_HOME_CACHE_TTL:6h}
-    contact-cache-ttl: ${SHOP_CONTACT_CACHE_TTL:24h}
-  auth:
-    token-store: redis
-    admin-access-ttl: 2h
-    admin-refresh-ttl: 7d
-    app-access-ttl: 7d
-    app-refresh-ttl: 30d
-    admin-login-protection:
-      enabled: ${SHOP_ADMIN_LOGIN_PROTECTION_ENABLED:true}
-      store: ${SHOP_ADMIN_LOGIN_PROTECTION_STORE:redis}
-      failure-window: ${SHOP_ADMIN_LOGIN_FAILURE_WINDOW:15m}
-      pair-failure-limit: ${SHOP_ADMIN_LOGIN_PAIR_FAILURE_LIMIT:5}
-      account-failure-limit: ${SHOP_ADMIN_LOGIN_ACCOUNT_FAILURE_LIMIT:12}
-      ip-failure-limit: ${SHOP_ADMIN_LOGIN_IP_FAILURE_LIMIT:30}
-      lock-duration: ${SHOP_ADMIN_LOGIN_LOCK_DURATION:15m}
-      memory-max-entries: ${SHOP_ADMIN_LOGIN_MEMORY_MAX_ENTRIES:100000}
-  security:
-    client-ip:
-      trusted-proxy-cidrs: ${SHOP_TRUSTED_PROXY_CIDRS:127.0.0.0/8,::1/128}
-      max-forwarded-hops: ${SHOP_MAX_FORWARDED_HOPS:20}
-      max-forwarded-header-length: ${SHOP_MAX_FORWARDED_HEADER_LENGTH:2048}
-  analytics:
-    rate-limit:
-      enabled: ${SHOP_ANALYTICS_RATE_LIMIT_ENABLED:true}
-      window: ${SHOP_ANALYTICS_RATE_LIMIT_WINDOW:1m}
-      ip-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_IP_EVENTS:5000}
-      visitor-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_VISITOR_EVENTS:1000}
-    retention:
-      enabled: ${SHOP_ANALYTICS_RETENTION_ENABLED:true}
-      days: ${SHOP_ANALYTICS_RETENTION_DAYS:400}
-      batch-size: ${SHOP_ANALYTICS_RETENTION_BATCH_SIZE:5000}
-      max-batches-per-run: ${SHOP_ANALYTICS_RETENTION_MAX_BATCHES:100}
-      cron: ${SHOP_ANALYTICS_RETENTION_CRON:0 15 3 * * *}
-  storage:
-    provider: ${SHOP_STORAGE_PROVIDER:LOCAL}
-    public-base-url: ${SHOP_STORAGE_PUBLIC_BASE_URL:http://localhost:8080}
-    local:
-      root: ${SHOP_STORAGE_LOCAL_ROOT:var/uploads}
-    tencent-cos:
-      region: ${SHOP_STORAGE_TENCENT_COS_REGION:}
-      bucket: ${SHOP_STORAGE_TENCENT_COS_BUCKET:}
-      secret-id: ${SHOP_STORAGE_TENCENT_COS_SECRET_ID:}
-      secret-key: ${SHOP_STORAGE_TENCENT_COS_SECRET_KEY:}
-      public-base-url: ${SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL:}
-    limits:
-      image-max-size: ${SHOP_STORAGE_IMAGE_MAX_SIZE:5MB}
-      image-max-width: ${SHOP_STORAGE_IMAGE_MAX_WIDTH:8192}
-      image-max-height: ${SHOP_STORAGE_IMAGE_MAX_HEIGHT:8192}
-      image-max-pixels: ${SHOP_STORAGE_IMAGE_MAX_PIXELS:25000000}
-      video-max-size: ${SHOP_STORAGE_VIDEO_MAX_SIZE:50MB}
-      private-file-max-size: ${SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE:1MB}
-  wechat:
-    mini-program:
-      app-id: ${WECHAT_MINI_PROGRAM_APP_ID:}
-      app-secret: ${WECHAT_MINI_PROGRAM_APP_SECRET:}
-      mock-enabled: false
-    shipping:
-      upload-enabled: ${SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED:false}
-  pay:
-    enabled: ${WECHAT_PAY_ENABLED:false}
-    mock-enabled: ${WECHAT_PAY_MOCK_ENABLED:false}
-    notification:
-      max-timestamp-skew: ${SHOP_PAY_NOTIFICATION_MAX_TIMESTAMP_SKEW:5m}
-    notification-route:
-      enabled: ${SHOP_PAY_NOTIFICATION_ROUTE_ENABLED:false}
-    secret-encryption:
-      write-version: ${SHOP_PAYMENT_SECRET_WRITE_VERSION:1}
-      active-key-id: ${SHOP_PAYMENT_SECRET_ACTIVE_KEY_ID:}
-      key-ring: ${SHOP_PAYMENT_SECRET_KEY_RING:}
-      rotation-enabled: ${SHOP_PAYMENT_SECRET_ROTATION_ENABLED:false}
-      rotation-delay: ${SHOP_PAYMENT_SECRET_ROTATION_DELAY:1m}
-      rotation-batch-size: ${SHOP_PAYMENT_SECRET_ROTATION_BATCH_SIZE:50}
-    initiation:
-      claim-timeout: ${SHOP_PAY_PREPAY_CLAIM_TIMEOUT:2m}
-    timeout-scan-enabled: ${SHOP_PAY_TIMEOUT_SCAN_ENABLED:true}
-    timeout-scan-delay: ${SHOP_PAY_TIMEOUT_SCAN_DELAY:60s}
-    timeout-scan-batch-size: ${SHOP_PAY_TIMEOUT_SCAN_BATCH_SIZE:50}
-    timeout-scan-claim-timeout: ${SHOP_PAY_TIMEOUT_SCAN_CLAIM_TIMEOUT:5m}
-    refund-recovery:
-      enabled: ${SHOP_REFUND_RECOVERY_ENABLED:true}
-      delay: ${SHOP_REFUND_RECOVERY_DELAY:60s}
-      batch-size: ${SHOP_REFUND_RECOVERY_BATCH_SIZE:20}
-      min-age: ${SHOP_REFUND_RECOVERY_MIN_AGE:1m}
-      claim-timeout: ${SHOP_REFUND_RECOVERY_CLAIM_TIMEOUT:5m}
-      base-retry-delay: ${SHOP_REFUND_RECOVERY_BASE_RETRY_DELAY:1m}
-      max-retry-delay: ${SHOP_REFUND_RECOVERY_MAX_RETRY_DELAY:30m}
-    config-source: ${WECHAT_PAY_CONFIG_SOURCE:AUTO}
-    app-id: ${WECHAT_PAY_APP_ID:}
-    mch-id: ${WECHAT_PAY_MCH_ID:}
-    merchant-serial-no: ${WECHAT_PAY_MERCHANT_SERIAL_NO:}
-    private-key-path: ${WECHAT_PAY_PRIVATE_KEY_PATH:}
-    api-v3-key: ${WECHAT_PAY_API_V3_KEY:}
-    notify-url: ${WECHAT_PAY_NOTIFY_URL:}
-    refund-notify-url: ${WECHAT_PAY_REFUND_NOTIFY_URL:}
-    verify-mode: ${WECHAT_PAY_VERIFY_MODE:PUBLIC_KEY}
-    public-key-id: ${WECHAT_PAY_PUBLIC_KEY_ID:}
-    public-key-path: ${WECHAT_PAY_PUBLIC_KEY_PATH:}
-    expire-minutes: ${SHOP_PAY_EXPIRE_MINUTES:1440}
-    secret-key: ${SHOP_PAYMENT_SECRET_KEY:}
+shop: # 商城项目自定义业务配置的统一入口。
+  content: # 首页和联系信息等内容模块的缓存配置。
+    cache-enabled: ${SHOP_CONTENT_CACHE_ENABLED:true} # 控制内容缓存总开关，默认启用。
+    home-cache-ttl: ${SHOP_HOME_CACHE_TTL:6h} # 设置首页内容缓存有效期，默认 6 小时。
+    contact-cache-ttl: ${SHOP_CONTACT_CACHE_TTL:24h} # 设置联系信息缓存有效期，默认 24 小时。
+  auth: # 管理后台和小程序的认证会话配置。
+    token-store: redis # 使用 Redis 保存访问令牌和刷新令牌。
+    admin-access-ttl: 2h # 管理后台访问令牌有效期为 2 小时。
+    admin-refresh-ttl: 7d # 管理后台刷新令牌有效期为 7 天。
+    app-access-ttl: 7d # 小程序访问令牌有效期为 7 天。
+    app-refresh-ttl: 30d # 小程序刷新令牌有效期为 30 天。
+    admin-login-protection: # 管理员登录失败限制与锁定配置。
+      enabled: ${SHOP_ADMIN_LOGIN_PROTECTION_ENABLED:true} # 默认启用管理员登录保护。
+      store: ${SHOP_ADMIN_LOGIN_PROTECTION_STORE:redis} # 默认使用 Redis 保存登录失败计数。
+      failure-window: ${SHOP_ADMIN_LOGIN_FAILURE_WINDOW:15m} # 在 15 分钟统计窗口内累计失败次数。
+      pair-failure-limit: ${SHOP_ADMIN_LOGIN_PAIR_FAILURE_LIMIT:5} # 单个账号与 IP 组合最多允许失败 5 次。
+      account-failure-limit: ${SHOP_ADMIN_LOGIN_ACCOUNT_FAILURE_LIMIT:12} # 单个账号在窗口内最多允许失败 12 次。
+      ip-failure-limit: ${SHOP_ADMIN_LOGIN_IP_FAILURE_LIMIT:30} # 单个来源 IP 在窗口内最多允许失败 30 次。
+      lock-duration: ${SHOP_ADMIN_LOGIN_LOCK_DURATION:15m} # 达到限制后锁定登录 15 分钟。
+      memory-max-entries: ${SHOP_ADMIN_LOGIN_MEMORY_MAX_ENTRIES:100000} # 使用内存存储时最多保留 100000 个计数项。
+  security: # 商城应用层安全配置入口。
+    client-ip: # 可信代理链和真实客户端 IP 解析配置。
+      trusted-proxy-cidrs: ${SHOP_TRUSTED_PROXY_CIDRS:127.0.0.0/8,::1/128} # 默认只信任本机 Caddy 写入的代理头。
+      max-forwarded-hops: ${SHOP_MAX_FORWARDED_HOPS:20} # 最多解析 20 层代理转发地址。
+      max-forwarded-header-length: ${SHOP_MAX_FORWARDED_HEADER_LENGTH:2048} # 限制转发头最大长度为 2048 字符。
+  analytics: # 访问统计、限流和历史数据保留配置。
+    rate-limit: # 访问统计事件写入的限流配置。
+      enabled: ${SHOP_ANALYTICS_RATE_LIMIT_ENABLED:true} # 默认启用统计事件限流。
+      window: ${SHOP_ANALYTICS_RATE_LIMIT_WINDOW:1m} # 使用 1 分钟作为限流统计窗口。
+      ip-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_IP_EVENTS:5000} # 每个 IP 每个窗口最多记录 5000 个事件。
+      visitor-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_VISITOR_EVENTS:1000} # 每个访客每个窗口最多记录 1000 个事件。
+    retention: # 历史访问统计数据的定期清理配置。
+      enabled: ${SHOP_ANALYTICS_RETENTION_ENABLED:true} # 默认启用过期统计数据清理任务。
+      days: ${SHOP_ANALYTICS_RETENTION_DAYS:400} # 默认保留最近 400 天的统计数据。
+      batch-size: ${SHOP_ANALYTICS_RETENTION_BATCH_SIZE:5000} # 每批最多删除 5000 条过期记录。
+      max-batches-per-run: ${SHOP_ANALYTICS_RETENTION_MAX_BATCHES:100} # 单次任务最多执行 100 个删除批次。
+      cron: ${SHOP_ANALYTICS_RETENTION_CRON:0 15 3 * * *} # 默认每天凌晨 3:15 执行清理任务。
+  storage: # 图片、视频和私有文件的素材存储配置。
+    provider: ${SHOP_STORAGE_PROVIDER:LOCAL} # 选择存储提供方，默认使用服务器本地磁盘。
+    public-base-url: ${SHOP_STORAGE_PUBLIC_BASE_URL:http://localhost:8080} # 设置本地存储文件对外返回的基础 URL。
+    local: # 本地磁盘存储提供方配置。
+      root: ${SHOP_STORAGE_LOCAL_ROOT:var/uploads} # 设置上传文件根目录，默认是工作目录下 var/uploads。
+    tencent-cos: # 腾讯云 COS 存储提供方配置。
+      region: ${SHOP_STORAGE_TENCENT_COS_REGION:} # 设置 COS 所在地域，例如 ap-guangzhou。
+      bucket: ${SHOP_STORAGE_TENCENT_COS_BUCKET:} # 设置 COS 存储桶名称。
+      secret-id: ${SHOP_STORAGE_TENCENT_COS_SECRET_ID:} # 从环境变量读取 COS CAM SecretId。
+      secret-key: ${SHOP_STORAGE_TENCENT_COS_SECRET_KEY:} # 从环境变量读取 COS CAM SecretKey，禁止提交明文。
+      public-base-url: ${SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL:} # 设置 COS 或 CDN 的公开访问基础 URL。
+    limits: # 不同素材类型的安全与资源限制。
+      image-max-size: ${SHOP_STORAGE_IMAGE_MAX_SIZE:5MB} # 单张图片最大允许 5MB。
+      image-max-width: ${SHOP_STORAGE_IMAGE_MAX_WIDTH:8192} # 图片最大宽度限制为 8192 像素。
+      image-max-height: ${SHOP_STORAGE_IMAGE_MAX_HEIGHT:8192} # 图片最大高度限制为 8192 像素。
+      image-max-pixels: ${SHOP_STORAGE_IMAGE_MAX_PIXELS:25000000} # 图片总像素数最大限制为 2500 万。
+      video-max-size: ${SHOP_STORAGE_VIDEO_MAX_SIZE:50MB} # 单个视频最大允许 50MB。
+      private-file-max-size: ${SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE:1MB} # 私有文件最大允许 1MB。
+  wechat: # 微信平台相关功能配置入口。
+    mini-program: # 微信小程序登录和接口调用配置。
+      app-id: ${WECHAT_MINI_PROGRAM_APP_ID:} # 从环境变量读取小程序 AppID。
+      app-secret: ${WECHAT_MINI_PROGRAM_APP_SECRET:} # 从环境变量读取小程序 AppSecret。
+      mock-enabled: false # 基础配置强制关闭小程序模拟模式。
+    shipping: # 微信小程序发货信息管理配置。
+      upload-enabled: ${SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED:false} # 默认不向微信上传发货信息。
+  pay: # 微信支付、退款和支付恢复任务配置入口。
+    enabled: ${WECHAT_PAY_ENABLED:false} # 微信支付总开关，默认关闭。
+    mock-enabled: ${WECHAT_PAY_MOCK_ENABLED:false} # 微信支付模拟实现开关，默认关闭。
+    notification: # 微信支付回调请求校验配置。
+      max-timestamp-skew: ${SHOP_PAY_NOTIFICATION_MAX_TIMESTAMP_SKEW:5m} # 回调时间戳与服务器时间最多允许相差 5 分钟。
+    notification-route: # 多商户支付回调路由配置。
+      enabled: ${SHOP_PAY_NOTIFICATION_ROUTE_ENABLED:false} # 默认关闭按商户配置路由回调的能力。
+    secret-encryption: # 支付敏感配置的信封加密和轮换配置。
+      write-version: ${SHOP_PAYMENT_SECRET_WRITE_VERSION:1} # 新写入密文使用的加密格式版本。
+      active-key-id: ${SHOP_PAYMENT_SECRET_ACTIVE_KEY_ID:} # 指定当前用于加密新数据的主密钥 ID。
+      key-ring: ${SHOP_PAYMENT_SECRET_KEY_RING:} # 配置可读取历史密文的主密钥集合。
+      rotation-enabled: ${SHOP_PAYMENT_SECRET_ROTATION_ENABLED:false} # 默认关闭后台自动密钥轮换任务。
+      rotation-delay: ${SHOP_PAYMENT_SECRET_ROTATION_DELAY:1m} # 密钥轮换任务每批之间默认等待 1 分钟。
+      rotation-batch-size: ${SHOP_PAYMENT_SECRET_ROTATION_BATCH_SIZE:50} # 密钥轮换任务每批最多处理 50 条记录。
+    initiation: # 创建微信预支付单时的并发占用配置。
+      claim-timeout: ${SHOP_PAY_PREPAY_CLAIM_TIMEOUT:2m} # 预支付创建占用超过 2 分钟后允许恢复。
+    timeout-scan-enabled: ${SHOP_PAY_TIMEOUT_SCAN_ENABLED:true} # 默认启用超时支付订单自动核查任务。
+    timeout-scan-delay: ${SHOP_PAY_TIMEOUT_SCAN_DELAY:60s} # 超时支付核查任务默认每 60 秒执行一次。
+    timeout-scan-batch-size: ${SHOP_PAY_TIMEOUT_SCAN_BATCH_SIZE:50} # 每次最多核查 50 个超时支付订单。
+    timeout-scan-claim-timeout: ${SHOP_PAY_TIMEOUT_SCAN_CLAIM_TIMEOUT:5m} # 超时订单处理占用超过 5 分钟后允许其他任务接管。
+    refund-recovery: # 微信退款异常和中断状态的自动恢复配置。
+      enabled: ${SHOP_REFUND_RECOVERY_ENABLED:true} # 默认启用退款恢复任务。
+      delay: ${SHOP_REFUND_RECOVERY_DELAY:60s} # 退款恢复任务默认每 60 秒执行一次。
+      batch-size: ${SHOP_REFUND_RECOVERY_BATCH_SIZE:20} # 每次最多恢复 20 个退款记录。
+      min-age: ${SHOP_REFUND_RECOVERY_MIN_AGE:1m} # 退款进入处理中至少 1 分钟后才参与恢复。
+      claim-timeout: ${SHOP_REFUND_RECOVERY_CLAIM_TIMEOUT:5m} # 退款恢复占用超过 5 分钟后允许重新接管。
+      base-retry-delay: ${SHOP_REFUND_RECOVERY_BASE_RETRY_DELAY:1m} # 首次恢复重试的基础等待时间为 1 分钟。
+      max-retry-delay: ${SHOP_REFUND_RECOVERY_MAX_RETRY_DELAY:30m} # 指数退避后的最大重试等待时间为 30 分钟。
+    config-source: ${WECHAT_PAY_CONFIG_SOURCE:AUTO} # 选择支付配置来源，AUTO 会按项目规则自动选择环境或数据库。
+    app-id: ${WECHAT_PAY_APP_ID:} # 从环境变量读取支付关联的 AppID。
+    mch-id: ${WECHAT_PAY_MCH_ID:} # 从环境变量读取微信支付商户号。
+    merchant-serial-no: ${WECHAT_PAY_MERCHANT_SERIAL_NO:} # 从环境变量读取商户 API 证书序列号。
+    private-key-path: ${WECHAT_PAY_PRIVATE_KEY_PATH:} # 设置商户 API 私钥 PEM 文件路径。
+    api-v3-key: ${WECHAT_PAY_API_V3_KEY:} # 从环境变量读取微信支付 APIv3 密钥。
+    notify-url: ${WECHAT_PAY_NOTIFY_URL:} # 设置支付结果通知的公网 HTTPS 地址。
+    refund-notify-url: ${WECHAT_PAY_REFUND_NOTIFY_URL:} # 设置退款结果通知的公网 HTTPS 地址。
+    verify-mode: ${WECHAT_PAY_VERIFY_MODE:PUBLIC_KEY} # 选择微信应答验签方式，默认使用微信支付公钥。
+    public-key-id: ${WECHAT_PAY_PUBLIC_KEY_ID:} # 设置微信支付公钥 ID。
+    public-key-path: ${WECHAT_PAY_PUBLIC_KEY_PATH:} # 设置微信支付公钥 PEM 文件路径。
+    expire-minutes: ${SHOP_PAY_EXPIRE_MINUTES:1440} # 本地支付订单默认 1440 分钟后过期。
+    secret-key: ${SHOP_PAYMENT_SECRET_KEY:} # 读取旧版或兼容路径使用的支付敏感信息加密密钥。

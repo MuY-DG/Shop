@@ -1,0 +1,24 @@
+# Git、IDE 与本地构建输出不进入 Docker 构建上下文。
+.git
+.idea
+.vscode
+target
+*.iml
+
+# 所有环境变量文件和密钥材料都必须留在构建上下文之外。
+.env*
+secrets
+*.pem
+*.key
+*.p12
+*.jks
+
+# 运行期上传文件、日志和临时文件不写入镜像。
+var
+logs
+tmp
+*.log
+
+# 开发工具与操作系统生成文件不需要进入镜像。
+.DS_Store
+HELP.md
