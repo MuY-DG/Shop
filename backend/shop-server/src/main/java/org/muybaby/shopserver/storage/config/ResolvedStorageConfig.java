@@ -4,11 +4,17 @@ import org.muybaby.shopserver.storage.StorageProviderKind;
 
 public record ResolvedStorageConfig(
         StorageProviderKind provider,
-        String publicBaseUrl,
+        String localPublicBaseUrl,
+        String cosPublicBaseUrl,
         String localRoot,
         String cosRegion,
         String cosBucket,
         String cosSecretId,
         String cosSecretKey
 ) {
+    public String publicBaseUrl() {
+        return provider == StorageProviderKind.TENCENT_COS
+                ? cosPublicBaseUrl
+                : localPublicBaseUrl;
+    }
 }

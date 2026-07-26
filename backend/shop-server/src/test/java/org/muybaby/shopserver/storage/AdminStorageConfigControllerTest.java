@@ -75,7 +75,8 @@ class AdminStorageConfigControllerTest {
         String createJson = """
                 {
                   "provider": "TENCENT_COS",
-                  "publicBaseUrl": "",
+                  "localPublicBaseUrl": "https://pay-dev.muybaby6.icu",
+                  "cosPublicBaseUrl": "",
                   "localRoot": "var/uploads",
                   "cosRegion": "ap-guangzhou",
                   "cosBucket": "shop-assets-1250000000",
@@ -92,6 +93,10 @@ class AdminStorageConfigControllerTest {
                 .andExpect(jsonPath("$.data.provider").value("TENCENT_COS"))
                 .andExpect(jsonPath("$.data.persisted").value(true))
                 .andExpect(jsonPath("$.data.publicBaseUrl")
+                        .value("https://shop-assets-1250000000.cos.ap-guangzhou.myqcloud.com"))
+                .andExpect(jsonPath("$.data.localPublicBaseUrl")
+                        .value("https://pay-dev.muybaby6.icu"))
+                .andExpect(jsonPath("$.data.cosPublicBaseUrl")
                         .value("https://shop-assets-1250000000.cos.ap-guangzhou.myqcloud.com"))
                 .andExpect(jsonPath("$.data.cosSecretIdMasked", stringContainsInOrder("AKID", "-id")))
                 .andExpect(jsonPath("$.data.cosSecretIdMasked", not("AKIDexample-secret-id")))
@@ -112,6 +117,7 @@ class AdminStorageConfigControllerTest {
 
         String updateWithoutSecrets = objectMapper.writeValueAsString(new ConfigUpdate(
                 "TENCENT_COS",
+                "https://pay-dev.muybaby6.icu",
                 "https://assets.example.test",
                 "var/uploads",
                 "ap-guangzhou",
@@ -122,13 +128,87 @@ class AdminStorageConfigControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(updateWithoutSecrets))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.localPublicBaseUrl")
+                        .value("https://pay-dev.muybaby6.icu"))
+                .andExpect(jsonPath("$.data.cosPublicBaseUrl")
+                        .value("https://assets.example.test"))
                 .andExpect(jsonPath("$.data.cosSecretKeyConfigured").value(true));
 
         mockMvc.perform(get("/admin/storage/config")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.publicBaseUrl").value("https://assets.example.test"))
+                .andExpect(jsonPath("$.data.localPublicBaseUrl")
+                        .value("https://pay-dev.muybaby6.icu"))
+                .andExpect(jsonPath("$.data.cosPublicBaseUrl")
+                        .value("https://assets.example.test"))
                 .andExpect(jsonPath("$.data.cosSecretKey").doesNotExist());
+    }
+
+    @Test
+    void keepsLocalAndCosPublicBaseUrlsIndependentWhenSwitchingProviders() throws Exception {
+        String writeToken = token(List.of("storage:config:write"));
+        String createJson = """
+                {
+                  "provider": "TENCENT_COS",
+                  "localPublicBaseUrl": "https://pay-dev.muybaby6.icu",
+                  "cosPublicBaseUrl": "https://oss.muybaby6.icu",
+                  "localRoot": "var/uploads",
+                  "cosRegion": "ap-guangzhou",
+                  "cosBucket": "shop-assets-1250000000",
+                  "cosSecretId": "AKIDexample-secret-id",
+                  "cosSecretKey": "example-secret-key"
+                }
+                """;
+
+        mockMvc.perform(put("/admin/storage/config")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.publicBaseUrl").value("https://oss.muybaby6.icu"))
+                .andExpect(jsonPath("$.data.localPublicBaseUrl")
+                        .value("https://pay-dev.muybaby6.icu"))
+                .andExpect(jsonPath("$.data.cosPublicBaseUrl")
+                        .value("https://oss.muybaby6.icu"));
+
+        String localUpdate = objectMapper.writeValueAsString(new ConfigUpdate(
+                "LOCAL",
+                "https://pay-next.muybaby6.icu",
+                "https://oss.muybaby6.icu",
+                "var/uploads",
+                "ap-guangzhou",
+                "shop-assets-1250000000"
+        ));
+        mockMvc.perform(put("/admin/storage/config")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(localUpdate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.publicBaseUrl").value("https://pay-next.muybaby6.icu"))
+                .andExpect(jsonPath("$.data.localPublicBaseUrl")
+                        .value("https://pay-next.muybaby6.icu"))
+                .andExpect(jsonPath("$.data.cosPublicBaseUrl")
+                        .value("https://oss.muybaby6.icu"));
+
+        String cosUpdate = objectMapper.writeValueAsString(new ConfigUpdate(
+                "TENCENT_COS",
+                "https://pay-next.muybaby6.icu",
+                "https://oss-next.muybaby6.icu",
+                "var/uploads",
+                "ap-guangzhou",
+                "shop-assets-1250000000"
+        ));
+        mockMvc.perform(put("/admin/storage/config")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(cosUpdate))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.publicBaseUrl").value("https://oss-next.muybaby6.icu"))
+                .andExpect(jsonPath("$.data.localPublicBaseUrl")
+                        .value("https://pay-next.muybaby6.icu"))
+                .andExpect(jsonPath("$.data.cosPublicBaseUrl")
+                        .value("https://oss-next.muybaby6.icu"));
     }
 
     private String token(List<String> permissions) {
@@ -140,7 +220,8 @@ class AdminStorageConfigControllerTest {
 
     private record ConfigUpdate(
             String provider,
-            String publicBaseUrl,
+            String localPublicBaseUrl,
+            String cosPublicBaseUrl,
             String localRoot,
             String cosRegion,
             String cosBucket

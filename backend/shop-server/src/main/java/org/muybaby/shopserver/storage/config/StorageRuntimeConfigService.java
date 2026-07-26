@@ -60,8 +60,8 @@ public class StorageRuntimeConfigService {
         ResolvedStorageConfig current = existing.map(this::resolve).orElseGet(this::defaultConfig);
         StorageProviderKind provider = parseProvider(request.provider());
         String localRoot = requireTextOrFallback(request.localRoot(), current.localRoot(), 500);
-        String cosRegion = optionalText(request.cosRegion(), 64);
-        String cosBucket = optionalText(request.cosBucket(), 128);
+        String cosRegion = optionalTextOrFallback(request.cosRegion(), current.cosRegion(), 64);
+        String cosBucket = optionalTextOrFallback(request.cosBucket(), current.cosBucket(), 128);
         String cosSecretId = textOrFallback(request.cosSecretId(), current.cosSecretId(), 256);
         String cosSecretKey = textOrFallback(request.cosSecretKey(), current.cosSecretKey(), 256);
 
@@ -69,14 +69,27 @@ public class StorageRuntimeConfigService {
             requireCosConfig(cosRegion, cosBucket, cosSecretId, cosSecretKey);
         }
 
-        String publicBaseUrl = normalizePublicBaseUrl(request.publicBaseUrl());
-        if (!StringUtils.hasText(publicBaseUrl)) {
-            if (provider == StorageProviderKind.TENCENT_COS) {
-                publicBaseUrl = defaultCosPublicBaseUrl(cosBucket, cosRegion);
-            } else {
-                throw validationFailure();
-            }
+        String localPublicBaseUrl = normalizePublicBaseUrl(requestedProviderUrl(
+                request.localPublicBaseUrl(),
+                provider == StorageProviderKind.LOCAL ? request.publicBaseUrl() : null,
+                current.localPublicBaseUrl()
+        ));
+        if (!StringUtils.hasText(localPublicBaseUrl)) {
+            throw validationFailure();
         }
+        String cosPublicBaseUrl = normalizePublicBaseUrl(requestedProviderUrl(
+                request.cosPublicBaseUrl(),
+                provider == StorageProviderKind.TENCENT_COS ? request.publicBaseUrl() : null,
+                current.cosPublicBaseUrl()
+        ));
+        if (!StringUtils.hasText(cosPublicBaseUrl)
+                && StringUtils.hasText(cosBucket)
+                && StringUtils.hasText(cosRegion)) {
+            cosPublicBaseUrl = defaultCosPublicBaseUrl(cosBucket, cosRegion);
+        }
+        String publicBaseUrl = provider == StorageProviderKind.TENCENT_COS
+                ? cosPublicBaseUrl
+                : localPublicBaseUrl;
 
         PaymentSecretCipher.EncryptedSecret encryptedSecretId = encryptIfPresent(
                 "cos-secret-id", cosSecretId);
@@ -87,6 +100,8 @@ public class StorageRuntimeConfigService {
                         update storage_runtime_setting
                         set provider = :provider,
                             public_base_url = :publicBaseUrl,
+                            local_public_base_url = :localPublicBaseUrl,
+                            cos_public_base_url = :cosPublicBaseUrl,
                             local_root = :localRoot,
                             cos_region = :cosRegion,
                             cos_bucket = :cosBucket,
@@ -101,6 +116,8 @@ public class StorageRuntimeConfigService {
                         """)
                 .param("provider", provider.name())
                 .param("publicBaseUrl", publicBaseUrl)
+                .param("localPublicBaseUrl", localPublicBaseUrl)
+                .param("cosPublicBaseUrl", cosPublicBaseUrl)
                 .param("localRoot", localRoot)
                 .param("cosRegion", cosRegion)
                 .param("cosBucket", cosBucket)
@@ -113,15 +130,19 @@ public class StorageRuntimeConfigService {
         if (updatedRows == 0) {
             jdbcClient.sql("""
                             insert into storage_runtime_setting
-                                (id, provider, public_base_url, local_root, cos_region, cos_bucket,
+                                (id, provider, public_base_url, local_public_base_url,
+                                 cos_public_base_url, local_root, cos_region, cos_bucket,
                                  cos_secret_id_ciphertext, cos_secret_key_ciphertext)
                         values
-                                (:id, :provider, :publicBaseUrl, :localRoot, :cosRegion, :cosBucket,
+                                (:id, :provider, :publicBaseUrl, :localPublicBaseUrl,
+                                 :cosPublicBaseUrl, :localRoot, :cosRegion, :cosBucket,
                                  :cosSecretIdCiphertext, :cosSecretKeyCiphertext)
                             """)
                     .param("id", SETTING_ID)
                     .param("provider", provider.name())
                     .param("publicBaseUrl", publicBaseUrl)
+                    .param("localPublicBaseUrl", localPublicBaseUrl)
+                    .param("cosPublicBaseUrl", cosPublicBaseUrl)
                     .param("localRoot", localRoot)
                     .param("cosRegion", cosRegion)
                     .param("cosBucket", cosBucket)
@@ -156,7 +177,8 @@ public class StorageRuntimeConfigService {
 
     private Optional<StorageSettingRow> persistedRow() {
         return jdbcClient.sql("""
-                        select provider, public_base_url, local_root, cos_region, cos_bucket,
+                        select provider, public_base_url, local_public_base_url,
+                               cos_public_base_url, local_root, cos_region, cos_bucket,
                                cos_secret_id_ciphertext, cos_secret_key_ciphertext,
                                secret_cipher_version, secret_key_id
                         from storage_runtime_setting
@@ -168,9 +190,25 @@ public class StorageRuntimeConfigService {
     }
 
     private ResolvedStorageConfig resolve(StorageSettingRow row) {
+        StorageProviderKind provider = parseProvider(row.provider());
+        String localPublicBaseUrl = normalizePublicBaseUrl(row.localPublicBaseUrl());
+        String cosPublicBaseUrl = normalizePublicBaseUrl(row.cosPublicBaseUrl());
+        if (provider == StorageProviderKind.LOCAL && !StringUtils.hasText(localPublicBaseUrl)) {
+            localPublicBaseUrl = normalizePublicBaseUrl(row.publicBaseUrl());
+        }
+        if (provider == StorageProviderKind.TENCENT_COS && !StringUtils.hasText(cosPublicBaseUrl)) {
+            cosPublicBaseUrl = normalizePublicBaseUrl(row.publicBaseUrl());
+        }
+        if (!StringUtils.hasText(localPublicBaseUrl)) {
+            localPublicBaseUrl = defaultLocalPublicBaseUrl();
+        }
+        if (!StringUtils.hasText(cosPublicBaseUrl)) {
+            cosPublicBaseUrl = configuredCosPublicBaseUrl(row.cosBucket(), row.cosRegion());
+        }
         return new ResolvedStorageConfig(
-                parseProvider(row.provider()),
-                row.publicBaseUrl(),
+                provider,
+                localPublicBaseUrl,
+                cosPublicBaseUrl,
                 row.localRoot(),
                 row.cosRegion(),
                 row.cosBucket(),
@@ -184,13 +222,11 @@ public class StorageRuntimeConfigService {
         StorageProviderKind provider = properties.provider() == null ? StorageProviderKind.LOCAL : properties.provider();
         String region = cos == null ? "" : trim(cos.region());
         String bucket = cos == null ? "" : trim(cos.bucket());
-        String cosPublicBaseUrl = cos == null ? "" : normalizePublicBaseUrl(cos.publicBaseUrl());
-        String publicBaseUrl = provider == StorageProviderKind.TENCENT_COS
-                ? (StringUtils.hasText(cosPublicBaseUrl) ? cosPublicBaseUrl : defaultCosPublicBaseUrl(bucket, region))
-                : normalizePublicBaseUrl(properties.publicBaseUrl());
+        String cosPublicBaseUrl = configuredCosPublicBaseUrl(bucket, region);
         return new ResolvedStorageConfig(
                 provider,
-                publicBaseUrl,
+                defaultLocalPublicBaseUrl(),
+                cosPublicBaseUrl,
                 properties.local() == null ? "var/uploads" : trim(properties.local().root()),
                 region,
                 bucket,
@@ -205,6 +241,8 @@ public class StorageRuntimeConfigService {
                 persisted,
                 properties.provider() == null ? StorageProviderKind.LOCAL.name() : properties.provider().name(),
                 config.publicBaseUrl(),
+                config.localPublicBaseUrl(),
+                config.cosPublicBaseUrl(),
                 config.localRoot(),
                 config.cosRegion(),
                 config.cosBucket(),
@@ -227,6 +265,18 @@ public class StorageRuntimeConfigService {
             return "";
         }
         return "https://" + bucket + ".cos." + region + ".myqcloud.com";
+    }
+
+    private String defaultLocalPublicBaseUrl() {
+        return normalizePublicBaseUrl(properties.publicBaseUrl());
+    }
+
+    private String configuredCosPublicBaseUrl(String bucket, String region) {
+        StorageProperties.TencentCos cos = properties.tencentCos();
+        String configured = cos == null ? "" : normalizePublicBaseUrl(cos.publicBaseUrl());
+        return StringUtils.hasText(configured)
+                ? configured
+                : defaultCosPublicBaseUrl(bucket, region);
     }
 
     private String normalizePublicBaseUrl(String value) {
@@ -276,6 +326,20 @@ public class StorageRuntimeConfigService {
             throw validationFailure();
         }
         return normalized;
+    }
+
+    private String optionalTextOrFallback(String value, String fallback, int maxLength) {
+        return value == null ? optionalText(fallback, maxLength) : optionalText(value, maxLength);
+    }
+
+    private String requestedProviderUrl(String providerUrl, String legacyUrl, String fallback) {
+        if (providerUrl != null) {
+            return providerUrl;
+        }
+        if (legacyUrl != null) {
+            return legacyUrl;
+        }
+        return fallback;
     }
 
     private PaymentSecretCipher.EncryptedSecret encryptIfPresent(String fieldName, String value) {
@@ -343,6 +407,8 @@ public class StorageRuntimeConfigService {
         return new StorageSettingRow(
                 rs.getString("provider"),
                 rs.getString("public_base_url"),
+                rs.getString("local_public_base_url"),
+                rs.getString("cos_public_base_url"),
                 rs.getString("local_root"),
                 rs.getString("cos_region"),
                 rs.getString("cos_bucket"),
@@ -356,6 +422,8 @@ public class StorageRuntimeConfigService {
     private record StorageSettingRow(
             String provider,
             String publicBaseUrl,
+            String localPublicBaseUrl,
+            String cosPublicBaseUrl,
             String localRoot,
             String cosRegion,
             String cosBucket,

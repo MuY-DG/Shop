@@ -5,6 +5,8 @@ public record AdminStorageConfigResponse(
         boolean persisted,
         String defaultProvider,
         String publicBaseUrl,
+        String localPublicBaseUrl,
+        String cosPublicBaseUrl,
         String localRoot,
         String cosRegion,
         String cosBucket,

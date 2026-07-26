@@ -174,6 +174,7 @@ class RoutingStorageProviderTest {
         return new ResolvedStorageConfig(
                 StorageProviderKind.LOCAL,
                 "http://localhost:8080",
+                "",
                 root.toString(),
                 "",
                 "",
@@ -185,6 +186,7 @@ class RoutingStorageProviderTest {
     private ResolvedStorageConfig cosConfig() {
         return new ResolvedStorageConfig(
                 StorageProviderKind.TENCENT_COS,
+                "http://localhost:8080",
                 "https://shop-test-123.cos.ap-guangzhou.myqcloud.com",
                 tempDir.resolve("unused-local").toString(),
                 "ap-guangzhou",

@@ -39,8 +39,11 @@
             <ElInput v-model="formData.localRoot" placeholder="例如：var/uploads" />
             <div class="form-tip">相对于后端启动目录，也可以填写绝对路径。</div>
           </ElFormItem>
-          <ElFormItem label="公开访问地址" prop="publicBaseUrl">
-            <ElInput v-model="formData.publicBaseUrl" placeholder="例如：http://localhost:8080" />
+          <ElFormItem label="公开访问地址" prop="localPublicBaseUrl">
+            <ElInput
+              v-model="formData.localPublicBaseUrl"
+              placeholder="例如：http://localhost:8080"
+            />
             <div class="form-tip">返回链接会拼接为：该地址 /files/public/文件路径。</div>
           </ElFormItem>
         </template>
@@ -71,8 +74,8 @@
               "
             />
           </ElFormItem>
-          <ElFormItem label="公开访问域名" prop="publicBaseUrl">
-            <ElInput v-model="formData.publicBaseUrl" :placeholder="cosDomainPlaceholder" />
+          <ElFormItem label="公开访问域名" prop="cosPublicBaseUrl">
+            <ElInput v-model="formData.cosPublicBaseUrl" :placeholder="cosDomainPlaceholder" />
             <div class="form-tip"
               >可留空使用 COS 默认域名；如已绑定自定义源站域名，可填写 HTTPS 地址。</div
             >
@@ -112,7 +115,8 @@
 
   const createDefaultForm = (): Api.Storage.ConfigForm => ({
     provider: 'LOCAL',
-    publicBaseUrl: '',
+    localPublicBaseUrl: '',
+    cosPublicBaseUrl: '',
     localRoot: 'var/uploads',
     cosRegion: '',
     cosBucket: '',
@@ -124,7 +128,8 @@
   const snapshot = () =>
     JSON.stringify({
       provider: formData.provider,
-      publicBaseUrl: formData.publicBaseUrl,
+      localPublicBaseUrl: formData.localPublicBaseUrl,
+      cosPublicBaseUrl: formData.cosPublicBaseUrl,
       localRoot: formData.localRoot,
       cosRegion: formData.cosRegion,
       cosBucket: formData.cosBucket,
@@ -172,11 +177,24 @@
         trigger: 'blur'
       }
     ],
-    publicBaseUrl: [
+    localPublicBaseUrl: [
       {
         validator: (_rule, value, callback) => {
           const text = String(value || '').trim()
-          if (!text && formData.provider === 'TENCENT_COS') {
+          if (!/^https?:\/\/[^\s]+$/i.test(text)) {
+            callback(new Error('请输入正确的 HTTP(S) 地址'))
+            return
+          }
+          callback()
+        },
+        trigger: 'blur'
+      }
+    ],
+    cosPublicBaseUrl: [
+      {
+        validator: (_rule, value, callback) => {
+          const text = String(value || '').trim()
+          if (!text) {
             callback()
             return
           }
@@ -227,7 +245,10 @@
   const fillForm = (value: Api.Storage.Config) => {
     Object.assign(formData, {
       provider: value.provider,
-      publicBaseUrl: value.publicBaseUrl,
+      localPublicBaseUrl:
+        value.localPublicBaseUrl ?? (value.provider === 'LOCAL' ? value.publicBaseUrl : ''),
+      cosPublicBaseUrl:
+        value.cosPublicBaseUrl ?? (value.provider === 'TENCENT_COS' ? value.publicBaseUrl : ''),
       localRoot: value.localRoot,
       cosRegion: value.cosRegion,
       cosBucket: value.cosBucket,
@@ -258,7 +279,12 @@
     try {
       const payload: Api.Storage.ConfigForm = {
         provider: formData.provider,
-        publicBaseUrl: String(formData.publicBaseUrl || '').trim(),
+        publicBaseUrl:
+          formData.provider === 'TENCENT_COS'
+            ? String(formData.cosPublicBaseUrl || '').trim()
+            : String(formData.localPublicBaseUrl || '').trim(),
+        localPublicBaseUrl: String(formData.localPublicBaseUrl || '').trim(),
+        cosPublicBaseUrl: String(formData.cosPublicBaseUrl || '').trim(),
         localRoot: String(formData.localRoot || '').trim(),
         cosRegion: String(formData.cosRegion || '').trim(),
         cosBucket: String(formData.cosBucket || '').trim()

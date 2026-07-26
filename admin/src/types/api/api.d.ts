@@ -630,6 +630,8 @@ declare namespace Api {
       persisted: boolean
       defaultProvider: Provider
       publicBaseUrl: string
+      localPublicBaseUrl: string
+      cosPublicBaseUrl: string
       localRoot: string
       cosRegion: string
       cosBucket: string
@@ -639,7 +641,9 @@ declare namespace Api {
 
     interface ConfigForm {
       provider: Provider
-      publicBaseUrl: string
+      publicBaseUrl?: string
+      localPublicBaseUrl: string
+      cosPublicBaseUrl: string
       localRoot: string
       cosRegion: string
       cosBucket: string

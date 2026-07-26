@@ -30,6 +30,8 @@ class StorageSchemaTest {
         assertThat(columnIsAutoIncrement("storage_asset", "id")).isTrue();
         assertThat(columnIsAutoIncrement("storage_asset_folder", "id")).isTrue();
         assertThat(columnIsAutoIncrement("storage_asset_usage", "id")).isTrue();
+        assertThat(columnNames("storage_runtime_setting"))
+                .contains("public_base_url", "local_public_base_url", "cos_public_base_url");
 
         assertThat(columnNames("storage_asset")).contains(
                 "id", "scope", "media_kind", "folder_id", "visibility", "provider",

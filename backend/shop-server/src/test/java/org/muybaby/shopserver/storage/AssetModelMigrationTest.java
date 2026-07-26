@@ -201,7 +201,7 @@ public class AssetModelMigrationTest {
                             "secret_reencrypted_at");
             assertThat(columnNames(statement, "storage_runtime_setting"))
                     .contains("secret_cipher_version", "secret_key_id", "secret_revision",
-                            "secret_reencrypted_at");
+                            "secret_reencrypted_at", "local_public_base_url", "cos_public_base_url");
 
             assertThat(columnNames(statement, "storage_asset")).containsExactly(
                     "id", "scope", "media_kind", "folder_id", "visibility", "provider",

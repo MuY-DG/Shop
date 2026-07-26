@@ -168,7 +168,7 @@ Never commit `.env.*.local`, merchant certificates, private keys, APIv3 keys, pu
 
 ## Object Storage
 
-The admin `开发配置 -> 对象存储配置` page selects the active provider at runtime. Its database setting takes effect without restarting the backend; when no database row exists, the backend falls back to the active profile's `.env.dev.local` or `.env.prod.local`.
+The admin `开发配置 -> 对象存储配置` page selects the active provider at runtime. It stores the local public base URL and the Tencent COS public base URL independently, while the compatibility `publicBaseUrl` response field always reports the URL for the currently active provider. Its database setting takes effect without restarting the backend; when no database row exists, the backend falls back to the active profile's `.env.dev.local` or `.env.prod.local`.
 
 Local storage defaults can be configured with:
 
