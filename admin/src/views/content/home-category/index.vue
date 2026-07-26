@@ -150,6 +150,7 @@
             <AssetPicker
               :model-value="{ fileId: formData.imageFileId, url: formData.imageUrl }"
               media-kind="IMAGE"
+              compact
               @change="handleImageChange"
             />
             <div class="image-guidance">

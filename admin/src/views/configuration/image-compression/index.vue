@@ -1,7 +1,7 @@
 <template>
   <div class="image-compression-config">
     <ElAlert
-      title="JPEG、PNG、WebP 经 Tinify 成功处理后统一输出为 WebP，且不保留版权、拍摄时间、GPS 等元数据；GIF、SVG 和压缩失败时的回退原图保持不变。"
+      title="JPEG、PNG 经 Tinify 成功处理后统一输出为 WebP，且不保留版权、拍摄时间、GPS 等元数据；WebP、GIF、SVG 和压缩失败时的回退原图保持不变。"
       type="info"
       :closable="false"
       show-icon
@@ -77,8 +77,8 @@
           />
           <span class="input-suffix">次</span>
           <div class="form-tip">
-            用于计算剩余次数并在耗尽时自动暂停。WebP 源图通常消耗 1 次，JPEG、PNG 转为 WebP 通常消耗
-            2 次。
+            用于计算剩余次数并在耗尽时自动暂停。JPEG、PNG 转为 WebP 通常消耗 2 次；WebP、GIF、SVG
+            会跳过压缩，不消耗 Tinify 次数。
           </div>
         </ElFormItem>
 

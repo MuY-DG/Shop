@@ -90,9 +90,9 @@
             <AssetPicker
               :model-value="{ fileId: formData.imageFileId, url: formData.imageUrl }"
               media-kind="IMAGE"
+              compact
               @change="handleBannerImageChange"
             />
-            <ElInput v-model="formData.imageUrl" readonly placeholder="已选素材地址" />
             <div class="image-guidance">
               <ArtSvgIcon icon="ri:information-line" />
               <span>

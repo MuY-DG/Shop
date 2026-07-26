@@ -110,21 +110,20 @@
 
     uploading.value = true
     try {
-      const results = await settleWithConcurrency(limitedFiles, 3, (file) =>
-        uploadAsset({ file, folderId: props.defaultFolderId }, { showSuccessMessage: false })
-      )
-      const uploaded = results.flatMap((result) =>
-        result.status === 'fulfilled'
-          ? [
-              {
-                fileId: result.value.id,
-                url: result.value.publicUrl || result.value.url || ''
-              }
-            ]
-          : []
-      )
+      const uploaded: Api.Common.AssetValue[] = []
+      const results = await settleWithConcurrency(limitedFiles, 3, async (file) => {
+        const asset = await uploadAsset(
+          { file, folderId: props.defaultFolderId },
+          { showSuccessMessage: false }
+        )
+        uploaded.push({
+          fileId: asset.id,
+          url: asset.publicUrl || asset.url || ''
+        })
+        emit('uploaded', [...uploaded])
+        return asset
+      })
       const failed = results.length - uploaded.length
-      if (uploaded.length) emit('uploaded', uploaded)
       if (failed) {
         ElMessage.warning(`成功上传 ${uploaded.length} 个，失败 ${failed} 个`)
       } else {

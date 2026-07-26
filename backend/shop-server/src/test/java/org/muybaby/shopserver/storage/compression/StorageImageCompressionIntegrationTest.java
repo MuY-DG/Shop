@@ -141,8 +141,8 @@ class StorageImageCompressionIntegrationTest {
     }
 
     @ParameterizedTest
-    @MethodSource("unsupportedCompressionImages")
-    void gifAndSvgBypassCompressionAndKeepTheirOriginalRepresentation(
+    @MethodSource("passthroughCompressionImages")
+    void gifSvgAndWebpBypassCompressionAndKeepTheirOriginalRepresentation(
             String filename,
             String contentType,
             byte[] source
@@ -377,7 +377,7 @@ class StorageImageCompressionIntegrationTest {
                 .single();
     }
 
-    private static Stream<Arguments> unsupportedCompressionImages() {
+    private static Stream<Arguments> passthroughCompressionImages() {
         byte[] gif = image("gif", 24, 16);
         byte[] svg = """
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="16">
@@ -386,7 +386,8 @@ class StorageImageCompressionIntegrationTest {
                 """.getBytes(StandardCharsets.UTF_8);
         return Stream.of(
                 Arguments.of("animated.gif", "image/gif", gif),
-                Arguments.of("vector.svg", "image/svg+xml", svg)
+                Arguments.of("vector.svg", "image/svg+xml", svg),
+                Arguments.of("already.webp", "image/webp", WEBP_80_BY_80)
         );
     }
 

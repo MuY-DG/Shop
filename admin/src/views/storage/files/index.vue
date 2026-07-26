@@ -32,6 +32,7 @@
           highlight-current
           :expand-on-click-node="false"
           :draggable="canSortFolders"
+          :current-node-key="selectedFolderId || undefined"
           :allow-drop="allowFolderDrop"
           @node-click="handleFolderSelect"
           @node-drag-start="captureFolderOrder"
@@ -92,12 +93,36 @@
           @reset="handleReset"
         />
 
-        <ElCard class="art-table-card" :style="{ marginTop: '12px' }">
+        <ElCard
+          class="art-table-card asset-library__drop-surface"
+          :class="{ 'is-dragging-upload': listUploadDragging }"
+          :style="{ marginTop: '12px' }"
+          @dragenter.prevent="handleListDragEnter"
+          @dragover.prevent="handleListDragOver"
+          @dragleave.prevent="handleListDragLeave"
+          @drop.stop.prevent="handleListDrop"
+        >
           <ArtTableHeader :loading="loading" v-model:columns="columnChecks" @refresh="loadAssets">
             <template #left>
-              <ElButton v-auth="'asset:upload'" type="primary" @click="openUploadDialog">
+              <ElButton
+                v-auth="'asset:upload'"
+                type="primary"
+                :disabled="listUploading"
+                @click="openUploadDialog"
+              >
                 上传素材
               </ElButton>
+              <span
+                v-if="hasAuth('asset:upload') && !listUploading && listUploadFolderId !== null"
+                class="asset-library__drop-hint"
+              >
+                <ElIcon><UploadFilled /></ElIcon>
+                可直接拖入列表上传
+              </span>
+              <span v-else-if="listUploading" class="asset-library__upload-progress">
+                已上传 {{ listUploadProgress.succeeded }}/{{ listUploadProgress.total }}，已处理
+                {{ listUploadProgress.finished }}/{{ listUploadProgress.total }}
+              </span>
               <ElButton
                 v-if="selectedAssetIds.length"
                 v-auth="'asset:folder'"
@@ -209,6 +234,12 @@
             @pagination:current-change="handleCurrentChange"
             @pagination:size-change="handleSizeChange"
           />
+
+          <div v-if="listUploadDragging" class="asset-library__drop-overlay">
+            <ElIcon size="42"><UploadFilled /></ElIcon>
+            <strong>松开即可上传到“{{ listUploadFolderName }}”</strong>
+            <span>支持图片和 MP4、WebM 视频，单次最多 50 个文件</span>
+          </div>
         </ElCard>
       </section>
     </div>
@@ -218,6 +249,9 @@
       title="上传素材"
       width="560px"
       align-center
+      :close-on-click-modal="!uploading"
+      :close-on-press-escape="!uploading"
+      :show-close="!uploading"
       @closed="resetUpload"
     >
       <ElForm label-width="92px">
@@ -257,6 +291,13 @@
           :closable="false"
         />
         <ElAlert
+          v-if="uploading && uploadProgress.total"
+          class="asset-library__upload-summary"
+          :title="`正在上传：成功 ${uploadProgress.succeeded} 个，已处理 ${uploadProgress.finished}/${uploadProgress.total}`"
+          type="info"
+          :closable="false"
+        />
+        <ElAlert
           v-if="uploadSummary"
           class="asset-library__upload-summary"
           :title="`本次上传成功 ${uploadSummary.succeeded} 个，失败 ${uploadSummary.failed} 个`"
@@ -266,7 +307,7 @@
       </ElForm>
 
       <template #footer>
-        <ElButton @click="uploadDialogVisible = false">取消</ElButton>
+        <ElButton :disabled="uploading" @click="uploadDialogVisible = false">取消</ElButton>
         <ElButton type="primary" :loading="uploading" @click="submitUpload">上传</ElButton>
       </template>
     </ElDialog>
@@ -527,7 +568,11 @@
   import type { ColumnOption } from '@/types'
   import { useAuth } from '@/hooks'
   import { settleWithConcurrency } from '@/utils/asset-batch'
-  import { assetUploadFileKey, validateLibraryAssetUploadFile } from '@/utils/asset-upload'
+  import {
+    assetUploadFileKey,
+    uniqueAssetUploadFiles,
+    validateLibraryAssetUploadFile
+  } from '@/utils/asset-upload'
   import { ASSET_LIBRARY_EMPTY_TABLE_HEIGHT } from './asset-library-layout'
   import {
     batchMoveAssets,
@@ -570,8 +615,18 @@
     failed: number
   }
 
+  interface UploadProgress {
+    total: number
+    finished: number
+    succeeded: number
+  }
+
+  const emptyUploadProgress = (): UploadProgress => ({ total: 0, finished: 0, succeeded: 0 })
+
   const loading = ref(false)
   const uploading = ref(false)
+  const listUploading = ref(false)
+  const listUploadDragging = ref(false)
   const moving = ref(false)
   const folderSaving = ref(false)
   const folderSorting = ref(false)
@@ -593,12 +648,15 @@
   const uploadFolderId = ref<number>(0)
   const uploadFileList = ref<UploadUserFile[]>([])
   const uploadSummary = ref<UploadSummary | null>(null)
+  const uploadProgress = ref<UploadProgress>(emptyUploadProgress())
+  const listUploadProgress = ref<UploadProgress>(emptyUploadProgress())
   const folderDialogMode = ref<FolderDialogMode>('create')
   const editingFolderId = ref<number | null>(null)
   const selectedAssetIds = ref<number[]>([])
   const assetTableRef = ref<AssetTableExpose | null>(null)
   const syncingTableSelection = ref(false)
   let folderOrderSnapshot: Api.Storage.AssetFolder[] = []
+  let listUploadDragDepth = 0
 
   const currentUsages = computed(() =>
     (detailAsset.value?.usages || []).filter((usage) => usage.status === 'ACTIVE')
@@ -824,6 +882,14 @@
   const resolveAssetUrl = (asset?: Api.Storage.AssetItem | null) =>
     asset?.publicUrl || asset?.url || ''
   const folderName = (folderId?: number | null) => folderNameMap.value[folderId || 0] || '未分组'
+  const listUploadFolderId = computed<number | null>(() => {
+    if (!selectedFolderId.value) return 0
+    const folder = findFolder(folders.value, selectedFolderId.value)
+    return folder?.status === 'ENABLED' ? folder.id : null
+  })
+  const listUploadFolderName = computed(() =>
+    listUploadFolderId.value === null ? '不可用分组' : folderName(listUploadFolderId.value)
+  )
 
   const copyAssetUrl = async () => {
     const url = resolveAssetUrl(detailAsset.value)
@@ -1119,6 +1185,114 @@
     loadAssets()
   }
 
+  const prepareAssetListForProgressiveUpload = (folderId?: number) => {
+    clearAssetSelection()
+    searchForm.value = {
+      keyword: undefined,
+      mediaKind: undefined,
+      referenceStatus: undefined,
+      createdRange: undefined
+    }
+    selectedFolderId.value = folderId
+    pagination.current = 1
+    pagination.total = 0
+    assets.value = []
+  }
+
+  const revealUploadedAsset = (asset: Api.Storage.AssetItem) => {
+    if (assets.value.some((item) => item.id === asset.id)) return
+    assets.value = [asset, ...assets.value].slice(0, pagination.size)
+    pagination.total += 1
+  }
+
+  const selectUploadFiles = (files: File[], maxFiles = 50) => {
+    const uniqueFiles = uniqueAssetUploadFiles(files)
+    const validFiles = uniqueFiles.filter((file) => validateLibraryAssetUploadFile(file).valid)
+    const selectedFiles = validFiles.slice(0, maxFiles)
+    return {
+      files: selectedFiles,
+      ignored: files.length - selectedFiles.length
+    }
+  }
+
+  const canReceiveListUpload = () =>
+    hasAuth('asset:upload') &&
+    !loading.value &&
+    !uploading.value &&
+    !listUploading.value &&
+    listUploadFolderId.value !== null
+  const isFileDrag = (event: DragEvent) =>
+    Array.from(event.dataTransfer?.types || []).includes('Files')
+
+  const handleListDragEnter = (event: DragEvent) => {
+    if (!canReceiveListUpload() || !isFileDrag(event)) return
+    listUploadDragDepth += 1
+    listUploadDragging.value = true
+  }
+
+  const handleListDragOver = (event: DragEvent) => {
+    if (!canReceiveListUpload() || !isFileDrag(event)) return
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }
+
+  const handleListDragLeave = () => {
+    if (listUploadDragDepth > 0) listUploadDragDepth -= 1
+    if (listUploadDragDepth === 0) listUploadDragging.value = false
+  }
+
+  const resetListDragging = () => {
+    listUploadDragDepth = 0
+    listUploadDragging.value = false
+  }
+
+  const uploadDroppedAssets = async (files: File[], folderId: number) => {
+    const selection = selectUploadFiles(files)
+    if (selection.ignored) {
+      ElMessage.warning(`${selection.ignored} 个文件因重复、数量上限、格式或大小不符合要求而被忽略`)
+    }
+    if (!selection.files.length) return
+
+    prepareAssetListForProgressiveUpload(selectedFolderId.value)
+    listUploading.value = true
+    listUploadProgress.value = {
+      total: selection.files.length,
+      finished: 0,
+      succeeded: 0
+    }
+
+    try {
+      const results = await settleWithConcurrency(selection.files, 3, async (file) => {
+        try {
+          const asset = await uploadAsset({ file, folderId }, { showSuccessMessage: false })
+          listUploadProgress.value.succeeded += 1
+          revealUploadedAsset(asset)
+          return asset
+        } finally {
+          listUploadProgress.value.finished += 1
+        }
+      })
+      const succeeded = results.filter((result) => result.status === 'fulfilled').length
+      const failed = results.length - succeeded
+      if (failed) {
+        ElMessage.warning(`上传完成：成功 ${succeeded} 个，失败 ${failed} 个`)
+      } else {
+        ElMessage.success(`成功上传 ${succeeded} 个素材`)
+      }
+      await Promise.all([loadAssets(), loadFolders()])
+    } finally {
+      listUploading.value = false
+      listUploadProgress.value = emptyUploadProgress()
+    }
+  }
+
+  const handleListDrop = (event: DragEvent) => {
+    resetListDragging()
+    if (!canReceiveListUpload() || listUploadFolderId.value === null) return
+    const files = Array.from(event.dataTransfer?.files || [])
+    if (!files.length) return
+    void uploadDroppedAssets(files, listUploadFolderId.value).catch(() => undefined)
+  }
+
   const openUploadDialog = () => {
     const currentFolder = selectedFolderId.value
       ? findFolder(folders.value, selectedFolderId.value)
@@ -1155,6 +1329,7 @@
   const resetUpload = () => {
     uploadFileList.value = []
     uploadSummary.value = null
+    uploadProgress.value = emptyUploadProgress()
   }
   const submitUpload = async () => {
     const pendingFiles = uploadFileList.value.filter((file) => file.raw)
@@ -1162,19 +1337,31 @@
       ElMessage.warning('请先选择一个或多个文件')
       return
     }
+    prepareAssetListForProgressiveUpload(uploadFolderId.value)
+    uploadProgress.value = {
+      total: pendingFiles.length,
+      finished: 0,
+      succeeded: 0
+    }
     uploading.value = true
     try {
       const results = await settleWithConcurrency(pendingFiles, 3, async (file) => {
         file.status = 'uploading'
-        const asset = await uploadAsset(
-          { file: file.raw!, folderId: uploadFolderId.value },
-          { showSuccessMessage: false }
-        )
-        file.status = 'success'
-        return asset
-      })
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') pendingFiles[index].status = 'fail'
+        try {
+          const asset = await uploadAsset(
+            { file: file.raw!, folderId: uploadFolderId.value },
+            { showSuccessMessage: false }
+          )
+          file.status = 'success'
+          uploadProgress.value.succeeded += 1
+          revealUploadedAsset(asset)
+          return asset
+        } catch (error) {
+          file.status = 'fail'
+          throw error
+        } finally {
+          uploadProgress.value.finished += 1
+        }
       })
       const succeeded = results.filter((result) => result.status === 'fulfilled').length
       const failed = results.length - succeeded
@@ -1401,6 +1588,57 @@
 
   .asset-library__toolbar {
     gap: 8px;
+  }
+
+  .asset-library__drop-surface {
+    position: relative;
+    min-height: 280px;
+    transition: box-shadow 0.2s ease;
+
+    &.is-dragging-upload {
+      box-shadow: 0 0 0 3px var(--el-color-primary-light-7);
+    }
+  }
+
+  .asset-library__drop-hint,
+  .asset-library__upload-progress {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    font-size: 12px;
+  }
+
+  .asset-library__drop-hint {
+    color: var(--el-text-color-secondary);
+  }
+
+  .asset-library__upload-progress {
+    color: var(--el-color-primary);
+  }
+
+  .asset-library__drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    color: var(--el-color-primary);
+    pointer-events: none;
+    background: rgb(236 245 255 / 94%);
+    border: 2px dashed var(--el-color-primary);
+    border-radius: var(--el-card-border-radius);
+
+    strong {
+      font-size: 16px;
+    }
+
+    span {
+      font-size: 13px;
+      color: var(--el-text-color-secondary);
+    }
   }
 
   .asset-library__grid-wrap {

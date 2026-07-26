@@ -24,8 +24,7 @@ public class UploadImageCompressionCoordinator {
             LoggerFactory.getLogger(UploadImageCompressionCoordinator.class);
     private static final Set<String> SUPPORTED_CONTENT_TYPES = Set.of(
             "image/jpeg",
-            "image/png",
-            "image/webp"
+            "image/png"
     );
 
     private final ImageCompressionRuntimeConfigService configService;
@@ -44,9 +43,8 @@ public class UploadImageCompressionCoordinator {
             return CompressionOutcome.passthrough(source, contentType);
         }
 
-        int expectedCost = "image/webp".equals(contentType) ? 1 : 2;
         ImageCompressionRuntimeConfigService.CompressionPermit permit =
-                configService.acquireCompressionPermit(expectedCost);
+                configService.acquireCompressionPermit(2);
         if (permit == null) {
             return CompressionOutcome.passthrough(source, contentType);
         }

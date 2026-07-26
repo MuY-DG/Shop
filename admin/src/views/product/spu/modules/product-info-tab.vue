@@ -249,6 +249,7 @@
           <AssetPicker
             :model-value="{ fileId: guaranteeForm.iconFileId, url: guaranteeForm.icon }"
             media-kind="IMAGE"
+            compact
             @change="updateGuaranteeIcon"
           />
         </ElFormItem>
@@ -454,10 +455,22 @@
   }
 
   const appendGalleryAssets = (assets: Api.Common.AssetValue[]) => {
+    const existingFileIds = new Set(
+      props.modelValue.images.flatMap((image) => (image.fileId ? [image.fileId] : []))
+    )
+    const existingUrls = new Set(
+      props.modelValue.images.flatMap((image) => (!image.fileId && image.url ? [image.url] : []))
+    )
+    const requestedNewAssets = appendUniqueAssetValues([], assets, MAX_GALLERY_IMAGES).filter(
+      (asset) =>
+        asset.fileId
+          ? !existingFileIds.has(asset.fileId)
+          : Boolean(asset.url && !existingUrls.has(asset.url))
+    )
     const images = appendUniqueAssetValues(props.modelValue.images, assets, MAX_GALLERY_IMAGES)
     const added = images.length - galleryImageCount.value
     patchForm({ images })
-    if (added < assets.length) {
+    if (added < requestedNewAssets.length) {
       ElMessage.info('已自动忽略重复素材或超过数量上限的图片')
     }
   }

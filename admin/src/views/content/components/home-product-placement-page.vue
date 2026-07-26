@@ -159,14 +159,17 @@
           </ElSelect>
         </ElFormItem>
         <ElFormItem label="自定义图片">
-          <AssetPicker
-            :model-value="{ fileId: formData.imageFileId, url: formData.imageUrl }"
-            media-kind="IMAGE"
-            allow-clear
-            @change="handleImageChange"
-          />
-          <div class="field-tip">
-            不选择时自动使用商品主图。{{ imageGuidance }}，支持 JPG、PNG、WebP、SVG
+          <div class="asset-field">
+            <AssetPicker
+              :model-value="{ fileId: formData.imageFileId, url: formData.imageUrl }"
+              media-kind="IMAGE"
+              compact
+              allow-clear
+              @change="handleImageChange"
+            />
+            <div class="field-tip">
+              不选择时自动使用商品主图。{{ imageGuidance }}，支持 JPG、PNG、WebP、SVG
+            </div>
           </div>
         </ElFormItem>
         <ElFormItem label="排序" prop="sortOrder">
@@ -606,6 +609,12 @@
     margin-top: 4px;
     font-size: 13px;
     color: var(--el-text-color-secondary);
+  }
+
+  .asset-field {
+    display: grid;
+    gap: 6px;
+    width: 100%;
   }
 
   .cover {
