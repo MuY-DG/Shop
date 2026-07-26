@@ -22,7 +22,7 @@ MySQL 和 Redis 不发布宿主机端口，因此公网和同机其他进程都�
 - `secrets/`：微信支付 PEM 文件，只读挂载到应用容器。
 - `var/`：本地上传文件持久化目录。
 - `backups/`：本机 MySQL 备份目录。
-- `scripts/deploy-prod.sh`：本地构建、SSH 上传和远程切换的一条命令。
+- `scripts/deploy-prod.sh`：本地测试、精简源码上传、服务器缓存构建和远程切换的一条命令。
 - `scripts/backup-mysql.sh`：供 1Panel 计划任务调用的 MySQL 备份脚本。
 
 所有 `.env.*.local`、`secrets/`、`var/` 和 `backups/` 均被 Git 忽略。
@@ -126,11 +126,9 @@ SHOP_DEPLOY_TRANSPORT=image-stream backend/shop-server/scripts/deploy-prod.sh tx
 1Panel 只负责 Docker 可视化、日志、监控、计划任务、证书和 OpenResty；项目的真实
 部署定义仍以仓库中的 `compose.prod.yaml` 为准。
 
-在 1Panel 的“容器 -> 编排”中，通过路径导入：
-
-```text
-/opt/shop/shop-server/compose.prod.yaml
-```
+不要在 1Panel 中再次新建或导入同名编排，否则脚本与面板会同时拥有容器生命周期，
+容易出现配置漂移。脚本负责 `docker compose` 的创建与更新；容器启动后仍可在 1Panel
+的容器列表中查看状态、资源与日志。
 
 OpenResty 在 1Panel 应用商店安装。创建“反向代理”网站：
 
@@ -139,8 +137,10 @@ OpenResty 在 1Panel 应用商店安装。创建“反向代理”网站：
 - HTTPS：选择 1Panel 申请或导入的证书并开启自动续签。
 - WebSocket：开启或保留升级头，项目包含 WebSocket 接口。
 
-同一时刻只能有一个服务监听 `80/443`。迁移时先让 OpenResty 在备用端口验证，
-再停止 Caddy 并把 OpenResty 改为 `80/443`；验证失败时可立即重新启动 Caddy。
+同一时刻只能有一个服务监听 `80/443`。当前 OpenResty 已接管这两个端口，Caddy 的
+配置仍保留但服务已禁用，可作为人工回滚方案。1Panel 应用安装后的 OpenResty 主端口
+不要直接改动；如需重新迁移，应先在备用端口验证，再停止 Caddy，并以 `80/443`
+重新安装或重建 OpenResty。
 
 生产后端必须继续使用：
 
