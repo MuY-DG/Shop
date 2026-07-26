@@ -235,8 +235,10 @@
         </ElFormItem>
         <ElFormItem label="选择文件">
           <ElUpload
+            class="asset-library__upload-dragger"
             accept="image/*,video/mp4,video/webm,.mp4,.webm"
             :auto-upload="false"
+            drag
             multiple
             :limit="50"
             :disabled="uploading"
@@ -245,7 +247,8 @@
             @remove="handleUploadRemove"
             @exceed="handleUploadExceed"
           >
-            <ElButton :disabled="uploading">批量选择图片或视频</ElButton>
+            <ElIcon class="asset-library__upload-icon"><UploadFilled /></ElIcon>
+            <div class="el-upload__text"> 将图片或视频拖到这里，或 <em>点击批量选择</em> </div>
           </ElUpload>
         </ElFormItem>
         <ElAlert
@@ -503,6 +506,7 @@
     Picture,
     Plus,
     Rank,
+    UploadFilled,
     VideoCamera
   } from '@element-plus/icons-vue'
   import {
@@ -523,6 +527,7 @@
   import type { ColumnOption } from '@/types'
   import { useAuth } from '@/hooks'
   import { settleWithConcurrency } from '@/utils/asset-batch'
+  import { assetUploadFileKey, validateLibraryAssetUploadFile } from '@/utils/asset-upload'
   import { ASSET_LIBRARY_EMPTY_TABLE_HEIGHT } from './asset-library-layout'
   import {
     batchMoveAssets,
@@ -1121,12 +1126,30 @@
     uploadFolderId.value = currentFolder?.status === 'ENABLED' ? currentFolder.id : 0
     uploadDialogVisible.value = true
   }
-  const handleUploadChange = (_file: UploadUserFile, fileList: UploadUserFile[]) => {
-    uploadFileList.value = fileList.filter((file) => file.raw)
+  const handleUploadChange = (file: UploadUserFile, fileList: UploadUserFile[]) => {
     uploadSummary.value = null
+    if (file.raw) {
+      const validation = validateLibraryAssetUploadFile(file.raw)
+      if (!validation.valid) {
+        uploadFileList.value = fileList.filter((item) => item.uid !== file.uid && item.raw)
+        ElMessage.warning(validation.message || '文件不符合上传要求')
+        return
+      }
+      const fileKey = assetUploadFileKey(file.raw)
+      const duplicate = fileList.some(
+        (item) => item.uid !== file.uid && item.raw && assetUploadFileKey(item.raw) === fileKey
+      )
+      if (duplicate) {
+        uploadFileList.value = fileList.filter((item) => item.uid !== file.uid && item.raw)
+        ElMessage.warning(`已忽略重复文件：${file.name}`)
+        return
+      }
+    }
+    uploadFileList.value = fileList.filter((item) => item.raw)
   }
   const handleUploadRemove = (_file: UploadUserFile, fileList: UploadUserFile[]) => {
     uploadFileList.value = fileList.filter((file) => file.raw)
+    uploadSummary.value = null
   }
   const handleUploadExceed = () => ElMessage.warning('单次最多选择 50 个文件')
   const resetUpload = () => {
@@ -1492,6 +1515,21 @@
 
   .asset-library__upload-summary {
     margin-top: 10px;
+  }
+
+  .asset-library__upload-dragger {
+    width: 100%;
+
+    :deep(.el-upload),
+    :deep(.el-upload-dragger) {
+      width: 100%;
+    }
+  }
+
+  .asset-library__upload-icon {
+    margin-bottom: 8px;
+    font-size: 34px;
+    color: var(--el-color-primary);
   }
 
   .asset-detail__hero {

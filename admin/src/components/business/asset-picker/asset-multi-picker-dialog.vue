@@ -27,6 +27,7 @@
           :render-after-expand="false"
           placeholder="全部分组"
           style="width: 240px"
+          @change="handleFolderFilterChange"
         />
         <ElButton type="primary" @click="handleSearch">筛选</ElButton>
         <ElButton @click="handleReset">重置</ElButton>
@@ -58,6 +59,15 @@
             @change="toggleAsset(asset)"
           />
           <div class="asset-multi-picker__preview">
+            <ElTag
+              class="asset-multi-picker__reference-badge"
+              :type="asset.usageCount > 0 ? 'info' : 'success'"
+              effect="dark"
+              size="small"
+              round
+            >
+              {{ asset.usageCount > 0 ? `已引用 ${asset.usageCount}` : '未引用' }}
+            </ElTag>
             <video
               v-if="asset.mediaKind === 'VIDEO' && resolveAssetUrl(asset)"
               :src="resolveAssetUrl(asset)"
@@ -109,6 +119,12 @@
   import { computed, reactive, ref } from 'vue'
   import { ElMessage } from 'element-plus'
   import { fetchAssetFolders, fetchAssets } from '@/api/assets'
+  import { useUserStore } from '@/store/modules/user'
+  import {
+    readAssetPickerFolderPreference,
+    resolveAssetPickerFolderPreference,
+    writeAssetPickerFolderPreference
+  } from '@/utils/asset-picker-preference'
 
   defineOptions({ name: 'AssetMultiPickerDialog' })
 
@@ -124,6 +140,7 @@
     mediaKind: Exclude<Api.Storage.MediaKind, 'DOCUMENT'>
     maxSelection: number
     excludeFileIds?: number[]
+    defaultFolderId?: number | null
   }
 
   interface Emits {
@@ -132,9 +149,11 @@
   }
 
   const props = withDefaults(defineProps<Props>(), {
-    excludeFileIds: () => []
+    excludeFileIds: () => [],
+    defaultFolderId: null
   })
   const emit = defineEmits<Emits>()
+  const userStore = useUserStore()
 
   const loading = ref(false)
   const folders = ref<Api.Storage.AssetFolder[]>([])
@@ -142,7 +161,11 @@
   const selectedAssetIds = ref<number[]>([])
   const selectedAssets = ref<Record<number, Api.Storage.AssetItem>>({})
   const pagination = reactive({ current: 1, size: 12, total: 0 })
-  const filters = reactive<{ keyword: string; folderId?: number }>({ keyword: '' })
+  const defaultFilters = () => ({
+    keyword: '',
+    folderId: props.defaultFolderId ?? undefined
+  })
+  const filters = reactive<{ keyword: string; folderId?: number }>(defaultFilters())
 
   const mediaKindLabel = computed(() => (props.mediaKind === 'VIDEO' ? '视频' : '图片'))
   const selectedAssetIdSet = computed(() => new Set(selectedAssetIds.value))
@@ -164,6 +187,33 @@
     if (sizeBytes < 1024) return `${sizeBytes} B`
     if (sizeBytes < 1024 * 1024) return `${(sizeBytes / 1024).toFixed(1)} KB`
     return `${(sizeBytes / 1024 / 1024).toFixed(1)} MB`
+  }
+
+  const browserStorage = () => {
+    try {
+      return window.localStorage
+    } catch {
+      return null
+    }
+  }
+
+  const rememberFolderSelection = (folderId: number | undefined) => {
+    const storage = browserStorage()
+    if (!storage) return
+    writeAssetPickerFolderPreference(storage, userStore.info.userId, props.mediaKind, folderId)
+  }
+
+  const restoreFolderSelection = () => {
+    const storage = browserStorage()
+    const preference = storage
+      ? readAssetPickerFolderPreference(storage, userStore.info.userId, props.mediaKind)
+      : undefined
+    filters.folderId = resolveAssetPickerFolderPreference(
+      preference,
+      props.defaultFolderId,
+      folders.value
+    )
+    rememberFolderSelection(filters.folderId)
   }
 
   const loadAssets = async () => {
@@ -189,22 +239,33 @@
     selectedAssetIds.value = []
     selectedAssets.value = {}
     filters.keyword = ''
-    filters.folderId = undefined
     pagination.current = 1
-    await Promise.all([
-      fetchAssetFolders().then((response) => (folders.value = response)),
-      loadAssets()
-    ])
+    folders.value = await fetchAssetFolders()
+    restoreFolderSelection()
+    await loadAssets()
   }
 
   const handleSearch = () => {
+    rememberFolderSelection(filters.folderId)
+    pagination.current = 1
+    loadAssets()
+  }
+
+  const handleFolderFilterChange = (folderId?: number) => {
+    filters.folderId = typeof folderId === 'number' ? folderId : undefined
+    rememberFolderSelection(filters.folderId)
     pagination.current = 1
     loadAssets()
   }
 
   const handleReset = () => {
     filters.keyword = ''
-    filters.folderId = undefined
+    filters.folderId = resolveAssetPickerFolderPreference(
+      undefined,
+      props.defaultFolderId,
+      folders.value
+    )
+    rememberFolderSelection(filters.folderId)
     pagination.current = 1
     loadAssets()
   }
@@ -297,6 +358,7 @@
   }
 
   .asset-multi-picker__preview {
+    position: relative;
     width: 100%;
     aspect-ratio: 1;
     overflow: hidden;
@@ -309,6 +371,14 @@
       height: 100%;
       object-fit: cover;
     }
+  }
+
+  .asset-multi-picker__reference-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    max-width: calc(100% - 16px);
   }
 
   .asset-multi-picker__empty {

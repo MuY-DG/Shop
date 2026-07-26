@@ -11,10 +11,14 @@
         :disabled="disabled"
         @uploaded="appendAssets"
       >
-        <template #default="{ uploading: batchUploading }">
+        <template #default="{ uploading: batchUploading, dragging: batchDragging }">
           <div
             class="asset-picker__compact-target"
-            :class="{ 'is-empty': !previewUrl, 'is-disabled': disabled }"
+            :class="{
+              'is-empty': !previewUrl,
+              'is-disabled': disabled,
+              'is-dragging': batchDragging
+            }"
             role="button"
             :aria-label="`上传一个或多个${mediaKindLabel}`"
           >
@@ -48,6 +52,10 @@
               <ElIcon size="14"><FolderOpened /></ElIcon>
               <span v-if="compactSize !== 'small'">素材库</span>
             </button>
+            <div v-if="batchDragging" class="asset-picker__drop-overlay">
+              <ElIcon size="22"><UploadFilled /></ElIcon>
+              <span>松开批量上传</span>
+            </div>
           </div>
         </template>
       </AssetBatchUploadButton>
@@ -62,9 +70,17 @@
       >
         <div
           class="asset-picker__compact-target"
-          :class="{ 'is-empty': !previewUrl, 'is-disabled': disabled }"
+          :class="{
+            'is-empty': !previewUrl,
+            'is-disabled': disabled,
+            'is-dragging': singleDragging
+          }"
           role="button"
           :aria-label="previewUrl ? `更换${mediaKindLabel}` : `上传${mediaKindLabel}`"
+          @dragenter.prevent="handleSingleDragEnter"
+          @dragover.prevent="handleSingleDragOver"
+          @dragleave.prevent="handleSingleDragLeave"
+          @drop.stop.prevent="handleSingleDrop"
         >
           <video
             v-if="mediaKind === 'VIDEO' && previewUrl"
@@ -105,12 +121,23 @@
           >
             <ElIcon size="18"><CircleCloseFilled /></ElIcon>
           </button>
+          <div v-if="singleDragging" class="asset-picker__drop-overlay">
+            <ElIcon size="22"><UploadFilled /></ElIcon>
+            <span>松开上传{{ mediaKindLabel }}</span>
+          </div>
         </div>
       </ElUpload>
     </template>
 
     <template v-else>
-      <div class="asset-picker__value">
+      <div
+        class="asset-picker__value"
+        :class="{ 'is-dragging': singleDragging }"
+        @dragenter.prevent="handleSingleDragEnter"
+        @dragover.prevent="handleSingleDragOver"
+        @dragleave.prevent="handleSingleDragLeave"
+        @drop.stop.prevent="handleSingleDrop"
+      >
         <div class="asset-picker__preview">
           <video
             v-if="mediaKind === 'VIDEO' && previewUrl"
@@ -156,6 +183,10 @@
             </template>
           </div>
         </div>
+        <div v-if="singleDragging" class="asset-picker__drop-overlay">
+          <ElIcon size="24"><UploadFilled /></ElIcon>
+          <span>松开上传{{ mediaKindLabel }}</span>
+        </div>
       </div>
 
       <div class="asset-picker__actions">
@@ -180,6 +211,7 @@
       :media-kind="mediaKind"
       :max-selection="maxSelection"
       :exclude-file-ids="excludeFileIds"
+      :default-folder-id="defaultFolderId"
       @confirm="appendAssets"
     />
 
@@ -210,6 +242,7 @@
             :render-after-expand="false"
             placeholder="全部分组"
             style="width: 240px"
+            @change="handleFolderFilterChange"
           />
           <ElButton type="primary" @click="handleSearch">筛选</ElButton>
           <ElButton @click="handleReset">重置</ElButton>
@@ -225,6 +258,15 @@
             @click="selectAsset(asset)"
           >
             <div class="asset-card__preview">
+              <ElTag
+                class="asset-card__reference-badge"
+                :type="asset.usageCount > 0 ? 'info' : 'success'"
+                effect="dark"
+                size="small"
+                round
+              >
+                {{ asset.usageCount > 0 ? `已引用 ${asset.usageCount}` : '未引用' }}
+              </ElTag>
               <video
                 v-if="asset.mediaKind === 'VIDEO' && resolveAssetUrl(asset)"
                 :src="resolveAssetUrl(asset)"
@@ -249,7 +291,6 @@
               <div class="asset-card__meta">
                 <span>ID {{ asset.id }}</span>
                 <span>{{ formatFileSize(asset.sizeBytes) }}</span>
-                <span>引用 {{ asset.usageCount || 0 }} 次</span>
               </div>
             </div>
           </button>
@@ -281,9 +322,17 @@
     Loading,
     Picture,
     Plus,
+    UploadFilled,
     VideoCamera
   } from '@element-plus/icons-vue'
   import { fetchAssetDetail, fetchAssetFolders, fetchAssets, uploadAsset } from '@/api/assets'
+  import { useUserStore } from '@/store/modules/user'
+  import {
+    readAssetPickerFolderPreference,
+    resolveAssetPickerFolderPreference,
+    writeAssetPickerFolderPreference
+  } from '@/utils/asset-picker-preference'
+  import { assetUploadAccept, validateAssetUploadFile } from '@/utils/asset-upload'
   import AssetBatchUploadButton from './asset-batch-upload-button.vue'
   import AssetMultiPickerDialog from './asset-multi-picker-dialog.vue'
 
@@ -326,10 +375,12 @@
     excludeFileIds: () => []
   })
   const emit = defineEmits<Emits>()
+  const userStore = useUserStore()
 
   const dialogVisible = ref(false)
   const loading = ref(false)
   const uploading = ref(false)
+  const singleDragging = ref(false)
   const selectedAsset = ref<Api.Storage.AssetItem | null>(null)
   const folders = ref<Api.Storage.AssetFolder[]>([])
   const assets = ref<Api.Storage.AssetItem[]>([])
@@ -340,19 +391,16 @@
     folderId: props.defaultFolderId ?? undefined
   })
   const filters = reactive<{ keyword: string; folderId?: number }>(defaultFilters())
+  let singleDragDepth = 0
 
   const mediaKind = computed(() => props.mediaKind)
   const mediaKindLabel = computed(() => (mediaKind.value === 'VIDEO' ? '视频' : '图片'))
   const mediaKindHint = computed(() =>
     mediaKind.value === 'VIDEO'
-      ? '支持 MP4、WebM，最大 50 MB'
-      : '支持 JPG、PNG、WebP、GIF、SVG，最大 5 MB'
+      ? '支持 MP4、WebM，最大 50 MB，可拖入上传'
+      : '支持 JPG、PNG、WebP、GIF、SVG，最大 5 MB，可拖入上传'
   )
-  const uploadAccept = computed(() =>
-    mediaKind.value === 'VIDEO'
-      ? 'video/mp4,video/webm,.mp4,.webm'
-      : 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.jpg,.jpeg,.png,.webp,.gif,.svg'
-  )
+  const uploadAccept = computed(() => assetUploadAccept(mediaKind.value))
   const modelValue = computed(() => props.modelValue || { fileId: null, url: '' })
   const previewUrl = computed(() => modelValue.value.url || resolveAssetUrl(selectedAsset.value))
 
@@ -405,6 +453,33 @@
     folders.value = await fetchAssetFolders()
   }
 
+  const browserStorage = () => {
+    try {
+      return window.localStorage
+    } catch {
+      return null
+    }
+  }
+
+  const rememberFolderSelection = (folderId: number | undefined) => {
+    const storage = browserStorage()
+    if (!storage) return
+    writeAssetPickerFolderPreference(storage, userStore.info.userId, props.mediaKind, folderId)
+  }
+
+  const restoreFolderSelection = () => {
+    const storage = browserStorage()
+    const preference = storage
+      ? readAssetPickerFolderPreference(storage, userStore.info.userId, props.mediaKind)
+      : undefined
+    filters.folderId = resolveAssetPickerFolderPreference(
+      preference,
+      props.defaultFolderId,
+      folders.value
+    )
+    rememberFolderSelection(filters.folderId)
+  }
+
   const loadAssets = async () => {
     loading.value = true
     try {
@@ -428,16 +503,33 @@
     dialogVisible.value = true
     pagination.current = 1
     if (props.multiple) return
-    await Promise.all([loadFolders(), loadAssets()])
+    filters.keyword = ''
+    await loadFolders()
+    restoreFolderSelection()
+    await loadAssets()
   }
 
   const handleSearch = () => {
+    rememberFolderSelection(filters.folderId)
+    pagination.current = 1
+    loadAssets()
+  }
+
+  const handleFolderFilterChange = (folderId?: number) => {
+    filters.folderId = typeof folderId === 'number' ? folderId : undefined
+    rememberFolderSelection(filters.folderId)
     pagination.current = 1
     loadAssets()
   }
 
   const handleReset = () => {
-    Object.assign(filters, defaultFilters())
+    filters.keyword = ''
+    filters.folderId = resolveAssetPickerFolderPreference(
+      undefined,
+      props.defaultFolderId,
+      folders.value
+    )
+    rememberFolderSelection(filters.folderId)
     pagination.current = 1
     loadAssets()
   }
@@ -460,58 +552,80 @@
   }
 
   const validateUpload = (file: File) => {
-    const extension = file.name.split('.').pop()?.toLowerCase()
-    if (props.mediaKind === 'VIDEO') {
-      if (!['mp4', 'webm'].includes(extension || '')) {
-        ElMessage.error('视频仅支持 MP4 或 WebM')
-        return false
-      }
-      if (file.size > 50 * 1024 * 1024) {
-        ElMessage.error('视频不能超过 50 MB')
-        return false
-      }
-      return true
-    }
-
-    if (!file.type.startsWith('image/')) {
-      ElMessage.error('请选择图片文件')
-      return false
-    }
-    if (!['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(extension || '')) {
-      ElMessage.error('图片仅支持 JPG、PNG、WebP、GIF 或 SVG')
-      return false
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      ElMessage.error('图片不能超过 5 MB')
-      return false
-    }
-    return true
+    const validation = validateAssetUploadFile(file, props.mediaKind)
+    if (!validation.valid) ElMessage.error(validation.message || '文件不符合上传要求')
+    return validation.valid
   }
 
-  const handleUploadRequest = async (options: UploadRequestOptions) => {
-    if (!validateUpload(options.file)) {
-      options.onError?.(new Error(`Invalid ${props.mediaKind.toLowerCase()} asset`) as any)
-      return
-    }
-
+  const uploadSingleFile = async (file: File) => {
+    if (!validateUpload(file)) return null
     uploading.value = true
+    resetSingleDragging()
     try {
       const asset = await uploadAsset({
         folderId: props.defaultFolderId ?? 0,
-        file: options.file
+        file
       })
       if (asset.mediaKind !== props.mediaKind) {
         throw new Error(`上传文件不是${mediaKindLabel.value}`)
       }
       selectedAsset.value = asset
       emitValue({ fileId: asset.id, url: resolveAssetUrl(asset) })
-      options.onSuccess?.(asset)
       if (dialogVisible.value) await loadAssets()
-    } catch (error) {
-      options.onError?.(error as any)
+      return asset
     } finally {
       uploading.value = false
     }
+  }
+
+  const handleUploadRequest = async (options: UploadRequestOptions) => {
+    try {
+      const asset = await uploadSingleFile(options.file)
+      if (!asset) {
+        options.onError?.(new Error(`Invalid ${props.mediaKind.toLowerCase()} asset`) as any)
+        return
+      }
+      options.onSuccess?.(asset)
+    } catch (error) {
+      options.onError?.(error as any)
+    }
+  }
+
+  const canReceiveSingleFile = () => !props.disabled && !uploading.value
+  const isFileDrag = (event: DragEvent) =>
+    Array.from(event.dataTransfer?.types || []).includes('Files')
+
+  const handleSingleDragEnter = (event: DragEvent) => {
+    if (!canReceiveSingleFile() || !isFileDrag(event)) return
+    singleDragDepth += 1
+    singleDragging.value = true
+  }
+
+  const handleSingleDragOver = (event: DragEvent) => {
+    if (!canReceiveSingleFile() || !isFileDrag(event)) return
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }
+
+  const handleSingleDragLeave = () => {
+    if (singleDragDepth > 0) singleDragDepth -= 1
+    if (singleDragDepth === 0) singleDragging.value = false
+  }
+
+  function resetSingleDragging() {
+    singleDragDepth = 0
+    singleDragging.value = false
+  }
+
+  const handleSingleDrop = (event: DragEvent) => {
+    resetSingleDragging()
+    if (!canReceiveSingleFile()) return
+    const files = Array.from(event.dataTransfer?.files || [])
+    if (!files.length) return
+    if (files.length > 1) {
+      ElMessage.warning(`单次只能拖入 1 个${mediaKindLabel.value}文件`)
+      return
+    }
+    void uploadSingleFile(files[0]).catch(() => undefined)
   }
 
   watch(
@@ -556,6 +670,11 @@
 
     &:hover {
       border-color: var(--el-color-primary);
+    }
+
+    &.is-dragging {
+      border-color: var(--el-color-primary);
+      box-shadow: 0 0 0 3px var(--el-color-primary-light-8);
     }
 
     &.is-disabled {
@@ -604,6 +723,23 @@
   .asset-picker__compact-loading {
     color: #fff;
     background: rgb(0 0 0 / 35%);
+  }
+
+  .asset-picker__drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--el-color-primary);
+    pointer-events: none;
+    background: var(--el-color-primary-light-9);
+    border-radius: inherit;
   }
 
   .asset-picker__compact-library {
@@ -663,6 +799,7 @@
   }
 
   .asset-picker__value {
+    position: relative;
     display: grid;
     grid-template-columns: 104px minmax(0, 1fr);
     gap: 12px;
@@ -671,6 +808,11 @@
     background: var(--el-fill-color-blank);
     border: 1px solid var(--el-border-color);
     border-radius: 8px;
+
+    &.is-dragging {
+      border-color: var(--el-color-primary);
+      box-shadow: 0 0 0 3px var(--el-color-primary-light-8);
+    }
   }
 
   .asset-picker__preview {
@@ -779,6 +921,7 @@
   }
 
   .asset-card__preview {
+    position: relative;
     width: 100%;
     aspect-ratio: 1;
     overflow: hidden;
@@ -791,6 +934,14 @@
       height: 100%;
       object-fit: cover;
     }
+  }
+
+  .asset-card__reference-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    max-width: calc(100% - 16px);
   }
 
   .asset-card__name {

@@ -1,6 +1,14 @@
 <template>
-  <span class="asset-batch-upload" @click="openFilePicker">
-    <slot :uploading="uploading" :disabled="disabled || maxFiles < 1">
+  <span
+    class="asset-batch-upload"
+    :class="{ 'is-dragging': dragging }"
+    @click="openFilePicker"
+    @dragenter.prevent="handleDragEnter"
+    @dragover.prevent="handleDragOver"
+    @dragleave.prevent="handleDragLeave"
+    @drop.stop.prevent="handleDrop"
+  >
+    <slot :uploading="uploading" :dragging="dragging" :disabled="disabled || maxFiles < 1">
       <ElButton :disabled="disabled || maxFiles < 1" :loading="uploading">
         {{ label }}
       </ElButton>
@@ -22,6 +30,11 @@
   import { ElMessage } from 'element-plus'
   import { uploadAsset } from '@/api/assets'
   import { settleWithConcurrency } from '@/utils/asset-batch'
+  import {
+    assetUploadAccept,
+    uniqueAssetUploadFiles,
+    validateAssetUploadFile
+  } from '@/utils/asset-upload'
 
   defineOptions({ name: 'AssetBatchUploadButton' })
 
@@ -46,46 +59,58 @@
 
   const fileInput = ref<HTMLInputElement | null>(null)
   const uploading = ref(false)
-  const uploadAccept = computed(() =>
-    props.mediaKind === 'VIDEO'
-      ? 'video/mp4,video/webm,.mp4,.webm'
-      : 'image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.jpg,.jpeg,.png,.webp,.gif,.svg'
-  )
+  const dragging = ref(false)
+  const uploadAccept = computed(() => assetUploadAccept(props.mediaKind))
+  let dragDepth = 0
 
   const openFilePicker = () => {
     if (props.disabled || props.maxFiles < 1 || uploading.value) return
     fileInput.value?.click()
   }
 
-  const validFile = (file: File) => {
-    const extension = file.name.split('.').pop()?.toLowerCase() || ''
-    if (props.mediaKind === 'VIDEO') {
-      return ['mp4', 'webm'].includes(extension) && file.size <= 50 * 1024 * 1024
-    }
-    return (
-      file.type.startsWith('image/') &&
-      ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(extension) &&
-      file.size <= 5 * 1024 * 1024
-    )
+  const canReceiveFiles = () => !props.disabled && props.maxFiles > 0 && !uploading.value
+  const isFileDrag = (event: DragEvent) =>
+    Array.from(event.dataTransfer?.types || []).includes('Files')
+
+  const handleDragEnter = (event: DragEvent) => {
+    if (!canReceiveFiles() || !isFileDrag(event)) return
+    dragDepth += 1
+    dragging.value = true
   }
 
-  const handleFilesSelected = async (event: Event) => {
-    const input = event.target as HTMLInputElement
-    const selectedFiles = Array.from(input.files || [])
-    input.value = ''
+  const handleDragOver = (event: DragEvent) => {
+    if (!canReceiveFiles() || !isFileDrag(event)) return
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }
+
+  const handleDragLeave = () => {
+    if (dragDepth > 0) dragDepth -= 1
+    if (dragDepth === 0) dragging.value = false
+  }
+
+  const resetDragging = () => {
+    dragDepth = 0
+    dragging.value = false
+  }
+
+  const uploadFiles = async (selectedFiles: File[]) => {
+    if (!canReceiveFiles()) return
     if (!selectedFiles.length) return
 
-    const limitedFiles = selectedFiles.slice(0, props.maxFiles)
-    const validFiles = limitedFiles.filter(validFile)
-    const ignored = selectedFiles.length - validFiles.length
+    const uniqueFiles = uniqueAssetUploadFiles(selectedFiles)
+    const validFiles = uniqueFiles.filter(
+      (file) => validateAssetUploadFile(file, props.mediaKind).valid
+    )
+    const limitedFiles = validFiles.slice(0, props.maxFiles)
+    const ignored = selectedFiles.length - limitedFiles.length
     if (ignored) {
       ElMessage.warning(`${ignored} 个文件因数量上限、格式或大小不符合要求而被忽略`)
     }
-    if (!validFiles.length) return
+    if (!limitedFiles.length) return
 
     uploading.value = true
     try {
-      const results = await settleWithConcurrency(validFiles, 3, (file) =>
+      const results = await settleWithConcurrency(limitedFiles, 3, (file) =>
         uploadAsset({ file, folderId: props.defaultFolderId }, { showSuccessMessage: false })
       )
       const uploaded = results.flatMap((result) =>
@@ -108,6 +133,19 @@
     } finally {
       uploading.value = false
     }
+  }
+
+  const handleFilesSelected = (event: Event) => {
+    const input = event.target as HTMLInputElement
+    const selectedFiles = Array.from(input.files || [])
+    input.value = ''
+    void uploadFiles(selectedFiles)
+  }
+
+  const handleDrop = (event: DragEvent) => {
+    resetDragging()
+    if (!canReceiveFiles()) return
+    void uploadFiles(Array.from(event.dataTransfer?.files || []))
   }
 </script>
 
