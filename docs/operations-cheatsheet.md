@@ -79,6 +79,15 @@ SHOP_DEPLOY_TRANSPORT=image-stream \
 backend/shop-server/scripts/deploy-prod.sh txcloud
 ```
 
+该模式显示传输百分比、速度和预计剩余时间；中断后默认自动重试 3 次，并对已经上传的
+部分执行断点续传。需要增加尝试次数时：
+
+```bash
+SHOP_DEPLOY_TRANSPORT=image-stream \
+SHOP_DEPLOY_TRANSFER_ATTEMPTS=5 \
+backend/shop-server/scripts/deploy-prod.sh txcloud
+```
+
 部署脚本会包含工作区内尚未提交的源码。发布前必须先检查 `git status --short`。
 
 ## 生产状态与日志

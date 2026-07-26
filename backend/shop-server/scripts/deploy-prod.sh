@@ -87,22 +87,108 @@ case "$transport" in
       "
     ;;
   image-stream)
-    for command in docker gzip; do
+    for command in docker gzip rsync shasum; do
       command -v "$command" >/dev/null 2>&1 || {
         printf '缺少命令：%s\n' "$command" >&2
         exit 1
       }
     done
+    ssh "$ssh_target" '
+      set -eu
+      for command in rsync sha256sum gzip; do
+        command -v "$command" >/dev/null 2>&1 || {
+          printf "服务器缺少命令：%s\n" "$command" >&2
+          exit 1
+        }
+      done
+    '
+
+    transfer_attempts="${SHOP_DEPLOY_TRANSFER_ATTEMPTS:-3}"
+    transfer_retry_delay="${SHOP_DEPLOY_TRANSFER_RETRY_DELAY_SECONDS:-5}"
+    if [[ ! "$transfer_attempts" =~ ^[1-9][0-9]*$ ]]; then
+      printf 'SHOP_DEPLOY_TRANSFER_ATTEMPTS 必须是大于 0 的整数。\n' >&2
+      exit 2
+    fi
+    if [[ ! "$transfer_retry_delay" =~ ^[0-9]+$ ]]; then
+      printf 'SHOP_DEPLOY_TRANSFER_RETRY_DELAY_SECONDS 必须是非负整数。\n' >&2
+      exit 2
+    fi
+
     printf '正在本机构建 %s（%s）。\n' "$release_image" "$platform"
     docker buildx build \
       --platform "$platform" \
       --load \
       --tag "$release_image" \
       "$service_dir"
-    printf '正在通过 SSH 传输完整压缩镜像。\n'
-    docker image save "$release_image" |
-      gzip -1 |
-      ssh "$ssh_target" 'gzip -dc | sudo docker image load'
+
+    image_stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/shop-image.XXXXXX")"
+    image_archive="${image_stage_dir}/shop-server.tar.gz"
+    cleanup_image_archive() {
+      rm -rf "$image_stage_dir"
+    }
+    trap cleanup_image_archive EXIT
+
+    printf '正在生成本地压缩镜像包。\n'
+    docker image save "$release_image" | gzip -1 >"$image_archive"
+    archive_sha256="$(shasum -a 256 "$image_archive" | awk '{print $1}')"
+    archive_size="$(wc -c <"$image_archive" | tr -d '[:space:]')"
+    remote_archive="/tmp/shop-image-${archive_sha256}.tar.gz"
+    printf '压缩镜像大小：%s MiB。\n' \
+      "$(((archive_size + 1048575) / 1048576))"
+
+    transfer_complete=false
+    transfer_attempt=1
+    while ((transfer_attempt <= transfer_attempts)); do
+      printf '正在通过 SSH 传输完整压缩镜像（第 %s/%s 次，支持断点续传）。\n' \
+        "$transfer_attempt" "$transfer_attempts"
+
+      if rsync \
+        --partial \
+        --append \
+        --progress \
+        --timeout=60 \
+        -e ssh \
+        "$image_archive" \
+        "${ssh_target}:${remote_archive}"; then
+        if ssh "$ssh_target" \
+          "printf '%s  %s\n' '$archive_sha256' '$remote_archive' |
+            sha256sum --check --status -"; then
+          transfer_complete=true
+          break
+        fi
+
+        printf '远端镜像包校验失败，将删除损坏文件后重新传输。\n' >&2
+        ssh "$ssh_target" "rm -f '$remote_archive'" || true
+      fi
+
+      if ((transfer_attempt == transfer_attempts)); then
+        printf '完整镜像传输在 %s 次尝试后仍然失败。\n' \
+          "$transfer_attempts" >&2
+        ssh "$ssh_target" "rm -f '$remote_archive'" || true
+        exit 1
+      fi
+
+      printf '%s 秒后继续断点续传。\n' "$transfer_retry_delay" >&2
+      sleep "$transfer_retry_delay"
+      transfer_attempt=$((transfer_attempt + 1))
+    done
+
+    if [[ "$transfer_complete" != true ]]; then
+      printf '完整镜像传输未完成。\n' >&2
+      exit 1
+    fi
+
+    printf '传输完成，正在校验并加载镜像。\n'
+    ssh "$ssh_target" "
+      set -eu
+      cleanup() {
+        rm -f '$remote_archive'
+      }
+      trap cleanup EXIT
+      printf '%s  %s\n' '$archive_sha256' '$remote_archive' |
+        sha256sum --check --status -
+      gzip -dc '$remote_archive' | sudo docker image load
+    "
     ;;
 esac
 

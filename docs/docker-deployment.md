@@ -118,8 +118,20 @@ Dockerfile 使用 Spring Boot `jarmode=tools` 将可执行 JAR 拆成：
 SHOP_DEPLOY_TRANSPORT=image-stream backend/shop-server/scripts/deploy-prod.sh txcloud
 ```
 
-该模式使用 `docker save | docker load`，不会只发送变化层。以后需要分层传输时，可接入
-腾讯云 TCR 或 GHCR，Compose 本身无需重构。
+该模式先生成本地压缩镜像包，再使用 rsync 显示传输百分比、速度和预计剩余时间。
+连接中断时默认自动尝试 3 次，并从远端已经收到的位置继续；传输完成后执行 SHA-256
+校验，再由 `docker load` 加载镜像。可按需调整：
+
+```bash
+SHOP_DEPLOY_TRANSPORT=image-stream \
+SHOP_DEPLOY_TRANSFER_ATTEMPTS=5 \
+SHOP_DEPLOY_TRANSFER_RETRY_DELAY_SECONDS=10 \
+backend/shop-server/scripts/deploy-prod.sh txcloud
+```
+
+本地和服务器需要额外容纳一份临时压缩包，成功加载后会自动清理。该模式仍会传输完整
+镜像，不会只发送变化层。以后需要分层传输时，可接入腾讯云 TCR 或 GHCR，Compose
+本身无需重构。
 
 ## 1Panel 与 OpenResty
 
