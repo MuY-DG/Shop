@@ -42,6 +42,8 @@ public enum ErrorCode {
     PAYMENT_PENDING(500001, "Payment pending"),
     PAYMENT_CONFIGURATION_CHANGED(500002, "Payment configuration changed; manual reconciliation required"),
     WECHAT_SHIPPING_UPLOAD_FAILED(600001, "WeChat shipping upload failed"),
+    WECHAT_RECEIPT_NOT_CONFIRMED(600002, "微信尚未确认收货，请完成确认后重试"),
+    WECHAT_RECEIPT_STATUS_UNAVAILABLE(600003, "微信收货状态暂时无法确认，请稍后重试"),
     WECHAT_REFUND_FAILED(700001, "WeChat refund failed"),
     STORAGE_FILE_UNAVAILABLE(800001, "Storage file unavailable"),
     STORAGE_UPLOAD_POLICY_REJECTED(800002, "Storage upload policy rejected"),

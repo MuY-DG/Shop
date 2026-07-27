@@ -8,7 +8,6 @@
     "pages/account/profile/profile",
     "pages/account/address/list/list",
     "pages/account/address/edit/edit",
-    "pages/account/address/location-picker/location-picker",
     "pages/account/coupon/coupon",
     "pages/account/favorites/favorites",
     "pages/account/history/history",
@@ -30,11 +29,11 @@
   },
   "permission": {
     "scope.userLocation": {
-      "desc": "用于定位并辅助填写收货地址"
+      "desc": "用于在微信地图中选择并填写收货地址"
     }
   },
   "requiredPrivateInfos": [
-    "getLocation",
+    "chooseLocation",
     "chooseAddress"
   ],
   "style": "v2",

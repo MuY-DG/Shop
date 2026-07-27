@@ -12,8 +12,11 @@ import org.muybaby.shopserver.coupon.UserCouponStatus;
 import org.muybaby.shopserver.logistics.DeliveryMode;
 import org.muybaby.shopserver.logistics.LogisticsType;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
+import org.muybaby.shopserver.logistics.WechatReceiptQueryStatus;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.AppOrderShipmentResponse;
+import org.muybaby.shopserver.logistics.provider.WechatReceiptQueryResult;
+import org.muybaby.shopserver.logistics.provider.WechatShippingProvider;
 import org.muybaby.shopserver.logistics.service.WechatShippingUploadRecovery;
 import org.muybaby.shopserver.order.CheckoutSource;
 import org.muybaby.shopserver.order.OrderStatus;
@@ -46,7 +49,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.math.BigInteger;
@@ -61,6 +66,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -82,7 +88,9 @@ public class AppOrderService {
     private final AppAfterSaleService appAfterSaleService;
     private final AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy;
     private final WechatShippingUploadRecovery shippingUploadRecovery;
+    private final WechatShippingProvider wechatShippingProvider;
     private final OrderStatusLogService orderStatusLogService;
+    private final TransactionTemplate receiptTransaction;
     private final Clock clock;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
@@ -95,7 +103,9 @@ public class AppOrderService {
             AppAfterSaleService appAfterSaleService,
             AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
             WechatShippingUploadRecovery shippingUploadRecovery,
+            WechatShippingProvider wechatShippingProvider,
             OrderStatusLogService orderStatusLogService,
+            PlatformTransactionManager transactionManager,
             Clock clock
     ) {
         this.jdbcClient = jdbcClient;
@@ -106,7 +116,9 @@ public class AppOrderService {
         this.appAfterSaleService = appAfterSaleService;
         this.afterSaleFulfillmentPolicy = afterSaleFulfillmentPolicy;
         this.shippingUploadRecovery = shippingUploadRecovery;
+        this.wechatShippingProvider = wechatShippingProvider;
         this.orderStatusLogService = orderStatusLogService;
+        this.receiptTransaction = new TransactionTemplate(transactionManager);
         this.clock = clock;
     }
 
@@ -463,9 +475,86 @@ public class AppOrderService {
         }
     }
 
-    @Transactional
     public OrderReceiptResponse confirmReceipt(AuthenticatedPrincipal principal, Long orderId) {
         Long userId = requireAppUser(principal);
+        ReceiptVerificationOrder verificationOrder = jdbcClient.sql("""
+                        select id as order_id,
+                               status,
+                               completed_at,
+                               payment_transaction_id
+                        from shop_order
+                        where id = :orderId
+                          and user_id = :userId
+                          and app_deleted_at is null
+                        """)
+                .param("orderId", orderId)
+                .param("userId", userId)
+                .query((rs, rowNum) -> new ReceiptVerificationOrder(
+                        rs.getLong("order_id"),
+                        rs.getString("status"),
+                        rs.getObject("completed_at", LocalDateTime.class),
+                        rs.getString("payment_transaction_id")
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+
+        if (OrderStatus.COMPLETED.name().equals(verificationOrder.status())) {
+            return new OrderReceiptResponse(
+                    verificationOrder.orderId(),
+                    verificationOrder.status(),
+                    verificationOrder.completedAt()
+            );
+        }
+        if (!OrderStatus.SHIPPED.name().equals(verificationOrder.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        afterSaleFulfillmentPolicy.rejectIfBlocked(verificationOrder.orderId());
+
+        PaymentOrderSnapshot latestPayment = findLatestPaymentOrder(verificationOrder.orderId());
+        String transactionId = nonBlank(
+                latestPayment == null ? null : latestPayment.transactionId(),
+                verificationOrder.paymentTransactionId()
+        );
+        verifyWechatReceipt(transactionId);
+
+        return Objects.requireNonNull(receiptTransaction.execute(
+                transactionStatus -> completeConfirmedReceipt(userId, verificationOrder.orderId())
+        ));
+    }
+
+    private void verifyWechatReceipt(String transactionId) {
+        WechatProviderMode providerMode;
+        try {
+            providerMode = wechatShippingProvider.mode();
+        } catch (RuntimeException ex) {
+            throw new BusinessException(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
+        }
+        if (providerMode == WechatProviderMode.MOCK) {
+            return;
+        }
+        if (providerMode != WechatProviderMode.REAL || !StringUtils.hasText(transactionId)) {
+            throw new BusinessException(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
+        }
+
+        WechatReceiptQueryResult queryResult;
+        try {
+            queryResult = wechatShippingProvider.queryReceiptStatus(transactionId);
+        } catch (RuntimeException ex) {
+            throw new BusinessException(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
+        }
+        if (queryResult == null) {
+            throw new BusinessException(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
+        }
+        if (queryResult.confirmed()) {
+            return;
+        }
+        if (queryResult.status() == WechatReceiptQueryStatus.NOT_CONFIRMED) {
+            throw new BusinessException(ErrorCode.WECHAT_RECEIPT_NOT_CONFIRMED);
+        }
+        throw new BusinessException(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
+    }
+
+    private OrderReceiptResponse completeConfirmedReceipt(Long userId, Long orderId) {
         ReceiptOrder order = jdbcClient.sql("""
                         select id as order_id,
                                status,
@@ -473,6 +562,7 @@ public class AppOrderService {
                         from shop_order
                         where id = :orderId
                           and user_id = :userId
+                          and app_deleted_at is null
                         for update
                         """)
                 .param("orderId", orderId)
@@ -493,7 +583,7 @@ public class AppOrderService {
         }
         afterSaleFulfillmentPolicy.rejectIfBlocked(order.orderId());
 
-        LocalDateTime completedAt = LocalDateTime.now().withNano(0);
+        LocalDateTime completedAt = LocalDateTime.now(clock).withNano(0);
         jdbcClient.sql("""
                         update shop_order
                         set status = :completedStatus,
@@ -1347,6 +1437,14 @@ public class AppOrderService {
             Long orderId,
             String status,
             LocalDateTime completedAt
+    ) {
+    }
+
+    private record ReceiptVerificationOrder(
+            Long orderId,
+            String status,
+            LocalDateTime completedAt,
+            String paymentTransactionId
     ) {
     }
 }

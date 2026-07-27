@@ -130,6 +130,15 @@
               >
                 移动分组（{{ selectedAssetIds.length }}）
               </ElButton>
+              <ElButton
+                v-if="selectedAssetIds.length"
+                v-auth="'asset:delete'"
+                type="danger"
+                :loading="batchDeleting"
+                @click="confirmBatchDelete"
+              >
+                批量删除（{{ selectedAssetIds.length }}）
+              </ElButton>
               <ElButton v-if="selectedAssetIds.length" text @click="clearAssetSelection">
                 取消选择
               </ElButton>
@@ -575,6 +584,7 @@
   } from '@/utils/asset-upload'
   import { ASSET_LIBRARY_EMPTY_TABLE_HEIGHT } from './asset-library-layout'
   import {
+    batchDeleteAssets,
     batchMoveAssets,
     createAssetFolder,
     deleteAsset,
@@ -627,6 +637,7 @@
   const uploading = ref(false)
   const listUploading = ref(false)
   const listUploadDragging = ref(false)
+  const batchDeleting = ref(false)
   const moving = ref(false)
   const folderSaving = ref(false)
   const folderSorting = ref(false)
@@ -931,7 +942,11 @@
       ElMessage.warning('请输入有效的文件名')
       return
     }
-    if (/[\\/\u0000-\u001f\u007f]/.test(displayName)) {
+    const hasInvalidCharacter = Array.from(displayName).some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0
+      return character === '/' || character === '\\' || codePoint <= 0x1f || codePoint === 0x7f
+    })
+    if (hasInvalidCharacter) {
       ElMessage.warning('文件名不能包含斜杠、反斜杠或控制字符')
       return
     }
@@ -1144,6 +1159,52 @@
       await loadAssets()
     } catch (error) {
       if (error === 'cancel' || error === 'close') return
+    }
+  }
+
+  const confirmBatchDelete = async () => {
+    const assetIds = [...selectedAssetIds.value]
+    if (!assetIds.length) return
+    try {
+      await ElMessageBox.confirm(
+        `确定批量删除已选择的 ${assetIds.length} 个素材吗？删除后不可恢复；正在被引用的素材会自动跳过。`,
+        '批量删除',
+        {
+          type: 'warning',
+          confirmButtonText: '删除',
+          cancelButtonText: '取消'
+        }
+      )
+    } catch (error) {
+      if (error === 'cancel' || error === 'close') return
+      throw error
+    }
+
+    batchDeleting.value = true
+    try {
+      const result = await batchDeleteAssets({ assetIds })
+      const deletedCount = result.deletedAssetIds.length
+      const skippedCount = result.skippedReferencedAssetIds.length
+      if (detailAsset.value && result.deletedAssetIds.includes(detailAsset.value.id)) {
+        detailDrawerVisible.value = false
+      }
+      const remainingTotal = Math.max(0, pagination.total - deletedCount)
+      pagination.current = Math.min(
+        pagination.current,
+        Math.max(1, Math.ceil(remainingTotal / pagination.size))
+      )
+      clearAssetSelection()
+      await loadAssets()
+
+      if (deletedCount && skippedCount) {
+        ElMessage.warning(`已删除 ${deletedCount} 个素材，${skippedCount} 个因正在被引用已跳过`)
+      } else if (skippedCount) {
+        ElMessage.warning(`所选 ${skippedCount} 个素材均在使用中，已全部跳过`)
+      } else {
+        ElMessage.success(`已删除 ${deletedCount} 个素材`)
+      }
+    } finally {
+      batchDeleting.value = false
     }
   }
 

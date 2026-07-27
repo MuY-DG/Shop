@@ -114,15 +114,30 @@
 }
 
 .form-field__chevron {
+  width: 32rpx;
+  height: 32rpx;
   flex: none;
-  color: @color-text-placeholder;
-  font-size: 36rpx;
+}
+
+.region-picker {
+  display: block;
+}
+
+.region-picker[disabled] {
+  opacity: 0.65;
+}
+
+.form-field--region-fallback {
+  width: 100%;
+  min-height: 88rpx;
+  box-sizing: border-box;
 }
 
 button.form-field--address {
   width: 100%;
+  min-height: 128rpx;
   margin: 0;
-  padding: @space-4 0;
+  padding: @space-5 0;
   border: 0;
   border-bottom: 1rpx solid @color-divider;
   border-radius: 0;
@@ -146,7 +161,60 @@ button.form-field--address[disabled] {
 }
 
 .address-value .form-field__value {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: right;
+}
+
+.address-summary {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: right;
+}
+
+.address-summary__name {
+  overflow: hidden;
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  font-weight: 600;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address-summary__single {
+  display: block;
+  overflow: hidden;
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address-summary__detail {
+  display: block;
+  overflow: hidden;
+  margin-top: @space-1;
+  color: @color-text-placeholder;
+  font-size: @font-size-xs;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address-value .form-field__value {
   line-height: 1.6;
+  text-align: right;
+}
+
+.form-hint {
+  margin: -1rpx 0 0;
+  padding: @space-2 0;
+  border-bottom: 1rpx solid @color-divider;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  line-height: 1.5;
   text-align: right;
 }
 

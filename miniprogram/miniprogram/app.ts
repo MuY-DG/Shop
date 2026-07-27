@@ -7,6 +7,7 @@ import {
   onSessionExpired,
   restoreSession
 } from "./services/session";
+import { handleWechatReceiptAppShow } from "./features/wechat-order-receipt";
 import { replaceWithExpiredSessionLogin } from "./utils/login-navigation";
 import { getAppLayoutMetrics } from "./utils/system";
 
@@ -29,5 +30,8 @@ App<IAppOption>({
     onSessionExpired(() => {
       replaceWithExpiredSessionLogin();
     });
+  },
+  onShow(options) {
+    handleWechatReceiptAppShow(options);
   }
 });

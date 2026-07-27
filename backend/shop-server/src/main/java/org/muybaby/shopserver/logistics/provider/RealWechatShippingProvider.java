@@ -32,8 +32,11 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
 
     private static final Logger log = LoggerFactory.getLogger(RealWechatShippingProvider.class);
     private static final String UPLOAD_URL = "https://api.weixin.qq.com/wxa/sec/order/upload_shipping_info?access_token={accessToken}";
+    private static final String ORDER_QUERY_URL = "https://api.weixin.qq.com/wxa/sec/order/get_order?access_token={accessToken}";
     private static final String CAPABILITY_URL = "https://api.weixin.qq.com/wxa/sec/order/is_trade_managed?access_token={accessToken}";
     private static final String DELIVERY_LIST_URL = "https://api.weixin.qq.com/cgi-bin/express/delivery/open_msg/get_delivery_list?access_token={accessToken}";
+    private static final Set<Integer> CONFIRMED_ORDER_STATES = Set.of(3, 4, 6);
+    private static final Set<Integer> NOT_CONFIRMED_ORDER_STATES = Set.of(1, 2, 5);
     private static final Set<Integer> KNOWN_UNAVAILABLE_CAPABILITY_CODES = Set.of(
             40013,
             40014,
@@ -160,6 +163,58 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
     }
 
     @Override
+    public WechatReceiptQueryResult queryReceiptStatus(String transactionId) {
+        if (!StringUtils.hasText(transactionId)) {
+            return WechatReceiptQueryResult.unavailable(
+                    MISSING_TRANSACTION_ID, MISSING_TRANSACTION_ID_MESSAGE
+            );
+        }
+
+        String body;
+        try {
+            body = objectMapper.writeValueAsString(new ReceiptQueryRequest(transactionId));
+        } catch (JsonProcessingException ex) {
+            WechatReceiptQueryResult result = unknownReceiptResponse("PAYLOAD_ERROR");
+            logReceiptResult(result, ex);
+            return result;
+        }
+
+        String accessToken;
+        try {
+            accessToken = accessTokenProvider.getAccessToken();
+        } catch (RuntimeException ex) {
+            WechatReceiptQueryResult result = receiptAccessTokenUnavailable();
+            logReceiptResult(result, ex);
+            return result;
+        }
+        if (!StringUtils.hasText(accessToken)) {
+            WechatReceiptQueryResult result = receiptAccessTokenUnavailable();
+            logReceiptResult(result, null);
+            return result;
+        }
+
+        try {
+            String responseBody = restClient.post()
+                    .uri(ORDER_QUERY_URL, accessToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+            WechatReceiptQueryResult result = parseReceiptResponse(responseBody, transactionId);
+            logReceiptResult(result, null);
+            return result;
+        } catch (RestClientException ex) {
+            WechatReceiptQueryResult result = ambiguousReceiptRequest();
+            logReceiptResult(result, ex);
+            return result;
+        } catch (RuntimeException ex) {
+            WechatReceiptQueryResult result = ambiguousReceiptRequest();
+            logReceiptResult(result, ex);
+            return result;
+        }
+    }
+
+    @Override
     public List<WechatDeliveryCompanyResult> getDeliveryCompanies() {
         try {
             String responseBody = restClient.post()
@@ -201,6 +256,43 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         } catch (RuntimeException ex) {
             log.warn("WeChat delivery company request failed: exception={}", ex.getClass().getSimpleName());
             throw safeDeliveryLookupFailure();
+        }
+    }
+
+    private WechatReceiptQueryResult parseReceiptResponse(String body, String expectedTransactionId) {
+        try {
+            JsonNode response = readResponseObject(body);
+            Integer errcode = strictErrcode(response);
+            if (errcode == null) {
+                return unknownReceiptResponse("AMBIGUOUS_RESPONSE");
+            }
+            if (errcode != 0) {
+                return unknownReceiptResponse(safeErrorCode(errcode));
+            }
+            JsonNode order = response == null ? null : response.get("order");
+            if (order == null || !order.isObject()) {
+                return unknownReceiptResponse("AMBIGUOUS_RESPONSE");
+            }
+            JsonNode returnedTransactionId = order.get("transaction_id");
+            JsonNode orderState = order.get("order_state");
+            if (returnedTransactionId == null
+                    || !returnedTransactionId.isTextual()
+                    || !expectedTransactionId.equals(returnedTransactionId.textValue())
+                    || orderState == null
+                    || !orderState.isIntegralNumber()
+                    || !orderState.canConvertToInt()) {
+                return unknownReceiptResponse("ORDER_MISMATCH");
+            }
+            int state = orderState.intValue();
+            if (CONFIRMED_ORDER_STATES.contains(state)) {
+                return WechatReceiptQueryResult.confirmed(state);
+            }
+            if (NOT_CONFIRMED_ORDER_STATES.contains(state)) {
+                return WechatReceiptQueryResult.notConfirmed(state);
+            }
+            return unknownReceiptResponse("UNKNOWN_ORDER_STATE");
+        } catch (JsonProcessingException | IllegalArgumentException ex) {
+            return unknownReceiptResponse("AMBIGUOUS_RESPONSE");
         }
     }
 
@@ -396,9 +488,39 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         );
     }
 
+    private WechatReceiptQueryResult receiptAccessTokenUnavailable() {
+        return WechatReceiptQueryResult.unavailable(
+                "ACCESS_TOKEN_UNAVAILABLE", "WeChat receipt status is unavailable"
+        );
+    }
+
+    private WechatReceiptQueryResult ambiguousReceiptRequest() {
+        return unknownReceiptResponse("REQUEST_AMBIGUOUS");
+    }
+
+    private WechatReceiptQueryResult unknownReceiptResponse(String errorCode) {
+        return WechatReceiptQueryResult.unknown(
+                errorCode, "WeChat receipt status could not be confirmed"
+        );
+    }
+
     private WechatShippingCapabilityResult unknownCapabilityResponse() {
         return WechatShippingCapabilityResult.unknown(
                 "AMBIGUOUS_RESPONSE", "WeChat shipping capability is unknown"
+        );
+    }
+
+    private void logReceiptResult(WechatReceiptQueryResult result, Exception exception) {
+        if (exception == null) {
+            log.info(
+                    "WeChat receipt status query completed: status={}, orderState={}, errorCode={}",
+                    result.status(), result.orderState(), result.errorCode()
+            );
+            return;
+        }
+        log.warn(
+                "WeChat receipt status query failed safely: status={}, errorCode={}, exception={}",
+                result.status(), result.errorCode(), exception.getClass().getSimpleName()
         );
     }
 
@@ -457,6 +579,11 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
     }
 
     private record CapabilityRequest(String appid) {
+    }
+
+    private record ReceiptQueryRequest(
+            @JsonProperty("transaction_id") String transactionId
+    ) {
     }
 
     private record DeliveryListResponse(

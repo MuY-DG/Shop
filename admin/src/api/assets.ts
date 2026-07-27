@@ -50,6 +50,14 @@ export function batchMoveAssets(data: Api.Storage.AssetBatchMovePayload) {
   })
 }
 
+export function batchDeleteAssets(data: Api.Storage.AssetBatchDeletePayload) {
+  return request.post<Api.Storage.AssetBatchDeleteResult>({
+    url: '/admin/assets/batch-delete',
+    data,
+    showSuccessMessage: false
+  })
+}
+
 export function updateAssetDisplayName(assetId: number, data: Api.Storage.AssetDisplayNamePayload) {
   return request.put<Api.Storage.Asset>({
     url: `/admin/assets/${assetId}/display-name`,

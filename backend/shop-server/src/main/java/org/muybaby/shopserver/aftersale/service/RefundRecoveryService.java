@@ -264,6 +264,7 @@ public class RefundRecoveryService {
                                po.out_trade_no,
                                po.transaction_id,
                                po.amount_cent as total_amount_cent,
+                               ro.provider_reason,
                                asr.reason,
                                asr.audit_note
                         from refund_order ro
@@ -335,7 +336,7 @@ public class RefundRecoveryService {
                 candidate.transactionId(),
                 candidate.refundAmountCent(),
                 candidate.totalAmountCent(),
-                firstNonBlank(candidate.auditNote(), candidate.reason())
+                providerReason(candidate)
         );
     }
 
@@ -399,6 +400,7 @@ public class RefundRecoveryService {
                                po.out_trade_no,
                                po.transaction_id,
                                po.amount_cent as total_amount_cent,
+                               ro.provider_reason,
                                asr.reason,
                                asr.audit_note
                         from refund_order ro
@@ -475,7 +477,7 @@ public class RefundRecoveryService {
                 candidate.transactionId(),
                 candidate.refundAmountCent(),
                 candidate.totalAmountCent(),
-                firstNonBlank(candidate.auditNote(), candidate.reason())
+                providerReason(candidate)
         );
     }
 
@@ -703,9 +705,16 @@ public class RefundRecoveryService {
                 rs.getString("transaction_id"),
                 rs.getLong("refund_amount_cent"),
                 rs.getLong("total_amount_cent"),
+                rs.getString("provider_reason"),
                 rs.getString("reason"),
                 rs.getString("audit_note")
         );
+    }
+
+    private String providerReason(RefundCandidate candidate) {
+        return candidate.providerReason() != null
+                ? candidate.providerReason()
+                : firstNonBlank(candidate.auditNote(), candidate.reason());
     }
 
     private String firstNonBlank(String preferred, String fallback) {
@@ -737,6 +746,7 @@ public class RefundRecoveryService {
             String transactionId,
             long refundAmountCent,
             long totalAmountCent,
+            String providerReason,
             String reason,
             String auditNote
     ) {

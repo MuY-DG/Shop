@@ -55,12 +55,53 @@
       >
         <text class="form-field__label">地址</text>
         <view class="address-value">
-          <view class="form-field__value {{addressDisplay ? '' : 'form-field__placeholder'}}">
-            {{locating ? '正在打开地图…' : (addressDisplay || '请选择所在地址')}}
+          <view wx:if="{{locationNameDisplay || locationAddressDisplay}}" class="address-summary">
+            <view wx:if="{{locationNameDisplay}}" class="address-summary__name">
+              {{locating ? '正在打开微信地图…' : locationNameDisplay}}
+            </view>
+            <view wx:else class="address-summary__single">
+              {{locating ? '正在打开微信地图…' : locationAddressDisplay}}
+            </view>
+            <view
+              wx:if="{{locationNameDisplay && locationAddressDisplay}}"
+              class="address-summary__detail"
+            >
+              {{locationAddressDisplay}}
+            </view>
+          </view>
+          <view wx:else class="form-field__value form-field__placeholder">
+            {{locating ? '正在打开微信地图…' : '请选择收货地址'}}
           </view>
         </view>
-        <text class="form-field__chevron">›</text>
+        <image
+          class="form-field__chevron"
+          src="/assets/icons/chevron-right-light.svg"
+          mode="aspectFit"
+        />
       </button>
+      <picker
+        wx:if="{{needsRegionSelection}}"
+        class="region-picker"
+        mode="region"
+        value="{{regionValue}}"
+        disabled="{{locating || saving || importing || deleting}}"
+        bindchange="onRegionChange"
+      >
+        <view class="form-field form-field--region-fallback">
+          <text class="form-field__label">补充地区</text>
+          <view class="address-value">
+            <view class="form-field__value {{regionDisplay ? '' : 'form-field__placeholder'}}">
+              {{regionDisplay || '请选择省、市、区'}}
+            </view>
+          </view>
+          <image
+            class="form-field__chevron"
+            src="/assets/icons/chevron-right-light.svg"
+            mode="aspectFit"
+          />
+        </view>
+      </picker>
+      <view wx:if="{{locationStatusText}}" class="form-hint">{{locationStatusText}}</view>
       <view class="form-field">
         <view class="form-field__label">门牌号</view>
         <input
@@ -78,7 +119,7 @@
       </view>
 
       <view wx:if="{{validationErrorText}}" class="validation-error">{{validationErrorText}}</view>
-      <button class="save-button" loading="{{saving}}" disabled="{{saving || importing || deleting}}" bindtap="onSaveTap">保存地址</button>
+      <button class="save-button" loading="{{saving}}" disabled="{{locating || saving || importing || deleting}}" bindtap="onSaveTap">保存地址</button>
       <button
         wx:if="{{addressId}}"
         class="delete-button"

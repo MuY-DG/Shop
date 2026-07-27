@@ -86,11 +86,11 @@ class AfterSaleSchemaTest {
                 .update();
         jdbcClient.sql("""
                         insert into refund_order
-                            (id, after_sale_id, order_id, payment_order_id, out_refund_no, refund_id,
+                            (id, after_sale_id, order_id, payment_order_id, out_refund_no, refund_id, provider_reason,
                              refund_amount_cent, status, callback_status, callback_digest, requested_at)
                         values
                             (19307, 19303, 19301, 19306, 'AFTER-SALE-SCHEMA-REFUND',
-                             'refund-schema', 6980, 'PROCESSING', 'ACCEPTED',
+                             'refund-schema', '', 6980, 'PROCESSING', 'ACCEPTED',
                              'refund-callback-digest-schema', current_timestamp)
                         """)
                 .update();
@@ -101,6 +101,7 @@ class AfterSaleSchemaTest {
                         join after_sale_request asr on asr.id = ro.after_sale_id
                         join after_sale_evidence ase on ase.after_sale_id = asr.id
                         where ro.out_refund_no = 'AFTER-SALE-SCHEMA-REFUND'
+                          and ro.provider_reason = ''
                           and asr.status = 'REFUNDING'
                           and ase.file_id = 19302
                         """)

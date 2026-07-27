@@ -38,6 +38,7 @@ public class PaymentInitiationService {
 
     private static final String CURRENCY_CNY = "CNY";
     private static final String OPERATOR_TYPE_APP = "APP";
+    private static final String PAYMENT_DESCRIPTION = "MuYbaby商城订单";
     private static final int DEFAULT_PAYMENT_EXPIRE_MINUTES = 24 * 60;
 
     private final JdbcClient jdbcClient;
@@ -281,13 +282,13 @@ public class PaymentInitiationService {
                         insert into payment_order
                             (order_id, payment_config_id, payment_config_fingerprint,
                              notification_route_token, out_trade_no, prepay_id, payer_openid, status,
-                             amount_cent, currency, request_digest, expires_at,
+                             amount_cent, currency, provider_description, request_digest, expires_at,
                              prepay_claim_token, prepay_claimed_at, prepay_attempts,
                              created_at, updated_at)
                         values
                             (:orderId, :paymentConfigId, :paymentConfigFingerprint,
                              :notificationRouteToken, :outTradeNo, '', :payerOpenid, 'PREPARING',
-                             :amountCent, :currency, :requestDigest, :expiresAt,
+                             :amountCent, :currency, :providerDescription, :requestDigest, :expiresAt,
                              :claimToken, :claimedAt, 1,
                              :createdAt, :updatedAt)
                         """)
@@ -299,6 +300,7 @@ public class PaymentInitiationService {
                 .param("payerOpenid", payerOpenid)
                 .param("amountCent", order.payableAmountCent())
                 .param("currency", CURRENCY_CNY)
+                .param("providerDescription", PAYMENT_DESCRIPTION)
                 .param("requestDigest", requestDigest)
                 .param("expiresAt", expiresAt)
                 .param("claimToken", claimToken)
@@ -330,7 +332,7 @@ public class PaymentInitiationService {
         ClaimedPayment claimed = new ClaimedPayment(
                 keyHolder.getKey().longValue(),
                 order.orderId(),
-                order.orderNo(),
+                PAYMENT_DESCRIPTION,
                 outTradeNo,
                 payerOpenid,
                 order.payableAmountCent(),
@@ -476,6 +478,7 @@ public class PaymentInitiationService {
                                status,
                                amount_cent,
                                currency,
+                               provider_description,
                                request_digest,
                                expires_at,
                                notification_route_token,
@@ -556,7 +559,7 @@ public class PaymentInitiationService {
         return new ClaimedPayment(
                 payment.paymentOrderId(),
                 order.orderId(),
-                order.orderNo(),
+                providerDescription(payment, order.orderNo()),
                 payment.outTradeNo(),
                 payment.payerOpenid(),
                 payment.amountCent(),
@@ -567,9 +570,15 @@ public class PaymentInitiationService {
         );
     }
 
+    private String providerDescription(PaymentInitiationRow payment, String orderNo) {
+        return payment.providerDescription() != null
+                ? payment.providerDescription()
+                : "Shop order " + orderNo;
+    }
+
     private WechatJsapiPrepayRequest toProviderRequest(ClaimedPayment claimed, ResolvedPaymentConfig config) {
         return new WechatJsapiPrepayRequest(
-                "Shop order " + claimed.orderNo(),
+                claimed.providerDescription(),
                 claimed.outTradeNo(),
                 claimed.amountCent(),
                 claimed.currency(),
@@ -741,6 +750,7 @@ public class PaymentInitiationService {
                 rs.getString("status"),
                 rs.getLong("amount_cent"),
                 rs.getString("currency"),
+                rs.getString("provider_description"),
                 rs.getString("request_digest"),
                 rs.getObject("expires_at", LocalDateTime.class),
                 rs.getString("notification_route_token"),
@@ -787,7 +797,7 @@ public class PaymentInitiationService {
     private record ClaimedPayment(
             Long paymentOrderId,
             Long orderId,
-            String orderNo,
+            String providerDescription,
             String outTradeNo,
             String payerOpenid,
             long amountCent,
@@ -812,6 +822,7 @@ public class PaymentInitiationService {
             String status,
             long amountCent,
             String currency,
+            String providerDescription,
             String requestDigest,
             LocalDateTime expiresAt,
             String notificationRouteToken,

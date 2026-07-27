@@ -13,6 +13,8 @@ public record AddressResponse(
         String city,
         String district,
         String detailAddress,
+        String locationName,
+        String doorplate,
         boolean isDefault,
         String formattedAddress,
         LocalDateTime createdAt,

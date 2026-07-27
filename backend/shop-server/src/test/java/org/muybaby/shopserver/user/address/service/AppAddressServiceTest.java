@@ -149,6 +149,8 @@ class AppAddressServiceTest {
                 "北京市",
                 "朝阳区",
                 "火锅路" + receiverName + "号",
+                "",
+                "",
                 isDefault
         );
     }

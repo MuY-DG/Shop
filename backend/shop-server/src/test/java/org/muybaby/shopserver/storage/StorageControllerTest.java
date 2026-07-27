@@ -204,6 +204,44 @@ class StorageControllerTest {
     }
 
     @Test
+    void batchDeleteRemovesUnusedAssetsAndSkipsReferencedAssets() throws Exception {
+        String token = adminToken();
+        long folderId = createFolder(token, 0, "待清理", "ENABLED");
+        UploadedAsset firstUnused = uploadImage(token, "unused-1.png", folderId);
+        UploadedAsset referenced = uploadImage(token, "referenced.png", folderId);
+        UploadedAsset secondUnused = uploadImage(token, "unused-2.png", folderId);
+        insertUsage(referenced.id());
+
+        mockMvc.perform(post("/admin/assets/batch-delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"assetIds":[%d,%d,%d,%d]}
+                                """.formatted(
+                                referenced.id(), firstUnused.id(), firstUnused.id(), secondUnused.id()))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deletedAssetIds.length()").value(2))
+                .andExpect(jsonPath("$.data.deletedAssetIds[0]").value(firstUnused.id()))
+                .andExpect(jsonPath("$.data.deletedAssetIds[1]").value(secondUnused.id()))
+                .andExpect(jsonPath("$.data.skippedReferencedAssetIds.length()").value(1))
+                .andExpect(jsonPath("$.data.skippedReferencedAssetIds[0]").value(referenced.id()));
+
+        mockMvc.perform(get("/admin/assets/{assetId}", firstUnused.id())
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
+        mockMvc.perform(get("/admin/assets/{assetId}", secondUnused.id())
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
+        mockMvc.perform(get("/admin/assets/{assetId}", referenced.id())
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.usageCount").value(1));
+    }
+
+    @Test
     void listSupportsDescendantReferenceKeywordAndDateFilters() throws Exception {
         String token = adminToken();
         long rootId = createFolder(token, 0, "根分组", "ENABLED");

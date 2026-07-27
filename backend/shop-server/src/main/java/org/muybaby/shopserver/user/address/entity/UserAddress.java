@@ -17,6 +17,8 @@ public record UserAddress(
         String city,
         String district,
         String detailAddress,
+        String locationName,
+        String doorplate,
         @TableField("is_default") Boolean isDefault,
         LocalDateTime createdAt,
         LocalDateTime updatedAt

@@ -13,4 +13,11 @@ public interface WechatShippingProvider {
     WechatShippingCapabilityResult queryCapability();
 
     List<WechatDeliveryCompanyResult> getDeliveryCompanies();
+
+    default WechatReceiptQueryResult queryReceiptStatus(String transactionId) {
+        return WechatReceiptQueryResult.unavailable(
+                "RECEIPT_QUERY_UNSUPPORTED",
+                "WeChat receipt status query is unavailable"
+        );
+    }
 }

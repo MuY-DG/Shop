@@ -34,6 +34,8 @@ export interface AddressFormValue {
   city: string;
   district: string;
   detailAddress: string;
+  locationName: string;
+  doorplate: string;
   isDefault: boolean;
 }
 
@@ -265,17 +267,28 @@ export function normalizeAddressForm(value: AddressFormValue): AddressUpsertRequ
     city: cleanText(value.city),
     district: cleanText(value.district),
     detailAddress: cleanText(value.detailAddress).replace(/\s+/g, " "),
+    locationName: cleanText(value.locationName).replace(/\s+/g, " "),
+    doorplate: cleanText(value.doorplate).replace(/\s+/g, " "),
     isDefault: Boolean(value.isDefault)
   };
 }
 
-export function composeAddressDetail(baseAddress: unknown, doorplate: unknown): string {
-  const base = cleanText(baseAddress).replace(/\s+/g, " ");
+export function composeAddressListTitle(
+  locationName: unknown,
+  doorplate: unknown,
+  detailAddress: unknown,
+  formattedAddress: unknown
+): string {
+  const name = cleanText(locationName).replace(/\s+/g, " ");
   const supplement = cleanText(doorplate).replace(/\s+/g, " ");
-  if (!supplement || base.endsWith(supplement)) {
-    return base;
+  if (name) {
+    return `${name}${supplement}`;
   }
-  return `${base} ${supplement}`.trim();
+  const detail = cleanText(detailAddress).replace(/\s+/g, " ");
+  if (supplement && detail && !detail.endsWith(supplement)) {
+    return `${detail}${supplement}`;
+  }
+  return detail || cleanText(formattedAddress).replace(/\s+/g, " ");
 }
 
 export function validateAddressForm(value: AddressFormValue): string {
@@ -300,6 +313,12 @@ export function validateAddressForm(value: AddressFormValue): string {
   }
   if (normalized.detailAddress.length > 255) {
     return "详细地址不能超过 255 个字";
+  }
+  if ((normalized.locationName?.length || 0) > 128) {
+    return "地点名称不能超过 128 个字";
+  }
+  if ((normalized.doorplate?.length || 0) > 128) {
+    return "门牌号不能超过 128 个字";
   }
   return "";
 }

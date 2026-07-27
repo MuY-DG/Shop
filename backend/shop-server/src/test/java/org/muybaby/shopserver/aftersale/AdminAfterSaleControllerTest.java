@@ -267,7 +267,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedAmountCent":6980,"auditNote":"同意退款"}
+                                {"approvedAmountCent":6980}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("REFUNDING"))
@@ -287,6 +287,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                           and order_id = :orderId
                           and out_refund_no = :outRefundNo
                           and refund_id = :refundId
+                          and provider_reason = ''
                           and refund_amount_cent = 6980
                           and status = 'PROCESSING'
                         """)
@@ -296,17 +297,55 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .param("refundId", "mock-refund-" + outRefundNo)
                 .query(Integer.class)
                 .single()).isEqualTo(1);
-        assertThat(jdbcClient.sql("select status from after_sale_request where id = :afterSaleId")
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from after_sale_request
+                        where id = :afterSaleId
+                          and status = 'REFUNDING'
+                          and audit_note = ''
+                        """)
                 .param("afterSaleId", afterSaleId)
-                .query(String.class)
-                .single()).isEqualTo("REFUNDING");
+                .query(Integer.class)
+                .single()).isEqualTo(1);
         assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
                 .param("orderId", order.orderId())
                 .query(String.class)
                 .single()).isEqualTo("REFUNDING");
         ArgumentCaptor<ResolvedPaymentConfig> configCaptor = ArgumentCaptor.forClass(ResolvedPaymentConfig.class);
-        verify(refundProvider, times(1)).requestRefund(configCaptor.capture(), any());
+        ArgumentCaptor<WechatRefundRequest> requestCaptor = ArgumentCaptor.forClass(WechatRefundRequest.class);
+        verify(refundProvider, times(1)).requestRefund(configCaptor.capture(), requestCaptor.capture());
         assertThat(configCaptor.getValue().configId()).isEqualTo(91001L);
+        assertThat(requestCaptor.getValue().reason()).isEmpty();
+    }
+
+    @Test
+    void adminApprovePassesAnOptionalRefundReasonToWechat() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-approve-reason-app");
+        SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve-reason");
+        long afterSaleId = applyAfterSale(appUser, order, 6980L);
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminLogin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"approvedAmountCent":6980,"auditNote":"商品缺货"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REFUNDING"))
+                .andExpect(jsonPath("$.data.auditNote").value("商品缺货"));
+
+        assertThat(jdbcClient.sql("""
+                        select provider_reason
+                        from refund_order
+                        where after_sale_id = :afterSaleId
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query(String.class)
+                .single()).isEqualTo("商品缺货");
+        ArgumentCaptor<WechatRefundRequest> requestCaptor = ArgumentCaptor.forClass(WechatRefundRequest.class);
+        verify(refundProvider).requestRefund(any(), requestCaptor.capture());
+        assertThat(requestCaptor.getValue().reason()).isEqualTo("商品缺货");
     }
 
     @Test

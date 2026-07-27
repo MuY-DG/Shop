@@ -81,6 +81,8 @@ class AppAddressControllerTest {
         request.put("city", " 北京市 ");
         request.put("district", "  朝阳区 ");
         request.put("detailAddress", "  火锅路1号  ");
+        request.put("locationName", "  朝阳火锅店  ");
+        request.put("doorplate", "  3栋201  ");
 
         String response = mockMvc.perform(post("/app/addresses")
                         .header(AUTHORIZATION, bearer(user.token()))
@@ -94,7 +96,10 @@ class AppAddressControllerTest {
                 .andExpect(jsonPath("$.data.city").value("北京市"))
                 .andExpect(jsonPath("$.data.district").value("朝阳区"))
                 .andExpect(jsonPath("$.data.detailAddress").value("火锅路1号"))
-                .andExpect(jsonPath("$.data.formattedAddress").value("北京市北京市朝阳区火锅路1号"))
+                .andExpect(jsonPath("$.data.locationName").value("朝阳火锅店"))
+                .andExpect(jsonPath("$.data.doorplate").value("3栋201"))
+                .andExpect(jsonPath("$.data.formattedAddress")
+                        .value("北京市北京市朝阳区火锅路1号 朝阳火锅店 3栋201"))
                 .andExpect(jsonPath("$.data.isDefault").value(true))
                 .andExpect(jsonPath("$.data.createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.data.updatedAt").isNotEmpty())
@@ -104,7 +109,8 @@ class AppAddressControllerTest {
 
         long addressId = objectMapper.readTree(response).path("data").path("id").asLong();
         Map<String, Object> persisted = jdbcClient.sql("""
-                        select receiver_name, receiver_phone, province, city, district, detail_address
+                        select receiver_name, receiver_phone, province, city, district,
+                               detail_address, location_name, doorplate
                         from user_address
                         where id = :addressId and user_id = :userId
                         """)
@@ -115,6 +121,8 @@ class AppAddressControllerTest {
         assertThat(persisted.get("RECEIVER_NAME")).isEqualTo("张三");
         assertThat(persisted.get("RECEIVER_PHONE")).isEqualTo("13800138000");
         assertThat(persisted.get("DETAIL_ADDRESS")).isEqualTo("火锅路1号");
+        assertThat(persisted.get("LOCATION_NAME")).isEqualTo("朝阳火锅店");
+        assertThat(persisted.get("DOORPLATE")).isEqualTo("3栋201");
     }
 
     @Test
@@ -255,7 +263,9 @@ class AppAddressControllerTest {
                 changed(validAddress("张三", false), "province", "   "),
                 changed(validAddress("张三", false), "city", "\t"),
                 changed(validAddress("张三", false), "district", "  "),
-                changed(validAddress("张三", false), "detailAddress", "\n")
+                changed(validAddress("张三", false), "detailAddress", "\n"),
+                changed(validAddress("张三", false), "locationName", "地".repeat(129)),
+                changed(validAddress("张三", false), "doorplate", "门".repeat(129))
         );
 
         for (Map<String, Object> request : invalidRequests) {

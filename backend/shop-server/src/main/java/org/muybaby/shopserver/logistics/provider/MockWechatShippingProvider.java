@@ -34,6 +34,13 @@ public class MockWechatShippingProvider implements WechatShippingProvider {
     }
 
     @Override
+    public WechatReceiptQueryResult queryReceiptStatus(String transactionId) {
+        return WechatReceiptQueryResult.unavailable(
+                "MOCK_PROVIDER", "Mock provider cannot confirm WeChat receipt status"
+        );
+    }
+
+    @Override
     public List<WechatDeliveryCompanyResult> getDeliveryCompanies() {
         return List.of(
                 new WechatDeliveryCompanyResult("SF", "顺丰速运"),

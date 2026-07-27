@@ -14,6 +14,7 @@ import {
   executeOrderPayment,
   recoverOrderPayment
 } from "../../../features/order-payment";
+import { openWechatReceiptConfirmation } from "../../../features/wechat-order-receipt";
 import { addCartItem } from "../../../services/cart";
 import {
   cancelOrder,
@@ -440,13 +441,26 @@ Page({
   async confirmCurrentOrder() {
     if (
       !this.data.orderId ||
-      this.data.actionType ||
-      !await confirmAction("确认收货", "请确认已经收到商品；确认后订单将完成。", "确认收货")
+      this.data.actionType
     ) {
       return;
     }
     this.setData({ actionType: "confirm" });
     try {
+      const transactionId = this.data.detail?.transactionId
+        || this.data.detail?.paymentTransactionId
+        || "";
+      const componentResult = await openWechatReceiptConfirmation(transactionId);
+      if (componentResult.outcome === "CANCELLED") {
+        return;
+      }
+      if (componentResult.outcome === "FAILED") {
+        wx.showToast({
+          title: componentResult.message || "微信确认收货失败",
+          icon: "none"
+        });
+        return;
+      }
       await confirmOrderReceipt(this.data.orderId);
       wx.showToast({ title: "已确认收货", icon: "success" });
     } catch (error) {

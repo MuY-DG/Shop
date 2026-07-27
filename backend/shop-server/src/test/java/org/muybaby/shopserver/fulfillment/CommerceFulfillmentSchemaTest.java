@@ -34,7 +34,15 @@ class CommerceFulfillmentSchemaTest {
                         """)
                 .query(Integer.class)
                 .single();
-        assertThat(addressColumns).isEqualTo(11);
+        assertThat(addressColumns).isEqualTo(13);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where table_name = 'user_address'
+                          and column_name in ('location_name', 'doorplate')
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
 
         Integer carrierColumns = jdbcClient.sql("""
                         select count(*)

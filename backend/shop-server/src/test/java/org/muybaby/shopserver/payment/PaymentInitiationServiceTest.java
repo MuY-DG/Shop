@@ -96,6 +96,8 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
         assertThat(transactionProbeWechatPayProvider.requests()).hasSize(2);
         assertThat(transactionProbeWechatPayProvider.requests().get(1))
                 .isEqualTo(transactionProbeWechatPayProvider.requests().get(0));
+        assertThat(transactionProbeWechatPayProvider.requests().getFirst().description())
+                .isEqualTo("MuYbaby商城订单");
         assertThat(transactionProbeWechatPayProvider.configIds()).containsExactly(91001L, 91001L);
         assertThat(attemptCount(completed.outTradeNo(), "PREPAY_FAILED", false)).isEqualTo(1);
         assertThat(attemptCount(completed.outTradeNo(), "PREPAY_SUCCEEDED", true)).isEqualTo(1);
@@ -103,6 +105,30 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
         WechatPaymentParamsResponse repeated = paymentInitiationService.initiate(session.userId(), order.orderId());
         assertThat(repeated.packageValue()).isEqualTo(response.packageValue());
         assertThat(transactionProbeWechatPayProvider.requests()).hasSize(2);
+    }
+
+    @Test
+    void legacyPaymentWithoutProviderDescriptionKeepsThePreviousBillText() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-initiation-legacy-description-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
+        transactionProbeWechatPayProvider.failNextPrepay();
+
+        assertThatThrownBy(() -> paymentInitiationService.initiate(session.userId(), order.orderId()))
+                .isInstanceOf(IllegalStateException.class);
+        jdbcClient.sql("""
+                        update payment_order
+                        set provider_description = null
+                        where order_id = :orderId
+                        """)
+                .param("orderId", order.orderId())
+                .update();
+
+        paymentInitiationService.initiate(session.userId(), order.orderId());
+
+        assertThat(transactionProbeWechatPayProvider.requests()).hasSize(2);
+        assertThat(transactionProbeWechatPayProvider.requests().get(1).description())
+                .isEqualTo("Shop order " + order.orderNo());
     }
 
     @Test

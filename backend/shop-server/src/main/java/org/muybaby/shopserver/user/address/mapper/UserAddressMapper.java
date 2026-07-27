@@ -16,7 +16,7 @@ public interface UserAddressMapper extends BaseMapper<UserAddress> {
 
     @Select("""
             SELECT id, user_id, receiver_name, receiver_phone, province, city, district,
-                   detail_address, is_default, created_at, updated_at
+                   detail_address, location_name, doorplate, is_default, created_at, updated_at
             FROM user_address
             WHERE user_id = #{userId}
             ORDER BY is_default DESC, created_at DESC, id DESC
@@ -25,7 +25,7 @@ public interface UserAddressMapper extends BaseMapper<UserAddress> {
 
     @Select("""
             SELECT id, user_id, receiver_name, receiver_phone, province, city, district,
-                   detail_address, is_default, created_at, updated_at
+                   detail_address, location_name, doorplate, is_default, created_at, updated_at
             FROM user_address
             WHERE id = #{addressId}
               AND user_id = #{userId}
@@ -37,7 +37,7 @@ public interface UserAddressMapper extends BaseMapper<UserAddress> {
 
     @Select("""
             SELECT id, user_id, receiver_name, receiver_phone, province, city, district,
-                   detail_address, is_default, created_at, updated_at
+                   detail_address, location_name, doorplate, is_default, created_at, updated_at
             FROM user_address
             WHERE user_id = #{userId}
             ORDER BY created_at ASC, id ASC

@@ -8,6 +8,7 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.PaymentTestSupport;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
+import org.muybaby.shopserver.payment.provider.WechatRefundRequest;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -31,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -128,6 +130,12 @@ class RefundRecoveryServiceTest extends PaymentTestSupport {
         assertThat(mockWechatPayProvider.queriedOutRefundNos()).containsExactly(approved.outRefundNo());
         assertThat(mockWechatPayProvider.requestedOutRefundNos())
                 .containsExactly(approved.outRefundNo(), approved.outRefundNo());
+        ArgumentCaptor<WechatRefundRequest> requestCaptor =
+                ArgumentCaptor.forClass(WechatRefundRequest.class);
+        verify(refundProvider, times(2)).requestRefund(any(), requestCaptor.capture());
+        assertThat(requestCaptor.getAllValues())
+                .extracting(WechatRefundRequest::reason)
+                .containsOnly("同意退款");
         assertThat(jdbcClient.sql("""
                         select count(*)
                         from refund_order
@@ -142,6 +150,29 @@ class RefundRecoveryServiceTest extends PaymentTestSupport {
                 .param("outRefundNo", approved.outRefundNo())
                 .query(Integer.class)
                 .single()).isEqualTo(1);
+    }
+
+    @Test
+    void legacyRefundWithoutProviderReasonReusesItsOriginalReason() throws Exception {
+        ApprovedRefund approved = approveRefund("refund-recovery-legacy-reason");
+        jdbcClient.sql("""
+                        update refund_order
+                        set provider_reason = null,
+                            callback_status = 'REQUEST_UNKNOWN'
+                        where out_refund_no = :outRefundNo
+                        """)
+                .param("outRefundNo", approved.outRefundNo())
+                .update();
+        mockWechatPayProvider.forgetRefund(approved.outRefundNo());
+        makeRecoveryDue(approved.outRefundNo());
+        org.mockito.Mockito.clearInvocations(refundProvider);
+
+        assertThat(refundRecoveryService.recoverPendingRefunds(10)).isEqualTo(1);
+
+        ArgumentCaptor<WechatRefundRequest> requestCaptor =
+                ArgumentCaptor.forClass(WechatRefundRequest.class);
+        verify(refundProvider).requestRefund(any(), requestCaptor.capture());
+        assertThat(requestCaptor.getValue().reason()).isEqualTo("同意退款");
     }
 
     @Test

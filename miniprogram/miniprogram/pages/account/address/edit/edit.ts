@@ -1,5 +1,4 @@
 import {
-  composeAddressDetail,
   normalizeAddressForm,
   parseAddressId,
   validateAddressForm,
@@ -11,7 +10,6 @@ import {
   getAddress,
   updateAddress
 } from "../../../../services/address";
-import type { AddressLocationSelection } from "../../../../types/location";
 import { isApiError } from "../../../../utils/api-error";
 
 type AddressTextField = "receiverName" | "receiverPhone";
@@ -33,6 +31,23 @@ interface SwitchEvent {
   };
 }
 
+interface RegionPickerEvent {
+  detail: {
+    value: string[];
+  };
+}
+
+interface RegionValue {
+  province: string;
+  city: string;
+  district: string;
+}
+
+interface LocationCoordinate {
+  longitude: number;
+  latitude: number;
+}
+
 const EMPTY_FORM: AddressFormValue = {
   receiverName: "",
   receiverPhone: "",
@@ -40,10 +55,16 @@ const EMPTY_FORM: AddressFormValue = {
   city: "",
   district: "",
   detailAddress: "",
+  locationName: "",
+  doorplate: "",
   isDefault: false
 };
 
 let latestRequest = 0;
+
+function text(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
 
 function actionError(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -57,8 +78,110 @@ function isTextField(value: unknown): value is AddressTextField {
   return value === "receiverName" || value === "receiverPhone";
 }
 
-function addressDisplay(value: AddressFormValue): string {
-  return value.detailAddress.trim();
+function formRegion(value: AddressFormValue): RegionValue {
+  return {
+    province: text(value.province),
+    city: text(value.city),
+    district: text(value.district)
+  };
+}
+
+function regionPickerValue(region: RegionValue): string[] {
+  return [region.province, region.city, region.district];
+}
+
+function regionDisplay(region: RegionValue): string {
+  return regionPickerValue(region)
+    .filter((part, index, parts) => Boolean(part) && parts.indexOf(part) === index)
+    .join(" ");
+}
+
+function completeRegion(region: RegionValue): boolean {
+  return Boolean(region.province && region.city && region.district);
+}
+
+function removePrefix(value: string, prefix: string): string {
+  return prefix && value.startsWith(prefix)
+    ? value.slice(prefix.length).trim()
+    : value;
+}
+
+function stripRegionPrefix(value: string, region: RegionValue): string {
+  let result = text(value).replace(/^中国/, "").trim();
+  regionPickerValue(region)
+    .filter((part, index, parts) => Boolean(part) && parts.indexOf(part) === index)
+    .forEach((part) => {
+      result = removePrefix(result, part);
+    });
+  return result;
+}
+
+function fullAddressDisplay(value: AddressFormValue): string {
+  const region = formRegion(value);
+  const regionText = regionPickerValue(region)
+    .filter((part, index, parts) => Boolean(part) && parts.indexOf(part) === index)
+    .join("");
+  const detail = stripRegionPrefix(value.detailAddress, region);
+  return `${regionText}${detail}`.trim();
+}
+
+function parseRegionFromLocation(address: string): RegionValue {
+  const normalized = text(address).replace(/^中国/, "").trim();
+  let remaining = normalized;
+  let province = "";
+  let city = "";
+  let district = "";
+
+  const municipality = ["北京市", "天津市", "上海市", "重庆市"]
+    .find((name) => remaining.startsWith(name));
+  if (municipality) {
+    province = municipality;
+    city = municipality;
+    remaining = removePrefix(remaining, municipality);
+  } else {
+    const provinceMatch = remaining.match(/^(.+?(?:特别行政区|自治区|省))/);
+    if (provinceMatch) {
+      province = provinceMatch[1];
+      remaining = removePrefix(remaining, province);
+    }
+    const cityMatch = remaining.match(/^(.+?(?:自治州|地区|盟|市))/);
+    if (cityMatch) {
+      city = cityMatch[1];
+      remaining = removePrefix(remaining, city);
+    }
+  }
+
+  const districtMatch = remaining.match(/^(.+?(?:自治县|自治旗|区|县|旗|市))/);
+  if (districtMatch) {
+    district = districtMatch[1];
+  }
+  if (
+    (province === "香港特别行政区" || province === "澳门特别行政区") &&
+    !city
+  ) {
+    city = province;
+  }
+  return { province, city, district };
+}
+
+function locationDetail(
+  address: string,
+  name: string,
+  region: RegionValue
+): string {
+  const rawAddress = text(address);
+  const placeName = text(name);
+  const baseAddress = stripRegionPrefix(rawAddress, region) || rawAddress;
+  return baseAddress || placeName;
+}
+
+function validCoordinate(value: LocationCoordinate): boolean {
+  return Number.isFinite(value.longitude) &&
+    value.longitude >= -180 &&
+    value.longitude <= 180 &&
+    Number.isFinite(value.latitude) &&
+    value.latitude >= -90 &&
+    value.latitude <= 90;
 }
 
 function isCancelled(error: unknown): boolean {
@@ -116,6 +239,51 @@ function showWechatAddressError(error: unknown): void {
   });
 }
 
+function wechatLocationErrorText(error: unknown): string {
+  if (!error || typeof error !== "object" || !("errMsg" in error)) {
+    return "微信地图暂不可用，请稍后重试";
+  }
+  const message = String(error.errMsg || "").toLowerCase();
+  if (message.includes("need to be declared")) {
+    return "地图选址能力配置尚未生效，请退出小程序后重新进入再试";
+  }
+  if (
+    message.includes("api permission") ||
+    message.includes("permission not open") ||
+    message.includes("no permission")
+  ) {
+    return "请先在小程序后台开通“选择地理位置”接口权限";
+  }
+  if (
+    message.includes("auth deny") ||
+    message.includes("authorize") ||
+    message.includes("permission") ||
+    message.includes("privacy")
+  ) {
+    return "请在微信设置中允许使用位置信息后重试";
+  }
+  if (message.includes("not support") || message.includes("unsupported")) {
+    return "当前微信环境不支持地图选址";
+  }
+  return "微信地图暂不可用，请稍后重试";
+}
+
+function showWechatLocationError(error: unknown): void {
+  const content = wechatLocationErrorText(error);
+  const needsSetting = /设置中允许/.test(content);
+  wx.showModal({
+    title: "暂时无法打开地图",
+    content,
+    confirmText: needsSetting ? "去设置" : "我知道了",
+    showCancel: needsSetting,
+    success: (result) => {
+      if (needsSetting && result.confirm) {
+        wx.openSetting({});
+      }
+    }
+  });
+}
+
 function chooseWechatAddress(): Promise<WechatMiniprogram.ChooseAddressSuccessCallbackResult> {
   return new Promise((resolve, reject) => {
     if (!wx.canIUse("chooseAddress")) {
@@ -123,6 +291,22 @@ function chooseWechatAddress(): Promise<WechatMiniprogram.ChooseAddressSuccessCa
       return;
     }
     wx.chooseAddress({ success: resolve, fail: reject });
+  });
+}
+
+function chooseWechatLocation(
+  coordinate?: LocationCoordinate
+): Promise<WechatMiniprogram.ChooseLocationSuccessCallbackResult> {
+  return new Promise((resolve, reject) => {
+    if (!wx.canIUse("chooseLocation")) {
+      reject({ errMsg: "chooseLocation:fail not support" });
+      return;
+    }
+    wx.chooseLocation({
+      ...(coordinate && validCoordinate(coordinate) ? coordinate : {}),
+      success: resolve,
+      fail: reject
+    });
   });
 }
 
@@ -144,8 +328,15 @@ Page({
     addressId: "",
     navigationTitle: "新增地址",
     form: { ...EMPTY_FORM } as AddressFormValue,
-    addressDisplay: "",
+    regionValue: [] as string[],
+    regionDisplay: "",
+    locationNameDisplay: "",
+    locationAddressDisplay: "",
+    needsRegionSelection: false,
     doorplate: "",
+    hasSelectedLocation: false,
+    locationLongitude: 0,
+    locationLatitude: 0,
     loading: false,
     loaded: true,
     saving: false,
@@ -205,12 +396,18 @@ Page({
         city: address.city,
         district: address.district,
         detailAddress: address.detailAddress,
+        locationName: text(address.locationName),
+        doorplate: text(address.doorplate),
         isDefault: address.isDefault
       };
       this.setData({
         form,
-        addressDisplay: addressDisplay(form),
-        doorplate: "",
+        regionValue: regionPickerValue(formRegion(form)),
+        regionDisplay: regionDisplay(formRegion(form)),
+        locationNameDisplay: form.locationName,
+        locationAddressDisplay: fullAddressDisplay(form),
+        needsRegionSelection: !completeRegion(formRegion(form)),
+        doorplate: form.doorplate,
         loading: false,
         loaded: true,
         loadErrorText: ""
@@ -249,8 +446,29 @@ Page({
     });
   },
 
+  onRegionChange(event: RegionPickerEvent) {
+    const [province = "", city = "", district = ""] =
+      Array.isArray(event.detail.value) ? event.detail.value.map(text) : [];
+    const region = { province, city, district };
+    const form: AddressFormValue = {
+      ...this.data.form,
+      ...region,
+      detailAddress: stripRegionPrefix(this.data.form.detailAddress, region)
+    };
+    this.setData({
+      form,
+      regionValue: regionPickerValue(region),
+      regionDisplay: regionDisplay(region),
+      locationNameDisplay: this.data.locationNameDisplay,
+      locationAddressDisplay: fullAddressDisplay(form),
+      needsRegionSelection: false,
+      locationStatusText: "",
+      validationErrorText: ""
+    });
+  },
+
   onLocateTap() {
-    this.openLocationPicker();
+    void this.openLocationPicker();
   },
 
   onWechatImportTap() {
@@ -282,12 +500,21 @@ Page({
         province,
         city,
         district,
-        detailAddress
+        detailAddress,
+        locationName: "",
+        doorplate: ""
       };
       this.setData({
         form,
-        addressDisplay: addressDisplay(form),
+        regionValue: regionPickerValue(formRegion(form)),
+        regionDisplay: regionDisplay(formRegion(form)),
+        locationNameDisplay: "",
+        locationAddressDisplay: fullAddressDisplay(form),
+        needsRegionSelection: false,
         doorplate: "",
+        hasSelectedLocation: false,
+        locationLongitude: 0,
+        locationLatitude: 0,
         importing: false,
         locationStatusText: ""
       });
@@ -307,50 +534,74 @@ Page({
     });
   },
 
-  openLocationPicker() {
-    if (this.data.locating) {
+  async openLocationPicker() {
+    if (
+      this.data.locating ||
+      this.data.saving ||
+      this.data.importing ||
+      this.data.deleting
+    ) {
       return;
     }
     this.setData({ locating: true, locationStatusText: "" });
-    wx.navigateTo({
-      url: "/pages/account/address/location-picker/location-picker",
-      success: ({ eventChannel }) => {
-        eventChannel.on("addressSelected", (selected: AddressLocationSelection) => {
-          this.applySelectedAddress(selected);
-        });
-      },
-      fail: (error) => {
-        const message = error.errMsg || "无法打开地图选址";
-        this.setData({ locationStatusText: message });
-        wx.showToast({ title: message, icon: "none" });
-      },
-      complete: () => {
-        this.setData({ locating: false });
+    try {
+      const coordinate = this.data.hasSelectedLocation
+        ? {
+            longitude: this.data.locationLongitude,
+            latitude: this.data.locationLatitude
+          }
+        : undefined;
+      const location = await chooseWechatLocation(coordinate);
+      const parsedRegion = parseRegionFromLocation(location.address);
+      const region = parsedRegion;
+      const detailAddress = locationDetail(location.address, location.name, region);
+      const locationName = text(location.name);
+      if (!detailAddress) {
+        throw new Error("微信地图未返回有效地址，请重新选择");
       }
-    });
-  },
-
-  applySelectedAddress(selected: AddressLocationSelection) {
-    const complete = Boolean(
-      selected.province && selected.city && selected.district && selected.detailAddress
-    );
-    const form: AddressFormValue = {
-      ...this.data.form,
-      province: selected.province,
-      city: selected.city,
-      district: selected.district,
-      detailAddress: selected.detailAddress
-    };
-    this.setData({
-      form,
-      addressDisplay: addressDisplay(form),
-      locationStatusText: "",
-      validationErrorText: ""
-    });
-    wx.showToast({
-      title: complete ? "地址已回填" : "请补充详细地址",
-      icon: "none"
-    });
+      const form: AddressFormValue = {
+        ...this.data.form,
+        ...region,
+        detailAddress,
+        locationName
+      };
+      const locationAddress =
+        text(location.address) || (locationName ? "" : fullAddressDisplay(form));
+      const needsRegion = !completeRegion(parsedRegion);
+      this.setData({
+        form,
+        regionValue: regionPickerValue(region),
+        regionDisplay: regionDisplay(region),
+        locationNameDisplay: locationName,
+        locationAddressDisplay: locationAddress,
+        needsRegionSelection: needsRegion,
+        hasSelectedLocation: true,
+        locationLongitude: location.longitude,
+        locationLatitude: location.latitude,
+        locating: false,
+        locationStatusText: needsRegion
+          ? "位置已选择，请继续选择所在地区"
+          : "",
+        validationErrorText: ""
+      });
+      wx.showToast({
+        title: needsRegion ? "请补充所在地区" : "地图位置已回填",
+        icon: "none"
+      });
+    } catch (error) {
+      this.setData({ locating: false });
+      if (!isCancelled(error)) {
+        const message = error instanceof Error
+          ? error.message
+          : wechatLocationErrorText(error);
+        this.setData({ locationStatusText: message });
+        if (error instanceof Error) {
+          wx.showToast({ title: message, icon: "none" });
+        } else {
+          showWechatLocationError(error);
+        }
+      }
+    }
   },
 
   onSaveTap() {
@@ -383,15 +634,18 @@ Page({
   },
 
   async saveAddress() {
-    if (this.data.saving || this.data.importing || this.data.deleting) {
+    if (
+      this.data.locating ||
+      this.data.saving ||
+      this.data.importing ||
+      this.data.deleting
+    ) {
       return;
     }
     const formForSave: AddressFormValue = {
       ...this.data.form,
-      detailAddress: composeAddressDetail(
-        this.data.form.detailAddress,
-        this.data.doorplate
-      )
+      locationName: this.data.locationNameDisplay,
+      doorplate: this.data.doorplate
     };
     const validationErrorText = validateAddressForm(formForSave);
     if (validationErrorText) {

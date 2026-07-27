@@ -236,6 +236,121 @@ class WechatShippingProviderTest {
     }
 
     @Test
+    void receiptQueryUsesOfficialPayloadAndAcceptsConfirmedState(CapturedOutput output) throws Exception {
+        ProviderFixture fixture = fixture();
+        AtomicReference<JsonNode> capturedBody = new AtomicReference<>();
+        fixture.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(captureJson(capturedBody))
+                .andRespond(withSuccess("""
+                        {
+                          "errcode": 0,
+                          "errmsg": "ok",
+                          "order": {
+                            "transaction_id": "4200000000000000001",
+                            "order_state": 3
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        var result = fixture.provider().queryReceiptStatus("4200000000000000001");
+
+        assertThat(capturedBody.get()).isEqualTo(objectMapper.readTree("""
+                {"transaction_id":"4200000000000000001"}
+                """));
+        assertThat(result.status()).isEqualTo(WechatReceiptQueryStatus.CONFIRMED);
+        assertThat(result.orderState()).isEqualTo(3);
+        assertThat(result.confirmed()).isTrue();
+        assertSafeLogs(output, "status=CONFIRMED", "orderState=3");
+        fixture.server().verify();
+    }
+
+    @Test
+    void receiptQueryMapsAllDocumentedTerminalAndNonterminalStates() {
+        for (int orderState : List.of(4, 6)) {
+            ProviderFixture fixture = fixture();
+            fixture.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
+                    .andRespond(withSuccess("""
+                            {"errcode":0,"order":{"transaction_id":"4200000000000000001","order_state":%d}}
+                            """.formatted(orderState), MediaType.APPLICATION_JSON));
+
+            assertThat(fixture.provider().queryReceiptStatus("4200000000000000001").status())
+                    .isEqualTo(WechatReceiptQueryStatus.CONFIRMED);
+            fixture.server().verify();
+        }
+
+        for (int orderState : List.of(1, 2, 5)) {
+            ProviderFixture fixture = fixture();
+            fixture.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
+                    .andRespond(withSuccess("""
+                            {"errcode":0,"order":{"transaction_id":"4200000000000000001","order_state":%d}}
+                            """.formatted(orderState), MediaType.APPLICATION_JSON));
+
+            var result = fixture.provider().queryReceiptStatus("4200000000000000001");
+            assertThat(result.status()).isEqualTo(WechatReceiptQueryStatus.NOT_CONFIRMED);
+            assertThat(result.orderState()).isEqualTo(orderState);
+            fixture.server().verify();
+        }
+    }
+
+    @Test
+    void receiptQueryRejectsMismatchedOrderAndAmbiguousWechatResponse() {
+        ProviderFixture mismatch = fixture();
+        mismatch.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
+                .andRespond(withSuccess("""
+                        {"errcode":0,"order":{"transaction_id":"different","order_state":3}}
+                        """, MediaType.APPLICATION_JSON));
+
+        var mismatchResult = mismatch.provider().queryReceiptStatus("4200000000000000001");
+
+        assertThat(mismatchResult.status()).isEqualTo(WechatReceiptQueryStatus.UNKNOWN);
+        assertThat(mismatchResult.errorCode()).isEqualTo("ORDER_MISMATCH");
+        mismatch.server().verify();
+
+        ProviderFixture rejected = fixture();
+        rejected.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
+                .andRespond(withSuccess("""
+                        {"errcode":10060001,"errmsg":"untrusted provider message"}
+                        """, MediaType.APPLICATION_JSON));
+
+        var rejectedResult = rejected.provider().queryReceiptStatus("4200000000000000001");
+
+        assertThat(rejectedResult.status()).isEqualTo(WechatReceiptQueryStatus.UNKNOWN);
+        assertThat(rejectedResult.errorCode()).isEqualTo("WECHAT_10060001");
+        assertThat(rejectedResult.errorMessage()).isEqualTo("WeChat receipt status could not be confirmed");
+        rejected.server().verify();
+    }
+
+    @Test
+    void receiptQueryTokenAndTransportFailuresFailClosedWithoutSensitiveLogs(CapturedOutput output) {
+        ProviderFixture tokenFailure = fixture(() -> {
+            throw new IllegalStateException("token " + ACCESS_TOKEN + " transaction 4200000000000000001");
+        });
+
+        var unavailable = tokenFailure.provider().queryReceiptStatus("4200000000000000001");
+
+        assertThat(unavailable.status()).isEqualTo(WechatReceiptQueryStatus.UNAVAILABLE);
+        assertThat(unavailable.errorCode()).isEqualTo("ACCESS_TOKEN_UNAVAILABLE");
+        tokenFailure.server().verify();
+
+        ProviderFixture transportFailure = fixture();
+        transportFailure.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
+                .andRespond(request -> {
+                    throw new ResourceAccessException(
+                            "transport " + ACCESS_TOKEN + " transaction 4200000000000000001"
+                    );
+                });
+
+        var unknown = transportFailure.provider().queryReceiptStatus("4200000000000000001");
+
+        assertThat(unknown.status()).isEqualTo(WechatReceiptQueryStatus.UNKNOWN);
+        assertThat(unknown.errorCode()).isEqualTo("REQUEST_AMBIGUOUS");
+        assertSafeLogs(output, "status=UNAVAILABLE", "status=UNKNOWN", "ResourceAccessException");
+        transportFailure.server().verify();
+    }
+
+    @Test
     void capabilityUsesOfficialEndpointAndConfiguredAppId() throws Exception {
         ProviderFixture fixture = fixture();
         AtomicReference<JsonNode> capturedBody = new AtomicReference<>();
@@ -390,6 +505,10 @@ class WechatShippingProviderTest {
                 .isEqualTo("MOCK_PROVIDER");
         assertThat(provider.queryCapability().state()).isEqualTo(WechatShippingCapabilityState.UNAVAILABLE);
         assertThat(provider.queryCapability().errorCode()).isEqualTo("MOCK_PROVIDER");
+        assertThat(provider.queryReceiptStatus("4200000000000000001").status())
+                .isEqualTo(WechatReceiptQueryStatus.UNAVAILABLE);
+        assertThat(provider.queryReceiptStatus("4200000000000000001").errorCode())
+                .isEqualTo("MOCK_PROVIDER");
     }
 
     @ParameterizedTest

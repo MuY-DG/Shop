@@ -6,6 +6,8 @@ export interface AddressResponse {
   city: string;
   district: string;
   detailAddress: string;
+  locationName?: string;
+  doorplate?: string;
   isDefault: boolean;
   formattedAddress: string;
   createdAt?: string;
@@ -19,6 +21,8 @@ export interface AddressUpsertRequest {
   city: string;
   district: string;
   detailAddress: string;
+  locationName?: string;
+  doorplate?: string;
   isDefault: boolean;
 }
 

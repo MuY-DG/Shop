@@ -10,6 +10,8 @@ public record AddressUpsertRequest(
         @NotBlank @Size(max = 64) String city,
         @NotBlank @Size(max = 64) String district,
         @NotBlank @Size(max = 255) String detailAddress,
+        @Size(max = 128) String locationName,
+        @Size(max = 128) String doorplate,
         boolean isDefault
 ) {
     public AddressUpsertRequest {
@@ -19,9 +21,16 @@ public record AddressUpsertRequest(
         city = strip(city);
         district = strip(district);
         detailAddress = strip(detailAddress);
+        locationName = stripOrEmpty(locationName);
+        doorplate = stripOrEmpty(doorplate);
     }
 
     private static String strip(String value) {
         return value == null ? null : value.strip();
+    }
+
+    private static String stripOrEmpty(String value) {
+        String stripped = strip(value);
+        return stripped == null ? "" : stripped;
     }
 }

@@ -170,7 +170,9 @@ public class RealWechatPayProvider implements WechatPayProvider {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         createRequest.setOutRefundNo(request.outRefundNo());
-        createRequest.setReason(request.reason());
+        if (request.reason() != null && !request.reason().isBlank()) {
+            createRequest.setReason(request.reason());
+        }
         createRequest.setNotifyUrl(request.notifyUrl());
         AmountReq amountReq = new AmountReq();
         amountReq.setRefund(request.refundAmountCent());

@@ -276,9 +276,7 @@
               审核拒绝
             </ElButton>
           </template>
-          <template
-            v-if="currentDetail?.refundOrder && hasAuth('aftersale:audit')"
-          >
+          <template v-if="currentDetail?.refundOrder && hasAuth('aftersale:audit')">
             <ElButton
               v-if="canOperateRefund(currentDetail)"
               :loading="refundOperating"
@@ -349,14 +347,19 @@
             style="width: 100%"
           />
         </ElFormItem>
-        <ElFormItem label="审核备注" prop="auditNote">
+        <ElFormItem
+          :label="auditMode === 'approve' ? '退款原因（选填）' : '拒绝原因'"
+          prop="auditNote"
+        >
           <ElInput
             v-model="auditForm.auditNote"
             type="textarea"
             maxlength="255"
             show-word-limit
             :rows="4"
-            placeholder="请输入审核备注"
+            :placeholder="
+              auditMode === 'approve' ? '选填，填写后将在微信退款到账通知中显示' : '请输入拒绝原因'
+            "
           />
         </ElFormItem>
       </ElForm>
@@ -396,7 +399,11 @@
       >
         <ElFormItem label="退款单">
           <ElInput
-            :model-value="currentDetail?.refundOrder ? `#${currentDetail.refundOrder.id} / ${currentDetail.refundOrder.outRefundNo}` : '-'"
+            :model-value="
+              currentDetail?.refundOrder
+                ? `#${currentDetail.refundOrder.id} / ${currentDetail.refundOrder.outRefundNo}`
+                : '-'
+            "
             disabled
           />
         </ElFormItem>
@@ -567,9 +574,7 @@
       confirmation: '确定停止自动恢复并转为人工介入吗？'
     }
   }
-  const refundOperationTitle = computed(
-    () => refundOperationCopy[refundOperationMode.value].title
-  )
+  const refundOperationTitle = computed(() => refundOperationCopy[refundOperationMode.value].title)
   const refundOperationDescription = computed(
     () => refundOperationCopy[refundOperationMode.value].description
   )
@@ -666,7 +671,10 @@
         trigger: 'change'
       }
     ],
-    auditNote: [{ required: true, message: '请输入审核备注', trigger: 'blur' }]
+    auditNote:
+      auditMode.value === 'reject'
+        ? [{ required: true, message: '请输入拒绝原因', trigger: 'blur' }]
+        : []
   }))
 
   const refundOperationRules: FormRules<RefundOperationForm> = {

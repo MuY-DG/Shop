@@ -8,7 +8,7 @@ import {
   buildFavoriteProductViews,
   buildHistoryProductViews,
   buildUserCouponViews,
-  composeAddressDetail,
+  composeAddressListTitle,
   normalizeAddressForm,
   parseAddressId,
   parseCouponStatusFilter,
@@ -23,6 +23,8 @@ const validAddress: AddressFormValue = {
   city: "成都市",
   district: "锦江区",
   detailAddress: " 春熙路  1 号 ",
+  locationName: " 春熙里 ",
+  doorplate: " 3 栋  201 ",
   isDefault: true
 };
 
@@ -43,6 +45,8 @@ test("地址表单规范空白并校验姓名、电话、地区和详细地址",
     city: "成都市",
     district: "锦江区",
     detailAddress: "春熙路 1 号",
+    locationName: "春熙里",
+    doorplate: "3 栋 201",
     isDefault: true
   });
   assert.equal(validateAddressForm({ ...validAddress, receiverName: "" }), "请填写收货人姓名");
@@ -52,9 +56,18 @@ test("地址表单规范空白并校验姓名、电话、地区和详细地址",
   assert.equal(parseAddressId("9007199254740993123"), "9007199254740993123");
   assert.equal(parseAddressId("0"), "");
   assert.equal(parseAddressId("12x"), "");
-  assert.equal(composeAddressDetail("春熙路 1 号", "3 栋 201"), "春熙路 1 号 3 栋 201");
-  assert.equal(composeAddressDetail("春熙路 1 号 3 栋 201", "3 栋 201"), "春熙路 1 号 3 栋 201");
-  assert.equal(composeAddressDetail("春熙路 1 号", ""), "春熙路 1 号");
+  assert.equal(
+    composeAddressListTitle("吉利学院(成都校区)", "666", "成简大道二段123号", ""),
+    "吉利学院(成都校区)666"
+  );
+  assert.equal(
+    composeAddressListTitle("紫都学府", "666", "紫都学府商业楼", ""),
+    "紫都学府666"
+  );
+  assert.equal(
+    composeAddressListTitle("", "", "历史详细地址", "四川省成都市历史详细地址"),
+    "历史详细地址"
+  );
 });
 
 test("收藏与浏览记录映射价格、下架状态和足迹文案", () => {

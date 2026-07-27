@@ -4,6 +4,8 @@ import jakarta.validation.Valid;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.dto.StorageAssetBatchDeleteRequest;
+import org.muybaby.shopserver.storage.dto.StorageAssetBatchDeleteResponse;
 import org.muybaby.shopserver.storage.dto.StorageAssetBatchMoveRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetDisplayNameRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetMoveRequest;
@@ -70,6 +72,14 @@ public class AdminAssetController {
     public ApiResponse<Void> batchMove(@Valid @RequestBody StorageAssetBatchMoveRequest request) {
         storageService.moveBatch(request.assetIds(), request.folderId());
         return ApiResponse.success();
+    }
+
+    @PostMapping("/batch-delete")
+    @PreAuthorize("hasAuthority('asset:delete')")
+    public ApiResponse<StorageAssetBatchDeleteResponse> batchDelete(
+            @Valid @RequestBody StorageAssetBatchDeleteRequest request
+    ) {
+        return ApiResponse.success(storageService.deleteBatch(request.assetIds()));
     }
 
     @PutMapping("/{assetId}/display-name")

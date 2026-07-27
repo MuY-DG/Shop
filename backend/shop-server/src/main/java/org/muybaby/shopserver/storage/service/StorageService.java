@@ -17,6 +17,7 @@ import org.muybaby.shopserver.storage.UploadedByType;
 import org.muybaby.shopserver.storage.compression.UploadImageCompressionCoordinator;
 import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
+import org.muybaby.shopserver.storage.dto.StorageAssetBatchDeleteResponse;
 import org.muybaby.shopserver.storage.dto.StorageAssetFolderPositionRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetFolderRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetFolderResponse;
@@ -469,6 +470,24 @@ public class StorageService {
         withoutTransaction.executeWithoutResult(status -> deleteOutsideTransaction(assetId));
     }
 
+    public StorageAssetBatchDeleteResponse deleteBatch(List<Long> assetIds) {
+        if (assetIds == null || assetIds.isEmpty()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        List<Long> normalizedAssetIds = assetIds.stream().distinct().sorted().toList();
+        return outsideTransaction(() -> {
+            BatchDeletePreparation preparation = Objects.requireNonNull(
+                    requiresNewTransaction.execute(status -> prepareLibraryBatchDelete(normalizedAssetIds))
+            );
+            preparation.deletedAssetIds()
+                    .forEach(assetId -> cleanupAssetSafely(assetId, "library batch delete"));
+            return new StorageAssetBatchDeleteResponse(
+                    preparation.deletedAssetIds(),
+                    preparation.skippedReferencedAssetIds()
+            );
+        });
+    }
+
     private void deleteOutsideTransaction(Long assetId) {
         Boolean prepared = requiresNewTransaction.execute(status -> prepareLibraryDelete(assetId));
         if (!Boolean.TRUE.equals(prepared)) {
@@ -479,7 +498,7 @@ public class StorageService {
 
     private boolean prepareLibraryDelete(Long assetId) {
         AssetRow row = findLibraryAssetRow(assetId, true);
-        if (storageUsageService.hasActiveUsages(assetId) || hasLocalPublicUrlReferences(row.publicUrl())) {
+        if (isLibraryAssetInUse(row)) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_IN_USE);
         }
 
@@ -497,6 +516,46 @@ public class StorageService {
                         """)
                 .param("assetId", assetId)
                 .update() == 1;
+    }
+
+    private BatchDeletePreparation prepareLibraryBatchDelete(List<Long> assetIds) {
+        List<AssetRow> rows = assetIds.stream()
+                .map(assetId -> findLibraryAssetRow(assetId, true))
+                .toList();
+        List<Long> skippedReferencedAssetIds = rows.stream()
+                .filter(this::isLibraryAssetInUse)
+                .map(AssetRow::id)
+                .toList();
+        Set<Long> skippedReferencedAssetIdSet = new HashSet<>(skippedReferencedAssetIds);
+        List<Long> deletedAssetIds = rows.stream()
+                .map(AssetRow::id)
+                .filter(assetId -> !skippedReferencedAssetIdSet.contains(assetId))
+                .toList();
+
+        if (!deletedAssetIds.isEmpty()) {
+            int updated = namedParameterJdbcTemplate.update("""
+                            update storage_asset
+                            set status = 'DELETE_PENDING',
+                                folder_id = null,
+                                public_url = null,
+                                cleanup_attempts = 0,
+                                cleanup_next_retry_at = current_timestamp,
+                                cleanup_lease_token = null,
+                                updated_at = current_timestamp
+                            where id in (:assetIds)
+                              and status = 'ACTIVE'
+                            """,
+                    new MapSqlParameterSource("assetIds", deletedAssetIds));
+            if (updated != deletedAssetIds.size()) {
+                throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+            }
+        }
+        return new BatchDeletePreparation(deletedAssetIds, skippedReferencedAssetIds);
+    }
+
+    private boolean isLibraryAssetInUse(AssetRow row) {
+        return storageUsageService.hasActiveUsages(row.id())
+                || hasLocalPublicUrlReferences(row.publicUrl());
     }
 
     @Transactional
@@ -1889,6 +1948,12 @@ public class StorageService {
     }
 
     private record ImageMetadata(int width, int height) {
+    }
+
+    private record BatchDeletePreparation(
+            List<Long> deletedAssetIds,
+            List<Long> skippedReferencedAssetIds
+    ) {
     }
 
     private record PreparedUpload(

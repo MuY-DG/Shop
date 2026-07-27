@@ -61,6 +61,8 @@ public class AppAddressService {
                 request.city(),
                 request.district(),
                 request.detailAddress(),
+                request.locationName(),
+                request.doorplate(),
                 makeDefault,
                 now,
                 now
@@ -87,6 +89,8 @@ public class AppAddressService {
                 request.city(),
                 request.district(),
                 request.detailAddress(),
+                request.locationName(),
+                request.doorplate(),
                 makeDefault,
                 existing.createdAt(),
                 now
@@ -165,6 +169,8 @@ public class AppAddressService {
                 address.city(),
                 address.district(),
                 address.detailAddress(),
+                address.locationName(),
+                address.doorplate(),
                 isDefault,
                 address.createdAt(),
                 updatedAt
@@ -182,6 +188,8 @@ public class AppAddressService {
                 address.city(),
                 address.district(),
                 address.detailAddress(),
+                address.locationName(),
+                address.doorplate(),
                 Boolean.TRUE.equals(address.isDefault()),
                 formattedAddress(address),
                 address.createdAt(),
@@ -190,10 +198,17 @@ public class AppAddressService {
     }
 
     private String formattedAddress(UserAddress address) {
+        String detail = address.detailAddress();
+        if (!address.locationName().isBlank() && !detail.contains(address.locationName())) {
+            detail = detail + " " + address.locationName();
+        }
+        if (!address.doorplate().isBlank() && !detail.endsWith(address.doorplate())) {
+            detail = detail + " " + address.doorplate();
+        }
         return address.province()
                 + address.city()
                 + address.district()
-                + address.detailAddress();
+                + detail;
     }
 
     private BusinessException addressNotFound() {

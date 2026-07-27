@@ -770,16 +770,17 @@ public class AdminAfterSaleService {
 
         String outRefundNo = outRefundNo(afterSaleId, order.orderId(), payment.id());
         String notificationRouteToken = providerPreflight.notificationRouteToken();
+        String providerReason = WechatRefundRequest.providerSafeReason(auditNote);
 
         LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into refund_order
                             (after_sale_id, order_id, payment_order_id, notification_route_token,
-                             out_refund_no, refund_id,
+                             out_refund_no, refund_id, provider_reason,
                              refund_amount_cent, status, callback_status, requested_at, created_at, updated_at)
                         values
                             (:afterSaleId, :orderId, :paymentOrderId, :notificationRouteToken,
-                             :outRefundNo, :refundId,
+                             :outRefundNo, :refundId, :providerReason,
                              :refundAmountCent, :status, :callbackStatus, :requestedAt, :createdAt, :updatedAt)
                         """)
                 .param("afterSaleId", afterSaleId)
@@ -788,6 +789,7 @@ public class AdminAfterSaleService {
                 .param("notificationRouteToken", notificationRouteToken)
                 .param("outRefundNo", outRefundNo)
                 .param("refundId", "")
+                .param("providerReason", providerReason)
                 .param("refundAmountCent", approvedAmountCent)
                 .param("status", RefundOrderStatus.PROCESSING.name())
                 .param("callbackStatus", RefundOrderStatus.PROCESSING.name())
@@ -847,7 +849,7 @@ public class AdminAfterSaleService {
                 outRefundNo,
                 approvedAmountCent,
                 payment.amountCent(),
-                StringUtils.hasText(auditNote) ? auditNote : afterSale.reason()
+                providerReason
         );
     }
 
@@ -898,15 +900,18 @@ public class AdminAfterSaleService {
 
         String outRefundNo = retryOutRefundNo(afterSaleId);
         String notificationRouteToken = providerPreflight.notificationRouteToken();
+        String providerReason = source.providerReason() != null
+                ? source.providerReason()
+                : WechatRefundRequest.providerSafeReason(afterSale.auditNote());
         LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into refund_order
                             (after_sale_id, order_id, payment_order_id, notification_route_token,
-                             out_refund_no, refund_id,
+                             out_refund_no, refund_id, provider_reason,
                              refund_amount_cent, status, callback_status, requested_at, created_at, updated_at)
                         values
                             (:afterSaleId, :orderId, :paymentOrderId, :notificationRouteToken,
-                             :outRefundNo, '',
+                             :outRefundNo, '', :providerReason,
                              :refundAmountCent, :status, :callbackStatus, :requestedAt, :createdAt, :updatedAt)
                         """)
                 .param("afterSaleId", afterSaleId)
@@ -914,6 +919,7 @@ public class AdminAfterSaleService {
                 .param("paymentOrderId", payment.id())
                 .param("notificationRouteToken", notificationRouteToken)
                 .param("outRefundNo", outRefundNo)
+                .param("providerReason", providerReason)
                 .param("refundAmountCent", source.refundAmountCent())
                 .param("status", RefundOrderStatus.PROCESSING.name())
                 .param("callbackStatus", RefundOrderStatus.PROCESSING.name())
@@ -964,7 +970,7 @@ public class AdminAfterSaleService {
                 outRefundNo,
                 source.refundAmountCent(),
                 payment.amountCent(),
-                StringUtils.hasText(afterSale.auditNote()) ? afterSale.auditNote() : afterSale.reason()
+                providerReason
         );
     }
 
@@ -1315,6 +1321,7 @@ public class AdminAfterSaleService {
                                order_id,
                                payment_order_id,
                                out_refund_no,
+                               provider_reason,
                                refund_amount_cent,
                                status,
                                callback_status,
@@ -1546,6 +1553,7 @@ public class AdminAfterSaleService {
                 rs.getLong("order_id"),
                 rs.getLong("payment_order_id"),
                 rs.getString("out_refund_no"),
+                rs.getString("provider_reason"),
                 rs.getLong("refund_amount_cent"),
                 rs.getString("status"),
                 rs.getString("callback_status"),
@@ -1704,6 +1712,7 @@ public class AdminAfterSaleService {
             Long orderId,
             Long paymentOrderId,
             String outRefundNo,
+            String providerReason,
             long refundAmountCent,
             String status,
             String callbackStatus,

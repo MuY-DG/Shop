@@ -10,9 +10,11 @@ import {
   executeOrderPayment,
   recoverOrderPayment
 } from "../../../features/order-payment";
+import { openWechatReceiptConfirmation } from "../../../features/wechat-order-receipt";
 import {
   cancelOrder,
   confirmOrderReceipt,
+  getOrderDetail,
   getOrders
 } from "../../../services/order";
 import type { OrderStatusGroup } from "../../../types/order";
@@ -275,14 +277,24 @@ Page({
   },
 
   async confirmSelectedOrder(orderId: number) {
-    if (
-      this.data.actionOrderId ||
-      !await confirmAction("确认收货", "请确认已经收到商品；确认后订单将完成。", "确认收货")
-    ) {
+    if (this.data.actionOrderId) {
       return;
     }
     this.setData({ actionOrderId: orderId });
     try {
+      const detail = await getOrderDetail(orderId);
+      const transactionId = detail.transactionId || detail.paymentTransactionId || "";
+      const componentResult = await openWechatReceiptConfirmation(transactionId);
+      if (componentResult.outcome === "CANCELLED") {
+        return;
+      }
+      if (componentResult.outcome === "FAILED") {
+        wx.showToast({
+          title: componentResult.message || "微信确认收货失败",
+          icon: "none"
+        });
+        return;
+      }
       await confirmOrderReceipt(orderId);
       wx.showToast({ title: "已确认收货", icon: "success" });
     } catch (error) {

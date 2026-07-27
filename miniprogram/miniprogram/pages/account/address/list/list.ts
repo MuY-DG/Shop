@@ -1,4 +1,7 @@
-import { parseAddressId } from "../../../../features/account-center";
+import {
+  composeAddressListTitle,
+  parseAddressId
+} from "../../../../features/account-center";
 import { getAddresses } from "../../../../services/address";
 import type { AddressResponse } from "../../../../types/checkout";
 import { isApiError } from "../../../../utils/api-error";
@@ -36,7 +39,12 @@ function maskPhone(value: string): string {
 function addressListItem(address: AddressResponse): AddressListItem {
   return {
     ...address,
-    detailDisplay: address.detailAddress.trim() || address.formattedAddress.trim(),
+    detailDisplay: composeAddressListTitle(
+      address.locationName,
+      address.doorplate,
+      address.detailAddress,
+      address.formattedAddress
+    ),
     phoneDisplay: maskPhone(address.receiverPhone)
   };
 }

@@ -783,6 +783,15 @@ declare namespace Api {
       assetIds: number[]
     }
 
+    interface AssetBatchDeletePayload {
+      assetIds: number[]
+    }
+
+    interface AssetBatchDeleteResult {
+      deletedAssetIds: number[]
+      skippedReferencedAssetIds: number[]
+    }
+
     interface AssetDisplayNamePayload {
       /** Filename without the immutable extension. */
       displayName: string
@@ -1532,7 +1541,7 @@ declare namespace Api {
 
     interface AuditPayload {
       approvedAmountCent?: number | null
-      auditNote: string
+      auditNote?: string
     }
 
     interface RefundOperationPayload {

@@ -23,7 +23,7 @@ public record WechatRefundRequest(
      * one-to-three-byte UTF-8 subset. Canonicalizing in the request value object guarantees that an
      * idempotent retry reconstructs exactly the same provider parameter.
      */
-    static String providerSafeReason(String value) {
+    public static String providerSafeReason(String value) {
         if (value == null || value.isBlank()) {
             return "";
         }

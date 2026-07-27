@@ -25,6 +25,11 @@ class WechatRefundRequestTest {
         assertThat(request(reason).reason()).isEqualTo(request(reason).reason());
     }
 
+    @Test
+    void blankReasonRemainsEmptySoTheProviderCanOmitIt() {
+        assertThat(request("   ").reason()).isEmpty();
+    }
+
     private WechatRefundRequest request(String reason) {
         return new WechatRefundRequest(
                 "trade-1", "transaction-1", "refund-1", 100L, 100L, reason, "https://example.test/refund"
