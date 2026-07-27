@@ -12,6 +12,7 @@ import { useUserStore } from '@/store/modules/user'
 import { useAppMode } from '@/hooks/core/useAppMode'
 import { fetchGetMenuList } from '@/api/system-manage'
 import { asyncRoutes } from '../routes/asyncRoutes'
+import { appendAuthenticatedUtilityRoutes } from '../routes/authenticatedUtilityRoutes'
 import { RoutesAlias } from '../routesAlias'
 import { formatMenuTitle } from '@/utils'
 
@@ -58,7 +59,7 @@ export class MenuProcessor {
    */
   private async processBackendMenu(): Promise<AppRouteRecord[]> {
     const list = await fetchGetMenuList()
-    return this.filterEmptyMenus(list)
+    return this.filterEmptyMenus(appendAuthenticatedUtilityRoutes(list))
   }
 
   /**
