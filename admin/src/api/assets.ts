@@ -30,7 +30,15 @@ export function fetchAssets(params: Api.Storage.AssetQueryParams) {
 
 export function fetchAssetDetail(assetId: number) {
   return request.get<Api.Storage.Asset>({
-    url: `/admin/assets/${assetId}`
+    url: `/admin/assets/${assetId}`,
+    params: { includeUsages: false }
+  })
+}
+
+export function fetchAssetUsages(assetId: number, params: Api.Storage.AssetUsageQueryParams) {
+  return request.get<Api.Storage.AssetUsageList>({
+    url: `/admin/assets/${assetId}/usages`,
+    params
   })
 }
 

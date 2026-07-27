@@ -1,10 +1,12 @@
 package org.muybaby.shopserver.storage.service;
 
+import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
+import org.muybaby.shopserver.storage.dto.StorageAssetUsageQueryRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetUsageResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
@@ -40,6 +42,48 @@ public class StorageUsageService {
                 .param("fileId", fileId)
                 .query(this::mapUsage)
                 .list();
+    }
+
+    public PageResult<StorageAssetUsageResponse> usagePage(
+            Long fileId,
+            StorageAssetUsageQueryRequest query
+    ) {
+        StorageAssetUsageQueryRequest normalized = query == null
+                ? new StorageAssetUsageQueryRequest(null, null, null)
+                : query;
+        long current = normalized.pageCurrent();
+        long size = normalized.pageSize();
+        long offset = (current - 1) * size;
+        String status = normalized.pageStatus().name();
+
+        Long total = jdbcClient.sql("""
+                        select count(*)
+                        from storage_asset_usage
+                        where asset_id = :fileId
+                          and status = :status
+                        """)
+                .param("fileId", fileId)
+                .param("status", status)
+                .query(Long.class)
+                .single();
+
+        List<StorageAssetUsageResponse> records = jdbcClient.sql("""
+                        select id, asset_id, usage_type, owner_type, owner_id, owner_label, snapshot_url,
+                               sort_order, protected, status, created_at, updated_at
+                        from storage_asset_usage
+                        where asset_id = :fileId
+                          and status = :status
+                        order by id desc
+                        limit :size offset :offset
+                        """)
+                .param("fileId", fileId)
+                .param("status", status)
+                .param("size", size)
+                .param("offset", offset)
+                .query(this::mapUsage)
+                .list();
+
+        return PageResult.of(records, total == null ? 0L : total, current, size);
     }
 
     public boolean hasActiveUsages(Long fileId) {

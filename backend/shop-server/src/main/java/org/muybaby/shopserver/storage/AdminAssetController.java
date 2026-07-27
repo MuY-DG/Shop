@@ -11,6 +11,8 @@ import org.muybaby.shopserver.storage.dto.StorageAssetDisplayNameRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetMoveRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetQueryRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
+import org.muybaby.shopserver.storage.dto.StorageAssetUsageQueryRequest;
+import org.muybaby.shopserver.storage.dto.StorageAssetUsageResponse;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -53,8 +55,20 @@ public class AdminAssetController {
 
     @GetMapping("/{assetId}")
     @PreAuthorize("hasAuthority('asset:read')")
-    public ApiResponse<StorageAssetResponse> detail(@PathVariable Long assetId) {
-        return ApiResponse.success(storageService.detail(assetId));
+    public ApiResponse<StorageAssetResponse> detail(
+            @PathVariable Long assetId,
+            @RequestParam(defaultValue = "true") boolean includeUsages
+    ) {
+        return ApiResponse.success(storageService.detail(assetId, includeUsages));
+    }
+
+    @GetMapping("/{assetId}/usages")
+    @PreAuthorize("hasAuthority('asset:read')")
+    public ApiResponse<PageResult<StorageAssetUsageResponse>> usagePage(
+            @PathVariable Long assetId,
+            StorageAssetUsageQueryRequest query
+    ) {
+        return ApiResponse.success(storageService.usagePage(assetId, query));
     }
 
     @PostMapping("/{assetId}/move")

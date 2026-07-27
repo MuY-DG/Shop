@@ -291,6 +291,48 @@ class StorageControllerTest {
     }
 
     @Test
+    void usageEndpointPaginatesCurrentAndHistoricalReferencesWithoutLoadingThemInDetail() throws Exception {
+        String token = adminToken();
+        UploadedAsset asset = uploadImage(token, "popular-product.png", 0);
+        for (long ownerId = 90001; ownerId <= 90005; ownerId++) {
+            insertUsage(asset.id(), ownerId, "ACTIVE");
+        }
+        insertUsage(asset.id(), 80001, "REMOVED");
+        insertUsage(asset.id(), 80002, "REMOVED");
+
+        mockMvc.perform(get("/admin/assets/{assetId}", asset.id())
+                        .param("includeUsages", "false")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.usageCount").value(5))
+                .andExpect(jsonPath("$.data.usages").doesNotExist());
+
+        mockMvc.perform(get("/admin/assets/{assetId}/usages", asset.id())
+                        .param("status", "ACTIVE")
+                        .param("current", "2")
+                        .param("size", "2")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(5))
+                .andExpect(jsonPath("$.data.current").value(2))
+                .andExpect(jsonPath("$.data.size").value(2))
+                .andExpect(jsonPath("$.data.records.length()").value(2))
+                .andExpect(jsonPath("$.data.records[0].ownerId").value(90003))
+                .andExpect(jsonPath("$.data.records[1].ownerId").value(90002));
+
+        mockMvc.perform(get("/admin/assets/{assetId}/usages", asset.id())
+                        .param("status", "REMOVED")
+                        .param("current", "1")
+                        .param("size", "1000")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.size").value(100))
+                .andExpect(jsonPath("$.data.records.length()").value(2))
+                .andExpect(jsonPath("$.data.records[0].ownerId").value(80002));
+    }
+
+    @Test
     void folderRulesRejectCyclesDisabledTargetsAndNonEmptyDeletes() throws Exception {
         String token = adminToken();
         long rootId = createFolder(token, 0, "根分组", "ENABLED");
@@ -518,15 +560,21 @@ class StorageControllerTest {
     }
 
     private void insertUsage(long assetId) {
+        insertUsage(assetId, 90001, "ACTIVE");
+    }
+
+    private void insertUsage(long assetId, long ownerId, String status) {
         jdbcClient.sql("""
                         insert into storage_asset_usage
                             (asset_id, usage_type, owner_type, owner_id, owner_label,
                              snapshot_url, sort_order, protected, status)
                         values
-                            (:assetId, 'PRODUCT_SPU_MAIN', 'PRODUCT_SPU', 90001, '测试商品',
-                             '', 1, false, 'ACTIVE')
+                            (:assetId, 'PRODUCT_SPU_MAIN', 'PRODUCT_SPU', :ownerId, '测试商品',
+                             '', 1, false, :status)
                         """)
                 .param("assetId", assetId)
+                .param("ownerId", ownerId)
+                .param("status", status)
                 .update();
     }
 

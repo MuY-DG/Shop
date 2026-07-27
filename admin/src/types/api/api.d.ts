@@ -658,6 +658,7 @@ declare namespace Api {
     type UploadedByType = 'ADMIN' | 'APP'
     type FolderStatus = 'ENABLED' | 'DISABLED'
     type ReferenceStatus = 'REFERENCED' | 'UNREFERENCED'
+    type UsageStatus = 'ACTIVE' | 'REMOVED'
 
     type UsageType =
       | 'PRODUCT_CATEGORY_ICON'
@@ -670,6 +671,8 @@ declare namespace Api {
       | 'RICH_TEXT_IMAGE'
       | 'PRODUCT_DETAIL_HTML'
       | 'HOME_BANNER'
+      | 'HOME_CATEGORY_IMAGE'
+      | 'HOME_PRODUCT_IMAGE'
       | 'ORDER_ITEM_SNAPSHOT'
       | 'AFTER_SALE_EVIDENCE'
       | 'PAYMENT_CONFIG_CERT'
@@ -681,11 +684,14 @@ declare namespace Api {
       | 'PRODUCT_SPEC_VALUE'
       | 'GUARANTEE_SERVICE'
       | 'HOME_BANNER'
+      | 'HOME_CATEGORY_ITEM'
+      | 'HOME_PRODUCT_ITEM'
       | 'ORDER_ITEM'
       | 'AFTER_SALE'
       | 'PAYMENT_CONFIG'
 
     type AssetList = Api.Common.PaginatedResponse<Asset>
+    type AssetUsageList = Api.Common.PaginatedResponse<AssetUsage>
 
     interface AssetQueryParams extends Partial<Api.Common.CommonSearchParams> {
       keyword?: string
@@ -695,6 +701,10 @@ declare namespace Api {
       referenceStatus?: ReferenceStatus
       createdFrom?: string
       createdTo?: string
+    }
+
+    interface AssetUsageQueryParams extends Partial<Api.Common.CommonSearchParams> {
+      status?: UsageStatus
     }
 
     interface Asset {
@@ -738,7 +748,7 @@ declare namespace Api {
       snapshotUrl?: string | null
       sortOrder?: number | null
       protected: boolean
-      status: string
+      status: UsageStatus
       createdAt: string
       updatedAt: string
     }

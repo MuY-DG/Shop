@@ -392,7 +392,7 @@
       title="素材详情"
       size="50%"
       destroy-on-close
-      @closed="cancelDisplayNameEdit"
+      @closed="handleDetailClosed"
     >
       <div v-if="detailAsset" v-loading="detailLoading" class="asset-detail">
         <div class="asset-detail__hero">
@@ -509,37 +509,97 @@
 
         <div class="asset-detail__usage">
           <div class="asset-detail__usage-title">当前引用位置</div>
-          <ElTable v-if="currentUsages.length" :data="currentUsages" border size="small">
-            <ElTableColumn prop="usageType" label="引用角色" min-width="150" />
-            <ElTableColumn prop="ownerType" label="对象类型" min-width="130" />
-            <ElTableColumn prop="ownerLabel" label="归属对象" min-width="180" />
-            <ElTableColumn prop="createdAt" label="引用时间" width="170">
-              <template #default="{ row }">
-                {{ formatDateTime(row.createdAt) }}
-              </template>
-            </ElTableColumn>
-            <ElTableColumn prop="protected" label="保护" width="80">
-              <template #default="{ row }">
-                <ElTag size="small" :type="row.protected ? 'warning' : 'info'">
-                  {{ row.protected ? '是' : '否' }}
-                </ElTag>
-              </template>
-            </ElTableColumn>
-          </ElTable>
-          <ElEmpty v-else description="当前未被引用" :image-size="64" />
+          <div v-loading="currentUsageLoading">
+            <ElTable v-if="currentUsages.length" :data="currentUsages" border size="small">
+              <ElTableColumn label="引用用途" min-width="150">
+                <template #default="{ row }">
+                  {{ formatAssetUsageType(row.usageType) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="业务对象" min-width="130">
+                <template #default="{ row }">
+                  {{ formatAssetUsageOwnerType(row.ownerType) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="ownerLabel" label="归属对象" min-width="180" />
+              <ElTableColumn prop="createdAt" label="引用时间" width="170">
+                <template #default="{ row }">
+                  {{ formatDateTime(row.createdAt) }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn prop="protected" label="保护" width="80">
+                <template #default="{ row }">
+                  <ElTag size="small" :type="row.protected ? 'warning' : 'info'">
+                    {{ row.protected ? '是' : '否' }}
+                  </ElTag>
+                </template>
+              </ElTableColumn>
+            </ElTable>
+            <ElEmpty v-else-if="!currentUsageLoading" description="当前未被引用" :image-size="64" />
+            <div v-if="currentUsagePagination.total" class="asset-detail__usage-pagination">
+              <ElPagination
+                small
+                background
+                layout="total, prev, pager, next, sizes"
+                :page-sizes="[20, 50, 100]"
+                :current-page="currentUsagePagination.current"
+                :page-size="currentUsagePagination.size"
+                :total="currentUsagePagination.total"
+                @current-change="handleCurrentUsageCurrentChange"
+                @size-change="handleCurrentUsageSizeChange"
+              />
+            </div>
+          </div>
 
-          <ElCollapse v-if="historicalUsages.length" class="asset-detail__history">
-            <ElCollapseItem :title="`历史引用记录（${historicalUsages.length}）`" name="history">
-              <ElTable :data="historicalUsages" border size="small">
-                <ElTableColumn prop="usageType" label="引用角色" min-width="150" />
-                <ElTableColumn prop="ownerType" label="对象类型" min-width="130" />
-                <ElTableColumn prop="ownerLabel" label="归属对象" min-width="180" />
-                <ElTableColumn prop="updatedAt" label="取消时间" width="170">
-                  <template #default="{ row }">
-                    {{ formatDateTime(row.updatedAt) }}
-                  </template>
-                </ElTableColumn>
-              </ElTable>
+          <ElCollapse
+            v-model="historyActiveNames"
+            class="asset-detail__history"
+            @change="handleHistoryCollapseChange"
+          >
+            <ElCollapseItem :title="historicalUsageTitle" name="history">
+              <div v-loading="historicalUsageLoading">
+                <ElTable
+                  v-if="historicalUsages.length"
+                  :data="historicalUsages"
+                  border
+                  size="small"
+                >
+                  <ElTableColumn label="引用用途" min-width="150">
+                    <template #default="{ row }">
+                      {{ formatAssetUsageType(row.usageType) }}
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn label="业务对象" min-width="130">
+                    <template #default="{ row }">
+                      {{ formatAssetUsageOwnerType(row.ownerType) }}
+                    </template>
+                  </ElTableColumn>
+                  <ElTableColumn prop="ownerLabel" label="归属对象" min-width="180" />
+                  <ElTableColumn prop="updatedAt" label="取消时间" width="170">
+                    <template #default="{ row }">
+                      {{ formatDateTime(row.updatedAt) }}
+                    </template>
+                  </ElTableColumn>
+                </ElTable>
+                <ElEmpty
+                  v-else-if="historicalUsagesLoaded && !historicalUsageLoading"
+                  description="暂无历史引用"
+                  :image-size="64"
+                />
+                <div v-if="historicalUsagePagination.total" class="asset-detail__usage-pagination">
+                  <ElPagination
+                    small
+                    background
+                    layout="total, prev, pager, next, sizes"
+                    :page-sizes="[20, 50, 100]"
+                    :current-page="historicalUsagePagination.current"
+                    :page-size="historicalUsagePagination.size"
+                    :total="historicalUsagePagination.total"
+                    @current-change="handleHistoricalUsageCurrentChange"
+                    @size-change="handleHistoricalUsageSizeChange"
+                  />
+                </div>
+              </div>
             </ElCollapseItem>
           </ElCollapse>
         </div>
@@ -591,12 +651,14 @@
     deleteAssetFolder,
     fetchAssetDetail,
     fetchAssetFolders,
+    fetchAssetUsages,
     fetchAssets,
     updateAssetDisplayName,
     updateAssetFolder,
     updateAssetFolderPosition,
     uploadAsset
   } from '@/api/assets'
+  import { formatAssetUsageOwnerType, formatAssetUsageType } from './asset-usage-labels'
 
   defineOptions({ name: 'StorageFiles' })
 
@@ -650,10 +712,16 @@
   const folderDialogVisible = ref(false)
   const detailDrawerVisible = ref(false)
   const detailLoading = ref(false)
+  const currentUsageLoading = ref(false)
+  const historicalUsageLoading = ref(false)
+  const historicalUsagesLoaded = ref(false)
   const displayNameEditing = ref(false)
   const displayNameSaving = ref(false)
   const displayNameDraft = ref('')
   const detailAsset = ref<Api.Storage.AssetItem | null>(null)
+  const currentUsages = ref<Api.Storage.AssetUsage[]>([])
+  const historicalUsages = ref<Api.Storage.AssetUsage[]>([])
+  const historyActiveNames = ref<string[]>([])
   const movingAssetIds = ref<number[]>([])
   const moveTargetFolderId = ref<number>(0)
   const uploadFolderId = ref<number>(0)
@@ -668,13 +736,9 @@
   const syncingTableSelection = ref(false)
   let folderOrderSnapshot: Api.Storage.AssetFolder[] = []
   let listUploadDragDepth = 0
-
-  const currentUsages = computed(() =>
-    (detailAsset.value?.usages || []).filter((usage) => usage.status === 'ACTIVE')
-  )
-  const historicalUsages = computed(() =>
-    (detailAsset.value?.usages || []).filter((usage) => usage.status !== 'ACTIVE')
-  )
+  let detailRequestSequence = 0
+  let currentUsageRequestSequence = 0
+  let historicalUsageRequestSequence = 0
   const { copy } = useClipboard({ legacy: true })
   const { hasAuth } = useAuth()
   const canSortFolders = computed(() => hasAuth('asset:folder') && !folderSorting.value)
@@ -685,6 +749,21 @@
   const displayNameMaxLength = computed(() => Math.max(1, 255 - displayNameExtension.value.length))
 
   const pagination = reactive<Api.Common.PaginationParams>({ current: 1, size: 20, total: 0 })
+  const currentUsagePagination = reactive<Api.Common.PaginationParams>({
+    current: 1,
+    size: 20,
+    total: 0
+  })
+  const historicalUsagePagination = reactive<Api.Common.PaginationParams>({
+    current: 1,
+    size: 20,
+    total: 0
+  })
+  const historicalUsageTitle = computed(() =>
+    historicalUsagesLoaded.value
+      ? `历史引用记录（${historicalUsagePagination.total}）`
+      : '历史引用记录'
+  )
   const searchForm = ref<AssetSearchForm>({
     keyword: undefined,
     mediaKind: undefined,
@@ -1112,16 +1191,141 @@
 
   watch(viewMode, () => syncTableSelection())
 
+  const resetUsageState = () => {
+    currentUsages.value = []
+    historicalUsages.value = []
+    historicalUsagesLoaded.value = false
+    historyActiveNames.value = []
+    Object.assign(currentUsagePagination, { current: 1, size: 20, total: 0 })
+    Object.assign(historicalUsagePagination, { current: 1, size: 20, total: 0 })
+  }
+
   const openDetail = async (assetId: number) => {
+    const requestId = ++detailRequestSequence
+    currentUsageRequestSequence += 1
+    historicalUsageRequestSequence += 1
     displayNameEditing.value = false
     displayNameDraft.value = ''
+    detailAsset.value = null
+    resetUsageState()
     detailDrawerVisible.value = true
     detailLoading.value = true
+    currentUsageLoading.value = true
     try {
-      detailAsset.value = await fetchAssetDetail(assetId)
+      const [asset, usagePage] = await Promise.all([
+        fetchAssetDetail(assetId),
+        fetchAssetUsages(assetId, {
+          status: 'ACTIVE',
+          current: currentUsagePagination.current,
+          size: currentUsagePagination.size
+        })
+      ])
+      if (requestId !== detailRequestSequence) return
+      detailAsset.value = asset
+      currentUsages.value = usagePage.records
+      Object.assign(currentUsagePagination, {
+        current: usagePage.current,
+        size: usagePage.size,
+        total: usagePage.total
+      })
     } finally {
-      detailLoading.value = false
+      if (requestId === detailRequestSequence) {
+        detailLoading.value = false
+        currentUsageLoading.value = false
+      }
     }
+  }
+
+  const loadCurrentUsagePage = async () => {
+    const assetId = detailAsset.value?.id
+    if (!assetId) return
+    const requestId = ++currentUsageRequestSequence
+    currentUsageLoading.value = true
+    try {
+      const usagePage = await fetchAssetUsages(assetId, {
+        status: 'ACTIVE',
+        current: currentUsagePagination.current,
+        size: currentUsagePagination.size
+      })
+      if (requestId !== currentUsageRequestSequence || detailAsset.value?.id !== assetId) return
+      currentUsages.value = usagePage.records
+      Object.assign(currentUsagePagination, {
+        current: usagePage.current,
+        size: usagePage.size,
+        total: usagePage.total
+      })
+    } finally {
+      if (requestId === currentUsageRequestSequence) {
+        currentUsageLoading.value = false
+      }
+    }
+  }
+
+  const loadHistoricalUsagePage = async () => {
+    const assetId = detailAsset.value?.id
+    if (!assetId) return
+    const requestId = ++historicalUsageRequestSequence
+    historicalUsageLoading.value = true
+    try {
+      const usagePage = await fetchAssetUsages(assetId, {
+        status: 'REMOVED',
+        current: historicalUsagePagination.current,
+        size: historicalUsagePagination.size
+      })
+      if (requestId !== historicalUsageRequestSequence || detailAsset.value?.id !== assetId) return
+      historicalUsages.value = usagePage.records
+      historicalUsagesLoaded.value = true
+      Object.assign(historicalUsagePagination, {
+        current: usagePage.current,
+        size: usagePage.size,
+        total: usagePage.total
+      })
+    } finally {
+      if (requestId === historicalUsageRequestSequence) {
+        historicalUsageLoading.value = false
+      }
+    }
+  }
+
+  const handleCurrentUsageCurrentChange = (current: number) => {
+    currentUsagePagination.current = current
+    loadCurrentUsagePage()
+  }
+
+  const handleCurrentUsageSizeChange = (size: number) => {
+    currentUsagePagination.size = size
+    currentUsagePagination.current = 1
+    loadCurrentUsagePage()
+  }
+
+  const handleHistoricalUsageCurrentChange = (current: number) => {
+    historicalUsagePagination.current = current
+    loadHistoricalUsagePage()
+  }
+
+  const handleHistoricalUsageSizeChange = (size: number) => {
+    historicalUsagePagination.size = size
+    historicalUsagePagination.current = 1
+    loadHistoricalUsagePage()
+  }
+
+  const handleHistoryCollapseChange = (activeNames: unknown) => {
+    const names = Array.isArray(activeNames) ? activeNames : [activeNames]
+    if (names.includes('history') && !historicalUsagesLoaded.value) {
+      loadHistoricalUsagePage()
+    }
+  }
+
+  const handleDetailClosed = () => {
+    detailRequestSequence += 1
+    currentUsageRequestSequence += 1
+    historicalUsageRequestSequence += 1
+    detailAsset.value = null
+    detailLoading.value = false
+    currentUsageLoading.value = false
+    historicalUsageLoading.value = false
+    resetUsageState()
+    cancelDisplayNameEdit()
   }
 
   const buildAssetActions = (): ButtonMoreItem[] => [
@@ -1888,6 +2092,12 @@
 
   .asset-detail__usage-title {
     font-weight: 600;
+  }
+
+  .asset-detail__usage-pagination {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 10px;
   }
 
   .asset-detail__history {

@@ -23,6 +23,7 @@ import org.muybaby.shopserver.storage.dto.StorageAssetFolderRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetFolderResponse;
 import org.muybaby.shopserver.storage.dto.StorageAssetQueryRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
+import org.muybaby.shopserver.storage.dto.StorageAssetUsageQueryRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetUsageResponse;
 import org.muybaby.shopserver.storage.provider.StoredObject;
 import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
@@ -398,13 +399,25 @@ public class StorageService {
     }
 
     public StorageAssetResponse detail(Long assetId) {
+        return detail(assetId, true);
+    }
+
+    public StorageAssetResponse detail(Long assetId, boolean includeUsages) {
         AssetRow row = findLibraryAssetRow(assetId, false);
-        return toResponse(row, storageUsageService.usages(assetId));
+        return toResponse(row, includeUsages ? storageUsageService.usages(assetId) : null);
     }
 
     public List<StorageAssetUsageResponse> usages(Long assetId) {
         findLibraryAssetRow(assetId, false);
         return storageUsageService.usages(assetId);
+    }
+
+    public PageResult<StorageAssetUsageResponse> usagePage(
+            Long assetId,
+            StorageAssetUsageQueryRequest query
+    ) {
+        findLibraryAssetRow(assetId, false);
+        return storageUsageService.usagePage(assetId, query);
     }
 
     @Transactional
