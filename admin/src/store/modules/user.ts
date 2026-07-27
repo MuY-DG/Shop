@@ -43,6 +43,45 @@ import { resetRouterState } from '@/router/guards/beforeEach'
 import { useMenuStore } from './menu'
 import { StorageConfig } from '@/utils/storage/storage-config'
 
+const USER_STORE_STORAGE_KEY = 'user'
+const USER_STORE_PERSISTED_KEY = StorageConfig.generateStorageKey(USER_STORE_STORAGE_KEY)
+let userStorageListenerRegistered = false
+
+interface PersistedAuthState {
+  accessToken: string
+  refreshToken: string
+  isLogin: boolean
+}
+
+function parsePersistedAuthState(value: string | null): PersistedAuthState | undefined {
+  if (value === null) {
+    return {
+      accessToken: '',
+      refreshToken: '',
+      isLogin: false
+    }
+  }
+
+  try {
+    const stored = JSON.parse(value) as Record<string, unknown>
+    if (
+      typeof stored.accessToken !== 'string' ||
+      typeof stored.refreshToken !== 'string' ||
+      typeof stored.isLogin !== 'boolean'
+    ) {
+      return undefined
+    }
+
+    return {
+      accessToken: stored.accessToken,
+      refreshToken: stored.refreshToken,
+      isLogin: stored.isLogin
+    }
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * 用户状态管理
  * 管理用户登录状态、个人信息、语言设置、搜索历史、锁屏状态等
@@ -136,6 +175,71 @@ export const useUserStore = defineStore(
     }
 
     /**
+     * 从持久化状态同步认证字段。
+     *
+     * 浏览器标签页各自维护 Pinia 内存态，refresh token 旋转后需要让其他标签页
+     * 及时采用新令牌，避免继续消费已经失效的旧 refresh token。
+     */
+    const syncAuthFromStorage = (serialized?: string | null): boolean => {
+      const value =
+        serialized === undefined ? localStorage.getItem(USER_STORE_PERSISTED_KEY) : serialized
+      const stored = parsePersistedAuthState(value)
+      if (!stored) {
+        return false
+      }
+
+      const nextIsLogin = stored.isLogin && Boolean(stored.accessToken || stored.refreshToken)
+      if (
+        accessToken.value === stored.accessToken &&
+        refreshToken.value === stored.refreshToken &&
+        isLogin.value === nextIsLogin
+      ) {
+        return false
+      }
+
+      accessToken.value = stored.accessToken
+      refreshToken.value = stored.refreshToken
+      isLogin.value = nextIsLogin
+      if (!nextIsLogin) {
+        info.value = {}
+        isLock.value = false
+        lockPassword.value = ''
+      }
+      return true
+    }
+
+    /**
+     * 清理仅存在于当前标签页的路由与会话状态，并回到登录页。
+     *
+     * token 字段由调用方负责清空，这样跨标签页收到 storage 事件时不会再次写入
+     * localStorage，避免标签页之间反复触发同步。
+     */
+    const finishLocalLogout = () => {
+      sessionStorage.removeItem('iframeRoutes')
+      useMenuStore().setHomePath('')
+      resetRouterState(500)
+
+      const currentRoute = router.currentRoute.value
+      const redirect = currentRoute.name !== 'Login' ? currentRoute.fullPath : undefined
+      void router.push({
+        name: 'Login',
+        query: redirect ? { redirect } : undefined
+      })
+    }
+
+    if (!userStorageListenerRegistered && typeof window !== 'undefined') {
+      window.addEventListener('storage', (event) => {
+        if (event.storageArea === localStorage && event.key === USER_STORE_PERSISTED_KEY) {
+          const changed = syncAuthFromStorage(event.newValue)
+          if (changed && !isLogin.value) {
+            finishLocalLogout()
+          }
+        }
+      })
+      userStorageListenerRegistered = true
+    }
+
+    /**
      * 退出登录
      * 清空所有用户相关状态并跳转到登录页
      * 如果是同一账号重新登录，保留工作台标签页
@@ -160,19 +264,7 @@ export const useUserStore = defineStore(
       // 清空刷新令牌
       refreshToken.value = ''
       // 注意：不清空工作台标签页，等下次登录时根据用户判断
-      // 移除iframe路由缓存
-      sessionStorage.removeItem('iframeRoutes')
-      // 清空主页路径
-      useMenuStore().setHomePath('')
-      // 重置路由状态
-      resetRouterState(500)
-      // 跳转到登录页，携带当前路由作为 redirect 参数
-      const currentRoute = router.currentRoute.value
-      const redirect = currentRoute.path !== '/login' ? currentRoute.fullPath : undefined
-      router.push({
-        name: 'Login',
-        query: redirect ? { redirect } : undefined
-      })
+      finishLocalLogout()
     }
 
     /**
@@ -222,13 +314,14 @@ export const useUserStore = defineStore(
       setLockStatus,
       setLockPassword,
       setToken,
+      syncAuthFromStorage,
       logOut,
       checkAndClearWorktabs
     }
   },
   {
     persist: {
-      key: 'user',
+      key: USER_STORE_STORAGE_KEY,
       storage: localStorage
     }
   }

@@ -310,6 +310,156 @@ class RedisTokenStoreIntegrationTest {
     }
 
     @Test
+    void registeredFamiliesEnforceTheLimitAndReplaceTheSameDeviceAtomically() {
+        Instant loginAt = Instant.parse("2026-07-09T00:00:00Z");
+        TokenSession first = appSession("registered-first");
+        TokenPair firstPair = tokenService.issueRegistered(
+                TokenKind.APP,
+                first,
+                accountSession(first, "device-1", loginAt),
+                2
+        );
+        TokenSession second = appSession("registered-second");
+        tokenService.issueRegistered(
+                TokenKind.APP,
+                second,
+                accountSession(second, "device-2", loginAt.plusSeconds(60)),
+                2
+        );
+        TokenSession third = appSession("registered-third");
+        tokenService.issueRegistered(
+                TokenKind.APP,
+                third,
+                accountSession(third, "device-3", loginAt.plusSeconds(120)),
+                2
+        );
+
+        assertThat(tokenService.listSessions(TokenKind.APP, 9L))
+                .extracting(AccountSession::sessionId)
+                .containsExactly("registered-third", "registered-second");
+        assertThat(redisTemplate.hasKey("shop:auth:revoked:registered-first")).isTrue();
+        assertThat(tokenService.lookupAccessToken(firstPair.accessToken(), TokenKind.APP)).isEmpty();
+        assertAuthenticationRequired(() ->
+                tokenService.consumeRefreshToken(firstPair.refreshToken(), TokenKind.APP));
+
+        TokenSession replacement = appSession("registered-second-replacement");
+        tokenService.issueRegistered(
+                TokenKind.APP,
+                replacement,
+                accountSession(replacement, "device-2", loginAt.plusSeconds(180)),
+                2
+        );
+
+        assertThat(tokenService.listSessions(TokenKind.APP, 9L))
+                .extracting(AccountSession::sessionId)
+                .containsExactly("registered-second-replacement", "registered-third");
+        assertThat(redisTemplate.hasKey("shop:auth:revoked:registered-second")).isTrue();
+    }
+
+    @Test
+    void refreshConsumptionKeepsRedisMetadataAndRotationPreservesStableFields() {
+        Instant loginAt = Instant.parse("2026-07-09T00:00:00Z");
+        TokenSession original = appSession("registered-rotation");
+        TokenPair originalPair = tokenService.issueRegistered(
+                TokenKind.APP,
+                original,
+                accountSession(original, "device-rotation", loginAt),
+                1
+        );
+
+        assertThat(tokenService.consumeRefreshToken(originalPair.refreshToken(), TokenKind.APP))
+                .isEqualTo(original);
+        assertThat(redisTemplate.hasKey("shop:auth:session:registered-rotation")).isFalse();
+        assertThat(redisTemplate.hasKey("shop:auth:session-meta:registered-rotation")).isTrue();
+        assertThat(tokenService.listSessions(TokenKind.APP, 9L)).hasSize(1);
+
+        Instant refreshedAt = loginAt.plusSeconds(3600);
+        TokenSession next = new TokenSession(
+                original.sessionId(),
+                CURRENT_GENERATION_ID,
+                TokenKind.APP,
+                9L,
+                "openid",
+                List.of(),
+                List.of(),
+                refreshedAt
+        );
+        tokenService.issueRegistered(
+                TokenKind.APP,
+                next,
+                new AccountSession(
+                        original.sessionId(),
+                        TokenKind.APP,
+                        9L,
+                        "openid",
+                        "",
+                        "203.0.113.20",
+                        "",
+                        refreshedAt,
+                        refreshedAt
+                ),
+                1
+        );
+
+        AccountSession rotated = tokenService.listSessions(TokenKind.APP, 9L).getFirst();
+        assertThat(rotated.deviceId()).isEqualTo("device-rotation");
+        assertThat(rotated.loginAt()).isEqualTo(loginAt);
+        assertThat(rotated.lastSeenAt()).isEqualTo(refreshedAt);
+        assertThat(rotated.ipAddress()).isEqualTo("203.0.113.20");
+    }
+
+    @Test
+    void accountSessionManagementIsOwnerScopedAndPreservesMetadataTtlOnTouch() {
+        Instant loginAt = Instant.parse("2026-07-09T00:00:00Z");
+        TokenSession first = appSession("managed-first");
+        tokenService.issueRegistered(
+                TokenKind.APP,
+                first,
+                accountSession(first, "managed-device-1", loginAt),
+                0
+        );
+        TokenSession second = appSession("managed-second");
+        tokenService.issueRegistered(
+                TokenKind.APP,
+                second,
+                accountSession(second, "managed-device-2", loginAt.plusSeconds(60)),
+                0
+        );
+        String metadataKey = "shop:auth:session-meta:managed-second";
+        Long ttlBeforeTouch = redisTemplate.getExpire(metadataKey, TimeUnit.MILLISECONDS);
+
+        assertThat(tokenStore.revokeSubjectSession(
+                TokenKind.APP,
+                10L,
+                second.sessionId(),
+                Duration.ofDays(1)
+        )).isFalse();
+        assertThat(tokenStore.touchSession(
+                second.sessionId(),
+                TokenKind.APP,
+                loginAt.plusSeconds(300)
+        )).isTrue();
+        Long ttlAfterTouch = redisTemplate.getExpire(metadataKey, TimeUnit.MILLISECONDS);
+        assertThat(ttlAfterTouch).isLessThanOrEqualTo(ttlBeforeTouch);
+        assertThat(ttlAfterTouch).isGreaterThan(ttlBeforeTouch - 5000L);
+        assertThat(tokenStore.trimSubjectSessions(
+                TokenKind.APP,
+                9L,
+                1,
+                Duration.ofDays(1)
+        )).isEqualTo(1);
+        assertThat(tokenService.listSessions(TokenKind.APP, 9L))
+                .extracting(AccountSession::sessionId)
+                .containsExactly("managed-second");
+        assertThat(tokenStore.revokeSubjectSessions(
+                TokenKind.APP,
+                9L,
+                Duration.ofDays(1)
+        )).isEqualTo(1);
+        assertThat(tokenService.listSessions(TokenKind.APP, 9L)).isEmpty();
+    }
+
+    @Test
     void logoutFailsClosedWhenFamilyIndexHasWrongType() {
         TokenSession session = new TokenSession(
                 "family-corrupt-logout",
@@ -527,6 +677,24 @@ class RedisTokenStoreIntegrationTest {
                 List.of(),
                 List.of(),
                 Instant.parse("2026-07-09T00:00:00Z")
+        );
+    }
+
+    private AccountSession accountSession(
+            TokenSession tokenSession,
+            String deviceId,
+            Instant loginAt
+    ) {
+        return new AccountSession(
+                tokenSession.sessionId(),
+                tokenSession.kind(),
+                tokenSession.subjectId(),
+                tokenSession.subjectName(),
+                deviceId,
+                "198.51.100.8",
+                "integration-test-agent",
+                loginAt,
+                loginAt
         );
     }
 

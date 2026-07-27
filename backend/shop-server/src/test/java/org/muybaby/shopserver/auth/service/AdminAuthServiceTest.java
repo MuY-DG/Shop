@@ -4,13 +4,18 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.admin.rbac.entity.AdminUser;
 import org.muybaby.shopserver.admin.rbac.service.AdminRbacService;
 import org.muybaby.shopserver.auth.dto.AdminLoginRequest;
+import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
 import org.muybaby.shopserver.auth.login.AdminLoginAttempt;
 import org.muybaby.shopserver.auth.login.AdminLoginGuard;
+import org.muybaby.shopserver.auth.session.AdminClientContext;
+import org.muybaby.shopserver.auth.token.AccountSession;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenPair;
+import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Clock;
@@ -53,7 +58,8 @@ class AdminAuthServiceTest {
         when(passwordEncoder.matches(anyString(), anyString())).thenReturn(false);
 
         assertThatThrownBy(() -> adminAuthService.login(
-                new AdminLoginRequest("Missing", "123456"), "198.51.100.8"))
+                new AdminLoginRequest("Missing", "123456"),
+                client("198.51.100.8")))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.INVALID_CREDENTIALS));
 
@@ -96,10 +102,16 @@ class AdminAuthServiceTest {
         when(adminLoginGuard.start("Super", "198.51.100.9")).thenReturn(suppliedAttempt);
         when(adminLoginGuard.start(1L, "198.51.100.9")).thenReturn(userAttempt);
         when(adminRbacService.findEnabledUserByUsername("Super")).thenReturn(Optional.of(user));
+        when(adminRbacService.findEnabledUserById(1L)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("123456", "password-hash")).thenReturn(true);
         when(adminRbacService.roleCodesByUserId(1L)).thenReturn(List.of("R_SUPER"));
         when(adminRbacService.permissionMarksByUserId(1L)).thenReturn(List.of("system:log:read"));
-        when(opaqueTokenService.issue(eq(TokenKind.ADMIN), any()))
+        when(opaqueTokenService.issueRegistered(
+                eq(TokenKind.ADMIN),
+                any(),
+                any(AccountSession.class),
+                eq(0)
+        ))
                 .thenReturn(new TokenPair("adm_token", "adr_token", 7200L));
         doThrow(new IllegalStateException("last-login-database-secret"))
                 .when(writer)
@@ -107,13 +119,99 @@ class AdminAuthServiceTest {
 
         AdminLoginResult result = adminAuthService.login(
                 new AdminLoginRequest("Super", "123456"),
-                "198.51.100.9"
+                client("198.51.100.9")
         );
 
         assertThat(result.tokens().token()).isEqualTo("adm_token");
         assertThat(result.tokens().refreshToken()).isEqualTo("adr_token");
         var inOrder = inOrder(opaqueTokenService, writer);
-        inOrder.verify(opaqueTokenService).issue(eq(TokenKind.ADMIN), any());
+        inOrder.verify(opaqueTokenService).issueRegistered(
+                eq(TokenKind.ADMIN),
+                any(),
+                any(AccountSession.class),
+                eq(0)
+        );
         inOrder.verify(writer).update(1L, expectedLastLoginAt);
+    }
+
+    @Test
+    void logoutRevokesTheWholeAdminSession() {
+        AdminRbacService adminRbacService = mock(AdminRbacService.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        OpaqueTokenService opaqueTokenService = mock(OpaqueTokenService.class);
+        AdminLoginGuard adminLoginGuard = mock(AdminLoginGuard.class);
+        AdminLastLoginService adminLastLoginService = mock(AdminLastLoginService.class);
+        AdminAuthService adminAuthService = new AdminAuthService(
+                adminRbacService,
+                passwordEncoder,
+                opaqueTokenService,
+                adminLoginGuard,
+                adminLastLoginService
+        );
+        AuthenticatedPrincipal principal = new AuthenticatedPrincipal(
+                "admin-session",
+                TokenKind.ADMIN,
+                1L,
+                "Super",
+                List.of("R_SUPER"),
+                List.of("system:user:read")
+        );
+
+        adminAuthService.logout(principal);
+
+        verify(opaqueTokenService).revokeSession("admin-session", TokenKind.ADMIN);
+    }
+
+    @Test
+    void refreshFailsClosedWhenTheRegisteredSessionNoLongerExists() {
+        AdminRbacService adminRbacService = mock(AdminRbacService.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        OpaqueTokenService opaqueTokenService = mock(OpaqueTokenService.class);
+        AdminLoginGuard adminLoginGuard = mock(AdminLoginGuard.class);
+        AdminLastLoginService adminLastLoginService = mock(AdminLastLoginService.class);
+        AdminAuthService adminAuthService = new AdminAuthService(
+                adminRbacService,
+                passwordEncoder,
+                opaqueTokenService,
+                adminLoginGuard,
+                adminLastLoginService
+        );
+        AdminUser user = new AdminUser(
+                1L,
+                "Super",
+                "password-hash",
+                "Super",
+                "super@shop.local",
+                "",
+                "ENABLED",
+                null,
+                LocalDateTime.of(2026, 1, 1, 0, 0),
+                LocalDateTime.of(2026, 1, 1, 0, 0)
+        );
+        TokenSession session = TokenSession.admin(
+                "admin-session",
+                1L,
+                "Super",
+                List.of("R_SUPER"),
+                List.of("system:user:read"),
+                Instant.parse("2026-07-26T03:04:05Z")
+        );
+        when(opaqueTokenService.consumeRefreshToken("refresh-token", TokenKind.ADMIN)).thenReturn(session);
+        when(adminRbacService.findEnabledUserById(1L)).thenReturn(Optional.of(user));
+        when(opaqueTokenService.renewSession("admin-session", TokenKind.ADMIN)).thenReturn(false);
+
+        assertThatThrownBy(() -> adminAuthService.refresh(new RefreshTokenRequest("refresh-token")))
+                .isInstanceOfSatisfying(BusinessException.class, ex ->
+                        assertThat(ex.errorCode()).isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED));
+
+        verify(opaqueTokenService).revokeSession("admin-session", TokenKind.ADMIN);
+    }
+
+    private AdminClientContext client(String ipAddress) {
+        return new AdminClientContext(
+                "device-hash",
+                ipAddress,
+                "Mozilla/5.0"
+        );
     }
 }

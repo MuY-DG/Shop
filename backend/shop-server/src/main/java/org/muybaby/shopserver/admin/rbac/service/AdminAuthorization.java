@@ -6,8 +6,19 @@ public record AdminAuthorization(
         Long userId,
         String username,
         List<String> roles,
-        List<String> permissions
+        List<String> permissions,
+        int maxSessions,
+        long authVersion
 ) {
+    public AdminAuthorization(
+            Long userId,
+            String username,
+            List<String> roles,
+            List<String> permissions
+    ) {
+        this(userId, username, roles, permissions, 0, 0L);
+    }
+
     public AdminAuthorization {
         roles = roles == null ? List.of() : List.copyOf(roles);
         permissions = permissions == null ? List.of() : List.copyOf(permissions);

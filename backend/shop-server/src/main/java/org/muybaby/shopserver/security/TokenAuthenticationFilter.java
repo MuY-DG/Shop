@@ -9,6 +9,8 @@ import org.muybaby.shopserver.admin.rbac.service.AdminRbacService;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -19,6 +21,7 @@ import java.util.Optional;
 @Component
 public class TokenAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(TokenAuthenticationFilter.class);
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final PathTokenKindResolver pathTokenKindResolver;
@@ -48,6 +51,7 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                     Optional<TokenSession> session = opaqueTokenService.lookupAccessToken(token, requiredKind.get())
                             .flatMap(this::withLiveAdminAuthorization);
                     if (session.isPresent()) {
+                        touchAdminSessionBestEffort(session.get());
                         SecurityContextHolder.getContext().setAuthentication(new TokenAuthentication(session.get()));
                         authenticationSet = true;
                     }
@@ -61,12 +65,24 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         }
     }
 
+    private void touchAdminSessionBestEffort(TokenSession session) {
+        if (session.kind() != TokenKind.ADMIN) {
+            return;
+        }
+        try {
+            opaqueTokenService.touchSession(session.sessionId(), TokenKind.ADMIN);
+        } catch (RuntimeException ex) {
+            LOGGER.warn("Failed to update admin session activity for {}", session.sessionId(), ex);
+        }
+    }
+
     private Optional<TokenSession> withLiveAdminAuthorization(TokenSession storedSession) {
         if (storedSession.kind() != TokenKind.ADMIN) {
             return Optional.of(storedSession);
         }
 
         return adminRbacService.findEnabledAuthorizationByUserId(storedSession.subjectId())
+                .filter(authorization -> storedSession.authVersion() == authorization.authVersion())
                 .map(authorization -> liveAdminSession(storedSession, authorization));
     }
 
@@ -79,6 +95,7 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                 authorization.username(),
                 authorization.roles(),
                 authorization.permissions(),
+                storedSession.authVersion(),
                 storedSession.issuedAt()
         );
     }

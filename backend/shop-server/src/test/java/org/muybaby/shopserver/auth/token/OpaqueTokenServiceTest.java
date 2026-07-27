@@ -264,6 +264,16 @@ class OpaqueTokenServiceTest {
         }
 
         @Override
+        public boolean saveRegisteredFamily(
+                AccountSession accountSession,
+                int maxSessions,
+                List<TokenGrant> grants,
+                Duration revokedTtl
+        ) {
+            return saveFamily(accountSession.sessionId(), grants);
+        }
+
+        @Override
         public Optional<TokenSession> find(String key) {
             return Optional.empty();
         }
@@ -275,6 +285,46 @@ class OpaqueTokenServiceTest {
 
         @Override
         public void revokeSession(String sessionId, Duration revokedTtl) {
+        }
+
+        @Override
+        public List<AccountSession> listSessions(TokenKind kind, Long subjectId) {
+            return List.of();
+        }
+
+        @Override
+        public boolean revokeSubjectSession(
+                TokenKind kind,
+                Long subjectId,
+                String sessionId,
+                Duration revokedTtl
+        ) {
+            return false;
+        }
+
+        @Override
+        public int revokeSubjectSessions(TokenKind kind, Long subjectId, Duration revokedTtl) {
+            return 0;
+        }
+
+        @Override
+        public int trimSubjectSessions(
+                TokenKind kind,
+                Long subjectId,
+                int maxSessions,
+                Duration revokedTtl
+        ) {
+            return 0;
+        }
+
+        @Override
+        public boolean renewSession(String sessionId, TokenKind kind, Duration ttl) {
+            return false;
+        }
+
+        @Override
+        public boolean touchSession(String sessionId, TokenKind kind, Instant lastSeenAt) {
+            return false;
         }
 
         @Override

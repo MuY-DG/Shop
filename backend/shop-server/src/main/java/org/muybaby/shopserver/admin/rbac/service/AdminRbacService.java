@@ -23,7 +23,7 @@ public class AdminRbacService {
     public Optional<AdminUser> findEnabledUserByUsername(String username) {
         return jdbcClient.sql("""
                         select id, username, password_hash, display_name, email, avatar, status,
-                               last_login_at, created_at, updated_at
+                               max_sessions, auth_version, last_login_at, created_at, updated_at
                         from admin_user
                         where username = :username and status = 'ENABLED'
                         """)
@@ -35,7 +35,7 @@ public class AdminRbacService {
     public Optional<AdminUser> findEnabledUserById(Long userId) {
         return jdbcClient.sql("""
                         select id, username, password_hash, display_name, email, avatar, status,
-                               last_login_at, created_at, updated_at
+                               max_sessions, auth_version, last_login_at, created_at, updated_at
                         from admin_user
                         where id = :userId and status = 'ENABLED'
                         """)
@@ -78,6 +78,8 @@ public class AdminRbacService {
         List<AuthorizationRow> rows = jdbcClient.sql("""
                         select u.id as user_id,
                                u.username,
+                               u.max_sessions,
+                               u.auth_version,
                                r.code as role_code,
                                p.auth_mark
                         from admin_user u
@@ -92,6 +94,8 @@ public class AdminRbacService {
                 .query((rs, rowNum) -> new AuthorizationRow(
                         rs.getLong("user_id"),
                         rs.getString("username"),
+                        rs.getInt("max_sessions"),
+                        rs.getLong("auth_version"),
                         rs.getString("role_code"),
                         rs.getString("auth_mark")
                 ))
@@ -116,7 +120,9 @@ public class AdminRbacService {
                 first.userId(),
                 first.username(),
                 List.copyOf(roles),
-                List.copyOf(permissions)
+                List.copyOf(permissions),
+                first.maxSessions(),
+                first.authVersion()
         ));
     }
 
@@ -129,6 +135,8 @@ public class AdminRbacService {
                 rs.getString("email"),
                 rs.getString("avatar"),
                 rs.getString("status"),
+                rs.getInt("max_sessions"),
+                rs.getLong("auth_version"),
                 rs.getTimestamp("last_login_at") == null ? null : rs.getTimestamp("last_login_at").toLocalDateTime(),
                 rs.getTimestamp("created_at").toLocalDateTime(),
                 rs.getTimestamp("updated_at").toLocalDateTime()
@@ -138,6 +146,8 @@ public class AdminRbacService {
     private record AuthorizationRow(
             Long userId,
             String username,
+            int maxSessions,
+            long authVersion,
             String roleCode,
             String authMark
     ) {

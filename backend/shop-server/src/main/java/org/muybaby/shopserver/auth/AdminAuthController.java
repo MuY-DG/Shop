@@ -3,32 +3,44 @@ package org.muybaby.shopserver.auth;
 import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletRequest;
 import org.muybaby.shopserver.auth.dto.AdminLoginRequest;
+import org.muybaby.shopserver.auth.dto.AdminSessionResponse;
 import org.muybaby.shopserver.auth.dto.CurrentAdminUserResponse;
 import org.muybaby.shopserver.auth.dto.LoginTokenResponse;
 import org.muybaby.shopserver.auth.dto.RefreshTokenRequest;
+import org.muybaby.shopserver.auth.session.AdminClientContextResolver;
+import org.muybaby.shopserver.auth.session.AdminSessionManagementService;
 import org.muybaby.shopserver.auth.service.AdminAuthService;
 import org.muybaby.shopserver.auth.service.AdminLoginResult;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.web.RequestLogContext;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
-import org.muybaby.shopserver.security.web.ClientIpResolver;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/admin/auth")
 public class AdminAuthController {
 
     private final AdminAuthService adminAuthService;
-    private final ClientIpResolver clientIpResolver;
+    private final AdminClientContextResolver adminClientContextResolver;
+    private final AdminSessionManagementService adminSessionManagementService;
 
-    public AdminAuthController(AdminAuthService adminAuthService, ClientIpResolver clientIpResolver) {
+    public AdminAuthController(
+            AdminAuthService adminAuthService,
+            AdminClientContextResolver adminClientContextResolver,
+            AdminSessionManagementService adminSessionManagementService
+    ) {
         this.adminAuthService = adminAuthService;
-        this.clientIpResolver = clientIpResolver;
+        this.adminClientContextResolver = adminClientContextResolver;
+        this.adminSessionManagementService = adminSessionManagementService;
     }
 
     @PostMapping("/login")
@@ -40,7 +52,7 @@ public class AdminAuthController {
         RequestLogContext.markLoginCandidate(servletRequest, username);
         AdminLoginResult result = adminAuthService.login(
                 request,
-                clientIpResolver.resolve(servletRequest)
+                adminClientContextResolver.resolve(servletRequest)
         );
         RequestLogContext.markLoginSuccess(
                 servletRequest,
@@ -53,6 +65,37 @@ public class AdminAuthController {
     @PostMapping("/refresh")
     public ApiResponse<LoginTokenResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
         return ApiResponse.success(adminAuthService.refresh(request));
+    }
+
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(@AuthenticationPrincipal AuthenticatedPrincipal principal) {
+        adminAuthService.logout(principal);
+        return ApiResponse.success();
+    }
+
+    @GetMapping("/sessions")
+    public ApiResponse<List<AdminSessionResponse>> sessions(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal
+    ) {
+        return ApiResponse.success(adminSessionManagementService.sessions(
+                principal.subjectId(),
+                principal.sessionId()
+        ));
+    }
+
+    @DeleteMapping("/sessions/{sessionId}")
+    public ApiResponse<Void> revokeSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable String sessionId
+    ) {
+        adminSessionManagementService.revokeSession(principal.subjectId(), sessionId);
+        return ApiResponse.success();
+    }
+
+    @PostMapping("/logout-all")
+    public ApiResponse<Void> logoutAll(@AuthenticationPrincipal AuthenticatedPrincipal principal) {
+        adminSessionManagementService.revokeAllSessions(principal.subjectId());
+        return ApiResponse.success();
     }
 
     @GetMapping("/current-user")

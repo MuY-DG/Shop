@@ -37,6 +37,10 @@
             <ArtSvgIcon icon="ri:user-3-line" />
             <span>{{ $t('topBar.user.userCenter') }}</span>
           </li>
+          <li class="btn-item" @click="openSessionDrawer">
+            <ArtSvgIcon icon="ri:device-line" />
+            <span>登录设备</span>
+          </li>
           <li class="btn-item" @click="toDocs()">
             <ArtSvgIcon icon="ri:book-2-line" />
             <span>{{ $t('topBar.user.docs') }}</span>
@@ -57,6 +61,8 @@
       </div>
     </template>
   </ElPopover>
+
+  <AdminSessionDrawer v-model="sessionDrawerVisible" mode="self" />
 </template>
 
 <script setup lang="ts">
@@ -64,6 +70,8 @@
   import { useRouter } from 'vue-router'
   import { ElMessageBox } from 'element-plus'
   import { useUserStore } from '@/store/modules/user'
+  import { logoutAdminSession } from '@/utils/auth-session'
+  import AdminSessionDrawer from '@/components/business/admin-session-drawer/index.vue'
   import { WEB_LINKS } from '@/utils/constants'
   import { mittBus } from '@/utils/sys'
 
@@ -75,6 +83,7 @@
 
   const { getUserInfo: userInfo } = storeToRefs(userStore)
   const userMenuPopover = ref()
+  const sessionDrawerVisible = ref(false)
 
   /**
    * 页面跳转
@@ -105,6 +114,11 @@
     mittBus.emit('openLockScreen')
   }
 
+  const openSessionDrawer = (): void => {
+    closeUserMenu()
+    sessionDrawerVisible.value = true
+  }
+
   /**
    * 用户登出确认
    */
@@ -116,7 +130,7 @@
         cancelButtonText: t('common.cancel'),
         customClass: 'login-out-dialog'
       }).then(() => {
-        userStore.logOut()
+        void logoutAdminSession()
       })
     }, 200)
   }

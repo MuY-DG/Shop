@@ -18,7 +18,15 @@ export const systemRoutes: AppRouteRecord = {
         title: 'menus.system.user',
         icon: 'ri:user-line',
         keepAlive: true,
-        roles: ['R_SUPER', 'R_ADMIN']
+        roles: ['R_SUPER', 'R_ADMIN'],
+        authList: [
+          { title: '查看管理员', authMark: 'system:user:read' },
+          { title: '创建管理员', authMark: 'system:user:create' },
+          { title: '编辑管理员', authMark: 'system:user:update' },
+          { title: '停用管理员', authMark: 'system:user:disable' },
+          { title: '查看登录设备', authMark: 'system:user:session:read' },
+          { title: '下线登录设备', authMark: 'system:user:session:revoke' }
+        ]
       }
     },
     {

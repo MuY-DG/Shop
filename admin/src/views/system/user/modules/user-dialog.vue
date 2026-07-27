@@ -2,11 +2,11 @@
   <ElDialog
     v-model="dialogVisible"
     :title="type === 'add' ? '新增管理员' : '编辑管理员'"
-    width="520px"
+    width="560px"
     align-center
     destroy-on-close
   >
-    <ElForm ref="formRef" :model="form" :rules="rules" label-width="96px">
+    <ElForm ref="formRef" :model="form" :rules="rules" label-width="126px">
       <ElFormItem label="用户名" prop="username">
         <ElInput
           v-model="form.username"
@@ -28,6 +28,14 @@
           :placeholder="type === 'add' ? '至少 6 位' : '留空则不修改'"
         />
       </ElFormItem>
+      <ElAlert
+        v-if="type === 'edit' && form.password"
+        class="force-logout-alert"
+        title="保存新密码后，该管理员在所有设备上的登录都会立即失效，需要重新登录。"
+        type="warning"
+        show-icon
+        :closable="false"
+      />
       <ElFormItem label="头像地址" prop="avatar">
         <ElInput v-model="form.avatar" placeholder="可选" />
       </ElFormItem>
@@ -47,12 +55,35 @@
           />
         </ElSelect>
       </ElFormItem>
+      <ElFormItem label="同时登录设备上限" prop="maxSessions">
+        <div class="session-limit-field">
+          <ElInputNumber
+            v-model="form.maxSessions"
+            :min="0"
+            :precision="0"
+            :step="1"
+            controls-position="right"
+          />
+          <div class="form-tip">
+            0 表示不限制，1
+            表示只能单设备登录，其他数字表示最多同时登录的设备数；保存后，超出上限的较早会话会立即下线。
+          </div>
+        </div>
+      </ElFormItem>
       <ElFormItem v-if="type === 'edit'" label="状态" prop="status">
         <ElRadioGroup v-model="form.status">
           <ElRadio value="ENABLED">启用</ElRadio>
           <ElRadio value="DISABLED">停用</ElRadio>
         </ElRadioGroup>
       </ElFormItem>
+      <ElAlert
+        v-if="type === 'edit' && userData?.status !== 'DISABLED' && form.status === 'DISABLED'"
+        class="force-logout-alert"
+        title="停用后，该管理员在所有设备上的登录都会立即失效。"
+        type="warning"
+        show-icon
+        :closable="false"
+      />
     </ElForm>
 
     <template #footer>
@@ -66,6 +97,7 @@
   import type { FormInstance, FormRules } from 'element-plus'
   import { ElMessage } from 'element-plus'
   import { createAdminUser, fetchGetRoleList, updateAdminUser } from '@/api/system-manage'
+  import { useUserStore } from '@/store/modules/user'
   import type { DialogType } from '@/types'
 
   interface Props {
@@ -86,6 +118,7 @@
   })
 
   const formRef = ref<FormInstance>()
+  const userStore = useUserStore()
   const submitting = ref(false)
   const roleOptions = ref<Api.SystemManage.RoleListItem[]>([])
   const form = reactive({
@@ -95,6 +128,7 @@
     password: '',
     avatar: '',
     status: 'ENABLED' as Api.SystemManage.AdminUserStatus,
+    maxSessions: 0,
     roleIds: [] as number[]
   })
 
@@ -118,6 +152,18 @@
       { type: 'email', message: '邮箱格式不正确', trigger: 'blur' }
     ],
     password: [{ validator: validatePassword, trigger: 'blur' }],
+    maxSessions: [
+      {
+        validator: (_rule: unknown, value: number, callback: (error?: Error) => void) => {
+          if (!Number.isInteger(value) || value < 0) {
+            callback(new Error('设备上限必须是大于等于 0 的整数'))
+            return
+          }
+          callback()
+        },
+        trigger: 'change'
+      }
+    ],
     roleIds: [
       { type: 'array', required: true, min: 1, message: '请至少选择一个角色', trigger: 'change' }
     ]
@@ -131,6 +177,7 @@
       password: '',
       avatar: props.userData?.avatar || '',
       status: props.userData?.status || 'ENABLED',
+      maxSessions: props.userData?.maxSessions ?? 0,
       roleIds: props.userData?.roleIds ? [...props.userData.roleIds] : []
     })
     nextTick(() => formRef.value?.clearValidate())
@@ -162,19 +209,28 @@
           email: form.email,
           password: form.password,
           avatar: form.avatar,
+          maxSessions: form.maxSessions,
           roleIds: form.roleIds
         })
         ElMessage.success('管理员创建成功')
       } else if (props.userData) {
+        const shouldLogoutCurrent =
+          props.userData.id === userStore.info.userId && Boolean(form.password)
         await updateAdminUser(props.userData.id, {
           displayName: form.displayName,
           email: form.email,
           password: form.password || undefined,
           avatar: form.avatar,
           status: form.status,
+          maxSessions: form.maxSessions,
           roleIds: form.roleIds
         })
         ElMessage.success('管理员更新成功')
+        if (shouldLogoutCurrent) {
+          dialogVisible.value = false
+          userStore.logOut()
+          return
+        }
       }
       dialogVisible.value = false
       emit('success')
@@ -183,3 +239,21 @@
     }
   }
 </script>
+
+<style scoped>
+  .force-logout-alert {
+    margin-bottom: 18px;
+  }
+
+  .session-limit-field,
+  .session-limit-field :deep(.el-input-number) {
+    width: 100%;
+  }
+
+  .form-tip {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--el-text-color-secondary);
+  }
+</style>

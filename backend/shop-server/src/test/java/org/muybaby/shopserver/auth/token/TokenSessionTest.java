@@ -27,6 +27,7 @@ class TokenSessionTest {
         );
 
         assertThat(session.generationId()).isEqualTo("family-1");
+        assertThat(session.authVersion()).isZero();
     }
 
     @Test
@@ -106,6 +107,20 @@ class TokenSessionTest {
 
         assertThat(session.roles()).isEmpty();
         assertThat(session.permissions()).isEmpty();
+    }
+
+    @Test
+    void adminFactoryCarriesTheAccountAuthenticationVersion() {
+        TokenSession session = TokenSession.admin(
+                1L,
+                "Super",
+                List.of("R_SUPER"),
+                List.of("system:user:read"),
+                7L,
+                Instant.parse("2026-07-06T12:00:00Z")
+        );
+
+        assertThat(session.authVersion()).isEqualTo(7L);
     }
 
     private TokenSession sessionWithGeneration(String generationId) {

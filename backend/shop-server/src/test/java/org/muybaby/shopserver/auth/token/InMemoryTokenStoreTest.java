@@ -214,6 +214,168 @@ class InMemoryTokenStoreTest {
         assertThat(store.find("legacy-refresh-key")).isEmpty();
     }
 
+    @Test
+    void registeredLoginReplacesTheSameDeviceAndRevokesItsOldFamily() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-07-06T12:00:00Z"));
+        InMemoryTokenStore store = new InMemoryTokenStore(clock);
+        TokenSession first = appSession(clock, "registered-first");
+        store.saveRegisteredFamily(
+                accountSession(clock, first, "device-1"),
+                0,
+                List.of(
+                        grant("first-access", first, Duration.ofHours(1)),
+                        grant("first-refresh", first, Duration.ofDays(1))
+                ),
+                Duration.ofDays(1)
+        );
+        clock.advance(Duration.ofMinutes(1));
+        TokenSession second = appSession(clock, "registered-second");
+
+        assertThat(store.saveRegisteredFamily(
+                accountSession(clock, second, "device-1"),
+                0,
+                List.of(
+                        grant("second-access", second, Duration.ofHours(1)),
+                        grant("second-refresh", second, Duration.ofDays(1))
+                ),
+                Duration.ofDays(1)
+        )).isTrue();
+
+        assertThat(store.listSessions(TokenKind.APP, 9L))
+                .extracting(AccountSession::sessionId)
+                .containsExactly("registered-second");
+        assertThat(store.isSessionRevoked("registered-first")).isTrue();
+        assertThat(store.find("first-access")).isEmpty();
+        assertThat(store.find("first-refresh")).isEmpty();
+        assertThat(store.find("second-access")).contains(second);
+    }
+
+    @Test
+    void registeredLoginAtomicallyEvictsTheOldestSessionAtTheLimit() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-07-06T12:00:00Z"));
+        InMemoryTokenStore store = new InMemoryTokenStore(clock);
+        for (int index = 1; index <= 3; index++) {
+            TokenSession session = appSession(clock, "limited-" + index);
+            assertThat(store.saveRegisteredFamily(
+                    accountSession(clock, session, "device-" + index),
+                    2,
+                    List.of(
+                            grant("limited-access-" + index, session, Duration.ofHours(1)),
+                            grant("limited-refresh-" + index, session, Duration.ofDays(1))
+                    ),
+                    Duration.ofDays(1)
+            )).isTrue();
+            clock.advance(Duration.ofMinutes(1));
+        }
+
+        assertThat(store.listSessions(TokenKind.APP, 9L))
+                .extracting(AccountSession::sessionId)
+                .containsExactly("limited-3", "limited-2");
+        assertThat(store.isSessionRevoked("limited-1")).isTrue();
+        assertThat(store.find("limited-access-1")).isEmpty();
+        assertThat(store.find("limited-refresh-1")).isEmpty();
+    }
+
+    @Test
+    void refreshConsumptionKeepsRegistrationAndTheNextGenerationPreservesLoginMetadata() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-07-06T12:00:00Z"));
+        InMemoryTokenStore store = new InMemoryTokenStore(clock);
+        TokenSession first = appSession(clock, "rotating-session");
+        AccountSession original = accountSession(clock, first, "device-1");
+        store.saveRegisteredFamily(
+                original,
+                1,
+                List.of(
+                        grant("old-access", first, Duration.ofHours(1)),
+                        grant("old-refresh", first, Duration.ofDays(1))
+                ),
+                Duration.ofDays(1)
+        );
+
+        assertThat(store.consumeRefreshAndRevokeFamily("old-refresh", Duration.ofDays(1)))
+                .contains(first);
+        assertThat(store.listSessions(TokenKind.APP, 9L)).containsExactly(original);
+
+        clock.advance(Duration.ofHours(1));
+        TokenSession next = new TokenSession(
+                first.sessionId(),
+                "22222222-2222-4222-8222-222222222222",
+                TokenKind.APP,
+                9L,
+                "openid",
+                List.of(),
+                List.of(),
+                clock.instant()
+        );
+        AccountSession refreshObservation = new AccountSession(
+                first.sessionId(),
+                TokenKind.APP,
+                9L,
+                "openid",
+                "",
+                "203.0.113.8",
+                "",
+                clock.instant(),
+                clock.instant()
+        );
+        store.saveRegisteredFamily(
+                refreshObservation,
+                1,
+                List.of(
+                        grant("new-access", next, Duration.ofHours(1)),
+                        grant("new-refresh", next, Duration.ofDays(1))
+                ),
+                Duration.ofDays(1)
+        );
+
+        AccountSession refreshed = store.listSessions(TokenKind.APP, 9L).getFirst();
+        assertThat(refreshed.sessionId()).isEqualTo(first.sessionId());
+        assertThat(refreshed.deviceId()).isEqualTo("device-1");
+        assertThat(refreshed.loginAt()).isEqualTo(original.loginAt());
+        assertThat(refreshed.lastSeenAt()).isEqualTo(clock.instant());
+        assertThat(refreshed.ipAddress()).isEqualTo("203.0.113.8");
+        assertThat(store.find("new-access")).contains(next);
+    }
+
+    @Test
+    void subjectRevokeTrimRenewAndTouchOperateOnlyOnOwnedRegistrations() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-07-06T12:00:00Z"));
+        InMemoryTokenStore store = new InMemoryTokenStore(clock);
+        for (int index = 1; index <= 3; index++) {
+            TokenSession session = appSession(clock, "managed-" + index);
+            store.saveRegisteredFamily(
+                    accountSession(clock, session, "managed-device-" + index),
+                    0,
+                    List.of(grant("managed-token-" + index, session, Duration.ofHours(1))),
+                    Duration.ofDays(1)
+            );
+            clock.advance(Duration.ofMinutes(1));
+        }
+
+        assertThat(store.trimSubjectSessions(TokenKind.APP, 9L, 2, Duration.ofDays(1)))
+                .isEqualTo(1);
+        assertThat(store.revokeSubjectSession(
+                TokenKind.APP,
+                10L,
+                "managed-2",
+                Duration.ofDays(1)
+        )).isFalse();
+        assertThat(store.touchSession(
+                "managed-2",
+                TokenKind.APP,
+                Instant.parse("2026-07-06T13:00:00Z")
+        )).isTrue();
+        assertThat(store.renewSession("managed-2", TokenKind.APP, Duration.ofDays(2))).isTrue();
+        assertThat(store.listSessions(TokenKind.APP, 9L))
+                .filteredOn(session -> session.sessionId().equals("managed-2"))
+                .singleElement()
+                .extracting(AccountSession::lastSeenAt)
+                .isEqualTo(Instant.parse("2026-07-06T13:00:00Z"));
+        assertThat(store.revokeSubjectSessions(TokenKind.APP, 9L, Duration.ofDays(1)))
+                .isEqualTo(2);
+        assertThat(store.listSessions(TokenKind.APP, 9L)).isEmpty();
+    }
+
     private TokenSession appSession(Clock clock, String sessionId) {
         return new TokenSession(
                 sessionId,
@@ -229,6 +391,20 @@ class InMemoryTokenStoreTest {
 
     private TokenGrant grant(String key, TokenSession session, Duration ttl) {
         return new TokenGrant(key, session, ttl);
+    }
+
+    private AccountSession accountSession(Clock clock, TokenSession session, String deviceId) {
+        return new AccountSession(
+                session.sessionId(),
+                session.kind(),
+                session.subjectId(),
+                session.subjectName(),
+                deviceId,
+                "198.51.100.8",
+                "test-agent",
+                clock.instant(),
+                clock.instant()
+        );
     }
 
     @SuppressWarnings("unchecked")

@@ -42,6 +42,7 @@ class AdminManagementControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.records[0].username").value("Super"))
+                .andExpect(jsonPath("$.data.records[0].maxSessions").value(0))
                 .andExpect(jsonPath("$.data.records[0].roleCodes", containsInAnyOrder("R_SUPER")));
 
         long roleId = createRole(token, "R_SUPPORT");
@@ -70,7 +71,8 @@ class AdminManagementControllerTest {
                                   "email":"support@shop.local",
                                   "password":"123456",
                                   "avatar":"",
-                                  "roleIds":[%d]
+                                  "roleIds":[%d],
+                                  "maxSessions":2
                                 }
                                 """.formatted(roleId)))
                 .andExpect(status().isOk())
@@ -84,6 +86,7 @@ class AdminManagementControllerTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].maxSessions").value(2))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();

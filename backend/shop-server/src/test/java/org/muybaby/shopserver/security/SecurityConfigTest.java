@@ -255,7 +255,17 @@ class SecurityConfigTest {
     }
 
     private String adminToken(List<String> roles, List<String> permissions) {
-        TokenSession session = TokenSession.admin(1L, "admin", roles, permissions, Instant.now());
+        long authVersion = jdbcClient.sql("select auth_version from admin_user where id = 1")
+                .query(Long.class)
+                .single();
+        TokenSession session = TokenSession.admin(
+                1L,
+                "admin",
+                roles,
+                permissions,
+                authVersion,
+                Instant.now()
+        );
         return opaqueTokenService.issue(TokenKind.ADMIN, session).accessToken();
     }
 

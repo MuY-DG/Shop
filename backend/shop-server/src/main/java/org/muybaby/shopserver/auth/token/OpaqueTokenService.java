@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -30,9 +31,7 @@ public class OpaqueTokenService {
     }
 
     public TokenPair issue(TokenKind kind, TokenSession session) {
-        if (session.kind() != kind) {
-            throw new IllegalArgumentException("Token session kind does not match requested token kind");
-        }
+        validateSession(kind, session);
         Duration accessTtl = accessTtl(kind);
         Duration refreshTtl = refreshTtl(kind);
         String accessToken = kind.accessPrefix() + randomTokenBody();
@@ -41,6 +40,44 @@ public class OpaqueTokenService {
                 new TokenGrant(key(kind, "access", accessToken), session, accessTtl),
                 new TokenGrant(key(kind, "refresh", refreshToken), session, refreshTtl)
         ));
+        if (!saved) {
+            throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+        }
+        return new TokenPair(accessToken, refreshToken, accessTtl.toSeconds());
+    }
+
+    public TokenPair issueRegistered(
+            TokenKind kind,
+            TokenSession session,
+            AccountSession accountSession,
+            int maxSessions
+    ) {
+        validateSession(kind, session);
+        if (accountSession == null
+                || !session.sessionId().equals(accountSession.sessionId())
+                || accountSession.kind() != kind
+                || !session.subjectId().equals(accountSession.subjectId())) {
+            throw new IllegalArgumentException(
+                    "Account session registration does not match token session"
+            );
+        }
+        if (maxSessions < 0) {
+            throw new IllegalArgumentException("Maximum sessions cannot be negative");
+        }
+
+        Duration accessTtl = accessTtl(kind);
+        Duration refreshTtl = refreshTtl(kind);
+        String accessToken = kind.accessPrefix() + randomTokenBody();
+        String refreshToken = kind.refreshPrefix() + randomTokenBody();
+        boolean saved = tokenStore.saveRegisteredFamily(
+                accountSession,
+                maxSessions,
+                List.of(
+                        new TokenGrant(key(kind, "access", accessToken), session, accessTtl),
+                        new TokenGrant(key(kind, "refresh", refreshToken), session, refreshTtl)
+                ),
+                revocationTtl(kind)
+        );
         if (!saved) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
@@ -75,6 +112,40 @@ public class OpaqueTokenService {
         }
     }
 
+    public List<AccountSession> listSessions(TokenKind kind, Long subjectId) {
+        return tokenStore.listSessions(kind, subjectId);
+    }
+
+    public boolean revokeSubjectSession(TokenKind kind, Long subjectId, String sessionId) {
+        return tokenStore.revokeSubjectSession(
+                kind,
+                subjectId,
+                sessionId,
+                revocationTtl(kind)
+        );
+    }
+
+    public int revokeSubjectSessions(TokenKind kind, Long subjectId) {
+        return tokenStore.revokeSubjectSessions(kind, subjectId, revocationTtl(kind));
+    }
+
+    public int trimSubjectSessions(TokenKind kind, Long subjectId, int maxSessions) {
+        return tokenStore.trimSubjectSessions(
+                kind,
+                subjectId,
+                maxSessions,
+                revocationTtl(kind)
+        );
+    }
+
+    public boolean renewSession(String sessionId, TokenKind kind) {
+        return tokenStore.renewSession(sessionId, kind, revocationTtl(kind));
+    }
+
+    public boolean touchSession(String sessionId, TokenKind kind) {
+        return tokenStore.touchSession(sessionId, kind, Instant.now());
+    }
+
     private Duration accessTtl(TokenKind kind) {
         return kind == TokenKind.ADMIN ? properties.adminAccessTtl() : properties.appAccessTtl();
     }
@@ -87,6 +158,14 @@ public class OpaqueTokenService {
         Duration accessTtl = accessTtl(kind);
         Duration refreshTtl = refreshTtl(kind);
         return accessTtl.compareTo(refreshTtl) >= 0 ? accessTtl : refreshTtl;
+    }
+
+    private void validateSession(TokenKind kind, TokenSession session) {
+        if (kind == null || session == null || session.kind() != kind) {
+            throw new IllegalArgumentException(
+                    "Token session kind does not match requested token kind"
+            );
+        }
     }
 
     private String key(TokenKind kind, String tokenType, String token) {

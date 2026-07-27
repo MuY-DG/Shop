@@ -56,6 +56,7 @@ class RedisTokenStoreTest {
         RedisTokenStore store = new RedisTokenStore(redisTemplate, objectMapper);
         ObjectNode missingGeneration = objectMapper.valueToTree(adminSession());
         missingGeneration.remove("generationId");
+        missingGeneration.remove("authVersion");
         ObjectNode blankGeneration = objectMapper.valueToTree(adminSession());
         blankGeneration.put("generationId", "   ");
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -64,7 +65,9 @@ class RedisTokenStoreTest {
         when(valueOperations.get("blank-generation"))
                 .thenReturn(objectMapper.writeValueAsString(blankGeneration));
 
-        assertThat(store.find("missing-generation").orElseThrow().generationId()).isEqualTo("session-1");
+        TokenSession legacy = store.find("missing-generation").orElseThrow();
+        assertThat(legacy.generationId()).isEqualTo("session-1");
+        assertThat(legacy.authVersion()).isZero();
         assertThat(store.find("blank-generation").orElseThrow().generationId()).isEqualTo("session-1");
     }
 

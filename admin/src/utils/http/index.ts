@@ -15,11 +15,13 @@
  */
 
 import axios, { AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
+import { nextTick } from 'vue'
 import { useUserStore } from '@/store/modules/user'
 import { ApiStatus } from './status'
 import { HttpError, handleError, showError, showSuccess } from './error'
 import { $t } from '@/locales'
 import { BaseResponse } from '@/types'
+import { getOrCreateAdminDeviceId } from '@/utils/device-identity'
 
 /** 请求配置常量 */
 const REQUEST_TIMEOUT = 15000
@@ -27,6 +29,7 @@ const LOGOUT_DELAY = 500
 const MAX_RETRIES = 0
 const RETRY_DELAY = 1000
 const UNAUTHORIZED_DEBOUNCE_TIME = 3000
+const AUTH_REFRESH_LOCK_NAME = 'shop-admin-auth-refresh'
 
 /** 401防抖状态 */
 let isUnauthorizedErrorShown = false
@@ -70,6 +73,7 @@ axiosInstance.interceptors.request.use(
   (request: InternalAxiosRequestConfig) => {
     const { accessToken } = useUserStore()
     if (accessToken) request.headers.set('Authorization', `Bearer ${accessToken}`)
+    request.headers.set('X-Device-Id', getOrCreateAdminDeviceId())
 
     if (request.data && !(request.data instanceof FormData) && !request.headers['Content-Type']) {
       request.headers.set('Content-Type', 'application/json')
@@ -99,7 +103,7 @@ axiosInstance.interceptors.response.use(
       const userStore = useUserStore()
       if (config && !config._skipAuthRefresh && !config._retryAuth && userStore.refreshToken) {
         try {
-          const accessToken = await refreshAdminAccessToken()
+          const accessToken = await refreshAdminAccessToken(accessTokenFromRequest(config))
           config._retryAuth = true
           config.headers = config.headers || {}
           config.headers.Authorization = `Bearer ${accessToken}`
@@ -114,32 +118,83 @@ axiosInstance.interceptors.response.use(
   }
 )
 
-async function refreshAdminAccessToken(): Promise<string> {
+async function refreshAdminAccessToken(failedAccessToken: string | null): Promise<string> {
   if (refreshPromise) return refreshPromise
 
   const userStore = useUserStore()
-  const refreshToken = userStore.refreshToken
-  if (!refreshToken) {
+  if (!userStore.refreshToken) {
     throw createHttpError($t('httpMsg.unauthorized'), ApiStatus.unauthorized)
   }
 
-  refreshPromise = axiosInstance
-    .request<BaseResponse<Api.Auth.LoginResponse>>({
+  refreshPromise = withCrossTabRefreshLock(async () => {
+    // 等待锁期间，其他标签页可能已经完成 refresh token 旋转。
+    userStore.syncAuthFromStorage()
+    if (failedAccessToken && userStore.accessToken && userStore.accessToken !== failedAccessToken) {
+      return userStore.accessToken
+    }
+
+    const refreshToken = userStore.refreshToken
+    if (!refreshToken) {
+      throw createHttpError($t('httpMsg.unauthorized'), ApiStatus.unauthorized)
+    }
+
+    const response = await axiosInstance.request<BaseResponse<Api.Auth.LoginResponse>>({
       url: '/admin/auth/refresh',
       method: 'POST',
       data: { refreshToken },
       _skipAuthRefresh: true
     } as ExtendedAxiosRequestConfig)
-    .then((response) => {
-      const session = response.data.data
-      userStore.setToken(session.token, session.refreshToken)
-      return session.token
-    })
-    .finally(() => {
-      refreshPromise = null
-    })
+    const session = response.data.data
+    if (!session?.token || !session.refreshToken) {
+      throw createHttpError($t('httpMsg.unauthorized'), ApiStatus.unauthorized)
+    }
+
+    userStore.setToken(session.token, session.refreshToken)
+    userStore.setLoginStatus(true)
+    // 等待持久化订阅写入 localStorage 后再释放跨标签页锁。
+    await nextTick()
+    return session.token
+  }).finally(() => {
+    refreshPromise = null
+  })
 
   return refreshPromise
+}
+
+/**
+ * Web Locks 在同源标签页之间提供真正的互斥；不支持时仍保留单标签页去重。
+ */
+function withCrossTabRefreshLock<T>(task: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request(AUTH_REFRESH_LOCK_NAME, { mode: 'exclusive' }, task)
+  }
+  return task()
+}
+
+/**
+ * 读取触发 401 的请求实际使用的 access token。
+ */
+function accessTokenFromRequest(config?: ExtendedAxiosRequestConfig): string | null {
+  const headers = config?.headers
+  if (!headers) {
+    return null
+  }
+
+  const headerReader = headers as unknown as {
+    get?: (name: string) => unknown
+    Authorization?: unknown
+    authorization?: unknown
+  }
+  const authorization =
+    typeof headerReader.get === 'function'
+      ? headerReader.get('Authorization')
+      : (headerReader.Authorization ?? headerReader.authorization)
+  if (typeof authorization !== 'string') {
+    return null
+  }
+
+  const match = /^Bearer\s+(.+)$/i.exec(authorization.trim())
+  return match?.[1] || null
 }
 
 /** 统一创建HttpError */

@@ -174,6 +174,8 @@ class AdminAuthControllerTest {
                         "system:user:create",
                         "system:user:update",
                         "system:user:disable",
+                        "system:user:session:read",
+                        "system:user:session:revoke",
                         "system:role:read",
                         "system:role:create",
                         "system:role:update",
@@ -208,6 +210,41 @@ class AdminAuthControllerTest {
         mockMvc.perform(get("/admin/auth/current-user")
                         .header("Authorization", "Bearer " + oldAccessToken))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void logoutRevokesAdminAccessAndRefreshTokens() throws Exception {
+        String loginResponse = mockMvc.perform(post("/admin/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"userName":"Super","password":"123456"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String accessToken = objectMapper.readTree(loginResponse).path("data").path("token").asText();
+        String refreshToken = objectMapper.readTree(loginResponse)
+                .path("data")
+                .path("refreshToken")
+                .asText();
+
+        mockMvc.perform(post("/admin/auth/logout")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(get("/admin/auth/current-user")
+                        .header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/admin/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "refreshToken", refreshToken
+                        ))))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(100001));
     }
 
     private String loginAndExtractToken() throws Exception {

@@ -9,9 +9,11 @@ import org.muybaby.shopserver.admin.rbac.dto.AdminUserCreateRequest;
 import org.muybaby.shopserver.admin.rbac.dto.AdminUserQueryRequest;
 import org.muybaby.shopserver.admin.rbac.dto.AdminUserResponse;
 import org.muybaby.shopserver.admin.rbac.dto.AdminUserUpdateRequest;
+import org.muybaby.shopserver.auth.session.AdminSessionPolicyChangedEvent;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -40,15 +42,18 @@ public class AdminManagementService {
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AdminManagementService(
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
-            PasswordEncoder passwordEncoder
+            PasswordEncoder passwordEncoder,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.passwordEncoder = passwordEncoder;
+        this.eventPublisher = eventPublisher;
     }
 
     public PageResult<AdminUserResponse> userPage(AdminUserQueryRequest query) {
@@ -76,6 +81,7 @@ public class AdminManagementService {
 
         List<UserRow> userRows = jdbcClient.sql("""
                         SELECT u.id, u.username, u.display_name, u.email, u.avatar, u.status,
+                               u.max_sessions,
                                u.last_login_at, u.created_at, u.updated_at
                         FROM admin_user u
                         WHERE (:username = '' OR LOWER(u.username) LIKE LOWER(:usernamePattern))
@@ -110,13 +116,16 @@ public class AdminManagementService {
         }
         List<Long> roleIds = distinctIds(request.roleIds());
         requireRoles(roleIds);
+        int maxSessions = normalizeMaxSessions(request.maxSessions(), 0);
 
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         INSERT INTO admin_user
-                            (username, password_hash, display_name, email, avatar, status, created_at, updated_at)
+                            (username, password_hash, display_name, email, avatar, status,
+                             max_sessions, created_at, updated_at)
                         VALUES
-                            (:username, :passwordHash, :displayName, :email, :avatar, 'ENABLED', :now, :now)
+                            (:username, :passwordHash, :displayName, :email, :avatar, 'ENABLED',
+                             :maxSessions, :now, :now)
                         """,
                 new MapSqlParameterSource()
                         .addValue("username", username)
@@ -124,6 +133,7 @@ public class AdminManagementService {
                         .addValue("displayName", request.displayName().trim())
                         .addValue("email", request.email().trim())
                         .addValue("avatar", normalize(request.avatar()))
+                        .addValue("maxSessions", maxSessions)
                         .addValue("now", LocalDateTime.now()),
                 keyHolder,
                 new String[]{"id"});
@@ -134,16 +144,22 @@ public class AdminManagementService {
 
     @Transactional
     public void updateUser(Long operatorUserId, Long userId, AdminUserUpdateRequest request) {
-        requireUser(userId);
+        UserSecurityState current = requireUserSecurityStateForUpdate(userId);
         if (userId.equals(operatorUserId) && "DISABLED".equals(request.status())) {
             throw new BusinessException(ErrorCode.CURRENT_ADMIN_DISABLE_FORBIDDEN);
         }
         List<Long> roleIds = distinctIds(request.roleIds());
         requireRoles(roleIds);
         LocalDateTime now = LocalDateTime.now();
+        boolean passwordChanged = StringUtils.hasText(request.password());
+        boolean disabled = !"DISABLED".equals(current.status()) && "DISABLED".equals(request.status());
+        boolean revokeAll = passwordChanged || disabled;
+        int maxSessions = normalizeMaxSessions(request.maxSessions(), current.maxSessions());
+        boolean sessionPolicyChanged = maxSessions != current.maxSessions();
+        int authVersionIncrement = revokeAll ? 1 : 0;
 
         int updated;
-        if (StringUtils.hasText(request.password())) {
+        if (passwordChanged) {
             updated = jdbcClient.sql("""
                             UPDATE admin_user
                             SET display_name = :displayName,
@@ -151,6 +167,8 @@ public class AdminManagementService {
                                 password_hash = :passwordHash,
                                 avatar = :avatar,
                                 status = :status,
+                                max_sessions = :maxSessions,
+                                auth_version = auth_version + :authVersionIncrement,
                                 updated_at = :now
                             WHERE id = :userId
                             """)
@@ -159,6 +177,8 @@ public class AdminManagementService {
                     .param("passwordHash", passwordEncoder.encode(request.password()))
                     .param("avatar", normalize(request.avatar()))
                     .param("status", request.status())
+                    .param("maxSessions", maxSessions)
+                    .param("authVersionIncrement", authVersionIncrement)
                     .param("now", now)
                     .param("userId", userId)
                     .update();
@@ -169,6 +189,8 @@ public class AdminManagementService {
                                 email = :email,
                                 avatar = :avatar,
                                 status = :status,
+                                max_sessions = :maxSessions,
+                                auth_version = auth_version + :authVersionIncrement,
                                 updated_at = :now
                             WHERE id = :userId
                             """)
@@ -176,6 +198,8 @@ public class AdminManagementService {
                     .param("email", request.email().trim())
                     .param("avatar", normalize(request.avatar()))
                     .param("status", request.status())
+                    .param("maxSessions", maxSessions)
+                    .param("authVersionIncrement", authVersionIncrement)
                     .param("now", now)
                     .param("userId", userId)
                     .update();
@@ -184,6 +208,7 @@ public class AdminManagementService {
             throw new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE);
         }
         replaceUserRoles(userId, roleIds);
+        publishSessionPolicyChange(userId, revokeAll, sessionPolicyChanged, maxSessions);
     }
 
     @Transactional
@@ -191,9 +216,12 @@ public class AdminManagementService {
         if (userId.equals(operatorUserId)) {
             throw new BusinessException(ErrorCode.CURRENT_ADMIN_DISABLE_FORBIDDEN);
         }
+        UserSecurityState current = requireUserSecurityStateForUpdate(userId);
         int updated = jdbcClient.sql("""
                         UPDATE admin_user
-                        SET status = 'DISABLED', updated_at = :now
+                        SET status = 'DISABLED',
+                            auth_version = auth_version + 1,
+                            updated_at = :now
                         WHERE id = :userId AND status <> 'DISABLED'
                         """)
                 .param("now", LocalDateTime.now())
@@ -202,6 +230,11 @@ public class AdminManagementService {
         if (updated != 1) {
             throw new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE);
         }
+        eventPublisher.publishEvent(new AdminSessionPolicyChangedEvent(
+                userId,
+                true,
+                current.maxSessions()
+        ));
     }
 
     public PageResult<AdminRoleResponse> rolePage(AdminRoleQueryRequest query) {
@@ -459,7 +492,7 @@ public class AdminManagementService {
         List<String> roleCodes = roles.stream().map(UserRoleRow::roleCode).toList();
         return new AdminUserResponse(
                 row.id(), row.username(), row.displayName(), row.email(), row.avatar(), row.status(),
-                roleIds, roleCodes, row.lastLoginAt(), row.createdAt(), row.updatedAt()
+                row.maxSessions(), roleIds, roleCodes, row.lastLoginAt(), row.createdAt(), row.updatedAt()
         );
     }
 
@@ -475,13 +508,30 @@ public class AdminManagementService {
         }
     }
 
-    private void requireUser(Long userId) {
-        long count = jdbcClient.sql("SELECT COUNT(*) FROM admin_user WHERE id = :userId")
+    private UserSecurityState requireUserSecurityStateForUpdate(Long userId) {
+        return jdbcClient.sql("""
+                        SELECT status, max_sessions
+                        FROM admin_user
+                        WHERE id = :userId
+                        FOR UPDATE
+                        """)
                 .param("userId", userId)
-                .query(Long.class)
-                .single();
-        if (count != 1) {
-            throw new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE);
+                .query((rs, rowNum) -> new UserSecurityState(
+                        rs.getString("status"),
+                        rs.getInt("max_sessions")
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE));
+    }
+
+    private void publishSessionPolicyChange(
+            Long userId,
+            boolean revokeAll,
+            boolean sessionPolicyChanged,
+            int maxSessions
+    ) {
+        if (revokeAll || sessionPolicyChanged) {
+            eventPublisher.publishEvent(new AdminSessionPolicyChangedEvent(userId, revokeAll, maxSessions));
         }
     }
 
@@ -548,6 +598,7 @@ public class AdminManagementService {
                 rs.getString("email"),
                 rs.getString("avatar"),
                 rs.getString("status"),
+                rs.getInt("max_sessions"),
                 timestamp(rs, "last_login_at"),
                 timestamp(rs, "created_at"),
                 timestamp(rs, "updated_at")
@@ -585,6 +636,10 @@ public class AdminManagementService {
         return value == null ? "" : value.trim();
     }
 
+    private int normalizeMaxSessions(Integer requested, int fallback) {
+        return requested == null ? fallback : requested;
+    }
+
     private List<Long> distinctIds(Collection<Long> ids) {
         return ids.stream().filter(id -> id != null && id > 0).distinct().toList();
     }
@@ -612,6 +667,7 @@ public class AdminManagementService {
             String email,
             String avatar,
             String status,
+            int maxSessions,
             LocalDateTime lastLoginAt,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
@@ -619,5 +675,8 @@ public class AdminManagementService {
     }
 
     private record UserRoleRow(Long userId, Long roleId, String roleCode) {
+    }
+
+    private record UserSecurityState(String status, int maxSessions) {
     }
 }

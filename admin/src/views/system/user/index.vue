@@ -27,13 +27,24 @@
         @success="refreshData"
       />
     </ElCard>
+
+    <AdminSessionDrawer
+      v-model="sessionDrawerVisible"
+      mode="managed"
+      :user-id="sessionUser?.id"
+      :user-name="sessionUser?.displayName"
+      :can-revoke="canRevokeSessions"
+      @changed="refreshData"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
+  import AdminSessionDrawer from '@/components/business/admin-session-drawer/index.vue'
   import { useTable } from '@/hooks/core/useTable'
+  import { useAuth } from '@/hooks/core/useAuth'
   import { disableAdminUser, fetchGetUserList } from '@/api/system-manage'
   import UserSearch from './modules/user-search.vue'
   import UserDialog from './modules/user-dialog.vue'
@@ -47,6 +58,13 @@
   const dialogType = ref<DialogType>('add')
   const dialogVisible = ref(false)
   const currentUserData = ref<UserListItem>()
+  const sessionDrawerVisible = ref(false)
+  const sessionUser = ref<UserListItem>()
+  const { hasAuth } = useAuth()
+  const canViewSessions = computed(
+    () => hasAuth('system:user:session:read') || hasAuth('system:user:session:revoke')
+  )
+  const canRevokeSessions = computed(() => hasAuth('system:user:session:revoke'))
   const searchForm = ref<Api.SystemManage.UserSearchParams>({
     username: undefined,
     email: undefined,
@@ -54,6 +72,11 @@
   })
 
   const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
+  const formatSessionLimit = (maxSessions: number) => {
+    if (maxSessions === 0) return '不限'
+    if (maxSessions === 1) return '单设备'
+    return `最多 ${maxSessions} 台`
+  }
 
   const {
     columns,
@@ -103,6 +126,21 @@
             )
         },
         {
+          prop: 'maxSessions',
+          label: '登录限制',
+          width: 120,
+          formatter: (row: UserListItem) =>
+            h(
+              ElTag,
+              {
+                type: row.maxSessions === 1 ? 'warning' : 'info',
+                effect: 'plain',
+                size: 'small'
+              },
+              () => formatSessionLimit(row.maxSessions)
+            )
+        },
+        {
           prop: 'status',
           label: '状态',
           width: 100,
@@ -131,6 +169,15 @@
           formatter: (row: UserListItem) =>
             h(ArtButtonMore, {
               list: [
+                ...(canViewSessions.value
+                  ? [
+                      {
+                        key: 'sessions',
+                        label: '登录设备',
+                        icon: 'ri:computer-line'
+                      }
+                    ]
+                  : []),
                 {
                   key: 'edit',
                   label: '编辑管理员',
@@ -147,6 +194,7 @@
                 }
               ],
               onClick: (item: ButtonMoreItem) => {
+                if (item.key === 'sessions') showSessionDrawer(row)
                 if (item.key === 'edit') showDialog('edit', row)
                 if (item.key === 'disable') disableUser(row)
               }
@@ -167,15 +215,27 @@
     dialogVisible.value = true
   }
 
+  const showSessionDrawer = (row: UserListItem) => {
+    sessionUser.value = row
+    sessionDrawerVisible.value = true
+  }
+
   const disableUser = async (row: UserListItem) => {
     try {
-      await ElMessageBox.confirm(`确定停用管理员“${row.displayName}”吗？`, '停用确认', {
-        confirmButtonText: '停用',
-        cancelButtonText: '取消',
-        type: 'warning'
-      })
+      await ElMessageBox.confirm(
+        `确定停用管理员“${row.displayName}”吗？停用后该管理员的所有登录设备将立即下线。`,
+        '停用确认',
+        {
+          confirmButtonText: '停用并下线',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
       await disableAdminUser(row.id)
       ElMessage.success('管理员已停用')
+      if (sessionUser.value?.id === row.id) {
+        sessionDrawerVisible.value = false
+      }
       await refreshData()
     } catch (error) {
       if (error !== 'cancel' && error !== 'close') throw error

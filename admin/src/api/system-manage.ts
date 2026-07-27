@@ -29,6 +29,24 @@ export function disableAdminUser(userId: number) {
   })
 }
 
+export function fetchAdminUserSessions(userId: number) {
+  return request.get<Api.Auth.AdminSession[]>({
+    url: `/admin/system/users/${userId}/sessions`
+  })
+}
+
+export function revokeAdminUserSession(userId: number, sessionId: string) {
+  return request.del<void>({
+    url: `/admin/system/users/${userId}/sessions/${encodeURIComponent(sessionId)}`
+  })
+}
+
+export function logoutAllAdminUserSessions(userId: number) {
+  return request.post<void>({
+    url: `/admin/system/users/${userId}/logout-all`
+  })
+}
+
 // 获取角色列表
 export function fetchGetRoleList(params: Api.SystemManage.RoleSearchParams) {
   return request.get<Api.SystemManage.RoleList>({

@@ -106,6 +106,25 @@ class AdminLiveRbacPermissionTest {
                 .andExpect(jsonPath("$.code").value(100001));
     }
 
+    @Test
+    void issuedAdminAccessTokenIsRejectedAfterAuthVersionChanges() throws Exception {
+        insertAdminWithoutPermission();
+        String accessToken = loginAndExtractAccessToken();
+
+        jdbcClient.sql("""
+                        update admin_user
+                        set auth_version = auth_version + 1
+                        where id = :userId
+                        """)
+                .param("userId", USER_ID)
+                .update();
+
+        mockMvc.perform(get("/admin/auth/current-user")
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(100001));
+    }
+
     private void insertAdminWithoutPermission() {
         String passwordHash = jdbcClient.sql("select password_hash from admin_user where id = 1")
                 .query(String.class)

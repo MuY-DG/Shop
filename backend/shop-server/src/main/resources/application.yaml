@@ -58,6 +58,10 @@ shop: # 商城项目自定义业务配置的统一入口。
     admin-refresh-ttl: 7d # 管理后台刷新令牌有效期为 7 天。
     app-access-ttl: 7d # 小程序访问令牌有效期为 7 天。
     app-refresh-ttl: 30d # 小程序刷新令牌有效期为 30 天。
+    admin-session-reconciliation: # 定期重试后台账号登录设备上限，修复 Redis 短暂故障造成的延迟裁剪。
+      enabled: ${SHOP_ADMIN_SESSION_RECONCILIATION_ENABLED:true} # 默认启用幂等对账。
+      initial-delay-ms: ${SHOP_ADMIN_SESSION_RECONCILIATION_INITIAL_DELAY_MS:30000} # 启动 30 秒后首次执行。
+      fixed-delay-ms: ${SHOP_ADMIN_SESSION_RECONCILIATION_FIXED_DELAY_MS:60000} # 每轮结束 60 秒后再次执行。
     admin-login-protection: # 管理员登录失败限制与锁定配置。
       enabled: ${SHOP_ADMIN_LOGIN_PROTECTION_ENABLED:true} # 默认启用管理员登录保护。
       store: ${SHOP_ADMIN_LOGIN_PROTECTION_STORE:redis} # 默认使用 Redis 保存登录失败计数。

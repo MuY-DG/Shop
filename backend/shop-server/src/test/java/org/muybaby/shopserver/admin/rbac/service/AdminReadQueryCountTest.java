@@ -125,7 +125,7 @@ class AdminReadQueryCountTest {
         assertThat(userRoutes.getFirst().id()).isEqualTo(100L);
         assertThat(userMenu.meta().authList())
                 .extracting("id")
-                .containsExactly(1000L, 1001L, 1002L, 1003L);
+                .containsExactly(1000L, 1001L, 1002L, 1003L, 1004L, 1005L);
         assertThat(userMenu.meta().authList())
                 .extracting("authMark")
                 .doesNotContain("query-count:disabled-only");
@@ -138,7 +138,7 @@ class AdminReadQueryCountTest {
         assertThat(allRoutes.getFirst().id()).isEqualTo(100L);
         assertThat(allUserMenu.meta().authList())
                 .extracting("id")
-                .containsExactly(1000L, 1001L, 1002L, 1003L, DISABLED_ROLE_PERMISSION_ID);
+                .containsExactly(1000L, 1001L, 1002L, 1003L, 1004L, 1005L, DISABLED_ROLE_PERMISSION_ID);
         assertThat(userRouteQueries).isEqualTo(2);
         assertThat(allRouteQueries).isEqualTo(userRouteQueries);
     }

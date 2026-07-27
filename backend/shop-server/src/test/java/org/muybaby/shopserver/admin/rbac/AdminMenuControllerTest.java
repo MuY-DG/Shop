@@ -242,7 +242,9 @@ class AdminMenuControllerTest {
                         "system:user:read",
                         "system:user:create",
                         "system:user:update",
-                        "system:user:disable"
+                        "system:user:disable",
+                        "system:user:session:read",
+                        "system:user:session:revoke"
                 )))
                 .andExpect(jsonPath("$.data[7].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "system:role:read",

@@ -89,6 +89,19 @@ declare namespace Api {
       email: string
       avatar?: string
     }
+
+    /** 管理员登录设备会话 */
+    interface AdminSession {
+      sessionId: string
+      deviceName: string
+      browser: string
+      os: string
+      ipAddress: string
+      userAgent: string
+      loginAt: string
+      lastSeenAt: string
+      current: boolean
+    }
   }
 
   /** 系统管理类型 */
@@ -106,6 +119,8 @@ declare namespace Api {
       email: string
       avatar: string
       status: string
+      /** 0 不限制、1 单设备、N 为最多同时登录 N 台设备。 */
+      maxSessions: number
       roleIds: number[]
       roleCodes: string[]
       lastLoginAt?: string | null
@@ -139,6 +154,7 @@ declare namespace Api {
       email: string
       password: string
       avatar: string
+      maxSessions: number
       roleIds: number[]
     }
 
@@ -148,6 +164,7 @@ declare namespace Api {
       password?: string
       avatar: string
       status: AdminUserStatus
+      maxSessions: number
       roleIds: number[]
     }
 

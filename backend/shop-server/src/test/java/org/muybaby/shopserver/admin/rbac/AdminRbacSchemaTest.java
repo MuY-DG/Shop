@@ -123,4 +123,37 @@ class AdminRbacSchemaTest {
         assertThat(operationPermissionCount).isEqualTo(7);
         assertThat(operationMenuCount).isEqualTo(8);
     }
+
+    @Test
+    void adminSessionPolicyDefaultsAndPermissionsAreMigrated() {
+        String sessionPolicy = jdbcClient.sql("""
+                        select concat(max_sessions, '|', auth_version)
+                        from admin_user
+                        where username = 'Super'
+                        """)
+                .query(String.class)
+                .single();
+        Integer sessionPermissionCount = jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission permission_item
+                        join admin_menu_permission menu_permission
+                          on menu_permission.permission_id = permission_item.id
+                         and menu_permission.menu_id = 201
+                        join admin_role_permission role_permission
+                          on role_permission.permission_id = permission_item.id
+                        join admin_role role_item
+                          on role_item.id = role_permission.role_id
+                         and role_item.code = 'R_SUPER'
+                        where permission_item.id in (1004, 1005)
+                          and permission_item.auth_mark in (
+                              'system:user:session:read',
+                              'system:user:session:revoke'
+                          )
+                        """)
+                .query(Integer.class)
+                .single();
+
+        assertThat(sessionPolicy).isEqualTo("0|1");
+        assertThat(sessionPermissionCount).isEqualTo(2);
+    }
 }

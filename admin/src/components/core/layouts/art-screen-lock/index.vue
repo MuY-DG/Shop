@@ -112,6 +112,7 @@
   import { useI18n } from 'vue-i18n'
   import CryptoJS from 'crypto-js'
   import { useUserStore } from '@/store/modules/user'
+  import { logoutAdminSession } from '@/utils/auth-session'
   import { mittBus } from '@/utils/sys'
 
   // 国际化
@@ -400,7 +401,7 @@
   }
 
   const toLogin = () => {
-    userStore.logOut()
+    void logoutAdminSession()
   }
 
   const openLockScreen = () => {

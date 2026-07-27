@@ -52,6 +52,7 @@ import { fetchGetUserInfo } from '@/api/auth'
 import { ApiStatus } from '@/utils/http/status'
 import { isHttpError } from '@/utils/http/error'
 import { RouteRegistry, MenuProcessor, IframeRouteManager, RoutePermissionValidator } from '../core'
+import { authenticatedLoginRedirect } from './authRedirect'
 
 // 路由注册器实例
 let routeRegistry: RouteRegistry | null = null
@@ -206,8 +207,17 @@ function handleLoginStatus(
   userStore: ReturnType<typeof useUserStore>,
   next: NavigationGuardNext
 ): boolean {
-  // 已登录或访问登录页或静态路由，直接放行
-  if (userStore.isLogin || to.path === RoutesAlias.Login || isStaticRoute(to.path)) {
+  // 已登录用户不应再次停留在登录页，优先恢复原目标，否则进入首页。
+  if (userStore.isLogin && to.path === RoutesAlias.Login) {
+    next({
+      path: authenticatedLoginRedirect(to.query.redirect),
+      replace: true
+    })
+    return false
+  }
+
+  // 已登录或访问静态路由，直接放行
+  if (userStore.isLogin || isStaticRoute(to.path)) {
     return true
   }
 
