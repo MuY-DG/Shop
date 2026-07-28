@@ -55,6 +55,7 @@ import type {
 } from "../../../types/product";
 import { isApiError } from "../../../utils/api-error";
 import { openLoginPage } from "../../../utils/login-navigation";
+import { enableNativeShareMenu } from "../../../utils/share";
 
 interface PageOptions {
   id?: string;
@@ -304,6 +305,7 @@ Page({
   },
 
   onLoad(options: PageOptions) {
+    enableNativeShareMenu();
     const productId = parsePositiveId(options.id);
     if (!productId) {
       this.setData({
@@ -329,6 +331,15 @@ Page({
     return {
       title: detail?.title || "灶香集好物",
       path: `/pages/product/detail/detail?id=${this.data.productId}`,
+      imageUrl: detail?.mainImage || this.data.galleryImages[0]?.url || ""
+    };
+  },
+
+  onShareTimeline() {
+    const detail = this.data.detail;
+    return {
+      title: detail?.title || "灶香集好物",
+      query: `id=${this.data.productId}`,
       imageUrl: detail?.mainImage || this.data.galleryImages[0]?.url || ""
     };
   },

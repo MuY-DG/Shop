@@ -1,4 +1,5 @@
 import { parsePositiveId } from "../../features/product-catalog";
+import { enableNativeShareMenu } from "../../utils/share";
 import { syncCustomTabBar } from "../../utils/tab-bar";
 
 interface CatalogBrowserInstance {
@@ -14,7 +15,21 @@ interface ProductSelectEvent {
 
 Page({
   onShow() {
+    enableNativeShareMenu();
     syncCustomTabBar(this, 1);
+  },
+
+  onShareAppMessage() {
+    return {
+      title: "灶香集好物分类",
+      path: "/pages/category/category"
+    };
+  },
+
+  onShareTimeline() {
+    return {
+      title: "灶香集好物分类"
+    };
   },
 
   async onPullDownRefresh() {

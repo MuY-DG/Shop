@@ -22,6 +22,7 @@ let loginCompleted = false;
 let pendingPhoneBinding = false;
 let pageDisposed = false;
 let initialHadSession = false;
+let latestLoginPreparation = 0;
 
 function errorMessage(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -33,7 +34,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function showAgreementRequired(): void {
   wx.showToast({
-    title: "请先阅读并同意相关协议",
+    title: "请先阅读并同意用户服务协议",
     icon: "none"
   });
 }
@@ -41,7 +42,9 @@ function showAgreementRequired(): void {
 Page({
   data: {
     agreed: false,
+    initializing: true,
     loading: false,
+    loginPrepared: false,
     needsPhoneAuthorization: false
   },
 
@@ -52,10 +55,14 @@ Page({
     pendingPhoneBinding = false;
     pageDisposed = false;
     initialHadSession = Boolean(getSessionState().accessToken);
+    latestLoginPreparation += 1;
+    this.setData({ initializing: true });
+    void this.prepareLogin();
   },
 
   onUnload() {
     pageDisposed = true;
+    latestLoginPreparation += 1;
     if (!loginCompleted && (pendingPhoneBinding || (loginStarted && !initialHadSession))) {
       this.discardUnfinishedLogin();
     }
@@ -65,37 +72,41 @@ Page({
     this.setData({ agreed: event.detail.value.includes("agree") });
   },
 
-  async onLoginTap() {
-    if (!this.data.agreed) {
-      showAgreementRequired();
-      return;
-    }
-    if (this.data.loading) {
+  async prepareLogin() {
+    if (this.data.loading || this.data.loginPrepared) {
       return;
     }
 
+    const preparationId = ++latestLoginPreparation;
     loginStarted = true;
     this.setData({ loading: true });
     try {
       const session = await loginWithWechat();
-      if (pageDisposed) {
+      if (
+        pageDisposed ||
+        preparationId !== latestLoginPreparation
+      ) {
         return;
       }
       if (!session.user) {
         throw new Error("登录响应缺少用户信息");
       }
-      if (!needsPhoneAuthorization(session.user)) {
-        this.completeLogin("登录成功");
-        return;
-      }
-      pendingPhoneBinding = true;
+      const needsPhone = needsPhoneAuthorization(session.user);
+      pendingPhoneBinding = needsPhone;
       this.setData({
+        initializing: false,
         loading: false,
-        needsPhoneAuthorization: true
+        loginPrepared: true,
+        needsPhoneAuthorization: needsPhone
       });
     } catch (error) {
-      if (!pageDisposed) {
-        this.setData({ loading: false });
+      if (!pageDisposed && preparationId === latestLoginPreparation) {
+        this.setData({
+          initializing: false,
+          loading: false,
+          loginPrepared: false,
+          needsPhoneAuthorization: false
+        });
         wx.showToast({
           title: errorMessage(error, "登录失败，请稍后重试"),
           icon: "none"
@@ -104,7 +115,29 @@ Page({
     }
   },
 
-  onPhoneAgreementRequired() {
+  onPrepareLoginTap() {
+    if (!this.data.agreed) {
+      showAgreementRequired();
+      return;
+    }
+    void this.prepareLogin();
+  },
+
+  onLoginTap() {
+    if (!this.data.agreed) {
+      showAgreementRequired();
+      return;
+    }
+    if (this.data.loading || !this.data.loginPrepared) {
+      return;
+    }
+
+    if (!pageDisposed) {
+      this.completeLogin("登录成功");
+    }
+  },
+
+  onAgreementRequired() {
     showAgreementRequired();
   },
 
@@ -169,7 +202,7 @@ Page({
   completeLogin(message: string) {
     loginCompleted = true;
     pendingPhoneBinding = false;
-    this.setData({ loading: false });
+    this.setData({ loading: false, loginPrepared: true });
     wx.showToast({ title: message, icon: "success" });
     this.leavePage();
   },
@@ -180,6 +213,13 @@ Page({
     }
     pendingPhoneBinding = false;
     loginStarted = false;
+    if (!pageDisposed) {
+      this.setData({
+        loading: false,
+        loginPrepared: false,
+        needsPhoneAuthorization: false
+      });
+    }
     if (getSessionState().accessToken) {
       void logoutSession().catch(() => undefined);
     } else {

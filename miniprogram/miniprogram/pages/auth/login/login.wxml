@@ -19,40 +19,51 @@
     </view>
 
     <view class="login-copy">
-      <view class="login-copy__title">
-        {{needsPhoneAuthorization ? '绑定手机号，开启会员服务' : '成为会员，享受更多专属好物'}}
-      </view>
-      <view class="login-copy__description">
-        {{needsPhoneAuthorization ? '首次注册需完成手机号授权，后续登录无需重复授权' : '已注册用户将直接登录，无需重复授权手机号'}}
-      </view>
+      <view class="login-copy__title">成为会员，享受更多专属好物</view>
     </view>
 
     <view class="login-actions">
       <button
-        wx:if="{{!needsPhoneAuthorization}}"
+        wx:if="{{initializing}}"
         class="primary-action"
-        loading="{{loading}}"
-        disabled="{{loading}}"
-        hover-class="primary-action--pressed"
-        bindtap="onLoginTap"
+        disabled="{{true}}"
       >微信一键登录</button>
 
       <button
-        wx:elif="{{agreed}}"
+        wx:elif="{{!agreed}}"
+        class="primary-action"
+        hover-class="primary-action--pressed"
+        bindtap="onAgreementRequired"
+      >微信一键登录</button>
+
+      <button
+        wx:elif="{{loading}}"
+        class="primary-action"
+        loading="{{loading}}"
+        disabled="{{true}}"
+      >微信一键登录</button>
+
+      <button
+        wx:elif="{{!loginPrepared}}"
+        class="primary-action"
+        hover-class="primary-action--pressed"
+        bindtap="onPrepareLoginTap"
+      >微信一键登录</button>
+
+      <button
+        wx:elif="{{needsPhoneAuthorization}}"
         class="primary-action"
         open-type="getPhoneNumber"
-        loading="{{loading}}"
-        disabled="{{loading}}"
         hover-class="primary-action--pressed"
         bindgetphonenumber="onGetPhoneNumber"
-      >授权手机号并登录</button>
+      >微信一键登录</button>
 
       <button
         wx:else
         class="primary-action"
         hover-class="primary-action--pressed"
-        bindtap="onPhoneAgreementRequired"
-      >授权手机号并登录</button>
+        bindtap="onLoginTap"
+      >微信一键登录</button>
 
       <checkbox-group class="agreement" bindchange="onAgreementChange">
         <label class="agreement__label">
@@ -72,5 +83,9 @@
     </view>
 
     <button class="skip-action" bindtap="onSkipTap">暂不登录</button>
+  </view>
+
+  <view wx:if="{{initializing}}" class="login-loading-layer" aria-label="正在加载">
+    <view class="login-loading-spinner"></view>
   </view>
 </view>

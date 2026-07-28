@@ -7,6 +7,10 @@ import {
 } from "../../features/home";
 import { getHome } from "../../services/home";
 import { isApiError } from "../../utils/api-error";
+import {
+  DEFAULT_SHARE_TITLE,
+  enableNativeShareMenu
+} from "../../utils/share";
 import { syncCustomTabBar } from "../../utils/tab-bar";
 
 interface BusinessPathEvent {
@@ -63,6 +67,7 @@ Page({
   },
 
   onLoad() {
+    enableNativeShareMenu();
     void this.loadHome();
   },
 
@@ -76,6 +81,19 @@ Page({
 
   onPullDownRefresh() {
     void this.loadHome(true);
+  },
+
+  onShareAppMessage() {
+    return {
+      title: DEFAULT_SHARE_TITLE,
+      path: "/pages/index/index"
+    };
+  },
+
+  onShareTimeline() {
+    return {
+      title: DEFAULT_SHARE_TITLE
+    };
   },
 
   async loadHome(preserveContent = false) {

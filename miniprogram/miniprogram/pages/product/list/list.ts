@@ -2,6 +2,7 @@ import {
   normalizeProductKeyword,
   parsePositiveId
 } from "../../../features/product-catalog";
+import { enableNativeShareMenu } from "../../../utils/share";
 
 interface PageOptions {
   categoryId?: string;
@@ -27,11 +28,29 @@ Page({
   },
 
   onLoad(options: PageOptions) {
+    enableNativeShareMenu();
     this.setData({
       ready: true,
       initialCategoryId: parsePositiveId(options.categoryId),
       initialKeyword: normalizeProductKeyword(options.keyword)
     });
+  },
+
+  onShareAppMessage() {
+    return {
+      title: this.data.initialKeyword
+        ? `灶香集｜${this.data.initialKeyword}`
+        : "灶香集好物",
+      path: "/pages/product/list/list"
+    };
+  },
+
+  onShareTimeline() {
+    return {
+      title: this.data.initialKeyword
+        ? `灶香集｜${this.data.initialKeyword}`
+        : "灶香集好物"
+    };
   },
 
   async onPullDownRefresh() {

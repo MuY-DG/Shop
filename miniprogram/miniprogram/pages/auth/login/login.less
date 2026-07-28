@@ -6,6 +6,33 @@
   background: @color-page-top;
 }
 
+.login-loading-layer {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-loading-spinner {
+  width: 36rpx;
+  height: 36rpx;
+  border: 4rpx solid fade(@color-brand, 18%);
+  border-top-color: @color-brand;
+  border-radius: 50%;
+  animation: login-spinner 0.8s linear infinite;
+}
+
+@keyframes login-spinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .login-content {
   box-sizing: border-box;
   display: flex;
