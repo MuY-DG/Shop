@@ -67,7 +67,14 @@
       </ArtTable>
     </ElCard>
 
-    <ElDrawer v-model="drawerVisible" title="订单详情" size="86%" destroy-on-close append-to-body>
+    <ElDrawer
+      v-model="drawerVisible"
+      title="订单详情"
+      size="86%"
+      destroy-on-close
+      append-to-body
+      class="order-detail-drawer"
+    >
       <div v-loading="drawerLoading" class="order-detail">
         <template v-if="currentDetail">
           <div class="order-summary">
@@ -77,27 +84,50 @@
               </div>
               <div>
                 <div class="order-summary__title">普通订单</div>
-                <div class="order-summary__no">订单号：{{ currentDetail.orderNo }}</div>
+                <div class="order-summary__no">
+                  <span>订单号：{{ currentDetail.orderNo }}</span>
+                  <ElButton
+                    link
+                    type="primary"
+                    class="order-summary__copy"
+                    aria-label="复制顶部订单号"
+                    title="复制订单号"
+                    @click="copyText(currentDetail.orderNo, '订单号')"
+                  >
+                    <ElIcon><CopyDocument /></ElIcon>
+                  </ElButton>
+                </div>
               </div>
             </div>
             <div class="order-summary__facts">
               <div class="summary-fact">
                 <span>订单状态</span>
-                <strong :class="`is-${statusMap[currentDetail.status].type}`">
+                <strong
+                  class="summary-fact__status"
+                  :class="`is-${statusMap[currentDetail.status].type}`"
+                >
                   {{ statusMap[currentDetail.status].text }}
                 </strong>
               </div>
               <div class="summary-fact">
                 <span>实际支付</span>
-                <strong>{{ formatPaidAmount(currentDetail) }}</strong>
+                <strong class="summary-fact__amount">
+                  {{ formatPaidAmount(currentDetail) }}
+                </strong>
               </div>
               <div class="summary-fact">
                 <span>订单来源</span>
-                <strong>{{ formatSource(currentDetail.source) }}</strong>
+                <strong class="summary-fact__with-icon summary-fact__source">
+                  <ArtSvgIcon icon="ri:wechat-fill" />
+                  {{ formatSource(currentDetail.source) }}
+                </strong>
               </div>
               <div class="summary-fact">
                 <span>创建时间</span>
-                <strong>{{ formatDateTime(currentDetail.createdAt) }}</strong>
+                <strong class="summary-fact__with-icon">
+                  <ArtSvgIcon icon="ri:time-line" />
+                  {{ formatDateTime(currentDetail.createdAt) }}
+                </strong>
               </div>
             </div>
           </div>
@@ -120,174 +150,244 @@
             </ElButton>
           </ElAlert>
 
-          <ElTabs v-model="detailActiveTab" class="order-detail-tabs">
-            <ElTabPane label="订单信息" name="orderInfo">
-              <div class="detail-section">
-                <div class="detail-section__title">用户信息</div>
-                <ElDescriptions :column="3" border>
-                  <ElDescriptionsItem label="用户名称">
-                    {{ formatText(currentDetail.userNickname) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="用户 ID">
-                    {{ currentDetail.userId }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="用户手机号">
-                    {{ maskPhone(currentDetail.userPhone) }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
+          <div class="order-detail-content">
+            <section class="detail-card detail-card--basic">
+              <div class="detail-card__header">
+                <h3>
+                  <ArtSvgIcon icon="ri:file-list-3-line" />
+                  <span>订单基本信息</span>
+                </h3>
               </div>
+              <dl class="detail-facts detail-facts--basic">
+                <div class="detail-fact detail-fact--wide detail-fact--order-number">
+                  <dt>订单编号</dt>
+                  <dd>
+                    <span class="detail-fact__mono">{{ currentDetail.orderNo }}</span>
+                    <ElButton
+                      link
+                      type="primary"
+                      class="copy-button"
+                      aria-label="复制订单编号"
+                      @click="copyText(currentDetail.orderNo, '订单编号')"
+                    >
+                      <ElIcon><CopyDocument /></ElIcon>
+                      复制
+                    </ElButton>
+                  </dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>下单时间</dt>
+                  <dd>{{ formatDateTime(currentDetail.createdAt) }}</dd>
+                </div>
+                <div v-if="currentDetail.paidAt" class="detail-fact">
+                  <dt>支付时间</dt>
+                  <dd>{{ formatDateTime(currentDetail.paidAt) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>订单来源</dt>
+                  <dd>{{ formatSource(currentDetail.source) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>订单类型</dt>
+                  <dd>普通订单</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>支付状态</dt>
+                  <dd>
+                    {{ formatPaymentStatus(currentDetail.paymentStatus, currentDetail.status) }}
+                  </dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>订单状态</dt>
+                  <dd>
+                    <ElTag :type="statusMap[currentDetail.status].type" effect="light">
+                      {{ statusMap[currentDetail.status].text }}
+                    </ElTag>
+                  </dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>购买用户名</dt>
+                  <dd>{{ formatText(currentDetail.userNickname) }}</dd>
+                </div>
+                <div class="detail-fact detail-fact--wide">
+                  <dt>用户 ID</dt>
+                  <dd class="detail-fact__mono">{{ currentDetail.userId }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>用户手机号</dt>
+                  <dd>{{ maskPhone(currentDetail.userPhone) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>划线价总额</dt>
+                  <dd>{{ formatMoney(currentDetail.productOriginalAmountCent) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>商品金额</dt>
+                  <dd>{{ formatMoney(currentDetail.productAmountCent) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>商品总数</dt>
+                  <dd>{{ currentDetail.itemCount }} 件</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>运费</dt>
+                  <dd>{{ formatMoney(currentDetail.freightCent) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>优惠券</dt>
+                  <dd>{{ currentDetail.couponName || '未使用' }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>优惠金额</dt>
+                  <dd>{{ formatMoney(currentDetail.couponDiscountCent) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>订单应付</dt>
+                  <dd>{{ formatMoney(currentDetail.payableAmountCent) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>实付金额</dt>
+                  <dd class="detail-fact__amount">{{ formatPaidAmount(currentDetail) }}</dd>
+                </div>
+                <div v-if="currentDetail.refundedAmountCent > 0" class="detail-fact">
+                  <dt>已退款金额</dt>
+                  <dd>{{ formatMoney(currentDetail.refundedAmountCent) }}</dd>
+                </div>
+                <div
+                  v-if="currentDetail.outTradeNo || currentDetail.merchantTradeNo"
+                  class="detail-fact detail-fact--wide"
+                >
+                  <dt>商户订单号</dt>
+                  <dd class="detail-fact__mono">
+                    {{ currentDetail.outTradeNo || currentDetail.merchantTradeNo }}
+                  </dd>
+                </div>
+                <div
+                  v-if="currentDetail.transactionId || currentDetail.paymentTransactionId"
+                  class="detail-fact detail-fact--wide"
+                >
+                  <dt>微信支付单号</dt>
+                  <dd class="detail-fact__mono">
+                    {{ currentDetail.transactionId || currentDetail.paymentTransactionId }}
+                  </dd>
+                </div>
+                <div v-if="currentDetail.shippedAt" class="detail-fact">
+                  <dt>发货时间</dt>
+                  <dd>{{ formatDateTime(currentDetail.shippedAt) }}</dd>
+                </div>
+                <div v-if="currentDetail.completedAt" class="detail-fact">
+                  <dt>完成时间</dt>
+                  <dd>{{ formatDateTime(currentDetail.completedAt) }}</dd>
+                </div>
+                <div v-if="currentDetail.closeReason" class="detail-fact detail-fact--wide">
+                  <dt>关闭原因</dt>
+                  <dd>{{ currentDetail.closeReason }}</dd>
+                </div>
+                <div v-if="currentDetail.closedAt" class="detail-fact">
+                  <dt>关闭时间</dt>
+                  <dd>{{ formatDateTime(currentDetail.closedAt) }}</dd>
+                </div>
+                <div v-if="currentDetail.refundingAt" class="detail-fact">
+                  <dt>退款发起时间</dt>
+                  <dd>{{ formatDateTime(currentDetail.refundingAt) }}</dd>
+                </div>
+                <div v-if="currentDetail.refundedAt" class="detail-fact">
+                  <dt>退款完成时间</dt>
+                  <dd>{{ formatDateTime(currentDetail.refundedAt) }}</dd>
+                </div>
+              </dl>
+            </section>
 
-              <div class="detail-section">
-                <div class="detail-section__title">收货信息</div>
-                <ElDescriptions :column="3" border>
-                  <ElDescriptionsItem label="收货人">
-                    {{ formatText(currentDetail.receiverName) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="收货手机号">
-                    {{ maskPhone(currentDetail.receiverPhone) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="收货地址">
-                    {{ formatText(currentDetail.receiverAddress) }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-              </div>
+            <div class="detail-card-grid detail-card-grid--two">
+              <section class="detail-card">
+                <div class="detail-card__header">
+                  <h3>
+                    <ArtSvgIcon icon="ri:map-pin-user-line" />
+                    <span>收货信息</span>
+                  </h3>
+                </div>
+                <dl class="detail-facts detail-facts--compact">
+                  <div class="detail-fact">
+                    <dt>收货人</dt>
+                    <dd>{{ formatText(currentDetail.receiverName) }}</dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>联系电话</dt>
+                    <dd>{{ maskPhone(currentDetail.receiverPhone) }}</dd>
+                  </div>
+                  <div class="detail-fact detail-fact--full">
+                    <dt>收货地址</dt>
+                    <dd>{{ formatText(currentDetail.receiverAddress) }}</dd>
+                  </div>
+                </dl>
+              </section>
 
-              <div class="detail-section">
-                <div class="detail-section__title">订单信息</div>
-                <ElDescriptions :column="3" border>
-                  <ElDescriptionsItem label="商品总价">
-                    {{ formatMoney(currentDetail.productOriginalAmountCent) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="商品总数">
-                    {{ currentDetail.itemCount }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="优惠券">
-                    {{ currentDetail.couponName || '未使用' }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="商品金额">
-                    {{ formatMoney(currentDetail.productAmountCent) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="优惠金额">
-                    {{ formatMoney(currentDetail.couponDiscountCent) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="支付邮费">
-                    {{ formatMoney(currentDetail.freightCent) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="订单应付">
-                    {{ formatMoney(currentDetail.payableAmountCent) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="实际支付">
-                    {{ formatPaidAmount(currentDetail) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="已退款金额">
-                    {{ formatMoney(currentDetail.refundedAmountCent) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="创建时间">
-                    {{ formatDateTime(currentDetail.createdAt) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="发货时间">
-                    {{ formatDateTime(currentDetail.shippedAt) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="完成时间">
-                    {{ formatDateTime(currentDetail.completedAt) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="关闭原因">
-                    {{ formatText(currentDetail.closeReason) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="关闭时间">
-                    {{ formatDateTime(currentDetail.closedAt) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="退款发起时间">
-                    {{ formatDateTime(currentDetail.refundingAt) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="退款完成时间">
-                    {{ formatDateTime(currentDetail.refundedAt) }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-              </div>
-
-              <div class="detail-section">
-                <div class="detail-section__title">支付信息</div>
-                <ElDescriptions :column="3" border>
-                  <ElDescriptionsItem label="支付状态">
-                    {{ formatPaymentStatus(currentDetail.paymentStatus || currentDetail.status) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="商户订单号">
-                    {{ formatText(currentDetail.outTradeNo || currentDetail.merchantTradeNo) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="微信支付单号">
-                    {{
-                      formatText(currentDetail.transactionId || currentDetail.paymentTransactionId)
-                    }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="支付时间">
-                    {{ formatDateTime(currentDetail.paidAt) }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-              </div>
-
-              <div class="detail-section">
-                <div class="detail-section__title">发货信息</div>
+              <section class="detail-card detail-card--logistics">
+                <div class="detail-card__header">
+                  <h3>
+                    <ArtSvgIcon icon="ri:truck-line" />
+                    <span>物流信息</span>
+                  </h3>
+                </div>
                 <template v-if="currentDetail.shipment">
-                  <ElDescriptions :column="3" border>
-                    <ElDescriptionsItem label="履约方式">
-                      {{ logisticsTypeLabel(currentDetail.shipment.logisticsType) }}
-                    </ElDescriptionsItem>
-                    <ElDescriptionsItem label="快递公司">
-                      {{ formatText(currentDetail.shipment.expressCompanyName) }}
-                    </ElDescriptionsItem>
-                    <ElDescriptionsItem label="物流单号">
-                      {{ formatText(currentDetail.shipment.trackingNo) }}
-                    </ElDescriptionsItem>
-                    <ElDescriptionsItem label="商品描述">
-                      {{ formatText(currentDetail.shipment.itemDesc) }}
-                    </ElDescriptionsItem>
-                    <ElDescriptionsItem label="发货备注">
-                      {{ formatText(currentDetail.shipment.shipmentNote) }}
-                    </ElDescriptionsItem>
-                    <ElDescriptionsItem label="本地发货时间">
-                      {{ formatDateTime(currentDetail.shipment.shippedAt) }}
-                    </ElDescriptionsItem>
-                  </ElDescriptions>
-                  <ElCollapse class="shipping-diagnostics">
-                    <ElCollapseItem title="微信发货诊断信息" name="wechat-shipping">
-                      <ElDescriptions :column="3" border>
-                        <ElDescriptionsItem label="配送说明">
-                          {{ formatShipmentModeDetail(currentDetail.shipment) }}
-                        </ElDescriptionsItem>
-                        <ElDescriptionsItem label="本地发货状态">
-                          {{
-                            formatLocalShipmentStatus(currentDetail.shipment.localShipmentStatus)
-                          }}
-                        </ElDescriptionsItem>
-                        <ElDescriptionsItem label="微信提供方">
-                          {{ formatWechatProviderMode(currentDetail.shipment.wechatProviderMode) }}
-                        </ElDescriptionsItem>
-                        <ElDescriptionsItem label="微信上传状态">
-                          {{
-                            formatShippingUploadStatus(currentDetail.shipment.wechatUploadStatus)
-                          }}
-                        </ElDescriptionsItem>
-                        <ElDescriptionsItem label="最近尝试时间">
-                          {{ formatDateTime(currentDetail.shipment.lastAttemptAt) }}
-                        </ElDescriptionsItem>
-                        <ElDescriptionsItem label="运营重试次数">
-                          {{ currentDetail.shipment.retryCount }}
-                        </ElDescriptionsItem>
-                        <ElDescriptionsItem label="微信错误" :span="3">
-                          {{ formatWechatUploadError(currentDetail.shipment) }}
-                        </ElDescriptionsItem>
-                      </ElDescriptions>
-                    </ElCollapseItem>
-                  </ElCollapse>
+                  <dl class="detail-facts detail-facts--compact">
+                    <div class="detail-fact">
+                      <dt>履约方式</dt>
+                      <dd>{{ logisticsTypeLabel(currentDetail.shipment.logisticsType) }}</dd>
+                    </div>
+                    <div class="detail-fact">
+                      <dt>快递公司</dt>
+                      <dd>{{ formatText(currentDetail.shipment.expressCompanyName) }}</dd>
+                    </div>
+                    <div class="detail-fact">
+                      <dt>物流单号</dt>
+                      <dd>
+                        <span class="detail-fact__mono">
+                          {{ formatText(currentDetail.shipment.trackingNo) }}
+                        </span>
+                        <ElButton
+                          v-if="currentDetail.shipment.trackingNo"
+                          link
+                          type="primary"
+                          class="copy-button"
+                          aria-label="复制物流单号"
+                          @click="copyText(currentDetail.shipment.trackingNo, '物流单号')"
+                        >
+                          <ElIcon><CopyDocument /></ElIcon>
+                          复制
+                        </ElButton>
+                      </dd>
+                    </div>
+                    <div class="detail-fact">
+                      <dt>发货时间</dt>
+                      <dd>{{ formatDateTime(currentDetail.shipment.shippedAt) }}</dd>
+                    </div>
+                    <div class="detail-fact detail-fact--full">
+                      <dt>商品描述</dt>
+                      <dd>{{ formatText(currentDetail.shipment.itemDesc) }}</dd>
+                    </div>
+                    <div
+                      v-if="currentDetail.shipment.shipmentNote"
+                      class="detail-fact detail-fact--full"
+                    >
+                      <dt>发货备注</dt>
+                      <dd>{{ currentDetail.shipment.shipmentNote }}</dd>
+                    </div>
+                  </dl>
                 </template>
-                <ElEmpty v-else description="暂无发货信息" :image-size="72" />
-              </div>
-            </ElTabPane>
+                <ElEmpty v-else description="当前订单暂无发货信息" :image-size="64" />
+              </section>
+            </div>
 
-            <ElTabPane label="商品信息" name="products">
-              <ElTable :data="currentDetail.items" border>
-                <ElTableColumn label="商品信息" min-width="340">
+            <section class="detail-card detail-card--products">
+              <div class="detail-card__header">
+                <h3>
+                  <ArtSvgIcon icon="ri:shopping-bag-3-line" />
+                  <span>商品信息</span>
+                </h3>
+              </div>
+              <ElTable :data="currentDetail.items" class="detail-products-table">
+                <ElTableColumn label="商品信息" min-width="300">
                   <template #default="{ row }">
                     <div class="item-cell">
                       <ElImage
@@ -304,27 +404,93 @@
                       <div class="item-cell__content">
                         <div class="title">{{ row.productTitle }}</div>
                         <div class="subtitle">
-                          {{ row.productSubtitle || '-' }} · 规格：{{ row.specText || '-' }}
+                          {{ row.productSubtitle || '暂无副标题' }}
                         </div>
+                        <div class="subtitle">商品编码：{{ row.skuCode || '-' }}</div>
                       </div>
                     </div>
                   </template>
                 </ElTableColumn>
-                <ElTableColumn label="商品售价" width="140">
+                <ElTableColumn label="单价" width="116">
                   <template #default="{ row }">
                     <div>{{ formatMoney(row.unitPriceCent) }}</div>
-                    <ElTag v-if="row.wholesaleTierMinQuantity" size="small" type="danger" effect="plain">
-                      {{ row.wholesaleTierMinQuantity }} 件起批发价
+                    <ElTag
+                      v-if="row.wholesaleTierMinQuantity"
+                      size="small"
+                      type="danger"
+                      effect="plain"
+                      class="wholesale-tag"
+                    >
+                      {{ row.wholesaleTierMinQuantity }} 件起批
                     </ElTag>
                   </template>
                 </ElTableColumn>
-                <ElTableColumn prop="quantity" label="购买数量" width="120" />
-                <ElTableColumn label="小计" width="140">
-                  <template #default="{ row }">{{ formatMoney(row.lineAmountCent) }}</template>
+                <ElTableColumn prop="quantity" label="数量" width="82" />
+                <ElTableColumn label="规格" min-width="132">
+                  <template #default="{ row }">{{ row.specText || '-' }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="小计" width="116" align="right">
+                  <template #default="{ row }">
+                    <strong>{{ formatMoney(row.lineAmountCent) }}</strong>
+                  </template>
                 </ElTableColumn>
               </ElTable>
-            </ElTabPane>
-          </ElTabs>
+              <div class="product-summary">
+                <strong>共 {{ currentDetail.itemCount }} 件商品</strong>
+                <div class="product-summary__amounts">
+                  <span>商品金额：{{ formatMoney(currentDetail.productAmountCent) }}</span>
+                  <span>优惠金额：{{ formatMoney(currentDetail.couponDiscountCent) }}</span>
+                  <span>运费：{{ formatMoney(currentDetail.freightCent) }}</span>
+                  <span class="product-summary__paid">
+                    实付金额：<strong>{{ formatPaidAmount(currentDetail) }}</strong>
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <section v-if="currentDetail.shipment" class="detail-card detail-card--diagnostics">
+              <ElCollapse class="shipping-diagnostics">
+                <ElCollapseItem title="微信发货诊断信息" name="wechat-shipping">
+                  <dl class="shipping-diagnostic-grid">
+                    <div class="shipping-diagnostic">
+                      <dt>配送说明</dt>
+                      <dd>{{ formatShipmentModeDetail(currentDetail.shipment) }}</dd>
+                    </div>
+                    <div class="shipping-diagnostic">
+                      <dt>本地发货状态</dt>
+                      <dd>
+                        {{ formatLocalShipmentStatus(currentDetail.shipment.localShipmentStatus) }}
+                      </dd>
+                    </div>
+                    <div class="shipping-diagnostic">
+                      <dt>微信提供方</dt>
+                      <dd>
+                        {{ formatWechatProviderMode(currentDetail.shipment.wechatProviderMode) }}
+                      </dd>
+                    </div>
+                    <div class="shipping-diagnostic">
+                      <dt>微信上传状态</dt>
+                      <dd>
+                        {{ formatShippingUploadStatus(currentDetail.shipment.wechatUploadStatus) }}
+                      </dd>
+                    </div>
+                    <div class="shipping-diagnostic">
+                      <dt>最近尝试时间</dt>
+                      <dd>{{ formatDateTime(currentDetail.shipment.lastAttemptAt) }}</dd>
+                    </div>
+                    <div class="shipping-diagnostic">
+                      <dt>运营重试次数</dt>
+                      <dd>{{ currentDetail.shipment.retryCount }}</dd>
+                    </div>
+                    <div class="shipping-diagnostic shipping-diagnostic--full">
+                      <dt>微信错误</dt>
+                      <dd>{{ formatWechatUploadError(currentDetail.shipment) }}</dd>
+                    </div>
+                  </dl>
+                </ElCollapseItem>
+              </ElCollapse>
+            </section>
+          </div>
         </template>
       </div>
 
@@ -553,7 +719,7 @@
   import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { ElNotification } from 'element-plus'
-  import { ArrowDown, Tickets } from '@element-plus/icons-vue'
+  import { ArrowDown, CopyDocument, Tickets } from '@element-plus/icons-vue'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
@@ -608,7 +774,6 @@
 
   const drawerVisible = ref(false)
   const drawerLoading = ref(false)
-  const detailActiveTab = ref<'orderInfo' | 'products'>('orderInfo')
   const recordsVisible = ref(false)
   const recordsLoading = ref(false)
   const recordsOrderNo = ref('')
@@ -893,6 +1058,16 @@
 
   const formatText = (value: string | null | undefined) => value || '-'
 
+  const copyText = async (value: string | null | undefined, label: string) => {
+    if (!value) return
+    try {
+      await navigator.clipboard.writeText(value)
+      ElMessage.success(`${label}已复制`)
+    } catch {
+      ElMessage.error(`${label}复制失败`)
+    }
+  }
+
   const maskPhone = (value: string | null | undefined) => {
     if (!value) return '-'
     if (value.length < 7) return value
@@ -904,9 +1079,22 @@
       ? '-'
       : formatMoney(order.paidAmountCent)
 
-  const formatPaymentStatus = (value: string | null | undefined) => {
-    if (!value) return '-'
-    return statusMap[value as Api.Order.OrderStatus]?.text || value
+  const paymentStatusLabels: Record<string, string> = {
+    PREPARING: '支付准备中',
+    PAYING: '支付中',
+    PAID: '已支付',
+    CLOSED: '已关闭'
+  }
+
+  const formatPaymentStatus = (
+    paymentStatus: string | null | undefined,
+    orderStatus: Api.Order.OrderStatus
+  ) => {
+    if (paymentStatus) return paymentStatusLabels[paymentStatus] || paymentStatus
+    if (orderStatus === 'CREATED') return '未支付'
+    if (orderStatus === 'PAYING') return '支付中'
+    if (orderStatus === 'CLOSED') return '已关闭'
+    return '已支付'
   }
 
   const formatShippingUploadStatus = (
@@ -1300,14 +1488,11 @@
     }
   }
 
+  const reloadCurrentDetail = (orderId: number) => loadOrderDetail(orderId)
+
   const openDetail = async (orderId: number) => {
-    detailActiveTab.value = 'orderInfo'
     drawerVisible.value = true
     await Promise.allSettled([loadOrderDetail(orderId), loadWechatShippingCapability()])
-  }
-
-  const reloadCurrentDetail = async (orderId: number) => {
-    await loadOrderDetail(orderId)
   }
 
   const isCurrentShipDialog = (generation: number, orderId: number) =>
@@ -1728,6 +1913,16 @@
     min-height: 360px;
   }
 
+  :global(.order-detail-drawer .el-drawer__body) {
+    padding: 18px 22px 22px;
+    background: var(--el-bg-color-page);
+  }
+
+  :global(.order-detail-drawer .el-drawer__footer) {
+    background: var(--el-bg-color);
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+
   .order-summary {
     display: flex;
     gap: 28px;
@@ -1735,8 +1930,10 @@
     justify-content: space-between;
     padding: 20px 24px;
     margin-bottom: 18px;
-    background: var(--el-fill-color-lighter);
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-extra-light);
     border-radius: 10px;
+    box-shadow: 0 4px 18px rgb(31 35 41 / 4%);
   }
 
   .order-summary__identity {
@@ -1765,16 +1962,31 @@
   }
 
   .order-summary__no {
+    display: flex;
+    gap: 4px;
+    align-items: center;
     margin-top: 4px;
     font-size: 13px;
-    color: var(--el-text-color-secondary);
+    color: var(--el-text-color-primary);
+    white-space: nowrap;
+  }
+
+  .order-summary__copy {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    font-size: 14px;
   }
 
   .order-summary__facts {
     display: grid;
     flex: 1;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 20px;
+    grid-template-columns:
+      minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(210px, 1.25fr)
+      minmax(210px, 1.25fr);
+    gap: 0;
+    align-self: stretch;
     max-width: 820px;
   }
 
@@ -1782,6 +1994,12 @@
     display: flex;
     flex-direction: column;
     gap: 7px;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: 0 16px;
+    text-align: center;
+    border-left: 1px solid var(--el-border-color-lighter);
 
     span {
       font-size: 13px;
@@ -1797,29 +2015,66 @@
 
     .is-warning {
       color: var(--el-color-warning);
+      background: var(--el-color-warning-light-9);
+      border-color: var(--el-color-warning-light-5);
     }
 
     .is-success {
       color: var(--el-color-success);
+      background: var(--el-color-success-light-9);
+      border-color: var(--el-color-success-light-5);
     }
 
     .is-danger {
       color: var(--el-color-danger);
+      background: var(--el-color-danger-light-9);
+      border-color: var(--el-color-danger-light-5);
     }
 
     .is-info {
       color: var(--el-text-color-secondary);
+      background: var(--el-fill-color-light);
+      border-color: var(--el-border-color-light);
     }
   }
 
-  .order-detail-tabs {
-    :deep(.el-tabs__header) {
-      margin-bottom: 20px;
+  .summary-fact__status {
+    width: fit-content;
+    padding: 3px 10px;
+    line-height: 20px !important;
+    border: 1px solid transparent;
+    border-radius: 999px;
+  }
+
+  .summary-fact strong.summary-fact__amount {
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 26px;
+    color: var(--el-color-primary);
+  }
+
+  .summary-fact__with-icon {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+
+    > .art-svg-icon {
+      flex-shrink: 0;
+      font-size: 17px;
+      color: var(--el-text-color-secondary);
     }
+  }
+
+  .summary-fact__source > .art-svg-icon {
+    color: var(--el-color-success);
   }
 
   .aftersale-hold-alert {
-    margin-bottom: 18px;
+    margin-bottom: 16px;
 
     :deep(.el-alert__content) {
       width: 100%;
@@ -1830,24 +2085,266 @@
     }
   }
 
-  .detail-section {
+  .order-detail-content {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-bottom: 24px;
+    gap: 16px;
   }
 
-  .detail-section__title {
-    padding-left: 10px;
-    font-size: 15px;
+  .detail-card {
+    min-width: 0;
+    padding: 0 20px 20px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-extra-light);
+    border-radius: 10px;
+    box-shadow: 0 4px 18px rgb(31 35 41 / 4%);
+  }
+
+  .detail-card__header {
+    display: flex;
+    align-items: center;
+    min-height: 52px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+
+    h3 {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 24px;
+      color: var(--el-text-color-primary);
+
+      > .art-svg-icon {
+        font-size: 19px;
+        color: var(--el-color-primary);
+      }
+    }
+  }
+
+  .detail-card-grid {
+    display: grid;
+    gap: 16px;
+  }
+
+  .detail-card-grid--two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-facts {
+    display: grid;
+    padding: 0;
+    margin: 0;
+  }
+
+  .detail-facts--basic {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px 26px;
+  }
+
+  .detail-facts--compact {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .detail-fact {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    align-items: start;
+    min-height: 34px;
+    font-size: 14px;
+    line-height: 22px;
+
+    dt {
+      color: var(--el-text-color-secondary);
+      white-space: nowrap;
+    }
+
+    dd {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+      margin: 0;
+      color: var(--el-text-color-primary);
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .detail-fact--full {
+    grid-column: 1 / -1;
+  }
+
+  .detail-fact--order-number {
+    grid-template-columns: 96px minmax(0, 1fr);
+
+    dd {
+      align-items: flex-start;
+      transform: translateY(-2px);
+    }
+
+    .detail-fact__mono {
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .copy-button {
+      height: 22px;
+      line-height: 22px;
+      transform: translateY(-7px);
+    }
+  }
+
+  .detail-fact__mono {
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-fact__amount {
+    font-size: 16px;
     font-weight: 600;
-    line-height: 20px;
-    color: var(--el-text-color-primary);
-    border-left: 4px solid var(--el-color-primary);
+    color: var(--el-color-danger) !important;
+  }
+
+  .copy-button {
+    flex-shrink: 0;
+    gap: 3px;
+    padding: 0;
+    font-size: 12px;
+  }
+
+  .detail-card--logistics {
+    :deep(.el-empty) {
+      padding: 8px 0 14px;
+    }
   }
 
   .shipping-diagnostics {
-    margin-top: 12px;
+    border-top: 0;
+    border-bottom: 0;
+
+    :deep(.el-collapse-item__header) {
+      min-height: 52px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+    }
+
+    :deep(.el-collapse-item__wrap) {
+      border-bottom: 0;
+    }
+
+    :deep(.el-collapse-item__content) {
+      padding-bottom: 20px;
+    }
+  }
+
+  .shipping-diagnostic-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 16px;
+    padding: 12px 14px;
+    margin: 0;
+    background: var(--el-fill-color-extra-light);
+    border-radius: 8px;
+  }
+
+  .shipping-diagnostic {
+    display: grid;
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 8px;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 20px;
+
+    dt {
+      color: var(--el-text-color-secondary);
+      white-space: nowrap;
+    }
+
+    dd {
+      min-width: 0;
+      margin: 0;
+      color: var(--el-text-color-primary);
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .shipping-diagnostic--full {
+    grid-column: 1 / -1;
+  }
+
+  .detail-card--products {
+    padding-right: 20px;
+    padding-bottom: 0;
+    padding-left: 20px;
+
+    .detail-card__header {
+      margin: 0;
+    }
+  }
+
+  .detail-card--diagnostics {
+    padding: 0 20px;
+  }
+
+  .detail-products-table {
+    --el-table-border-color: var(--el-border-color-lighter);
+    --el-table-header-bg-color: var(--el-fill-color-lighter);
+
+    :deep(.el-table__header th.el-table__cell) {
+      height: 42px;
+      font-weight: 500;
+      color: var(--el-text-color-secondary);
+    }
+
+    :deep(.el-table__cell) {
+      padding: 10px 0;
+    }
+
+    :deep(.el-table__inner-wrapper::before) {
+      display: none;
+    }
+  }
+
+  .wholesale-tag {
+    margin-top: 4px;
+  }
+
+  .product-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 24px;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 58px;
+    padding: 10px 0;
+    color: var(--el-text-color-primary);
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+
+  .product-summary__amounts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    align-items: center;
+    justify-content: flex-end;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .product-summary__paid {
+    color: var(--el-text-color-primary);
+
+    strong {
+      margin-left: 4px;
+      font-size: 18px;
+      color: var(--el-color-danger);
+    }
   }
 
   .order-records__no {
@@ -1884,8 +2381,8 @@
 
   .item-cell__image {
     flex-shrink: 0;
-    width: 48px;
-    height: 48px;
+    width: 58px;
+    height: 58px;
     overflow: hidden;
     background: var(--el-fill-color-light);
     border-radius: 6px;
@@ -1952,7 +2449,7 @@
     color: var(--el-text-color-secondary);
   }
 
-  @media (width <= 900px) {
+  @media (width <= 960px) {
     .order-summary {
       align-items: flex-start;
     }
@@ -1960,9 +2457,18 @@
     .order-summary__facts {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .detail-facts--basic,
+    .detail-card-grid--two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   @media (width <= 640px) {
+    :global(.order-detail-drawer .el-drawer__body) {
+      padding: 14px;
+    }
+
     .order-summary {
       flex-direction: column;
       align-items: flex-start;
@@ -1971,6 +2477,23 @@
     .order-summary__facts {
       grid-template-columns: minmax(0, 1fr);
       width: 100%;
+    }
+
+    .detail-facts--basic,
+    .detail-card-grid--two,
+    .shipping-diagnostic-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .detail-fact--full,
+    .shipping-diagnostic--full {
+      grid-column: auto;
+    }
+
+    .product-summary,
+    .product-summary__amounts {
+      align-items: flex-start;
+      justify-content: flex-start;
     }
   }
 </style>
