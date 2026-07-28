@@ -24,6 +24,7 @@
         class="hero-image"
         src="{{item.imageUrl}}"
         mode="aspectFit"
+        lazy-load="{{true}}"
         data-index="{{index}}"
         binderror="onBannerImageError"
       />
