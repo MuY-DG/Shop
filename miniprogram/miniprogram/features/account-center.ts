@@ -262,7 +262,7 @@ export function parseAddressId(value: unknown): string {
 export function normalizeAddressForm(value: AddressFormValue): AddressUpsertRequest {
   return {
     receiverName: cleanText(value.receiverName),
-    receiverPhone: cleanText(value.receiverPhone).replace(/\s+/g, " "),
+    receiverPhone: cleanText(value.receiverPhone).replace(/\s+/g, ""),
     province: cleanText(value.province),
     city: cleanText(value.city),
     district: cleanText(value.district),
@@ -296,13 +296,13 @@ export function validateAddressForm(value: AddressFormValue): string {
   if (!normalized.receiverName) {
     return "请填写收货人姓名";
   }
-  if (normalized.receiverName.length > 64) {
-    return "收货人姓名不能超过 64 个字";
+  if (normalized.receiverName.length > 10) {
+    return "收货人姓名不能超过 10 个字";
   }
   if (!normalized.receiverPhone) {
     return "请填写手机号码";
   }
-  if (!/^[0-9+()\-\s]{6,32}$/.test(normalized.receiverPhone)) {
+  if (!/^1[3-9]\d{9}$/.test(normalized.receiverPhone)) {
     return "请填写有效的手机号码";
   }
   if (!normalized.province || !normalized.city || !normalized.district) {

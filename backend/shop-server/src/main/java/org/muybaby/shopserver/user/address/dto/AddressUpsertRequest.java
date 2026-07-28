@@ -1,11 +1,12 @@
 package org.muybaby.shopserver.user.address.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record AddressUpsertRequest(
-        @NotBlank @Size(max = 64) String receiverName,
-        @NotBlank @Size(max = 32) String receiverPhone,
+        @NotBlank @Size(max = 10) String receiverName,
+        @NotBlank @Pattern(regexp = "^1[3-9]\\d{9}$") String receiverPhone,
         @NotBlank @Size(max = 64) String province,
         @NotBlank @Size(max = 64) String city,
         @NotBlank @Size(max = 64) String district,
@@ -16,7 +17,7 @@ public record AddressUpsertRequest(
 ) {
     public AddressUpsertRequest {
         receiverName = strip(receiverName);
-        receiverPhone = strip(receiverPhone);
+        receiverPhone = stripWhitespace(receiverPhone);
         province = strip(province);
         city = strip(city);
         district = strip(district);
@@ -32,5 +33,9 @@ public record AddressUpsertRequest(
     private static String stripOrEmpty(String value) {
         String stripped = strip(value);
         return stripped == null ? "" : stripped;
+    }
+
+    private static String stripWhitespace(String value) {
+        return value == null ? null : value.replaceAll("\\s+", "");
     }
 }

@@ -40,7 +40,7 @@ test("地址表单规范空白并校验姓名、电话、地区和详细地址",
   assert.equal(validateAddressForm(validAddress), "");
   assert.deepEqual(normalizeAddressForm(validAddress), {
     receiverName: "张三",
-    receiverPhone: "138 0000 0000",
+    receiverPhone: "13800000000",
     province: "四川省",
     city: "成都市",
     district: "锦江区",
@@ -50,7 +50,23 @@ test("地址表单规范空白并校验姓名、电话、地区和详细地址",
     isDefault: true
   });
   assert.equal(validateAddressForm({ ...validAddress, receiverName: "" }), "请填写收货人姓名");
+  assert.equal(
+    validateAddressForm({ ...validAddress, receiverName: "一二三四五六七八九十" }),
+    ""
+  );
+  assert.equal(
+    validateAddressForm({ ...validAddress, receiverName: "一二三四五六七八九十一" }),
+    "收货人姓名不能超过 10 个字"
+  );
   assert.equal(validateAddressForm({ ...validAddress, receiverPhone: "abc" }), "请填写有效的手机号码");
+  assert.equal(
+    validateAddressForm({ ...validAddress, receiverPhone: "12800138000" }),
+    "请填写有效的手机号码"
+  );
+  assert.equal(
+    validateAddressForm({ ...validAddress, receiverPhone: "1380013800" }),
+    "请填写有效的手机号码"
+  );
   assert.equal(validateAddressForm({ ...validAddress, district: "" }), "请通过地图选择完整地址");
   assert.equal(validateAddressForm({ ...validAddress, detailAddress: "" }), "请通过地图选择详细地址");
   assert.equal(parseAddressId("9007199254740993123"), "9007199254740993123");

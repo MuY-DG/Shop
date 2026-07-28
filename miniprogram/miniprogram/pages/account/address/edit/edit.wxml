@@ -30,7 +30,7 @@
           class="form-field__input"
           value="{{form.receiverName}}"
           data-field="receiverName"
-          maxlength="64"
+          maxlength="10"
           placeholder="姓名"
           placeholder-class="form-field__placeholder"
           bindinput="onInput"

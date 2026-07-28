@@ -254,12 +254,13 @@ class AppAddressControllerTest {
     }
 
     @Test
-    void trimmedValidationRejectsBlankFieldsAndLengthOverflow() throws Exception {
+    void trimmedValidationRejectsBlankFieldsInvalidPhonesAndLengthOverflow() throws Exception {
         LoggedInApp user = appLogin("test-login-code");
         List<Map<String, Object>> invalidRequests = List.of(
                 changed(validAddress("张三", false), "receiverName", "   "),
-                changed(validAddress("张三", false), "receiverName", "姓".repeat(65)),
-                changed(validAddress("张三", false), "receiverPhone", "1".repeat(33)),
+                changed(validAddress("张三", false), "receiverName", "姓".repeat(11)),
+                changed(validAddress("张三", false), "receiverPhone", "12800138000"),
+                changed(validAddress("张三", false), "receiverPhone", "1380013800"),
                 changed(validAddress("张三", false), "province", "   "),
                 changed(validAddress("张三", false), "city", "\t"),
                 changed(validAddress("张三", false), "district", "  "),
