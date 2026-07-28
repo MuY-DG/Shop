@@ -219,5 +219,6 @@ test("小程序只在售后选择原图且不调用图片压缩 API", () => {
     "utf8"
   );
   assert.doesNotMatch(profileLogic, /wx\.(chooseImage|chooseMedia|compressImage)/);
+  assert.doesNotMatch(profileTemplate, /chooseImage|chooseMedia/);
   assert.match(profileTemplate, /open-type="chooseAvatar"/);
 });

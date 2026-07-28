@@ -175,17 +175,53 @@ class StorageImageCompressionIntegrationTest {
     }
 
     @Test
-    void miniProgramImageUploadsBypassCompressionAndKeepTheOriginal() {
+    void miniProgramAvatarUploadBypassesCompressionAndKeepsTheOriginal() {
         byte[] source = noisyImage("png", 80, 80);
         List<ProviderWrite> providerWrites = captureProviderWrites();
 
         StorageAssetResponse response = storageService.uploadUserAvatar(
-                appPrincipal(),
-                multipart("wechat-avatar.png", "image/png", source)
+                appPrincipal(1L),
+                multipart("avatar.png", "image/png", source)
         );
 
         verifyNoInteractions(imageCompressionService);
-        assertThat(response.originalFilename()).isEqualTo("wechat-avatar.png");
+        assertThat(response.originalFilename()).isEqualTo("avatar.png");
+        assertOriginalPngWasStored(response, source, providerWrites.getFirst());
+    }
+
+    @Test
+    void miniProgramAfterSaleUploadBypassesCompressionAndKeepsTheOriginal() {
+        long userId = 91001L;
+        long orderId = 92001L;
+        jdbcClient.sql("""
+                        insert into app_user (id, openid, status)
+                        values (:userId, 'compression-app-user', 'ENABLED')
+                        """)
+                .param("userId", userId)
+                .update();
+        jdbcClient.sql("""
+                        insert into shop_order
+                            (id, order_no, user_id, status, source, idempotency_key,
+                             product_original_amount_cent, product_amount_cent,
+                             coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent)
+                        values
+                            (:orderId, 'COMPRESSION-APP-ORDER', :userId, 'PAID', 'CART',
+                             'compression-app-order', 1000, 1000, 0, 0, 1000, 1000)
+                        """)
+                .param("orderId", orderId)
+                .param("userId", userId)
+                .update();
+        byte[] source = noisyImage("png", 80, 80);
+        List<ProviderWrite> providerWrites = captureProviderWrites();
+
+        StorageAssetResponse response = storageService.uploadAfterSaleEvidence(
+                appPrincipal(userId),
+                orderId,
+                multipart("after-sale-evidence.png", "image/png", source)
+        );
+
+        verifyNoInteractions(imageCompressionService);
+        assertThat(response.originalFilename()).isEqualTo("after-sale-evidence.png");
         assertOriginalPngWasStored(response, source, providerWrites.getFirst());
     }
 
@@ -461,10 +497,10 @@ class StorageImageCompressionIntegrationTest {
         );
     }
 
-    private static AuthenticatedPrincipal appPrincipal() {
+    private static AuthenticatedPrincipal appPrincipal(long userId) {
         return new AuthenticatedPrincipal(
                 TokenKind.APP,
-                1L,
+                userId,
                 "wechat-user",
                 List.of(),
                 List.of()

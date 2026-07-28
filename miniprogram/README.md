@@ -66,7 +66,13 @@ pnpm check
 
 微信开发者工具导入当前目录即可预览。开发 API 默认指向 `https://pay-dev.muybaby6.icu`，配置入口为 `miniprogram/config/app-config.ts`。
 
-当前以 WebView 和基础库 2.32.3 为兼容基线。正式版启动时会拒绝 `development` 配置；发布前必须设置生产环境与 HTTPS API，并确认微信公众平台的 request 合法域名包含业务 API 域名与 `https://restapi.amap.com`，图片/downloadFile 合法域名包含 `https://oss.muybaby6.icu`（正式环境请替换业务域名）。
+当前以 WebView 和基础库 2.32.3 为兼容基线。正式版启动时会拒绝 `development` 配置；发布前必须设置生产环境与 HTTPS API，并在微信公众平台分别配置：
+
+- request 合法域名：业务 API 域名与 `https://restapi.amap.com`
+- uploadFile 合法域名：业务 API 域名（头像和售后凭证上传依赖此配置）
+- downloadFile 合法域名：`https://oss.muybaby6.icu`、`https://thirdwx.qlogo.cn`、`https://wx.qlogo.cn` 和 `https://mmbiz.qpic.cn`
+
+正式环境请将上述业务域名替换为实际生产域名。
 
 ## 下一阶段
 

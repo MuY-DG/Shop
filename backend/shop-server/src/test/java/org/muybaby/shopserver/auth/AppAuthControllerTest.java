@@ -130,11 +130,11 @@ class AppAuthControllerTest {
     }
 
     @Test
-    void appUserCanUploadWechatChosenAvatarAndReadItFromLaterProfiles() throws Exception {
+    void appUserCanUploadChosenAvatarAndReadItFromLaterProfiles() throws Exception {
         AppSession login = login("avatar-profile-user");
 
         MvcResult uploadResult = mockMvc.perform(multipart("/app/users/me/avatar")
-                        .file(new MockMultipartFile("file", "wechat-avatar.png", "image/png", TINY_PNG))
+                        .file(new MockMultipartFile("file", "avatar.png", "image/png", TINY_PNG))
                         .header("Authorization", bearer(login.token())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.avatarUrl", startsWith("http://localhost:8080/files/public/")))

@@ -13,6 +13,10 @@ const pageRoot = resolve(
   process.cwd(),
   "miniprogram/pages/account/profile/profile"
 );
+const servicePath = resolve(
+  process.cwd(),
+  "miniprogram/services/user-profile.ts"
+);
 
 test("微信昵称规范化并限制有效长度", () => {
   assert.equal(normalizeProfileNickname("  山茶花  "), "山茶花");
@@ -23,18 +27,19 @@ test("微信昵称规范化并限制有效长度", () => {
   assert.match(validateProfileNickname("很".repeat(33)), /32/);
 });
 
-test("资料改动同时识别昵称和微信头像临时路径", () => {
-  assert.equal(profileHasChanges("灶香集", "灶香集", ""), false);
-  assert.equal(profileHasChanges(" 新昵称 ", "灶香集", ""), true);
-  assert.equal(profileHasChanges("灶香集", "灶香集", "wxfile://avatar.png"), true);
+test("资料改动识别昵称变化", () => {
+  assert.equal(profileHasChanges("灶香集", "灶香集"), false);
+  assert.equal(profileHasChanges(" 新昵称 ", "灶香集"), true);
 });
 
-test("个人资料页只开放微信头像和昵称能力并提供退出登录", () => {
+test("个人资料页接受原生头像选择结果并直接保存", () => {
   const template = readFileSync(`${pageRoot}.wxml`, "utf8");
   const logic = readFileSync(`${pageRoot}.ts`, "utf8");
+  const service = readFileSync(servicePath, "utf8");
 
   assert.match(template, /open-type="chooseAvatar"/);
   assert.match(template, /bindchooseavatar="onAvatarChoose"/);
+  assert.match(template, /aria-label="更换头像"/);
   assert.match(template, /user-profile-background\.png/);
   assert.match(template, /round-back="\{\{true\}\}"/);
   assert.match(template, /class="avatar-button__image"[\s\S]*mode="aspectFill"/);
@@ -43,6 +48,10 @@ test("个人资料页只开放微信头像和昵称能力并提供退出登录",
   assert.doesNotMatch(template, /点击使用微信头像|头像仅通过微信头像选择器|>微信<\/view>/);
   assert.doesNotMatch(template, /微信账号|已绑定/);
   assert.doesNotMatch(template, /chooseImage|chooseMedia|type="file"/);
-  assert.doesNotMatch(logic, /wx\.(chooseImage|chooseMedia)/);
+  assert.doesNotMatch(logic, /只允许使用微信头像|不能上传相册或拍照图片/);
+  assert.doesNotMatch(logic, /wx\.getUserProfile/);
+  assert.match(logic, /saveAvatar\(avatarUrl\)/);
+  assert.match(service, /uploadFile<AppUserProfile>/);
+  assert.doesNotMatch(service, /compressImage|chooseImage|chooseMedia/);
   assert.match(logic, /logoutSession/);
 });

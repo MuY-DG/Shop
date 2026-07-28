@@ -19,7 +19,7 @@ import { request } from "../miniprogram/utils/request";
 import { uploadFile as uploadAuthenticatedFile } from "../miniprogram/utils/upload";
 import { getHome } from "../miniprogram/services/home";
 import {
-  saveWechatAvatar,
+  saveAvatar,
   updateMyProfile
 } from "../miniprogram/services/user-profile";
 
@@ -398,7 +398,7 @@ test("微信昵称和头像更新会同步到当前会话", async () => {
   await nicknameUpdate;
 
   const wechatAvatarUrl = "https://thirdwx.qlogo.cn/mmopen/vi_32/avatar/132";
-  const remoteAvatarUpdate = saveWechatAvatar(wechatAvatarUrl);
+  const remoteAvatarUpdate = saveAvatar(wechatAvatarUrl);
   await flushTasks();
   const remoteAvatarCall = takeRequest("/app/users/me/avatar");
   assert.equal(remoteAvatarCall.method, "PUT");
@@ -415,12 +415,15 @@ test("微信昵称和头像更新会同步到当前会话", async () => {
       phoneNumberMasked: "138****5678"
     }
   });
-  await remoteAvatarUpdate;
+  const profile = await remoteAvatarUpdate;
+  assert.equal(profile.avatarUrl, wechatAvatarUrl);
+  assert.equal(getSessionState().user?.nickname, "灶香集会员");
+  assert.equal(getSessionState().user?.avatarUrl, profile.avatarUrl);
 
-  const avatarUpdate = saveWechatAvatar("/tmp/wechat-avatar.png");
+  const avatarUpdate = saveAvatar("/tmp/avatar.png");
   await flushTasks();
   const avatarCall = takeUpload("/app/users/me/avatar");
-  assert.equal(avatarCall.filePath, "/tmp/wechat-avatar.png");
+  assert.equal(avatarCall.filePath, "/tmp/avatar.png");
   assert.equal(avatarCall.name, "file");
   respondUpload(avatarCall, 200, {
     code: 200,
@@ -435,10 +438,11 @@ test("微信昵称和头像更新会同步到当前会话", async () => {
     }
   });
 
-  const profile = await avatarUpdate;
-  assert.equal(profile.avatarUrl, "https://oss.example.test/avatar.png");
-  assert.equal(getSessionState().user?.nickname, "灶香集会员");
-  assert.equal(getSessionState().user?.avatarUrl, profile.avatarUrl);
+  const uploadedProfile = await avatarUpdate;
+  assert.equal(uploadedProfile.avatarUrl, "https://oss.example.test/avatar.png");
+  assert.equal(getSessionState().user?.avatarUrl, uploadedProfile.avatarUrl);
+  assert.equal(pendingRequests.length, 0);
+  assert.equal(pendingUploads.length, 0);
   assert.equal(loginCallCount, 1);
 });
 

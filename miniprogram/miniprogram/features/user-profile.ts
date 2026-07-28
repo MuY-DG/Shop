@@ -28,11 +28,7 @@ export function validateProfileNickname(value: unknown): string {
 
 export function profileHasChanges(
   nickname: unknown,
-  originalNickname: unknown,
-  pendingAvatarPath: unknown
+  originalNickname: unknown
 ): boolean {
-  return Boolean(
-    normalizeProfileNickname(nickname) !== normalizeProfileNickname(originalNickname) ||
-    (typeof pendingAvatarPath === "string" && pendingAvatarPath.trim())
-  );
+  return normalizeProfileNickname(nickname) !== normalizeProfileNickname(originalNickname);
 }

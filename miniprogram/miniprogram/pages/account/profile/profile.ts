@@ -5,7 +5,7 @@ import {
 } from "../../../features/user-profile";
 import {
   getMyProfile,
-  saveWechatAvatar,
+  saveAvatar,
   updateMyProfile
 } from "../../../services/user-profile";
 import {
@@ -25,7 +25,6 @@ interface ChooseAvatarEvent {
 }
 
 let originalNickname = "";
-let pendingAvatarPath = "";
 let latestProfileRequest = 0;
 let loginRequested = false;
 
@@ -42,6 +41,7 @@ Page({
     initialized: false,
     loading: false,
     saving: false,
+    savingAvatar: false,
     loggingOut: false,
     nickname: "",
     avatarUrl: DEFAULT_AVATAR,
@@ -99,32 +99,45 @@ Page({
     }
   },
 
-  onAvatarChoose(event: ChooseAvatarEvent) {
-    const avatarUrl = event.detail.avatarUrl?.trim() || "";
-    if (!avatarUrl) {
-      wx.showToast({ title: "未选择微信头像", icon: "none" });
+  async onAvatarChoose(event: ChooseAvatarEvent) {
+    if (this.data.saving || this.data.savingAvatar || this.data.loggingOut) {
       return;
     }
-    pendingAvatarPath = avatarUrl;
-    this.setData({
-      avatarUrl,
-      hasAvatar: true,
-      dirty: profileHasChanges(this.data.nickname, originalNickname, pendingAvatarPath),
-      validationErrorText: ""
-    });
+    const avatarUrl = event.detail.avatarUrl?.trim() || "";
+    if (!avatarUrl) {
+      wx.showToast({ title: "未选择头像", icon: "none" });
+      return;
+    }
+    this.setData({ savingAvatar: true, validationErrorText: "" });
+    try {
+      const profile = await saveAvatar(avatarUrl);
+      this.setData({
+        savingAvatar: false,
+        avatarUrl: profile.avatarUrl || DEFAULT_AVATAR,
+        hasAvatar: Boolean(profile.avatarUrl),
+        dirty: profileHasChanges(this.data.nickname, originalNickname),
+        validationErrorText: ""
+      });
+      wx.showToast({ title: "头像已更新", icon: "success" });
+    } catch (error) {
+      this.setData({
+        savingAvatar: false,
+        validationErrorText: actionError(error, "头像更新失败，请稍后重试")
+      });
+    }
   },
 
   onNicknameInput(event: WechatMiniprogram.Input) {
     const nickname = event.detail.value;
     this.setData({
       nickname,
-      dirty: profileHasChanges(nickname, originalNickname, pendingAvatarPath),
+      dirty: profileHasChanges(nickname, originalNickname),
       validationErrorText: ""
     });
   },
 
   async onSaveTap() {
-    if (this.data.saving || this.data.loggingOut) {
+    if (this.data.saving || this.data.savingAvatar || this.data.loggingOut) {
       return;
     }
     const nickname = normalizeProfileNickname(this.data.nickname);
@@ -144,9 +157,6 @@ Page({
       if (nickname !== originalNickname) {
         profile = await updateMyProfile(nickname);
       }
-      if (pendingAvatarPath) {
-        profile = await saveWechatAvatar(pendingAvatarPath);
-      }
       if (!profile) {
         throw new Error("用户资料不存在");
       }
@@ -161,7 +171,7 @@ Page({
   },
 
   onLogoutTap() {
-    if (this.data.saving || this.data.loggingOut) {
+    if (this.data.saving || this.data.savingAvatar || this.data.loggingOut) {
       return;
     }
     wx.showModal({
@@ -190,11 +200,11 @@ Page({
 
   applyProfile(profile: AppUserProfile) {
     originalNickname = profile.nickname;
-    pendingAvatarPath = "";
     this.setData({
       initialized: true,
       loading: false,
       saving: false,
+      savingAvatar: false,
       nickname: profile.nickname,
       avatarUrl: profile.avatarUrl || DEFAULT_AVATAR,
       hasAvatar: Boolean(profile.avatarUrl),

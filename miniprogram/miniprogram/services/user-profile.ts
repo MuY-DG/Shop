@@ -27,15 +27,11 @@ export async function updateMyProfile(
   return updateSessionUser(profile);
 }
 
-function isRemoteWechatAvatarUrl(avatarUrl: string): boolean {
-  return /^https:\/\//i.test(avatarUrl);
-}
-
-export async function saveWechatAvatar(
+export async function saveAvatar(
   selectedAvatarUrl: string
 ): Promise<AppUserProfile> {
   const avatarUrl = selectedAvatarUrl.trim();
-  if (isRemoteWechatAvatarUrl(avatarUrl)) {
+  if (/^https:\/\//i.test(avatarUrl)) {
     const profile = await request<AppUserProfile, UpdateAppUserAvatarRequest>({
       url: API_ENDPOINTS.user.avatar,
       method: "PUT",
