@@ -3,6 +3,7 @@
     "pages/index/index",
     "pages/category/category",
     "pages/cart/cart",
+    "pages/cart/standalone/standalone",
     "pages/profile/profile",
     "pages/auth/login/login",
     "pages/account/profile/profile",

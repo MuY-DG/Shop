@@ -667,7 +667,12 @@ Page({
   },
 
   onGoToCart() {
-    wx.switchTab({ url: "/pages/cart/cart" });
+    wx.navigateTo({
+      url: "/pages/cart/standalone/standalone",
+      fail: () => {
+        wx.switchTab({ url: "/pages/cart/cart" });
+      }
+    });
   },
 
   onAddressTap() {

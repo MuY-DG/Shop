@@ -72,8 +72,13 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
   assert.equal(selected, 3);
 
   const cartLogic = readFileSync(resolve(sourceRoot, "pages/cart/cart.ts"), "utf8");
+  const cartPageLogic = readFileSync(
+    resolve(sourceRoot, "pages/cart/cart-page.ts"),
+    "utf8"
+  );
   const profileLogic = readFileSync(resolve(sourceRoot, "pages/profile/profile.ts"), "utf8");
-  assert.match(cartLogic, /syncCustomTabBar\(this, 2\)/);
+  assert.match(cartLogic, /syncTabBar: true/);
+  assert.match(cartPageLogic, /syncCustomTabBar\(this, 2\)/);
   assert.match(profileLogic, /syncCustomTabBar\(this, 3\)/);
 
   assert.doesNotThrow(() => syncCustomTabBar({}, 0));
@@ -218,11 +223,34 @@ test("购物车与结算页注册真实交易路径", () => {
     resolve(sourceRoot, "pages/order/preview/preview.ts"),
     "utf8"
   );
+  const productDetailLogic = readFileSync(
+    resolve(sourceRoot, "pages/product/detail/detail.ts"),
+    "utf8"
+  );
+  const standaloneCartRoot = resolve(
+    sourceRoot,
+    "pages/cart/standalone/standalone"
+  );
+  const standaloneCartStyle = readFileSync(`${standaloneCartRoot}.less`, "utf8");
 
+  assert.ok(appConfig.pages.includes("pages/cart/standalone/standalone"));
   assert.ok(appConfig.pages.includes("pages/order/preview/preview"));
   assert.ok(appConfig.pages.includes("pages/order/created/created"));
+  ["json", "ts", "wxml", "less"].forEach((extension) => {
+    assert.equal(existsSync(`${standaloneCartRoot}.${extension}`), true);
+  });
   assert.doesNotMatch(cartTemplate, /tab-placeholder|正在接入/);
   assert.match(cartTemplate, /bindtap="onCheckoutTap"/);
+  assert.match(cartTemplate, /back="{{navigationBack}}"/);
+  assert.match(standaloneCartStyle, /\.settlement-bar\s*\{\s*bottom:\s*0/);
+  assert.match(
+    standaloneCartStyle,
+    /padding-bottom:\s*calc\(@space-4 \+ env\(safe-area-inset-bottom\)\)/
+  );
+  assert.match(
+    productDetailLogic,
+    /wx\.navigateTo\(\{\s*url: "\/pages\/cart\/standalone\/standalone"/
+  );
   assert.match(previewTemplate, /bindtap="onImportAddress"/);
   assert.match(previewTemplate, /bindtap="onPayTap"/);
   assert.match(previewTemplate, /立即支付/);

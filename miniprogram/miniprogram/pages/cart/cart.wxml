@@ -1,6 +1,7 @@
 <view class="cart-page">
   <navigation-bar
     title="购物车"
+    back="{{navigationBack}}"
     background="#FAF2E4"
     color="#2E1D16"
     loading="{{loaded && loading}}"
