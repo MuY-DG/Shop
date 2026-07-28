@@ -22,11 +22,10 @@ export interface CartItemResponse {
   nextWholesaleTierQuantityNeeded?: number;
   quantity: number;
   lineAmountCent: number;
-  stockAvailable: number;
   skuStatus?: "ENABLED" | "DISABLED";
   spuStatus?: "DRAFT" | "ON_SALE" | "OFF_SALE";
   available: boolean;
-  unavailableReason?: "SKU_UNAVAILABLE" | "PRODUCT_UNAVAILABLE" | "STOCK_SHORTAGE";
+  unavailableReason?: "SKU_UNAVAILABLE" | "PRODUCT_UNAVAILABLE" | "SOLD_OUT" | "STOCK_SHORTAGE";
   createdAt?: string;
   updatedAt?: string;
 }

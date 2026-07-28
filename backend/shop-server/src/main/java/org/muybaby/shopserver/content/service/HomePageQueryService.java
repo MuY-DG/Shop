@@ -52,7 +52,7 @@ public class HomePageQueryService {
                 productParameterService.displayValuesBySpuIds(spuIds, true);
         return new HomePageLoad(
                 new AppHomeResponse(
-                        2,
+                        3,
                         homeBannerService.appBanners(),
                         categories(),
                         List.of(
@@ -213,6 +213,7 @@ public class HomePageQueryService {
                 List.copyOf(features.get("META")),
                 wholesaleSummary,
                 row.displaySales(),
+                null,
                 "/pages/product/detail/detail?id=" + row.spuId()
         );
     }

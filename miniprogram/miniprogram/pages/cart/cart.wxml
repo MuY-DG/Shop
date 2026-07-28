@@ -118,7 +118,6 @@
             <view class="cart-card__footer">
               <view>
                 <view class="line-amount">小计 {{item.lineAmountText}}</view>
-                <view class="stock-copy">{{item.stockText}}</view>
               </view>
               <view class="quantity-stepper">
                 <button
@@ -134,7 +133,7 @@
                 <button
                   class="quantity-stepper__button"
                   data-id="{{item.id}}"
-                  disabled="{{!item.available || item.quantity >= item.stockAvailable || updatingId || deletingId || clearing}}"
+                  disabled="{{!item.available || item.quantity >= 999 || updatingId || deletingId || clearing}}"
                   catchtap="onQuantityPlus"
                 >+</button>
               </view>

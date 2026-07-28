@@ -116,7 +116,6 @@ const EMPTY_SELECTION: PurchaseSelectionView = {
   priceDecimalText: "",
   originalPriceText: "",
   hasOriginalPrice: false,
-  stockText: "暂无可售规格",
   wholesaleApplied: false,
   wholesaleHint: "",
   wholesaleTiers: []

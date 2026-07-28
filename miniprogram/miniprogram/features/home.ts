@@ -12,7 +12,7 @@ import {
   type ProductFactView
 } from "./product-facts";
 
-export const SUPPORTED_HOME_SCHEMA_VERSION = 2;
+export const SUPPORTED_HOME_SCHEMA_VERSION = 3;
 
 export type ProductTagTone = ProductFactTone;
 
@@ -58,6 +58,7 @@ export interface HomeProductCardView {
   hasOriginalPrice: boolean;
   badgeText: string;
   badgeTone: ProductTagTone;
+  soldOut: boolean;
   features: ProductFeatureView[];
   wholesaleText: string;
   salesText: string;
@@ -213,6 +214,7 @@ function toProductView(product: HomeProduct): HomeProductCardView | undefined {
   const strikePriceText = originalPriceText(product, primaryPrice);
   const imageUrl = text(product.imageUrl);
   const sales = nonNegativeInteger(product.displaySales) ?? 0;
+  const soldOut = product.saleState === "SOLD_OUT";
   return {
     placementId: positiveInteger(product.placementId) ?? spuId,
     spuId,
@@ -231,8 +233,9 @@ function toProductView(product: HomeProduct): HomeProductCardView | undefined {
     priceSuffixText: "",
     originalPriceText: strikePriceText,
     hasOriginalPrice: Boolean(strikePriceText),
-    badgeText: text(product.badge?.text),
-    badgeTone: badgeTone(product.badge?.tone),
+    badgeText: soldOut ? "暂时售罄" : text(product.badge?.text),
+    badgeTone: soldOut ? "neutral" : badgeTone(product.badge?.tone),
+    soldOut,
     features: productFeatures(product),
     wholesaleText: product.wholesaleSummary?.available
       ? text(product.wholesaleSummary.label)

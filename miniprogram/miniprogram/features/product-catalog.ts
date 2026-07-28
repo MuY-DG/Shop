@@ -38,6 +38,7 @@ export interface CatalogProductCardView {
   hasOriginalPrice: boolean;
   badgeText: string;
   badgeTone: "brand" | "orange" | "success" | "neutral" | "gold";
+  soldOut: boolean;
   features: ProductFactView[];
   wholesaleText: string;
   salesText: string;
@@ -60,7 +61,7 @@ export interface SkuOptionView {
   id: number;
   name: string;
   priceText: string;
-  stockText: string;
+  availabilityText: string;
   imageUrl: string;
   hasImage: boolean;
   selected: boolean;
@@ -98,7 +99,6 @@ export interface PurchaseSelectionView {
   priceDecimalText: string;
   originalPriceText: string;
   hasOriginalPrice: boolean;
-  stockText: string;
   wholesaleApplied: boolean;
   wholesaleHint: string;
   wholesaleTiers: WholesaleTierView[];
@@ -252,7 +252,8 @@ export function buildCatalogProductCard(
   const primaryParts = priceParts(primaryPrice);
   const rangeParts = priceParts(rangePrice);
   const imageUrl = cleanText(product.mainImage);
-  const stock = nonNegativeInteger(product.totalStock) ?? 0;
+  const soldOut = product.saleState === "SOLD_OUT";
+  const displaySales = nonNegativeInteger(product.displaySales) ?? 0;
   return {
     navigationPath: `/pages/product/detail/detail?id=${spuId}`,
     spuId,
@@ -275,11 +276,12 @@ export function buildCatalogProductCard(
     priceSuffixText: minPrice !== undefined && maxPrice === undefined ? "起" : "",
     originalPriceText: "",
     hasOriginalPrice: false,
-    badgeText: stock > 0 ? "" : "暂时售罄",
+    badgeText: soldOut ? "暂时售罄" : "",
     badgeTone: "neutral",
+    soldOut,
     features: productFacts(product.parameters),
     wholesaleText: "",
-    salesText: stock > 0 ? `库存 ${stock}` : "补货中"
+    salesText: `已售 ${displaySales}+`
   };
 }
 
@@ -331,7 +333,7 @@ export function buildParameterViews(
 function validSku(sku: ProductSku): boolean {
   return Boolean(positiveInteger(sku?.id)) &&
     sku.status === "ENABLED" &&
-    (nonNegativeInteger(sku.stockAvailable) ?? 0) > 0 &&
+    sku.saleState === "AVAILABLE" &&
     nonNegativeInteger(sku.priceCent) !== undefined;
 }
 
@@ -527,12 +529,11 @@ export function buildSkuOptions(
   return (Array.isArray(skus) ? skus : [])
     .filter((sku) => positiveInteger(sku?.id))
     .map((sku) => {
-      const stock = nonNegativeInteger(sku.stockAvailable) ?? 0;
       return {
         id: sku.id,
         name: cleanText(sku.specText) || "默认规格",
         priceText: formatMoney(sku.priceCent),
-        stockText: stock > 0 ? `库存 ${stock}` : "已售罄",
+        availabilityText: validSku(sku) ? "" : "暂时售罄",
         imageUrl: cleanText(sku.image) || cleanText(fallbackImage),
         hasImage: Boolean(cleanText(sku.image) || cleanText(fallbackImage)),
         selected: sku.id === selectedSkuId,
@@ -562,14 +563,12 @@ export function resolvePurchaseSelection(
       priceDecimalText: "",
       originalPriceText: "",
       hasOriginalPrice: false,
-      stockText: "暂无可售规格",
       wholesaleApplied: false,
       wholesaleHint: "",
       wholesaleTiers: []
     };
   }
-  const stock = nonNegativeInteger(sku.stockAvailable) ?? 0;
-  const quantityMax = Math.min(stock, 999);
+  const quantityMax = 999;
   const quantity = Math.min(Math.max(positiveInteger(requestedQuantity) ?? 1, 1), quantityMax);
   const tiers = validWholesaleTiers(sku.wholesaleTiers);
   const eligibleTiers = tiers.filter((tier) => tier.minQuantity <= quantity);
@@ -593,7 +592,6 @@ export function resolvePurchaseSelection(
       ? formatMoney(originalPrice)
       : "",
     hasOriginalPrice: originalPrice !== undefined && originalPrice > unitPrice,
-    stockText: `库存 ${stock}`,
     wholesaleApplied: Boolean(appliedTier),
     wholesaleHint: hints.join(" · "),
     wholesaleTiers: tiers.map((tier) => ({

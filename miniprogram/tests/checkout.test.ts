@@ -39,7 +39,6 @@ function cartItem(overrides: Partial<CartItemResponse> = {}): CartItemResponse {
     nextWholesaleTierQuantityNeeded: 3,
     quantity: 3,
     lineAmountCent: 5040,
-    stockAvailable: 20,
     skuStatus: "ENABLED",
     spuStatus: "ON_SALE",
     available: true,
@@ -96,6 +95,11 @@ test("购物车选择只保留可购买商品并计算选中金额", () => {
   assert.equal(summary.allAvailableSelected, false);
   assert.equal(summary.items[0]?.wholesaleText, "已享 3 件起批发价");
   assert.equal(summary.items[2]?.unavailableText, "库存不足，请调整数量");
+
+  const soldOutSummary = buildCartSummary([
+    cartItem({ available: false, unavailableReason: "SOLD_OUT" })
+  ], []);
+  assert.equal(soldOutSummary.items[0]?.unavailableText, "暂时售罄");
 
   assert.deepEqual(toggleCartSelection([11], 12), [11, 12]);
   assert.deepEqual(toggleCartSelection([11, 12], 11), [12]);

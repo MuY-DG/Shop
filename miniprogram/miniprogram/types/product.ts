@@ -4,6 +4,7 @@ export type ProductParameterCardRole = "HIGHLIGHT" | "META";
 export type ProductParameterCardRenderer = "TEXT" | "PILL" | "LEVEL" | "SPICE";
 export type ProductSkuStatus = "ENABLED" | "DISABLED";
 export type ProductFreightChargeMode = "FREE" | "FIXED";
+export type ProductSaleState = "AVAILABLE" | "SOLD_OUT";
 
 export interface ProductCategory {
   id: number;
@@ -59,7 +60,8 @@ export interface ProductListItem {
   sellingPoints: string[];
   minPriceCent?: number;
   maxPriceCent?: number;
-  totalStock: number;
+  displaySales: number;
+  saleState: ProductSaleState;
   parameters: ProductParameterValue[];
 }
 
@@ -91,7 +93,7 @@ export interface ProductSku {
   specText: string;
   priceCent: number;
   originalPriceCent?: number;
-  stockAvailable: number;
+  saleState: ProductSaleState;
   weightGram?: number;
   image?: string;
   imageFileId?: number;
@@ -108,6 +110,7 @@ export interface ProductDetail {
   mainImage?: string;
   mainImageFileId?: number;
   salesCount: number;
+  saleState: ProductSaleState;
   sellingPoints: string[];
   detailHtml?: string;
   images: ProductImage[];

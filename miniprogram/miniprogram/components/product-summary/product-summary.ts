@@ -5,7 +5,6 @@ Component({
 
   properties: {
     detail: { type: Object, value: {} },
-    stockText: { type: String, value: "" },
     priceText: { type: String, value: "" },
     priceIntegerText: { type: String, value: "" },
     priceDecimalText: { type: String, value: "" },

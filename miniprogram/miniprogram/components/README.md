@@ -20,5 +20,5 @@
 1. 后端 DTO 只进入 `types/`，页面展示模型由 `features/` 生成。
 2. 跨页面复用或独立变化的业务区块必须放在 `components/`。
 3. 组件通过事件上报路由意图，不直接决定页面栈；页面执行 `navigateTo` 或 `switchTab`。
-4. 价格、库存、SKU 和批发规则保持为 `features/` 中的纯函数，并配套 Node 测试。
+4. 价格、可售状态、SKU 和批发规则保持为 `features/` 中的纯函数，并配套 Node 测试。
 5. 组件样式使用 `styles/tokens.less`，不复制已有语义色。

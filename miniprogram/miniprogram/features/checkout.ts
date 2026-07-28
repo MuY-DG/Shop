@@ -22,7 +22,6 @@ export interface CartItemView extends CartItemResponse {
   wholesaleText: string;
   nextWholesaleText: string;
   lineAmountText: string;
-  stockText: string;
   unavailableText: string;
 }
 
@@ -94,6 +93,8 @@ function unavailableText(item: CartItemResponse): string {
       return "该规格已下架";
     case "PRODUCT_UNAVAILABLE":
       return "商品已下架";
+    case "SOLD_OUT":
+      return "暂时售罄";
     case "STOCK_SHORTAGE":
       return "库存不足，请调整数量";
     default:
@@ -121,7 +122,6 @@ function cartItemView(item: CartItemResponse, selected: boolean): CartItemView {
       ? `再买 ${nextTierQuantity} 件，每件 ${money(nextTierPrice)}`
       : "",
     lineAmountText: money(item.lineAmountCent),
-    stockText: `库存 ${Math.max(0, item.stockAvailable)}`,
     unavailableText: unavailableText(item)
   };
 }

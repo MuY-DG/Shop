@@ -162,7 +162,7 @@ Page({
 
   onQuantityPlus(event: DatasetEvent) {
     const item = this.findItem(event);
-    if (item && item.quantity < Math.min(999, item.stockAvailable)) {
+    if (item?.available && item.quantity < 999) {
       void this.updateQuantity(item.id, item.quantity + 1);
     }
   },

@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.product.dto;
 
+import org.muybaby.shopserver.product.ProductSaleState;
+
 import java.util.List;
 
 public record AppSkuResponse(
@@ -9,7 +11,7 @@ public record AppSkuResponse(
         String specText,
         Long priceCent,
         Long originalPriceCent,
-        Integer stockAvailable,
+        ProductSaleState saleState,
         Integer weightGram,
         String image,
         Long imageFileId,

@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.product.dto;
 
+import org.muybaby.shopserver.product.ProductSaleState;
+
 import java.util.List;
 
 public record AppSpuDetailResponse(
@@ -11,6 +13,7 @@ public record AppSpuDetailResponse(
         String mainImage,
         Long mainImageFileId,
         Long salesCount,
+        ProductSaleState saleState,
         List<String> sellingPoints,
         String detailHtml,
         List<ProductImageResponse> images,

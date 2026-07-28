@@ -44,6 +44,36 @@
   justify-content: center;
 }
 
+.product-card--sold-out .product-card__image,
+.product-card--sold-out .product-card__placeholder {
+  filter: grayscale(0.72);
+  opacity: 0.72;
+}
+
+.product-card__sold-out {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  min-width: 132rpx;
+  min-height: 48rpx;
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 7rpx 18rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.58);
+  border-radius: @radius-pill;
+  color: #fff;
+  font-size: 22rpx;
+  font-weight: 650;
+  letter-spacing: 1rpx;
+  background: rgba(54, 51, 49, 0.7);
+  box-shadow: 0 5rpx 16rpx rgba(32, 30, 28, 0.18);
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(4rpx);
+}
+
 .product-card__placeholder {
   color: @color-gold-text;
   font-family: "Songti SC", "STSong", serif;
@@ -348,6 +378,16 @@
 
 .product-card__cart--loading {
   opacity: 0.72;
+}
+
+.product-card__cart--disabled {
+  background: #b7b4b1;
+  box-shadow: none;
+  opacity: 0.68;
+}
+
+.product-card__cart--disabled::before {
+  display: none;
 }
 
 .product-card__cart-plus-horizontal,

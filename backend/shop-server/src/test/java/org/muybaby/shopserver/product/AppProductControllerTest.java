@@ -78,7 +78,10 @@ class AppProductControllerTest {
                         .param("keyword", "Published"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total", greaterThanOrEqualTo(1)))
-                .andExpect(jsonPath("$.data.records[0].title").value("App Published SPU"));
+                .andExpect(jsonPath("$.data.records[0].title").value("App Published SPU"))
+                .andExpect(jsonPath("$.data.records[0].saleState").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.records[0].displaySales").value(0))
+                .andExpect(jsonPath("$.data.records[0].totalStock").doesNotExist());
 
         mockMvc.perform(get("/app/product/spus/" + spuId))
                 .andExpect(status().isOk())
@@ -86,7 +89,10 @@ class AppProductControllerTest {
                 .andExpect(jsonPath("$.data.mainImageFileId").value(mainFile.id()))
                 .andExpect(jsonPath("$.data.images[0].fileId").value(galleryFile.id()))
                 .andExpect(jsonPath("$.data.skus[0].skuCode").value("APP-SKU-1"))
-                .andExpect(jsonPath("$.data.skus[0].imageFileId").value(skuFile.id()));
+                .andExpect(jsonPath("$.data.skus[0].imageFileId").value(skuFile.id()))
+                .andExpect(jsonPath("$.data.saleState").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.skus[0].saleState").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.skus[0].stockAvailable").doesNotExist());
 
         adminProductService.unpublishSpu(spuId);
 
@@ -221,20 +227,25 @@ class AppProductControllerTest {
                 .andExpect(jsonPath("$.data.records[0].title").value("Disabled SKU SPU"))
                 .andExpect(jsonPath("$.data.records[0].minPriceCent").doesNotExist())
                 .andExpect(jsonPath("$.data.records[0].maxPriceCent").doesNotExist())
-                .andExpect(jsonPath("$.data.records[0].totalStock").value(0))
+                .andExpect(jsonPath("$.data.records[0].saleState").value("SOLD_OUT"))
+                .andExpect(jsonPath("$.data.records[0].displaySales").value(0))
+                .andExpect(jsonPath("$.data.records[0].totalStock").doesNotExist())
                 .andExpect(jsonPath("$.data.records[0].sellingPoints[0]").value("Fresh"))
                 .andExpect(jsonPath("$.data.records[0].sellingPoints[1]").value("Spicy"))
                 .andExpect(jsonPath("$.data.records[1].title").value("Mixed SKU SPU"))
                 .andExpect(jsonPath("$.data.records[1].minPriceCent").value(3990))
                 .andExpect(jsonPath("$.data.records[1].maxPriceCent").value(3990))
-                .andExpect(jsonPath("$.data.records[1].totalStock").value(5));
+                .andExpect(jsonPath("$.data.records[1].saleState").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.records[1].totalStock").doesNotExist());
 
         mockMvc.perform(get("/app/product/spus/" + mixedSkuSpuId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.sellingPoints[0]").value("Crisp"))
                 .andExpect(jsonPath("$.data.sellingPoints[1]").value("Hot"))
                 .andExpect(jsonPath("$.data.skus.length()").value(1))
-                .andExpect(jsonPath("$.data.skus[0].skuCode").value("MIX-SKU-1"));
+                .andExpect(jsonPath("$.data.skus[0].skuCode").value("MIX-SKU-1"))
+                .andExpect(jsonPath("$.data.skus[0].saleState").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.skus[0].stockAvailable").doesNotExist());
     }
 
     @Test

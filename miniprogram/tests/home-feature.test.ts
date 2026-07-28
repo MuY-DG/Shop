@@ -27,6 +27,7 @@ function product(
     highlights: [],
     metaFacts: [],
     displaySales: 0,
+    saleState: "AVAILABLE",
     path: "",
     ...overrides
   };
@@ -42,7 +43,7 @@ function section(
 
 function response(overrides: Partial<HomeResponse> = {}): HomeResponse {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     banners: [],
     categories: [],
     productSections: [],
@@ -50,7 +51,7 @@ function response(overrides: Partial<HomeResponse> = {}): HomeResponse {
   };
 }
 
-test("schema v2 首页响应映射为可直接渲染的 view-model", () => {
+test("schema v3 首页响应映射为可直接渲染的 view-model", () => {
   const hotProduct = product({
     placementId: 301,
     spuId: 41,
@@ -100,6 +101,7 @@ test("schema v2 首页响应映射为可直接渲染的 view-model", () => {
       maxPriceCent: 3990
     },
     displaySales: 0,
+    saleState: "SOLD_OUT",
     path: "/pages/product/detail/detail?id=42"
   });
 
@@ -129,7 +131,7 @@ test("schema v2 首页响应映射为可直接渲染的 view-model", () => {
     ]
   }));
 
-  assert.equal(viewModel.schemaVersion, 2);
+  assert.equal(viewModel.schemaVersion, 3);
   assert.equal(viewModel.hasContent, true);
   assert.deepEqual(viewModel.banners.map((banner) => ({
     id: banner.id,
@@ -173,6 +175,7 @@ test("schema v2 首页响应映射为可直接渲染的 view-model", () => {
   assert.equal(featured.hasOriginalPrice, true);
   assert.equal(featured.badgeText, "店长推荐");
   assert.equal(featured.badgeTone, "orange");
+  assert.equal(featured.soldOut, false);
   assert.deepEqual(featured.features, [
     {
       text: "中辣",
@@ -202,6 +205,9 @@ test("schema v2 首页响应映射为可直接渲染的 view-model", () => {
   assert.equal(compact.priceText, "39.90");
   assert.equal(compact.hasImage, false);
   assert.equal(compact.salesText, "已售 0+");
+  assert.equal(compact.soldOut, true);
+  assert.equal(compact.badgeText, "暂时售罄");
+  assert.equal(compact.badgeTone, "neutral");
   assert.equal(compact.hasOriginalPrice, false);
 });
 
@@ -228,9 +234,9 @@ test("商品区块按 code 映射而不是依赖后端数组顺序", () => {
   assert.deepEqual(viewModel.compactProducts.map((item) => item.spuId), [101]);
 });
 
-test("schema v2 空响应得到稳定空页面模型", () => {
+test("schema v3 空响应得到稳定空页面模型", () => {
   assert.deepEqual(buildHomeViewModel(response()), {
-    schemaVersion: 2,
+    schemaVersion: 3,
     banners: [],
     categories: [],
     featuredProducts: [],
@@ -364,7 +370,7 @@ test("schemaVersion 不匹配时显式拒绝渲染", () => {
     /暂不支持首页数据版本 1/
   );
   assert.throws(
-    () => buildHomeViewModel(response({ schemaVersion: 3 })),
-    /暂不支持首页数据版本 3/
+    () => buildHomeViewModel(response({ schemaVersion: 4 })),
+    /暂不支持首页数据版本 4/
   );
 });

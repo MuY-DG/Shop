@@ -18,6 +18,7 @@ interface ProductCardValue {
   hasOriginalPrice: boolean;
   badgeText: string;
   badgeTone: string;
+  soldOut: boolean;
   features: Array<{
     text: string;
     tone: string;
@@ -51,6 +52,7 @@ const EMPTY_PRODUCT: ProductCardValue = {
   hasOriginalPrice: false,
   badgeText: "",
   badgeTone: "neutral",
+  soldOut: false,
   features: [],
   wholesaleText: "",
   salesText: ""
@@ -101,7 +103,7 @@ Component({
         return;
       }
       const product = this.data.product as ProductCardValue;
-      if (!product.spuId) {
+      if (!product.spuId || product.soldOut) {
         return;
       }
       this.triggerEvent("add", {

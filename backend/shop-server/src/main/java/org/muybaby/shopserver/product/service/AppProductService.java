@@ -5,6 +5,7 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.FreightChargeMode;
 import org.muybaby.shopserver.product.FreightTemplateStatus;
+import org.muybaby.shopserver.product.ProductSaleState;
 import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.product.dto.AppCategoryResponse;
@@ -81,17 +82,26 @@ public class AppProductService {
                         SELECT s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points,
                                min(k.price_cent) AS min_price_cent,
                                max(k.price_cent) AS max_price_cent,
-                               coalesce(sum(k.stock_available), 0) AS total_stock
+                               s.virtual_sales + coalesce(sales.actual_sales, 0) AS display_sales,
+                               max(case when k.stock_available > 0 then 1 else 0 end) AS has_available_sku
                         FROM product_spu s
                         JOIN product_category c ON c.id = s.category_id
                         LEFT JOIN product_sku k ON k.spu_id = s.id
                             AND k.status = :skuStatus AND k.deleted_at IS NULL
+                        LEFT JOIN (
+                            SELECT oi.spu_id, sum(oi.quantity) AS actual_sales
+                            FROM order_item oi
+                            JOIN shop_order o ON o.id = oi.order_id
+                            WHERE o.paid_at IS NOT NULL
+                            GROUP BY oi.spu_id
+                        ) sales ON sales.spu_id = s.id
                         WHERE s.status = :spuStatus
                           AND s.deleted_at IS NULL
                           AND c.status = :categoryStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
                           AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
-                        GROUP BY s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points, s.sort_order
+                        GROUP BY s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points,
+                                 s.virtual_sales, sales.actual_sales, s.sort_order
                         ORDER BY s.sort_order ASC, s.id DESC
                         LIMIT :limit OFFSET :offset
                         """)
@@ -119,7 +129,8 @@ public class AppProductService {
                         splitSellingPoints(row.sellingPoints()),
                         row.minPriceCent(),
                         row.maxPriceCent(),
-                        row.totalStock(),
+                        row.displaySales(),
+                        row.saleState(),
                         parametersBySpuId.getOrDefault(row.id(), List.of())
                 ))
                 .toList();
@@ -172,7 +183,7 @@ public class AppProductService {
             images = List.of(new ProductImageResponse(null, spu.mainImage(), spu.mainImageFileId(), 1));
         }
 
-        List<AppSkuResponse> skus = jdbcClient.sql("""
+        List<AppSkuRow> skuRows = jdbcClient.sql("""
                         SELECT id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
                                stock_available, weight_gram, image, image_file_id, status
                         FROM product_sku
@@ -186,14 +197,17 @@ public class AppProductService {
                 .query(this::mapAppSku)
                 .list();
         Map<Long, List<WholesaleTierResponse>> wholesaleTiersBySkuId = findWholesaleTiers(spuId);
-        skus = skus.stream()
+        List<AppSkuResponse> skus = skuRows.stream()
                 .map(sku -> new AppSkuResponse(
                         sku.id(), sku.skuCode(), sku.specJson(), sku.specText(), sku.priceCent(),
-                        sku.originalPriceCent(), sku.stockAvailable(), sku.weightGram(), sku.image(),
+                        sku.originalPriceCent(), saleState(sku.stockAvailable()), sku.weightGram(), sku.image(),
                         sku.imageFileId(), sku.status(),
                         wholesaleTiersBySkuId.getOrDefault(sku.id(), List.of())
                 ))
                 .toList();
+        ProductSaleState saleState = skuRows.stream().anyMatch(sku -> sku.stockAvailable() > 0)
+                ? ProductSaleState.AVAILABLE
+                : ProductSaleState.SOLD_OUT;
         List<AppGuaranteeServiceResponse> guaranteeServices = findGuaranteeServices(spuId);
 
         return new AppSpuDetailResponse(
@@ -205,6 +219,7 @@ public class AppProductService {
                 spu.mainImage(),
                 spu.mainImageFileId(),
                 spu.salesCount(),
+                saleState,
                 splitSellingPoints(spu.sellingPoints()),
                 spu.detailHtml(),
                 images,
@@ -259,7 +274,10 @@ public class AppProductService {
                 rs.getString("selling_points"),
                 rs.getObject("min_price_cent", Long.class),
                 rs.getObject("max_price_cent", Long.class),
-                rs.getInt("total_stock")
+                rs.getLong("display_sales"),
+                rs.getInt("has_available_sku") == 1
+                        ? ProductSaleState.AVAILABLE
+                        : ProductSaleState.SOLD_OUT
         );
     }
 
@@ -293,8 +311,8 @@ public class AppProductService {
         );
     }
 
-    private AppSkuResponse mapAppSku(ResultSet rs, int rowNum) throws SQLException {
-        return new AppSkuResponse(
+    private AppSkuRow mapAppSku(ResultSet rs, int rowNum) throws SQLException {
+        return new AppSkuRow(
                 rs.getLong("id"),
                 rs.getString("sku_code"),
                 rs.getString("spec_json"),
@@ -305,9 +323,12 @@ public class AppProductService {
                 rs.getObject("weight_gram", Integer.class),
                 rs.getString("image"),
                 rs.getObject("image_file_id", Long.class),
-                rs.getString("status"),
-                List.of()
+                rs.getString("status")
         );
+    }
+
+    private ProductSaleState saleState(int stockAvailable) {
+        return stockAvailable > 0 ? ProductSaleState.AVAILABLE : ProductSaleState.SOLD_OUT;
     }
 
     private Map<Long, List<WholesaleTierResponse>> findWholesaleTiers(Long spuId) {
@@ -398,7 +419,23 @@ public class AppProductService {
             String sellingPoints,
             Long minPriceCent,
             Long maxPriceCent,
-            Integer totalStock
+            Long displaySales,
+            ProductSaleState saleState
+    ) {
+    }
+
+    private record AppSkuRow(
+            Long id,
+            String skuCode,
+            String specJson,
+            String specText,
+            Long priceCent,
+            Long originalPriceCent,
+            Integer stockAvailable,
+            Integer weightGram,
+            String image,
+            Long imageFileId,
+            String status
     ) {
     }
 

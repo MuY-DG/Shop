@@ -9,12 +9,15 @@ import org.muybaby.shopserver.content.dto.AppHomeProductPriceResponse;
 import org.muybaby.shopserver.content.dto.AppHomeProductResponse;
 import org.muybaby.shopserver.content.dto.AppHomeProductSectionResponse;
 import org.muybaby.shopserver.content.dto.ContactResponse;
+import org.muybaby.shopserver.product.ProductSaleState;
+import org.muybaby.shopserver.product.service.ProductPublicStateService;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -41,6 +44,45 @@ class PublicContentCacheServiceTest {
     }
 
     @Test
+    void homeCacheHitOverlaysCurrentSaleStateWithoutRebuildingContent() throws Exception {
+        Fixture fixture = fixture();
+        AppHomeResponse cached = new AppHomeResponse(
+                3,
+                List.of(),
+                List.of(),
+                List.of(new AppHomeProductSectionResponse(
+                        "HOT",
+                        "FEATURED",
+                        List.of(new AppHomeProductResponse(
+                                1L,
+                                88L,
+                                "商品",
+                                "",
+                                "",
+                                new AppHomeProductPriceResponse(1990L, 1990L, 2590L),
+                                null,
+                                List.of(),
+                                List.of(),
+                                null,
+                                7L,
+                                null,
+                                "/pages/product/detail/detail?id=88"
+                        ))
+                ))
+        );
+        when(fixture.values().get(PublicContentCacheService.HOME_CACHE_KEY))
+                .thenReturn(fixture.objectMapper().writeValueAsString(cached));
+        when(fixture.productPublicStateService().saleStates(List.of(88L)))
+                .thenReturn(Map.of(88L, ProductSaleState.SOLD_OUT));
+
+        AppHomeResponse response = fixture.service().homePage();
+
+        assertThat(response.productSections().getFirst().products().getFirst().saleState())
+                .isEqualTo(ProductSaleState.SOLD_OUT);
+        verify(fixture.homeQuery(), never()).load();
+    }
+
+    @Test
     void homeCacheMissBuildsAndWritesWithTransitionBoundedTtl() {
         Fixture fixture = fixture();
         AppHomeResponse assembled = emptyHome();
@@ -62,7 +104,7 @@ class PublicContentCacheServiceTest {
     }
 
     @Test
-    void cachedHomeWithoutOriginalPriceIsRebuiltUnderTheSameV2Key() throws Exception {
+    void cachedHomeWithoutOriginalPriceIsRebuiltUnderTheSameV3Key() throws Exception {
         Fixture fixture = fixture();
         AppHomeResponse stale = new AppHomeResponse(
                 2,
@@ -83,6 +125,7 @@ class PublicContentCacheServiceTest {
                                 List.of(),
                                 null,
                                 0L,
+                                null,
                                 "/pages/product/detail/detail?id=1"
                         ))
                 ))
@@ -141,6 +184,8 @@ class PublicContentCacheServiceTest {
         ValueOperations<String, String> values = mock(ValueOperations.class);
         when(redis.opsForValue()).thenReturn(values);
         HomePageQueryService homeQuery = mock(HomePageQueryService.class);
+        ProductPublicStateService productPublicStateService = mock(ProductPublicStateService.class);
+        when(productPublicStateService.saleStates(any())).thenReturn(Map.of());
         ContactService contactService = mock(ContactService.class);
         ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
         ContentProperties properties = new ContentProperties(true, Duration.ofHours(6), Duration.ofHours(24));
@@ -148,14 +193,23 @@ class PublicContentCacheServiceTest {
                 redis,
                 objectMapper,
                 homeQuery,
+                productPublicStateService,
                 contactService,
                 properties
         );
-        return new Fixture(service, redis, values, homeQuery, contactService, objectMapper);
+        return new Fixture(
+                service,
+                redis,
+                values,
+                homeQuery,
+                productPublicStateService,
+                contactService,
+                objectMapper
+        );
     }
 
     private AppHomeResponse emptyHome() {
-        return new AppHomeResponse(2, List.of(), List.of(), List.of());
+        return new AppHomeResponse(3, List.of(), List.of(), List.of());
     }
 
     private record Fixture(
@@ -163,6 +217,7 @@ class PublicContentCacheServiceTest {
             StringRedisTemplate redis,
             ValueOperations<String, String> values,
             HomePageQueryService homeQuery,
+            ProductPublicStateService productPublicStateService,
             ContactService contactService,
             ObjectMapper objectMapper
     ) {

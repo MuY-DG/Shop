@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.product.dto;
 
+import org.muybaby.shopserver.product.ProductSaleState;
+
 import java.util.List;
 
 public record AppSpuListItemResponse(
@@ -11,7 +13,8 @@ public record AppSpuListItemResponse(
         List<String> sellingPoints,
         Long minPriceCent,
         Long maxPriceCent,
-        Integer totalStock,
+        Long displaySales,
+        ProductSaleState saleState,
         List<AppProductParameterValueResponse> parameters
 ) {
 }

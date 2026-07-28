@@ -78,7 +78,8 @@ class AppCartControllerTest {
                 .andExpect(jsonPath("$.data.quantity").value(2))
                 .andExpect(jsonPath("$.data.priceCent").value(3990))
                 .andExpect(jsonPath("$.data.lineAmountCent").value(7980))
-                .andExpect(jsonPath("$.data.available").value(true));
+                .andExpect(jsonPath("$.data.available").value(true))
+                .andExpect(jsonPath("$.data.stockAvailable").doesNotExist());
 
         mockMvc.perform(post("/app/cart/items")
                         .header("Authorization", "Bearer " + appToken)
@@ -97,6 +98,7 @@ class AppCartControllerTest {
                 .andExpect(jsonPath("$.data.totalQuantity").value(5))
                 .andExpect(jsonPath("$.data.totalAmountCent").value(19950))
                 .andExpect(jsonPath("$.data.unavailableCount").value(0))
+                .andExpect(jsonPath("$.data.items[0].stockAvailable").doesNotExist())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -184,6 +186,21 @@ class AppCartControllerTest {
                 .andExpect(jsonPath("$.data.items[0].available").value(false))
                 .andExpect(jsonPath("$.data.items[0].unavailableReason").value("STOCK_SHORTAGE"))
                 .andExpect(jsonPath("$.data.unavailableCount").value(1));
+
+        jdbcClient.sql("""
+                        update product_sku
+                        set stock_available = 0, updated_at = current_timestamp
+                        where id = :skuId
+                        """)
+                .param("skuId", skuId)
+                .update();
+
+        mockMvc.perform(get("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].available").value(false))
+                .andExpect(jsonPath("$.data.items[0].unavailableReason").value("SOLD_OUT"))
+                .andExpect(jsonPath("$.data.items[0].stockAvailable").doesNotExist());
 
         mockMvc.perform(put("/app/cart/items/{cartItemId}/quantity", cartItemId)
                         .header("Authorization", "Bearer " + appToken)

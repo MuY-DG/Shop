@@ -1,10 +1,10 @@
 <view
-  class="product-card product-card--{{variant}}"
+  class="product-card product-card--{{variant}} {{product.soldOut ? 'product-card--sold-out' : ''}}"
   hover-class="product-card--pressed"
   hover-stay-time="80"
   bindtap="handleTap"
   aria-role="button"
-  aria-label="{{product.title}}，{{product.hasPrice ? '¥' + product.priceText : '暂无报价'}}"
+  aria-label="{{product.title}}，{{product.hasPrice ? '¥' + product.priceText : '暂无报价'}}{{product.soldOut ? '，暂时售罄' : ''}}"
 >
   <view class="product-card__image-wrap">
     <image
@@ -23,6 +23,9 @@
       class="product-card__badge product-card__badge--{{product.badgeTone}}"
     >
       <text class="product-card__badge-text">{{product.badgeText}}</text>
+    </view>
+    <view wx:if="{{product.soldOut}}" class="product-card__sold-out">
+      <text>暂时售罄</text>
     </view>
   </view>
 
@@ -84,12 +87,13 @@
       </view>
       <view wx:else class="product-card__price-empty">暂无报价</view>
       <view
-        class="product-card__cart {{adding ? 'product-card__cart--loading' : ''}}"
+        class="product-card__cart {{adding ? 'product-card__cart--loading' : ''}} {{product.soldOut ? 'product-card__cart--disabled' : ''}}"
         catchtap="handleCartTap"
         hover-class="product-card__cart--pressed"
         hover-stay-time="80"
         aria-role="button"
-        aria-label="{{adding ? '正在将' + product.title + '加入购物车' : '将' + product.title + '加入购物车'}}"
+        aria-disabled="{{product.soldOut}}"
+        aria-label="{{product.soldOut ? product.title + '暂时售罄' : adding ? '正在将' + product.title + '加入购物车' : '将' + product.title + '加入购物车'}}"
       >
         <view wx:if="{{adding}}" class="product-card__cart-spinner" aria-hidden="true"></view>
         <block wx:else>

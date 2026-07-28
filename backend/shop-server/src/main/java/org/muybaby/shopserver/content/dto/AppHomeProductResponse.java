@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.content.dto;
 
+import org.muybaby.shopserver.product.ProductSaleState;
+
 public record AppHomeProductResponse(
         Long placementId,
         Long spuId,
@@ -12,6 +14,7 @@ public record AppHomeProductResponse(
         java.util.List<AppHomeProductFeatureResponse> metaFacts,
         AppHomeWholesaleSummaryResponse wholesaleSummary,
         Long displaySales,
+        ProductSaleState saleState,
         String path
 ) {
 }

@@ -145,7 +145,7 @@ class HomeDecorationControllerTest {
         insertCurrentBanner(categoryImage);
         mockMvc.perform(get("/app/home"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.schemaVersion").value(2))
+                .andExpect(jsonPath("$.data.schemaVersion").value(3))
                 .andExpect(jsonPath("$.data.banners[0].title").value("聚合轮播"))
                 .andExpect(jsonPath("$.data.categories[0].categoryId").value(product.categoryId()))
                 .andExpect(jsonPath("$.data.categories[0].path")
@@ -167,6 +167,7 @@ class HomeDecorationControllerTest {
                 .andExpect(jsonPath("$.data.productSections[0].products[0].wholesaleSummary.label")
                         .value("支持批量价"))
                 .andExpect(jsonPath("$.data.productSections[0].products[0].displaySales").value(7))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].saleState").value("AVAILABLE"))
                 .andExpect(jsonPath("$.data.productSections[0].products[0].path")
                         .value("/pages/product/detail/detail?id=" + product.spuId()))
                 .andExpect(jsonPath("$.data.productSections[1].code").value("RECOMMENDED"))

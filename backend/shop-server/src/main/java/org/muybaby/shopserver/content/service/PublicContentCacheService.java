@@ -5,7 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.muybaby.shopserver.content.ContentProperties;
 import org.muybaby.shopserver.content.PublicContentChangedEvent;
 import org.muybaby.shopserver.content.dto.AppHomeResponse;
+import org.muybaby.shopserver.content.dto.AppHomeProductResponse;
+import org.muybaby.shopserver.content.dto.AppHomeProductSectionResponse;
 import org.muybaby.shopserver.content.dto.ContactResponse;
+import org.muybaby.shopserver.product.ProductSaleState;
+import org.muybaby.shopserver.product.service.ProductPublicStateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -16,11 +20,15 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 @Service
 public class PublicContentCacheService {
 
-    public static final String HOME_CACHE_KEY = "shop:public:home:v2";
+    public static final String HOME_CACHE_KEY = "shop:public:home:content:v3";
     public static final String CONTACT_CACHE_KEY = "shop:public:contact:v1";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(PublicContentCacheService.class);
@@ -28,6 +36,7 @@ public class PublicContentCacheService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final HomePageQueryService homePageQueryService;
+    private final ProductPublicStateService productPublicStateService;
     private final ContactService contactService;
     private final ContentProperties properties;
 
@@ -35,32 +44,94 @@ public class PublicContentCacheService {
             StringRedisTemplate redisTemplate,
             ObjectMapper objectMapper,
             HomePageQueryService homePageQueryService,
+            ProductPublicStateService productPublicStateService,
             ContactService contactService,
             ContentProperties properties
     ) {
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.homePageQueryService = homePageQueryService;
+        this.productPublicStateService = productPublicStateService;
         this.contactService = contactService;
         this.properties = properties;
     }
 
     public AppHomeResponse homePage() {
+        AppHomeResponse snapshot = null;
         if (Boolean.TRUE.equals(properties.cacheEnabled())) {
             AppHomeResponse cached = read(HOME_CACHE_KEY, AppHomeResponse.class);
             if (cached != null && hasCurrentHomePriceShape(cached)) {
-                return cached;
+                snapshot = cached;
             }
-            if (cached != null) {
+            if (cached != null && snapshot == null) {
                 delete(HOME_CACHE_KEY);
             }
         }
 
-        HomePageQueryService.HomePageLoad loaded = homePageQueryService.load();
-        if (Boolean.TRUE.equals(properties.cacheEnabled())) {
-            write(HOME_CACHE_KEY, loaded.response(), homeTtl(loaded.nextTransitionAt()));
+        if (snapshot == null) {
+            HomePageQueryService.HomePageLoad loaded = homePageQueryService.load();
+            snapshot = loaded.response();
+            if (Boolean.TRUE.equals(properties.cacheEnabled())) {
+                write(HOME_CACHE_KEY, snapshot, homeTtl(loaded.nextTransitionAt()));
+            }
         }
-        return loaded.response();
+        return withCurrentSaleStates(snapshot);
+    }
+
+    private AppHomeResponse withCurrentSaleStates(AppHomeResponse snapshot) {
+        if (snapshot == null || snapshot.productSections() == null) {
+            return snapshot;
+        }
+        List<Long> spuIds = snapshot.productSections().stream()
+                .filter(Objects::nonNull)
+                .flatMap(section -> section.products() == null ? Stream.empty() : section.products().stream())
+                .filter(Objects::nonNull)
+                .map(AppHomeProductResponse::spuId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, ProductSaleState> saleStates = productPublicStateService.saleStates(spuIds);
+        List<AppHomeProductSectionResponse> sections = snapshot.productSections().stream()
+                .map(section -> section == null ? null : new AppHomeProductSectionResponse(
+                        section.code(),
+                        section.presentation(),
+                        section.products() == null
+                                ? List.of()
+                                : section.products().stream()
+                                        .map(product -> withSaleState(product, saleStates))
+                                        .toList()
+                ))
+                .toList();
+        return new AppHomeResponse(
+                snapshot.schemaVersion(),
+                snapshot.banners(),
+                snapshot.categories(),
+                sections
+        );
+    }
+
+    private AppHomeProductResponse withSaleState(
+            AppHomeProductResponse product,
+            Map<Long, ProductSaleState> saleStates
+    ) {
+        if (product == null) {
+            return null;
+        }
+        return new AppHomeProductResponse(
+                product.placementId(),
+                product.spuId(),
+                product.title(),
+                product.subtitle(),
+                product.imageUrl(),
+                product.price(),
+                product.badge(),
+                product.highlights(),
+                product.metaFacts(),
+                product.wholesaleSummary(),
+                product.displaySales(),
+                saleStates.getOrDefault(product.spuId(), ProductSaleState.SOLD_OUT),
+                product.path()
+        );
     }
 
     private boolean hasCurrentHomePriceShape(AppHomeResponse response) {

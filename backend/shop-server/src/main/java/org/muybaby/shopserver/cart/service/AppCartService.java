@@ -445,7 +445,6 @@ public class AppCartService {
                 nextWholesaleTierMinQuantity == null ? null : nextWholesaleTierMinQuantity - quantity,
                 quantity,
                 priceCent * quantity,
-                stockAvailable,
                 skuStatus,
                 spuStatus,
                 unavailableReason == null,
@@ -464,6 +463,9 @@ public class AppCartService {
         }
         if (!ProductStatus.ON_SALE.name().equals(spuStatus) || !CATEGORY_ENABLED.equals(categoryStatus)) {
             return "PRODUCT_UNAVAILABLE";
+        }
+        if (stockAvailable <= 0) {
+            return "SOLD_OUT";
         }
         if (stockAvailable < quantity) {
             return "STOCK_SHORTAGE";

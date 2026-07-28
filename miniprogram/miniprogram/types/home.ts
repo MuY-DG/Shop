@@ -8,6 +8,7 @@ export type HomeBannerJumpType =
 
 export type ProductBadgeTone = "RED" | "ORANGE" | "GREEN" | "NEUTRAL";
 export type HomeSectionPresentation = "FEATURED" | "COMPACT";
+export type ProductSaleState = "AVAILABLE" | "SOLD_OUT";
 
 export interface HomeBanner {
   id: number;
@@ -66,6 +67,7 @@ export interface HomeProduct {
   metaFacts: HomeProductFeature[];
   wholesaleSummary?: HomeWholesaleSummary;
   displaySales: number;
+  saleState: ProductSaleState;
   path: string;
 }
 

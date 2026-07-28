@@ -21,7 +21,6 @@ public record CartItemResponse(
         Integer nextWholesaleTierQuantityNeeded,
         Integer quantity,
         Long lineAmountCent,
-        Integer stockAvailable,
         String skuStatus,
         String spuStatus,
         Boolean available,

@@ -56,7 +56,8 @@ function product(overrides: Partial<ProductListItem> = {}): ProductListItem {
     sellingPoints: [],
     minPriceCent: 1990,
     maxPriceCent: 2590,
-    totalStock: 12,
+    displaySales: 36,
+    saleState: "AVAILABLE",
     parameters: [
       parameter(),
       parameter({
@@ -81,7 +82,7 @@ function sku(overrides: Partial<ProductSku> = {}): ProductSku {
     specText: "500g 袋装",
     priceCent: 2000,
     originalPriceCent: 2600,
-    stockAvailable: 20,
+    saleState: "AVAILABLE",
     status: "ENABLED",
     wholesaleTiers: [
       { minQuantity: 10, unitPriceCent: 1800 },
@@ -121,7 +122,7 @@ test("分类标签去重并稳定保留全部入口和选中态", () => {
   ]);
 });
 
-test("列表商品映射价格区间、库存和参数卡片语义", () => {
+test("列表商品映射价格区间、销量、可售状态和参数卡片语义", () => {
   const card = buildCatalogProductCard(product());
   assert.ok(card);
   assert.equal(card.navigationPath, "/pages/product/detail/detail?id=41");
@@ -131,7 +132,8 @@ test("列表商品映射价格区间、库存和参数卡片语义", () => {
   assert.equal(card.rangePriceIntegerText, "25");
   assert.equal(card.rangePriceDecimalText, ".90");
   assert.equal(card.hasPriceRange, true);
-  assert.equal(card.salesText, "库存 12");
+  assert.equal(card.salesText, "已售 36+");
+  assert.equal(card.soldOut, false);
   assert.deepEqual(card.features, [
     {
       text: "中辣",
@@ -152,9 +154,11 @@ test("列表商品映射价格区间、库存和参数卡片语义", () => {
     }
   ]);
 
-  const soldOut = buildCatalogProductCard(product({ totalStock: 0 }));
+  const soldOut = buildCatalogProductCard(product({ saleState: "SOLD_OUT" }));
   assert.equal(soldOut?.badgeText, "暂时售罄");
-  assert.equal(soldOut?.salesText, "补货中");
+  assert.equal(soldOut?.badgeTone, "neutral");
+  assert.equal(soldOut?.soldOut, true);
+  assert.equal(soldOut?.salesText, "已售 36+");
 });
 
 test("详情图片去重并将参数映射为展示数据", () => {
@@ -163,6 +167,7 @@ test("详情图片去重并将参数映射为展示数据", () => {
     categoryId: 5,
     categoryName: "麻辣",
     salesCount: 0,
+    saleState: "AVAILABLE",
     title: "经典牛油锅底",
     mainImage: "https://example.test/main.png",
     sellingPoints: [],
@@ -205,8 +210,8 @@ test("详情图片去重并将参数映射为展示数据", () => {
   assert.deepEqual(buildParameterViews([]), []);
 });
 
-test("默认规格、库存禁用态和批发阶梯价随数量联动", () => {
-  const unavailable = sku({ id: 100, stockAvailable: 0 });
+test("默认规格、售罄禁用态和批发阶梯价随数量联动", () => {
+  const unavailable = sku({ id: 100, saleState: "SOLD_OUT" });
   const available = sku();
   assert.equal(findDefaultSku([unavailable, available])?.id, 101);
   assert.deepEqual(
@@ -243,7 +248,8 @@ test("默认规格、库存禁用态和批发阶梯价随数量联动", () => {
   assert.equal(wholesale.hasOriginalPrice, true);
 
   const clamped = resolvePurchaseSelection(available, 200);
-  assert.equal(clamped.quantity, 20);
+  assert.equal(clamped.quantity, 200);
+  assert.equal(clamped.quantityMax, 999);
   assert.equal(clamped.priceText, "18.00");
   assert.equal(clamped.wholesaleTiers[1]?.active, true);
 
@@ -254,10 +260,10 @@ test("默认规格、库存禁用态和批发阶梯价随数量联动", () => {
 
 test("规格按名称和值分组并只允许选择真实可售组合", () => {
   const variants = [
-    sku({ id: 201, specJson: "{\"颜色\":\"红色\",\"尺寸\":\"x\"}", specText: "红色 / x", image: "https://example.test/red.png", stockAvailable: 3 }),
-    sku({ id: 202, specJson: "{\"颜色\":\"红色\",\"尺寸\":\"l\"}", specText: "红色 / l", image: "https://example.test/red.png", stockAvailable: 5 }),
-    sku({ id: 203, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"x\"}", specText: "绿色 / x", image: "https://example.test/green.png", stockAvailable: 0 }),
-    sku({ id: 204, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"l\"}", specText: "绿色 / l", image: "https://example.test/green.png", stockAvailable: 4 })
+    sku({ id: 201, specJson: "{\"颜色\":\"红色\",\"尺寸\":\"x\"}", specText: "红色 / x", image: "https://example.test/red.png" }),
+    sku({ id: 202, specJson: "{\"颜色\":\"红色\",\"尺寸\":\"l\"}", specText: "红色 / l", image: "https://example.test/red.png" }),
+    sku({ id: 203, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"x\"}", specText: "绿色 / x", image: "https://example.test/green.png", saleState: "SOLD_OUT" }),
+    sku({ id: 204, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"l\"}", specText: "绿色 / l", image: "https://example.test/green.png" })
   ];
 
   const redSmallGroups = buildSkuSpecificationGroups(variants, 201);
