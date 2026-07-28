@@ -58,7 +58,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/app/analytics/events/batch").permitAll()
                         .requestMatchers(HttpMethod.GET, "/files/public/**").permitAll()
                         .requestMatchers(HttpMethod.GET,
-                                "/app/product/categories", "/app/product/spus", "/app/product/spus/*",
+                                "/app/product/categories", "/app/product/filter-facets",
+                                "/app/product/spus", "/app/product/spus/*",
                                 "/app/product/spus/*/reviews",
                                 "/app/home", "/app/home/banners", "/app/contact").permitAll()
                         .requestMatchers("/admin/**", "/app/**").authenticated()

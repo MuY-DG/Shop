@@ -15,6 +15,8 @@ public record AppSpuListItemResponse(
         Long maxPriceCent,
         Long displaySales,
         ProductSaleState saleState,
+        String badgeText,
+        String badgeTone,
         List<AppProductParameterValueResponse> parameters
 ) {
 }

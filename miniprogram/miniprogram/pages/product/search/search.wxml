@@ -1,0 +1,75 @@
+<view class="search-page">
+  <navigation-bar
+    back="{{true}}"
+    background="#FAF2E4"
+    color="#2E1D16"
+    show-divider="{{false}}"
+    wide-center="{{true}}"
+  >
+    <view slot="center" class="search-field">
+      <image
+        class="search-field__icon"
+        src="/assets/icons/address-search.svg"
+        mode="aspectFit"
+        aria-hidden="true"
+      />
+      <input
+        class="search-field__input"
+        value="{{keyword}}"
+        maxlength="80"
+        focus="{{true}}"
+        confirm-type="search"
+        placeholder="搜索商品"
+        bindinput="onInput"
+        bindconfirm="onConfirm"
+      />
+      <image
+        wx:if="{{keyword}}"
+        class="search-field__clear"
+        src="/assets/icons/close-material-symbols.svg"
+        mode="aspectFit"
+        bindtap="onClearInput"
+        aria-role="button"
+        aria-label="清除关键词"
+      />
+      <view
+        class="search-field__submit"
+        bindtap="onSearchTap"
+        hover-class="search-field__submit--pressed"
+        aria-role="button"
+      >搜索</view>
+    </view>
+  </navigation-bar>
+
+  <view class="search-content">
+    <block wx:if="{{history.length}}">
+      <view class="search-history__header">
+        <text class="search-history__title">搜索历史</text>
+        <view
+          class="search-history__clear"
+          bindtap="onClearHistory"
+          aria-role="button"
+        >清空</view>
+      </view>
+      <view class="search-history__list">
+        <view
+          wx:for="{{history}}"
+          wx:key="*this"
+          class="search-history__item"
+          data-keyword="{{item}}"
+          bindtap="onHistoryTap"
+          hover-class="search-history__item--pressed"
+          aria-role="button"
+        >{{item}}</view>
+      </view>
+    </block>
+
+    <view wx:else class="search-empty">
+      <ui-state
+        type="empty"
+        icon="/assets/icons/empty-search.svg"
+        description="暂无搜索记录，试试搜索商品名称"
+      />
+    </view>
+  </view>
+</view>

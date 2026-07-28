@@ -137,6 +137,7 @@ class SecurityConfigTest {
     @Test
     void appProductReadApisArePublicButWriteApisStillRequireAuthentication() throws Exception {
         assertNotAuthenticationBlocked("/app/product/categories");
+        assertNotAuthenticationBlocked("/app/product/filter-facets");
         assertNotAuthenticationBlocked("/app/product/spus");
         assertNotAuthenticationBlocked("/app/product/spus/1");
 

@@ -1,0 +1,110 @@
+@import "../../../styles/tokens.less";
+
+.search-page {
+  min-height: 100vh;
+  color: @color-text-primary;
+  background:
+    radial-gradient(circle at 94% 2%, fade(@color-brand, 6%), transparent 28%),
+    linear-gradient(180deg, @color-page-top, @color-page-bottom);
+}
+
+.search-field {
+  width: 100%;
+  height: 64rpx;
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  padding-left: 18rpx;
+  overflow: hidden;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-pill;
+  background: @color-surface;
+}
+
+.search-field__icon,
+.search-field__clear {
+  width: 28rpx;
+  height: 28rpx;
+  flex: none;
+  opacity: 0.62;
+}
+
+.search-field__input {
+  min-width: 0;
+  height: 64rpx;
+  flex: 1;
+  margin-left: 10rpx;
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+}
+
+.search-field__clear {
+  margin: 0 10rpx;
+}
+
+.search-field__submit {
+  height: 64rpx;
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 20rpx;
+  color: @color-text-inverse;
+  font-size: 23rpx;
+  font-weight: 600;
+  background: @color-brand;
+  transition: opacity @duration-fast @ease-standard;
+}
+
+.search-field__submit--pressed {
+  opacity: 0.78;
+}
+
+.search-content {
+  padding: 34rpx @page-gutter calc(48rpx + env(safe-area-inset-bottom));
+}
+
+.search-history__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.search-history__title {
+  font-size: @font-size-lg;
+  font-weight: 650;
+}
+
+.search-history__clear {
+  padding: 12rpx 0 12rpx 24rpx;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.search-history__list {
+  display: flex;
+  margin-top: 24rpx;
+  flex-wrap: wrap;
+  gap: 18rpx 14rpx;
+}
+
+.search-history__item {
+  max-width: 300rpx;
+  padding: 14rpx 24rpx;
+  overflow: hidden;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-pill;
+  color: @color-text-secondary;
+  font-size: @font-size-sm;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: fade(@color-surface, 92%);
+}
+
+.search-history__item--pressed {
+  color: @color-brand;
+  background: @color-brand-soft;
+}
+
+.search-empty {
+  margin-top: 36rpx;
+}

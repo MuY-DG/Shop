@@ -14,6 +14,7 @@ export const API_ENDPOINTS = Object.freeze({
   product: {
     categories: "/app/product/categories",
     list: "/app/product/spus",
+    filterFacets: "/app/product/filter-facets",
     detail: (spuId: number): string => `/app/product/spus/${spuId}`,
     reviews: (spuId: number): string => `/app/product/spus/${spuId}/reviews`,
     reviewEligibility: (spuId: number): string =>

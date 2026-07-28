@@ -18,6 +18,8 @@ import org.muybaby.shopserver.product.dto.AdminProductParameterOptionRequest;
 import org.muybaby.shopserver.product.dto.AdminProductParameterOptionResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuParameterValueRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuParameterValueResponse;
+import org.muybaby.shopserver.product.dto.AppProductFilterGroupResponse;
+import org.muybaby.shopserver.product.dto.AppProductFilterOptionResponse;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -109,6 +111,70 @@ public class ProductParameterService {
                 rs.getObject("updated_at", LocalDateTime.class)
         )).list();
         return hydrateDefinitions(rows);
+    }
+
+    public List<AppProductFilterGroupResponse> filterFacets(Long categoryId, String keyword) {
+        List<AdminProductParameterDefinitionResponse> definitions = definitions(categoryId, true).stream()
+                .filter(definition -> Boolean.TRUE.equals(definition.filterable()))
+                .filter(definition -> ProductParameterValueType.SINGLE_SELECT.name().equals(definition.valueType())
+                        || ProductParameterValueType.MULTI_SELECT.name().equals(definition.valueType()))
+                .filter(definition -> !definition.options().isEmpty())
+                .toList();
+        if (definitions.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> parameterIds = definitions.stream()
+                .map(AdminProductParameterDefinitionResponse::id)
+                .toList();
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("parameterIds", parameterIds)
+                .addValue("spuStatus", "ON_SALE")
+                .addValue("categoryStatus", "ENABLED")
+                .addValue("categoryId", categoryId)
+                .addValue("keywordLike", StringUtils.hasText(keyword) ? "%" + keyword.trim() + "%" : null);
+        Map<Long, Map<String, Long>> counts = new HashMap<>();
+        namedParameterJdbcTemplate.query("""
+                        select v.parameter_id, v.option_codes_json
+                        from product_spu_parameter_value v
+                        join product_spu s on s.id = v.spu_id
+                        join product_category c on c.id = s.category_id
+                        where v.parameter_id in (:parameterIds)
+                          and s.status = :spuStatus
+                          and s.deleted_at is null
+                          and c.status = :categoryStatus
+                          and (:categoryId is null or s.category_id = :categoryId)
+                          and (:keywordLike is null or s.title like :keywordLike)
+                        """,
+                parameters,
+                rs -> {
+                    Long parameterId = rs.getLong("parameter_id");
+                    Map<String, Long> optionCounts = counts.computeIfAbsent(
+                            parameterId,
+                            ignored -> new HashMap<>()
+                    );
+                    for (String optionCode : readOptionCodes(rs.getString("option_codes_json"))) {
+                        optionCounts.merge(optionCode, 1L, Long::sum);
+                    }
+                });
+
+        return definitions.stream()
+                .map(definition -> new AppProductFilterGroupResponse(
+                        definition.id(),
+                        definition.parameterCode(),
+                        definition.parameterName(),
+                        definition.valueType(),
+                        definition.options().stream()
+                                .map(option -> new AppProductFilterOptionResponse(
+                                        option.optionCode(),
+                                        option.optionLabel(),
+                                        option.displayLevel(),
+                                        counts.getOrDefault(definition.id(), Map.of())
+                                                .getOrDefault(option.optionCode(), 0L)
+                                ))
+                                .toList()
+                ))
+                .toList();
     }
 
     private List<Long> categoryLineage(Long categoryId) {

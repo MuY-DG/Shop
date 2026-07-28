@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   buildCatalogProductCard,
+  buildCatalogParameterFilterGroups,
   buildCategoryTabs,
   buildGalleryImages,
   buildParameterViews,
@@ -12,6 +13,7 @@ import {
   buildSkuSpecificationGroups,
   findDefaultSku,
   normalizeProductKeyword,
+  normalizeProductRouteKeyword,
   parsePositiveId,
   resolvePurchaseSelection,
   resolveSkuSpecificationSelection
@@ -19,6 +21,7 @@ import {
 import type {
   ProductCategory,
   ProductDetail,
+  ProductFilterGroup,
   ProductListItem,
   ProductParameterValue,
   ProductSku
@@ -97,6 +100,12 @@ test("商品列表查询只保留安全分类、关键词和分页", () => {
   assert.equal(parsePositiveId("42x"), 0);
   assert.equal(parsePositiveId(Number.MAX_SAFE_INTEGER + 1), 0);
   assert.equal(normalizeProductKeyword("  牛油   锅底  "), "牛油 锅底");
+  assert.equal(
+    normalizeProductRouteKeyword("%E6%89%8B%E6%9C%BA"),
+    "手机"
+  );
+  assert.equal(normalizeProductRouteKeyword("手机"), "手机");
+  assert.equal(normalizeProductRouteKeyword("100%"), "100%");
   assert.deepEqual(buildProductListQuery("5", "  麻辣  ", 3), {
     current: 3,
     size: 10,
@@ -107,6 +116,20 @@ test("商品列表查询只保留安全分类、关键词和分页", () => {
     current: 1,
     size: 10
   });
+  assert.deepEqual(
+    buildProductListQuery(5, "麻辣", 1, "SALES_DESC", {
+      spice: "medium",
+      "bad:code": "ignored"
+    }),
+    {
+      current: 1,
+      size: 10,
+      categoryId: 5,
+      keyword: "麻辣",
+      sort: "SALES_DESC",
+      parameterFilters: { SPICE: "MEDIUM" }
+    }
+  );
 });
 
 test("分类标签去重并稳定保留全部入口和选中态", () => {
@@ -119,6 +142,35 @@ test("分类标签去重并稳定保留全部入口和选中态", () => {
     { id: 0, name: "全部", selected: false },
     { id: 1, name: "火锅底料", selected: false },
     { id: 5, name: "麻辣", selected: true }
+  ]);
+});
+
+test("商品参数筛选项来自独立聚合接口并稳定保留零商品选项", () => {
+  const facets: ProductFilterGroup[] = [{
+    parameterId: 1,
+    parameterCode: "SPICE",
+    parameterName: "辣度",
+    valueType: "SINGLE_SELECT",
+    options: [
+      { optionCode: "MILD", optionLabel: "微辣", displayLevel: 1, productCount: 0 },
+      { optionCode: "MEDIUM", optionLabel: "中辣", displayLevel: 2, productCount: 2 },
+      { optionCode: "HOT", optionLabel: "特辣", displayLevel: 3, productCount: 1 },
+      { optionCode: "EXTREME", optionLabel: "变态辣", displayLevel: 4, productCount: 1 }
+    ]
+  }];
+  const groups = buildCatalogParameterFilterGroups(facets, { SPICE: "MEDIUM" });
+  assert.equal(groups[0]?.name, "辣度");
+  assert.deepEqual(groups[0]?.options.map((option) => ({
+    value: option.value,
+    label: option.label,
+    count: option.count,
+    disabled: option.disabled,
+    selected: option.selected
+  })), [
+    { value: "MILD", label: "微辣", count: 0, disabled: true, selected: false },
+    { value: "MEDIUM", label: "中辣", count: 2, disabled: false, selected: true },
+    { value: "HOT", label: "特辣", count: 1, disabled: false, selected: false },
+    { value: "EXTREME", label: "变态辣", count: 1, disabled: false, selected: false }
   ]);
 });
 
@@ -159,6 +211,13 @@ test("列表商品映射价格区间、销量、可售状态和参数卡片语�
   assert.equal(soldOut?.badgeTone, "neutral");
   assert.equal(soldOut?.soldOut, true);
   assert.equal(soldOut?.salesText, "已售 36+");
+
+  const badged = buildCatalogProductCard(product({
+    badgeText: "新品首发",
+    badgeTone: "RED"
+  }));
+  assert.equal(badged?.badgeText, "新品首发");
+  assert.equal(badged?.badgeTone, "brand");
 });
 
 test("详情图片去重并将参数映射为展示数据", () => {

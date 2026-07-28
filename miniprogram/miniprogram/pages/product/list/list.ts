@@ -1,8 +1,9 @@
 import {
-  normalizeProductKeyword,
+  normalizeProductRouteKeyword,
   parsePositiveId
 } from "../../../features/product-catalog";
 import { enableNativeShareMenu } from "../../../utils/share";
+import { refreshCustomTabBarCartCount } from "../../../utils/tab-bar";
 
 interface PageOptions {
   categoryId?: string;
@@ -32,7 +33,7 @@ Page({
     this.setData({
       ready: true,
       initialCategoryId: parsePositiveId(options.categoryId),
-      initialKeyword: normalizeProductKeyword(options.keyword)
+      initialKeyword: normalizeProductRouteKeyword(options.keyword)
     });
   },
 
@@ -62,11 +63,22 @@ Page({
     void this.catalog()?.loadMore();
   },
 
+  onSearchTap() {
+    const keyword = encodeURIComponent(this.data.initialKeyword);
+    wx.navigateTo({
+      url: `/pages/product/search/search${keyword ? `?keyword=${keyword}` : ""}`
+    });
+  },
+
   onProductSelect(event: ProductSelectEvent) {
     const spuId = parsePositiveId(event.detail.spuId);
     if (spuId) {
       wx.navigateTo({ url: `/pages/product/detail/detail?id=${spuId}` });
     }
+  },
+
+  onCartChange() {
+    void refreshCustomTabBarCartCount(this);
   },
 
   catalog(): CatalogBrowserInstance | undefined {

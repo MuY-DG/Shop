@@ -3,8 +3,10 @@ import type { HomeProductFeature } from "../types/home";
 import type {
   ProductCategory,
   ProductDetail,
+  ProductFilterGroup,
   ProductListItem,
   ProductListQuery,
+  ProductListSort,
   ProductParameterValue,
   ProductSku,
   WholesaleTier
@@ -16,6 +18,21 @@ export interface CategoryTabView {
   id: number;
   name: string;
   selected: boolean;
+}
+
+export interface CatalogParameterFilterOptionView {
+  key: string;
+  value: string;
+  label: string;
+  count: number;
+  disabled: boolean;
+  selected: boolean;
+}
+
+export interface CatalogParameterFilterGroupView {
+  key: string;
+  name: string;
+  options: CatalogParameterFilterOptionView[];
 }
 
 export interface CatalogProductCardView {
@@ -153,18 +170,46 @@ export function normalizeProductKeyword(value: unknown): string {
   return cleanText(value).replace(/\s+/g, " ").slice(0, 80);
 }
 
+export function normalizeProductRouteKeyword(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+  try {
+    return normalizeProductKeyword(decodeURIComponent(value));
+  } catch {
+    return normalizeProductKeyword(value);
+  }
+}
+
 export function buildProductListQuery(
   categoryId: unknown,
   keyword: unknown,
-  current = 1
+  current = 1,
+  sort: ProductListSort = "COMPREHENSIVE",
+  parameterFilters: Record<string, string> = {}
 ): ProductListQuery {
   const normalizedCategoryId = parsePositiveId(categoryId);
   const normalizedKeyword = normalizeProductKeyword(keyword);
+  const normalizedParameterFilters = Object.fromEntries(
+    Object.entries(parameterFilters)
+      .map(([parameterCode, optionCode]) => [
+        cleanText(parameterCode).toUpperCase(),
+        cleanText(optionCode).toUpperCase()
+      ])
+      .filter(([parameterCode, optionCode]) =>
+        /^[A-Z0-9_-]{1,64}$/.test(parameterCode) &&
+        /^[A-Z0-9_-]{1,64}$/.test(optionCode)
+      )
+  );
   return {
     current: positiveInteger(current) ?? 1,
     size: PRODUCT_PAGE_SIZE,
     ...(normalizedCategoryId ? { categoryId: normalizedCategoryId } : {}),
-    ...(normalizedKeyword ? { keyword: normalizedKeyword } : {})
+    ...(normalizedKeyword ? { keyword: normalizedKeyword } : {}),
+    ...(sort !== "COMPREHENSIVE" ? { sort } : {}),
+    ...(Object.keys(normalizedParameterFilters).length
+      ? { parameterFilters: normalizedParameterFilters }
+      : {})
   };
 }
 
@@ -192,6 +237,43 @@ export function buildCategoryTabs(
     { id: 0, name: "全部", selected: activeCategoryId === 0 },
     ...normalized
   ];
+}
+
+export function buildCatalogParameterFilterGroups(
+  facets: ProductFilterGroup[],
+  selections: Record<string, string> = {}
+): CatalogParameterFilterGroupView[] {
+  return (Array.isArray(facets) ? facets : [])
+    .map((facet) => {
+      const key = cleanText(facet?.parameterCode).toUpperCase();
+      const name = cleanText(facet?.parameterName);
+      if (!key || !name) {
+        return undefined;
+      }
+      const seen = new Set<string>();
+      const options = (Array.isArray(facet.options) ? facet.options : [])
+        .map((option) => {
+          const value = cleanText(option?.optionCode).toUpperCase();
+          const label = cleanText(option?.optionLabel);
+          if (!value || !label || seen.has(value)) {
+            return undefined;
+          }
+          seen.add(value);
+          const count = nonNegativeInteger(option.productCount) ?? 0;
+          const selected = selections[key] === value;
+          return {
+            key: `${key}-${value}`,
+            value,
+            label,
+            count,
+            disabled: count === 0 && !selected,
+            selected
+          };
+        })
+        .filter((option): option is CatalogParameterFilterOptionView => Boolean(option));
+      return options.length ? { key, name, options } : undefined;
+    })
+    .filter((group): group is CatalogParameterFilterGroupView => Boolean(group));
 }
 
 function toFact(parameter: ProductParameterValue): ProductFactView | undefined {
@@ -253,6 +335,19 @@ export function buildCatalogProductCard(
   const rangeParts = priceParts(rangePrice);
   const imageUrl = cleanText(product.mainImage);
   const soldOut = product.saleState === "SOLD_OUT";
+  const manualBadgeText = cleanText(product.badgeText);
+  const manualBadgeTone = (() => {
+    switch (product.badgeTone) {
+      case "RED":
+        return "brand";
+      case "ORANGE":
+        return "orange";
+      case "GREEN":
+        return "success";
+      default:
+        return "neutral";
+    }
+  })();
   const displaySales = nonNegativeInteger(product.displaySales) ?? 0;
   return {
     navigationPath: `/pages/product/detail/detail?id=${spuId}`,
@@ -276,8 +371,8 @@ export function buildCatalogProductCard(
     priceSuffixText: minPrice !== undefined && maxPrice === undefined ? "起" : "",
     originalPriceText: "",
     hasOriginalPrice: false,
-    badgeText: soldOut ? "暂时售罄" : "",
-    badgeTone: "neutral",
+    badgeText: soldOut ? "暂时售罄" : manualBadgeText,
+    badgeTone: soldOut ? "neutral" : manualBadgeTone,
     soldOut,
     features: productFacts(product.parameters),
     wholesaleText: "",

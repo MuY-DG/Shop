@@ -3,7 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
-import { syncCustomTabBar } from "../miniprogram/utils/tab-bar";
+import {
+  setCustomTabBarHidden,
+  syncCustomTabBar
+} from "../miniprogram/utils/tab-bar";
 
 interface AppConfig {
   pages: string[];
@@ -62,14 +65,29 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
 
 test("Tab 页面显示时同步自定义导航选中项", () => {
   let selected = -1;
+  let hidden = true;
   syncCustomTabBar({
     getTabBar: () => ({
       setData(data) {
         selected = data.selected;
+      },
+      setHidden(value) {
+        hidden = value;
       }
     })
   }, 3);
   assert.equal(selected, 3);
+  assert.equal(hidden, false);
+
+  setCustomTabBarHidden({
+    getTabBar: () => ({
+      setData() {},
+      setHidden(value) {
+        hidden = value;
+      }
+    })
+  }, true);
+  assert.equal(hidden, true);
 
   const cartLogic = readFileSync(resolve(sourceRoot, "pages/cart/cart.ts"), "utf8");
   const cartPageLogic = readFileSync(
@@ -82,6 +100,30 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
   assert.match(profileLogic, /syncCustomTabBar\(this, 3\)/);
 
   assert.doesNotThrow(() => syncCustomTabBar({}, 0));
+});
+
+test("分类筛选打开时隐藏自定义底部导航", () => {
+  const categoryTemplate = readFileSync(
+    resolve(sourceRoot, "pages/category/category.wxml"),
+    "utf8"
+  );
+  const categoryLogic = readFileSync(
+    resolve(sourceRoot, "pages/category/category.ts"),
+    "utf8"
+  );
+  const catalogLogic = readFileSync(
+    resolve(sourceRoot, "components/catalog-browser/catalog-browser.ts"),
+    "utf8"
+  );
+  const tabTemplate = readFileSync(
+    resolve(sourceRoot, "custom-tab-bar/index.wxml"),
+    "utf8"
+  );
+  assert.match(categoryTemplate, /bindfiltervisibilitychange="onFilterVisibilityChange"/);
+  assert.match(categoryLogic, /setCustomTabBarHidden\(this, Boolean\(event\.detail\.visible\)\)/);
+  assert.match(catalogLogic, /filtervisibilitychange", \{ visible: true \}/);
+  assert.match(catalogLogic, /filtervisibilitychange", \{ visible: false \}/);
+  assert.match(tabTemplate, /hidden="\{\{hidden\}\}"/);
 });
 
 test("商品加购按钮调用真实购物车接口并同步底部角标", () => {

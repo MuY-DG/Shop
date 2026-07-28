@@ -2,6 +2,7 @@ import { API_ENDPOINTS } from "../constants/api-endpoints";
 import type {
   ProductCategory,
   ProductDetail,
+  ProductFilterGroup,
   ProductListQuery,
   ProductListResult
 } from "../types/product";
@@ -34,8 +35,42 @@ export function getProductList(query: ProductListQuery): Promise<ProductListResu
   if (query.keyword) {
     data.keyword = query.keyword;
   }
+  if (query.sort) {
+    data.sort = query.sort;
+  }
+  const parameterFilters = Object.entries(query.parameterFilters ?? {})
+    .filter(([parameterCode, optionCode]) =>
+      /^[A-Za-z0-9_-]{1,64}$/.test(parameterCode) &&
+      /^[A-Za-z0-9_-]{1,64}$/.test(optionCode)
+    )
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([parameterCode, optionCode]) =>
+      `${parameterCode.toUpperCase()}:${optionCode.toUpperCase()}`
+    );
+  if (parameterFilters.length) {
+    data.parameterFilters = parameterFilters.join(",");
+  }
   return request<ProductListResult>({
     url: API_ENDPOINTS.product.list,
+    method: "GET",
+    data,
+    auth: false
+  });
+}
+
+export function getProductFilterFacets(query: {
+  categoryId?: number;
+  keyword?: string;
+}): Promise<ProductFilterGroup[]> {
+  const data: WechatMiniprogram.IAnyObject = {};
+  if (query.categoryId !== undefined) {
+    data.categoryId = query.categoryId;
+  }
+  if (query.keyword) {
+    data.keyword = query.keyword;
+  }
+  return request<ProductFilterGroup[]>({
+    url: API_ENDPOINTS.product.filterFacets,
     method: "GET",
     data,
     auth: false

@@ -1,13 +1,32 @@
 <view class="category-page">
   <navigation-bar
-    title="分类"
     background="#FAF2E4"
     color="#2E1D16"
-  />
+    show-divider="{{false}}"
+    wide-center="{{true}}"
+  >
+    <view
+      slot="center"
+      class="category-search"
+      bindtap="onSearchTap"
+      hover-class="category-search--pressed"
+      aria-role="button"
+      aria-label="搜索商品"
+    >
+      <image
+        class="category-search__icon"
+        src="/assets/icons/address-search.svg"
+        mode="aspectFit"
+        aria-hidden="true"
+      />
+      <text class="category-search__placeholder">搜索商品名称</text>
+    </view>
+  </navigation-bar>
   <catalog-browser
     id="catalog"
     tab-page="{{true}}"
     bindproductselect="onProductSelect"
     bindcartchange="onCartChange"
+    bindfiltervisibilitychange="onFilterVisibilityChange"
   />
 </view>

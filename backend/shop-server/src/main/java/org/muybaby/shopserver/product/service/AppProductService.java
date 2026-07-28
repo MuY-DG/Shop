@@ -28,6 +28,7 @@ import java.sql.SQLException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -55,11 +56,20 @@ public class AppProductService {
     }
 
     public PageResult<AppSpuListItemResponse> page(ProductPageRequest request) {
-        ProductPageRequest normalizedRequest = request == null ? new ProductPageRequest(null, null, null, null) : request;
+        ProductPageRequest normalizedRequest = request == null
+                ? new ProductPageRequest(null, null, null, null, null, null)
+                : request;
         long current = normalizedRequest.pageCurrent();
         long size = normalizedRequest.pageSize();
         long offset = (current - 1) * size;
         String keywordLike = likeKeyword(normalizedRequest.keyword());
+        Map<String, String> parameterFilters = normalizedRequest.normalizedParameterFilters();
+        String parameterFilterClause = parameterFilterClause(parameterFilters);
+        Map<String, Object> baseParameters = baseListParameters(
+                normalizedRequest,
+                keywordLike,
+                parameterFilters
+        );
 
         Long total = jdbcClient.sql("""
                         SELECT count(*)
@@ -70,16 +80,19 @@ public class AppProductService {
                           AND c.status = :categoryStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
                           AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
-                        """)
-                .param("status", ProductStatus.ON_SALE.name())
-                .param("categoryStatus", "ENABLED")
-                .param("categoryId", normalizedRequest.categoryId())
-                .param("keywordLike", keywordLike)
+                          %s
+                        """.formatted(parameterFilterClause))
+                .params(baseParameters)
                 .query(Long.class)
                 .single();
 
+        Map<String, Object> rowParameters = new LinkedHashMap<>(baseParameters);
+        rowParameters.put("skuStatus", SkuStatus.ENABLED.name());
+        rowParameters.put("limit", size);
+        rowParameters.put("offset", offset);
         List<SpuListRow> rows = jdbcClient.sql("""
                         SELECT s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points,
+                               s.display_badge_text, s.display_badge_tone,
                                min(k.price_cent) AS min_price_cent,
                                max(k.price_cent) AS max_price_cent,
                                s.virtual_sales + coalesce(sales.actual_sales, 0) AS display_sales,
@@ -100,18 +113,14 @@ public class AppProductService {
                           AND c.status = :categoryStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
                           AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
+                          %s
                         GROUP BY s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points,
+                                 s.display_badge_text, s.display_badge_tone,
                                  s.virtual_sales, sales.actual_sales, s.sort_order
-                        ORDER BY s.sort_order ASC, s.id DESC
+                        ORDER BY %s
                         LIMIT :limit OFFSET :offset
-                        """)
-                .param("skuStatus", SkuStatus.ENABLED.name())
-                .param("spuStatus", ProductStatus.ON_SALE.name())
-                .param("categoryStatus", "ENABLED")
-                .param("categoryId", normalizedRequest.categoryId())
-                .param("keywordLike", keywordLike)
-                .param("limit", size)
-                .param("offset", offset)
+                        """.formatted(parameterFilterClause, normalizedRequest.orderByClause()))
+                .params(rowParameters)
                 .query(this::mapSpuListRow)
                 .list();
         Map<Long, List<AppProductParameterValueResponse>> parametersBySpuId =
@@ -131,6 +140,8 @@ public class AppProductService {
                         row.maxPriceCent(),
                         row.displaySales(),
                         row.saleState(),
+                        row.badgeText(),
+                        row.badgeTone(),
                         parametersBySpuId.getOrDefault(row.id(), List.of())
                 ))
                 .toList();
@@ -272,6 +283,8 @@ public class AppProductService {
                 rs.getString("subtitle"),
                 rs.getString("main_image"),
                 rs.getString("selling_points"),
+                rs.getString("display_badge_text"),
+                rs.getString("display_badge_tone"),
                 rs.getObject("min_price_cent", Long.class),
                 rs.getObject("max_price_cent", Long.class),
                 rs.getLong("display_sales"),
@@ -385,6 +398,52 @@ public class AppProductService {
         return StringUtils.hasText(keyword) ? "%" + keyword.trim() + "%" : null;
     }
 
+    private Map<String, Object> baseListParameters(
+            ProductPageRequest request,
+            String keywordLike,
+            Map<String, String> parameterFilters
+    ) {
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("status", ProductStatus.ON_SALE.name());
+        parameters.put("spuStatus", ProductStatus.ON_SALE.name());
+        parameters.put("categoryStatus", "ENABLED");
+        parameters.put("categoryId", request.categoryId());
+        parameters.put("keywordLike", keywordLike);
+        int index = 0;
+        for (Map.Entry<String, String> filter : parameterFilters.entrySet()) {
+            parameters.put("parameterCode" + index, filter.getKey());
+            parameters.put("parameterOption" + index, "%\"" + filter.getValue() + "\"%");
+            index++;
+        }
+        return parameters;
+    }
+
+    private String parameterFilterClause(Map<String, String> parameterFilters) {
+        if (parameterFilters.isEmpty()) {
+            return "";
+        }
+        StringBuilder clause = new StringBuilder();
+        int index = 0;
+        for (Map.Entry<String, String> ignored : parameterFilters.entrySet()) {
+            clause.append("""
+
+                          AND EXISTS (
+                              SELECT 1
+                              FROM product_spu_parameter_value filter_value
+                              JOIN product_parameter_definition filter_definition
+                                ON filter_definition.id = filter_value.parameter_id
+                              WHERE filter_value.spu_id = s.id
+                                AND filter_definition.status = 'ENABLED'
+                                AND filter_definition.filterable = true
+                                AND filter_definition.parameter_code = :parameterCode%s
+                                AND filter_value.option_codes_json LIKE :parameterOption%s
+                          )
+                    """.formatted(index, index));
+            index++;
+        }
+        return clause.toString();
+    }
+
     private List<String> splitSellingPoints(String sellingPoints) {
         if (!StringUtils.hasText(sellingPoints)) {
             return List.of();
@@ -417,6 +476,8 @@ public class AppProductService {
             String subtitle,
             String mainImage,
             String sellingPoints,
+            String badgeText,
+            String badgeTone,
             Long minPriceCent,
             Long maxPriceCent,
             Long displaySales,

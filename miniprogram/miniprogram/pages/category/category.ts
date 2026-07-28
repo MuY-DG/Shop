@@ -2,6 +2,7 @@ import { parsePositiveId } from "../../features/product-catalog";
 import { enableNativeShareMenu } from "../../utils/share";
 import {
   refreshCustomTabBarCartCount,
+  setCustomTabBarHidden,
   syncCustomTabBar
 } from "../../utils/tab-bar";
 
@@ -13,6 +14,12 @@ interface CatalogBrowserInstance {
 interface ProductSelectEvent {
   detail: {
     spuId?: number | string;
+  };
+}
+
+interface FilterVisibilityChangeEvent {
+  detail: {
+    visible?: boolean;
   };
 }
 
@@ -44,6 +51,10 @@ Page({
     void this.catalog()?.loadMore();
   },
 
+  onSearchTap() {
+    wx.navigateTo({ url: "/pages/product/search/search" });
+  },
+
   onProductSelect(event: ProductSelectEvent) {
     const spuId = parsePositiveId(event.detail.spuId);
     if (spuId) {
@@ -53,6 +64,10 @@ Page({
 
   onCartChange() {
     void refreshCustomTabBarCartCount(this);
+  },
+
+  onFilterVisibilityChange(event: FilterVisibilityChangeEvent) {
+    setCustomTabBarHidden(this, Boolean(event.detail.visible));
   },
 
   catalog(): CatalogBrowserInstance | undefined {

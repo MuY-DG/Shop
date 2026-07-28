@@ -1,15 +1,36 @@
 <view class="catalog-page">
   <navigation-bar
-    title="选购火锅底料"
     back="{{true}}"
     background="#FAF2E4"
     color="#2E1D16"
-  />
+    show-divider="{{false}}"
+    wide-center="{{true}}"
+  >
+    <view
+      slot="center"
+      class="catalog-search"
+      bindtap="onSearchTap"
+      hover-class="catalog-search--pressed"
+      aria-role="button"
+      aria-label="{{initialKeyword ? '修改搜索关键词' : '搜索商品'}}"
+    >
+      <image
+        class="catalog-search__icon"
+        src="/assets/icons/address-search.svg"
+        mode="aspectFit"
+        aria-hidden="true"
+      />
+      <text class="catalog-search__text {{initialKeyword ? '' : 'catalog-search__text--placeholder'}}">
+        {{initialKeyword || '搜索商品名称'}}
+      </text>
+    </view>
+  </navigation-bar>
   <catalog-browser
     wx:if="{{ready}}"
     id="catalog"
     initial-category-id="{{initialCategoryId}}"
     initial-keyword="{{initialKeyword}}"
     bindproductselect="onProductSelect"
+    bindcartchange="onCartChange"
   />
 </view>

@@ -57,10 +57,15 @@ Component({
 
   data: {
     selected: 0,
+    hidden: false,
     list: TAB_ITEMS
   },
 
   methods: {
+    setHidden(hidden: boolean) {
+      this.setData({ hidden: Boolean(hidden) });
+    },
+
     setCartCount(count: number) {
       const safeCount = Number.isSafeInteger(count) && count > 0 ? count : 0;
       const badge = safeCount > 99 ? "99+" : safeCount ? String(safeCount) : "";

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.product.dto.AdminProductParameterDefinitionResponse;
 import org.muybaby.shopserver.product.dto.AdminSpuDetailResponse;
+import org.muybaby.shopserver.product.dto.AppProductFilterGroupResponse;
 import org.muybaby.shopserver.product.dto.AppProductParameterValueResponse;
 import org.muybaby.shopserver.product.dto.AppSpuListItemResponse;
 import org.muybaby.shopserver.product.dto.ProductPageRequest;
@@ -192,6 +193,79 @@ class ProductQueryCountTest {
         });
     }
 
+    @Test
+    void filterFacetsIncludeAllOptionsAndProductFilteringRunsBeforePagination() {
+        long categoryId = 8_400_000L;
+        long parameterId = 8_400_100L;
+        insertCategory(categoryId, "Facet Category");
+        insertParameter(
+                parameterId,
+                "QC_SPICE",
+                "辣度",
+                "SINGLE_SELECT",
+                true,
+                true,
+                true,
+                0
+        );
+        jdbcClient.sql("""
+                        insert into product_category_parameter (category_id, parameter_id)
+                        values (:categoryId, :parameterId)
+                        """)
+                .param("categoryId", categoryId)
+                .param("parameterId", parameterId)
+                .update();
+        insertOption(8_400_200L, parameterId, "MILD", "微辣", 1, 0);
+        insertOption(8_400_201L, parameterId, "MEDIUM", "中辣", 2, 1);
+        insertOption(8_400_202L, parameterId, "HOT", "特辣", 3, 2);
+        insertOption(8_400_203L, parameterId, "EXTREME", "变态辣", 4, 3);
+
+        long hotSpuId = 8_401_000L;
+        long extremeSpuId = 8_401_001L;
+        insertPublishedSpuWithSku(hotSpuId, 8_402_000L, categoryId, 0);
+        insertPublishedSpuWithSku(extremeSpuId, 8_402_001L, categoryId, 1);
+        insertParameterValue(hotSpuId, parameterId, "", "[\"HOT\"]");
+        insertParameterValue(extremeSpuId, parameterId, "", "[\"EXTREME\"]");
+        jdbcClient.sql("""
+                        update product_spu
+                        set display_badge_text = '新品首发', display_badge_tone = 'RED'
+                        where id = :spuId
+                        """)
+                .param("spuId", extremeSpuId)
+                .update();
+
+        List<AppProductFilterGroupResponse> facets =
+                productParameterService.filterFacets(categoryId, null);
+
+        assertThat(facets).hasSize(1);
+        assertThat(facets.getFirst().parameterCode()).isEqualTo("QC_SPICE");
+        assertThat(facets.getFirst().options())
+                .extracting("optionCode", "optionLabel", "productCount")
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple("MILD", "微辣", 0L),
+                        org.assertj.core.groups.Tuple.tuple("MEDIUM", "中辣", 0L),
+                        org.assertj.core.groups.Tuple.tuple("HOT", "特辣", 1L),
+                        org.assertj.core.groups.Tuple.tuple("EXTREME", "变态辣", 1L)
+                );
+
+        PageResult<AppSpuListItemResponse> filtered = appProductService.page(
+                new ProductPageRequest(
+                        categoryId,
+                        null,
+                        1L,
+                        1L,
+                        null,
+                        "QC_SPICE:EXTREME"
+                )
+        );
+
+        assertThat(filtered.total()).isEqualTo(1);
+        assertThat(filtered.records()).hasSize(1);
+        assertThat(filtered.records().getFirst().id()).isEqualTo(extremeSpuId);
+        assertThat(filtered.records().getFirst().badgeText()).isEqualTo("新品首发");
+        assertThat(filtered.records().getFirst().badgeTone()).isEqualTo("RED");
+    }
+
     private void assertParameterSnapshot(AppProductParameterValueResponse parameter) {
         assertThat(parameter.parameterCode()).isEqualTo("QC_SELECT");
         assertThat(parameter.displayText()).isEqualTo("第二项、UNKNOWN、第一项");
@@ -268,18 +342,41 @@ class ProductQueryCountTest {
             boolean detailVisible,
             int sortOrder
     ) {
+        insertParameter(
+                parameterId,
+                code,
+                name,
+                valueType,
+                false,
+                cardVisible,
+                detailVisible,
+                sortOrder
+        );
+    }
+
+    private void insertParameter(
+            long parameterId,
+            String code,
+            String name,
+            String valueType,
+            boolean filterable,
+            boolean cardVisible,
+            boolean detailVisible,
+            int sortOrder
+    ) {
         jdbcClient.sql("""
                         insert into product_parameter_definition
                             (id, parameter_code, parameter_name, value_type, unit, description,
                              required_value, filterable, card_visible, detail_visible, sort_order, status)
                         values
-                            (:id, :code, :name, :valueType, '', '', false, false,
+                            (:id, :code, :name, :valueType, '', '', false, :filterable,
                              :cardVisible, :detailVisible, :sortOrder, 'ENABLED')
                         """)
                 .param("id", parameterId)
                 .param("code", code)
                 .param("name", name)
                 .param("valueType", valueType)
+                .param("filterable", filterable)
                 .param("cardVisible", cardVisible)
                 .param("detailVisible", detailVisible)
                 .param("sortOrder", sortOrder)

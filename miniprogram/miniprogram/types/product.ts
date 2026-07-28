@@ -5,6 +5,12 @@ export type ProductParameterCardRenderer = "TEXT" | "PILL" | "LEVEL" | "SPICE";
 export type ProductSkuStatus = "ENABLED" | "DISABLED";
 export type ProductFreightChargeMode = "FREE" | "FIXED";
 export type ProductSaleState = "AVAILABLE" | "SOLD_OUT";
+export type ProductBadgeTone = "RED" | "ORANGE" | "GREEN" | "NEUTRAL";
+export type ProductListSort =
+  | "COMPREHENSIVE"
+  | "SALES_DESC"
+  | "PRICE_ASC"
+  | "PRICE_DESC";
 
 export interface ProductCategory {
   id: number;
@@ -35,6 +41,21 @@ export interface ProductParameterValue {
   selectedOptions: ProductParameterOptionValue[];
 }
 
+export interface ProductFilterOption {
+  optionCode: string;
+  optionLabel: string;
+  displayLevel?: number;
+  productCount: number;
+}
+
+export interface ProductFilterGroup {
+  parameterId: number;
+  parameterCode: string;
+  parameterName: string;
+  valueType: string;
+  options: ProductFilterOption[];
+}
+
 export interface ProductFreightTemplate {
   id: number;
   name: string;
@@ -62,6 +83,8 @@ export interface ProductListItem {
   maxPriceCent?: number;
   displaySales: number;
   saleState: ProductSaleState;
+  badgeText?: string;
+  badgeTone?: ProductBadgeTone;
   parameters: ProductParameterValue[];
 }
 
@@ -70,6 +93,8 @@ export interface ProductListQuery {
   size: number;
   categoryId?: number;
   keyword?: string;
+  sort?: ProductListSort;
+  parameterFilters?: Record<string, string>;
 }
 
 export type ProductListResult = PageResult<ProductListItem>;

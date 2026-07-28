@@ -150,6 +150,10 @@ Component({
       type: Boolean,
       value: false,
     },
+    wideCenter: {
+      type: Boolean,
+      value: false,
+    },
     delta: {
       type: Number,
       value: 1,

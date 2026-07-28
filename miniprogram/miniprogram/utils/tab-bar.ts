@@ -1,5 +1,6 @@
 interface CustomTabBarInstance {
   setData(data: { selected: number }): void;
+  setHidden?: (hidden: boolean) => void;
   refreshCartCount?: () => Promise<void> | void;
   setCartCount?: (count: number) => void;
 }
@@ -12,8 +13,16 @@ export function syncCustomTabBar(host: CustomTabBarHost, selected: number): void
   const tabBar = host.getTabBar?.();
   if (tabBar) {
     tabBar.setData({ selected });
+    tabBar.setHidden?.(false);
     void tabBar.refreshCartCount?.();
   }
+}
+
+export function setCustomTabBarHidden(
+  host: CustomTabBarHost,
+  hidden: boolean
+): void {
+  host.getTabBar?.()?.setHidden?.(hidden);
 }
 
 export function setCustomTabBarCartCount(

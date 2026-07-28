@@ -34,8 +34,8 @@
     </view>
 
     <view
-      class="navigation-bar__center"
-      style="left: {{sideWidth}}px; right: {{sideWidth}}px;"
+      class="navigation-bar__center {{wideCenter ? 'navigation-bar__center--wide' : ''}} {{back ? 'navigation-bar__center--with-back' : ''}}"
+      style="left: {{wideCenter ? (back ? 52 : 12) : sideWidth}}px; right: {{sideWidth}}px;"
       aria-role="heading"
       aria-level="1"
     >

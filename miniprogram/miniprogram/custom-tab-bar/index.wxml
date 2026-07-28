@@ -1,4 +1,9 @@
-<view class="tab-bar" aria-role="tablist" aria-label="主导航">
+<view
+  class="tab-bar"
+  hidden="{{hidden}}"
+  aria-role="tablist"
+  aria-label="主导航"
+>
   <view class="tab-bar__items">
     <view
       wx:for="{{list}}"
