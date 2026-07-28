@@ -127,7 +127,7 @@ const EMPTY_SELECTION: PurchaseSelectionView = {
 const EMPTY_REVIEW_SUMMARY = buildProductReviewSummaryView();
 const REVIEW_PREVIEW_SIZE = 2;
 const REVIEW_PAGE_SIZE = 10;
-const SHEET_EXIT_DURATION_MS = 300;
+const SHEET_EXIT_DURATION_MS = 340;
 
 let latestDetailRequest = 0;
 let latestAddressRequest = 0;
@@ -728,9 +728,7 @@ Page({
     if (!this.requireLogin()) {
       return;
     }
-    this.animateSheetClose(() => {
-      wx.navigateTo({ url: "/pages/account/address/edit/edit" });
-    });
+    wx.navigateTo({ url: "/pages/account/address/edit/edit" });
   },
 
   async loadReviewPreview() {
