@@ -83,8 +83,19 @@
         <text wx:if="{{product.hasOriginalPrice}}" class="product-card__original-price">¥{{product.originalPriceText}}</text>
       </view>
       <view wx:else class="product-card__price-empty">暂无报价</view>
-      <view class="product-card__cart" aria-hidden="true">
-        <image class="product-card__cart-icon" src="/assets/icons/shopping-cart.svg" mode="aspectFit" />
+      <view
+        class="product-card__cart {{adding ? 'product-card__cart--loading' : ''}}"
+        catchtap="handleCartTap"
+        hover-class="product-card__cart--pressed"
+        hover-stay-time="80"
+        aria-role="button"
+        aria-label="{{adding ? '正在将' + product.title + '加入购物车' : '将' + product.title + '加入购物车'}}"
+      >
+        <view wx:if="{{adding}}" class="product-card__cart-spinner" aria-hidden="true"></view>
+        <block wx:else>
+          <view class="product-card__cart-plus-horizontal" aria-hidden="true"></view>
+          <view class="product-card__cart-plus-vertical" aria-hidden="true"></view>
+        </block>
       </view>
     </view>
 

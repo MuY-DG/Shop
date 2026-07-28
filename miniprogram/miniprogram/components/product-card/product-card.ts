@@ -72,6 +72,10 @@ Component({
     variant: {
       type: String,
       value: "compact"
+    },
+    adding: {
+      type: Boolean,
+      value: false
     }
   },
 
@@ -89,6 +93,21 @@ Component({
       this.triggerEvent("select", {
         path: product.navigationPath || "",
         spuId: product.spuId
+      });
+    },
+
+    handleCartTap() {
+      if (this.data.adding) {
+        return;
+      }
+      const product = this.data.product as ProductCardValue;
+      if (!product.spuId) {
+        return;
+      }
+      this.triggerEvent("add", {
+        path: product.navigationPath || "",
+        spuId: product.spuId,
+        title: product.title
       });
     }
   }

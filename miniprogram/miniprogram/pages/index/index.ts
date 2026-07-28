@@ -5,17 +5,32 @@ import {
   type HomeCategoryView,
   type HomeProductCardView
 } from "../../features/home";
+import { findDefaultSku, parsePositiveId } from "../../features/product-catalog";
+import { addCartItem } from "../../services/cart";
 import { getHome } from "../../services/home";
+import { getProductDetail } from "../../services/product";
+import { getSessionState } from "../../services/session";
 import { isApiError } from "../../utils/api-error";
+import { openLoginPage } from "../../utils/login-navigation";
 import {
   DEFAULT_SHARE_TITLE,
   enableNativeShareMenu
 } from "../../utils/share";
-import { syncCustomTabBar } from "../../utils/tab-bar";
+import {
+  refreshCustomTabBarCartCount,
+  syncCustomTabBar
+} from "../../utils/tab-bar";
 
 interface BusinessPathEvent {
   detail: {
     path?: string;
+  };
+}
+
+interface ProductAddEvent {
+  detail: {
+    spuId?: number | string;
+    title?: string;
   };
 }
 
@@ -63,7 +78,8 @@ Page({
     categories: [] as HomeCategoryView[],
     featuredProducts: [] as HomeProductCardView[],
     compactProducts: [] as HomeProductCardView[],
-    hasContent: false
+    hasContent: false,
+    addingSpuId: 0
   },
 
   onLoad() {
@@ -147,6 +163,49 @@ Page({
 
   onBusinessPathSelect(event: BusinessPathEvent) {
     this.openBusinessPath(event.detail.path);
+  },
+
+  onProductAdd(event: ProductAddEvent) {
+    const spuId = parsePositiveId(event.detail.spuId);
+    if (!spuId || this.data.addingSpuId) {
+      return;
+    }
+    const session = getSessionState();
+    if (!session.user || (!session.accessToken && !session.refreshToken)) {
+      openLoginPage("/pages/index/index");
+      return;
+    }
+    void this.addProductToCart(spuId);
+  },
+
+  async addProductToCart(spuId: number) {
+    this.setData({ addingSpuId: spuId });
+    try {
+      const detail = await getProductDetail(spuId);
+      const sku = findDefaultSku(detail.skus);
+      if (!sku) {
+        wx.showToast({ title: "该商品暂无可售规格", icon: "none" });
+        return;
+      }
+      await addCartItem({ skuId: sku.id, quantity: 1 });
+      void refreshCustomTabBarCartCount(this);
+      wx.showToast({ title: "已加入购物车", icon: "success" });
+    } catch (error) {
+      if (isApiError(error) && error.kind === "AUTH") {
+        openLoginPage("/pages/index/index");
+        return;
+      }
+      wx.showToast({
+        title: isApiError(error)
+          ? error.message
+          : "加入购物车失败，请稍后重试",
+        icon: "none"
+      });
+    } finally {
+      if (this.data.addingSpuId === spuId) {
+        this.setData({ addingSpuId: 0 });
+      }
+    }
   },
 
   openBusinessPath(path: unknown) {

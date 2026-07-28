@@ -2,17 +2,22 @@ import {
   buildCatalogProductCards,
   buildCategoryTabs,
   buildProductListQuery,
+  findDefaultSku,
   normalizeProductKeyword,
   parsePositiveId,
   type CatalogProductCardView,
   type CategoryTabView
 } from "../../features/product-catalog";
+import { addCartItem } from "../../services/cart";
 import {
   getProductCategories,
+  getProductDetail,
   getProductList
 } from "../../services/product";
+import { getSessionState } from "../../services/session";
 import type { ProductCategory } from "../../types/product";
 import { isApiError } from "../../utils/api-error";
+import { openLoginPage } from "../../utils/login-navigation";
 
 interface DatasetEvent {
   currentTarget: {
@@ -96,7 +101,8 @@ Component({
     loading: true,
     loadingMore: false,
     loaded: false,
-    errorText: ""
+    errorText: "",
+    addingSpuId: 0
   },
 
   lifetimes: {
@@ -299,6 +305,47 @@ Component({
       const spuId = parsePositiveId(event.detail.spuId);
       if (spuId) {
         this.triggerEvent("productselect", { spuId });
+      }
+    },
+
+    onProductAdd(event: ProductSelectEvent) {
+      const spuId = parsePositiveId(event.detail.spuId);
+      if (!spuId || this.data.addingSpuId) {
+        return;
+      }
+      const session = getSessionState();
+      if (!session.user || (!session.accessToken && !session.refreshToken)) {
+        openLoginPage();
+        return;
+      }
+      void this.addProductToCart(spuId);
+    },
+
+    async addProductToCart(spuId: number) {
+      this.setData({ addingSpuId: spuId });
+      try {
+        const detail = await getProductDetail(spuId);
+        const sku = findDefaultSku(detail.skus);
+        if (!sku) {
+          wx.showToast({ title: "该商品暂无可售规格", icon: "none" });
+          return;
+        }
+        await addCartItem({ skuId: sku.id, quantity: 1 });
+        this.triggerEvent("cartchange");
+        wx.showToast({ title: "已加入购物车", icon: "success" });
+      } catch (error) {
+        if (isApiError(error) && error.kind === "AUTH") {
+          openLoginPage();
+          return;
+        }
+        wx.showToast({
+          title: productErrorMessage(error, "加入购物车失败，请稍后重试"),
+          icon: "none"
+        });
+      } finally {
+        if (this.data.addingSpuId === spuId) {
+          this.setData({ addingSpuId: 0 });
+        }
       }
     }
   }

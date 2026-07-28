@@ -8,15 +8,34 @@
       bindtap="onTabTap"
       hover-class="tab-bar__item--pressed"
       aria-role="tab"
-      aria-label="{{item.text}}{{selected === index ? '，当前页面' : ''}}"
+      aria-label="{{item.ariaLabel}}{{selected === index ? '，当前页面' : ''}}"
       aria-selected="{{selected === index}}"
     >
       <view class="tab-bar__icon-wrap" aria-hidden="true">
-        <image
-          class="tab-bar__icon"
-          src="{{selected === index ? item.activeIconPath : item.iconPath}}"
-          mode="aspectFit"
-        />
+        <view class="tab-bar__icon tab-bar__icon--{{item.icon}}">
+          <image
+            wx:if="{{item.icon === 'home'}}"
+            class="tab-bar__icon-image"
+            src="{{selected === index ? '/assets/icons/tab-home-active.svg' : '/assets/icons/tab-home.svg'}}"
+            mode="aspectFit"
+          />
+          <block wx:elif="{{item.icon === 'category'}}">
+            <view class="tab-bar__category-square tab-bar__category-square--one"></view>
+            <view class="tab-bar__category-square tab-bar__category-square--two"></view>
+            <view class="tab-bar__category-square tab-bar__category-square--three"></view>
+            <view class="tab-bar__category-square tab-bar__category-square--four"></view>
+          </block>
+          <block wx:elif="{{item.icon === 'cart'}}">
+            <view class="tab-bar__cart-handle"></view>
+            <view class="tab-bar__cart-basket"></view>
+            <view class="tab-bar__cart-wheel tab-bar__cart-wheel--one"></view>
+            <view class="tab-bar__cart-wheel tab-bar__cart-wheel--two"></view>
+          </block>
+          <block wx:else>
+            <view class="tab-bar__profile-head"></view>
+            <view class="tab-bar__profile-body"></view>
+          </block>
+        </view>
         <text wx:if="{{item.badge}}" class="tab-bar__badge">{{item.badge}}</text>
       </view>
       <text class="tab-bar__label">{{item.text}}</text>

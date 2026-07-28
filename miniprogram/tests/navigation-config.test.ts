@@ -79,6 +79,28 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
   assert.doesNotThrow(() => syncCustomTabBar({}, 0));
 });
 
+test("商品加购按钮调用真实购物车接口并同步底部角标", () => {
+  const productCardTemplate = readFileSync(
+    resolve(sourceRoot, "components/product-card/product-card.wxml"),
+    "utf8"
+  );
+  const homeLogic = readFileSync(resolve(sourceRoot, "pages/index/index.ts"), "utf8");
+  const catalogLogic = readFileSync(
+    resolve(sourceRoot, "components/catalog-browser/catalog-browser.ts"),
+    "utf8"
+  );
+  const tabLogic = readFileSync(resolve(sourceRoot, "custom-tab-bar/index.ts"), "utf8");
+  const tabStyle = readFileSync(resolve(sourceRoot, "custom-tab-bar/index.less"), "utf8");
+
+  assert.match(productCardTemplate, /catchtap="handleCartTap"/);
+  assert.match(productCardTemplate, /product-card__cart-plus-horizontal/);
+  assert.match(homeLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
+  assert.match(catalogLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
+  assert.match(tabLogic, /getCartItems\(\)/);
+  assert.match(tabLogic, /cart\.totalQuantity/);
+  assert.match(tabStyle, /background: rgba\(255, 251, 244, 0\.74\)/);
+});
+
 test("账户中心注册真实页面、移除消息中心并提供在线客服", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")

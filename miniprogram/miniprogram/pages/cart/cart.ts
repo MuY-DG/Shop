@@ -16,7 +16,10 @@ import { getSessionState } from "../../services/session";
 import type { CartItemResponse } from "../../types/cart";
 import { isApiError } from "../../utils/api-error";
 import { openLoginPage } from "../../utils/login-navigation";
-import { syncCustomTabBar } from "../../utils/tab-bar";
+import {
+  setCustomTabBarCartCount,
+  syncCustomTabBar
+} from "../../utils/tab-bar";
 
 interface DatasetEvent {
   currentTarget: {
@@ -110,6 +113,7 @@ Page({
         selectionInitialized: true,
         ...summary
       });
+      setCustomTabBarCartCount(this, response.totalQuantity);
     } catch (error) {
       if (requestId !== latestCartRequest) {
         return;

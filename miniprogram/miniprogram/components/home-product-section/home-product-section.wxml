@@ -31,7 +31,9 @@
           <product-card
             product="{{item}}"
             variant="featured"
+            adding="{{addingSpuId === item.spuId}}"
             bindselect="onProductSelect"
+            bindadd="onProductAdd"
           />
         </view>
       </view>
@@ -42,7 +44,9 @@
         <product-card
           product="{{item}}"
           variant="compact"
+          adding="{{addingSpuId === item.spuId}}"
           bindselect="onProductSelect"
+          bindadd="onProductAdd"
         />
       </view>
     </view>

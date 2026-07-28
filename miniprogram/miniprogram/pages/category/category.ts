@@ -1,6 +1,9 @@
 import { parsePositiveId } from "../../features/product-catalog";
 import { enableNativeShareMenu } from "../../utils/share";
-import { syncCustomTabBar } from "../../utils/tab-bar";
+import {
+  refreshCustomTabBarCartCount,
+  syncCustomTabBar
+} from "../../utils/tab-bar";
 
 interface CatalogBrowserInstance {
   refresh(): Promise<void>;
@@ -46,6 +49,10 @@ Page({
     if (spuId) {
       wx.navigateTo({ url: `/pages/product/detail/detail?id=${spuId}` });
     }
+  },
+
+  onCartChange() {
+    void refreshCustomTabBarCartCount(this);
   },
 
   catalog(): CatalogBrowserInstance | undefined {

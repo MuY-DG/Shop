@@ -6,12 +6,13 @@
   right: 0;
   bottom: 0;
   left: 0;
+  padding-bottom: constant(safe-area-inset-bottom);
   padding-bottom: env(safe-area-inset-bottom);
-  border-top: 1rpx solid rgba(169, 120, 55, 0.13);
-  background: rgba(255, 253, 249, 0.94);
-  box-shadow: 0 -12rpx 34rpx rgba(78, 43, 20, 0.07);
-  -webkit-backdrop-filter: blur(18rpx);
-  backdrop-filter: blur(18rpx);
+  border-top: 1rpx solid rgba(139, 96, 57, 0.13);
+  background: rgba(255, 251, 244, 0.74);
+  box-shadow: 0 -12rpx 34rpx rgba(68, 37, 22, 0.065);
+  -webkit-backdrop-filter: blur(12rpx);
+  backdrop-filter: blur(12rpx);
 }
 
 .tab-bar__items {
@@ -27,7 +28,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #8a817b;
+  color: #8d8179;
   transition:
     color @duration-fast @ease-standard,
     opacity @duration-fast @ease-standard,
@@ -45,39 +46,125 @@
 
 .tab-bar__icon-wrap {
   position: relative;
-  width: 46rpx;
-  height: 46rpx;
+  width: 44rpx;
+  height: 44rpx;
   flex: none;
 }
 
 .tab-bar__icon {
-  width: 46rpx;
-  height: 46rpx;
+  position: relative;
+  width: 44rpx;
+  height: 44rpx;
+  color: inherit;
 }
 
 .tab-bar__label {
-  margin-top: 5rpx;
+  margin-top: 1rpx;
   font-size: 20rpx;
   font-weight: 500;
-  line-height: 28rpx;
+  line-height: 27rpx;
 }
 
 .tab-bar__item--selected .tab-bar__label {
-  font-weight: 700;
+  font-weight: 650;
+}
+
+.tab-bar__icon-image {
+  display: block;
+  width: 44rpx;
+  height: 44rpx;
+}
+
+.tab-bar__category-square {
+  position: absolute;
+  width: 12rpx;
+  height: 12rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 4rpx;
+  box-sizing: border-box;
+}
+
+.tab-bar__category-square--one { top: 7rpx; left: 7rpx; }
+.tab-bar__category-square--two { top: 7rpx; right: 7rpx; }
+.tab-bar__category-square--three { bottom: 7rpx; left: 7rpx; }
+.tab-bar__category-square--four { right: 7rpx; bottom: 7rpx; }
+
+.tab-bar__cart-handle {
+  position: absolute;
+  top: 7rpx;
+  left: 4rpx;
+  width: 9rpx;
+  height: 8rpx;
+  border-top: 3rpx solid currentColor;
+  border-left: 3rpx solid currentColor;
+  border-radius: 3rpx 0 0 0;
+  box-sizing: border-box;
+}
+
+.tab-bar__cart-basket {
+  position: absolute;
+  top: 12rpx;
+  left: 9rpx;
+  width: 28rpx;
+  height: 19rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 4rpx 4rpx 7rpx 7rpx;
+  box-sizing: border-box;
+  transform: skew(-7deg);
+}
+
+.tab-bar__cart-wheel {
+  position: absolute;
+  bottom: 6rpx;
+  width: 5rpx;
+  height: 5rpx;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tab-bar__cart-wheel--one { left: 14rpx; }
+.tab-bar__cart-wheel--two { right: 8rpx; }
+
+.tab-bar__profile-head {
+  position: absolute;
+  top: 5rpx;
+  left: 16rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.tab-bar__profile-body {
+  position: absolute;
+  right: 7rpx;
+  bottom: 4rpx;
+  left: 7rpx;
+  height: 19rpx;
+  border: 3rpx solid currentColor;
+  border-bottom: 0;
+  border-radius: 22rpx 22rpx 5rpx 5rpx;
+  box-sizing: border-box;
 }
 
 .tab-bar__badge {
   position: absolute;
   top: -7rpx;
   right: -13rpx;
-  min-width: 28rpx;
-  height: 28rpx;
+  min-width: 27rpx;
+  height: 27rpx;
   padding: 0 7rpx;
-  border: 3rpx solid @color-surface;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3rpx solid #fffbf4;
   border-radius: @radius-pill;
-  color: @color-text-inverse;
-  font-size: 17rpx;
-  line-height: 28rpx;
-  text-align: center;
-  background: @color-danger;
+  box-sizing: border-box;
+  color: #fff;
+  font-family: Arial, sans-serif;
+  font-size: 16rpx;
+  font-weight: 700;
+  line-height: 24rpx;
+  background: #d62f26;
 }

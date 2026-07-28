@@ -59,7 +59,9 @@
         icon-path="/assets/icons/section-hot.svg"
         presentation="featured"
         products="{{featuredProducts}}"
+        adding-spu-id="{{addingSpuId}}"
         bindselect="onBusinessPathSelect"
+        bindadd="onProductAdd"
       />
 
       <home-product-section
@@ -70,7 +72,9 @@
         presentation="compact"
         products="{{compactProducts}}"
         separated="{{featuredProducts.length > 0}}"
+        adding-spu-id="{{addingSpuId}}"
         bindselect="onBusinessPathSelect"
+        bindadd="onProductAdd"
       />
 
       <view wx:if="{{!hasContent}}" class="home-empty">

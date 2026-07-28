@@ -8,5 +8,6 @@
     id="catalog"
     tab-page="{{true}}"
     bindproductselect="onProductSelect"
+    bindcartchange="onCartChange"
   />
 </view>

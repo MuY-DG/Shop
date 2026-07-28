@@ -30,7 +30,7 @@
 - `order-review.svg`：用户提供的评价 SVG，仅用于个人中心订单入口。
 - `order-after-sale.svg`：用户提供的售后 SVG，仅用于个人中心订单入口。
 - `account-after-sale.svg`：[Iconify Material Design Icons `mdi:cash-refund`](https://icon-sets.iconify.design/mdi/cash-refund/)，Apache 2.0，用于退款与售后入口。
-- `tab-home.svg` / `tab-home-active.svg`：[Iconify Material Symbols `material-symbols:home-outline-rounded`](https://icon-sets.iconify.design/material-symbols/home-outline-rounded/)，Apache 2.0，底部首页导航的默认与选中版本。
+- `tab-home.svg` / `tab-home-active.svg`：[Iconify Material Symbols Light `material-symbols-light:home-outline`](https://icon-sets.iconify.design/material-symbols-light/home-outline/)，Apache 2.0，底部首页导航的默认与选中版本。
 - `tab-category.svg` / `tab-category-active.svg`：[Iconify Material Symbols `material-symbols:grid-view-outline-rounded`](https://icon-sets.iconify.design/material-symbols/grid-view-outline-rounded/)，Apache 2.0，底部分类导航的默认与选中版本。
 - `tab-cart.svg` / `tab-cart-active.svg`：[Iconify Material Symbols `material-symbols:shopping-cart-outline-rounded`](https://icon-sets.iconify.design/material-symbols/shopping-cart-outline-rounded/)，Apache 2.0，底部购物车导航的默认与选中版本。
 - `tab-profile.svg` / `tab-profile-active.svg`：[Iconify Material Symbols `material-symbols:person-outline-rounded`](https://icon-sets.iconify.design/material-symbols/person-outline-rounded/)，Apache 2.0，底部个人中心导航的默认与选中版本。

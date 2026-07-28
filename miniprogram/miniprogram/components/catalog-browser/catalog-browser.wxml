@@ -83,7 +83,9 @@
           <product-card
             product="{{item}}"
             variant="compact"
+            adding="{{addingSpuId === item.spuId}}"
             bindselect="onProductSelect"
+            bindadd="onProductAdd"
           />
         </view>
       </view>
