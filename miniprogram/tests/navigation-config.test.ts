@@ -301,3 +301,31 @@ test("商品轮播延后同步当前位置并在手势中断时恢复吸附", ()
   assert.match(galleryLogic, /galleryRuntime\(this\)\.pendingCurrent = current/);
   assert.match(galleryLogic, /swiperVisible: false, current/);
 });
+
+test("首页轮播在动画完成后同步位置并在前后台切换时重建原生实例", () => {
+  const bannerTemplate = readFileSync(
+    resolve(sourceRoot, "components/home-banner/home-banner.wxml"),
+    "utf8"
+  );
+  const bannerLogic = readFileSync(
+    resolve(sourceRoot, "components/home-banner/home-banner.ts"),
+    "utf8"
+  );
+
+  assert.match(bannerTemplate, /wx:if="{{swiperVisible}}"/);
+  assert.match(
+    bannerTemplate,
+    /autoplay="{{autoplayEnabled && banners\.length > 1}}"/
+  );
+  assert.match(
+    bannerTemplate,
+    /bindanimationfinish="onBannerAnimationFinish"/
+  );
+  assert.match(bannerTemplate, /bindtouchcancel="onBannerTouchCancel"/);
+  assert.match(bannerLogic, /runtime\.pendingCurrent = current/);
+  assert.match(bannerLogic, /pageLifetimes:\s*{[\s\S]*hide\(\)/);
+  assert.match(
+    bannerLogic,
+    /autoplayEnabled: false,[\s\S]*swiperVisible: false/
+  );
+});

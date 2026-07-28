@@ -1,13 +1,18 @@
 <view class="hero-section">
   <swiper
+    wx:if="{{swiperVisible}}"
     class="hero-swiper"
     current="{{currentBanner}}"
-    autoplay="{{banners.length > 1}}"
+    autoplay="{{autoplayEnabled && banners.length > 1}}"
     circular="{{banners.length > 1}}"
     interval="4500"
     duration="650"
     easing-function="easeInOutCubic"
     bindchange="onBannerChange"
+    bindtransition="onBannerTransition"
+    bindanimationfinish="onBannerAnimationFinish"
+    bindtouchend="onBannerTouchEnd"
+    bindtouchcancel="onBannerTouchCancel"
   >
     <swiper-item
       wx:for="{{banners}}"
@@ -40,6 +45,7 @@
       </view>
     </swiper-item>
   </swiper>
+  <view wx:else class="hero-swiper"></view>
   <view class="hero-top-wash"></view>
   <view class="hero-fade"></view>
   <view
