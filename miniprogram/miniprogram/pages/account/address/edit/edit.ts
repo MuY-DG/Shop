@@ -584,10 +584,12 @@ Page({
           : "",
         validationErrorText: ""
       });
-      wx.showToast({
-        title: needsRegion ? "请补充所在地区" : "地图位置已回填",
-        icon: "none"
-      });
+      if (needsRegion) {
+        wx.showToast({
+          title: "请补充所在地区",
+          icon: "none"
+        });
+      }
     } catch (error) {
       this.setData({ locating: false });
       if (!isCancelled(error)) {

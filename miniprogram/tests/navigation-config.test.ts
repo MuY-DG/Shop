@@ -170,13 +170,14 @@ test("全局导航统一返回图标且不再显示首页按钮", () => {
   assert.doesNotMatch(addressListTemplate, /\bhome=/);
 });
 
-test("商品详情关闭下拉刷新并将规格选择收进购买弹层", () => {
+test("商品详情使用自建规格、评价和收货地址弹层", () => {
   const detailPageRoot = resolve(sourceRoot, "pages/product/detail/detail");
   const detailConfig = JSON.parse(
     readFileSync(`${detailPageRoot}.json`, "utf8")
   ) as DetailPageConfig;
   const detailTemplate = readFileSync(`${detailPageRoot}.wxml`, "utf8");
   const detailLogic = readFileSync(`${detailPageRoot}.ts`, "utf8");
+  const detailStyle = readFileSync(`${detailPageRoot}.less`, "utf8");
 
   assert.equal(detailConfig.enablePullDownRefresh, false);
   assert.doesNotMatch(detailTemplate, /<sku-selector|stock-text=|categoryName/);
@@ -186,12 +187,19 @@ test("商品详情关闭下拉刷新并将规格选择收进购买弹层", () =>
   assert.match(detailTemplate, />商品评价</);
   assert.match(detailTemplate, /activeSheet === 'reviews'/);
   assert.match(detailTemplate, /activeSheet === 'reviewManage'/);
+  assert.match(detailTemplate, /activeSheet === 'address'/);
+  assert.match(detailTemplate, /bindtap="onAddAddress">新增地址</);
   assert.match(detailTemplate, /bindscrolltolower="onReviewLoadMore"/);
   assert.match(detailTemplate, /bindtap="onReviewSubmit"/);
   assert.doesNotMatch(detailTemplate, /bounces="{{false}}"/);
   assert.match(detailTemplate, /class="detail-scroll-content"/);
   assert.match(detailTemplate, /class="purchase-sheet-scroll-content"/);
   assert.match(detailLogic, /buildDirectBuyUrl/);
+  assert.match(detailLogic, /getAddresses/);
+  assert.match(detailLogic, /resolveAddressSelection/);
+  assert.doesNotMatch(detailLogic, /wx\.chooseAddress/);
+  assert.match(detailLogic, /sheetClosing/);
+  assert.match(detailStyle, /@keyframes sheet-sink/);
 });
 
 test("购物车与结算页注册真实交易路径", () => {

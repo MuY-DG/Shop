@@ -1,5 +1,6 @@
 import {
-  buildDirectBuyUrl
+  buildDirectBuyUrl,
+  resolveAddressSelection
 } from "../../../features/checkout";
 import {
   buildGalleryImages,
@@ -31,6 +32,7 @@ import {
   type RatingStarView,
   type ReviewableOrderItemView
 } from "../../../features/product-review";
+import { getAddresses } from "../../../services/address";
 import { addCartItem } from "../../../services/cart";
 import {
   createProductReview,
@@ -48,6 +50,7 @@ import {
   removeFavorite
 } from "../../../services/product-preference";
 import { getSessionState } from "../../../services/session";
+import type { AddressResponse } from "../../../types/checkout";
 import type {
   ProductDetail,
   ProductFreightTemplate,
@@ -62,7 +65,7 @@ interface PageOptions {
 }
 
 type InfoSheet = "guarantee" | "freight" | "wholesale";
-type ActiveSheet = "" | "purchase" | InfoSheet | "reviews" | "reviewManage";
+type ActiveSheet = "" | "purchase" | "address" | InfoSheet | "reviews" | "reviewManage";
 
 interface DatasetEvent {
   currentTarget: {
@@ -124,11 +127,14 @@ const EMPTY_SELECTION: PurchaseSelectionView = {
 const EMPTY_REVIEW_SUMMARY = buildProductReviewSummaryView();
 const REVIEW_PREVIEW_SIZE = 2;
 const REVIEW_PAGE_SIZE = 10;
+const SHEET_EXIT_DURATION_MS = 300;
 
 let latestDetailRequest = 0;
+let latestAddressRequest = 0;
 let latestReviewPreviewRequest = 0;
 let latestReviewPageRequest = 0;
 let latestReviewManagementRequest = 0;
+let sheetCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -268,7 +274,11 @@ Page({
     freightSummary: "",
     freightChargeText: "",
     wholesaleSummary: "",
-    addressText: "",
+    addresses: [] as AddressResponse[],
+    selectedAddress: null as AddressResponse | null,
+    addressLoading: false,
+    addressLoaded: false,
+    addressErrorText: "",
     reviewSummary: EMPTY_REVIEW_SUMMARY as ProductReviewSummaryView,
     reviewPreview: [] as PublicProductReviewView[],
     reviewPreviewLoading: false,
@@ -295,6 +305,7 @@ Page({
     favorited: false,
     favoriteLoading: false,
     activeSheet: "" as ActiveSheet,
+    sheetClosing: false,
     purchaseMode: "BUY" as "CART" | "BUY",
     purchaseActionText: "立即购买",
     confirmLoading: false,
@@ -318,8 +329,29 @@ Page({
     void this.loadDetail();
   },
 
+  onShow() {
+    const session = getSessionState();
+    if (session.user && (session.accessToken || session.refreshToken)) {
+      void this.loadAddresses();
+      return;
+    }
+    latestAddressRequest += 1;
+    this.setData({
+      addresses: [],
+      selectedAddress: null,
+      addressLoading: false,
+      addressLoaded: false,
+      addressErrorText: ""
+    });
+  },
+
   onUnload() {
+    if (sheetCloseTimer !== null) {
+      clearTimeout(sheetCloseTimer);
+      sheetCloseTimer = null;
+    }
     latestDetailRequest += 1;
+    latestAddressRequest += 1;
     latestReviewPreviewRequest += 1;
     latestReviewPageRequest += 1;
     latestReviewManagementRequest += 1;
@@ -452,7 +484,7 @@ Page({
   onInfoSheetOpen(event: DatasetEvent) {
     const sheet = event.currentTarget.dataset.sheet;
     if (sheet) {
-      this.setData({ activeSheet: sheet });
+      this.setData({ activeSheet: sheet, sheetClosing: false });
     }
   },
 
@@ -467,6 +499,7 @@ Page({
     const purchaseMode = event.currentTarget.dataset.mode === "CART" ? "CART" : "BUY";
     this.setData({
       activeSheet: "purchase",
+      sheetClosing: false,
       purchaseMode,
       purchaseActionText: purchaseMode === "CART" ? "加入购物车" : "立即购买"
     });
@@ -478,8 +511,25 @@ Page({
       !this.data.reviewSubmitting &&
       !this.data.reviewDeletingId
     ) {
-      this.setData({ activeSheet: "" });
+      this.animateSheetClose();
     }
+  },
+
+  animateSheetClose(afterClose?: () => void) {
+    if (!this.data.activeSheet || this.data.sheetClosing) {
+      return;
+    }
+    this.setData({ sheetClosing: true });
+    if (sheetCloseTimer !== null) {
+      clearTimeout(sheetCloseTimer);
+    }
+    sheetCloseTimer = setTimeout(() => {
+      sheetCloseTimer = null;
+      this.setData({
+        activeSheet: "",
+        sheetClosing: false
+      }, afterClose);
+    }, SHEET_EXIT_DURATION_MS);
   },
 
   onPreventMove() {},
@@ -558,17 +608,18 @@ Page({
       return;
     }
     if (this.data.purchaseMode === "BUY") {
-      this.setData({ activeSheet: "" });
-      try {
-        wx.navigateTo({
-          url: buildDirectBuyUrl(this.data.selectedSkuId, this.data.quantity)
-        });
-      } catch (error) {
-        wx.showToast({
-          title: error instanceof Error ? error.message : "结算参数无效",
-          icon: "none"
-        });
-      }
+      this.animateSheetClose(() => {
+        try {
+          wx.navigateTo({
+            url: buildDirectBuyUrl(this.data.selectedSkuId, this.data.quantity)
+          });
+        } catch (error) {
+          wx.showToast({
+            title: error instanceof Error ? error.message : "结算参数无效",
+            icon: "none"
+          });
+        }
+      });
       return;
     }
     this.setData({ confirmLoading: true });
@@ -577,7 +628,8 @@ Page({
         skuId: this.data.selectedSkuId,
         quantity: this.data.quantity
       });
-      this.setData({ activeSheet: "", confirmLoading: false });
+      this.setData({ confirmLoading: false });
+      this.animateSheetClose();
       wx.showToast({ title: "已加入购物车", icon: "success" });
     } catch (error) {
       this.setData({ confirmLoading: false });
@@ -618,22 +670,66 @@ Page({
     wx.switchTab({ url: "/pages/cart/cart" });
   },
 
-  onChooseAddress() {
-    wx.chooseAddress({
-      success: (address) => {
-        const region = [address.provinceName, address.cityName, address.countyName]
-          .map(cleanText)
-          .filter(Boolean)
-          .join(" ");
-        this.setData({
-          addressText: [region, cleanText(address.detailInfo)].filter(Boolean).join(" ")
-        });
-      },
-      fail: (error) => {
-        if (!cleanText(error.errMsg).includes("cancel")) {
-          wx.showToast({ title: "地址选择失败，请稍后重试", icon: "none" });
-        }
+  onAddressTap() {
+    if (!this.requireLogin()) {
+      return;
+    }
+    this.setData({ activeSheet: "address", sheetClosing: false });
+    if (!this.data.addressLoading) {
+      void this.loadAddresses();
+    }
+  },
+
+  async loadAddresses() {
+    const requestId = ++latestAddressRequest;
+    this.setData({ addressLoading: true, addressErrorText: "" });
+    try {
+      const addresses = await getAddresses();
+      if (requestId !== latestAddressRequest) {
+        return;
       }
+      this.setData({
+        addresses,
+        selectedAddress: resolveAddressSelection(addresses, this.data.selectedAddress),
+        addressLoading: false,
+        addressLoaded: true,
+        addressErrorText: ""
+      });
+    } catch (error) {
+      if (requestId !== latestAddressRequest) {
+        return;
+      }
+      this.setData({
+        addressLoading: false,
+        addressLoaded: this.data.addresses.length > 0,
+        addressErrorText: isApiError(error)
+          ? error.message
+          : "收货地址加载失败，请稍后重试"
+      });
+    }
+  },
+
+  onAddressRetry() {
+    if (!this.data.addressLoading) {
+      void this.loadAddresses();
+    }
+  },
+
+  onAddressSelect(event: DatasetEvent) {
+    const addressId = String(event.currentTarget.dataset.id || "");
+    const selectedAddress = this.data.addresses.find((address) => address.id === addressId);
+    if (selectedAddress) {
+      this.setData({ selectedAddress });
+      this.animateSheetClose();
+    }
+  },
+
+  onAddAddress() {
+    if (!this.requireLogin()) {
+      return;
+    }
+    this.animateSheetClose(() => {
+      wx.navigateTo({ url: "/pages/account/address/edit/edit" });
     });
   },
 
@@ -671,7 +767,7 @@ Page({
   },
 
   onReviewListOpen() {
-    this.setData({ activeSheet: "reviews" });
+    this.setData({ activeSheet: "reviews", sheetClosing: false });
     void this.loadReviewPage(true);
   },
 
@@ -735,7 +831,7 @@ Page({
     if (!this.requireLogin()) {
       return;
     }
-    this.setData({ activeSheet: "reviewManage" });
+    this.setData({ activeSheet: "reviewManage", sheetClosing: false });
     void this.loadReviewManagement();
   },
 

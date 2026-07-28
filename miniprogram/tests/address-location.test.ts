@@ -84,6 +84,7 @@ test("收货地址使用微信原生地图选址并保留停用的高德实现",
   assert.match(editLogic, /locationAddressDisplay: locationAddress/);
   assert.match(editLogic, /locationName/);
   assert.match(editLogic, /doorplate: this\.data\.doorplate/);
+  assert.doesNotMatch(editLogic, /地图位置已回填/);
   assert.match(editTemplate, />手机号</);
   assert.match(editTemplate, /placeholder="手机号码"/);
   assert.match(editTemplate, /微信导入/);
