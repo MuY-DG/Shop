@@ -624,7 +624,7 @@
     SHIPPED: '待收货',
     COMPLETED: '已完成',
     CLOSED: '已关闭',
-    REFUNDING: '退款中',
+    REFUNDING: '退款处理中',
     REFUNDED: '已退款'
   }
 

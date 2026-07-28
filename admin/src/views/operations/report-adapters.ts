@@ -15,7 +15,7 @@ const statusLabels: Record<string, string> = {
   COMPLETED: '已完成',
   CLOSED: '已关闭',
   CANCELLED: '已取消',
-  REFUNDING: '退款中',
+  REFUNDING: '退款处理中',
   REFUNDED: '已退款',
   SUCCESS: '成功',
   FAILED: '失败',

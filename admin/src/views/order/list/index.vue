@@ -103,8 +103,11 @@
               <div class="summary-fact">
                 <span>订单状态</span>
                 <strong
-                  class="summary-fact__status"
-                  :class="`is-${statusMap[currentDetail.status].type}`"
+                  :class="[
+                    'summary-fact__status',
+                    'business-status-text',
+                    `business-status--${statusMap[currentDetail.status].tone}`
+                  ]"
                 >
                   {{ statusMap[currentDetail.status].text }}
                 </strong>
@@ -200,7 +203,14 @@
                 <div class="detail-fact">
                   <dt>订单状态</dt>
                   <dd>
-                    <ElTag :type="statusMap[currentDetail.status].type" effect="light">
+                    <ElTag
+                      :type="statusMap[currentDetail.status].type"
+                      effect="light"
+                      :class="[
+                        'business-status-tag',
+                        `business-status--${statusMap[currentDetail.status].tone}`
+                      ]"
+                    >
                       {{ statusMap[currentDetail.status].text }}
                     </ElTag>
                   </dd>
@@ -758,6 +768,7 @@
     validateShippingForm
   } from './shipping-form'
   import {
+    ElButton,
     ElImage,
     ElMessage,
     ElMessageBox,
@@ -862,29 +873,39 @@
     { label: '待收货', value: 'TO_RECEIVE', countKey: 'toReceive' },
     { label: '已完成', value: 'COMPLETED', countKey: 'completed' },
     { label: '已关闭', value: 'CLOSED', countKey: 'closed' },
-    { label: '退款中', value: 'REFUNDING', countKey: 'refunding' },
+    { label: '退款处理中', value: 'REFUNDING', countKey: 'refunding' },
     { label: '已退款', value: 'REFUNDED', countKey: 'refunded' }
   ]
 
   const statusMap: Record<
     Api.Order.OrderStatus,
-    { type: 'warning' | 'success' | 'info' | 'danger'; text: string }
+    {
+      type: 'primary' | 'warning' | 'success' | 'info' | 'danger'
+      text: string
+      tone: 'pending' | 'to-ship' | 'to-receive' | 'completed' | 'closed' | 'refunding' | 'refunded'
+    }
   > = {
-    CREATED: { type: 'warning', text: '待付款' },
-    PAYING: { type: 'warning', text: '待付款' },
-    PAID: { type: 'success', text: '待发货' },
-    SHIPPED: { type: 'success', text: '待收货' },
-    COMPLETED: { type: 'success', text: '已完成' },
-    CLOSED: { type: 'info', text: '已关闭' },
-    REFUNDING: { type: 'warning', text: '退款中' },
-    REFUNDED: { type: 'danger', text: '已退款' }
+    CREATED: { type: 'warning', text: '待付款', tone: 'pending' },
+    PAYING: { type: 'warning', text: '待付款', tone: 'pending' },
+    PAID: { type: 'primary', text: '待发货', tone: 'to-ship' },
+    SHIPPED: { type: 'primary', text: '待收货', tone: 'to-receive' },
+    COMPLETED: { type: 'success', text: '已完成', tone: 'completed' },
+    CLOSED: { type: 'info', text: '已关闭', tone: 'closed' },
+    REFUNDING: { type: 'warning', text: '退款处理中', tone: 'refunding' },
+    REFUNDED: { type: 'success', text: '已退款', tone: 'refunded' }
   }
 
   const afterSaleStatusMap: Record<string, string> = {
     REQUESTED: '待审核',
     APPROVED: '退款处理中',
-    REFUNDING: '退款中',
+    REFUNDING: '退款处理中',
     REFUND_FAILED: '退款失败'
+  }
+  const afterSaleStatusToneMap: Record<string, string> = {
+    REQUESTED: 'pending',
+    APPROVED: 'refunding',
+    REFUNDING: 'refunding',
+    REFUND_FAILED: 'failed'
   }
 
   const formatAfterSaleStatus = (status: string) => afterSaleStatusMap[status] || status
@@ -1144,7 +1165,7 @@
     SHIPPED: '待收货',
     COMPLETED: '已完成',
     CLOSED: '已关闭',
-    REFUNDING: '退款中',
+    REFUNDING: '退款处理中',
     REFUNDED: '已退款'
   }
 
@@ -1230,6 +1251,54 @@
           label: '订单号',
           minWidth: 230,
           formatter: (row) => h('span', { class: 'order-no-cell' }, row.orderNo)
+        },
+        {
+          prop: 'status',
+          label: '订单状态',
+          width: 130,
+          formatter: (row) => {
+            const config = statusMap[row.status]
+            return h(
+              ElTag,
+              {
+                type: config?.type || 'info',
+                class: ['business-status-tag', `business-status--${config?.tone || 'closed'}`]
+              },
+              () => config?.text || row.status
+            )
+          }
+        },
+        {
+          prop: 'activeAfterSale',
+          label: '售后状态',
+          width: 150,
+          formatter: (row) => {
+            const activeAfterSale = row.activeAfterSale
+            if (!activeAfterSale) return '-'
+
+            return h(
+              ElButton,
+              {
+                link: true,
+                class: 'after-sale-status-link',
+                'aria-label': `查看售后单 ${activeAfterSale.afterSaleId}`,
+                onClick: () => openActiveAfterSale(activeAfterSale.afterSaleId)
+              },
+              () =>
+                h(
+                  ElTag,
+                  {
+                    type: 'warning',
+                    effect: 'plain',
+                    class: [
+                      'business-status-tag',
+                      `business-status--${afterSaleStatusToneMap[activeAfterSale.status] || 'closed'}`
+                    ]
+                  },
+                  () => formatAfterSaleStatus(activeAfterSale.status)
+                )
+            )
+          }
         },
         {
           prop: 'userNickname',
@@ -1328,39 +1397,6 @@
           label: '实际支付',
           width: 120,
           formatter: (row) => formatPaidAmount(row)
-        },
-        {
-          prop: 'status',
-          label: '订单状态',
-          width: 150,
-          formatter: (row) => {
-            const config = statusMap[row.status]
-            const activeAfterSale = row.activeAfterSale
-            const tags = [
-              h(ElTag, { type: config?.type || 'info' }, () => config?.text || row.status)
-            ]
-            if (activeAfterSale) {
-              tags.push(
-                h(
-                  ElTag,
-                  { type: 'warning', effect: 'plain' },
-                  () => `售后${formatAfterSaleStatus(activeAfterSale.status)}`
-                )
-              )
-            }
-            return h(
-              'div',
-              {
-                style: {
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  gap: '6px'
-                }
-              },
-              tags
-            )
-          }
         },
         {
           prop: 'createdAt',
@@ -1854,6 +1890,11 @@
 
   .order-actions__arrow {
     margin-left: 3px;
+  }
+
+  :deep(.after-sale-status-link.el-button) {
+    height: auto;
+    padding: 0;
   }
 
   .order-no-cell {

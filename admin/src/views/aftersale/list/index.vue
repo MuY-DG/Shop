@@ -93,7 +93,12 @@
             <div class="aftersale-summary__facts">
               <div class="summary-fact">
                 <span>售后状态</span>
-                <strong :class="`is-${statusConfig(currentDetail.status).type}`">
+                <strong
+                  :class="[
+                    'business-status-text',
+                    `business-status--${statusConfig(currentDetail.status).tone}`
+                  ]"
+                >
                   {{ formatStatus(currentDetail.status) }}
                 </strong>
               </div>
@@ -225,6 +230,10 @@
                   <ElTag
                     :type="refundStatusConfig(currentDetail.refundOrder.status).type"
                     size="small"
+                    :class="[
+                      'business-status-tag',
+                      `business-status--${refundStatusConfig(currentDetail.refundOrder.status).tone}`
+                    ]"
                   >
                     {{ formatRefundStatus(currentDetail.refundOrder.status) }}
                   </ElTag>
@@ -459,6 +468,7 @@
   type AuditMode = 'approve' | 'reject'
   type RefundOperationMode = 'query' | 'resubmit' | 'manual'
   type TagType = 'success' | 'warning' | 'info' | 'danger'
+  type StatusTone = 'pending' | 'refunding' | 'refunded' | 'rejected' | 'failed'
 
   interface AfterSaleSearchForm {
     afterSaleId?: string
@@ -541,7 +551,7 @@
   }> = [
     { label: '全部', value: 'ALL', countKey: 'all' },
     { label: '待审核', value: 'PENDING_REVIEW', countKey: 'pendingReview' },
-    { label: '退款中', value: 'REFUNDING', countKey: 'refunding' },
+    { label: '退款处理中', value: 'REFUNDING', countKey: 'refunding' },
     { label: '已退款', value: 'REFUNDED', countKey: 'refunded' },
     { label: '已拒绝', value: 'REJECTED', countKey: 'rejected' },
     { label: '退款失败', value: 'REFUND_FAILED', countKey: 'refundFailed' }
@@ -579,19 +589,19 @@
     () => refundOperationCopy[refundOperationMode.value].description
   )
 
-  const statusMap: Record<string, { type: TagType; text: string }> = {
-    REQUESTED: { type: 'warning', text: '待审核' },
-    APPROVED: { type: 'warning', text: '退款处理中' },
-    REJECTED: { type: 'info', text: '已拒绝' },
-    REFUNDING: { type: 'warning', text: '退款中' },
-    REFUNDED: { type: 'success', text: '已退款' },
-    REFUND_FAILED: { type: 'danger', text: '退款失败' }
+  const statusMap: Record<string, { type: TagType; text: string; tone: StatusTone }> = {
+    REQUESTED: { type: 'warning', text: '待审核', tone: 'pending' },
+    APPROVED: { type: 'warning', text: '退款处理中', tone: 'refunding' },
+    REJECTED: { type: 'info', text: '已拒绝', tone: 'rejected' },
+    REFUNDING: { type: 'warning', text: '退款处理中', tone: 'refunding' },
+    REFUNDED: { type: 'success', text: '已退款', tone: 'refunded' },
+    REFUND_FAILED: { type: 'danger', text: '退款失败', tone: 'failed' }
   }
 
-  const refundStatusMap: Record<string, { type: TagType; text: string }> = {
-    PROCESSING: { type: 'warning', text: '处理中' },
-    SUCCESS: { type: 'success', text: '已成功' },
-    FAILED: { type: 'danger', text: '失败' }
+  const refundStatusMap: Record<string, { type: TagType; text: string; tone: StatusTone }> = {
+    PROCESSING: { type: 'warning', text: '处理中', tone: 'refunding' },
+    SUCCESS: { type: 'success', text: '已成功', tone: 'refunded' },
+    FAILED: { type: 'danger', text: '失败', tone: 'failed' }
   }
 
   const typeMap: Record<string, string> = {
@@ -704,9 +714,17 @@
   const formatText = (value?: string | number | null) =>
     value === null || value === undefined || value === '' ? '-' : String(value)
   const statusConfig = (value?: string) =>
-    statusMap[value || ''] || { type: 'info' as const, text: value || '-' }
+    statusMap[value || ''] || {
+      type: 'info' as const,
+      text: value || '-',
+      tone: 'rejected' as const
+    }
   const refundStatusConfig = (value?: string) =>
-    refundStatusMap[value || ''] || { type: 'info' as const, text: value || '-' }
+    refundStatusMap[value || ''] || {
+      type: 'info' as const,
+      text: value || '-',
+      tone: 'rejected' as const
+    }
   const formatStatus = (value?: string) => statusConfig(value).text
   const formatRefundStatus = (value?: string) => refundStatusConfig(value).text
   const formatAfterSaleType = (value?: string) => (value ? typeMap[value] || value : '-')
@@ -824,7 +842,14 @@
           width: 120,
           formatter: (row) => {
             const config = statusConfig(row.status)
-            return h(ElTag, { type: config.type }, () => config.text)
+            return h(
+              ElTag,
+              {
+                type: config.type,
+                class: ['business-status-tag', `business-status--${config.tone}`]
+              },
+              () => config.text
+            )
           }
         },
         {

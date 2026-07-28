@@ -1,0 +1,93 @@
+.business-status-tag.el-tag,
+.business-status-text {
+  color: var(--business-status-color) !important;
+  background-color: var(--business-status-background) !important;
+  border-color: var(--business-status-border) !important;
+}
+
+.business-status-text {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 10px;
+  line-height: 20px;
+  border: 1px solid;
+  border-radius: 4px;
+}
+
+.business-status--pending,
+.business-status--to-ship,
+.business-status--to-receive,
+.business-status--refunding,
+.business-status--refunded,
+.business-status--rejected,
+.business-status--failed {
+  --business-status-color: var(--business-status-base);
+  --business-status-background: color-mix(in srgb, var(--business-status-base) 10%, white);
+  --business-status-border: color-mix(in srgb, var(--business-status-base) 30%, white);
+}
+
+.business-status--pending {
+  --business-status-base: #f9901f;
+}
+
+.business-status--to-ship {
+  --business-status-base: #5d87ff;
+}
+
+.business-status--to-receive {
+  --business-status-base: #38c0fc;
+}
+
+.business-status--completed {
+  --business-status-color: var(--el-color-success);
+  --business-status-background: var(--el-color-success-light-9);
+  --business-status-border: var(--el-color-success-light-5);
+}
+
+.business-status--refunded {
+  --business-status-base: #e5484d;
+}
+
+.business-status--closed {
+  --business-status-color: #4b5563;
+  --business-status-background: #f9fafb;
+  --business-status-border: #e5e7eb;
+}
+
+.business-status--refunding {
+  --business-status-base: #b48df3;
+}
+
+.business-status--rejected {
+  --business-status-base: var(--el-color-error);
+}
+
+.business-status--failed {
+  --business-status-base: var(--el-color-danger);
+}
+
+html.dark {
+  .business-status--pending,
+  .business-status--to-ship,
+  .business-status--to-receive,
+  .business-status--refunding,
+  .business-status--refunded {
+    --business-status-color: color-mix(in srgb, var(--business-status-base) 78%, white);
+    --business-status-background: color-mix(in srgb, var(--business-status-base) 22%, #111827);
+    --business-status-border: color-mix(in srgb, var(--business-status-base) 48%, #111827);
+  }
+
+  .business-status--closed {
+    --business-status-color: #e5e7eb;
+    --business-status-background: #1f2937;
+    --business-status-border: #4b5563;
+  }
+
+  .business-status--rejected,
+  .business-status--failed {
+    --business-status-color: color-mix(in srgb, var(--business-status-base) 72%, white);
+    --business-status-background: color-mix(in srgb, var(--business-status-base) 20%, #111827);
+    --business-status-border: color-mix(in srgb, var(--business-status-base) 46%, #111827);
+  }
+}
