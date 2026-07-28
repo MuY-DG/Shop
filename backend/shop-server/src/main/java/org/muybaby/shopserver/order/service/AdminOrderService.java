@@ -116,6 +116,7 @@ public class AdminOrderService {
                                coalesce(first_item.quantity, 0) as first_item_quantity,
                                coalesce(item_summary.item_count, 0) as item_count,
                                active_asr.id as active_after_sale_id,
+                               active_asr.after_sale_no as active_after_sale_no,
                                active_asr.after_sale_type as active_after_sale_type,
                                active_asr.status as active_after_sale_status,
                                active_asr.requested_amount_cent as active_after_sale_amount_cent,
@@ -367,7 +368,7 @@ public class AdminOrderService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return jdbcClient.sql("""
-                        select id, order_id, from_status, to_status, event_type,
+                        select id, order_id, after_sale_id, from_status, to_status, event_type,
                                operator_type, operator_id, description, created_at
                         from order_status_log
                         where order_id = :orderId
@@ -377,6 +378,7 @@ public class AdminOrderService {
                 .query((rs, rowNum) -> new OrderStatusLogResponse(
                         rs.getLong("id"),
                         rs.getLong("order_id"),
+                        rs.getObject("after_sale_id", Long.class),
                         rs.getString("from_status"),
                         rs.getString("to_status"),
                         rs.getString("event_type"),
@@ -436,6 +438,7 @@ public class AdminOrderService {
         }
         return new AdminOrderAfterSaleSummaryResponse(
                 afterSaleId,
+                rs.getString("active_after_sale_no"),
                 rs.getString("active_after_sale_type"),
                 rs.getString("active_after_sale_status"),
                 rs.getLong("active_after_sale_amount_cent"),
@@ -448,6 +451,7 @@ public class AdminOrderService {
     ) {
         return new AdminOrderAfterSaleSummaryResponse(
                 afterSale.afterSaleId(),
+                afterSale.afterSaleNo(),
                 afterSale.afterSaleType(),
                 afterSale.status(),
                 afterSale.requestedAmountCent(),

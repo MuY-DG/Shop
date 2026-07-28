@@ -15,8 +15,14 @@ export function fetchAfterSaleStatusCounts(params: Api.AfterSale.SearchParams) {
 }
 
 export function fetchAfterSaleDetail(afterSaleId: number) {
-  return request.get<Api.AfterSale.Item>({
+  return request.get<Api.AfterSale.Detail>({
     url: `/admin/after-sales/${afterSaleId}`
+  })
+}
+
+export function fetchAfterSaleRecords(afterSaleId: number) {
+  return request.get<Api.AfterSale.Record[]>({
+    url: `/admin/after-sales/${afterSaleId}/records`
   })
 }
 

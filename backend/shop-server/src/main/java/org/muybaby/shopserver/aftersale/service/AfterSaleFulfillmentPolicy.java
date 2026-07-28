@@ -33,6 +33,7 @@ public class AfterSaleFulfillmentPolicy {
     public Optional<BlockingAfterSale> findBlocking(long orderId) {
         return jdbcClient.sql("""
                         select id,
+                               after_sale_no,
                                after_sale_type,
                                status,
                                requested_amount_cent,
@@ -47,6 +48,7 @@ public class AfterSaleFulfillmentPolicy {
                 .param("statuses", BLOCKING_STATUSES)
                 .query((rs, rowNum) -> new BlockingAfterSale(
                         rs.getLong("id"),
+                        rs.getString("after_sale_no"),
                         rs.getString("after_sale_type"),
                         rs.getString("status"),
                         rs.getLong("requested_amount_cent"),
@@ -63,6 +65,7 @@ public class AfterSaleFulfillmentPolicy {
 
     public record BlockingAfterSale(
             Long afterSaleId,
+            String afterSaleNo,
             String afterSaleType,
             String status,
             Long requestedAmountCent,

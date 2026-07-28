@@ -47,6 +47,7 @@ export interface RefundOrderResponse {
 
 export interface AfterSaleResponse {
   id: number;
+  afterSaleNo: string;
   orderId: number;
   orderNo: string;
   userId: string;

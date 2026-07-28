@@ -1177,6 +1177,7 @@ declare namespace Api {
 
     interface ActiveAfterSaleSummary {
       afterSaleId: number
+      afterSaleNo: string
       afterSaleType: string
       status: string
       requestedAmountCent: number
@@ -1237,6 +1238,7 @@ declare namespace Api {
     interface OrderStatusLog {
       id: number
       orderId: number
+      afterSaleId?: number | null
       fromStatus: OrderStatus | null
       toStatus: OrderStatus
       eventType: string
@@ -1487,6 +1489,7 @@ declare namespace Api {
       status?: AfterSaleStatus
       statusGroup?: AdminAfterSaleStatusGroup
       afterSaleId?: number
+      afterSaleNo?: string
       orderNo?: string
       userSearchType?: UserSearchType
       userKeyword?: string
@@ -1507,6 +1510,7 @@ declare namespace Api {
 
     interface Summary {
       id: number
+      afterSaleNo: string
       orderId: number
       orderNo: string
       userId: string
@@ -1520,6 +1524,7 @@ declare namespace Api {
 
     interface Item {
       id: number
+      afterSaleNo: string
       orderId: number
       orderNo: string
       userId: string
@@ -1538,6 +1543,24 @@ declare namespace Api {
       evidenceFiles?: EvidenceFile[]
       refundOrder?: RefundOrder | null
     }
+
+    interface OrderContext {
+      orderId: number
+      orderNo: string
+      receiverName: string | null
+      receiverPhone: string | null
+      receiverAddress: string | null
+      productAmountCent: number
+      paidAmountCent: number
+      itemCount: number
+      items: Api.Order.OrderItem[]
+    }
+
+    interface Detail extends Item {
+      orderContext: OrderContext
+    }
+
+    type Record = Api.Order.OrderStatusLog
 
     interface EvidenceFile {
       fileId: number

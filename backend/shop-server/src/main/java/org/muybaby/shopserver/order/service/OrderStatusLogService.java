@@ -27,15 +27,34 @@ public class OrderStatusLogService {
             String description,
             LocalDateTime createdAt
     ) {
+        record(
+                orderId, null, fromStatus, toStatus, eventType,
+                operatorType, operatorId, description, createdAt
+        );
+    }
+
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void record(
+            Long orderId,
+            Long afterSaleId,
+            String fromStatus,
+            String toStatus,
+            String eventType,
+            String operatorType,
+            Long operatorId,
+            String description,
+            LocalDateTime createdAt
+    ) {
         jdbcClient.sql("""
                         insert into order_status_log
-                            (order_id, from_status, to_status, event_type, operator_type,
+                            (order_id, after_sale_id, from_status, to_status, event_type, operator_type,
                              operator_id, description, created_at)
                         values
-                            (:orderId, :fromStatus, :toStatus, :eventType, :operatorType,
+                            (:orderId, :afterSaleId, :fromStatus, :toStatus, :eventType, :operatorType,
                              :operatorId, :description, :createdAt)
                         """)
                 .param("orderId", orderId)
+                .param("afterSaleId", afterSaleId)
                 .param("fromStatus", fromStatus == null ? "" : fromStatus)
                 .param("toStatus", toStatus)
                 .param("eventType", eventType)

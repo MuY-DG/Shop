@@ -10,6 +10,7 @@ public record AdminAfterSaleQueryRequest(
         String status,
         String statusGroup,
         Long afterSaleId,
+        String afterSaleNo,
         String orderNo,
         String userSearchType,
         String userKeyword,

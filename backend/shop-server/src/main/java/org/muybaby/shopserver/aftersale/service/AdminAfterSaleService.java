@@ -5,6 +5,7 @@ import org.muybaby.shopserver.aftersale.AfterSaleStatus;
 import org.muybaby.shopserver.aftersale.AfterSaleType;
 import org.muybaby.shopserver.aftersale.RefundOrderStatus;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleAuditRequest;
+import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleDetailResponse;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleQueryRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleStatusCountsResponse;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleSummaryResponse;
@@ -18,6 +19,7 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.dto.OrderStatusLogResponse;
 import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
@@ -44,10 +46,13 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -55,11 +60,15 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 
 @Service
 public class AdminAfterSaleService {
 
+    private static final DateTimeFormatter REFUND_NO_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final int REFUND_NO_RANDOM_BYTES = 9;
+    private static final int REFUND_NO_RANDOM_WIDTH = 14;
+    private static final SecureRandom REFUND_NO_RANDOM = new SecureRandom();
     private static final Set<String> AUDITABLE_STATUSES = Set.of(AfterSaleStatus.REQUESTED.name());
     private static final Set<String> REFUNDABLE_ORDER_STATUSES = Set.of(
             OrderStatus.PAID.name(),
@@ -76,6 +85,7 @@ public class AdminAfterSaleService {
     private final TransactionTemplate refundStateTransaction;
     private final TransactionTemplate withoutTransaction;
     private final OrderStatusLogService orderStatusLogService;
+    private final AfterSaleOrderContextQueryService orderContextQueryService;
     private final RefundRecoveryService refundRecoveryService;
 
     public AdminAfterSaleService(
@@ -86,6 +96,7 @@ public class AdminAfterSaleService {
             StorageProvider storageProvider,
             PlatformTransactionManager transactionManager,
             OrderStatusLogService orderStatusLogService,
+            AfterSaleOrderContextQueryService orderContextQueryService,
             RefundRecoveryService refundRecoveryService
     ) {
         this.jdbcClient = jdbcClient;
@@ -101,6 +112,7 @@ public class AdminAfterSaleService {
         this.withoutTransaction.setPropagationBehavior(
                 TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
         this.orderStatusLogService = orderStatusLogService;
+        this.orderContextQueryService = orderContextQueryService;
         this.refundRecoveryService = refundRecoveryService;
     }
 
@@ -122,6 +134,7 @@ public class AdminAfterSaleService {
                         left join app_user u on u.id = asr.user_id
                         where asr.status in (:statuses)
                           and (:afterSaleId is null or asr.id = :afterSaleId)
+                          and (:afterSaleNoLike is null or asr.after_sale_no like :afterSaleNoLike)
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or asr.user_id = :userId)
                           and (:userPhone is null or u.phone_number = :userPhone)
@@ -137,6 +150,7 @@ public class AdminAfterSaleService {
                         """)
                 .param("statuses", filters.statuses())
                 .param("afterSaleId", filters.afterSaleId())
+                .param("afterSaleNoLike", filters.afterSaleNoLike())
                 .param("orderNoLike", filters.orderNoLike())
                 .param("userId", filters.userId())
                 .param("userPhone", filters.userPhone())
@@ -150,6 +164,7 @@ public class AdminAfterSaleService {
 
         List<AdminAfterSaleSummaryResponse> records = jdbcClient.sql("""
                         select asr.id,
+                               asr.after_sale_no,
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
@@ -164,6 +179,7 @@ public class AdminAfterSaleService {
                         left join app_user u on u.id = asr.user_id
                         where asr.status in (:statuses)
                           and (:afterSaleId is null or asr.id = :afterSaleId)
+                          and (:afterSaleNoLike is null or asr.after_sale_no like :afterSaleNoLike)
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or asr.user_id = :userId)
                           and (:userPhone is null or u.phone_number = :userPhone)
@@ -181,6 +197,7 @@ public class AdminAfterSaleService {
                         """)
                 .param("statuses", filters.statuses())
                 .param("afterSaleId", filters.afterSaleId())
+                .param("afterSaleNoLike", filters.afterSaleNoLike())
                 .param("orderNoLike", filters.orderNoLike())
                 .param("userId", filters.userId())
                 .param("userPhone", filters.userPhone())
@@ -210,6 +227,7 @@ public class AdminAfterSaleService {
                         join shop_order o on o.id = asr.order_id
                         left join app_user u on u.id = asr.user_id
                         where (:afterSaleId is null or asr.id = :afterSaleId)
+                          and (:afterSaleNoLike is null or asr.after_sale_no like :afterSaleNoLike)
                           and (:orderNoLike is null or o.order_no like :orderNoLike)
                           and (:userId is null or asr.user_id = :userId)
                           and (:userPhone is null or u.phone_number = :userPhone)
@@ -225,6 +243,7 @@ public class AdminAfterSaleService {
                         group by asr.status
                         """)
                 .param("afterSaleId", filters.afterSaleId())
+                .param("afterSaleNoLike", filters.afterSaleNoLike())
                 .param("orderNoLike", filters.orderNoLike())
                 .param("userId", filters.userId())
                 .param("userPhone", filters.userPhone())
@@ -247,9 +266,49 @@ public class AdminAfterSaleService {
         );
     }
 
-    public AfterSaleResponse detail(AuthenticatedPrincipal principal, Long afterSaleId) {
+    public AdminAfterSaleDetailResponse detail(AuthenticatedPrincipal principal, Long afterSaleId) {
         requireAdminUser(principal);
-        return requireResponse(afterSaleId);
+        AfterSaleResponse afterSale = requireResponse(afterSaleId);
+        return AdminAfterSaleDetailResponse.from(
+                afterSale,
+                orderContextQueryService.requireContext(afterSale.orderId())
+        );
+    }
+
+    public List<OrderStatusLogResponse> records(
+            AuthenticatedPrincipal principal,
+            Long afterSaleId
+    ) {
+        requireAdminUser(principal);
+        Integer exists = jdbcClient.sql(
+                        "select count(*) from after_sale_request where id = :afterSaleId")
+                .param("afterSaleId", afterSaleId)
+                .query(Integer.class)
+                .single();
+        if (exists == null || exists == 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return jdbcClient.sql("""
+                        select id, order_id, after_sale_id, from_status, to_status, event_type,
+                               operator_type, operator_id, description, created_at
+                        from order_status_log
+                        where after_sale_id = :afterSaleId
+                        order by created_at asc, id asc
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query((rs, rowNum) -> new OrderStatusLogResponse(
+                        rs.getLong("id"),
+                        rs.getLong("order_id"),
+                        rs.getObject("after_sale_id", Long.class),
+                        rs.getString("from_status"),
+                        rs.getString("to_status"),
+                        rs.getString("event_type"),
+                        rs.getString("operator_type"),
+                        rs.getObject("operator_id", Long.class),
+                        rs.getString("description"),
+                        rs.getObject("created_at", LocalDateTime.class)
+                ))
+                .list();
     }
 
     public ResponseEntity<InputStreamResource> evidence(
@@ -317,6 +376,8 @@ public class AdminAfterSaleService {
         if (!AUDITABLE_STATUSES.contains(afterSale.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+        OrderRefundRow order = findOrderForUpdate(afterSale.orderId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         String auditNote = requireAuditNote(request == null ? null : request.auditNote());
         LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
@@ -335,6 +396,11 @@ public class AdminAfterSaleService {
                 .param("updatedAt", now)
                 .param("afterSaleId", afterSaleId)
                 .update();
+        orderStatusLogService.record(
+                order.orderId(), afterSaleId, order.status(), order.status(),
+                "AFTER_SALE_REJECTED", "ADMIN", adminUserId,
+                "售后审核拒绝", now
+        );
         return requireResponse(afterSaleId);
     }
 
@@ -465,7 +531,7 @@ public class AdminAfterSaleService {
                 }
             }
             orderStatusLogService.record(
-                    target.orderId(), target.orderStatus(), target.orderStatus(),
+                    target.orderId(), afterSaleId, target.orderStatus(), target.orderStatus(),
                     "REFUND_MANUAL_INTERVENTION", "ADMIN", adminUserId,
                     auditDescription("人工介入退款", note), LocalDateTime.now()
             );
@@ -502,7 +568,7 @@ public class AdminAfterSaleService {
                 throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
             }
             orderStatusLogService.record(
-                    current.orderId(), current.orderStatus(), current.orderStatus(),
+                    current.orderId(), current.afterSaleId(), current.orderStatus(), current.orderStatus(),
                     resubmitWhenMissing ? "REFUND_RESUBMIT_REQUESTED" : "REFUND_QUERY_REQUESTED",
                     "ADMIN", adminUserId,
                     auditDescription(
@@ -768,11 +834,11 @@ public class AdminAfterSaleService {
         requireMatchingPreflight(payment, providerPreflight);
         rejectIfRefundOrderExists(afterSaleId);
 
-        String outRefundNo = outRefundNo(afterSaleId, order.orderId(), payment.id());
+        LocalDateTime now = LocalDateTime.now();
+        String outRefundNo = nextRefundNo(now);
         String notificationRouteToken = providerPreflight.notificationRouteToken();
         String providerReason = WechatRefundRequest.providerSafeReason(auditNote);
 
-        LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into refund_order
                             (after_sale_id, order_id, payment_order_id, notification_route_token,
@@ -836,7 +902,7 @@ public class AdminAfterSaleService {
                 .param("orderId", order.orderId())
                 .update();
         orderStatusLogService.record(
-                order.orderId(), order.status(), OrderStatus.REFUNDING.name(),
+                order.orderId(), afterSaleId, order.status(), OrderStatus.REFUNDING.name(),
                 "REFUND_STARTED", "ADMIN", adminUserId,
                 "售后审核通过，开始退款", now
         );
@@ -898,12 +964,12 @@ public class AdminAfterSaleService {
         clearExpiredRecoveryClaimIfPresent(
                 source.refundOrderId(), source.recoveryClaimToken(), source.recoveryClaimedAt());
 
-        String outRefundNo = retryOutRefundNo(afterSaleId);
+        LocalDateTime now = LocalDateTime.now();
+        String outRefundNo = nextRefundNo(now);
         String notificationRouteToken = providerPreflight.notificationRouteToken();
         String providerReason = source.providerReason() != null
                 ? source.providerReason()
                 : WechatRefundRequest.providerSafeReason(afterSale.auditNote());
-        LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into refund_order
                             (after_sale_id, order_id, payment_order_id, notification_route_token,
@@ -951,7 +1017,7 @@ public class AdminAfterSaleService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         orderStatusLogService.record(
-                order.orderId(), OrderStatus.REFUNDING.name(), OrderStatus.REFUNDING.name(),
+                order.orderId(), afterSaleId, OrderStatus.REFUNDING.name(), OrderStatus.REFUNDING.name(),
                 "REFUND_RETRIED", "ADMIN", adminUserId,
                 auditDescription(
                         "渠道退款关闭后新单重试：旧退款=" + source.refundOrderId()
@@ -1035,7 +1101,7 @@ public class AdminAfterSaleService {
         return query == null
                 ? new AdminAfterSaleQueryRequest(
                         null, null, null, null, null, null,
-                        null, null, null, null, null, null
+                        null, null, null, null, null, null, null
                 )
                 : query;
     }
@@ -1106,6 +1172,7 @@ public class AdminAfterSaleService {
         return new AfterSaleQueryFilters(
                 statuses,
                 afterSaleId,
+                like(query.afterSaleNo()),
                 like(query.orderNo()),
                 userId,
                 userPhone,
@@ -1250,7 +1317,7 @@ public class AdminAfterSaleService {
                     .optional()
                     .orElse(target.orderStatus());
             orderStatusLogService.record(
-                    target.orderId(), target.orderStatus(), currentOrderStatus,
+                    target.orderId(), target.afterSaleId(), target.orderStatus(), currentOrderStatus,
                     eventType, "ADMIN", adminUserId, description, LocalDateTime.now()
             );
         });
@@ -1264,6 +1331,7 @@ public class AdminAfterSaleService {
     private java.util.Optional<AfterSaleAuditRow> findAfterSaleForUpdate(Long afterSaleId) {
         return jdbcClient.sql("""
                         select asr.id,
+                               asr.after_sale_no,
                                asr.order_id,
                                asr.status,
                                asr.reason,
@@ -1359,6 +1427,7 @@ public class AdminAfterSaleService {
     private AfterSaleResponse requireResponse(Long afterSaleId) {
         AfterSaleRow row = jdbcClient.sql("""
                         select asr.id,
+                               asr.after_sale_no,
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
@@ -1388,6 +1457,7 @@ public class AdminAfterSaleService {
     private AfterSaleResponse toResponse(AfterSaleRow row) {
         return new AfterSaleResponse(
                 row.id(),
+                row.afterSaleNo(),
                 row.orderId(),
                 row.orderNo(),
                 row.userId(),
@@ -1502,12 +1572,15 @@ public class AdminAfterSaleService {
         return normalized;
     }
 
-    private String outRefundNo(Long afterSaleId, Long orderId, Long paymentOrderId) {
-        return "RF" + afterSaleId + "O" + orderId + "P" + paymentOrderId;
-    }
-
-    private String retryOutRefundNo(Long afterSaleId) {
-        return "RF" + afterSaleId + "R" + UUID.randomUUID().toString().replace("-", "");
+    static String nextRefundNo(LocalDateTime requestedAt) {
+        byte[] randomBytes = new byte[REFUND_NO_RANDOM_BYTES];
+        REFUND_NO_RANDOM.nextBytes(randomBytes);
+        String randomSuffix = new BigInteger(1, randomBytes)
+                .toString(Character.MAX_RADIX)
+                .toUpperCase(Locale.ROOT);
+        String paddedSuffix = "0".repeat(Math.max(0, REFUND_NO_RANDOM_WIDTH - randomSuffix.length()))
+                + randomSuffix;
+        return "RF" + requestedAt.format(REFUND_NO_TIME_FORMATTER) + paddedSuffix;
     }
 
     private String nullToEmpty(String value) {
@@ -1591,6 +1664,7 @@ public class AdminAfterSaleService {
     private AdminAfterSaleSummaryResponse mapAfterSaleSummary(ResultSet rs, int rowNum) throws SQLException {
         return new AdminAfterSaleSummaryResponse(
                 rs.getLong("id"),
+                rs.getString("after_sale_no"),
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getLong("user_id"),
@@ -1606,6 +1680,7 @@ public class AdminAfterSaleService {
     private AfterSaleRow mapAfterSale(ResultSet rs, int rowNum) throws SQLException {
         return new AfterSaleRow(
                 rs.getLong("id"),
+                rs.getString("after_sale_no"),
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getLong("user_id"),
@@ -1737,6 +1812,7 @@ public class AdminAfterSaleService {
     private record AfterSaleQueryFilters(
             List<String> statuses,
             Long afterSaleId,
+            String afterSaleNoLike,
             String orderNoLike,
             Long userId,
             String userPhone,
@@ -1795,6 +1871,7 @@ public class AdminAfterSaleService {
 
     private record AfterSaleRow(
             Long id,
+            String afterSaleNo,
             Long orderId,
             String orderNo,
             Long userId,

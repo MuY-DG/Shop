@@ -235,10 +235,11 @@ class AppAfterSaleServiceTest {
         long afterSaleId = SEQUENCE.incrementAndGet();
         jdbcClient.sql("""
                         insert into after_sale_request
-                            (id, order_id, user_id, after_sale_type, status, reason,
+                            (id, after_sale_no, order_id, user_id, after_sale_type, status, reason,
                              description, requested_amount_cent, created_at, updated_at)
                         values
-                            (:afterSaleId, :orderId, :userId, 'REFUND_ONLY', :status, 'page ownership',
+                            (:afterSaleId, concat('ASTEST', :afterSaleId), :orderId, :userId,
+                             'REFUND_ONLY', :status, 'page ownership',
                              '', 100, :createdAt, :createdAt)
                         """)
                 .param("afterSaleId", afterSaleId)

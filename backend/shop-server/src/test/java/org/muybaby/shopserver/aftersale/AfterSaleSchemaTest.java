@@ -49,10 +49,10 @@ class AfterSaleSchemaTest {
                 .update();
         jdbcClient.sql("""
                         insert into after_sale_request
-                            (id, order_id, user_id, after_sale_type, status, reason, description,
+                            (id, after_sale_no, order_id, user_id, after_sale_type, status, reason, description,
                              requested_amount_cent, approved_amount_cent, audit_note, reviewed_by, reviewed_at)
                         values
-                            (19303, 19301, 1, 'REFUND_ONLY', 'REFUNDING', '不想要了',
+                            (19303, 'ASFIX19303', 19301, 1, 'REFUND_ONLY', 'REFUNDING', '不想要了',
                              'schema after sale', 6980, 6980, 'schema approved', 1, current_timestamp)
                         """)
                 .update();

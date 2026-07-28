@@ -823,16 +823,16 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into after_sale_request
-                            (id, order_id, user_id, after_sale_type, status, reason,
+                            (id, after_sale_no, order_id, user_id, after_sale_type, status, reason,
                              requested_amount_cent, approved_amount_cent, reviewed_at, created_at, updated_at)
                         values
-                            (88201, 88211, 88100, 'REFUND_ONLY', 'REFUNDED', '跨期通过',
+                            (88201, 'ASFIX88201', 88211, 88100, 'REFUND_ONLY', 'REFUNDED', '跨期通过',
                              1000, 1000, timestamp '2026-07-02 10:00:00',
                              timestamp '2026-06-30 10:00:00', timestamp '2026-07-02 10:00:00'),
-                            (88202, 88212, 88100, 'REFUND_ONLY', 'REJECTED', '跨期拒绝',
+                            (88202, 'ASFIX88202', 88212, 88100, 'REFUND_ONLY', 'REJECTED', '跨期拒绝',
                              1000, null, timestamp '2026-07-03 10:00:00',
                              timestamp '2026-06-30 11:00:00', timestamp '2026-07-03 10:00:00'),
-                            (88203, 88213, 88100, 'REFUND_ONLY', 'REQUESTED', '本期申请',
+                            (88203, 'ASFIX88203', 88213, 88100, 'REFUND_ONLY', 'REQUESTED', '本期申请',
                              1000, null, null,
                              timestamp '2026-07-04 10:00:00', timestamp '2026-07-04 10:00:00')
                         """).update();
@@ -1055,12 +1055,14 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into after_sale_request
-                            (id, order_id, user_id, after_sale_type, status, reason,
+                            (id, after_sale_no, order_id, user_id, after_sale_type, status, reason,
                              requested_amount_cent, approved_amount_cent, created_at, updated_at)
                         values
-                            (97001, 94002, 90001, 'REFUND_ONLY', 'REFUNDED', '不喜欢', 20000, 20000,
+                            (97001, 'ASFIX97001', 94002, 90001, 'REFUND_ONLY', 'REFUNDED', '不喜欢',
+                             20000, 20000,
                              timestamp '2026-07-05 10:00:00', timestamp '2026-07-06 12:00:00'),
-                            (97002, 94003, 90002, 'REFUND_ONLY', 'REQUESTED', '其他', 5000, null,
+                            (97002, 'ASFIX97002', 94003, 90002, 'REFUND_ONLY', 'REQUESTED', '其他',
+                             5000, null,
                              timestamp '2026-07-07 10:00:00', timestamp '2026-07-07 10:00:00')
                         """).update();
         jdbcClient.sql("""

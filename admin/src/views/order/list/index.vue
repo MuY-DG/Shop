@@ -149,7 +149,7 @@
               link
               @click="openActiveAfterSale(currentDetail.activeAfterSale.afterSaleId)"
             >
-              查看售后单 #{{ currentDetail.activeAfterSale.afterSaleId }}
+              查看售后单 {{ currentDetail.activeAfterSale.afterSaleNo }}
             </ElButton>
           </ElAlert>
 
@@ -563,7 +563,7 @@
             :key="record.id"
             :timestamp="formatDateTime(record.createdAt)"
             placement="top"
-            :type="statusMap[record.toStatus]?.type || 'primary'"
+            :type="formatRecordTimelineType(record)"
           >
             <div class="order-record">
               <div class="order-record__title">
@@ -915,7 +915,7 @@
     return '订单存在进行中售后，退款流程处理中'
   }
   const formatAfterSaleHold = (afterSale: Api.Order.ActiveAfterSaleSummary) =>
-    `售后单 #${afterSale.afterSaleId} · 整单仅退款 · ${formatAfterSaleStatus(afterSale.status)} · ${formatMoney(afterSale.requestedAmountCent)}`
+    `售后单 ${afterSale.afterSaleNo} · 整单仅退款 · ${formatAfterSaleStatus(afterSale.status)} · ${formatMoney(afterSale.requestedAmountCent)}`
 
   const shippingUploadStatusMap: Record<
     Api.Order.WechatShippingUploadStatus,
@@ -1153,6 +1153,8 @@
     ORDER_SHIPPED: '订单发货',
     ORDER_COMPLETED: '订单完成',
     ORDER_CLOSED: '关闭订单',
+    AFTER_SALE_REQUESTED: '用户申请售后',
+    AFTER_SALE_REJECTED: '售后审核拒绝',
     REFUND_STARTED: '发起退款',
     REFUND_RESTORED: '退款申请回退',
     REFUND_SUCCEEDED: '退款成功'
@@ -1186,8 +1188,16 @@
     return record.operatorId ? `${operator} ${record.operatorId}` : operator
   }
 
+  const formatRecordTimelineType = (record: Api.Order.OrderStatusLog) => {
+    if (record.eventType === 'AFTER_SALE_REQUESTED') return 'warning'
+    if (record.eventType === 'AFTER_SALE_REJECTED') return 'danger'
+    return statusMap[record.toStatus]?.type || 'primary'
+  }
+
   const formatStatusTransition = (record: Api.Order.OrderStatusLog) => {
     const toStatus = statusRecordLabels[record.toStatus] || record.toStatus
+    if (record.eventType === 'AFTER_SALE_REQUESTED') return `${toStatus} · 售后待审核`
+    if (record.eventType === 'AFTER_SALE_REJECTED') return `${toStatus} · 售后已拒绝`
     if (!record.fromStatus) return toStatus
     const fromStatus = statusRecordLabels[record.fromStatus] || record.fromStatus
     return fromStatus === toStatus ? toStatus : `${fromStatus} → ${toStatus}`
@@ -1281,7 +1291,7 @@
               {
                 link: true,
                 class: 'after-sale-status-link',
-                'aria-label': `查看售后单 ${activeAfterSale.afterSaleId}`,
+                'aria-label': `查看售后单 ${activeAfterSale.afterSaleNo}`,
                 onClick: () => openActiveAfterSale(activeAfterSale.afterSaleId)
               },
               () =>

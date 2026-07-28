@@ -11,6 +11,7 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.StorageAssetScope;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
@@ -31,11 +32,15 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.math.BigInteger;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -44,6 +49,11 @@ public class AppAfterSaleService {
 
     private static final int DEFAULT_PAGE_SIZE = 10;
     private static final int MAX_PAGE_SIZE = 100;
+    private static final DateTimeFormatter AFTER_SALE_NO_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final int AFTER_SALE_NO_RANDOM_BYTES = 9;
+    private static final int AFTER_SALE_NO_RANDOM_WIDTH = 14;
+    private static final SecureRandom AFTER_SALE_NO_RANDOM = new SecureRandom();
     private static final Set<String> ACTIVE_STATUSES = Set.of(
             AfterSaleStatus.REQUESTED.name(),
             AfterSaleStatus.APPROVED.name(),
@@ -59,17 +69,20 @@ public class AppAfterSaleService {
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final StorageService storageService;
     private final StorageUsageService storageUsageService;
+    private final OrderStatusLogService orderStatusLogService;
 
     public AppAfterSaleService(
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             StorageService storageService,
-            StorageUsageService storageUsageService
+            StorageUsageService storageUsageService,
+            OrderStatusLogService orderStatusLogService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageService = storageService;
         this.storageUsageService = storageUsageService;
+        this.orderStatusLogService = orderStatusLogService;
     }
 
     public StorageAssetResponse uploadEvidence(
@@ -109,10 +122,19 @@ public class AppAfterSaleService {
         rejectIfActiveAfterSaleExists(order.orderId());
         validateEvidenceFiles(userId, order.orderId(), evidenceFileIds);
 
-        Long afterSaleId = insertAfterSale(order, type, reason, description, requestedAmountCent);
+        LocalDateTime requestedAt = LocalDateTime.now();
+        String afterSaleNo = nextAfterSaleNo(requestedAt);
+        Long afterSaleId = insertAfterSale(
+                order, afterSaleNo, type, reason, description,
+                requestedAmountCent, requestedAt);
         insertEvidence(afterSaleId, evidenceFileIds);
-        addProtectedEvidenceUsage(afterSaleId, order.orderNo(), evidenceFileIds);
+        addProtectedEvidenceUsage(afterSaleId, afterSaleNo, order.orderNo(), evidenceFileIds);
         claimEvidenceFiles(evidenceFileIds);
+        orderStatusLogService.record(
+                order.orderId(), afterSaleId, order.status(), order.status(),
+                "AFTER_SALE_REQUESTED", "APP", userId,
+                "用户申请售后", requestedAt
+        );
         return requireResponseForUser(afterSaleId, userId);
     }
 
@@ -142,6 +164,7 @@ public class AppAfterSaleService {
 
         List<AfterSaleRow> pageRows = jdbcClient.sql("""
                         select asr.id,
+                               asr.after_sale_no,
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
@@ -180,6 +203,7 @@ public class AppAfterSaleService {
         requireOwnedOrder(orderId, userId);
         List<AfterSaleRow> rows = jdbcClient.sql("""
                         select asr.id,
+                               asr.after_sale_no,
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
@@ -217,6 +241,7 @@ public class AppAfterSaleService {
         Long userId = requireAppUser(principal);
         AfterSaleRow row = jdbcClient.sql("""
                         select asr.id,
+                               asr.after_sale_no,
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
@@ -378,17 +403,26 @@ public class AppAfterSaleService {
                 .update();
     }
 
-    private Long insertAfterSale(OrderRow order, AfterSaleType type, String reason, String description, long requestedAmountCent) {
+    private Long insertAfterSale(
+            OrderRow order,
+            String afterSaleNo,
+            AfterSaleType type,
+            String reason,
+            String description,
+            long requestedAmountCent,
+            LocalDateTime requestedAt
+    ) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into after_sale_request
-                            (order_id, user_id, after_sale_type, status, reason, description,
+                            (after_sale_no, order_id, user_id, after_sale_type, status, reason, description,
                              requested_amount_cent, created_at, updated_at)
                         values
-                            (:orderId, :userId, :afterSaleType, :status, :reason, :description,
+                            (:afterSaleNo, :orderId, :userId, :afterSaleType, :status, :reason, :description,
                              :requestedAmountCent, :createdAt, :updatedAt)
                         """,
                 new MapSqlParameterSource()
+                        .addValue("afterSaleNo", afterSaleNo)
                         .addValue("orderId", order.orderId())
                         .addValue("userId", order.userId())
                         .addValue("afterSaleType", type.name())
@@ -396,8 +430,8 @@ public class AppAfterSaleService {
                         .addValue("reason", reason)
                         .addValue("description", description)
                         .addValue("requestedAmountCent", requestedAmountCent)
-                        .addValue("createdAt", LocalDateTime.now())
-                        .addValue("updatedAt", LocalDateTime.now()),
+                        .addValue("createdAt", requestedAt)
+                        .addValue("updatedAt", requestedAt),
                 keyHolder,
                 new String[]{"id"});
         Number key = keyHolder.getKey();
@@ -423,7 +457,12 @@ public class AppAfterSaleService {
         }
     }
 
-    private void addProtectedEvidenceUsage(Long afterSaleId, String orderNo, List<Long> fileIds) {
+    private void addProtectedEvidenceUsage(
+            Long afterSaleId,
+            String afterSaleNo,
+            String orderNo,
+            List<Long> fileIds
+    ) {
         int sortOrder = 1;
         for (Long fileId : fileIds) {
             storageUsageService.addProtectedUsage(
@@ -431,7 +470,7 @@ public class AppAfterSaleService {
                     StorageFileUsageType.AFTER_SALE_EVIDENCE,
                     StorageUsageOwnerType.AFTER_SALE,
                     afterSaleId,
-                    "售后 #" + afterSaleId + " / 订单 " + orderNo,
+                    "售后 " + afterSaleNo + " / 订单 " + orderNo,
                     "",
                     sortOrder++
             );
@@ -441,6 +480,7 @@ public class AppAfterSaleService {
     private AfterSaleResponse requireResponseForUser(Long afterSaleId, Long userId) {
         AfterSaleRow row = jdbcClient.sql("""
                         select asr.id,
+                               asr.after_sale_no,
                                asr.order_id,
                                o.order_no,
                                asr.user_id,
@@ -490,6 +530,7 @@ public class AppAfterSaleService {
     ) {
         return new AfterSaleResponse(
                 row.id(),
+                row.afterSaleNo(),
                 row.orderId(),
                 row.orderNo(),
                 row.userId(),
@@ -608,6 +649,17 @@ public class AppAfterSaleService {
         return normalized;
     }
 
+    static String nextAfterSaleNo(LocalDateTime requestedAt) {
+        byte[] randomBytes = new byte[AFTER_SALE_NO_RANDOM_BYTES];
+        AFTER_SALE_NO_RANDOM.nextBytes(randomBytes);
+        String randomSuffix = new BigInteger(1, randomBytes)
+                .toString(Character.MAX_RADIX)
+                .toUpperCase(Locale.ROOT);
+        String paddedSuffix = "0".repeat(Math.max(0, AFTER_SALE_NO_RANDOM_WIDTH - randomSuffix.length()))
+                + randomSuffix;
+        return "AS" + requestedAt.format(AFTER_SALE_NO_TIME_FORMATTER) + paddedSuffix;
+    }
+
     private long normalizeCurrent(Long current) {
         if (current == null) {
             return 1L;
@@ -690,6 +742,7 @@ public class AppAfterSaleService {
     private AfterSaleRow mapAfterSale(ResultSet rs, int rowNum) throws SQLException {
         return new AfterSaleRow(
                 rs.getLong("id"),
+                rs.getString("after_sale_no"),
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getLong("user_id"),
@@ -762,6 +815,7 @@ public class AppAfterSaleService {
 
     private record AfterSaleRow(
             Long id,
+            String afterSaleNo,
             Long orderId,
             String orderNo,
             Long userId,

@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 
 public record AdminAfterSaleSummaryResponse(
         Long id,
+        String afterSaleNo,
         Long orderId,
         String orderNo,
         @JsonStringId Long userId,

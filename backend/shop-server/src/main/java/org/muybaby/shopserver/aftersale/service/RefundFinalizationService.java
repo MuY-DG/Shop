@@ -281,7 +281,8 @@ public class RefundFinalizationService {
         requireUpdated(afterSaleRows, "after-sale resumed refunding state");
 
         orderStatusLogService.record(
-                refund.orderId(), OrderStatus.REFUNDING.name(), OrderStatus.REFUNDING.name(),
+                refund.orderId(), refund.afterSaleId(),
+                OrderStatus.REFUNDING.name(), OrderStatus.REFUNDING.name(),
                 "REFUND_RECOVERY_RESUMED", "SYSTEM", null,
                 "渠道确认退款仍在处理中", now
         );
@@ -353,7 +354,8 @@ public class RefundFinalizationService {
         requireUpdated(orderRows, "order refunded state");
 
         orderStatusLogService.record(
-                refund.orderId(), OrderStatus.REFUNDING.name(), OrderStatus.REFUNDED.name(),
+                refund.orderId(), refund.afterSaleId(),
+                OrderStatus.REFUNDING.name(), OrderStatus.REFUNDED.name(),
                 "REFUND_SUCCEEDED", "WECHAT", null, "微信退款成功", successAt
         );
         return Outcome.SUCCESS;

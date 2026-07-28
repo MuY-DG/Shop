@@ -21,6 +21,7 @@ import type { AppOrderDetailResponse, OrderStatus } from "../miniprogram/types/o
 function afterSale(status: AfterSaleStatus = "REQUESTED"): AfterSaleResponse {
   return {
     id: 71,
+    afterSaleNo: "AS2026072110000000000000000071",
     orderId: 101,
     orderNo: "ORD-101",
     userId: "9001",

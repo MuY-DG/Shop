@@ -58,6 +58,7 @@
               </ElButton>
               <template #dropdown>
                 <ElDropdownMenu>
+                  <ElDropdownItem command="records">售后记录</ElDropdownItem>
                   <ElDropdownItem command="order">查看关联订单</ElDropdownItem>
                   <template v-if="row.status === 'REQUESTED' && hasAuth('aftersale:audit')">
                     <ElDropdownItem command="approve" divided>审核通过并退款</ElDropdownItem>
@@ -77,6 +78,7 @@
       size="86%"
       destroy-on-close
       append-to-body
+      class="aftersale-detail-drawer"
     >
       <div v-loading="detailLoading" class="aftersale-detail">
         <template v-if="currentDetail">
@@ -86,8 +88,34 @@
                 <ElIcon><Tickets /></ElIcon>
               </div>
               <div>
-                <div class="aftersale-summary__title">售后单 #{{ currentDetail.id }}</div>
-                <div class="aftersale-summary__no">订单号：{{ currentDetail.orderNo }}</div>
+                <div class="aftersale-summary__title-row">
+                  <div class="aftersale-summary__title">
+                    售后单 {{ currentDetail.afterSaleNo }}
+                  </div>
+                  <ElButton
+                    link
+                    type="primary"
+                    class="aftersale-summary__copy"
+                    aria-label="复制顶部售后单号"
+                    title="复制售后单号"
+                    @click="copyText(currentDetail.afterSaleNo, '售后单号')"
+                  >
+                    <ElIcon><CopyDocument /></ElIcon>
+                  </ElButton>
+                </div>
+                <div class="aftersale-summary__no">
+                  <span>订单号：{{ currentDetail.orderNo }}</span>
+                  <ElButton
+                    link
+                    type="primary"
+                    class="aftersale-summary__copy"
+                    aria-label="复制顶部订单号"
+                    title="复制订单号"
+                    @click="copyText(currentDetail.orderNo, '订单号')"
+                  >
+                    <ElIcon><CopyDocument /></ElIcon>
+                  </ElButton>
+                </div>
               </div>
             </div>
             <div class="aftersale-summary__facts">
@@ -95,7 +123,7 @@
                 <span>售后状态</span>
                 <strong
                   :class="[
-                    'business-status-text',
+                    'summary-fact__status',
                     `business-status--${statusConfig(currentDetail.status).tone}`
                   ]"
                 >
@@ -108,70 +136,227 @@
               </div>
               <div class="summary-fact">
                 <span>申请金额</span>
-                <strong>{{ formatMoney(currentDetail.requestedAmountCent) }}</strong>
+                <strong class="summary-fact__amount">
+                  {{ formatMoney(currentDetail.requestedAmountCent) }}
+                </strong>
               </div>
               <div class="summary-fact">
                 <span>创建时间</span>
-                <strong>{{ formatDateTime(currentDetail.createdAt) }}</strong>
+                <strong class="summary-fact__with-icon">
+                  <ArtSvgIcon icon="ri:time-line" />
+                  {{ formatDateTime(currentDetail.createdAt) }}
+                </strong>
               </div>
             </div>
           </div>
 
-          <ElTabs v-model="detailActiveTab" class="aftersale-detail-tabs">
-            <ElTabPane label="售后信息" name="info">
-              <div class="detail-section">
-                <div class="detail-section__title">申请信息</div>
-                <ElDescriptions :column="3" border>
-                  <ElDescriptionsItem label="售后单 ID">{{ currentDetail.id }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="订单 ID">{{
-                    currentDetail.orderId
-                  }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="用户 ID">{{
-                    currentDetail.userId
-                  }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="用户名称">{{
-                    formatText(currentDetail.userNickname)
-                  }}</ElDescriptionsItem>
-                  <ElDescriptionsItem label="关联订单">
-                    <ElButton type="primary" link @click="openRelatedOrder(currentDetail.orderNo)">
-                      {{ currentDetail.orderNo }}
-                    </ElButton>
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="售后类型">
-                    {{ formatAfterSaleType(currentDetail.afterSaleType) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="申请金额">
-                    {{ formatMoney(currentDetail.requestedAmountCent) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="申请原因" :span="3">
-                    {{ formatText(currentDetail.reason) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="申请说明" :span="3">
-                    {{ formatText(currentDetail.description) }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-              </div>
+          <div class="aftersale-detail-content">
+            <div class="aftersale-card-grid aftersale-card-grid--overview">
+              <section class="detail-card detail-card--basic">
+                <div class="detail-card__header">
+                  <h3>
+                    <ArtSvgIcon icon="ri:file-list-3-line" />
+                    <span>售后基本信息</span>
+                  </h3>
+                </div>
+                <dl class="detail-facts detail-facts--basic">
+                  <div class="detail-fact">
+                    <dt>售后单号</dt>
+                    <dd>
+                      <span class="detail-fact__mono">{{ currentDetail.afterSaleNo }}</span>
+                      <ElButton
+                        link
+                        type="primary"
+                        class="copy-button"
+                        aria-label="复制售后单号"
+                        @click="copyText(currentDetail.afterSaleNo, '售后单号')"
+                      >
+                        <ElIcon><CopyDocument /></ElIcon>
+                        复制
+                      </ElButton>
+                    </dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>订单 ID</dt>
+                    <dd>{{ currentDetail.orderId }}</dd>
+                  </div>
+                  <div class="detail-fact detail-fact--full detail-fact--order-number">
+                    <dt>关联订单</dt>
+                    <dd>
+                      <span class="detail-fact__mono">{{ currentDetail.orderNo }}</span>
+                      <ElButton
+                        link
+                        type="primary"
+                        class="copy-button"
+                        aria-label="复制关联订单号"
+                        @click="copyText(currentDetail.orderNo, '订单号')"
+                      >
+                        <ElIcon><CopyDocument /></ElIcon>
+                        复制
+                      </ElButton>
+                      <ElButton
+                        link
+                        type="primary"
+                        class="detail-fact__action"
+                        @click="openRelatedOrder(currentDetail.orderNo)"
+                      >
+                        查看订单
+                      </ElButton>
+                    </dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>申请时间</dt>
+                    <dd>{{ formatDateTime(currentDetail.createdAt) }}</dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>售后类型</dt>
+                    <dd>{{ formatAfterSaleType(currentDetail.afterSaleType) }}</dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>售后状态</dt>
+                    <dd>
+                      <span
+                        :class="[
+                          'detail-fact__status',
+                          `business-status--${statusConfig(currentDetail.status).tone}`
+                        ]"
+                      >
+                        {{ formatStatus(currentDetail.status) }}
+                      </span>
+                    </dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>申请金额</dt>
+                    <dd class="detail-fact__amount">
+                      {{ formatMoney(currentDetail.requestedAmountCent) }}
+                    </dd>
+                  </div>
+                  <div class="detail-fact detail-fact--full">
+                    <dt>申请原因</dt>
+                    <dd>{{ formatText(currentDetail.reason) }}</dd>
+                  </div>
+                  <div v-if="currentDetail.description" class="detail-fact detail-fact--full">
+                    <dt>申请说明</dt>
+                    <dd>{{ currentDetail.description }}</dd>
+                  </div>
+                </dl>
+              </section>
 
-              <div class="detail-section">
-                <div class="detail-section__title">审核信息</div>
-                <ElDescriptions :column="3" border>
-                  <ElDescriptionsItem label="审核金额">
-                    {{ formatMoneyOrDash(currentDetail.approvedAmountCent) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="审核人">
-                    {{ formatText(currentDetail.reviewedBy) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="审核时间">
-                    {{ formatDateTime(currentDetail.reviewedAt) }}
-                  </ElDescriptionsItem>
-                  <ElDescriptionsItem label="审核备注" :span="3">
-                    {{ formatText(currentDetail.auditNote) }}
-                  </ElDescriptionsItem>
-                </ElDescriptions>
-              </div>
-            </ElTabPane>
+              <section class="detail-card">
+                <div class="detail-card__header">
+                  <h3>
+                    <ArtSvgIcon icon="ri:map-pin-user-line" />
+                    <span>买家与收货信息</span>
+                  </h3>
+                </div>
+                <dl class="detail-facts detail-facts--single">
+                  <div class="detail-fact">
+                    <dt>买家名称</dt>
+                    <dd>{{ formatText(currentDetail.userNickname) }}</dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>用户 ID</dt>
+                    <dd class="detail-fact__mono">{{ currentDetail.userId }}</dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>收货人</dt>
+                    <dd>{{ formatText(currentDetail.orderContext.receiverName) }}</dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>联系电话</dt>
+                    <dd>{{ formatText(currentDetail.orderContext.receiverPhone) }}</dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>收货地址</dt>
+                    <dd>{{ formatText(currentDetail.orderContext.receiverAddress) }}</dd>
+                  </div>
+                </dl>
+              </section>
+            </div>
 
-            <ElTabPane label="售后凭证" name="evidence">
+            <section class="detail-card detail-card--products">
+              <div class="detail-card__header">
+                <h3>
+                  <ArtSvgIcon icon="ri:shopping-bag-3-line" />
+                  <span>商品信息</span>
+                </h3>
+                <span class="detail-card__count">
+                  共 {{ currentDetail.orderContext.itemCount }} 件商品
+                </span>
+              </div>
+              <ElTable
+                v-if="currentDetail.orderContext.items.length"
+                :data="currentDetail.orderContext.items"
+                class="detail-products-table"
+              >
+                <ElTableColumn label="商品信息" min-width="300">
+                  <template #default="{ row }">
+                    <div class="item-cell">
+                      <ElImage
+                        :src="row.displayImage || row.skuImage || row.mainImage"
+                        fit="cover"
+                        :preview-src-list="
+                          row.displayImage || row.skuImage || row.mainImage
+                            ? [row.displayImage || row.skuImage || row.mainImage]
+                            : []
+                        "
+                        preview-teleported
+                        class="item-cell__image"
+                      >
+                        <template #error>
+                          <div class="item-cell__image-fallback">
+                            <ArtSvgIcon icon="ri:image-line" />
+                          </div>
+                        </template>
+                      </ElImage>
+                      <div class="item-cell__content">
+                        <div class="title">{{ formatText(row.productTitle) }}</div>
+                        <div class="subtitle">{{ row.productSubtitle || '暂无副标题' }}</div>
+                        <div class="subtitle">商品编码：{{ row.skuCode || '-' }}</div>
+                      </div>
+                    </div>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="单价" width="116">
+                  <template #default="{ row }">{{ formatMoney(row.unitPriceCent) }}</template>
+                </ElTableColumn>
+                <ElTableColumn prop="quantity" label="数量" width="82" />
+                <ElTableColumn label="规格" min-width="132">
+                  <template #default="{ row }">{{ row.specText || '-' }}</template>
+                </ElTableColumn>
+                <ElTableColumn label="小计" width="116" align="right">
+                  <template #default="{ row }">
+                    <strong>{{ formatMoney(row.lineAmountCent) }}</strong>
+                  </template>
+                </ElTableColumn>
+              </ElTable>
+              <ElEmpty v-else description="暂无商品信息" :image-size="64" />
+              <div class="product-summary">
+                <strong>本次为整单售后</strong>
+                <div class="product-summary__amounts">
+                  <span>
+                    商品金额：{{ formatMoney(currentDetail.orderContext.productAmountCent) }}
+                  </span>
+                  <span>
+                    订单实付：{{ formatMoney(currentDetail.orderContext.paidAmountCent) }}
+                  </span>
+                  <span class="product-summary__refund">
+                    申请退款：<strong>{{ formatMoney(currentDetail.requestedAmountCent) }}</strong>
+                  </span>
+                </div>
+              </div>
+            </section>
+
+            <section class="detail-card detail-card--evidence">
+              <div class="detail-card__header">
+                <h3>
+                  <ArtSvgIcon icon="ri:image-line" />
+                  <span>售后凭证</span>
+                </h3>
+                <span v-if="currentDetail.evidenceFiles?.length" class="detail-card__count">
+                  共 {{ currentDetail.evidenceFiles.length }} 个文件
+                </span>
+              </div>
               <div v-if="currentDetail.evidenceFiles?.length" class="evidence-list">
                 <div
                   v-for="file in currentDetail.evidenceFiles"
@@ -215,54 +400,150 @@
                   文件 ID {{ fileId }}
                 </ElTag>
               </div>
-              <ElEmpty v-else description="暂无售后凭证" :image-size="72" />
-            </ElTabPane>
+              <ElEmpty v-else description="暂无售后凭证" :image-size="60" />
+            </section>
 
-            <ElTabPane label="退款信息" name="refund">
-              <ElDescriptions v-if="currentDetail.refundOrder" :column="3" border>
-                <ElDescriptionsItem label="退款单 ID">
-                  {{ currentDetail.refundOrder.id }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="支付单 ID">
-                  {{ currentDetail.refundOrder.paymentOrderId }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="退款状态">
-                  <ElTag
-                    :type="refundStatusConfig(currentDetail.refundOrder.status).type"
-                    size="small"
-                    :class="[
-                      'business-status-tag',
-                      `business-status--${refundStatusConfig(currentDetail.refundOrder.status).tone}`
-                    ]"
+            <div class="aftersale-card-grid aftersale-card-grid--two">
+              <section class="detail-card">
+                <div class="detail-card__header">
+                  <h3>
+                    <ArtSvgIcon icon="ri:shield-check-line" />
+                    <span>审核信息</span>
+                  </h3>
+                </div>
+                <dl
+                  v-if="
+                    (currentDetail.approvedAmountCent !== null &&
+                      currentDetail.approvedAmountCent !== undefined) ||
+                    (currentDetail.reviewedBy !== null && currentDetail.reviewedBy !== undefined) ||
+                    currentDetail.reviewedAt ||
+                    currentDetail.auditNote
+                  "
+                  class="detail-facts detail-facts--single"
+                >
+                  <div
+                    v-if="
+                      currentDetail.approvedAmountCent !== null &&
+                      currentDetail.approvedAmountCent !== undefined
+                    "
+                    class="detail-fact"
                   >
-                    {{ formatRefundStatus(currentDetail.refundOrder.status) }}
-                  </ElTag>
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="商户退款单号">
-                  {{ formatText(currentDetail.refundOrder.outRefundNo) }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="微信退款单号">
-                  {{ formatText(currentDetail.refundOrder.refundId) }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="退款金额">
-                  {{ formatMoney(currentDetail.refundOrder.refundAmountCent) }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="回调状态">
-                  {{ formatText(currentDetail.refundOrder.callbackStatus) }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="发起时间">
-                  {{ formatDateTime(currentDetail.refundOrder.requestedAt) }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="完成时间">
-                  {{ formatDateTime(currentDetail.refundOrder.successAt) }}
-                </ElDescriptionsItem>
-                <ElDescriptionsItem label="错误信息" :span="3">
-                  {{ formatRefundError(currentDetail.refundOrder) }}
-                </ElDescriptionsItem>
-              </ElDescriptions>
-              <ElEmpty v-else description="暂无退款单" :image-size="72" />
-            </ElTabPane>
-          </ElTabs>
+                    <dt>审核金额</dt>
+                    <dd class="detail-fact__amount">
+                      {{ formatMoneyOrDash(currentDetail.approvedAmountCent) }}
+                    </dd>
+                  </div>
+                  <div
+                    v-if="
+                      currentDetail.reviewedBy !== null && currentDetail.reviewedBy !== undefined
+                    "
+                    class="detail-fact"
+                  >
+                    <dt>审核人 ID</dt>
+                    <dd>{{ formatText(currentDetail.reviewedBy) }}</dd>
+                  </div>
+                  <div v-if="currentDetail.reviewedAt" class="detail-fact">
+                    <dt>审核时间</dt>
+                    <dd>{{ formatDateTime(currentDetail.reviewedAt) }}</dd>
+                  </div>
+                  <div v-if="currentDetail.auditNote" class="detail-fact">
+                    <dt>审核备注</dt>
+                    <dd>{{ currentDetail.auditNote }}</dd>
+                  </div>
+                </dl>
+                <ElEmpty v-else description="暂未审核" :image-size="60" />
+              </section>
+
+              <section class="detail-card">
+                <div class="detail-card__header">
+                  <h3>
+                    <ArtSvgIcon icon="ri:refund-2-line" />
+                    <span>退款信息</span>
+                  </h3>
+                </div>
+                <dl v-if="currentDetail.refundOrder" class="detail-facts detail-facts--refund">
+                  <div class="detail-fact">
+                    <dt>退款状态</dt>
+                    <dd>
+                      <span
+                        :class="[
+                          'detail-fact__status',
+                          `business-status--${refundStatusConfig(currentDetail.refundOrder.status).tone}`
+                        ]"
+                      >
+                        {{ formatRefundStatus(currentDetail.refundOrder.status) }}
+                      </span>
+                    </dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>退款金额</dt>
+                    <dd class="detail-fact__amount">
+                      {{ formatMoney(currentDetail.refundOrder.refundAmountCent) }}
+                    </dd>
+                  </div>
+                  <div class="detail-fact detail-fact--full">
+                    <dt>商户退款单号</dt>
+                    <dd>
+                      <span class="detail-fact__mono">
+                        {{ currentDetail.refundOrder.outRefundNo }}
+                      </span>
+                      <ElButton
+                        link
+                        type="primary"
+                        class="copy-button"
+                        aria-label="复制商户退款单号"
+                        @click="copyText(currentDetail.refundOrder.outRefundNo, '商户退款单号')"
+                      >
+                        <ElIcon><CopyDocument /></ElIcon>
+                        复制
+                      </ElButton>
+                    </dd>
+                  </div>
+                  <div
+                    v-if="currentDetail.refundOrder.refundId"
+                    class="detail-fact detail-fact--full"
+                  >
+                    <dt>微信退款单号</dt>
+                    <dd>
+                      <span class="detail-fact__mono">
+                        {{ currentDetail.refundOrder.refundId }}
+                      </span>
+                      <ElButton
+                        link
+                        type="primary"
+                        class="copy-button"
+                        aria-label="复制微信退款单号"
+                        @click="copyText(currentDetail.refundOrder.refundId, '微信退款单号')"
+                      >
+                        <ElIcon><CopyDocument /></ElIcon>
+                        复制
+                      </ElButton>
+                    </dd>
+                  </div>
+                  <div v-if="currentDetail.refundOrder.callbackStatus" class="detail-fact">
+                    <dt>回调状态</dt>
+                    <dd>{{ currentDetail.refundOrder.callbackStatus }}</dd>
+                  </div>
+                  <div v-if="currentDetail.refundOrder.requestedAt" class="detail-fact">
+                    <dt>发起时间</dt>
+                    <dd>{{ formatDateTime(currentDetail.refundOrder.requestedAt) }}</dd>
+                  </div>
+                  <div v-if="currentDetail.refundOrder.successAt" class="detail-fact">
+                    <dt>完成时间</dt>
+                    <dd>{{ formatDateTime(currentDetail.refundOrder.successAt) }}</dd>
+                  </div>
+                  <div
+                    v-if="formatRefundError(currentDetail.refundOrder) !== '-'"
+                    class="detail-fact detail-fact--full"
+                  >
+                    <dt>错误信息</dt>
+                    <dd>{{ formatRefundError(currentDetail.refundOrder) }}</dd>
+                  </div>
+                </dl>
+                <ElEmpty v-else description="暂无退款单" :image-size="60" />
+              </section>
+            </div>
+          </div>
         </template>
       </div>
 
@@ -324,6 +605,42 @@
       </template>
     </ElDrawer>
 
+    <ElDrawer
+      v-model="recordsDrawerVisible"
+      title="售后记录"
+      size="520px"
+      destroy-on-close
+      append-to-body
+      class="aftersale-records-drawer"
+    >
+      <div v-loading="recordsLoading" class="aftersale-records">
+        <div v-if="recordsTarget" class="aftersale-records__identity">
+          <strong>售后单 {{ recordsTarget.afterSaleNo }}</strong>
+          <span>订单号：{{ recordsTarget.orderNo }}</span>
+        </div>
+        <ElTimeline v-if="afterSaleRecords.length">
+          <ElTimelineItem
+            v-for="record in afterSaleRecords"
+            :key="record.id"
+            :timestamp="formatDateTime(record.createdAt)"
+            placement="top"
+            :type="formatRecordTimelineType(record)"
+          >
+            <div class="aftersale-record">
+              <div class="aftersale-record__heading">
+                <strong>{{ formatRecordTitle(record) }}</strong>
+                <ElTag size="small" effect="plain" :type="formatRecordTimelineType(record)">
+                  {{ formatRecordState(record) }}
+                </ElTag>
+              </div>
+              <div class="aftersale-record__meta">{{ formatRecordOperator(record) }}</div>
+            </div>
+          </ElTimelineItem>
+        </ElTimeline>
+        <ElEmpty v-else-if="!recordsLoading" description="暂无售后记录" :image-size="88" />
+      </div>
+    </ElDrawer>
+
     <ElDialog
       v-model="auditDialogVisible"
       :title="auditMode === 'approve' ? '审核通过并退款' : '审核拒绝'"
@@ -341,7 +658,9 @@
       <ElForm ref="auditFormRef" :model="auditForm" :rules="auditRules" label-width="96px">
         <ElFormItem label="售后单">
           <ElInput
-            :model-value="auditTarget ? `#${auditTarget.id} / ${auditTarget.orderNo}` : '-'"
+            :model-value="
+              auditTarget ? `${auditTarget.afterSaleNo} / ${auditTarget.orderNo}` : '-'
+            "
             disabled
           />
         </ElFormItem>
@@ -410,7 +729,7 @@
           <ElInput
             :model-value="
               currentDetail?.refundOrder
-                ? `#${currentDetail.refundOrder.id} / ${currentDetail.refundOrder.outRefundNo}`
+                ? currentDetail.refundOrder.outRefundNo
                 : '-'
             "
             disabled
@@ -444,7 +763,7 @@
 <script setup lang="ts">
   import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
-  import { ArrowDown, Tickets } from '@element-plus/icons-vue'
+  import { ArrowDown, CopyDocument, Tickets } from '@element-plus/icons-vue'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
@@ -453,6 +772,7 @@
     approveAfterSale,
     fetchAfterSaleDetail,
     fetchAfterSaleEvidence,
+    fetchAfterSaleRecords,
     fetchAfterSales,
     fetchAfterSaleStatusCounts,
     markRefundManualIntervention,
@@ -461,7 +781,8 @@
     retryClosedRefund,
     rejectAfterSale
   } from '@/api/aftersale'
-  import { ElMessageBox, ElTag, type FormInstance, type FormRules } from 'element-plus'
+  import { fetchOrderDetail } from '@/api/order'
+  import { ElMessage, ElMessageBox, ElTag, type FormInstance, type FormRules } from 'element-plus'
 
   defineOptions({ name: 'AfterSaleList' })
 
@@ -472,6 +793,7 @@
 
   interface AfterSaleSearchForm {
     afterSaleId?: string
+    afterSaleNo?: string
     orderNo?: string
     userSearchType: Api.AfterSale.UserSearchType
     userKeyword?: string
@@ -487,6 +809,7 @@
 
   interface AuditTarget {
     id: number
+    afterSaleNo: string
     orderNo: string
     requestedAmountCent: number
   }
@@ -500,13 +823,17 @@
   const { hasAuth } = useAuth()
   const detailLoading = ref(false)
   const detailDrawerVisible = ref(false)
-  const detailActiveTab = ref<'info' | 'evidence' | 'refund'>('info')
   const evidencePreviewLoading = ref(false)
   const auditDialogVisible = ref(false)
   const auditing = ref(false)
   const refundOperationDialogVisible = ref(false)
   const refundOperating = ref(false)
-  const currentDetail = ref<Api.AfterSale.Item | null>(null)
+  const recordsDrawerVisible = ref(false)
+  const recordsLoading = ref(false)
+  const currentDetail = ref<Api.AfterSale.Detail | null>(null)
+  const afterSaleRecords = ref<Api.AfterSale.Record[]>([])
+  const recordsTarget =
+    ref<Pick<Api.AfterSale.Summary, 'id' | 'afterSaleNo' | 'orderNo'> | null>(null)
   const evidencePreviewUrls = ref<Record<number, string>>({})
   const auditTarget = ref<AuditTarget | null>(null)
   const auditMode = ref<AuditMode>('approve')
@@ -524,6 +851,7 @@
 
   const createInitialSearchForm = (): AfterSaleSearchForm => ({
     afterSaleId: routeAfterSaleId(),
+    afterSaleNo: undefined,
     orderNo: undefined,
     userSearchType: 'USER_ID',
     userKeyword: undefined,
@@ -609,13 +937,54 @@
     RETURN_REFUND: '退货退款'
   }
 
+  const recordEventLabels: Record<string, string> = {
+    AFTER_SALE_REQUESTED: '用户提交售后申请',
+    AFTER_SALE_REJECTED: '管理员拒绝售后申请',
+    REFUND_STARTED: '审核通过并发起退款',
+    REFUND_RECOVERY_RESUMED: '退款恢复处理中',
+    REFUND_SUCCEEDED: '退款成功',
+    REFUND_RESTORED: '退款申请已回退',
+    REFUND_RETRIED: '关闭退款后重新发起',
+    REFUND_QUERY_REQUESTED: '请求查询渠道退款状态',
+    REFUND_QUERY_COMPLETED: '渠道退款状态查询完成',
+    REFUND_QUERY_FAILED: '渠道退款状态查询失败',
+    REFUND_RESUBMIT_REQUESTED: '请求安全重提退款',
+    REFUND_RESUBMIT_COMPLETED: '安全重提退款完成',
+    REFUND_RESUBMIT_FAILED: '安全重提退款失败',
+    REFUND_MANUAL_INTERVENTION: '退款转人工介入'
+  }
+
+  const recordStateLabels: Record<string, string> = {
+    AFTER_SALE_REQUESTED: '待审核',
+    AFTER_SALE_REJECTED: '已拒绝',
+    REFUND_STARTED: '退款处理中',
+    REFUND_RECOVERY_RESUMED: '退款处理中',
+    REFUND_SUCCEEDED: '已退款',
+    REFUND_RESTORED: '待处理',
+    REFUND_RETRIED: '退款处理中',
+    REFUND_QUERY_REQUESTED: '查询中',
+    REFUND_QUERY_COMPLETED: '已查询',
+    REFUND_QUERY_FAILED: '查询失败',
+    REFUND_RESUBMIT_REQUESTED: '重提中',
+    REFUND_RESUBMIT_COMPLETED: '已重提',
+    REFUND_RESUBMIT_FAILED: '重提失败',
+    REFUND_MANUAL_INTERVENTION: '人工介入'
+  }
+
+  const operatorTypeLabels: Record<string, string> = {
+    APP: '用户',
+    ADMIN: '管理员',
+    SYSTEM: '系统',
+    WECHAT: '微信'
+  }
+
   const searchItems = computed<SearchFormItem[]>(() => [
     {
       label: '售后单号',
-      key: 'afterSaleId',
+      key: 'afterSaleNo',
       type: 'input',
       span: 8,
-      props: { clearable: true, placeholder: '请输入售后单 ID' }
+      props: { clearable: true, placeholder: '请输入售后单号' }
     },
     {
       label: '订单号',
@@ -713,6 +1082,14 @@
   const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
   const formatText = (value?: string | number | null) =>
     value === null || value === undefined || value === '' ? '-' : String(value)
+  const copyText = async (value: string | number, label: string) => {
+    try {
+      await navigator.clipboard.writeText(String(value))
+      ElMessage.success(`${label}已复制`)
+    } catch {
+      ElMessage.error(`${label}复制失败`)
+    }
+  }
   const statusConfig = (value?: string) =>
     statusMap[value || ''] || {
       type: 'info' as const,
@@ -747,6 +1124,36 @@
     return [code, message].filter(Boolean).join(' / ') || '-'
   }
 
+  const formatRecordTitle = (record: Api.AfterSale.Record) =>
+    record.description?.trim() || recordEventLabels[record.eventType] || record.eventType
+
+  const formatRecordState = (record: Api.AfterSale.Record) =>
+    recordStateLabels[record.eventType] || formatStatus(record.toStatus)
+
+  const formatRecordOperator = (record: Api.AfterSale.Record) => {
+    const operator = operatorTypeLabels[record.operatorType] || record.operatorType
+    return record.operatorId ? `操作人：${operator} ${record.operatorId}` : `操作方：${operator}`
+  }
+
+  const formatRecordTimelineType = (record: Api.AfterSale.Record): TagType => {
+    if (record.eventType === 'REFUND_SUCCEEDED') return 'success'
+    if (
+      record.eventType === 'AFTER_SALE_REJECTED' ||
+      record.eventType.endsWith('_FAILED') ||
+      record.eventType === 'REFUND_MANUAL_INTERVENTION'
+    ) {
+      return 'danger'
+    }
+    if (
+      record.eventType === 'AFTER_SALE_REQUESTED' ||
+      record.eventType.includes('REQUESTED') ||
+      record.eventType === 'REFUND_RETRIED'
+    ) {
+      return 'warning'
+    }
+    return 'info'
+  }
+
   const normalizeSearchParams = (
     form: AfterSaleSearchForm = searchForm.value
   ): Api.AfterSale.SearchParams => {
@@ -758,6 +1165,7 @@
 
     const afterSaleId = Number(form.afterSaleId?.trim())
     if (Number.isSafeInteger(afterSaleId) && afterSaleId > 0) params.afterSaleId = afterSaleId
+    assignText('afterSaleNo', form.afterSaleNo)
     assignText('orderNo', form.orderNo)
     assignText('refundNo', form.refundNo)
     if (form.userKeyword?.trim()) {
@@ -801,10 +1209,10 @@
       },
       columnsFactory: () => [
         {
-          prop: 'id',
+          prop: 'afterSaleNo',
           label: '售后单号',
-          minWidth: 140,
-          formatter: (row) => h('span', { class: 'aftersale-id-cell' }, `#${row.id}`)
+          minWidth: 260,
+          formatter: (row) => h('span', { class: 'aftersale-id-cell' }, row.afterSaleNo)
         },
         {
           prop: 'orderNo',
@@ -875,11 +1283,12 @@
   }
 
   const handleSearch = async () => {
+    searchForm.value.afterSaleId = undefined
     await applyCurrentSearch()
   }
 
   const handleReset = async () => {
-    searchForm.value = createInitialSearchForm()
+    searchForm.value = { ...createInitialSearchForm(), afterSaleId: undefined }
     await applyCurrentSearch()
   }
 
@@ -923,6 +1332,26 @@
     evidencePreviewLoading.value = false
   }
 
+  const toOrderContext = (order: Api.Order.OrderDetail): Api.AfterSale.OrderContext => ({
+    orderId: order.orderId,
+    orderNo: order.orderNo,
+    receiverName: order.receiverName,
+    receiverPhone: order.receiverPhone,
+    receiverAddress: order.receiverAddress,
+    productAmountCent: order.productAmountCent,
+    paidAmountCent: order.paidAmountCent,
+    itemCount: order.itemCount,
+    items: order.items
+  })
+
+  const hydrateOrderContext = async (
+    detail: Api.AfterSale.Detail
+  ): Promise<Api.AfterSale.Detail> => {
+    if (detail.orderContext) return detail
+    const order = await fetchOrderDetail(detail.orderId)
+    return { ...detail, orderContext: toOrderContext(order) }
+  }
+
   const loadEvidencePreviews = async (detail: Api.AfterSale.Item, requestId: number) => {
     const files = (detail.evidenceFiles || []).filter(isPreviewableImage)
     if (!files.length) return
@@ -952,13 +1381,12 @@
 
   const openDetail = async (afterSaleId: number) => {
     detailDrawerVisible.value = true
-    detailActiveTab.value = 'info'
     const requestId = ++detailRequestSeq.value
     detailLoading.value = true
     clearEvidencePreviews()
     currentDetail.value = null
     try {
-      const detail = await fetchAfterSaleDetail(afterSaleId)
+      const detail = await hydrateOrderContext(await fetchAfterSaleDetail(afterSaleId))
       if (requestId !== detailRequestSeq.value) return
       currentDetail.value = detail
       await loadEvidencePreviews(detail, requestId)
@@ -978,6 +1406,27 @@
   const openRelatedOrder = (orderNo: string) => {
     void router.push({ path: '/trade/orders', query: { orderNo } })
   }
+
+  const openRecords = async (
+    row: Pick<Api.AfterSale.Summary, 'id' | 'afterSaleNo' | 'orderNo'>
+  ) => {
+    recordsTarget.value = row
+    recordsDrawerVisible.value = true
+    recordsLoading.value = true
+    afterSaleRecords.value = []
+    try {
+      afterSaleRecords.value = await fetchAfterSaleRecords(row.id)
+    } finally {
+      recordsLoading.value = false
+    }
+  }
+
+  watch(recordsDrawerVisible, (visible) => {
+    if (!visible) {
+      afterSaleRecords.value = []
+      recordsTarget.value = null
+    }
+  })
 
   const openAuditDialog = (mode: AuditMode, row: AuditTarget) => {
     auditMode.value = mode
@@ -1086,6 +1535,7 @@
   }
 
   const handleMoreCommand = (command: string | number | object, row: Api.AfterSale.Summary) => {
+    if (command === 'records') void openRecords(row)
     if (command === 'order') openRelatedOrder(row.orderNo)
     if (command === 'approve') openAuditDialog('approve', row)
     if (command === 'reject') openAuditDialog('reject', row)
@@ -1100,8 +1550,8 @@
     const isApprove = auditMode.value === 'approve'
     await ElMessageBox.confirm(
       isApprove
-        ? `确定审核通过售后 #${target.id} 并立即发起退款吗？`
-        : `确定拒绝售后 #${target.id} 吗？`,
+        ? `确定审核通过售后 ${target.afterSaleNo} 并立即发起退款吗？`
+        : `确定拒绝售后 ${target.afterSaleNo} 吗？`,
       '审核确认',
       {
         type: 'warning',
@@ -1184,15 +1634,23 @@
     min-height: 360px;
   }
 
+  :global(.aftersale-detail-drawer .el-drawer__body) {
+    padding: 16px 18px 24px;
+    background: var(--el-fill-color-lighter);
+  }
+
   .aftersale-summary {
     display: flex;
     gap: 28px;
     align-items: center;
     justify-content: space-between;
-    padding: 20px 24px;
-    margin-bottom: 18px;
-    background: var(--el-fill-color-lighter);
+    min-height: 108px;
+    padding: 18px 22px;
+    margin-bottom: 16px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
     border-radius: 10px;
+    box-shadow: 0 4px 16px rgb(31 35 41 / 5%);
   }
 
   .aftersale-summary__identity {
@@ -1220,24 +1678,45 @@
     color: var(--el-text-color-primary);
   }
 
+  .aftersale-summary__title-row,
+  .aftersale-summary__no {
+    display: flex;
+    gap: 7px;
+    align-items: center;
+  }
+
   .aftersale-summary__no {
     margin-top: 4px;
     font-size: 13px;
-    color: var(--el-text-color-secondary);
+    color: var(--el-text-color-primary);
+  }
+
+  .aftersale-summary__copy {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    font-size: 13px;
   }
 
   .aftersale-summary__facts {
     display: grid;
     flex: 1;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 20px;
-    max-width: 820px;
+    gap: 0;
+    align-self: stretch;
+    max-width: 760px;
   }
 
   .summary-fact {
     display: flex;
     flex-direction: column;
     gap: 7px;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    padding: 0 16px;
+    text-align: center;
+    border-left: 1px solid var(--el-border-color-lighter);
 
     span {
       font-size: 13px;
@@ -1250,44 +1729,219 @@
       line-height: 22px;
       color: var(--el-text-color-primary);
     }
+  }
 
-    .is-warning {
-      color: var(--el-color-warning);
-    }
+  .summary-fact__status,
+  .detail-fact__status {
+    width: fit-content;
+    padding: 2px 9px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+    border: 1px solid transparent;
+    border-radius: 999px;
 
-    .is-success {
+    &.business-status--refunded {
       color: var(--el-color-success);
+      background: var(--el-color-success-light-9);
+      border-color: var(--el-color-success-light-5);
     }
 
-    .is-danger {
+    &.business-status--failed {
       color: var(--el-color-danger);
+      background: var(--el-color-danger-light-9);
+      border-color: var(--el-color-danger-light-5);
     }
 
-    .is-info {
+    &.business-status--rejected {
+      color: var(--el-text-color-secondary);
+      background: var(--el-fill-color-light);
+      border-color: var(--el-border-color-light);
+    }
+
+    &.business-status--pending {
+      color: var(--el-color-warning);
+      background: var(--el-color-warning-light-9);
+      border-color: var(--el-color-warning-light-5);
+    }
+
+    &.business-status--refunding {
+      color: var(--el-color-primary);
+      background: var(--el-color-primary-light-9);
+      border-color: var(--el-color-primary-light-5);
+    }
+  }
+
+  .summary-fact strong.summary-fact__amount {
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 26px;
+    color: var(--el-color-primary);
+  }
+
+  .summary-fact__with-icon {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+    white-space: nowrap;
+
+    > .art-svg-icon {
+      flex-shrink: 0;
+      font-size: 17px;
       color: var(--el-text-color-secondary);
     }
   }
 
-  .aftersale-detail-tabs {
-    :deep(.el-tabs__header) {
-      margin-bottom: 20px;
+  .aftersale-detail-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .aftersale-card-grid {
+    display: grid;
+    gap: 16px;
+  }
+
+  .aftersale-card-grid--overview {
+    grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.7fr);
+  }
+
+  .aftersale-card-grid--two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-card {
+    min-width: 0;
+    padding: 16px 18px 18px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgb(31 35 41 / 5%);
+  }
+
+  .detail-card__header {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--el-border-color-lighter);
+
+    h3 {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 0;
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 22px;
+      color: var(--el-text-color-primary);
+    }
+
+    .art-svg-icon {
+      font-size: 18px;
+      color: var(--el-color-primary);
     }
   }
 
-  .detail-section {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-bottom: 24px;
+  .detail-card__count {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 
-  .detail-section__title {
-    padding-left: 10px;
-    font-size: 15px;
+  .detail-facts {
+    display: grid;
+    gap: 12px 24px;
+    margin: 0;
+  }
+
+  .detail-facts--basic,
+  .detail-facts--refund {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .detail-facts--single {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detail-facts--refund .detail-fact {
+    grid-template-columns: 112px minmax(0, 1fr);
+    column-gap: 8px;
+  }
+
+  .detail-fact {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 0;
+    align-items: start;
+    min-width: 0;
+    min-height: 26px;
+
+    dt {
+      margin: 0;
+      line-height: 22px;
+      color: var(--el-text-color-secondary);
+    }
+
+    dd {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+      margin: 0;
+      line-height: 22px;
+      color: var(--el-text-color-primary);
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .detail-fact--full {
+    grid-column: 1 / -1;
+  }
+
+  .detail-fact--order-number {
+    grid-template-columns: 96px minmax(0, 1fr);
+
+    .detail-fact__mono {
+      font-size: 12px;
+      white-space: nowrap;
+    }
+  }
+
+  .detail-fact__mono {
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-fact__amount {
+    font-size: 16px;
     font-weight: 600;
-    line-height: 20px;
-    color: var(--el-text-color-primary);
-    border-left: 4px solid var(--el-color-primary);
+    color: var(--el-color-danger) !important;
+  }
+
+  .detail-fact__action {
+    padding: 0 2px;
+  }
+
+  .copy-button {
+    flex-shrink: 0;
+    gap: 3px;
+    height: 22px;
+    padding: 0;
+    font-size: 12px;
+    line-height: 22px;
+  }
+
+  .detail-card :deep(.el-empty) {
+    padding: 6px 0 10px;
   }
 
   .evidence-list {
@@ -1300,9 +1954,9 @@
     display: flex;
     gap: 14px;
     padding: 14px;
+    background: var(--el-bg-color);
     border: 1px solid var(--el-border-color);
     border-radius: 8px;
-    background: var(--el-fill-color-blank);
   }
 
   .evidence-file__preview,
@@ -1330,8 +1984,8 @@
   .evidence-file__meta {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
     gap: 8px 12px;
+    align-items: center;
   }
 
   .evidence-file__header {
@@ -1352,6 +2006,168 @@
     gap: 8px;
   }
 
+  .detail-card--products {
+    overflow: hidden;
+  }
+
+  .detail-products-table {
+    width: 100%;
+
+    :deep(.el-table__cell:first-child) {
+      padding-left: 10px;
+    }
+
+    :deep(.el-table__cell:last-child) {
+      padding-right: 10px;
+    }
+  }
+
+  .item-cell {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .item-cell__image {
+    flex: 0 0 64px;
+    width: 64px;
+    height: 64px;
+    overflow: hidden;
+    background: var(--el-fill-color-light);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 7px;
+  }
+
+  .item-cell__image-fallback {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    font-size: 24px;
+    color: var(--el-text-color-placeholder);
+  }
+
+  .item-cell__content {
+    min-width: 0;
+
+    .title,
+    .subtitle {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .title {
+      font-weight: 500;
+      line-height: 22px;
+      color: var(--el-text-color-primary);
+    }
+
+    .subtitle {
+      margin-top: 3px;
+      font-size: 12px;
+      line-height: 18px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .product-summary {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 48px;
+    padding: 10px;
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+
+  .product-summary__amounts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 24px;
+    align-items: center;
+    justify-content: flex-end;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .product-summary__refund {
+    color: var(--el-text-color-primary);
+
+    strong {
+      font-size: 17px;
+      color: var(--el-color-danger);
+    }
+  }
+
+  :global(.aftersale-records-drawer .el-drawer__body) {
+    padding: 18px 22px 24px;
+    background: var(--el-bg-color-page);
+  }
+
+  .aftersale-records__identity {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 14px 16px;
+    margin-bottom: 24px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+
+    strong {
+      color: var(--el-text-color-primary);
+    }
+
+    span {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+      overflow-wrap: anywhere;
+    }
+  }
+
+  .aftersale-records {
+    min-height: 260px;
+
+    :deep(.el-timeline) {
+      padding-left: 5px;
+    }
+
+    :deep(.el-timeline-item__timestamp) {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .aftersale-record {
+    padding: 12px 14px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    box-shadow: 0 3px 12px rgb(31 35 41 / 4%);
+  }
+
+  .aftersale-record__heading {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+
+    strong {
+      min-width: 0;
+      line-height: 22px;
+      color: var(--el-text-color-primary);
+    }
+  }
+
+  .aftersale-record__meta {
+    margin-top: 7px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--el-text-color-secondary);
+  }
+
   .audit-alert {
     margin-bottom: 18px;
   }
@@ -1359,25 +2175,70 @@
   .drawer-footer,
   .dialog-footer {
     display: flex;
-    justify-content: flex-end;
     gap: 12px;
+    justify-content: flex-end;
     width: 100%;
   }
 
-  @media (max-width: 1100px) {
+  @media (width <= 1100px) {
     .aftersale-summary {
-      align-items: flex-start;
       flex-direction: column;
+      align-items: flex-start;
     }
 
     .aftersale-summary__facts {
       width: 100%;
     }
+
+    .aftersale-card-grid--overview {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
 
-  @media (max-width: 768px) {
+  @media (width <= 768px) {
+    :global(.aftersale-detail-drawer .el-drawer__body) {
+      padding: 14px;
+    }
+
     .aftersale-summary__facts {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .aftersale-card-grid--two {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .product-summary {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .product-summary__amounts {
+      justify-content: flex-start;
+    }
+  }
+
+  @media (width <= 560px) {
+    .aftersale-summary {
+      padding: 16px;
+    }
+
+    .aftersale-summary__facts,
+    .detail-facts--basic,
+    .detail-facts--refund {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .summary-fact {
+      padding: 10px 8px;
+    }
+
+    .detail-fact--full {
+      grid-column: auto;
+    }
+
+    .evidence-list {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>

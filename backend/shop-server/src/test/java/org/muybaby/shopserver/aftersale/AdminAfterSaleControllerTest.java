@@ -61,6 +61,11 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .update();
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-list");
         long afterSaleId = applyAfterSale(appUser, order, 6980L);
+        String afterSaleNo = jdbcClient.sql(
+                        "select after_sale_no from after_sale_request where id = :afterSaleId")
+                .param("afterSaleId", afterSaleId)
+                .query(String.class)
+                .single();
         long evidenceFileId = firstEvidenceFileId(afterSaleId);
         String readToken = limitedAdminToken(List.of("aftersale:read"));
         String auditOnlyToken = limitedAdminToken(List.of("aftersale:audit"));
@@ -78,6 +83,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.records[0].id").value(afterSaleId))
+                .andExpect(jsonPath("$.data.records[0].afterSaleNo").value(afterSaleNo))
                 .andExpect(jsonPath("$.data.records[0].orderId").value(order.orderId()))
                 .andExpect(jsonPath("$.data.records[0].userId").isString())
                 .andExpect(jsonPath("$.data.records[0].userId").value(Long.toString(appUser.userId())))
@@ -87,10 +93,18 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.data.current").value(1))
                 .andExpect(jsonPath("$.data.size").value(10));
 
+        mockMvc.perform(get("/admin/after-sales")
+                        .param("afterSaleNo", afterSaleNo)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].afterSaleNo").value(afterSaleNo));
+
         mockMvc.perform(get("/admin/after-sales/{afterSaleId}", afterSaleId)
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(afterSaleId))
+                .andExpect(jsonPath("$.data.afterSaleNo").value(afterSaleNo))
                 .andExpect(jsonPath("$.data.orderNo").value(order.orderNo()))
                 .andExpect(jsonPath("$.data.userNickname").value("售后详情用户"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].fileId").value(evidenceFileId))
@@ -100,7 +114,31 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.data.evidenceFiles[0].scope").value("ATTACHMENT"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].mediaKind").value("IMAGE"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].visibility").value("PRIVATE"))
-                .andExpect(jsonPath("$.data.evidenceFiles[0].status").value("ACTIVE"));
+                .andExpect(jsonPath("$.data.evidenceFiles[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.orderContext.orderId").value(order.orderId()))
+                .andExpect(jsonPath("$.data.orderContext.orderNo").value(order.orderNo()))
+                .andExpect(jsonPath("$.data.orderContext.receiverName").value("Pay User"))
+                .andExpect(jsonPath("$.data.orderContext.receiverPhone").value("13800000000"))
+                .andExpect(jsonPath("$.data.orderContext.receiverAddress").value("Pay Test Address"))
+                .andExpect(jsonPath("$.data.orderContext.productAmountCent").value(6980))
+                .andExpect(jsonPath("$.data.orderContext.paidAmountCent").value(6980))
+                .andExpect(jsonPath("$.data.orderContext.itemCount").value(2))
+                .andExpect(jsonPath("$.data.orderContext.items[0].productTitle").value("Payment Item"))
+                .andExpect(jsonPath("$.data.orderContext.items[0].quantity").value(2))
+                .andExpect(jsonPath("$.data.orderContext.items[0].specText").value("300g"));
+
+        mockMvc.perform(get("/admin/after-sales/{afterSaleId}/records", afterSaleId)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].afterSaleId").value(afterSaleId))
+                .andExpect(jsonPath("$.data[0].orderId").value(order.orderId()))
+                .andExpect(jsonPath("$.data[0].eventType").value("AFTER_SALE_REQUESTED"))
+                .andExpect(jsonPath("$.data[0].description").value("用户申请售后"));
+
+        mockMvc.perform(get("/admin/after-sales/{afterSaleId}/records", afterSaleId)
+                        .header("Authorization", "Bearer " + auditOnlyToken))
+                .andExpect(status().isForbidden());
     }
 
     @Test
@@ -217,7 +255,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     }
 
     @Test
-    void adminRejectSetsAuditFieldsAndLeavesOrderPaid() throws Exception {
+    void adminRejectLogsEachReviewAndAllowsReapplication() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-reject-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-reject");
@@ -252,6 +290,52 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .param("orderId", order.orderId())
                 .query(String.class)
                 .single()).isEqualTo("PAID");
+
+        long secondAfterSaleId = applyAfterSale(appUser, order, 6980L);
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/reject", secondAfterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"auditNote":"再次审核仍不符合退款条件"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+        List<String> afterSaleEvents = jdbcClient.sql("""
+                        select event_type
+                        from order_status_log
+                        where order_id = :orderId
+                          and event_type in ('AFTER_SALE_REQUESTED', 'AFTER_SALE_REJECTED')
+                        order by created_at, id
+                        """)
+                .param("orderId", order.orderId())
+                .query(String.class)
+                .list();
+        assertThat(afterSaleEvents).containsExactly(
+                "AFTER_SALE_REQUESTED",
+                "AFTER_SALE_REJECTED",
+                "AFTER_SALE_REQUESTED",
+                "AFTER_SALE_REJECTED"
+        );
+
+        String readToken = limitedAdminToken(List.of("aftersale:read"));
+        mockMvc.perform(get("/admin/after-sales/{afterSaleId}/records", afterSaleId)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].afterSaleId").value(afterSaleId))
+                .andExpect(jsonPath("$.data[0].eventType").value("AFTER_SALE_REQUESTED"))
+                .andExpect(jsonPath("$.data[1].afterSaleId").value(afterSaleId))
+                .andExpect(jsonPath("$.data[1].eventType").value("AFTER_SALE_REJECTED"));
+
+        mockMvc.perform(get("/admin/after-sales/{afterSaleId}/records", secondAfterSaleId)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].afterSaleId").value(secondAfterSaleId))
+                .andExpect(jsonPath("$.data[0].eventType").value("AFTER_SALE_REQUESTED"))
+                .andExpect(jsonPath("$.data[1].afterSaleId").value(secondAfterSaleId))
+                .andExpect(jsonPath("$.data[1].eventType").value("AFTER_SALE_REJECTED"));
     }
 
     @Test
@@ -279,7 +363,9 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .param("afterSaleId", afterSaleId)
                 .query(String.class)
                 .single();
-        assertThat(outRefundNo).hasSizeLessThanOrEqualTo(64).startsWith("RF");
+        assertThat(outRefundNo)
+                .matches("^RF\\d{14}[0-9A-Z]{14}$")
+                .hasSizeLessThanOrEqualTo(64);
         assertThat(jdbcClient.sql("""
                         select count(*)
                         from refund_order
@@ -376,8 +462,6 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         AppLoginSession appUser = appLogin("after-sale-admin-approve-retry-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve-retry");
         long afterSaleId = applyAfterSale(appUser, order, 6980L);
-        long paymentOrderId = paymentOrderId(order.orderId());
-        String expectedOutRefundNo = expectedOutRefundNo(afterSaleId, order.orderId(), paymentOrderId);
         String adminToken = adminLogin();
         clearInvocations(refundProvider);
 
@@ -392,7 +476,8 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
 
         List<RefundOrderSnapshot> rows = refundOrders(afterSaleId);
         assertThat(rows).hasSize(1);
-        assertThat(rows.get(0).outRefundNo()).isEqualTo(expectedOutRefundNo);
+        String expectedOutRefundNo = rows.get(0).outRefundNo();
+        assertThat(expectedOutRefundNo).matches("^RF\\d{14}[0-9A-Z]{14}$");
         ArgumentCaptor<WechatRefundRequest> refundRequestCaptor = ArgumentCaptor.forClass(WechatRefundRequest.class);
         verify(refundProvider, times(1)).requestRefund(any(), refundRequestCaptor.capture());
         assertThat(refundRequestCaptor.getValue().outRefundNo()).isEqualTo(expectedOutRefundNo);
@@ -421,8 +506,6 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         AppLoginSession appUser = appLogin("after-sale-admin-approve-provider-failure-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-approve-provider-failure");
         long afterSaleId = applyAfterSale(appUser, order, 6980L);
-        long paymentOrderId = paymentOrderId(order.orderId());
-        String expectedOutRefundNo = expectedOutRefundNo(afterSaleId, order.orderId(), paymentOrderId);
         String adminToken = adminLogin();
         String sensitiveProviderMessage = "synthetic-provider-sensitive-detail";
         doAnswer(invocation -> {
@@ -446,6 +529,8 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         List<RefundOrderSnapshot> rows = refundOrders(afterSaleId);
         assertThat(rows).hasSize(1);
         RefundOrderSnapshot refundOrder = rows.get(0);
+        String expectedOutRefundNo = refundOrder.outRefundNo();
+        assertThat(expectedOutRefundNo).matches("^RF\\d{14}[0-9A-Z]{14}$");
         assertThat(refundOrder.outRefundNo()).isEqualTo(expectedOutRefundNo).hasSizeLessThanOrEqualTo(64);
         assertThat(refundOrder.status()).isEqualTo("PROCESSING");
         assertThat(refundOrder.lastErrorCode()).isEqualTo("RuntimeException");
@@ -563,7 +648,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
         assertThat(rows.get(0).callbackStatus()).isEqualTo("CLOSED");
         assertThat(rows.get(1).outRefundNo())
                 .isNotEqualTo(originalOutRefundNo)
-                .startsWith("RF" + afterSaleId + "R")
+                .matches("^RF\\d{14}[0-9A-Z]{14}$")
                 .hasSizeLessThanOrEqualTo(64);
         assertThat(rows.get(1).status()).isEqualTo("PROCESSING");
 
@@ -1160,10 +1245,6 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .param("afterSaleId", afterSaleId)
                 .query(Long.class)
                 .single();
-    }
-
-    private String expectedOutRefundNo(long afterSaleId, long orderId, long paymentOrderId) {
-        return "RF" + afterSaleId + "O" + orderId + "P" + paymentOrderId;
     }
 
     private void markLatestRefundTerminal(long afterSaleId, String callbackStatus) {

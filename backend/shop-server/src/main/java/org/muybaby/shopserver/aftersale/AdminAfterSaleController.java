@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.aftersale;
 
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleAuditRequest;
+import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleDetailResponse;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleQueryRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleStatusCountsResponse;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleSummaryResponse;
@@ -10,6 +11,7 @@ import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.service.AdminAfterSaleService;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
+import org.muybaby.shopserver.order.dto.OrderStatusLogResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/admin/after-sales")
@@ -52,11 +56,20 @@ public class AdminAfterSaleController {
 
     @GetMapping("/{afterSaleId}")
     @PreAuthorize("hasAuthority('aftersale:read')")
-    public ApiResponse<AfterSaleResponse> detail(
+    public ApiResponse<AdminAfterSaleDetailResponse> detail(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long afterSaleId
     ) {
         return ApiResponse.success(adminAfterSaleService.detail(principal, afterSaleId));
+    }
+
+    @GetMapping("/{afterSaleId}/records")
+    @PreAuthorize("hasAuthority('aftersale:read')")
+    public ApiResponse<List<OrderStatusLogResponse>> records(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId
+    ) {
+        return ApiResponse.success(adminAfterSaleService.records(principal, afterSaleId));
     }
 
     @GetMapping("/{afterSaleId}/evidence/{fileId}")

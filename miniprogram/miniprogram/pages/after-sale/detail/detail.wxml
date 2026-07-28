@@ -66,7 +66,7 @@
 
       <view class="detail-card">
         <view class="section-heading">申请信息</view>
-        <view class="info-row"><text>售后编号</text><text>{{detail.id}}</text></view>
+        <view class="info-row"><text>售后单号</text><text>{{detail.afterSaleNo}}</text></view>
         <view class="info-row"><text>订单编号</text><text>{{detail.orderNo}}</text></view>
         <view class="info-row"><text>申请时间</text><text>{{detail.createdAtText}}</text></view>
         <view wx:if="{{detail.reviewedAtText}}" class="info-row"><text>审核时间</text><text>{{detail.reviewedAtText}}</text></view>

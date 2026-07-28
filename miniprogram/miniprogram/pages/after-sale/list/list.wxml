@@ -27,7 +27,8 @@
       >
         <view class="record-card__heading">
           <view>
-            <view class="record-card__order">订单 {{item.orderNo}}</view>
+            <view class="record-card__order">售后 {{item.afterSaleNo}}</view>
+            <view class="record-card__time">订单 {{item.orderNo}}</view>
             <view class="record-card__time">申请于 {{item.createdAtText}}</view>
           </view>
           <view class="record-card__status record-card__status--{{item.statusTone}}">{{item.statusText}}</view>

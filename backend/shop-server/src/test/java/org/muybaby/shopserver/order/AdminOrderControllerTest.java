@@ -270,10 +270,11 @@ class AdminOrderControllerTest {
                 .update();
         jdbcClient.sql("""
                         insert into after_sale_request
-                            (order_id, user_id, after_sale_type, status, reason, description,
+                            (after_sale_no, order_id, user_id, after_sale_type, status, reason, description,
                              requested_amount_cent, created_at, updated_at)
                         values
-                            (:orderId, :userId, 'REFUND_ONLY', 'REQUESTED', '整单退款', '',
+                            (concat('ASORDER', :orderId), :orderId, :userId,
+                             'REFUND_ONLY', 'REQUESTED', '整单退款', '',
                              7480, timestamp '2026-07-08 13:00:00', timestamp '2026-07-08 13:00:00')
                         """)
                 .param("orderId", orderId)
@@ -292,6 +293,8 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data.records[0].orderId").value(orderId))
                 .andExpect(jsonPath("$.data.records[0].canShip").value(false))
                 .andExpect(jsonPath("$.data.records[0].activeAfterSale.afterSaleId").value(afterSaleId))
+                .andExpect(jsonPath("$.data.records[0].activeAfterSale.afterSaleNo")
+                        .value("ASORDER" + orderId))
                 .andExpect(jsonPath("$.data.records[0].activeAfterSale.afterSaleType").value("REFUND_ONLY"))
                 .andExpect(jsonPath("$.data.records[0].activeAfterSale.status").value("REQUESTED"))
                 .andExpect(jsonPath("$.data.records[0].activeAfterSale.requestedAmountCent").value(7480));
@@ -301,6 +304,7 @@ class AdminOrderControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.canShip").value(false))
                 .andExpect(jsonPath("$.data.activeAfterSale.afterSaleId").value(afterSaleId))
+                .andExpect(jsonPath("$.data.activeAfterSale.afterSaleNo").value("ASORDER" + orderId))
                 .andExpect(jsonPath("$.data.activeAfterSale.status").value("REQUESTED"));
     }
 

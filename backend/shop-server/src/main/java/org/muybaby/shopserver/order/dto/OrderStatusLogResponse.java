@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 public record OrderStatusLogResponse(
         Long id,
         Long orderId,
+        Long afterSaleId,
         String fromStatus,
         String toStatus,
         String eventType,

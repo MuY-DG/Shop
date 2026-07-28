@@ -7,6 +7,7 @@ import java.util.List;
 
 public record AfterSaleResponse(
         Long id,
+        String afterSaleNo,
         Long orderId,
         String orderNo,
         @JsonStringId

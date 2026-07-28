@@ -92,17 +92,42 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
                 .getResponse()
                 .getContentAsString();
         long afterSaleId = objectMapper.readTree(response).path("data").path("id").asLong();
+        String afterSaleNo = objectMapper.readTree(response).path("data").path("afterSaleNo").asText();
+        assertThat(afterSaleNo).matches("^AS\\d{14}[0-9A-Z]{14}$");
+
+        String orderStatusLog = jdbcClient.sql("""
+                        select after_sale_id, from_status, to_status, event_type, operator_type,
+                               operator_id, description
+                        from order_status_log
+                        where order_id = :orderId
+                          and event_type = 'AFTER_SALE_REQUESTED'
+                        """)
+                .param("orderId", order.orderId())
+                .query((rs, rowNum) -> "%d|%s|%s|%s|%s|%d|%s".formatted(
+                        rs.getLong("after_sale_id"),
+                        rs.getString("from_status"),
+                        rs.getString("to_status"),
+                        rs.getString("event_type"),
+                        rs.getString("operator_type"),
+                        rs.getLong("operator_id"),
+                        rs.getString("description")))
+                .single();
+        assertThat(orderStatusLog).isEqualTo(
+                afterSaleId + "|PAID|PAID|AFTER_SALE_REQUESTED|APP|"
+                        + session.userId() + "|用户申请售后");
 
         mockMvc.perform(get("/app/orders/{orderId}/after-sales", order.orderId())
                         .header("Authorization", "Bearer " + session.token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value(afterSaleId))
+                .andExpect(jsonPath("$.data[0].afterSaleNo").value(afterSaleNo))
                 .andExpect(jsonPath("$.data[0].status").value("REQUESTED"));
 
         mockMvc.perform(get("/app/after-sales/{afterSaleId}", afterSaleId)
                         .header("Authorization", "Bearer " + session.token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").value(afterSaleId))
+                .andExpect(jsonPath("$.data.afterSaleNo").value(afterSaleNo))
                 .andExpect(jsonPath("$.data.orderNo").value(order.orderNo()));
 
         assertThat(jdbcClient.sql("""

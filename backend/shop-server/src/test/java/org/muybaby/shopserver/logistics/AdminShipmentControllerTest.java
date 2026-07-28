@@ -139,10 +139,11 @@ class AdminShipmentControllerTest {
         long orderId = insertPaidOrder(session, "SHIP-AFTER-SALE-HOLD", "wx-ship-after-sale-hold");
         jdbcClient.sql("""
                         insert into after_sale_request
-                            (order_id, user_id, after_sale_type, status, reason, description,
+                            (after_sale_no, order_id, user_id, after_sale_type, status, reason, description,
                              requested_amount_cent, created_at, updated_at)
                         values
-                            (:orderId, :userId, 'REFUND_ONLY', 'REQUESTED', '整单退款', '',
+                            (concat('ASSHIP', :orderId), :orderId, :userId,
+                             'REFUND_ONLY', 'REQUESTED', '整单退款', '',
                              3980, timestamp '2026-07-08 10:20:00', timestamp '2026-07-08 10:20:00')
                         """)
                 .param("orderId", orderId)
