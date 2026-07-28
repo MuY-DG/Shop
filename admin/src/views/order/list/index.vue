@@ -1435,7 +1435,13 @@
   }
 
   const handleReset = async () => {
-    searchForm.value = createInitialSearchForm()
+    searchForm.value = { ...createInitialSearchForm(), orderNo: undefined }
+    if (route.query.orderNo !== undefined) {
+      await router.replace({
+        path: route.path,
+        query: { ...route.query, orderNo: undefined }
+      })
+    }
     await applyCurrentSearch()
   }
 

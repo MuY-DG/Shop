@@ -79,6 +79,7 @@
       destroy-on-close
       append-to-body
       class="aftersale-detail-drawer"
+      @closed="handleDetailDrawerClosed"
     >
       <div v-loading="detailLoading" class="aftersale-detail">
         <template v-if="currentDetail">
@@ -160,7 +161,7 @@
                   </h3>
                 </div>
                 <dl class="detail-facts detail-facts--basic">
-                  <div class="detail-fact">
+                  <div class="detail-fact detail-fact--full detail-fact--number">
                     <dt>售后单号</dt>
                     <dd>
                       <span class="detail-fact__mono">{{ currentDetail.afterSaleNo }}</span>
@@ -176,11 +177,9 @@
                       </ElButton>
                     </dd>
                   </div>
-                  <div class="detail-fact">
-                    <dt>订单 ID</dt>
-                    <dd>{{ currentDetail.orderId }}</dd>
-                  </div>
-                  <div class="detail-fact detail-fact--full detail-fact--order-number">
+                  <div
+                    class="detail-fact detail-fact--full detail-fact--number detail-fact--order-number"
+                  >
                     <dt>关联订单</dt>
                     <dd>
                       <span class="detail-fact__mono">{{ currentDetail.orderNo }}</span>
@@ -205,14 +204,6 @@
                     </dd>
                   </div>
                   <div class="detail-fact">
-                    <dt>申请时间</dt>
-                    <dd>{{ formatDateTime(currentDetail.createdAt) }}</dd>
-                  </div>
-                  <div class="detail-fact">
-                    <dt>售后类型</dt>
-                    <dd>{{ formatAfterSaleType(currentDetail.afterSaleType) }}</dd>
-                  </div>
-                  <div class="detail-fact">
                     <dt>售后状态</dt>
                     <dd>
                       <span
@@ -231,13 +222,21 @@
                       {{ formatMoney(currentDetail.requestedAmountCent) }}
                     </dd>
                   </div>
-                  <div class="detail-fact detail-fact--full">
+                  <div class="detail-fact">
                     <dt>申请原因</dt>
                     <dd>{{ formatText(currentDetail.reason) }}</dd>
                   </div>
-                  <div v-if="currentDetail.description" class="detail-fact detail-fact--full">
-                    <dt>申请说明</dt>
-                    <dd>{{ currentDetail.description }}</dd>
+                  <div class="detail-fact">
+                    <dt>买家备注</dt>
+                    <dd>{{ currentDetail.description || '' }}</dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>售后类型</dt>
+                    <dd>{{ formatAfterSaleType(currentDetail.afterSaleType) }}</dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>申请时间</dt>
+                    <dd>{{ formatDateTime(currentDetail.createdAt) }}</dd>
                   </div>
                 </dl>
               </section>
@@ -446,9 +445,9 @@
                     <dt>审核时间</dt>
                     <dd>{{ formatDateTime(currentDetail.reviewedAt) }}</dd>
                   </div>
-                  <div v-if="currentDetail.auditNote" class="detail-fact">
+                  <div class="detail-fact">
                     <dt>审核备注</dt>
-                    <dd>{{ currentDetail.auditNote }}</dd>
+                    <dd>{{ currentDetail.auditNote || '' }}</dd>
                   </div>
                 </dl>
                 <ElEmpty v-else description="暂未审核" :image-size="60" />
@@ -462,26 +461,7 @@
                   </h3>
                 </div>
                 <dl v-if="currentDetail.refundOrder" class="detail-facts detail-facts--refund">
-                  <div class="detail-fact">
-                    <dt>退款状态</dt>
-                    <dd>
-                      <span
-                        :class="[
-                          'detail-fact__status',
-                          `business-status--${refundStatusConfig(currentDetail.refundOrder.status).tone}`
-                        ]"
-                      >
-                        {{ formatRefundStatus(currentDetail.refundOrder.status) }}
-                      </span>
-                    </dd>
-                  </div>
-                  <div class="detail-fact">
-                    <dt>退款金额</dt>
-                    <dd class="detail-fact__amount">
-                      {{ formatMoney(currentDetail.refundOrder.refundAmountCent) }}
-                    </dd>
-                  </div>
-                  <div class="detail-fact detail-fact--full">
+                  <div class="detail-fact detail-fact--full detail-fact--number">
                     <dt>商户退款单号</dt>
                     <dd>
                       <span class="detail-fact__mono">
@@ -501,7 +481,7 @@
                   </div>
                   <div
                     v-if="currentDetail.refundOrder.refundId"
-                    class="detail-fact detail-fact--full"
+                    class="detail-fact detail-fact--full detail-fact--number"
                   >
                     <dt>微信退款单号</dt>
                     <dd>
@@ -520,9 +500,24 @@
                       </ElButton>
                     </dd>
                   </div>
-                  <div v-if="currentDetail.refundOrder.callbackStatus" class="detail-fact">
-                    <dt>回调状态</dt>
-                    <dd>{{ currentDetail.refundOrder.callbackStatus }}</dd>
+                  <div class="detail-fact">
+                    <dt>退款状态</dt>
+                    <dd>
+                      <span
+                        :class="[
+                          'detail-fact__status',
+                          `business-status--${refundStatusConfig(currentDetail.refundOrder.status).tone}`
+                        ]"
+                      >
+                        {{ formatRefundStatus(currentDetail.refundOrder.status) }}
+                      </span>
+                    </dd>
+                  </div>
+                  <div class="detail-fact">
+                    <dt>退款金额</dt>
+                    <dd class="detail-fact__amount">
+                      {{ formatMoney(currentDetail.refundOrder.refundAmountCent) }}
+                    </dd>
                   </div>
                   <div v-if="currentDetail.refundOrder.requestedAt" class="detail-fact">
                     <dt>发起时间</dt>
@@ -538,6 +533,13 @@
                   >
                     <dt>错误信息</dt>
                     <dd>{{ formatRefundError(currentDetail.refundOrder) }}</dd>
+                  </div>
+                  <div
+                    v-if="currentDetail.refundOrder.callbackStatus"
+                    class="detail-fact detail-fact--full"
+                  >
+                    <dt>回调状态</dt>
+                    <dd>{{ currentDetail.refundOrder.callbackStatus }}</dd>
                   </div>
                 </dl>
                 <ElEmpty v-else description="暂无退款单" :image-size="60" />
@@ -658,9 +660,7 @@
       <ElForm ref="auditFormRef" :model="auditForm" :rules="auditRules" label-width="96px">
         <ElFormItem label="售后单">
           <ElInput
-            :model-value="
-              auditTarget ? `${auditTarget.afterSaleNo} / ${auditTarget.orderNo}` : '-'
-            "
+            :model-value="auditTarget ? `${auditTarget.afterSaleNo} / ${auditTarget.orderNo}` : '-'"
             disabled
           />
         </ElFormItem>
@@ -727,11 +727,7 @@
       >
         <ElFormItem label="退款单">
           <ElInput
-            :model-value="
-              currentDetail?.refundOrder
-                ? currentDetail.refundOrder.outRefundNo
-                : '-'
-            "
+            :model-value="currentDetail?.refundOrder ? currentDetail.refundOrder.outRefundNo : '-'"
             disabled
           />
         </ElFormItem>
@@ -831,9 +827,11 @@
   const recordsDrawerVisible = ref(false)
   const recordsLoading = ref(false)
   const currentDetail = ref<Api.AfterSale.Detail | null>(null)
+  const pendingRelatedOrderNo = ref<string | null>(null)
   const afterSaleRecords = ref<Api.AfterSale.Record[]>([])
-  const recordsTarget =
-    ref<Pick<Api.AfterSale.Summary, 'id' | 'afterSaleNo' | 'orderNo'> | null>(null)
+  const recordsTarget = ref<Pick<Api.AfterSale.Summary, 'id' | 'afterSaleNo' | 'orderNo'> | null>(
+    null
+  )
   const evidencePreviewUrls = ref<Record<number, string>>({})
   const auditTarget = ref<AuditTarget | null>(null)
   const auditMode = ref<AuditMode>('approve')
@@ -1211,13 +1209,13 @@
         {
           prop: 'afterSaleNo',
           label: '售后单号',
-          minWidth: 260,
+          minWidth: 280,
           formatter: (row) => h('span', { class: 'aftersale-id-cell' }, row.afterSaleNo)
         },
         {
           prop: 'orderNo',
           label: '订单号',
-          minWidth: 220,
+          minWidth: 280,
           formatter: (row) => h('span', { class: 'order-no-cell' }, row.orderNo)
         },
         {
@@ -1404,7 +1402,19 @@
   })
 
   const openRelatedOrder = (orderNo: string) => {
-    void router.push({ path: '/trade/orders', query: { orderNo } })
+    if (!detailDrawerVisible.value) {
+      void router.push({ path: '/trade/orders', query: { orderNo } })
+      return
+    }
+
+    pendingRelatedOrderNo.value = orderNo
+    detailDrawerVisible.value = false
+  }
+
+  const handleDetailDrawerClosed = () => {
+    const orderNo = pendingRelatedOrderNo.value
+    pendingRelatedOrderNo.value = null
+    if (orderNo) void router.push({ path: '/trade/orders', query: { orderNo } })
   }
 
   const openRecords = async (
@@ -1621,11 +1631,15 @@
     margin-left: 3px;
   }
 
-  .aftersale-id-cell,
-  .order-no-cell {
+  :deep(.aftersale-id-cell),
+  :deep(.order-no-cell) {
+    display: inline-block;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 13px;
     color: var(--el-text-color-primary);
+    word-break: keep-all;
+    overflow-wrap: normal;
+    white-space: nowrap;
   }
 
   .aftersale-detail {
@@ -1905,6 +1919,19 @@
     grid-column: 1 / -1;
   }
 
+  .detail-fact--number {
+    dd {
+      flex-wrap: nowrap;
+      min-height: 22px;
+    }
+
+    .detail-fact__mono {
+      word-break: keep-all;
+      overflow-wrap: normal;
+      white-space: nowrap;
+    }
+  }
+
   .detail-fact--order-number {
     grid-template-columns: 96px minmax(0, 1fr);
 
@@ -1934,10 +1961,17 @@
   .copy-button {
     flex-shrink: 0;
     gap: 3px;
-    height: 22px;
     padding: 0;
     font-size: 12px;
     line-height: 22px;
+  }
+
+  :global(.aftersale-detail-drawer .copy-button.el-button),
+  :global(.aftersale-detail-drawer .detail-fact__action.el-button) {
+    width: auto;
+    height: 22px !important;
+    min-height: 22px;
+    padding: 0;
   }
 
   .detail-card :deep(.el-empty) {
