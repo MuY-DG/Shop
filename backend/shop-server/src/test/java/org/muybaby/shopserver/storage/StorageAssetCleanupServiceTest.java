@@ -132,6 +132,30 @@ class StorageAssetCleanupServiceTest {
     }
 
     @Test
+    void staleUnreferencedUserAvatarIsDeletedAfterItsUploadGraceWindow() {
+        InsertedAsset stale = insertUserAvatar(LocalDateTime.now().minusHours(1));
+        InsertedAsset fresh = insertUserAvatar(LocalDateTime.now());
+        InsertedAsset referenced = insertUserAvatar(LocalDateTime.now().minusHours(1));
+        jdbcClient.sql("""
+                        insert into app_user (id, openid, nickname, avatar_url, status)
+                        values (991, 'cleanup-current-avatar', 'Cleanup User', :avatarUrl, 'ENABLED')
+                        """)
+                .param("avatarUrl", publicUrl(referenced.id()))
+                .update();
+
+        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+
+        assertThat(status(stale.id())).isEqualTo("DELETED");
+        assertThat(status(fresh.id())).isEqualTo("ACTIVE");
+        assertThat(status(referenced.id())).isEqualTo("ACTIVE");
+        assertThatThrownBy(() -> storageProvider.open(stale.objectKey())).isInstanceOf(RuntimeException.class);
+        assertThat(storageProvider.open(fresh.objectKey()).sizeBytes()).isPositive();
+        assertThat(storageProvider.open(referenced.objectKey()).sizeBytes()).isPositive();
+        storageProvider.delete(fresh.objectKey());
+        storageProvider.delete(referenced.objectKey());
+    }
+
+    @Test
     void staleWorkerCannotFinalizeAfterAnotherWorkerOwnsTheLease() throws Exception {
         InsertedAsset expired = insertExpiredAsset("SECRET");
         StorageProvider slowProvider = mock(StorageProvider.class);
@@ -254,8 +278,44 @@ class StorageAssetCleanupServiceTest {
         return new InsertedAsset(id, objectKey);
     }
 
+    private InsertedAsset insertUserAvatar(LocalDateTime createdAt) {
+        String objectKey = "public/library/image/cleanup/" + UUID.randomUUID() + ".png";
+        String publicUrl = "http://localhost:8080/files/public/"
+                + objectKey.substring("public/".length());
+        byte[] bytes = "avatar".getBytes();
+        storageProvider.put(objectKey, "image/png", new ByteArrayInputStream(bytes), bytes.length);
+        jdbcClient.sql("""
+                        insert into storage_asset
+                            (scope, media_kind, visibility, provider, storage_container, object_key,
+                             original_filename, content_type, extension, size_bytes, sha256, public_url,
+                             status, uploaded_by_type, uploaded_by_id, upload_context_type,
+                             upload_context_id, created_at, updated_at)
+                        values
+                            ('LIBRARY', 'IMAGE', 'PUBLIC', 'LOCAL', '', :objectKey,
+                             'avatar.png', 'image/png', 'png', :sizeBytes, '', :publicUrl,
+                             'ACTIVE', 'APP', 991, 'APP_USER_AVATAR', 991, :createdAt, :createdAt)
+                        """)
+                .param("objectKey", objectKey)
+                .param("sizeBytes", bytes.length)
+                .param("publicUrl", publicUrl)
+                .param("createdAt", createdAt)
+                .update();
+        Long id = jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
+                .param("objectKey", objectKey)
+                .query(Long.class)
+                .single();
+        return new InsertedAsset(id, objectKey);
+    }
+
     private String status(Long assetId) {
         return jdbcClient.sql("select status from storage_asset where id = :assetId")
+                .param("assetId", assetId)
+                .query(String.class)
+                .single();
+    }
+
+    private String publicUrl(Long assetId) {
+        return jdbcClient.sql("select public_url from storage_asset where id = :assetId")
                 .param("assetId", assetId)
                 .query(String.class)
                 .single();

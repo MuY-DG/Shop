@@ -2,12 +2,15 @@ package org.muybaby.shopserver.user;
 
 import jakarta.validation.Valid;
 import org.muybaby.shopserver.auth.dto.AppUserProfile;
+import org.muybaby.shopserver.auth.dto.AppUserAvatarUpdateResponse;
 import org.muybaby.shopserver.auth.dto.UpdateAppUserAvatarRequest;
 import org.muybaby.shopserver.auth.dto.UpdateAppUserProfileRequest;
 import org.muybaby.shopserver.auth.service.AppAuthService;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.user.service.AppUserAvatarService;
+import org.muybaby.shopserver.user.service.AppUserAvatarRateLimiter;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,18 +47,37 @@ public class AppUserController {
     }
 
     @PostMapping("/me/avatar")
-    public ApiResponse<AppUserProfile> updateAvatar(
+    public ResponseEntity<ApiResponse<AppUserAvatarUpdateResponse>> updateAvatar(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @RequestParam("file") MultipartFile file
     ) {
-        return ApiResponse.success(appUserAvatarService.updateAvatar(principal, file));
+        return avatarResponse(appUserAvatarService.updateAvatar(principal, file));
     }
 
     @PutMapping("/me/avatar")
-    public ApiResponse<AppUserProfile> updateAvatar(
+    public ResponseEntity<ApiResponse<AppUserAvatarUpdateResponse>> updateAvatar(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @Valid @RequestBody UpdateAppUserAvatarRequest request
     ) {
-        return ApiResponse.success(appUserAvatarService.updateAvatar(principal, request.avatarUrl()));
+        return avatarResponse(
+                appUserAvatarService.updateAvatar(principal, request.avatarUrl()));
+    }
+
+    private ResponseEntity<ApiResponse<AppUserAvatarUpdateResponse>> avatarResponse(
+            AppUserAvatarService.AvatarUpdateResult result
+    ) {
+        return ResponseEntity.ok()
+                .header(
+                        "X-RateLimit-Limit",
+                        Integer.toString(AppUserAvatarRateLimiter.DAILY_LIMIT)
+                )
+                .header(
+                        "X-RateLimit-Remaining",
+                        Integer.toString(result.remainingChanges())
+                )
+                .body(ApiResponse.success(AppUserAvatarUpdateResponse.from(
+                        result.profile(),
+                        result.remainingChanges()
+                )));
     }
 }

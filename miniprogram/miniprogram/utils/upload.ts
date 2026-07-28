@@ -94,7 +94,13 @@ function rawUpload<T>(
 function uploadError<T>(result: RawUploadResult<T>): ApiError {
   const status = result.statusCode;
   return new ApiError({
-    kind: status === 401 ? "AUTH" : status >= 500 ? "SERVER" : "API",
+    kind: status === 401
+      ? "AUTH"
+      : status === 429
+        ? "RATE_LIMIT"
+        : status >= 500
+          ? "SERVER"
+          : "API",
     message: result.body?.msg || (
       status === 401 ? "登录状态已失效" : "图片上传失败，请稍后重试"
     ),

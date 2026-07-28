@@ -35,7 +35,11 @@ test("资料改动识别昵称变化", () => {
 test("个人资料页接受原生头像选择结果并直接保存", () => {
   const template = readFileSync(`${pageRoot}.wxml`, "utf8");
   const logic = readFileSync(`${pageRoot}.ts`, "utf8");
+  const styles = readFileSync(`${pageRoot}.less`, "utf8");
   const service = readFileSync(servicePath, "utf8");
+  const avatarButton = template.match(
+    /<button\s+class="avatar-button"[\s\S]*?<\/button>/
+  )?.[0] ?? "";
 
   assert.match(template, /open-type="chooseAvatar"/);
   assert.match(template, /bindchooseavatar="onAvatarChoose"/);
@@ -50,8 +54,18 @@ test("个人资料页接受原生头像选择结果并直接保存", () => {
   assert.doesNotMatch(template, /chooseImage|chooseMedia|type="file"/);
   assert.doesNotMatch(logic, /只允许使用微信头像|不能上传相册或拍照图片/);
   assert.doesNotMatch(logic, /wx\.getUserProfile/);
+  assert.match(logic, /profile-default-avatar\.png/);
+  assert.match(logic, /savingAvatar: true,\s+validationErrorText: ""/);
+  assert.doesNotMatch(logic, /savingAvatar: true,\s+avatarUrl/);
+  assert.doesNotMatch(logic, /avatarUrl: previousAvatarUrl/);
   assert.match(logic, /saveAvatar\(avatarUrl\)/);
-  assert.match(service, /uploadFile<AppUserProfile>/);
+  assert.match(logic, /头像已更新，还剩 \$\{result\.remainingChanges\} 次/);
+  assert.match(logic, /error\.kind === "RATE_LIMIT"/);
+  assert.doesNotMatch(avatarButton, /loading=/);
+  assert.match(styles, /\.avatar-button\s*\{[\s\S]*?opacity:\s*0;/);
+  assert.match(styles, /\.avatar-button\[disabled\]/);
+  assert.match(service, /uploadFile<AppUserAvatarUpdateResponse>/);
+  assert.match(service, /remainingChanges/);
   assert.doesNotMatch(service, /compressImage|chooseImage|chooseMedia/);
   assert.match(logic, /logoutSession/);
 });

@@ -9,6 +9,7 @@ import org.muybaby.shopserver.wechat.WechatPhoneInfo;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.sql.ResultSet;
@@ -114,10 +115,13 @@ public class AppUserService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
     }
 
-    public AppUser updateAvatar(Long userId, String avatarUrl) {
+    @Transactional
+    public AvatarReplacement replaceAvatar(Long userId, String avatarUrl) {
         if (!StringUtils.hasText(avatarUrl) || avatarUrl.length() > 1024) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
+        AppUser previousUser = findEnabledByIdForUpdate(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
         int updatedRows = jdbcClient.sql("""
                         UPDATE app_user
                         SET avatar_url = :avatarUrl, updated_at = :updatedAt
@@ -131,8 +135,9 @@ public class AppUserService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
-        return findEnabledById(userId)
+        AppUser updatedUser = findEnabledById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+        return new AvatarReplacement(previousUser.avatarUrl(), updatedUser);
     }
 
     private Optional<AppUser> findByOpenid(String openid) {
@@ -163,11 +168,31 @@ public class AppUserService {
         return findById(userId).filter(this::isEnabled);
     }
 
+    private Optional<AppUser> findEnabledByIdForUpdate(Long userId) {
+        return jdbcClient.sql("""
+                        SELECT id, openid, unionid, nickname, avatar_url, phone_number, phone_country_code, phone_authorized,
+                               status, last_login_at, created_at, updated_at
+                        FROM app_user
+                        WHERE id = :id AND status = :status
+                        FOR UPDATE
+                        """)
+                .param("id", userId)
+                .param("status", ENABLED_STATUS)
+                .query(this::mapRow)
+                .optional();
+    }
+
     private AppUser requireEnabled(AppUser user) {
         if (!isEnabled(user)) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
         return user;
+    }
+
+    public record AvatarReplacement(
+            String previousAvatarUrl,
+            AppUser user
+    ) {
     }
 
     private boolean isEnabled(AppUser user) {

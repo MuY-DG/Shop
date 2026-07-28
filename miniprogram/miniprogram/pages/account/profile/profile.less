@@ -68,12 +68,16 @@
   background: transparent;
   color: transparent;
   line-height: 1;
+  opacity: 0;
 }
 
+.avatar-button[disabled],
 .avatar-button::after,
 .save-button::after,
 .logout-button::after {
+  background: transparent;
   border: 0;
+  opacity: 0;
 }
 
 .avatar-button__image {

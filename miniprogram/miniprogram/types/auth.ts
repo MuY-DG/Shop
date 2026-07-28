@@ -32,6 +32,10 @@ export interface UpdateAppUserAvatarRequest extends WechatMiniprogram.IAnyObject
   avatarUrl: string;
 }
 
+export interface AppUserAvatarUpdateResponse extends AppUserProfile {
+  remainingChanges: number;
+}
+
 export interface RefreshTokenRequest extends WechatMiniprogram.IAnyObject {
   refreshToken: string;
 }

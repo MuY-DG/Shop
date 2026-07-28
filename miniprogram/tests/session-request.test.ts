@@ -130,13 +130,14 @@ function takeUpload(path: string): FakeUploadCall {
 function respond<T>(
   call: FakeRequestCall,
   statusCode: number,
-  body: ApiResponse<T>
+  body: ApiResponse<T>,
+  header: Record<string, string> = {}
 ): void {
   assert.ok(call.success, `请求 ${call.url} 缺少 success 回调`);
   call.success({
     data: body,
     statusCode,
-    header: {},
+    header,
     cookies: []
   });
 }
@@ -144,13 +145,14 @@ function respond<T>(
 function respondUpload<T>(
   call: FakeUploadCall,
   statusCode: number,
-  body: ApiResponse<T>
+  body: ApiResponse<T>,
+  header: Record<string, string> = {}
 ): void {
   assert.ok(call.success, `上传请求 ${call.url} 缺少 success 回调`);
   call.success({
     data: JSON.stringify(body),
     statusCode,
-    header: {}
+    header
   });
 }
 
@@ -403,20 +405,27 @@ test("微信昵称和头像更新会同步到当前会话", async () => {
   const remoteAvatarCall = takeRequest("/app/users/me/avatar");
   assert.equal(remoteAvatarCall.method, "PUT");
   assert.deepEqual(remoteAvatarCall.data, { avatarUrl: wechatAvatarUrl });
-  respond(remoteAvatarCall, 200, {
-    code: 200,
-    msg: "success",
-    data: {
-      userId: "1",
-      nickname: "灶香集会员",
-      avatarUrl: wechatAvatarUrl,
-      openidMasked: "openid****",
-      phoneAuthorized: true,
-      phoneNumberMasked: "138****5678"
+  respond(
+    remoteAvatarCall,
+    200,
+    {
+      code: 200,
+      msg: "success",
+      data: {
+        userId: "1",
+        nickname: "灶香集会员",
+        avatarUrl: wechatAvatarUrl,
+        openidMasked: "openid****",
+        phoneAuthorized: true,
+        phoneNumberMasked: "138****5678",
+        remainingChanges: 2
+      }
     }
-  });
-  const profile = await remoteAvatarUpdate;
+  );
+  const remoteAvatarResult = await remoteAvatarUpdate;
+  const profile = remoteAvatarResult.profile;
   assert.equal(profile.avatarUrl, wechatAvatarUrl);
+  assert.equal(remoteAvatarResult.remainingChanges, 2);
   assert.equal(getSessionState().user?.nickname, "灶香集会员");
   assert.equal(getSessionState().user?.avatarUrl, profile.avatarUrl);
 
@@ -425,25 +434,55 @@ test("微信昵称和头像更新会同步到当前会话", async () => {
   const avatarCall = takeUpload("/app/users/me/avatar");
   assert.equal(avatarCall.filePath, "/tmp/avatar.png");
   assert.equal(avatarCall.name, "file");
-  respondUpload(avatarCall, 200, {
-    code: 200,
-    msg: "success",
-    data: {
-      userId: "1",
-      nickname: "灶香集会员",
-      avatarUrl: "https://oss.example.test/avatar.png",
-      openidMasked: "openid****",
-      phoneAuthorized: true,
-      phoneNumberMasked: "138****5678"
+  respondUpload(
+    avatarCall,
+    200,
+    {
+      code: 200,
+      msg: "success",
+      data: {
+        userId: "1",
+        nickname: "灶香集会员",
+        avatarUrl: "https://oss.example.test/avatar.png",
+        openidMasked: "openid****",
+        phoneAuthorized: true,
+        phoneNumberMasked: "138****5678",
+        remainingChanges: 1
+      }
     }
-  });
+  );
 
-  const uploadedProfile = await avatarUpdate;
+  const uploadedAvatarResult = await avatarUpdate;
+  const uploadedProfile = uploadedAvatarResult.profile;
   assert.equal(uploadedProfile.avatarUrl, "https://oss.example.test/avatar.png");
+  assert.equal(uploadedAvatarResult.remainingChanges, 1);
   assert.equal(getSessionState().user?.avatarUrl, uploadedProfile.avatarUrl);
   assert.equal(pendingRequests.length, 0);
   assert.equal(pendingUploads.length, 0);
   assert.equal(loginCallCount, 1);
+});
+
+test("头像文件上传达到每日限制时保留服务端提示", async () => {
+  await establishSession("1");
+  const avatarUpdate = saveAvatar("/tmp/avatar.png");
+  await flushTasks();
+  const avatarCall = takeUpload("/app/users/me/avatar");
+  respondUpload(
+    avatarCall,
+    429,
+    {
+      code: 100104,
+      msg: "每天最多修改 3 次头像，请明天再试"
+    }
+  );
+
+  await assert.rejects(
+    avatarUpdate,
+    (error: unknown) => isApiError(error) &&
+      error.kind === "RATE_LIMIT" &&
+      error.code === 100104 &&
+      /每天最多修改 3 次头像/.test(error.message)
+  );
 });
 
 test("受保护请求的并发 401 共用一次刷新并各自只重试一次", async () => {

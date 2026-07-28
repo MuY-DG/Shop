@@ -454,6 +454,50 @@ class StorageServiceTest {
         assertThat(assetStatus(response.id())).isEqualTo("DELETED");
     }
 
+    @Test
+    void replacedAvatarCleanupDeletesCosObjectUsingRecordedLocation() {
+        long userId = 991L;
+        String bucket = "avatar-bucket-1250000000";
+        String region = "ap-guangzhou";
+        String objectKey = "public/library/image/2026/07/28/old-avatar.png";
+        String publicUrl = "https://avatar.example.test/" + objectKey;
+        jdbcClient.sql("""
+                        insert into storage_asset
+                            (scope, media_kind, visibility, provider, storage_container, storage_region,
+                             object_key, original_filename, content_type, extension, size_bytes, sha256,
+                             public_url, status, uploaded_by_type, uploaded_by_id,
+                             upload_context_type, upload_context_id)
+                        values
+                            ('LIBRARY', 'IMAGE', 'PUBLIC', 'TENCENT_COS', :bucket, :region,
+                             :objectKey, 'old-avatar.png', 'image/png', 'png', 1, '',
+                             :publicUrl, 'ACTIVE', 'APP', :userId, 'APP_USER_AVATAR', :userId)
+                        """)
+                .param("bucket", bucket)
+                .param("region", region)
+                .param("objectKey", objectKey)
+                .param("publicUrl", publicUrl)
+                .param("userId", userId)
+                .update();
+        Long assetId = jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
+                .param("objectKey", objectKey)
+                .query(Long.class)
+                .single();
+
+        storageService.cleanupReplacedUserAvatar(
+                userId,
+                publicUrl,
+                "https://thirdwx.qlogo.cn/mmopen/new-avatar/132"
+        );
+
+        assertThat(assetStatus(assetId)).isEqualTo("DELETED");
+        org.mockito.Mockito.verify(storageProvider).delete(new StorageObjectLocation(
+                StorageProviderKind.TENCENT_COS,
+                bucket,
+                region,
+                objectKey
+        ));
+    }
+
     private String assetStatus(Long assetId) {
         return jdbcClient.sql("select status from storage_asset where id = :assetId")
                 .param("assetId", assetId)

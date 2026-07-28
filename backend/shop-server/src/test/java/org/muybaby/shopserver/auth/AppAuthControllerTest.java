@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
@@ -20,6 +21,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -37,6 +40,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -61,6 +65,9 @@ class AppAuthControllerTest {
 
     @Autowired
     private InMemoryTokenStore tokenStore;
+
+    @Autowired
+    private JdbcClient jdbcClient;
 
     @Test
     void appLoginExchangesCodeAndIssuesAppToken() throws Exception {
@@ -154,6 +161,32 @@ class AppAuthControllerTest {
     }
 
     @Test
+    void replacingUploadedAvatarDeletesPreviousLocalFile() throws Exception {
+        AppSession login = login("avatar-local-cleanup-user");
+
+        MvcResult firstUpload = mockMvc.perform(multipart("/app/users/me/avatar")
+                        .file(new MockMultipartFile("file", "first-avatar.png", "image/png", TINY_PNG))
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk())
+                .andReturn();
+        String firstAvatarUrl = read(firstUpload, "/data/avatarUrl").asText();
+        StoredAvatarAsset firstAsset = storedAvatarAsset(firstAvatarUrl);
+        org.assertj.core.api.Assertions.assertThat(Files.exists(firstAsset.path())).isTrue();
+
+        MvcResult secondUpload = mockMvc.perform(multipart("/app/users/me/avatar")
+                        .file(new MockMultipartFile("file", "second-avatar.png", "image/png", TINY_PNG))
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk())
+                .andReturn();
+        String secondAvatarUrl = read(secondUpload, "/data/avatarUrl").asText();
+
+        org.assertj.core.api.Assertions.assertThat(assetStatus(firstAsset.id())).isEqualTo("DELETED");
+        org.assertj.core.api.Assertions.assertThat(Files.exists(firstAsset.path())).isFalse();
+        org.assertj.core.api.Assertions.assertThat(assetStatus(storedAvatarAsset(secondAvatarUrl).id()))
+                .isEqualTo("ACTIVE");
+    }
+
+    @Test
     void appUserCanSaveWechatAvatarUrlWithoutUploadingAFile() throws Exception {
         AppSession login = login("avatar-url-profile-user");
         String avatarUrl = "https://thirdwx.qlogo.cn/mmopen/vi_32/wechat-avatar/132";
@@ -176,6 +209,53 @@ class AppAuthControllerTest {
                         .content("{\"avatarUrl\":\"https://images.example.test/avatar.png\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100400));
+    }
+
+    @Test
+    void avatarFileAndUrlUpdatesShareAThreeChangesPerDayLimit() throws Exception {
+        AppSession login = login("avatar-rate-limit-user");
+
+        for (int change = 1; change <= 2; change++) {
+            String avatarUrl = "https://thirdwx.qlogo.cn/mmopen/vi_32/avatar-" + change + "/132";
+            mockMvc.perform(put("/app/users/me/avatar")
+                            .header("Authorization", bearer(login.token()))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of("avatarUrl", avatarUrl))))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("X-RateLimit-Limit", "3"))
+                    .andExpect(header().string(
+                            "X-RateLimit-Remaining",
+                            Integer.toString(3 - change)
+                    ))
+                    .andExpect(jsonPath("$.data.avatarUrl").value(avatarUrl))
+                    .andExpect(jsonPath("$.data.remainingChanges").value(3 - change));
+        }
+
+        MvcResult uploadResult = mockMvc.perform(multipart("/app/users/me/avatar")
+                        .file(new MockMultipartFile("file", "third-avatar.png", "image/png", TINY_PNG))
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-RateLimit-Limit", "3"))
+                .andExpect(header().string("X-RateLimit-Remaining", "0"))
+                .andExpect(jsonPath("$.data.remainingChanges").value(0))
+                .andReturn();
+        String thirdAvatarUrl = read(uploadResult, "/data/avatarUrl").asText();
+
+        mockMvc.perform(put("/app/users/me/avatar")
+                        .header("Authorization", bearer(login.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"avatarUrl":"https://thirdwx.qlogo.cn/mmopen/vi_32/avatar-4/132"}
+                                """))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().exists("Retry-After"))
+                .andExpect(jsonPath("$.code").value(100104))
+                .andExpect(jsonPath("$.msg").value("每天最多修改 3 次头像，请明天再试"));
+
+        mockMvc.perform(get("/app/users/me")
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.avatarUrl").value(thirdAvatarUrl));
     }
 
     @Test
@@ -369,6 +449,27 @@ class AppAuthControllerTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).at(pointer);
     }
 
+    private StoredAvatarAsset storedAvatarAsset(String publicUrl) {
+        return jdbcClient.sql("""
+                        select id, storage_container, object_key
+                        from storage_asset
+                        where public_url = :publicUrl
+                        """)
+                .param("publicUrl", publicUrl)
+                .query((rs, rowNum) -> new StoredAvatarAsset(
+                        rs.getLong("id"),
+                        Path.of(rs.getString("storage_container")).resolve(rs.getString("object_key"))
+                ))
+                .single();
+    }
+
+    private String assetStatus(long assetId) {
+        return jdbcClient.sql("select status from storage_asset where id = :assetId")
+                .param("assetId", assetId)
+                .query(String.class)
+                .single();
+    }
+
     private String bearer(String token) {
         return "Bearer " + token;
     }
@@ -386,5 +487,8 @@ class AppAuthControllerTest {
     }
 
     private record AppSession(String token, String refreshToken, long userId, String nickname) {
+    }
+
+    private record StoredAvatarAsset(long id, Path path) {
     }
 }

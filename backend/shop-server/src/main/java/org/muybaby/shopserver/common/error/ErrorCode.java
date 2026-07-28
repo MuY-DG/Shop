@@ -21,6 +21,7 @@ public enum ErrorCode {
     WECHAT_LOGIN_FAILED(100101, "WeChat login failed"),
     WECHAT_PHONE_FAILED(100102, "WeChat phone authorization failed"),
     APP_USER_UNAVAILABLE(100103, "App user unavailable"),
+    APP_USER_AVATAR_RATE_LIMITED(100104, "每天最多修改 3 次头像，请明天再试"),
     PRODUCT_CATEGORY_UNAVAILABLE(200000, "商品分类不存在或当前不可用"),
     PRODUCT_UNAVAILABLE(200001, "Product unavailable"),
     SKU_UNAVAILABLE(200002, "SKU unavailable"),

@@ -276,6 +276,27 @@ public class StorageService {
         });
     }
 
+    public void cleanupReplacedUserAvatar(
+            Long userId,
+            String previousAvatarUrl,
+            String currentAvatarUrl
+    ) {
+        if (userId == null
+                || userId <= 0
+                || !StringUtils.hasText(previousAvatarUrl)
+                || Objects.equals(previousAvatarUrl, currentAvatarUrl)) {
+            return;
+        }
+        cleanupUnusedUserAvatarAssets(userId, null, previousAvatarUrl, "replaced user avatar");
+    }
+
+    public void cleanupUnusedUserAvatar(Long userId, Long assetId) {
+        if (userId == null || userId <= 0 || assetId == null || assetId <= 0) {
+            return;
+        }
+        cleanupUnusedUserAvatarAssets(userId, assetId, null, "unused user avatar upload");
+    }
+
     public StorageAssetResponse uploadCustomerServiceImage(
             AuthenticatedPrincipal principal,
             Long conversationId,
@@ -1048,6 +1069,87 @@ public class StorageService {
                     assetId, reason, cleanupStateFailure.getClass().getSimpleName()
             );
         }
+    }
+
+    private void cleanupUnusedUserAvatarAssets(
+            Long userId,
+            Long assetId,
+            String publicUrl,
+            String reason
+    ) {
+        withoutTransaction.executeWithoutResult(status -> {
+            try {
+                List<Long> assetIds = Objects.requireNonNull(
+                        requiresNewTransaction.execute(transactionStatus ->
+                                prepareUnusedUserAvatarCleanup(userId, assetId, publicUrl))
+                );
+                assetIds.forEach(id -> cleanupAssetSafely(id, reason));
+            } catch (RuntimeException cleanupStateFailure) {
+                log.warn(
+                        "User avatar cleanup state could not be persisted: userId={}, assetId={}, reason={}, exception={}",
+                        userId, assetId, reason, cleanupStateFailure.getClass().getSimpleName()
+                );
+            }
+        });
+    }
+
+    private List<Long> prepareUnusedUserAvatarCleanup(
+            Long userId,
+            Long assetId,
+            String publicUrl
+    ) {
+        String targetPredicate = assetId == null
+                ? "asset.public_url = :publicUrl"
+                : "asset.id = :assetId";
+        MapSqlParameterSource parameters = new MapSqlParameterSource()
+                .addValue("userId", userId);
+        if (assetId == null) {
+            parameters.addValue("publicUrl", publicUrl);
+        } else {
+            parameters.addValue("assetId", assetId);
+        }
+
+        List<Long> assetIds = namedParameterJdbcTemplate.queryForList("""
+                        select asset.id
+                        from storage_asset asset
+                        where asset.scope = 'LIBRARY'
+                          and asset.media_kind = 'IMAGE'
+                          and asset.status = 'ACTIVE'
+                          and asset.uploaded_by_type = 'APP'
+                          and asset.uploaded_by_id = :userId
+                          and asset.upload_context_type = 'APP_USER_AVATAR'
+                          and asset.upload_context_id = :userId
+                          and %s
+                          and not exists (
+                              select 1
+                              from app_user app_user_reference
+                              where app_user_reference.avatar_url = asset.public_url
+                          )
+                        for update
+                        """.formatted(targetPredicate),
+                parameters,
+                Long.class);
+        if (assetIds.isEmpty()) {
+            return List.of();
+        }
+
+        int updated = namedParameterJdbcTemplate.update("""
+                        update storage_asset
+                        set status = 'DELETE_PENDING',
+                            folder_id = null,
+                            public_url = null,
+                            cleanup_attempts = 0,
+                            cleanup_next_retry_at = current_timestamp,
+                            cleanup_lease_token = null,
+                            updated_at = current_timestamp
+                        where id in (:assetIds)
+                          and status = 'ACTIVE'
+                        """,
+                new MapSqlParameterSource("assetIds", assetIds));
+        if (updated != assetIds.size()) {
+            throw new IllegalStateException("Failed to schedule all unused user avatars for cleanup");
+        }
+        return assetIds;
     }
 
     private void cleanupAssetSafely(Long assetId, String reason) {

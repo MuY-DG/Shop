@@ -16,7 +16,7 @@ import type { AppUserProfile } from "../../../types/auth";
 import { isApiError } from "../../../utils/api-error";
 import { openLoginPage } from "../../../utils/login-navigation";
 
-const DEFAULT_AVATAR = "/assets/images/zaoxiangji-login-emblem.png";
+const DEFAULT_AVATAR = "/assets/images/profile-default-avatar.png";
 
 interface ChooseAvatarEvent {
   detail: {
@@ -108,9 +108,13 @@ Page({
       wx.showToast({ title: "未选择头像", icon: "none" });
       return;
     }
-    this.setData({ savingAvatar: true, validationErrorText: "" });
+    this.setData({
+      savingAvatar: true,
+      validationErrorText: ""
+    });
     try {
-      const profile = await saveAvatar(avatarUrl);
+      const result = await saveAvatar(avatarUrl);
+      const profile = result.profile;
       this.setData({
         savingAvatar: false,
         avatarUrl: profile.avatarUrl || DEFAULT_AVATAR,
@@ -118,12 +122,23 @@ Page({
         dirty: profileHasChanges(this.data.nickname, originalNickname),
         validationErrorText: ""
       });
-      wx.showToast({ title: "头像已更新", icon: "success" });
+      wx.showToast({
+        title: result.remainingChanges === undefined
+          ? "头像已更新"
+          : result.remainingChanges === 0
+            ? "头像已更新，今日次数已用完"
+            : `头像已更新，还剩 ${result.remainingChanges} 次`,
+        icon: result.remainingChanges === undefined ? "success" : "none"
+      });
     } catch (error) {
+      const validationErrorText = actionError(error, "头像更新失败，请稍后重试");
       this.setData({
         savingAvatar: false,
-        validationErrorText: actionError(error, "头像更新失败，请稍后重试")
+        validationErrorText
       });
+      if (isApiError(error) && error.kind === "RATE_LIMIT") {
+        wx.showToast({ title: validationErrorText, icon: "none" });
+      }
     }
   },
 

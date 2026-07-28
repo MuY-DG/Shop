@@ -25,7 +25,6 @@
         <button
           class="avatar-button"
           open-type="chooseAvatar"
-          loading="{{savingAvatar}}"
           disabled="{{saving || savingAvatar || loggingOut}}"
           bindchooseavatar="onAvatarChoose"
           aria-label="更换头像"

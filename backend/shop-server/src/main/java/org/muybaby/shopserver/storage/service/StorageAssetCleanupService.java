@@ -50,6 +50,7 @@ public class StorageAssetCleanupService {
         Set<Long> candidateIds = new LinkedHashSet<>(expiredCandidateIds());
         candidateIds.addAll(retryCandidateIds());
         candidateIds.addAll(staleUploadCandidateIds());
+        candidateIds.addAll(orphanedUserAvatarCandidateIds());
 
         int cleaned = 0;
         for (Long assetId : candidateIds) {
@@ -154,6 +155,31 @@ public class StorageAssetCleanupService {
                 .list();
     }
 
+    private List<Long> orphanedUserAvatarCandidateIds() {
+        LocalDateTime staleBefore = databaseNow().minus(uploadPendingGrace);
+        return jdbcClient.sql("""
+                        select asset.id
+                        from storage_asset asset
+                        where asset.scope = 'LIBRARY'
+                          and asset.media_kind = 'IMAGE'
+                          and asset.status = 'ACTIVE'
+                          and asset.uploaded_by_type = 'APP'
+                          and asset.upload_context_type = 'APP_USER_AVATAR'
+                          and asset.created_at <= :staleBefore
+                          and not exists (
+                              select 1
+                              from app_user app_user_reference
+                              where app_user_reference.avatar_url = asset.public_url
+                          )
+                        order by asset.created_at asc, asset.id asc
+                        limit :limit
+                        """)
+                .param("staleBefore", staleBefore)
+                .param("limit", cleanupBatchSize)
+                .query(Long.class)
+                .list();
+    }
+
     private CleanupAsset claim(Long assetId) {
         CleanupAsset asset = jdbcClient.sql("""
                         select id, scope, status, expires_at, cleanup_attempts, created_at,
@@ -220,6 +246,38 @@ public class StorageAssetCleanupService {
                     .param("leaseToken", leaseToken)
                     .update();
             return leased == 1 ? asset.withLeaseToken(leaseToken) : null;
+        }
+
+        LocalDateTime staleBefore = now.minus(uploadPendingGrace);
+        int orphanedAvatarLeased = jdbcClient.sql("""
+                        update storage_asset
+                        set status = 'DELETE_PENDING',
+                            folder_id = null,
+                            public_url = null,
+                            cleanup_attempts = 0,
+                            cleanup_next_retry_at = :leaseUntil,
+                            cleanup_lease_token = :leaseToken,
+                            updated_at = current_timestamp
+                        where id = :assetId
+                          and scope = 'LIBRARY'
+                          and media_kind = 'IMAGE'
+                          and status = 'ACTIVE'
+                          and uploaded_by_type = 'APP'
+                          and upload_context_type = 'APP_USER_AVATAR'
+                          and created_at <= :staleBefore
+                          and not exists (
+                              select 1
+                              from app_user app_user_reference
+                              where app_user_reference.avatar_url = storage_asset.public_url
+                          )
+                        """)
+                .param("assetId", asset.id())
+                .param("staleBefore", staleBefore)
+                .param("leaseUntil", leaseUntil)
+                .param("leaseToken", leaseToken)
+                .update();
+        if (orphanedAvatarLeased == 1) {
+            return asset.withLeaseToken(leaseToken);
         }
 
         if (!isPrivateExpirableScope(asset.scope())

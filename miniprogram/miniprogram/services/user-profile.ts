@@ -1,5 +1,6 @@
 import { API_ENDPOINTS } from "../constants/api-endpoints";
 import type {
+  AppUserAvatarUpdateResponse,
   AppUserProfile,
   UpdateAppUserAvatarRequest,
   UpdateAppUserProfileRequest
@@ -7,6 +8,11 @@ import type {
 import { request } from "../utils/request";
 import { uploadFile } from "../utils/upload";
 import { updateSessionUser } from "./session";
+
+export interface SavedAvatar {
+  profile: AppUserProfile;
+  remainingChanges?: number;
+}
 
 export async function getMyProfile(): Promise<AppUserProfile> {
   const profile = await request<AppUserProfile>({
@@ -29,22 +35,33 @@ export async function updateMyProfile(
 
 export async function saveAvatar(
   selectedAvatarUrl: string
-): Promise<AppUserProfile> {
+): Promise<SavedAvatar> {
   const avatarUrl = selectedAvatarUrl.trim();
   if (/^https:\/\//i.test(avatarUrl)) {
-    const profile = await request<AppUserProfile, UpdateAppUserAvatarRequest>({
+    const response = await request<
+      AppUserAvatarUpdateResponse,
+      UpdateAppUserAvatarRequest
+    >({
       url: API_ENDPOINTS.user.avatar,
       method: "PUT",
       data: { avatarUrl }
     });
-    return updateSessionUser(profile);
+    const { remainingChanges, ...profile } = response;
+    return {
+      profile: updateSessionUser(profile),
+      remainingChanges
+    };
   }
 
-  const profile = await uploadFile<AppUserProfile>({
+  const response = await uploadFile<AppUserAvatarUpdateResponse>({
     url: API_ENDPOINTS.user.avatar,
     filePath: avatarUrl,
     name: "file",
     timeoutMs: 30_000
   });
-  return updateSessionUser(profile);
+  const { remainingChanges, ...profile } = response;
+  return {
+    profile: updateSessionUser(profile),
+    remainingChanges
+  };
 }
