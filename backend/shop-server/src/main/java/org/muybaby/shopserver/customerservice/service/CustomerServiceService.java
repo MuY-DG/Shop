@@ -181,39 +181,6 @@ public class CustomerServiceService {
         return linked;
     }
 
-    public MessageResponse sendImageFromApp(AuthenticatedPrincipal principal, MultipartFile file) {
-        Long appUserId = requirePrincipal(principal, TokenKind.APP);
-        return requireTransactionResult(withoutTransaction.execute(status ->
-                sendImageFromAppOutsideTransaction(principal, appUserId, file)));
-    }
-
-    private MessageResponse sendImageFromAppOutsideTransaction(
-            AuthenticatedPrincipal principal,
-            Long appUserId,
-            MultipartFile file
-    ) {
-        ImageMessageContext context = requireTransactionResult(requiresNewTransaction.execute(status -> {
-            ConversationRow conversation = findOrCreateConversation(appUserId);
-            conversation = prepareForAppAction(conversation, appUserId);
-            return new ImageMessageContext(conversation.id(), conversation.appUserId());
-        }));
-        StorageAssetResponse asset = storageService.uploadCustomerServiceImage(principal, context.conversationId(), file);
-        return requireTransactionResult(requiresNewTransaction.execute(status -> {
-            ConversationRow conversation = findConversationByAppUser(appUserId)
-                    .filter(row -> row.id().equals(context.conversationId()))
-                    .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE));
-            conversation = prepareForAppAction(conversation, appUserId);
-            MessageResponse message = insertMessage(
-                    conversation, "APP_USER", appUserId, "IMAGE",
-                    asset.originalFilename(), asset.id(), null
-            );
-            storageService.bindCustomerServiceImage(asset.id(), conversation.id());
-            touchForAdminNotification(conversation.id(), message.createdAt());
-            publish(conversation.id(), appUserId, "MESSAGE_CREATED", message.messageId());
-            return message;
-        }));
-    }
-
     private <T> T requireTransactionResult(T result) {
         return Objects.requireNonNull(result);
     }

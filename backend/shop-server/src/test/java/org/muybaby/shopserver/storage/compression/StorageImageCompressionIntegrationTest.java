@@ -175,6 +175,21 @@ class StorageImageCompressionIntegrationTest {
     }
 
     @Test
+    void miniProgramImageUploadsBypassCompressionAndKeepTheOriginal() {
+        byte[] source = noisyImage("png", 80, 80);
+        List<ProviderWrite> providerWrites = captureProviderWrites();
+
+        StorageAssetResponse response = storageService.uploadUserAvatar(
+                appPrincipal(),
+                multipart("wechat-avatar.png", "image/png", source)
+        );
+
+        verifyNoInteractions(imageCompressionService);
+        assertThat(response.originalFilename()).isEqualTo("wechat-avatar.png");
+        assertOriginalPngWasStored(response, source, providerWrites.getFirst());
+    }
+
+    @Test
     void transientCompressionFailureFallsBackToTheOriginalWithoutDisablingCompression() {
         byte[] source = noisyImage("png", 80, 80);
         List<ProviderWrite> providerWrites = captureProviderWrites();
@@ -443,6 +458,16 @@ class StorageImageCompressionIntegrationTest {
                 "Super",
                 List.of("SUPER_ADMIN"),
                 List.of("asset:upload")
+        );
+    }
+
+    private static AuthenticatedPrincipal appPrincipal() {
+        return new AuthenticatedPrincipal(
+                TokenKind.APP,
+                1L,
+                "wechat-user",
+                List.of(),
+                List.of()
         );
     }
 

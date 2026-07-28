@@ -45,7 +45,7 @@ interface LocalImage {
 }
 
 const MAX_EVIDENCE_COUNT = 3;
-const MAX_EVIDENCE_SIZE = 1024 * 1024;
+const MAX_EVIDENCE_SIZE = 5 * 1024 * 1024;
 let latestOrderRequest = 0;
 
 function actionError(error: unknown, fallback: string): string {
@@ -62,7 +62,7 @@ function chooseEvidenceImages(count: number): Promise<LocalImage[]> {
       count,
       mediaType: ["image"],
       sourceType: ["album", "camera"],
-      sizeType: ["compressed"],
+      sizeType: ["original"],
       success: (result) => resolve(result.tempFiles
         .map((file) => ({
           tempFilePath: file.tempFilePath,
@@ -185,7 +185,7 @@ Page({
       const selected = await chooseEvidenceImages(remaining);
       const accepted = selected.filter((file) => file.size > 0 && file.size <= MAX_EVIDENCE_SIZE);
       if (accepted.length < selected.length) {
-        wx.showToast({ title: "单张图片不能超过 1MB", icon: "none" });
+        wx.showToast({ title: "单张图片不能超过 5MB", icon: "none" });
       }
       if (!accepted.length) {
         return;

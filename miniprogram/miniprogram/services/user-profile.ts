@@ -1,6 +1,7 @@
 import { API_ENDPOINTS } from "../constants/api-endpoints";
 import type {
   AppUserProfile,
+  UpdateAppUserAvatarRequest,
   UpdateAppUserProfileRequest
 } from "../types/auth";
 import { request } from "../utils/request";
@@ -26,12 +27,26 @@ export async function updateMyProfile(
   return updateSessionUser(profile);
 }
 
-export async function uploadWechatAvatar(
-  filePath: string
+function isRemoteWechatAvatarUrl(avatarUrl: string): boolean {
+  return /^https:\/\//i.test(avatarUrl);
+}
+
+export async function saveWechatAvatar(
+  selectedAvatarUrl: string
 ): Promise<AppUserProfile> {
+  const avatarUrl = selectedAvatarUrl.trim();
+  if (isRemoteWechatAvatarUrl(avatarUrl)) {
+    const profile = await request<AppUserProfile, UpdateAppUserAvatarRequest>({
+      url: API_ENDPOINTS.user.avatar,
+      method: "PUT",
+      data: { avatarUrl }
+    });
+    return updateSessionUser(profile);
+  }
+
   const profile = await uploadFile<AppUserProfile>({
     url: API_ENDPOINTS.user.avatar,
-    filePath,
+    filePath: avatarUrl,
     name: "file",
     timeoutMs: 30_000
   });

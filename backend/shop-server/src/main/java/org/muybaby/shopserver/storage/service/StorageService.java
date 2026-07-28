@@ -282,12 +282,9 @@ public class StorageService {
             MultipartFile file
     ) {
         return outsideTransaction(() -> {
-            if (principal == null
-                    || (principal.kind() != TokenKind.APP && principal.kind() != TokenKind.ADMIN)
-                    || principal.subjectId() == null
-                    || conversationId == null
-                    || conversationId <= 0) {
-                throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
+            requirePrincipal(principal, TokenKind.ADMIN);
+            if (conversationId == null || conversationId <= 0) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
             return upload(
                     principal,
@@ -297,7 +294,7 @@ public class StorageService {
                     conversationId,
                     databaseNow().plus(CUSTOMER_SERVICE_IMAGE_STAGING_TTL),
                     file,
-                    principal.kind() == TokenKind.APP ? UploadedByType.APP : UploadedByType.ADMIN
+                    UploadedByType.ADMIN
             );
         });
     }
@@ -841,8 +838,10 @@ public class StorageService {
                 sourceBytes.length,
                 profile.mediaKind() != StorageMediaKind.IMAGE || sourceImage != null
         );
-        PreparedUpload prepared = prepareCompressedUpload(
-                profile, originalFilename, sourceBytes, sourceImage, sourceDecision);
+        PreparedUpload prepared = uploadedByType == UploadedByType.APP
+                ? new PreparedUpload(originalFilename, sourceBytes, sourceImage, sourceDecision)
+                : prepareCompressedUpload(
+                        profile, originalFilename, sourceBytes, sourceImage, sourceDecision);
 
         String objectKey = storageObjectKeyGenerator.nextKey(
                 profile, prepared.decision().extension(), LocalDate.now());

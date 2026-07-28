@@ -2,6 +2,7 @@ package org.muybaby.shopserver.user;
 
 import jakarta.validation.Valid;
 import org.muybaby.shopserver.auth.dto.AppUserProfile;
+import org.muybaby.shopserver.auth.dto.UpdateAppUserAvatarRequest;
 import org.muybaby.shopserver.auth.dto.UpdateAppUserProfileRequest;
 import org.muybaby.shopserver.auth.service.AppAuthService;
 import org.muybaby.shopserver.common.api.ApiResponse;
@@ -48,5 +49,13 @@ public class AppUserController {
             @RequestParam("file") MultipartFile file
     ) {
         return ApiResponse.success(appUserAvatarService.updateAvatar(principal, file));
+    }
+
+    @PutMapping("/me/avatar")
+    public ApiResponse<AppUserProfile> updateAvatar(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @Valid @RequestBody UpdateAppUserAvatarRequest request
+    ) {
+        return ApiResponse.success(appUserAvatarService.updateAvatar(principal, request.avatarUrl()));
     }
 }

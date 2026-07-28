@@ -19,8 +19,8 @@ import { request } from "../miniprogram/utils/request";
 import { uploadFile as uploadAuthenticatedFile } from "../miniprogram/utils/upload";
 import { getHome } from "../miniprogram/services/home";
 import {
-  updateMyProfile,
-  uploadWechatAvatar
+  saveWechatAvatar,
+  updateMyProfile
 } from "../miniprogram/services/user-profile";
 
 interface FakeRequestResponse {
@@ -397,7 +397,27 @@ test("微信昵称和头像更新会同步到当前会话", async () => {
   });
   await nicknameUpdate;
 
-  const avatarUpdate = uploadWechatAvatar("/tmp/wechat-avatar.png");
+  const wechatAvatarUrl = "https://thirdwx.qlogo.cn/mmopen/vi_32/avatar/132";
+  const remoteAvatarUpdate = saveWechatAvatar(wechatAvatarUrl);
+  await flushTasks();
+  const remoteAvatarCall = takeRequest("/app/users/me/avatar");
+  assert.equal(remoteAvatarCall.method, "PUT");
+  assert.deepEqual(remoteAvatarCall.data, { avatarUrl: wechatAvatarUrl });
+  respond(remoteAvatarCall, 200, {
+    code: 200,
+    msg: "success",
+    data: {
+      userId: "1",
+      nickname: "灶香集会员",
+      avatarUrl: wechatAvatarUrl,
+      openidMasked: "openid****",
+      phoneAuthorized: true,
+      phoneNumberMasked: "138****5678"
+    }
+  });
+  await remoteAvatarUpdate;
+
+  const avatarUpdate = saveWechatAvatar("/tmp/wechat-avatar.png");
   await flushTasks();
   const avatarCall = takeUpload("/app/users/me/avatar");
   assert.equal(avatarCall.filePath, "/tmp/wechat-avatar.png");

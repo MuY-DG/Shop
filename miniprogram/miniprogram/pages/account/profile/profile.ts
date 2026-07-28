@@ -5,8 +5,8 @@ import {
 } from "../../../features/user-profile";
 import {
   getMyProfile,
-  updateMyProfile,
-  uploadWechatAvatar
+  saveWechatAvatar,
+  updateMyProfile
 } from "../../../services/user-profile";
 import {
   getSessionState,
@@ -145,7 +145,7 @@ Page({
         profile = await updateMyProfile(nickname);
       }
       if (pendingAvatarPath) {
-        profile = await uploadWechatAvatar(pendingAvatarPath);
+        profile = await saveWechatAvatar(pendingAvatarPath);
       }
       if (!profile) {
         throw new Error("用户资料不存在");

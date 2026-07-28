@@ -365,7 +365,7 @@ class CustomerServiceControllerTest {
     }
 
     @Test
-    void bothSidesCanSendPrivateImagesAndOtherAppCannotReadThem() throws Exception {
+    void onlyAdminCanUploadCustomerServiceImagesAndOnlyOwningAppCanReadThem() throws Exception {
         AppLogin app = appLogin("customer-service-image-user");
         AppLogin other = appLogin("customer-service-image-other");
         String adminToken = adminLogin("Super", "123456");
@@ -381,22 +381,18 @@ class CustomerServiceControllerTest {
                 "file", "app.png", "image/png", onePixelPng()
         );
 
-        String imageResponse = mockMvc.perform(multipart("/app/customer-service/conversation/images")
+        mockMvc.perform(multipart("/app/customer-service/conversation/images")
                         .file(appImage)
                         .header("Authorization", bearer(app.token())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.messageType").value("IMAGE"))
-                .andExpect(jsonPath("$.data.image.originalFilename").value("app.png"))
-                .andReturn().getResponse().getContentAsString();
-        long messageId = objectMapper.readTree(imageResponse).path("data").path("messageId").asLong();
+                .andExpect(status().isNotFound());
 
-        mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", messageId)
-                        .header("Authorization", bearer(app.token())))
-                .andExpect(status().isOk())
-                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo("image/png"));
-        mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", messageId)
-                        .header("Authorization", bearer(other.token())))
-                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/app/customer-service/conversation/messages")
+                        .header("Authorization", bearer(app.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"请协助查看问题","clientMessageId":"image-policy-text"}
+                                """))
+                .andExpect(status().isOk());
 
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/claim", conversationId)
                         .header("Authorization", bearer(adminToken)))
@@ -412,6 +408,13 @@ class CustomerServiceControllerTest {
                 .andExpect(jsonPath("$.data.messageType").value("IMAGE"))
                 .andReturn().getResponse().getContentAsString();
         long adminMessageId = objectMapper.readTree(adminImageResponse).path("data").path("messageId").asLong();
+        mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", adminMessageId)
+                        .header("Authorization", bearer(app.token())))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo("image/png"));
+        mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", adminMessageId)
+                        .header("Authorization", bearer(other.token())))
+                .andExpect(status().isBadRequest());
         mockMvc.perform(get("/admin/customer-service/messages/{messageId}/image", adminMessageId)
                         .header("Authorization", bearer(adminToken)))
                 .andExpect(status().isOk());
@@ -429,7 +432,7 @@ class CustomerServiceControllerTest {
                         """)
                 .param("conversationId", conversationId)
                 .query(Integer.class)
-                .single()).isEqualTo(2);
+                .single()).isEqualTo(1);
     }
 
     @Test

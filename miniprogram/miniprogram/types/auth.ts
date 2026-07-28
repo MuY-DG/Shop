@@ -28,6 +28,10 @@ export interface UpdateAppUserProfileRequest extends WechatMiniprogram.IAnyObjec
   nickname: string;
 }
 
+export interface UpdateAppUserAvatarRequest extends WechatMiniprogram.IAnyObject {
+  avatarUrl: string;
+}
+
 export interface RefreshTokenRequest extends WechatMiniprogram.IAnyObject {
   refreshToken: string;
 }

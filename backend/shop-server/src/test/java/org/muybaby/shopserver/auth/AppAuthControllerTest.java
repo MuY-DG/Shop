@@ -154,6 +154,31 @@ class AppAuthControllerTest {
     }
 
     @Test
+    void appUserCanSaveWechatAvatarUrlWithoutUploadingAFile() throws Exception {
+        AppSession login = login("avatar-url-profile-user");
+        String avatarUrl = "https://thirdwx.qlogo.cn/mmopen/vi_32/wechat-avatar/132";
+
+        mockMvc.perform(put("/app/users/me/avatar")
+                        .header("Authorization", bearer(login.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of("avatarUrl", avatarUrl))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.avatarUrl").value(avatarUrl));
+
+        mockMvc.perform(get("/app/users/me")
+                        .header("Authorization", bearer(login.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.avatarUrl").value(avatarUrl));
+
+        mockMvc.perform(put("/app/users/me/avatar")
+                        .header("Authorization", bearer(login.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"avatarUrl\":\"https://images.example.test/avatar.png\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+    }
+
+    @Test
     void nicknameUpdateRequiresAppTokenAndValidNickname() throws Exception {
         AppSession login = login("nickname-validation-user");
 

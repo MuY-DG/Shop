@@ -192,3 +192,32 @@ test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
   assert.match(orderDetailTemplate, /onApplyAfterSaleTap/);
   assert.match(orderDetailTemplate, /onAfterSaleDetailTap/);
 });
+
+test("小程序只在售后选择原图且不调用图片压缩 API", () => {
+  const sourceRoot = resolve(process.cwd(), "miniprogram");
+  const applyLogic = readFileSync(
+    resolve(sourceRoot, "pages/after-sale/apply/apply.ts"),
+    "utf8"
+  );
+  const applyTemplate = readFileSync(
+    resolve(sourceRoot, "pages/after-sale/apply/apply.wxml"),
+    "utf8"
+  );
+
+  assert.match(applyLogic, /wx\.chooseMedia\(/);
+  assert.match(applyLogic, /sizeType:\s*\["original"\]/);
+  assert.doesNotMatch(applyLogic, /sizeType:\s*\["compressed"\]/);
+  assert.doesNotMatch(applyLogic, /wx\.compressImage/);
+  assert.match(applyTemplate, /最多 3 张原图，单张不超过 5MB/);
+
+  const profileLogic = readFileSync(
+    resolve(sourceRoot, "pages/account/profile/profile.ts"),
+    "utf8"
+  );
+  const profileTemplate = readFileSync(
+    resolve(sourceRoot, "pages/account/profile/profile.wxml"),
+    "utf8"
+  );
+  assert.doesNotMatch(profileLogic, /wx\.(chooseImage|chooseMedia|compressImage)/);
+  assert.match(profileTemplate, /open-type="chooseAvatar"/);
+});
