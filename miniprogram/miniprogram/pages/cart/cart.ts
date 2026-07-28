@@ -131,10 +131,6 @@ Page({
     void this.loadCart();
   },
 
-  onBrowse() {
-    wx.switchTab({ url: "/pages/category/category" });
-  },
-
   onLoginTap() {
     openLoginPage("/pages/cart/cart");
   },

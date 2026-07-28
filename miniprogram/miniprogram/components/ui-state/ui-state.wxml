@@ -1,22 +1,31 @@
 <view class="ui-state ui-state--{{type}}">
-  <view class="ui-state__visual">
-    <view wx:if="{{type === 'loading'}}" class="ui-state__loading"></view>
+  <view wx:if="{{type === 'loading'}}" class="ui-state__loading-toast" aria-label="{{title || description}}">
+    <view class="ui-state__loading"></view>
+    <text class="ui-state__loading-text">{{title || description}}</text>
+  </view>
 
-    <view wx:elif="{{type === 'error'}}" class="ui-state__error-mark"></view>
+  <block wx:elif="{{type === 'empty'}}">
+    <image
+      class="ui-state__empty-icon"
+      src="{{icon}}"
+      mode="aspectFit"
+      aria-hidden="true"
+    />
+    <view class="ui-state__empty-description">{{description || title}}</view>
+  </block>
 
-    <view wx:else class="ui-state__empty-box">
-      <view class="ui-state__empty-line ui-state__empty-line--long"></view>
-      <view class="ui-state__empty-line"></view>
+  <block wx:else>
+    <view class="ui-state__visual">
+      <view class="ui-state__error-mark"></view>
     </view>
-  </view>
-
-  <view wx:if="{{title}}" class="ui-state__title">{{title}}</view>
-  <view wx:if="{{description}}" class="ui-state__description">{{description}}</view>
-  <view wx:if="{{actionText}}" class="ui-state__action">
-    <ui-button
-      variant="{{type === 'error' ? 'danger' : 'secondary'}}"
-      size="small"
-      bindtap="handleAction"
-    >{{actionText}}</ui-button>
-  </view>
+    <view wx:if="{{title}}" class="ui-state__title">{{title}}</view>
+    <view wx:if="{{description}}" class="ui-state__description">{{description}}</view>
+    <view wx:if="{{actionText}}" class="ui-state__action">
+      <ui-button
+        variant="danger"
+        size="small"
+        bindtap="handleAction"
+      >{{actionText}}</ui-button>
+    </view>
+  </block>
 </view>

@@ -53,13 +53,10 @@
     </view>
 
     <view wx:elif="{{loaded && !rawItems.length}}" class="cart-state cart-state--empty">
-      <view class="empty-seal" aria-hidden="true">灶</view>
       <ui-state
         type="empty"
-        title="购物车还是空的"
-        description="先去挑几款地道川味，让下一锅更有滋味。"
-        action-text="去逛商品"
-        bindaction="onBrowse"
+        icon="/assets/icons/empty-cart.svg"
+        description="购物车还是空的"
       />
     </view>
 

@@ -80,10 +80,8 @@
       <view wx:if="{{!hasContent}}" class="home-empty">
         <ui-state
           type="empty"
-          title="好物正在上架"
-          description="首页内容还在准备中，下拉页面可以重新加载。"
-          action-text="重新加载"
-          bindaction="onRetry"
+          icon="/assets/icons/empty-products.svg"
+          description="首页内容还在准备中"
         />
       </view>
 

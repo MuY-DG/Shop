@@ -67,13 +67,11 @@
       />
     </view>
 
-    <view wx:elif="{{loaded && !products.length}}" class="catalog-state">
+    <view wx:elif="{{loaded && !products.length}}" class="catalog-state catalog-state--empty">
       <ui-state
         type="empty"
-        title="暂时没有找到商品"
-        description="{{activeKeyword ? '换个关键词试试，或清除搜索查看全部商品。' : '这个分类的好物还在准备中。'}}"
-        action-text="{{activeKeyword ? '清除搜索' : '重新加载'}}"
-        bindaction="onEmptyAction"
+        icon="/assets/icons/empty-search.svg"
+        description="{{activeKeyword ? '没有找到相关商品' : '这个分类还没有商品'}}"
       />
     </view>
 

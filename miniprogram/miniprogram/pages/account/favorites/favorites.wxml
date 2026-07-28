@@ -15,9 +15,12 @@
     <view wx:elif="{{!loaded && errorText}}" class="account-state">
       <ui-state type="error" title="收藏加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
     </view>
-    <view wx:elif="{{loaded && !items.length}}" class="account-state">
-      <ui-state type="empty" title="还没有收藏商品" description="在商品详情点击收藏后，可在这里快速找到" />
-    </view>
+    <ui-state
+      wx:elif="{{loaded && !items.length}}"
+      type="empty"
+      icon="/assets/icons/empty-favorites.svg"
+      description="还没有收藏商品"
+    />
 
     <block wx:else>
       <view wx:if="{{errorText}}" class="inline-error"><text>{{errorText}}</text><button bindtap="onRetry">重试</button></view>

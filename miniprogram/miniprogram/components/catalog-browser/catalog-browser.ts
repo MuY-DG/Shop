@@ -234,14 +234,6 @@ Component({
       void this.loadFirstPage();
     },
 
-    onEmptyAction() {
-      if (this.data.activeKeyword) {
-        this.onSearchClear();
-        return;
-      }
-      this.onRetry();
-    },
-
     onCategoryTap(event: DatasetEvent) {
       const categoryId = Number(event.currentTarget.dataset.id);
       if (

@@ -40,5 +40,6 @@
 - `navigation-back.svg`、`address-search.svg`、`location-target-active.svg`、`location-target-idle.svg`：用户提供的收货地址与全局导航 SVG，分别用于统一返回、地址搜索和地图定位状态；`navigation-back.png` 是地图原生层为兼容真机渲染使用的透明 PNG 版本。
 - `address-edit.svg`、`address-check.svg`：[Material Symbols](https://fonts.google.com/icons)，Apache 2.0，用于编辑地址和附近地点选中态。
 - `wechat.svg`：[Simple Icons WeChat](https://simpleicons.org/?q=wechat)，CC0 1.0，用于从微信导入收货地址。
+- `empty-products.svg`、`empty-cart.svg`、`empty-orders.svg`、`empty-favorites.svg`、`empty-history.svg`、`empty-coupons.svg`、`empty-addresses.svg`、`empty-after-sale.svg`、`empty-search.svg`：[Iconify Material Symbols](https://icon-sets.iconify.design/material-symbols/)，Apache 2.0；分别使用 `inventory-2-outline-rounded`、`remove-shopping-cart-outline-rounded`、`receipt-long-outline-rounded`、`favorite-outline-rounded`、`history-rounded`、`confirmation-number-outline-rounded`、`location-off-outline-rounded`、`assignment-return-outline-rounded`、`search-off-rounded`，统一为页面空状态的暖灰色线性图标。
 
 图标已内置为小程序本地资源；运行时不请求 Iconify，也不需要配置图片域名白名单。

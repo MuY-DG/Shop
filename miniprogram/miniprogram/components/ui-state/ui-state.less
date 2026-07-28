@@ -12,6 +12,20 @@
   text-align: center;
 }
 
+.ui-state--empty {
+  min-height: 60vh;
+  padding: 32rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ui-state--loading {
+  min-height: 176rpx;
+  padding: 32rpx 24rpx;
+}
+
 .ui-state__visual {
   display: flex;
   width: 112rpx;
@@ -42,54 +56,47 @@
 
 .ui-state__loading {
   box-sizing: border-box;
-  width: 72rpx;
-  height: 72rpx;
-  border: 6rpx solid @color-brand-soft;
-  border-top-color: @color-brand;
+  width: 34rpx;
+  height: 34rpx;
+  border: 4rpx solid fade(@color-text-inverse, 30%);
+  border-top-color: @color-text-inverse;
   border-radius: 50%;
+  flex: none;
   animation: ui-state-spin 0.9s linear infinite;
 }
 
-.ui-state__empty-box {
-  position: relative;
-  display: flex;
-  box-sizing: border-box;
-  width: 92rpx;
-  height: 68rpx;
-  padding: 18rpx 20rpx;
-  border: 4rpx solid @color-border;
-  border-radius: @radius-sm;
-  background: @color-surface-muted;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.ui-state__empty-box::before {
-  position: absolute;
-  top: -18rpx;
-  left: 14rpx;
-  box-sizing: border-box;
-  width: 56rpx;
-  height: 22rpx;
-  border: 4rpx solid @color-border;
-  border-bottom: 0;
-  border-radius: @radius-sm @radius-sm 0 0;
-  background: @color-surface-muted;
-  content: '';
-}
-
-.ui-state__empty-line {
-  width: 34rpx;
-  height: 4rpx;
-  margin-top: 8rpx;
+.ui-state__loading-toast {
+  display: inline-flex;
+  max-width: 560rpx;
+  padding: 18rpx 26rpx;
   border-radius: @radius-pill;
-  background: @color-text-muted;
-  opacity: 0.55;
+  align-items: center;
+  color: @color-text-inverse;
+  background: fade(@color-text-primary, 88%);
+  box-shadow: 0 8rpx 24rpx fade(@color-text-primary, 14%);
 }
 
-.ui-state__empty-line--long {
-  width: 50rpx;
-  margin-top: 0;
+.ui-state__loading-text {
+  margin-left: 14rpx;
+  overflow: hidden;
+  font-size: 24rpx;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-state__empty-icon {
+  display: block;
+  width: 112rpx;
+  height: 112rpx;
+}
+
+.ui-state__empty-description {
+  max-width: 520rpx;
+  margin-top: 24rpx;
+  color: @color-text-muted;
+  font-size: 26rpx;
+  line-height: 1.5;
 }
 
 .ui-state__error-mark {

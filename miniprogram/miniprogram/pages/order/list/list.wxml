@@ -26,8 +26,8 @@
     <view wx:elif="{{!loaded && errorText}}" class="orders-state">
       <ui-state type="error" title="订单加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
     </view>
-    <view wx:elif="{{loaded && !orders.length}}" class="orders-state">
-      <ui-state type="empty" title="暂无相关订单" description="下单后可在这里继续支付和查看进度" />
+    <view wx:elif="{{loaded && !orders.length}}" class="orders-state orders-state--empty">
+      <ui-state type="empty" icon="/assets/icons/empty-orders.svg" description="暂无相关订单" />
     </view>
 
     <block wx:else>

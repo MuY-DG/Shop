@@ -16,9 +16,12 @@
     <view wx:elif="{{!loaded && errorText}}" class="account-state">
       <ui-state type="error" title="浏览记录加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
     </view>
-    <view wx:elif="{{loaded && !items.length}}" class="account-state">
-      <ui-state type="empty" title="还没有浏览记录" description="浏览过的商品会自动保存在这里" />
-    </view>
+    <ui-state
+      wx:elif="{{loaded && !items.length}}"
+      type="empty"
+      icon="/assets/icons/empty-history.svg"
+      description="还没有浏览记录"
+    />
 
     <block wx:else>
       <view wx:if="{{errorText}}" class="inline-error"><text>{{errorText}}</text><button bindtap="onRetry">重试</button></view>

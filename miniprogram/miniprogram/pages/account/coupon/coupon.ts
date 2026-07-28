@@ -43,24 +43,20 @@ function couponSection(value: unknown): CouponSection {
 
 function emptyCopy(section: CouponSection, status: CouponStatusFilter): {
   title: string;
-  description: string;
 } {
   if (section === "CLAIMABLE") {
-    return {
-      title: "暂无可领取优惠券",
-      description: "新的优惠活动上线后会在这里展示"
-    };
+    return { title: "暂无可领取优惠券" };
   }
   if (status === "CLAIMED") {
-    return { title: "暂无待使用优惠券", description: "去领券中心看看最新优惠" };
+    return { title: "暂无待使用优惠券" };
   }
   if (status === "USED") {
-    return { title: "暂无已使用优惠券", description: "使用后的优惠券会保留在这里" };
+    return { title: "暂无已使用优惠券" };
   }
   if (status === "EXPIRED") {
-    return { title: "暂无过期优惠券", description: "及时使用优惠券，别让优惠过期" };
+    return { title: "暂无过期优惠券" };
   }
-  return { title: "还没有优惠券", description: "前往领券中心领取优惠" };
+  return { title: "还没有优惠券" };
 }
 
 Page({
@@ -77,7 +73,6 @@ Page({
     loaded: false,
     errorText: "",
     emptyTitle: "暂无可领取优惠券",
-    emptyDescription: "新的优惠活动上线后会在这里展示",
     claimingTemplateId: 0
   },
 
@@ -109,8 +104,7 @@ Page({
       coupons: [],
       loaded: false,
       errorText: "",
-      emptyTitle: copy.title,
-      emptyDescription: copy.description
+      emptyTitle: copy.title
     });
     void this.loadCoupons();
   },
@@ -131,8 +125,7 @@ Page({
       coupons: [],
       loaded: false,
       errorText: "",
-      emptyTitle: copy.title,
-      emptyDescription: copy.description
+      emptyTitle: copy.title
     });
     void this.loadCoupons();
   },
@@ -145,8 +138,7 @@ Page({
     this.setData({
       loading: true,
       errorText: "",
-      emptyTitle: copy.title,
-      emptyDescription: copy.description
+      emptyTitle: copy.title
     });
     try {
       const coupons = section === "CLAIMABLE"
