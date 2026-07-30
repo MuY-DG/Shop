@@ -23,6 +23,9 @@ export interface CustomerServiceImage {
   contentType: string;
   width?: number;
   height?: number;
+  accessMode?: "SIGNED_URL" | "AUTHENTICATED_BLOB";
+  accessUrl?: string;
+  accessExpiresAt?: string;
 }
 
 export interface CustomerServiceOrder {

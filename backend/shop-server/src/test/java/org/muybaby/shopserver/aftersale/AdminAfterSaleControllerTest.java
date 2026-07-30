@@ -115,6 +115,8 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(jsonPath("$.data.evidenceFiles[0].mediaKind").value("IMAGE"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].visibility").value("PRIVATE"))
                 .andExpect(jsonPath("$.data.evidenceFiles[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].accessMode").value("AUTHENTICATED_BLOB"))
+                .andExpect(jsonPath("$.data.evidenceFiles[0].accessUrl").doesNotExist())
                 .andExpect(jsonPath("$.data.orderContext.orderId").value(order.orderId()))
                 .andExpect(jsonPath("$.data.orderContext.orderNo").value(order.orderNo()))
                 .andExpect(jsonPath("$.data.orderContext.receiverName").value("Pay User"))

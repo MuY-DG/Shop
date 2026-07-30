@@ -68,6 +68,9 @@ test("小程序客服使用自建接口、原图上传和两级商品来源面�
   assert.match(endpointSource, /customerService/);
   assert.match(endpointSource, /\/app\/customer-service\/conversation\/images/);
   assert.match(serviceSource, /uploadCustomerServiceImage/);
+  assert.match(serviceSource, /accessMode === "SIGNED_URL"/);
+  assert.match(serviceSource, /downloadExternalFile/);
+  assert.match(serviceSource, /downloadAuthenticatedFile/);
   assert.match(pageSource, /sizeType: \["original"\]/);
   assert.match(pageSource, /getBrowseHistory/);
   assert.match(pageSource, /getFavorites/);

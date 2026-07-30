@@ -25,9 +25,10 @@ import org.muybaby.shopserver.storage.dto.StorageAssetQueryRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
 import org.muybaby.shopserver.storage.dto.StorageAssetUsageQueryRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetUsageResponse;
-import org.muybaby.shopserver.storage.provider.StoredObject;
+import org.muybaby.shopserver.storage.provider.PrivateObjectAccess;
 import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
+import org.muybaby.shopserver.storage.provider.StoredObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -94,6 +95,7 @@ import java.util.Set;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.function.Function;
 
 @Service
 public class StorageService {
@@ -712,6 +714,10 @@ public class StorageService {
         } catch (RuntimeException ex) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
+    }
+
+    public Function<StorageObjectLocation, PrivateObjectAccess> privateImageAccessResolver() {
+        return storageProvider.privateReadAccessResolver(Duration.ofMinutes(5));
     }
 
     public List<StorageAssetFolderResponse> folderTree() {

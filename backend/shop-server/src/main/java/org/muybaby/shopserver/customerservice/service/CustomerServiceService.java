@@ -21,7 +21,10 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRe
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequestResponse;
 import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
+import org.muybaby.shopserver.storage.provider.PrivateObjectAccess;
+import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.InputStreamResource;
@@ -47,6 +50,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 @Service
 public class CustomerServiceService {
@@ -959,6 +963,8 @@ public class CustomerServiceService {
 
     private List<MessageResponse> messages(Long conversationId, Long afterId) {
         long effectiveAfterId = afterId == null || afterId < 0 ? 0L : afterId;
+        Function<StorageObjectLocation, PrivateObjectAccess> imageAccessResolver =
+                storageService.privateImageAccessResolver();
         return jdbcClient.sql(messageSelect() + """
                         where m.conversation_id = :conversationId and m.id > :afterId
                         order by m.id
@@ -966,7 +972,7 @@ public class CustomerServiceService {
                         """)
                 .param("conversationId", conversationId)
                 .param("afterId", effectiveAfterId)
-                .query(this::mapMessage)
+                .query((rs, rowNum) -> mapMessage(rs, rowNum, imageAccessResolver))
                 .list();
     }
 
@@ -1583,6 +1589,8 @@ public class CustomerServiceService {
             Long senderId,
             String clientMessageId
     ) {
+        Function<StorageObjectLocation, PrivateObjectAccess> imageAccessResolver =
+                storageService.privateImageAccessResolver();
         return jdbcClient.sql(messageSelect() + """
                         where m.conversation_id = :conversationId
                           and m.sender_type = :senderType
@@ -1593,7 +1601,7 @@ public class CustomerServiceService {
                 .param("senderType", senderType)
                 .param("senderId", senderId)
                 .param("clientMessageId", clientMessageId)
-                .query(this::mapMessage)
+                .query((rs, rowNum) -> mapMessage(rs, rowNum, imageAccessResolver))
                 .optional();
     }
 
@@ -1979,7 +1987,11 @@ public class CustomerServiceService {
                        image_asset.original_filename as image_original_filename,
                        image_asset.content_type as image_content_type,
                        image_asset.width as image_width,
-                       image_asset.height as image_height
+                       image_asset.height as image_height,
+                       image_asset.provider as image_provider,
+                       image_asset.storage_container as image_storage_container,
+                       image_asset.storage_region as image_storage_region,
+                       image_asset.object_key as image_object_key
                 from customer_service_message m
                 left join app_user app
                   on m.sender_type = 'APP_USER' and app.id = m.sender_id
@@ -2129,21 +2141,37 @@ public class CustomerServiceService {
         );
     }
 
-    private MessageResponse mapMessage(ResultSet rs, int rowNum) throws SQLException {
+    private MessageResponse mapMessage(
+            ResultSet rs,
+            int rowNum,
+            Function<StorageObjectLocation, PrivateObjectAccess> imageAccessResolver
+    ) throws SQLException {
         LinkedOrderResponse order = nullableLong(rs, "card_order_id") == null
                 ? null
                 : mapOrderCard(rs);
         LinkedProductResponse product = nullableLong(rs, "card_product_id") == null
                 ? null
                 : mapProductCard(rs);
-        ImageMessageResponse image = nullableLong(rs, "image_asset_id") == null
-                ? null
-                : new ImageMessageResponse(
-                        rs.getString("image_original_filename"),
-                        rs.getString("image_content_type"),
-                        rs.getObject("image_width", Integer.class),
-                        rs.getObject("image_height", Integer.class)
-                );
+        ImageMessageResponse image = null;
+        if (nullableLong(rs, "image_asset_id") != null) {
+            PrivateObjectAccess access = imageAccessResolver.apply(
+                    new StorageObjectLocation(
+                            StorageProviderKind.valueOf(rs.getString("image_provider")),
+                            rs.getString("image_storage_container"),
+                            rs.getString("image_storage_region"),
+                            rs.getString("image_object_key")
+                    )
+            );
+            image = new ImageMessageResponse(
+                    rs.getString("image_original_filename"),
+                    rs.getString("image_content_type"),
+                    rs.getObject("image_width", Integer.class),
+                    rs.getObject("image_height", Integer.class),
+                    access.mode().name(),
+                    access.url(),
+                    access.expiresAt()
+            );
+        }
         return new MessageResponse(
                 rs.getLong("id"),
                 rs.getLong("conversation_id"),

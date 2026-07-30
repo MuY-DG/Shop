@@ -8,6 +8,7 @@ import jakarta.validation.constraints.Size;
 import org.muybaby.shopserver.common.api.JsonStringId;
 
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 public final class CustomerServiceDtos {
@@ -63,7 +64,10 @@ public final class CustomerServiceDtos {
             String originalFilename,
             String contentType,
             Integer width,
-            Integer height
+            Integer height,
+            String accessMode,
+            String accessUrl,
+            Instant accessExpiresAt
     ) {
     }
 

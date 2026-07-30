@@ -438,7 +438,7 @@ Page({
         const message = pending[cursor];
         cursor += 1;
         try {
-          const tempFilePath = await downloadCustomerServiceImage(message.messageId);
+          const tempFilePath = await downloadCustomerServiceImage(message);
           imageTempPaths.set(message.messageId, tempFilePath);
           if (pageActive) {
             this.setData({

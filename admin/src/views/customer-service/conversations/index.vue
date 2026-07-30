@@ -174,18 +174,24 @@
               <div v-if="message.senderType === 'SYSTEM'" class="system-message">
                 {{ message.content }}
               </div>
-              <ElImage
-                v-else-if="message.messageType === 'IMAGE'"
-                class="message-image"
-                :src="imageUrls[message.messageId]"
-                :preview-src-list="
-                  imageUrls[message.messageId] ? [imageUrls[message.messageId]] : []
-                "
-                fit="cover"
-                preview-teleported
-              >
-                <template #error><div class="message-image__error">图片加载失败</div></template>
-              </ElImage>
+              <template v-else-if="message.messageType === 'IMAGE'">
+                <ElImage
+                  v-if="imageUrls[message.messageId]"
+                  class="message-image"
+                  :src="imageUrls[message.messageId]"
+                  :preview-src-list="[imageUrls[message.messageId]]"
+                  fit="cover"
+                  preview-teleported
+                  @error="handleImageError(message)"
+                >
+                  <template #error><div class="message-image__error">图片加载失败</div></template>
+                </ElImage>
+                <div v-else class="message-image message-image__status">
+                  {{
+                    imageLoadStates[message.messageId] === 'error' ? '图片加载失败' : '图片加载中…'
+                  }}
+                </div>
+              </template>
               <button
                 v-else-if="message.messageType === 'ORDER_CARD' && message.order"
                 type="button"
@@ -588,6 +594,8 @@
   const messageListRef = ref<HTMLElement | null>(null)
   const imageInputRef = ref<HTMLInputElement | null>(null)
   const imageUrls = ref<Record<number, string>>({})
+  const imageUrlExpiresAt = ref<Record<number, number>>({})
+  const imageLoadStates = ref<Record<number, 'loading' | 'error'>>({})
   const transferDialogVisible = ref(false)
   const agents = ref<Api.CustomerService.Agent[]>([])
   const targetAgentId = ref<number | null>(null)
@@ -724,28 +732,108 @@
   }
 
   const clearImageUrls = () => {
-    Object.values(imageUrls.value).forEach((url) => URL.revokeObjectURL(url))
+    Object.values(imageUrls.value).forEach((url) => {
+      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+    })
     imageUrls.value = {}
+    imageUrlExpiresAt.value = {}
+    imageLoadStates.value = {}
   }
 
-  const syncImageUrls = async (messages: Api.CustomerService.Message[]) => {
-    const missing = messages.filter(
-      (message) => message.messageType === 'IMAGE' && !imageUrls.value[message.messageId]
-    )
-    const downloaded = await Promise.allSettled(
-      missing.map(async (message) => {
-        const blob = await fetchCustomerServiceImage(message.messageId)
-        return [message.messageId, URL.createObjectURL(blob)] as const
+  const loadAuthenticatedImage = (message: Api.CustomerService.Message, requestId: number) => {
+    imageLoadStates.value = {
+      ...imageLoadStates.value,
+      [message.messageId]: 'loading'
+    }
+    void fetchCustomerServiceImage(message.messageId)
+      .then((blob) => {
+        const url = URL.createObjectURL(blob)
+        if (requestId !== detailRequestSequence) {
+          URL.revokeObjectURL(url)
+          return
+        }
+        imageUrls.value = { ...imageUrls.value, [message.messageId]: url }
+        imageUrlExpiresAt.value = { ...imageUrlExpiresAt.value, [message.messageId]: 0 }
+        const nextStates = { ...imageLoadStates.value }
+        delete nextStates[message.messageId]
+        imageLoadStates.value = nextStates
       })
-    )
-    const next = { ...imageUrls.value }
-    downloaded.forEach((result) => {
-      if (result.status === 'fulfilled') next[result.value[0]] = result.value[1]
+      .catch(() => {
+        if (requestId !== detailRequestSequence) return
+        imageLoadStates.value = {
+          ...imageLoadStates.value,
+          [message.messageId]: 'error'
+        }
+      })
+  }
+
+  const handleImageError = (message: Api.CustomerService.Message) => {
+    const current = imageUrls.value[message.messageId]
+    if (message.image?.accessMode !== 'SIGNED_URL' || current?.startsWith('blob:')) {
+      imageLoadStates.value = {
+        ...imageLoadStates.value,
+        [message.messageId]: 'error'
+      }
+      return
+    }
+    const nextUrls = { ...imageUrls.value }
+    const nextExpiresAt = { ...imageUrlExpiresAt.value }
+    delete nextUrls[message.messageId]
+    delete nextExpiresAt[message.messageId]
+    imageUrls.value = nextUrls
+    imageUrlExpiresAt.value = nextExpiresAt
+    loadAuthenticatedImage(message, detailRequestSequence)
+  }
+
+  const syncImageUrls = (messages: Api.CustomerService.Message[], requestId: number) => {
+    const imageMessages = messages.filter((message) => message.messageType === 'IMAGE')
+    const nextUrls = { ...imageUrls.value }
+    const nextExpiresAt = { ...imageUrlExpiresAt.value }
+    const now = Date.now()
+
+    imageMessages.forEach((message) => {
+      const access = message.image
+      if (access?.accessMode === 'SIGNED_URL' && access.accessUrl) {
+        const currentExpiry = nextExpiresAt[message.messageId] || 0
+        if (!nextUrls[message.messageId] || (currentExpiry > 0 && currentExpiry <= now + 30_000)) {
+          const previous = nextUrls[message.messageId]
+          if (previous?.startsWith('blob:')) URL.revokeObjectURL(previous)
+          nextUrls[message.messageId] = access.accessUrl
+          nextExpiresAt[message.messageId] = access.accessExpiresAt
+            ? Date.parse(access.accessExpiresAt)
+            : 0
+        }
+        return
+      }
+
+      const previous = nextUrls[message.messageId]
+      if (previous && !previous.startsWith('blob:')) {
+        delete nextUrls[message.messageId]
+        delete nextExpiresAt[message.messageId]
+      }
     })
-    imageUrls.value = next
+    imageUrls.value = nextUrls
+    imageUrlExpiresAt.value = nextExpiresAt
+    const nextStates = { ...imageLoadStates.value }
+    imageMessages.forEach((message) => {
+      if (message.image?.accessMode === 'SIGNED_URL' && message.image.accessUrl) {
+        delete nextStates[message.messageId]
+      }
+    })
+    imageLoadStates.value = nextStates
+
+    const missing = imageMessages.filter(
+      (message) =>
+        !(message.image?.accessMode === 'SIGNED_URL' && message.image.accessUrl) &&
+        !imageUrls.value[message.messageId]
+    )
+    if (!missing.length) return
+
+    missing.forEach((message) => loadAuthenticatedImage(message, requestId))
   }
 
   const loadConversations = async (selectFirst = false) => {
+    let firstConversationId: number | null = null
     listLoading.value = true
     try {
       const page = await fetchCustomerServiceConversations({
@@ -755,11 +843,12 @@
       })
       conversationPage.value = page
       if (selectFirst && !selectedConversationId.value && filteredConversations.value.length) {
-        await selectConversation(filteredConversations.value[0].conversationId)
+        firstConversationId = filteredConversations.value[0].conversationId
       }
     } finally {
       listLoading.value = false
     }
+    if (firstConversationId) await selectConversation(firstConversationId)
   }
 
   const loadAgentState = async () => {
@@ -778,7 +867,7 @@
       const detail = await fetchCustomerServiceConversation(conversationId)
       if (requestId !== detailRequestSequence) return
       currentDetail.value = detail
-      await syncImageUrls(detail.messages)
+      syncImageUrls(detail.messages, requestId)
       await nextTick()
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
     } finally {
@@ -1095,6 +1184,7 @@
   })
 
   onBeforeUnmount(() => {
+    detailRequestSequence += 1
     unsubscribeRealtime?.()
     if (pollTimer) clearInterval(pollTimer)
     if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer)
@@ -1367,6 +1457,12 @@
     display: grid;
     place-items: center;
     min-height: 120px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .message-image__status {
+    display: grid;
+    place-items: center;
     color: var(--el-text-color-secondary);
   }
 

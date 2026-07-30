@@ -597,7 +597,10 @@ public class AppAfterSaleService {
                 rs.getString("scope"),
                 rs.getString("media_kind"),
                 rs.getString("visibility"),
-                rs.getString("status")
+                rs.getString("status"),
+                null,
+                null,
+                null
         );
         return new EvidenceProjectionRow(afterSaleId, fileId, file);
     }

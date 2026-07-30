@@ -18,6 +18,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.startsWith;
+import static org.muybaby.shopserver.support.TestHashSupport.sha256;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -381,7 +382,7 @@ class AdminProductCategoryControllerTest {
                         """)
                 .param("objectKey", objectKey)
                 .param("originalFilename", originalFilename)
-                .param("sha256", "sha-" + objectKey)
+                .param("sha256", sha256(objectKey))
                 .param("publicUrl", publicUrl)
                 .update();
         Long fileId = jdbcClient.sql("""

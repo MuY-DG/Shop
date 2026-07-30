@@ -8,7 +8,10 @@ import type {
   CustomerServiceRealtimeTicket,
   CustomerServiceSendMessageRequest
 } from "../types/customer-service";
-import { downloadAuthenticatedFile } from "../utils/authenticated-download";
+import {
+  downloadAuthenticatedFile,
+  downloadExternalFile
+} from "../utils/authenticated-download";
 import { request } from "../utils/request";
 import { uploadFile } from "../utils/upload";
 
@@ -90,8 +93,19 @@ export function sendCustomerServiceProduct(
   });
 }
 
-export function downloadCustomerServiceImage(messageId: number): Promise<string> {
-  return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(messageId));
+export function downloadCustomerServiceImage(
+  message: Pick<CustomerServiceMessage, "messageId" | "image">
+): Promise<string> {
+  if (
+    message.image?.accessMode === "SIGNED_URL" &&
+    message.image.accessUrl
+  ) {
+    return downloadExternalFile(message.image.accessUrl)
+      .catch(() => downloadAuthenticatedFile(
+        API_ENDPOINTS.customerService.image(message.messageId)
+      ));
+  }
+  return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(message.messageId));
 }
 
 export function issueCustomerServiceRealtimeTicket(): Promise<CustomerServiceRealtimeTicket> {

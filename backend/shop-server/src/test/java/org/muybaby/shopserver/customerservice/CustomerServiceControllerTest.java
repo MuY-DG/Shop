@@ -387,6 +387,8 @@ class CustomerServiceControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.messageType").value("IMAGE"))
                 .andExpect(jsonPath("$.data.senderType").value("APP_USER"))
+                .andExpect(jsonPath("$.data.image.accessMode").value("AUTHENTICATED_BLOB"))
+                .andExpect(jsonPath("$.data.image.accessUrl").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
         long appMessageId = objectMapper.readTree(appImageResponse).path("data").path("messageId").asLong();
 
@@ -418,6 +420,8 @@ class CustomerServiceControllerTest {
                                 .header("Authorization", bearer(adminToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.messageType").value("IMAGE"))
+                .andExpect(jsonPath("$.data.image.accessMode").value("AUTHENTICATED_BLOB"))
+                .andExpect(jsonPath("$.data.image.accessUrl").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
         long adminMessageId = objectMapper.readTree(adminImageResponse).path("data").path("messageId").asLong();
         mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", adminMessageId)

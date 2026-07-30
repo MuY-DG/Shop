@@ -27,6 +27,9 @@ export interface AfterSaleEvidenceFile {
   mediaKind: "IMAGE";
   visibility: "PRIVATE";
   status: string;
+  accessMode?: "SIGNED_URL" | "AUTHENTICATED_BLOB";
+  accessUrl?: string;
+  accessExpiresAt?: string;
 }
 
 export interface RefundOrderResponse {

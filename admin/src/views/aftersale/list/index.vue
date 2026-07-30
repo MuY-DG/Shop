@@ -370,6 +370,7 @@
                     :initial-index="evidencePreviewIndex(file.fileId)"
                     fit="cover"
                     preview-teleported
+                    @error="handleEvidencePreviewError(file)"
                   />
                   <div v-else-if="isPreviewableImage(file)" class="evidence-file__preview-state">
                     <span v-if="evidencePreviewLoading">图片加载中...</span>
@@ -1325,7 +1326,9 @@
   }
 
   const clearEvidencePreviews = () => {
-    Object.values(evidencePreviewUrls.value).forEach((url) => URL.revokeObjectURL(url))
+    Object.values(evidencePreviewUrls.value).forEach((url) => {
+      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+    })
     evidencePreviewUrls.value = {}
     evidencePreviewLoading.value = false
   }
@@ -1354,9 +1357,18 @@
     const files = (detail.evidenceFiles || []).filter(isPreviewableImage)
     if (!files.length) return
 
+    const signedPreviews = files
+      .filter((file) => file.accessMode === 'SIGNED_URL' && file.accessUrl)
+      .map((file) => [file.fileId, file.accessUrl as string] as const)
+    const protectedFiles = files.filter(
+      (file) => !(file.accessMode === 'SIGNED_URL' && file.accessUrl)
+    )
+    evidencePreviewUrls.value = Object.fromEntries(signedPreviews)
+    if (!protectedFiles.length) return
+
     evidencePreviewLoading.value = true
     const previews = await Promise.all(
-      files.map(async (file) => {
+      protectedFiles.map(async (file) => {
         try {
           const blob = await fetchAfterSaleEvidence(detail.id, file.fileId)
           return [file.fileId, URL.createObjectURL(blob)] as const
@@ -1371,10 +1383,41 @@
       return
     }
 
-    evidencePreviewUrls.value = Object.fromEntries(
-      previews.filter((preview): preview is readonly [number, string] => preview !== null)
-    )
+    evidencePreviewUrls.value = {
+      ...evidencePreviewUrls.value,
+      ...Object.fromEntries(
+        previews.filter((preview): preview is readonly [number, string] => preview !== null)
+      )
+    }
     evidencePreviewLoading.value = false
+  }
+
+  const handleEvidencePreviewError = (file: Api.AfterSale.EvidenceFile) => {
+    const detail = currentDetail.value
+    const requestId = detailRequestSeq.value
+    const currentUrl = evidencePreviewUrls.value[file.fileId]
+    if (!detail || file.accessMode !== 'SIGNED_URL' || currentUrl?.startsWith('blob:')) return
+
+    const nextUrls = { ...evidencePreviewUrls.value }
+    delete nextUrls[file.fileId]
+    evidencePreviewUrls.value = nextUrls
+    evidencePreviewLoading.value = true
+    void fetchAfterSaleEvidence(detail.id, file.fileId)
+      .then((blob) => {
+        const url = URL.createObjectURL(blob)
+        if (requestId !== detailRequestSeq.value) {
+          URL.revokeObjectURL(url)
+          return
+        }
+        evidencePreviewUrls.value = {
+          ...evidencePreviewUrls.value,
+          [file.fileId]: url
+        }
+        evidencePreviewLoading.value = false
+      })
+      .catch(() => {
+        if (requestId === detailRequestSeq.value) evidencePreviewLoading.value = false
+      })
   }
 
   const openDetail = async (afterSaleId: number) => {
@@ -1387,7 +1430,7 @@
       const detail = await hydrateOrderContext(await fetchAfterSaleDetail(afterSaleId))
       if (requestId !== detailRequestSeq.value) return
       currentDetail.value = detail
-      await loadEvidencePreviews(detail, requestId)
+      void loadEvidencePreviews(detail, requestId)
     } finally {
       if (requestId === detailRequestSeq.value) detailLoading.value = false
     }

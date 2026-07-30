@@ -1,6 +1,8 @@
 package org.muybaby.shopserver.storage.provider;
 
 import com.qcloud.cos.COSClient;
+import com.qcloud.cos.http.HttpMethodName;
+import com.qcloud.cos.http.HttpProtocol;
 import com.qcloud.cos.model.CannedAccessControlList;
 import com.qcloud.cos.model.PutObjectRequest;
 import org.junit.jupiter.api.Test;
@@ -12,7 +14,10 @@ import org.mockito.ArgumentCaptor;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URL;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -21,8 +26,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -168,6 +177,105 @@ class RoutingStorageProviderTest {
         verify(client, times(taskCount)).deleteObject("shop-test-123", "private/concurrent.pem");
         provider.shutdown();
         verify(client).shutdown();
+    }
+
+    @Test
+    void privateCosAccessSignsTheConfiguredCustomDomainWithoutOpeningTheObject() throws Exception {
+        StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
+        ResolvedStorageConfig config = new ResolvedStorageConfig(
+                StorageProviderKind.TENCENT_COS,
+                "http://localhost:8080",
+                "https://oss.muybaby6.icu",
+                tempDir.resolve("unused-local").toString(),
+                "ap-guangzhou",
+                "shop-test-123",
+                "secret-id",
+                "secret-key"
+        );
+        when(configService.effective()).thenReturn(config);
+        COSClient objectClient = mock(COSClient.class);
+        COSClient signingClient = mock(COSClient.class);
+        URL signedUrl = new URL(
+                "https://oss.muybaby6.icu/private/customer-service/image.png?q-signature=test"
+        );
+        when(signingClient.generatePresignedUrl(
+                eq("shop-test-123"),
+                eq("private/customer-service/image.png"),
+                any(),
+                eq(HttpMethodName.GET)
+        )).thenReturn(signedUrl);
+        AtomicReference<HttpProtocol> protocol = new AtomicReference<>();
+        AtomicReference<String> endpoint = new AtomicReference<>();
+        RoutingStorageProvider provider = new RoutingStorageProvider(
+                configService,
+                (region, secretId, secretKey) -> objectClient,
+                (region, secretId, secretKey, requestedProtocol, requestedEndpoint) -> {
+                    protocol.set(requestedProtocol);
+                    endpoint.set(requestedEndpoint);
+                    return signingClient;
+                }
+        );
+
+        PrivateObjectAccess access = provider.privateReadAccess(
+                cosLocation("ap-guangzhou", "private/customer-service/image.png"),
+                Duration.ofMinutes(5)
+        );
+
+        assertThat(access.mode()).isEqualTo(PrivateObjectAccess.Mode.SIGNED_URL);
+        assertThat(access.url()).isEqualTo(signedUrl.toString());
+        assertThat(access.expiresAt()).isNotNull();
+        assertThat(protocol).hasValue(HttpProtocol.https);
+        assertThat(endpoint).hasValue("oss.muybaby6.icu");
+        verify(objectClient, never()).getObject(anyString(), anyString());
+
+        provider.shutdown();
+        verify(signingClient).shutdown();
+        verify(objectClient, never()).shutdown();
+    }
+
+    @Test
+    void realCosSdkPresignedUrlUsesTheCustomDomainAsItsSignedHost() throws Exception {
+        StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
+        when(configService.effective()).thenReturn(new ResolvedStorageConfig(
+                StorageProviderKind.TENCENT_COS,
+                "http://localhost:8080",
+                "https://oss.muybaby6.icu",
+                tempDir.resolve("unused-local").toString(),
+                "ap-guangzhou",
+                "shop-test-123",
+                "secret-id",
+                "secret-key"
+        ));
+        RoutingStorageProvider provider = new RoutingStorageProvider(configService);
+
+        PrivateObjectAccess access = provider.privateReadAccess(
+                cosLocation("ap-guangzhou", "private/customer-service/image with space.png"),
+                Duration.ofMinutes(5)
+        );
+
+        assertThat(access.mode()).isEqualTo(PrivateObjectAccess.Mode.SIGNED_URL);
+        assertThat(URI.create(access.url()).getHost()).isEqualTo("oss.muybaby6.icu");
+        assertThat(access.url()).contains("q-signature=");
+        provider.shutdown();
+    }
+
+    @Test
+    void localPrivateAccessKeepsAuthenticatedBlobFallback() {
+        StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
+        when(configService.effective()).thenReturn(localConfig(tempDir.resolve("local")));
+        RoutingStorageProvider provider = new RoutingStorageProvider(configService);
+
+        PrivateObjectAccess access = provider.privateReadAccess(
+                new StorageObjectLocation(
+                        StorageProviderKind.LOCAL,
+                        tempDir.resolve("local").toString(),
+                        "",
+                        "private/customer-service/image.png"
+                ),
+                Duration.ofMinutes(5)
+        );
+
+        assertThat(access).isEqualTo(PrivateObjectAccess.authenticatedBlob());
     }
 
     private ResolvedStorageConfig localConfig(Path root) {

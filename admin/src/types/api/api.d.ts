@@ -1571,6 +1571,9 @@ declare namespace Api {
       mediaKind: Api.Storage.MediaKind | string
       visibility: Api.Storage.Visibility | string
       status: Api.Storage.AssetStatus | string
+      accessMode?: 'SIGNED_URL' | 'AUTHENTICATED_BLOB' | null
+      accessUrl?: string | null
+      accessExpiresAt?: string | null
     }
 
     interface RefundOrder {

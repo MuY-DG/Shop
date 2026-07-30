@@ -54,16 +54,34 @@ function rawDownload(path: string, token: string | null): Promise<DownloadResult
   });
 }
 
-export async function downloadAuthenticatedFile(path: string): Promise<string> {
-  await ensureSession();
-  let result = await rawDownload(path, getSessionState().accessToken || null);
-  if (result.statusCode === 401) {
-    await recoverAfterUnauthorized(result.authTokenUsed);
-    result = await rawDownload(path, getSessionState().accessToken || null);
-    if (result.statusCode === 401) {
-      clearSessionIfCurrent(result.authTokenUsed);
-    }
+function rawExternalDownload(url: string): Promise<DownloadResult> {
+  if (!/^https:\/\/[^/\s]+(?:\/|$)/i.test(url)) {
+    return Promise.reject(new ApiError({
+      kind: "PROTOCOL",
+      message: "图片地址无效"
+    }));
   }
+  return new Promise((resolve, reject) => {
+    wx.downloadFile({
+      url,
+      timeout: APP_CONFIG.requestTimeoutMs,
+      success: (response) => resolve({
+        statusCode: response.statusCode,
+        tempFilePath: response.tempFilePath,
+        authTokenUsed: null
+      }),
+      fail: (cause) => reject(new ApiError({
+        kind: "NETWORK",
+        message: cause.errMsg.includes("timeout")
+          ? "图片加载超时"
+          : "图片加载失败",
+        cause
+      }))
+    });
+  });
+}
+
+function requireSuccessfulDownload(result: DownloadResult): string {
   if (
     result.statusCode < 200 ||
     result.statusCode >= 300 ||
@@ -80,4 +98,21 @@ export async function downloadAuthenticatedFile(path: string): Promise<string> {
     });
   }
   return result.tempFilePath;
+}
+
+export async function downloadExternalFile(url: string): Promise<string> {
+  return requireSuccessfulDownload(await rawExternalDownload(url.trim()));
+}
+
+export async function downloadAuthenticatedFile(path: string): Promise<string> {
+  await ensureSession();
+  let result = await rawDownload(path, getSessionState().accessToken || null);
+  if (result.statusCode === 401) {
+    await recoverAfterUnauthorized(result.authTokenUsed);
+    result = await rawDownload(path, getSessionState().accessToken || null);
+    if (result.statusCode === 401) {
+      clearSessionIfCurrent(result.authTokenUsed);
+    }
+  }
+  return requireSuccessfulDownload(result);
 }

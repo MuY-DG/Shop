@@ -29,9 +29,10 @@ import org.muybaby.shopserver.payment.provider.WechatRefundRequest;
 import org.muybaby.shopserver.payment.provider.WechatRefundResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.StorageProviderKind;
+import org.muybaby.shopserver.storage.provider.PrivateObjectAccess;
+import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.muybaby.shopserver.storage.provider.StoredObject;
-import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ContentDisposition;
@@ -51,6 +52,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
@@ -60,6 +62,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 
 @Service
 public class AdminAfterSaleService {
@@ -1491,6 +1494,8 @@ public class AdminAfterSaleService {
     }
 
     private List<AfterSaleEvidenceFileResponse> evidenceFiles(Long afterSaleId) {
+        Function<StorageObjectLocation, PrivateObjectAccess> accessResolver =
+                storageProvider.privateReadAccessResolver(Duration.ofMinutes(5));
         return jdbcClient.sql("""
                         select ase.file_id,
                                sf.original_filename,
@@ -1499,18 +1504,32 @@ public class AdminAfterSaleService {
                                sf.scope,
                                sf.media_kind,
                                sf.visibility,
-                               sf.status
+                               sf.status,
+                               sf.provider,
+                               sf.storage_container,
+                               sf.storage_region,
+                               sf.object_key
                         from after_sale_evidence ase
                         join storage_asset sf on sf.id = ase.file_id
                         where ase.after_sale_id = :afterSaleId
                         order by ase.sort_order asc, ase.id asc
                         """)
                 .param("afterSaleId", afterSaleId)
-                .query(this::mapEvidenceFile)
+                .query((rs, rowNum) -> mapEvidenceFile(rs, rowNum, accessResolver))
                 .list();
     }
 
-    private AfterSaleEvidenceFileResponse mapEvidenceFile(ResultSet rs, int rowNum) throws SQLException {
+    private AfterSaleEvidenceFileResponse mapEvidenceFile(
+            ResultSet rs,
+            int rowNum,
+            Function<StorageObjectLocation, PrivateObjectAccess> accessResolver
+    ) throws SQLException {
+        PrivateObjectAccess access = accessResolver.apply(new StorageObjectLocation(
+                StorageProviderKind.valueOf(rs.getString("provider")),
+                rs.getString("storage_container"),
+                rs.getString("storage_region"),
+                rs.getString("object_key")
+        ));
         return new AfterSaleEvidenceFileResponse(
                 rs.getLong("file_id"),
                 rs.getString("original_filename"),
@@ -1519,7 +1538,10 @@ public class AdminAfterSaleService {
                 rs.getString("scope"),
                 rs.getString("media_kind"),
                 rs.getString("visibility"),
-                rs.getString("status")
+                rs.getString("status"),
+                access.mode().name(),
+                access.url(),
+                access.expiresAt()
         );
     }
 

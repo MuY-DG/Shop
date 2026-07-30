@@ -11,6 +11,9 @@ declare namespace Api {
       contentType: string
       width: number | null
       height: number | null
+      accessMode: 'SIGNED_URL' | 'AUTHENTICATED_BLOB'
+      accessUrl?: string | null
+      accessExpiresAt?: string | null
     }
 
     interface Message {

@@ -4,6 +4,9 @@ import com.qcloud.cos.COSClient;
 import com.qcloud.cos.ClientConfig;
 import com.qcloud.cos.auth.BasicCOSCredentials;
 import com.qcloud.cos.auth.COSCredentials;
+import com.qcloud.cos.endpoint.UserSpecifiedEndpointBuilder;
+import com.qcloud.cos.http.HttpMethodName;
+import com.qcloud.cos.http.HttpProtocol;
 import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.CannedAccessControlList;
 import com.qcloud.cos.model.ObjectMetadata;
@@ -16,10 +19,16 @@ import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
 import org.springframework.util.StringUtils;
 
 import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Date;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 
 public class RoutingStorageProvider implements StorageProvider {
 
@@ -27,16 +36,31 @@ public class RoutingStorageProvider implements StorageProvider {
 
     private final StorageRuntimeConfigService configService;
     private final CosClientFactory cosClientFactory;
+    private final CosSigningClientFactory cosSigningClientFactory;
     private final ConcurrentMap<CosKey, COSClient> cosClients = new ConcurrentHashMap<>();
+    private final ConcurrentMap<CosSigningKey, COSClient> cosSigningClients = new ConcurrentHashMap<>();
     private volatile LocalHolder localHolder;
 
     public RoutingStorageProvider(StorageRuntimeConfigService configService) {
-        this(configService, RoutingStorageProvider::createCosClient);
+        this(
+                configService,
+                RoutingStorageProvider::createCosClient,
+                RoutingStorageProvider::createCosSigningClient
+        );
     }
 
     RoutingStorageProvider(StorageRuntimeConfigService configService, CosClientFactory cosClientFactory) {
+        this(configService, cosClientFactory, RoutingStorageProvider::createCosSigningClient);
+    }
+
+    RoutingStorageProvider(
+            StorageRuntimeConfigService configService,
+            CosClientFactory cosClientFactory,
+            CosSigningClientFactory cosSigningClientFactory
+    ) {
         this.configService = configService;
         this.cosClientFactory = cosClientFactory;
+        this.cosSigningClientFactory = cosSigningClientFactory;
     }
 
     @Override
@@ -117,6 +141,26 @@ public class RoutingStorageProvider implements StorageProvider {
     }
 
     @Override
+    public PrivateObjectAccess privateReadAccess(
+            StorageObjectLocation location,
+            Duration validity
+    ) {
+        try {
+            ResolvedStorageConfig config = configService.effective();
+            return privateReadAccess(location, validity, config);
+        } catch (RuntimeException ex) {
+            return PrivateObjectAccess.authenticatedBlob();
+        }
+    }
+
+    @Override
+    public Function<StorageObjectLocation, PrivateObjectAccess> privateReadAccessResolver(
+            Duration validity
+    ) {
+        return new LazyPrivateReadAccessResolver(validity);
+    }
+
+    @Override
     public void delete(String objectKey) {
         ResolvedStorageConfig config = configService.effective();
         delete(currentLocation(config, config.provider(), objectKey));
@@ -143,8 +187,13 @@ public class RoutingStorageProvider implements StorageProvider {
     @PreDestroy
     void shutdown() {
         Map<CosKey, COSClient> clientsToClose = Map.copyOf(cosClients);
+        Map<CosSigningKey, COSClient> signingClientsToClose = Map.copyOf(cosSigningClients);
         cosClients.clear();
+        cosSigningClients.clear();
         for (COSClient client : clientsToClose.values()) {
+            client.shutdown();
+        }
+        for (COSClient client : signingClientsToClose.values()) {
             client.shutdown();
         }
     }
@@ -180,6 +229,124 @@ public class RoutingStorageProvider implements StorageProvider {
     private static COSClient createCosClient(String region, String secretId, String secretKey) {
         COSCredentials credentials = new BasicCOSCredentials(secretId, secretKey);
         return new COSClient(credentials, new ClientConfig(new Region(region)));
+    }
+
+    private COSClient signingCos(
+            ResolvedStorageConfig config,
+            String region,
+            SigningEndpoint endpoint
+    ) {
+        requireCosCredentials(config);
+        CosSigningKey key = new CosSigningKey(
+                region,
+                config.cosSecretId(),
+                config.cosSecretKey(),
+                endpoint.protocol(),
+                endpoint.host()
+        );
+        return cosSigningClients.computeIfAbsent(
+                key,
+                ignored -> cosSigningClientFactory.create(
+                        key.region(),
+                        key.secretId(),
+                        key.secretKey(),
+                        key.protocol(),
+                        key.endpoint()
+                )
+        );
+    }
+
+    private PrivateObjectAccess privateReadAccess(
+            StorageObjectLocation location,
+            Duration validity,
+            ResolvedStorageConfig config
+    ) {
+        try {
+            StorageObjectLocation resolved = resolveLocation(location, config);
+            if (resolved.provider() != StorageProviderKind.TENCENT_COS) {
+                return PrivateObjectAccess.authenticatedBlob();
+            }
+            requireCosLocation(resolved, config);
+            SigningEndpoint endpoint = signingEndpoint(resolved, config);
+            Instant expiresAt = Instant.now().plus(normalizeValidity(validity));
+            COSClient client = signingCos(config, resolved.region(), endpoint);
+            String signedUrl = client.generatePresignedUrl(
+                    resolved.container(),
+                    resolved.objectKey(),
+                    Date.from(expiresAt),
+                    HttpMethodName.GET
+            ).toString();
+            return PrivateObjectAccess.signedUrl(signedUrl, expiresAt);
+        } catch (RuntimeException ex) {
+            return PrivateObjectAccess.authenticatedBlob();
+        }
+    }
+
+    private static COSClient createCosSigningClient(
+            String region,
+            String secretId,
+            String secretKey,
+            HttpProtocol protocol,
+            String endpoint
+    ) {
+        COSCredentials credentials = new BasicCOSCredentials(secretId, secretKey);
+        ClientConfig clientConfig = new ClientConfig(new Region(region));
+        clientConfig.setHttpProtocol(protocol);
+        clientConfig.setEndpointBuilder(
+                new UserSpecifiedEndpointBuilder(endpoint, "service.cos.myqcloud.com")
+        );
+        return new COSClient(credentials, clientConfig);
+    }
+
+    private SigningEndpoint signingEndpoint(
+            StorageObjectLocation location,
+            ResolvedStorageConfig config
+    ) {
+        if (location.container().equals(config.cosBucket())
+                && location.region().equals(config.cosRegion())
+                && StringUtils.hasText(config.cosPublicBaseUrl())) {
+            SigningEndpoint configured = parseSigningEndpoint(config.cosPublicBaseUrl());
+            if (configured != null) {
+                return configured;
+            }
+        }
+        return new SigningEndpoint(
+                HttpProtocol.https,
+                location.container() + ".cos." + location.region() + ".myqcloud.com"
+        );
+    }
+
+    private SigningEndpoint parseSigningEndpoint(String publicBaseUrl) {
+        try {
+            URI uri = new URI(publicBaseUrl);
+            String path = uri.getPath();
+            if (!StringUtils.hasText(uri.getHost())
+                    || uri.getUserInfo() != null
+                    || (StringUtils.hasText(path) && !"/".equals(path))
+                    || uri.getQuery() != null
+                    || uri.getFragment() != null) {
+                return null;
+            }
+            HttpProtocol protocol = "http".equalsIgnoreCase(uri.getScheme())
+                    ? HttpProtocol.http
+                    : "https".equalsIgnoreCase(uri.getScheme()) ? HttpProtocol.https : null;
+            if (protocol == null) {
+                return null;
+            }
+            String host = uri.getPort() < 0
+                    ? uri.getHost()
+                    : uri.getHost() + ":" + uri.getPort();
+            return new SigningEndpoint(protocol, host);
+        } catch (URISyntaxException ex) {
+            return null;
+        }
+    }
+
+    private Duration normalizeValidity(Duration validity) {
+        if (validity == null || validity.isNegative() || validity.isZero()) {
+            return Duration.ofMinutes(5);
+        }
+        return validity.compareTo(Duration.ofHours(1)) > 0 ? Duration.ofHours(1) : validity;
     }
 
     private void requireCosCredentials(ResolvedStorageConfig config) {
@@ -235,8 +402,62 @@ public class RoutingStorageProvider implements StorageProvider {
     private record CosKey(String region, String secretId, String secretKey) {
     }
 
+    private record CosSigningKey(
+            String region,
+            String secretId,
+            String secretKey,
+            HttpProtocol protocol,
+            String endpoint
+    ) {
+    }
+
+    private record SigningEndpoint(HttpProtocol protocol, String host) {
+    }
+
+    private final class LazyPrivateReadAccessResolver
+            implements Function<StorageObjectLocation, PrivateObjectAccess> {
+
+        private final Duration validity;
+        private volatile Function<StorageObjectLocation, PrivateObjectAccess> delegate;
+
+        private LazyPrivateReadAccessResolver(Duration validity) {
+            this.validity = validity;
+        }
+
+        @Override
+        public PrivateObjectAccess apply(StorageObjectLocation location) {
+            Function<StorageObjectLocation, PrivateObjectAccess> resolver = delegate;
+            if (resolver == null) {
+                synchronized (this) {
+                    resolver = delegate;
+                    if (resolver == null) {
+                        try {
+                            ResolvedStorageConfig config = configService.effective();
+                            resolver = candidate -> privateReadAccess(candidate, validity, config);
+                        } catch (RuntimeException ex) {
+                            resolver = ignored -> PrivateObjectAccess.authenticatedBlob();
+                        }
+                        delegate = resolver;
+                    }
+                }
+            }
+            return resolver.apply(location);
+        }
+    }
+
     @FunctionalInterface
     interface CosClientFactory {
         COSClient create(String region, String secretId, String secretKey);
+    }
+
+    @FunctionalInterface
+    interface CosSigningClientFactory {
+        COSClient create(
+                String region,
+                String secretId,
+                String secretKey,
+                HttpProtocol protocol,
+                String endpoint
+        );
     }
 }
