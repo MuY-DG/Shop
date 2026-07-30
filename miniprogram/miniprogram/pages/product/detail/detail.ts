@@ -2,6 +2,7 @@ import {
   buildDirectBuyUrl,
   resolveAddressSelection
 } from "../../../features/checkout";
+import { buildCustomerServiceUrl } from "../../../features/customer-service";
 import {
   buildGalleryImages,
   buildParameterViews,
@@ -673,6 +674,16 @@ Page({
         wx.switchTab({ url: "/pages/cart/cart" });
       }
     });
+  },
+
+  onCustomerServiceTap() {
+    const url = buildCustomerServiceUrl("PRODUCT", this.data.productId);
+    const session = getSessionState();
+    if (!session.user || (!session.accessToken && !session.refreshToken)) {
+      openLoginPage(url);
+      return;
+    }
+    wx.navigateTo({ url });
   },
 
   onAddressTap() {

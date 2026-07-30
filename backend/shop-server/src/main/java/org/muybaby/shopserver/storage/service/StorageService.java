@@ -320,6 +320,31 @@ public class StorageService {
         });
     }
 
+    public StorageAssetResponse uploadCustomerServiceImageFromApp(
+            AuthenticatedPrincipal principal,
+            Long conversationId,
+            MultipartFile file
+    ) {
+        return outsideTransaction(() -> {
+            requirePrincipal(principal, TokenKind.APP);
+            if (conversationId == null
+                    || conversationId <= 0
+                    || !ownsCustomerServiceConversation(principal.subjectId(), conversationId)) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            return upload(
+                    principal,
+                    StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                    null,
+                    CUSTOMER_SERVICE_CONVERSATION_CONTEXT,
+                    conversationId,
+                    databaseNow().plus(CUSTOMER_SERVICE_IMAGE_STAGING_TTL),
+                    file,
+                    UploadedByType.APP
+            );
+        });
+    }
+
     public StorageAssetResponse uploadPaymentSecret(
             AuthenticatedPrincipal principal,
             MultipartFile file
@@ -1507,6 +1532,19 @@ public class StorageService {
     private boolean ownsOrder(Long userId, Long orderId) {
         Integer count = jdbcClient.sql("select count(*) from shop_order where id = :orderId and user_id = :userId")
                 .param("orderId", orderId)
+                .param("userId", userId)
+                .query(Integer.class)
+                .single();
+        return count != null && count == 1;
+    }
+
+    private boolean ownsCustomerServiceConversation(Long userId, Long conversationId) {
+        Integer count = jdbcClient.sql("""
+                        select count(*)
+                        from customer_service_conversation
+                        where id = :conversationId and app_user_id = :userId
+                        """)
+                .param("conversationId", conversationId)
                 .param("userId", userId)
                 .query(Integer.class)
                 .single();

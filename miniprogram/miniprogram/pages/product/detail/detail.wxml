@@ -221,7 +221,7 @@
 
     <view class="purchase-bar">
       <view class="purchase-utilities">
-        <button class="utility-action" open-type="contact" aria-label="联系客服">
+        <button class="utility-action" bindtap="onCustomerServiceTap" aria-label="联系客服">
           <view class="utility-icon-frame">
             <image class="utility-icon utility-icon--support" src="/assets/icons/support-agent-outline-rounded.svg" mode="aspectFit" />
           </view>

@@ -15,6 +15,7 @@
     "pages/product/search/search",
     "pages/product/list/list",
     "pages/product/detail/detail",
+    "pages/customer-service/chat/chat",
     "pages/order/preview/preview",
     "pages/order/created/created",
     "pages/order/list/list",

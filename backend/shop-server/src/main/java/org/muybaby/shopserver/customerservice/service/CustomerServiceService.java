@@ -737,6 +737,39 @@ public class CustomerServiceService {
         }));
     }
 
+    public MessageResponse sendImageFromApp(
+            AuthenticatedPrincipal principal,
+            MultipartFile file
+    ) {
+        Long appUserId = requirePrincipal(principal, TokenKind.APP);
+        return requireTransactionResult(withoutTransaction.execute(status -> {
+            ImageMessageContext context = requireTransactionResult(requiresNewTransaction.execute(prepareStatus -> {
+                ConversationRow conversation = findOrCreateConversation(appUserId);
+                if (!conversation.appUserId().equals(appUserId)) {
+                    throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
+                }
+                return new ImageMessageContext(conversation.id(), conversation.appUserId());
+            }));
+            StorageAssetResponse asset = storageService.uploadCustomerServiceImageFromApp(
+                    principal, context.conversationId(), file);
+            return requireTransactionResult(requiresNewTransaction.execute(finalizeStatus -> {
+                ConversationRow conversation = requireConversation(context.conversationId());
+                if (!conversation.appUserId().equals(appUserId)) {
+                    throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
+                }
+                conversation = prepareForAppAction(conversation, appUserId);
+                MessageResponse message = insertMessage(
+                        conversation, "APP_USER", appUserId, "IMAGE",
+                        asset.originalFilename(), asset.id(), null
+                );
+                storageService.bindCustomerServiceImage(asset.id(), conversation.id());
+                touchForAdminNotification(conversation.id(), message.createdAt());
+                publish(conversation.id(), appUserId, "MESSAGE_CREATED", message.messageId());
+                return message;
+            }));
+        }));
+    }
+
     public ResponseEntity<InputStreamResource> imageForApp(
             AuthenticatedPrincipal principal,
             Long messageId

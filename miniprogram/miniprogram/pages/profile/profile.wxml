@@ -140,12 +140,6 @@
             aria-hidden="true"
           />
           <text class="service-item__label">{{item.label}}</text>
-          <button
-            wx:if="{{item.kind === 'contact'}}"
-            class="service-item__contact-hit"
-            open-type="contact"
-            aria-label="在线客服"
-          />
         </view>
       </view>
     </view>

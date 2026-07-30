@@ -11,6 +11,23 @@ export const API_ENDPOINTS = Object.freeze({
   },
   home: "/app/home",
   contact: "/app/contact",
+  realtime: {
+    ticket: "/app/realtime/tickets"
+  },
+  customerService: {
+    conversation: "/app/customer-service/conversation",
+    open: "/app/customer-service/conversation/open",
+    messages: "/app/customer-service/conversation/messages",
+    images: "/app/customer-service/conversation/images",
+    orderCandidates: "/app/customer-service/conversation/order-candidates",
+    order: (orderId: number): string =>
+      `/app/customer-service/conversation/orders/${orderId}`,
+    productCandidates: "/app/customer-service/conversation/product-candidates",
+    product: (productId: number): string =>
+      `/app/customer-service/conversation/products/${productId}`,
+    image: (messageId: number): string =>
+      `/app/customer-service/conversation/messages/${messageId}/image`
+  },
   product: {
     categories: "/app/product/categories",
     list: "/app/product/spus",

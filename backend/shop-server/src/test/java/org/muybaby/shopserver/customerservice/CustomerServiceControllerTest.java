@@ -365,7 +365,7 @@ class CustomerServiceControllerTest {
     }
 
     @Test
-    void onlyAdminCanUploadCustomerServiceImagesAndOnlyOwningAppCanReadThem() throws Exception {
+    void appAndAdminCanUploadCustomerServiceImagesAndOnlyOwningAppCanReadThem() throws Exception {
         AppLogin app = appLogin("customer-service-image-user");
         AppLogin other = appLogin("customer-service-image-other");
         String adminToken = adminLogin("Super", "123456");
@@ -381,10 +381,22 @@ class CustomerServiceControllerTest {
                 "file", "app.png", "image/png", onePixelPng()
         );
 
-        mockMvc.perform(multipart("/app/customer-service/conversation/images")
+        String appImageResponse = mockMvc.perform(multipart("/app/customer-service/conversation/images")
                         .file(appImage)
                         .header("Authorization", bearer(app.token())))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.messageType").value("IMAGE"))
+                .andExpect(jsonPath("$.data.senderType").value("APP_USER"))
+                .andReturn().getResponse().getContentAsString();
+        long appMessageId = objectMapper.readTree(appImageResponse).path("data").path("messageId").asLong();
+
+        mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", appMessageId)
+                        .header("Authorization", bearer(app.token())))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo("image/png"));
+        mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", appMessageId)
+                        .header("Authorization", bearer(other.token())))
+                .andExpect(status().isBadRequest());
 
         mockMvc.perform(post("/app/customer-service/conversation/messages")
                         .header("Authorization", bearer(app.token()))
@@ -432,7 +444,7 @@ class CustomerServiceControllerTest {
                         """)
                 .param("conversationId", conversationId)
                 .query(Integer.class)
-                .single()).isEqualTo(1);
+                .single()).isEqualTo(2);
     }
 
     @Test

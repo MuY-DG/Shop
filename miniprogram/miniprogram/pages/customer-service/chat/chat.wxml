@@ -1,0 +1,333 @@
+<view class="chat-page">
+  <navigation-bar
+    title="在线客服"
+    back="{{true}}"
+    background="#F7F7F7"
+    color="#111111"
+    show-divider="{{true}}"
+  />
+
+  <view class="service-status service-status--{{conversationStatus}}">
+    <view class="service-status__dot"></view>
+    <text>{{statusHint}}</text>
+  </view>
+
+  <view wx:if="{{loading && !loaded}}" class="chat-state">
+    <ui-state type="loading" title="正在接入客服" description="会话记录正在同步" />
+  </view>
+
+  <view wx:elif="{{errorText && !loaded}}" class="chat-state">
+    <ui-state
+      type="error"
+      title="客服暂时无法接入"
+      description="{{errorText}}"
+      action-text="重新加载"
+      bindaction="onRetry"
+    />
+  </view>
+
+  <block wx:else>
+    <scroll-view
+      class="message-scroll"
+      scroll-y
+      enhanced
+      show-scrollbar="{{false}}"
+      scroll-with-animation
+      scroll-into-view="{{scrollTarget}}"
+    >
+      <view class="message-list">
+        <view wx:if="{{!messages.length}}" class="welcome-message">
+          <view class="welcome-message__avatar">客</view>
+          <view class="welcome-message__bubble">
+            你好，我是在线客服。请描述遇到的问题，我们会尽快回复你。
+          </view>
+        </view>
+
+        <block wx:for="{{messages}}" wx:key="messageId">
+          <view wx:if="{{item.showTime}}" class="message-time">{{item.timeText}}</view>
+
+          <view
+            wx:if="{{item.isSystem}}"
+            id="message-{{item.messageId}}"
+            class="system-message"
+          >
+            <text>{{item.content}}</text>
+          </view>
+
+          <view
+            wx:else
+            id="message-{{item.messageId}}"
+            class="message-row {{item.isMine ? 'message-row--mine' : ''}}"
+          >
+            <view wx:if="{{!item.isMine}}" class="message-avatar">
+              <image
+                wx:if="{{item.senderAvatar}}"
+                src="{{item.senderAvatar}}"
+                mode="aspectFill"
+              />
+              <text wx:else>{{item.avatarText}}</text>
+            </view>
+
+            <view class="message-body">
+              <text wx:if="{{!item.isMine}}" class="message-sender">{{item.senderName}}</text>
+
+              <view
+                wx:if="{{item.messageType === 'TEXT'}}"
+                class="message-bubble {{item.isMine ? 'message-bubble--mine' : 'message-bubble--other'}}"
+              >{{item.content}}</view>
+
+              <view
+                wx:elif="{{item.messageType === 'IMAGE'}}"
+                class="message-image-shell"
+                data-url="{{item.imageUrl}}"
+                bindtap="onImageTap"
+              >
+                <image
+                  wx:if="{{item.imageUrl}}"
+                  class="message-image"
+                  style="{{item.imageStyle}}"
+                  src="{{item.imageUrl}}"
+                  mode="aspectFill"
+                />
+                <view
+                  wx:else
+                  class="message-image message-image--loading"
+                  style="{{item.imageStyle}}"
+                >{{item.imageLoading ? '图片加载中' : '图片加载失败'}}</view>
+              </view>
+
+              <view
+                wx:elif="{{item.messageType === 'ORDER_CARD'}}"
+                class="chat-card"
+                data-id="{{item.orderId}}"
+                bindtap="onOrderCardTap"
+                aria-role="button"
+              >
+                <view class="chat-card__eyebrow">
+                  <text>订单</text>
+                  <text class="chat-card__status">{{item.orderStatusText}}</text>
+                </view>
+                <view class="chat-card__main">
+                  <view class="chat-card__image-shell">
+                    <image
+                      wx:if="{{item.orderImage}}"
+                      src="{{item.orderImage}}"
+                      mode="aspectFill"
+                    />
+                    <text wx:else>单</text>
+                  </view>
+                  <view class="chat-card__body">
+                    <text class="chat-card__title">{{item.orderTitle}}</text>
+                    <text class="chat-card__meta">{{item.orderItemText}}</text>
+                    <text class="chat-card__price">{{item.orderAmountText}}</text>
+                  </view>
+                </view>
+                <view class="chat-card__footer">
+                  <text>订单号 {{item.orderNo}}</text>
+                  <text>查看 ›</text>
+                </view>
+              </view>
+
+              <view
+                wx:elif="{{item.messageType === 'PRODUCT_CARD'}}"
+                class="chat-card"
+                data-id="{{item.productId}}"
+                bindtap="onProductCardTap"
+                aria-role="button"
+              >
+                <view class="chat-card__eyebrow">商品</view>
+                <view class="chat-card__main">
+                  <view class="chat-card__image-shell">
+                    <image
+                      wx:if="{{item.productImage}}"
+                      src="{{item.productImage}}"
+                      mode="aspectFill"
+                    />
+                    <text wx:else>物</text>
+                  </view>
+                  <view class="chat-card__body">
+                    <text class="chat-card__title">{{item.productTitle}}</text>
+                    <text class="chat-card__price">{{item.productPriceText}}</text>
+                  </view>
+                </view>
+                <view class="chat-card__footer">
+                  <text>商品详情</text>
+                  <text>查看 ›</text>
+                </view>
+              </view>
+
+              <view
+                wx:else
+                class="message-bubble {{item.isMine ? 'message-bubble--mine' : 'message-bubble--other'}}"
+              >{{item.content}}</view>
+            </view>
+
+            <view wx:if="{{item.isMine}}" class="message-avatar message-avatar--mine">
+              <image
+                wx:if="{{item.senderAvatar}}"
+                src="{{item.senderAvatar}}"
+                mode="aspectFill"
+              />
+              <text wx:else>我</text>
+            </view>
+          </view>
+        </block>
+
+        <view class="message-list__bottom"></view>
+      </view>
+    </scroll-view>
+
+    <view wx:if="{{contextPreview}}" class="context-preview">
+      <text class="context-preview__mark">已关联</text>
+      <text class="context-preview__text">{{contextPreview}}</text>
+    </view>
+
+    <view class="composer">
+      <textarea
+        class="composer__input"
+        value="{{inputValue}}"
+        auto-height
+        maxlength="2000"
+        confirm-type="send"
+        cursor-spacing="18"
+        placeholder="发送消息"
+        placeholder-class="composer__placeholder"
+        disabled="{{sending || uploading}}"
+        bindinput="onInput"
+        bindfocus="onInputFocus"
+        bindconfirm="onInputConfirm"
+      />
+      <button
+        wx:if="{{inputValue}}"
+        class="composer__send"
+        loading="{{sending}}"
+        disabled="{{sending || uploading}}"
+        bindtap="onSendTap"
+      >发送</button>
+      <button
+        class="composer__plus {{panelMode ? 'composer__plus--active' : ''}}"
+        disabled="{{sending || uploading}}"
+        bindtap="onPlusTap"
+        aria-label="更多发送选项"
+      >
+        <view class="composer__plus-line composer__plus-line--horizontal"></view>
+        <view class="composer__plus-line composer__plus-line--vertical"></view>
+      </button>
+    </view>
+
+    <view class="attachment-panel {{panelMode ? 'attachment-panel--open' : ''}}">
+      <view wx:if="{{uploading}}" class="upload-progress">
+        <view class="upload-progress__spinner"></view>
+        <text>{{uploadProgress}}</text>
+      </view>
+
+      <view wx:elif="{{panelMode === 'main'}}" class="attachment-grid">
+        <view class="attachment-action" bindtap="onAlbumTap" aria-role="button">
+          <view class="attachment-action__icon">▧</view>
+          <text>相册</text>
+        </view>
+        <view class="attachment-action" bindtap="onCameraTap" aria-role="button">
+          <view class="attachment-action__icon">◉</view>
+          <text>拍摄</text>
+        </view>
+        <view class="attachment-action" bindtap="onOrderActionTap" aria-role="button">
+          <view class="attachment-action__icon attachment-action__icon--text">单</view>
+          <text>订单</text>
+        </view>
+        <view class="attachment-action" bindtap="onProductActionTap" aria-role="button">
+          <view class="attachment-action__icon attachment-action__icon--text">物</view>
+          <text>商品</text>
+        </view>
+      </view>
+
+      <view wx:elif="{{panelMode === 'product'}}" class="product-source-panel">
+        <view class="product-source-panel__heading">
+          <button bindtap="onPanelBackTap">‹</button>
+          <text>从哪里选择商品</text>
+        </view>
+        <view class="attachment-grid attachment-grid--three">
+          <view
+            class="attachment-action"
+            data-source="browse"
+            bindtap="onProductSourceTap"
+            aria-role="button"
+          >
+            <view class="attachment-action__icon attachment-action__icon--text">览</view>
+            <text>浏览</text>
+          </view>
+          <view
+            class="attachment-action"
+            data-source="favorite"
+            bindtap="onProductSourceTap"
+            aria-role="button"
+          >
+            <view class="attachment-action__icon attachment-action__icon--text">藏</view>
+            <text>收藏</text>
+          </view>
+          <view
+            class="attachment-action"
+            data-source="cart"
+            bindtap="onProductSourceTap"
+            aria-role="button"
+          >
+            <view class="attachment-action__icon attachment-action__icon--text">车</view>
+            <text>购物车</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <view wx:if="{{pickerOpen}}" class="picker-layer">
+    <view class="picker-mask" bindtap="onPickerCloseTap"></view>
+    <view class="picker-sheet">
+      <view class="picker-sheet__handle"></view>
+      <view class="picker-sheet__header">
+        <text>{{pickerTitle}}</text>
+        <button bindtap="onPickerCloseTap" aria-label="关闭">×</button>
+      </view>
+
+      <view wx:if="{{pickerLoading}}" class="picker-state">
+        <view class="upload-progress__spinner"></view>
+        <text>正在加载</text>
+      </view>
+
+      <view wx:elif="{{pickerErrorText}}" class="picker-state picker-state--error">
+        <text>{{pickerErrorText}}</text>
+        <button bindtap="onPickerRetry">重试</button>
+      </view>
+
+      <view wx:elif="{{!candidates.length}}" class="picker-state">
+        <text>这里还没有可发送的内容</text>
+      </view>
+
+      <scroll-view wx:else class="candidate-list" scroll-y enhanced show-scrollbar="{{false}}">
+        <view
+          wx:for="{{candidates}}"
+          wx:key="id"
+          class="candidate {{item.disabled ? 'candidate--disabled' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="onCandidateTap"
+          aria-role="button"
+        >
+          <view class="candidate__image-shell">
+            <image wx:if="{{item.hasImage}}" src="{{item.imageUrl}}" mode="aspectFill" />
+            <text wx:else>{{pickerKind === 'order' ? '单' : '物'}}</text>
+          </view>
+          <view class="candidate__body">
+            <text class="candidate__title">{{item.title}}</text>
+            <text wx:if="{{item.subtitle}}" class="candidate__subtitle">{{item.subtitle}}</text>
+            <text class="candidate__meta">{{item.metaText}}</text>
+          </view>
+          <view class="candidate__aside">
+            <text class="candidate__price">{{item.priceText}}</text>
+            <button
+              loading="{{candidateSendingId === item.id}}"
+              disabled="{{item.disabled || candidateSendingId}}"
+            >{{item.disabled ? '不可用' : '发送'}}</button>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+</view>

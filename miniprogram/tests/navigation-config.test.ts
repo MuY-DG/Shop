@@ -160,7 +160,7 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(tabStyle, /background: rgba\(255, 251, 244, 0\.74\)/);
 });
 
-test("账户中心注册真实页面、移除消息中心并提供在线客服", () => {
+test("账户中心注册真实页面、移除消息中心并接入自建在线客服", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")
   ) as AppConfig;
@@ -193,8 +193,8 @@ test("账户中心注册真实页面、移除消息中心并提供在线客服",
   assert.match(profileLogic, /优惠券/);
   assert.match(profileLogic, /我的收藏/);
   assert.match(profileLogic, /浏览记录/);
-  assert.match(profileTemplate, /open-type="contact"/);
-  assert.match(profileTemplate, /在线客服/);
+  assert.doesNotMatch(profileTemplate, /open-type="contact"/);
+  assert.match(profileLogic, /customerService/);
   assert.match(profileLogic, /accountNavigationPath/);
   assert.match(profileLogic, /profile-default-avatar\.png/);
   assert.match(profileTemplate, /profile-watercolor-background\.png/);

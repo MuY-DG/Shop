@@ -95,8 +95,8 @@ Page({
       {
         label: "联系客服",
         iconPath: "/assets/icons/support-agent-outline-rounded.svg",
-        path: "",
-        kind: "contact"
+        path: ACCOUNT_ROUTES.customerService,
+        kind: "route"
       },
       {
         label: "售后服务",

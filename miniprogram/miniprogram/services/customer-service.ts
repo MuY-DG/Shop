@@ -1,0 +1,102 @@
+import { API_ENDPOINTS } from "../constants/api-endpoints";
+import type {
+  CustomerServiceConversation,
+  CustomerServiceMessage,
+  CustomerServiceOpenRequest,
+  CustomerServiceOrder,
+  CustomerServiceProduct,
+  CustomerServiceRealtimeTicket,
+  CustomerServiceSendMessageRequest
+} from "../types/customer-service";
+import { downloadAuthenticatedFile } from "../utils/authenticated-download";
+import { request } from "../utils/request";
+import { uploadFile } from "../utils/upload";
+
+export function openCustomerServiceConversation(
+  data: CustomerServiceOpenRequest
+): Promise<CustomerServiceConversation> {
+  return request<CustomerServiceConversation, CustomerServiceOpenRequest>({
+    url: API_ENDPOINTS.customerService.open,
+    method: "POST",
+    data
+  });
+}
+
+export function getCustomerServiceConversation(): Promise<CustomerServiceConversation | null> {
+  return request<CustomerServiceConversation | null>({
+    url: API_ENDPOINTS.customerService.conversation,
+    method: "GET"
+  });
+}
+
+export function getCustomerServiceMessages(
+  afterId?: number
+): Promise<CustomerServiceMessage[]> {
+  return request<CustomerServiceMessage[]>({
+    url: API_ENDPOINTS.customerService.messages,
+    method: "GET",
+    data: afterId ? { afterId } : undefined
+  });
+}
+
+export function sendCustomerServiceMessage(
+  data: CustomerServiceSendMessageRequest
+): Promise<CustomerServiceMessage> {
+  return request<CustomerServiceMessage, CustomerServiceSendMessageRequest>({
+    url: API_ENDPOINTS.customerService.messages,
+    method: "POST",
+    data
+  });
+}
+
+export function uploadCustomerServiceImage(
+  filePath: string
+): Promise<CustomerServiceMessage> {
+  return uploadFile<CustomerServiceMessage>({
+    url: API_ENDPOINTS.customerService.images,
+    filePath
+  });
+}
+
+export function getCustomerServiceOrderCandidates(): Promise<CustomerServiceOrder[]> {
+  return request<CustomerServiceOrder[]>({
+    url: API_ENDPOINTS.customerService.orderCandidates,
+    method: "GET"
+  });
+}
+
+export function sendCustomerServiceOrder(orderId: number): Promise<CustomerServiceOrder> {
+  return request<CustomerServiceOrder>({
+    url: API_ENDPOINTS.customerService.order(orderId),
+    method: "POST"
+  });
+}
+export function getCustomerServiceProductCandidates(
+  keyword?: string
+): Promise<CustomerServiceProduct[]> {
+  return request<CustomerServiceProduct[]>({
+    url: API_ENDPOINTS.customerService.productCandidates,
+    method: "GET",
+    data: keyword?.trim() ? { keyword: keyword.trim() } : undefined
+  });
+}
+
+export function sendCustomerServiceProduct(
+  productId: number
+): Promise<CustomerServiceProduct> {
+  return request<CustomerServiceProduct>({
+    url: API_ENDPOINTS.customerService.product(productId),
+    method: "POST"
+  });
+}
+
+export function downloadCustomerServiceImage(messageId: number): Promise<string> {
+  return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(messageId));
+}
+
+export function issueCustomerServiceRealtimeTicket(): Promise<CustomerServiceRealtimeTicket> {
+  return request<CustomerServiceRealtimeTicket>({
+    url: API_ENDPOINTS.realtime.ticket,
+    method: "POST"
+  });
+}
