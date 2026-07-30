@@ -1,21 +1,26 @@
 package org.muybaby.shopserver.storage.compression;
 
+import org.muybaby.shopserver.common.error.BusinessException;
+import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.storage.compression.config.ImageCompressionProperties;
 import org.muybaby.shopserver.storage.compression.config.ImageCompressionRuntimeConfigService;
 import org.muybaby.shopserver.storage.compression.config.ResolvedImageCompressionConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.OptionalLong;
 import java.util.Set;
 
 /**
  * Applies the runtime compression policy without coupling the Tinify transport to storage.
  *
- * <p>Every provider failure is a soft failure for uploads: the already validated source image
- * remains available to the storage pipeline. Credential and quota failures also update the
- * persisted runtime state so following uploads stop calling Tinify until configuration or the
- * billing period changes.</p>
+ * <p>Disabled or unusable configuration is a soft bypass, so the validated source image remains
+ * available to the storage pipeline. Once compression is enabled and usable, transient provider
+ * failures are retried and must not silently persist the source image. Credential and quota
+ * failures update the persisted runtime state and then use the source because compression is no
+ * longer usable.</p>
  */
 @Component
 public class UploadImageCompressionCoordinator {
@@ -29,13 +34,18 @@ public class UploadImageCompressionCoordinator {
 
     private final ImageCompressionRuntimeConfigService configService;
     private final ImageCompressionService imageCompressionService;
+    private final int maxAttempts;
+    private final Duration retryDelay;
 
     public UploadImageCompressionCoordinator(
             ImageCompressionRuntimeConfigService configService,
-            ImageCompressionService imageCompressionService
+            ImageCompressionService imageCompressionService,
+            ImageCompressionProperties properties
     ) {
         this.configService = configService;
         this.imageCompressionService = imageCompressionService;
+        this.maxAttempts = requireMaxAttempts(properties.effectiveMaxAttempts());
+        this.retryDelay = requireRetryDelay(properties.effectiveRetryDelay());
     }
 
     public CompressionOutcome compress(byte[] source, String contentType, long maxOutputBytes) {
@@ -49,32 +59,55 @@ public class UploadImageCompressionCoordinator {
             return CompressionOutcome.passthrough(source, contentType);
         }
         ResolvedImageCompressionConfig config = permit.config();
+        ImageCompressionRequest request =
+                new ImageCompressionRequest(source, contentType, maxOutputBytes);
 
         try {
-            ImageCompressionResult result = imageCompressionService.compress(
-                    config.apiKey(),
-                    new ImageCompressionRequest(source, contentType, maxOutputBytes)
-            );
-            recordCount(config.apiKey(), result.compressionCount());
-            return CompressionOutcome.compressed(
-                    result.content(),
-                    result.contentType(),
-                    result.width(),
-                    result.height()
-            );
-        } catch (ImageCompressionException ex) {
-            recordCount(config.apiKey(), ex.compressionCount());
-            if (ex.failure() == ImageCompressionFailure.QUOTA_EXHAUSTED) {
-                markQuotaExhausted(config.apiKey());
-            } else if (ex.failure() == ImageCompressionFailure.INVALID_CREDENTIALS) {
-                markInvalidKey(config.apiKey());
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    ImageCompressionResult result =
+                            imageCompressionService.compress(config.apiKey(), request);
+                    recordCount(config.apiKey(), result.compressionCount());
+                    return CompressionOutcome.compressed(
+                            result.content(),
+                            result.contentType(),
+                            result.width(),
+                            result.height()
+                    );
+                } catch (ImageCompressionException ex) {
+                    recordCount(config.apiKey(), ex.compressionCount());
+                    if (ex.failure() == ImageCompressionFailure.QUOTA_EXHAUSTED) {
+                        markQuotaExhausted(config.apiKey());
+                        logBypass(ex);
+                        return CompressionOutcome.passthrough(source, contentType);
+                    }
+                    if (ex.failure() == ImageCompressionFailure.INVALID_CREDENTIALS) {
+                        markInvalidKey(config.apiKey());
+                        logBypass(ex);
+                        return CompressionOutcome.passthrough(source, contentType);
+                    }
+                    if (!isRetryable(ex.failure()) || attempt == maxAttempts) {
+                        log.warn(
+                                "Tinify image compression failed; upload rejected: "
+                                        + "attempts={}, failure={}, status={}",
+                                attempt,
+                                ex.failure(),
+                                statusCode(ex)
+                        );
+                        throw new BusinessException(ErrorCode.STORAGE_IMAGE_COMPRESSION_FAILED);
+                    }
+                    log.warn(
+                            "Tinify image compression attempt failed; retrying: "
+                                    + "attempt={}/{}, failure={}, status={}",
+                            attempt,
+                            maxAttempts,
+                            ex.failure(),
+                            statusCode(ex)
+                    );
+                    waitBeforeRetry();
+                }
             }
-            log.warn(
-                    "Tinify image compression was bypassed: failure={}, status={}",
-                    ex.failure(),
-                    ex.statusCode().isPresent() ? ex.statusCode().getAsInt() : null
-            );
-            return CompressionOutcome.passthrough(source, contentType);
+            throw new IllegalStateException("Compression retry loop completed without an outcome");
         } finally {
             try {
                 configService.releaseCompressionPermit(permit.reservationId());
@@ -82,6 +115,53 @@ public class UploadImageCompressionCoordinator {
                 log.warn("Failed to release an image compression budget reservation");
             }
         }
+    }
+
+    private void logBypass(ImageCompressionException exception) {
+        log.warn(
+                "Tinify image compression became unavailable; source image retained: "
+                        + "failure={}, status={}",
+                exception.failure(),
+                statusCode(exception)
+        );
+    }
+
+    private Integer statusCode(ImageCompressionException exception) {
+        return exception.statusCode().isPresent() ? exception.statusCode().getAsInt() : null;
+    }
+
+    private boolean isRetryable(ImageCompressionFailure failure) {
+        return switch (failure) {
+            case RATE_LIMITED, UNAVAILABLE, NETWORK, TIMEOUT -> true;
+            case QUOTA_EXHAUSTED, INVALID_CREDENTIALS, REJECTED, INVALID_RESPONSE -> false;
+        };
+    }
+
+    private void waitBeforeRetry() {
+        if (retryDelay.isZero()) {
+            return;
+        }
+        try {
+            Thread.sleep(retryDelay.toMillis());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new BusinessException(ErrorCode.STORAGE_IMAGE_COMPRESSION_FAILED);
+        }
+    }
+
+    private int requireMaxAttempts(int value) {
+        if (value < 1 || value > 3) {
+            throw new IllegalArgumentException("Image compression max attempts must be between 1 and 3");
+        }
+        return value;
+    }
+
+    private Duration requireRetryDelay(Duration value) {
+        if (value == null || value.isNegative() || value.compareTo(Duration.ofSeconds(10)) > 0) {
+            throw new IllegalArgumentException(
+                    "Image compression retry delay must be between 0 and 10 seconds");
+        }
+        return value;
     }
 
     private void recordCount(String apiKey, OptionalLong compressionCount) {

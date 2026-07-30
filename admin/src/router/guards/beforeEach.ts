@@ -276,6 +276,7 @@ async function handleDynamicRoutes(
   loadingService.showLoading()
 
   try {
+    const userStore = useUserStore()
     // 1. 获取用户信息
     await fetchUserInfo()
 
@@ -293,6 +294,12 @@ async function handleDynamicRoutes(
     // 5. 保存菜单数据到 store
     const menuStore = useMenuStore()
     menuStore.setMenuList(menuList)
+    const roles = userStore.info.roles || []
+    if (roles.includes('R_CUSTOMER_SERVICE') && !roles.includes('R_SUPER')) {
+      menuStore.setHomePath('/customer-service')
+    } else if (roles.includes('R_CUSTOMER_SERVICE_MANAGER') && !roles.includes('R_SUPER')) {
+      menuStore.setHomePath('/customer-service/settings')
+    }
     menuStore.addRemoveRouteFns(routeRegistry?.getRemoveRouteFns() || [])
 
     // 6. 保存 iframe 路由

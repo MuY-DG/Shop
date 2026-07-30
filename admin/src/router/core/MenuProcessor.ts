@@ -140,7 +140,11 @@ export class MenuProcessor {
         ? this.normalizeMenuPaths(item.children, fullPath)
         : item.children
 
-      const redirect = item.redirect || this.resolveDefaultRedirect(children)
+      const redirect =
+        item.redirect ||
+        (item.meta?.isFullPage && item.component
+          ? undefined
+          : this.resolveDefaultRedirect(children))
 
       return {
         ...item,

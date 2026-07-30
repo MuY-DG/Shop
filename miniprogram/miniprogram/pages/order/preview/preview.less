@@ -335,25 +335,48 @@
 }
 
 button.submit-action,
-button.import-address-action {
+button.add-address-action {
   margin: 0;
   border-radius: @radius-pill;
   color: @color-text-inverse;
-  background: linear-gradient(135deg, @color-brand 0, @color-brand-dark 100%);
   box-shadow: @shadow-action;
   font-size: @font-size-base;
   font-weight: 700;
 }
 
 button.submit-action {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
   width: 100%;
   height: 88rpx;
+  padding: 0 30rpx;
+  align-items: center;
+  justify-content: center;
+  color: #fefcfc;
+  background: #ff172b;
   font-size: @font-size-md;
-  line-height: 88rpx;
+  line-height: normal;
+  text-align: center;
+}
+
+.submit-action__label {
+  display: block;
+  text-align: center;
+}
+
+.submit-action__amount {
+  position: absolute;
+  right: 30rpx;
+  color: inherit;
+  font-size: @font-size-sm;
+  font-weight: 600;
 }
 
 button.submit-action::after,
-button.import-address-action::after {
+button.add-address-action::after,
+.address-retry::after,
+.address-inline-error button::after {
   border: 0;
 }
 
@@ -380,8 +403,11 @@ button.submit-action[disabled] {
   right: 0;
   bottom: 0;
   left: 0;
+  display: flex;
+  box-sizing: border-box;
   max-height: 78vh;
   padding: @space-3 @page-gutter calc(@space-6 + env(safe-area-inset-bottom));
+  flex-direction: column;
   border-radius: @radius-xl @radius-xl 0 0;
   background: @color-surface;
   box-shadow: @shadow-floating;
@@ -416,8 +442,7 @@ button.submit-action[disabled] {
 }
 
 .address-options {
-  max-height: 48vh;
-  margin-top: @space-5;
+  padding: @space-5 0 @space-3;
 }
 
 .address-option {
@@ -449,17 +474,83 @@ button.submit-action[disabled] {
   min-width: 0;
 }
 
-.address-options-empty {
-  padding: @space-12 0;
+.address-sheet__scroll {
+  min-height: 0;
+  max-height: 48vh;
+  flex: 1;
+}
+
+.address-sheet-state {
+  display: flex;
+  min-height: 330rpx;
+  padding: @space-8;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
   color: @color-text-muted;
   font-size: @font-size-sm;
   text-align: center;
+  gap: @space-2;
 }
 
-button.import-address-action {
+.address-sheet-state--error {
+  color: @color-danger;
+}
+
+.address-sheet-state__title {
+  color: @color-text-primary;
+  font-size: @font-size-base;
+  font-weight: 700;
+}
+
+.address-retry,
+.address-inline-error button {
+  width: auto !important;
+  min-width: 0;
+  height: 52rpx;
+  margin: @space-2 0 0 !important;
+  padding: 0 @space-4;
+  border-radius: @radius-pill;
+  color: @color-brand;
+  background: @color-brand-soft;
+  font-size: @font-size-xs;
+  line-height: 52rpx;
+}
+
+.address-inline-error {
+  display: flex;
+  min-height: 62rpx;
+  margin-bottom: @space-3;
+  padding: @space-2 @space-3;
+  border-radius: @radius-sm;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  color: @color-danger;
+  background: @color-danger-soft;
+  font-size: @font-size-xs;
+  gap: @space-3;
+}
+
+.address-inline-error button {
+  height: 44rpx;
+  margin: 0 !important;
+  flex: none;
+  line-height: 44rpx;
+}
+
+.address-sheet__footer {
+  padding-top: @space-4;
+  flex: none;
+  border-top: 1rpx solid @color-divider;
+}
+
+button.add-address-action {
   width: 100%;
   height: 84rpx;
-  margin-top: @space-5;
+  padding: 0;
+  background: @color-brand;
   line-height: 84rpx;
 }
 

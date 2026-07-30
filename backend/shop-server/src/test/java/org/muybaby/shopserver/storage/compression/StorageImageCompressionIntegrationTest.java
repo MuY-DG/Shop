@@ -7,6 +7,8 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.common.error.BusinessException;
+import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.compression.config.ImageCompressionRuntimeConfigService;
 import org.muybaby.shopserver.storage.compression.dto.AdminImageCompressionConfigRequest;
@@ -39,6 +41,7 @@ import java.util.Random;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -226,7 +229,7 @@ class StorageImageCompressionIntegrationTest {
     }
 
     @Test
-    void transientCompressionFailureFallsBackToTheOriginalWithoutDisablingCompression() {
+    void transientCompressionFailureRetriesTheSameSourceAndStoresWebp() {
         byte[] source = noisyImage("png", 80, 80);
         List<ProviderWrite> providerWrites = captureProviderWrites();
         when(imageCompressionService.compress(eq("test-tinify-key"), any(ImageCompressionRequest.class)))
@@ -237,17 +240,99 @@ class StorageImageCompressionIntegrationTest {
                         "ServiceUnavailable",
                         null,
                         null
+                ))
+                .thenReturn(new ImageCompressionResult(
+                        WEBP_80_BY_80,
+                        "image/webp",
+                        80,
+                        80,
+                        OptionalLong.of(18)
                 ));
 
         StorageAssetResponse response = storageService.uploadLibrary(
                 adminPrincipal(),
                 null,
-                multipart("fallback.png", "image/png", source)
+                multipart("retry.png", "image/png", source)
         );
 
-        assertOriginalPngWasStored(response, source, providerWrites.getFirst());
+        var retryRequestCaptor =
+                org.mockito.ArgumentCaptor.forClass(ImageCompressionRequest.class);
+        verify(imageCompressionService, times(2))
+                .compress(eq("test-tinify-key"), retryRequestCaptor.capture());
+        assertThat(retryRequestCaptor.getAllValues()).allSatisfy(request -> {
+            assertThat(request.content()).isEqualTo(source);
+            assertThat(request.contentType()).isEqualTo("image/png");
+        });
+        assertThat(response.originalFilename()).isEqualTo("retry.webp");
+        assertThat(response.contentType()).isEqualTo("image/webp");
+        assertThat(providerWrites).singleElement().satisfies(write -> {
+            assertThat(write.contentType()).isEqualTo("image/webp");
+            assertThat(write.bytes()).isEqualTo(WEBP_80_BY_80);
+        });
         assertThat(configService.effective().enabled()).isTrue();
         assertThat(configService.current().autoDisabledReason()).isEmpty();
+    }
+
+    @Test
+    void repeatedTransientCompressionFailureRejectsUploadWithoutStoringTheOriginal() {
+        byte[] source = noisyImage("png", 80, 80);
+        List<ProviderWrite> providerWrites = captureProviderWrites();
+        when(imageCompressionService.compress(eq("test-tinify-key"), any(ImageCompressionRequest.class)))
+                .thenThrow(new ImageCompressionException(
+                        ImageCompressionFailure.TIMEOUT,
+                        "Tinify timed out",
+                        null,
+                        null,
+                        null,
+                        null
+                ));
+
+        assertThatThrownBy(() -> storageService.uploadLibrary(
+                adminPrincipal(),
+                null,
+                multipart("must-compress.png", "image/png", source)
+        )).isInstanceOfSatisfying(BusinessException.class, exception ->
+                assertThat(exception.errorCode())
+                        .isEqualTo(ErrorCode.STORAGE_IMAGE_COMPRESSION_FAILED));
+
+        verify(imageCompressionService, times(2))
+                .compress(eq("test-tinify-key"), any(ImageCompressionRequest.class));
+        assertThat(providerWrites).isEmpty();
+        assertThat(jdbcClient.sql("""
+                                select count(*)
+                                from storage_asset
+                                where original_filename = 'must-compress.png'
+                                """)
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(configService.effective().enabled()).isTrue();
+    }
+
+    @Test
+    void nonRetryableCompressionFailureRejectsUploadWithoutRetryingOrStoringTheOriginal() {
+        byte[] source = noisyImage("png", 80, 80);
+        List<ProviderWrite> providerWrites = captureProviderWrites();
+        when(imageCompressionService.compress(eq("test-tinify-key"), any(ImageCompressionRequest.class)))
+                .thenThrow(new ImageCompressionException(
+                        ImageCompressionFailure.REJECTED,
+                        "Tinify rejected the image",
+                        400,
+                        "BadRequest",
+                        null,
+                        null
+                ));
+
+        assertThatThrownBy(() -> storageService.uploadLibrary(
+                adminPrincipal(),
+                null,
+                multipart("rejected.png", "image/png", source)
+        )).isInstanceOfSatisfying(BusinessException.class, exception ->
+                assertThat(exception.errorCode())
+                        .isEqualTo(ErrorCode.STORAGE_IMAGE_COMPRESSION_FAILED));
+
+        verify(imageCompressionService, times(1))
+                .compress(eq("test-tinify-key"), any(ImageCompressionRequest.class));
+        assertThat(providerWrites).isEmpty();
     }
 
     @Test
@@ -280,7 +365,7 @@ class StorageImageCompressionIntegrationTest {
     }
 
     @Test
-    void webpFilenameOverflowFallsBackToTheValidatedOriginal() {
+    void webpFilenameOverflowRejectsUploadInsteadOfStoringTheOriginal() {
         String filename = "a".repeat(251) + ".png";
         assertThat(filename).hasSize(255);
         byte[] source = noisyImage("png", 80, 80);
@@ -294,14 +379,15 @@ class StorageImageCompressionIntegrationTest {
                         OptionalLong.of(1)
                 ));
 
-        StorageAssetResponse response = storageService.uploadLibrary(
+        assertThatThrownBy(() -> storageService.uploadLibrary(
                 adminPrincipal(),
                 null,
                 multipart(filename, "image/png", source)
-        );
+        )).isInstanceOfSatisfying(BusinessException.class, exception ->
+                assertThat(exception.errorCode())
+                        .isEqualTo(ErrorCode.STORAGE_IMAGE_COMPRESSION_FAILED));
 
-        assertThat(response.originalFilename()).isEqualTo(filename);
-        assertOriginalPngWasStored(response, source, providerWrites.getFirst());
+        assertThat(providerWrites).isEmpty();
     }
 
     @Test

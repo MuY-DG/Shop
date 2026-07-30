@@ -103,6 +103,9 @@ shop: # 商城项目自定义业务配置的统一入口。
       config-source: ${SHOP_IMAGE_COMPRESSION_CONFIG_SOURCE:AUTO} # AUTO 优先使用有效环境密钥，否则使用数据库密钥。
       api-key: ${TINIFY_API_KEY:} # Tinify 密钥仅从环境变量读取，禁止提交明文。
       monthly-limit: ${SHOP_IMAGE_COMPRESSION_MONTHLY_LIMIT:500} # 本系统每月可使用的压缩次数预算。
+      request-timeout: ${SHOP_IMAGE_COMPRESSION_REQUEST_TIMEOUT:60s} # 单次 Tinify HTTP 请求最长等待 60 秒。
+      max-attempts: ${SHOP_IMAGE_COMPRESSION_MAX_ATTEMPTS:2} # 瞬时故障最多执行 2 次，即自动重试 1 次。
+      retry-delay: ${SHOP_IMAGE_COMPRESSION_RETRY_DELAY:1s} # 重试前短暂退避，避免立即再次争抢出带宽。
     local: # 本地磁盘存储提供方配置。
       root: ${SHOP_STORAGE_LOCAL_ROOT:var/uploads} # 设置上传文件根目录，默认是工作目录下 var/uploads。
     tencent-cos: # 腾讯云 COS 存储提供方配置。

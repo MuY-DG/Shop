@@ -49,6 +49,9 @@ shop:
       config-source: AUTO
       api-key:
       monthly-limit: 500
+      request-timeout: 60s
+      max-attempts: 2
+      retry-delay: 1ms
     local:
       root: ${java.io.tmpdir}/shop-server-test-uploads
     tencent-cos:

@@ -1,6 +1,8 @@
 import request from '@/utils/http'
 
-const ASSET_UPLOAD_TIMEOUT_MS = 120_000
+// Asset uploads may include two Tinify requests per compression attempt plus one bounded retry.
+// Keep this endpoint-specific timeout separate from normal admin API requests.
+const ASSET_UPLOAD_TIMEOUT_MS = 180_000
 
 export function uploadAsset(
   data: Api.Storage.AssetUploadPayload,

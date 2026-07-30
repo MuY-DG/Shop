@@ -1,6 +1,7 @@
 @import "../../styles/tokens.less";
 
 .product-card {
+  position: relative;
   width: 100%;
   overflow: hidden;
   box-sizing: border-box;
@@ -12,6 +13,10 @@
   transition:
     opacity @duration-fast @ease-standard,
     transform @duration-fast @ease-standard;
+}
+
+.product-card--featured {
+  box-shadow: none;
 }
 
 .product-card--pressed {
@@ -28,7 +33,8 @@
 }
 
 .product-card--featured .product-card__image-wrap {
-  height: 216rpx;
+  height: auto;
+  aspect-ratio: 1 / 1;
 }
 
 .product-card--compact .product-card__image-wrap {
@@ -159,28 +165,87 @@
   padding: 14rpx;
 }
 
-.product-card__title {
-  display: -webkit-box;
-  max-height: 70rpx;
-  overflow: hidden;
+.product-card__title-row {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+}
+
+.product-card__title,
+.product-card__title-measure {
   font-size: 28rpx;
   font-weight: 650;
   line-height: 35rpx;
-  word-break: break-all;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
-.product-card--featured .product-card__title {
-  max-height: 68rpx;
+.product-card__title {
+  min-width: 0;
+  display: block;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-card__title--expanded {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.product-card--featured .product-card__title,
+.product-card--featured .product-card__title-measure {
   font-size: 26rpx;
   line-height: 34rpx;
 }
 
-.product-card--list .product-card__title {
-  max-height: 72rpx;
-  font-size: 28rpx;
+.product-card--list .product-card__title,
+.product-card--list .product-card__title-measure {
   line-height: 36rpx;
+}
+
+.product-card__title-toggle {
+  width: 40rpx;
+  height: 40rpx;
+  display: flex;
+  margin: -2rpx -4rpx 0 2rpx;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.product-card__title-toggle:active {
+  background: fade(@color-brand, 7%);
+}
+
+.product-card__title-chevron {
+  width: 11rpx;
+  height: 11rpx;
+  border-right: 2rpx solid @color-text-muted;
+  border-bottom: 2rpx solid @color-text-muted;
+  transform: translateY(-3rpx) rotate(45deg);
+  transition: transform @duration-base @ease-standard;
+}
+
+.product-card__title-chevron--expanded {
+  transform: translateY(3rpx) rotate(225deg);
+}
+
+.product-card__title-measure-shell {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2000rpx;
+  height: 1rpx;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.product-card__title-measure {
+  white-space: nowrap;
 }
 
 .product-card__subtitle {

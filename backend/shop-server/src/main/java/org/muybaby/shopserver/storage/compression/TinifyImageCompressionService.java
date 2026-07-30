@@ -3,6 +3,7 @@ package org.muybaby.shopserver.storage.compression;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.muybaby.shopserver.storage.compression.config.ImageCompressionProperties;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -35,7 +36,7 @@ public final class TinifyImageCompressionService implements ImageCompressionServ
     static final URI PRODUCTION_BASE_URI = URI.create("https://api.tinify.com");
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(60);
     private static final int MAX_ERROR_BODY_BYTES = 64 * 1024;
     private static final String WEBP_CONTENT_TYPE = "image/webp";
     private static final byte[] WEBP_CONVERSION_BODY =
@@ -49,7 +50,10 @@ public final class TinifyImageCompressionService implements ImageCompressionServ
     private final Duration requestTimeout;
 
     @Autowired
-    public TinifyImageCompressionService(ObjectMapper objectMapper) {
+    public TinifyImageCompressionService(
+            ObjectMapper objectMapper,
+            ImageCompressionProperties properties
+    ) {
         this(
                 HttpClient.newBuilder()
                         .connectTimeout(CONNECT_TIMEOUT)
@@ -57,12 +61,12 @@ public final class TinifyImageCompressionService implements ImageCompressionServ
                         .build(),
                 PRODUCTION_BASE_URI,
                 objectMapper,
-                REQUEST_TIMEOUT
+                properties.effectiveRequestTimeout()
         );
     }
 
     TinifyImageCompressionService(HttpClient httpClient, URI baseUri, ObjectMapper objectMapper) {
-        this(httpClient, baseUri, objectMapper, REQUEST_TIMEOUT);
+        this(httpClient, baseUri, objectMapper, DEFAULT_REQUEST_TIMEOUT);
     }
 
     TinifyImageCompressionService(

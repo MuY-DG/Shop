@@ -960,10 +960,10 @@ public class StorageService {
                     compressedFilename, compressedBytes, compressedImage, compressedDecision);
         } catch (BusinessException ex) {
             log.warn(
-                    "Tinify output failed local image validation; retaining the source image (type={})",
+                    "Tinify output failed local image validation; upload rejected (type={})",
                     sourceDecision.contentType()
             );
-            return source;
+            throw new BusinessException(ErrorCode.STORAGE_IMAGE_COMPRESSION_FAILED);
         }
     }
 

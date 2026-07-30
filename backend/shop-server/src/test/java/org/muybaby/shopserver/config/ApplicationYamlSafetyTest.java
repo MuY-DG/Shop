@@ -22,6 +22,18 @@ class ApplicationYamlSafetyTest {
                 .containsEntry("spring.data.redis.host", "${SHOP_REDIS_HOST:127.0.0.1}")
                 .containsEntry("spring.data.redis.port", "${SHOP_REDIS_PORT:6379}")
                 .containsEntry("spring.data.redis.database", "${SHOP_REDIS_DATABASE:0}")
+                .containsEntry(
+                        "shop.storage.image-compression.request-timeout",
+                        "${SHOP_IMAGE_COMPRESSION_REQUEST_TIMEOUT:60s}"
+                )
+                .containsEntry(
+                        "shop.storage.image-compression.max-attempts",
+                        "${SHOP_IMAGE_COMPRESSION_MAX_ATTEMPTS:2}"
+                )
+                .containsEntry(
+                        "shop.storage.image-compression.retry-delay",
+                        "${SHOP_IMAGE_COMPRESSION_RETRY_DELAY:1s}"
+                )
                 .containsEntry("logging.pattern.level", "%5p [requestId=%X{requestId:-}]")
                 .containsEntry(
                         "spring.flyway.placeholders.seed_super_status",

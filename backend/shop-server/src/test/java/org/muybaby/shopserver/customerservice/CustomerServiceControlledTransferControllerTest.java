@@ -68,15 +68,21 @@ class CustomerServiceControlledTransferControllerTest {
         String superToken = adminLogin("Super", "123456");
         long conversationId = openWaitingConversation("controlled-claim-one");
 
+        mockMvc.perform(get("/admin/customer-service/profile")
+                        .header("Authorization", bearer(superToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.serviceName").value("商城客服"))
+                .andExpect(jsonPath("$.data.avatar").value(""));
+
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/claim", conversationId)
                         .header("Authorization", bearer(superToken)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(900005));
 
         connectAdmin(1L);
-        setWorkStatus(superToken, "BUSY")
+        setWorkStatus(superToken, "OFFLINE")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.workStatus").value("BUSY"));
+                .andExpect(jsonPath("$.data.workStatus").value("OFFLINE"));
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/claim", conversationId)
                         .header("Authorization", bearer(superToken)))
                 .andExpect(status().isBadRequest())

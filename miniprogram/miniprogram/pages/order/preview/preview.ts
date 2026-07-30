@@ -11,14 +11,10 @@ import {
 } from "../../../features/checkout";
 import { executeOrderPayment } from "../../../features/order-payment";
 import { buildOrderDetailUrl } from "../../../features/order-center";
-import { createAddress, getAddresses } from "../../../services/address";
+import { getAddresses } from "../../../services/address";
 import { getAvailableCoupons } from "../../../services/coupon";
 import { previewOrder, submitOrder } from "../../../services/order";
-import type {
-  AddressResponse,
-  AddressUpsertRequest,
-  CheckoutSelection
-} from "../../../types/checkout";
+import type { AddressResponse, CheckoutSelection } from "../../../types/checkout";
 import { isApiError } from "../../../utils/api-error";
 
 interface DatasetEvent {
@@ -32,6 +28,7 @@ interface DatasetEvent {
 
 let latestPreviewRequest = 0;
 let latestCouponRequest = 0;
+let latestAddressRequest = 0;
 
 function actionError(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -39,33 +36,6 @@ function actionError(error: unknown, fallback: string): string {
     : error instanceof Error
       ? error.message
       : fallback;
-}
-
-function chooseWechatAddress(): Promise<WechatMiniprogram.ChooseAddressSuccessCallbackResult> {
-  return new Promise((resolve, reject) => {
-    wx.chooseAddress({
-      success: resolve,
-      fail: reject
-    });
-  });
-}
-
-function addressPayload(
-  address: WechatMiniprogram.ChooseAddressSuccessCallbackResult,
-  isDefault: boolean
-): AddressUpsertRequest {
-  const province = address.provinceName.trim();
-  const city = address.cityName.trim() || province;
-  const district = address.countyName.trim() || city;
-  return {
-    receiverName: address.userName.trim(),
-    receiverPhone: address.telNumber.trim(),
-    province,
-    city,
-    district,
-    detailAddress: address.detailInfo.trim(),
-    isDefault
-  };
 }
 
 Page({
@@ -81,12 +51,15 @@ Page({
     loaded: false,
     errorText: "",
     addressSheetOpen: false,
+    addressLoading: false,
+    addressLoaded: false,
+    addressErrorText: "",
+    addressEditorOpen: false,
     couponSheetOpen: false,
     couponLoading: false,
     couponLoaded: false,
     couponErrorText: "",
     couponSelectingId: 0,
-    importingAddress: false,
     submitting: false
   },
 
@@ -109,6 +82,15 @@ Page({
   onUnload() {
     latestPreviewRequest += 1;
     latestCouponRequest += 1;
+    latestAddressRequest += 1;
+  },
+
+  onShow() {
+    if (!this.data.addressEditorOpen) {
+      return;
+    }
+    this.setData({ addressEditorOpen: false });
+    void this.reloadAddressesAfterEdit();
   },
 
   async onPullDownRefresh() {
@@ -129,6 +111,8 @@ Page({
     this.setData({
       loading: true,
       errorText: "",
+      addressLoading: true,
+      addressErrorText: "",
       couponLoading: true,
       couponErrorText: ""
     });
@@ -161,6 +145,9 @@ Page({
         couponLoading: false,
         couponLoaded: couponResult.response !== null,
         couponErrorText: couponResult.errorText,
+        addressLoading: false,
+        addressLoaded: true,
+        addressErrorText: "",
         loading: false,
         loaded: true,
         errorText: ""
@@ -171,6 +158,9 @@ Page({
       }
       this.setData({
         loading: false,
+        addressLoading: false,
+        addressLoaded: this.data.addresses.length > 0,
+        addressErrorText: actionError(error, "收货地址加载失败，请稍后重试"),
         couponLoading: false,
         loaded: this.data.preview !== null,
         errorText: actionError(error, "订单预览加载失败，请稍后重试")
@@ -185,9 +175,7 @@ Page({
   },
 
   onAddressSheetClose() {
-    if (!this.data.importingAddress) {
-      this.setData({ addressSheetOpen: false });
-    }
+    this.setData({ addressSheetOpen: false });
   },
 
   onAddressSelect(event: DatasetEvent) {
@@ -232,6 +220,96 @@ Page({
           loading: false,
           errorText: actionError(error, "地址切换失败，请重试")
         });
+      }
+    }
+  },
+
+  onAddressRetry() {
+    if (!this.data.addressLoading) {
+      void this.reloadAddressOptions();
+    }
+  },
+
+  async reloadAddressOptions() {
+    const requestId = ++latestAddressRequest;
+    const previousAddress = this.data.selectedAddress;
+    this.setData({ addressLoading: true, addressErrorText: "" });
+    try {
+      const addresses = await getAddresses();
+      if (requestId !== latestAddressRequest) {
+        return;
+      }
+      const selectedAddress = resolveAddressSelection(addresses, previousAddress);
+      this.setData({
+        addresses,
+        selectedAddress,
+        addressLoading: false,
+        addressLoaded: true,
+        addressErrorText: ""
+      });
+      if (selectedAddress && selectedAddress.id !== previousAddress?.id) {
+        await this.reloadPreviewForAddress(selectedAddress);
+      }
+    } catch (error) {
+      if (requestId === latestAddressRequest) {
+        this.setData({
+          addressLoading: false,
+          addressLoaded: this.data.addresses.length > 0,
+          addressErrorText: actionError(error, "收货地址加载失败，请稍后重试")
+        });
+      }
+    }
+  },
+
+  onAddAddress() {
+    if (this.data.addressEditorOpen || this.data.submitting) {
+      return;
+    }
+    this.setData({ addressEditorOpen: true });
+    wx.navigateTo({
+      url: "/pages/account/address/edit/edit",
+      fail: () => {
+        this.setData({ addressEditorOpen: false });
+        wx.showToast({ title: "暂时无法打开新增地址页", icon: "none" });
+      }
+    });
+  },
+
+  async reloadAddressesAfterEdit() {
+    const requestId = ++latestAddressRequest;
+    const previousIds = new Set(this.data.addresses.map((address) => address.id));
+    const previousAddress = this.data.selectedAddress;
+    this.setData({ addressLoading: true, addressErrorText: "" });
+    try {
+      const addresses = await getAddresses();
+      if (requestId !== latestAddressRequest) {
+        return;
+      }
+      const addedAddress = addresses.find((address) => !previousIds.has(address.id));
+      const selectedAddress = addedAddress ||
+        resolveAddressSelection(addresses, previousAddress);
+      this.setData({
+        addresses,
+        selectedAddress,
+        addressLoading: false,
+        addressLoaded: true,
+        addressErrorText: ""
+      });
+      if (selectedAddress && selectedAddress.id !== previousAddress?.id) {
+        await this.reloadPreviewForAddress(selectedAddress);
+      }
+    } catch (error) {
+      if (requestId === latestAddressRequest) {
+        const addressErrorText = actionError(
+          error,
+          "新增地址后刷新失败，请点击重试"
+        );
+        this.setData({
+          addressLoading: false,
+          addressLoaded: this.data.addresses.length > 0,
+          addressErrorText
+        });
+        wx.showToast({ title: addressErrorText, icon: "none" });
       }
     }
   },
@@ -327,45 +405,6 @@ Page({
         this.setData({ couponSelectingId: 0 });
         wx.showToast({
           title: actionError(error, "优惠券选择失败，请重试"),
-          icon: "none"
-        });
-      }
-    }
-  },
-
-  async onImportAddress() {
-    if (this.data.importingAddress || this.data.submitting) {
-      return;
-    }
-    this.setData({ importingAddress: true });
-    try {
-      const wechatAddress = await chooseWechatAddress();
-      const created = await createAddress(addressPayload(
-        wechatAddress,
-        this.data.addresses.length === 0
-      ));
-      const addresses = [
-        created,
-        ...this.data.addresses.filter((address) => address.id !== created.id)
-      ];
-      this.setData({
-        addresses,
-        selectedAddress: created,
-        addressSheetOpen: false,
-        importingAddress: false
-      });
-      await this.reloadPreviewForAddress(created);
-      wx.showToast({ title: "地址已保存", icon: "success" });
-    } catch (error) {
-      this.setData({ importingAddress: false });
-      const message = error instanceof Error
-        ? error.message
-        : typeof error === "object" && error !== null && "errMsg" in error
-          ? String(error.errMsg)
-          : "";
-      if (!message.toLowerCase().includes("cancel")) {
-        wx.showToast({
-          title: actionError(error, "地址导入失败，请重试"),
           icon: "none"
         });
       }

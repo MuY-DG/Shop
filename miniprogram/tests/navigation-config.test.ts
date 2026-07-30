@@ -131,6 +131,14 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
     resolve(sourceRoot, "components/product-card/product-card.wxml"),
     "utf8"
   );
+  const productCardLogic = readFileSync(
+    resolve(sourceRoot, "components/product-card/product-card.ts"),
+    "utf8"
+  );
+  const productCardStyle = readFileSync(
+    resolve(sourceRoot, "components/product-card/product-card.less"),
+    "utf8"
+  );
   const homeLogic = readFileSync(resolve(sourceRoot, "pages/index/index.ts"), "utf8");
   const catalogLogic = readFileSync(
     resolve(sourceRoot, "components/catalog-browser/catalog-browser.ts"),
@@ -141,6 +149,10 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
 
   assert.match(productCardTemplate, /catchtap="handleCartTap"/);
   assert.match(productCardTemplate, /product-card__cart-plus-horizontal/);
+  assert.match(productCardTemplate, /catchtap="handleTitleToggle"/);
+  assert.match(productCardLogic, /measureTitleOverflow/);
+  assert.match(productCardStyle, /\.product-card__title[\s\S]*text-overflow: ellipsis[\s\S]*white-space: nowrap/);
+  assert.match(productCardStyle, /\.product-card--featured\s*\{[\s\S]*box-shadow: none/);
   assert.match(homeLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
   assert.match(catalogLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
   assert.match(tabLogic, /getCartItems\(\)/);
@@ -293,7 +305,9 @@ test("购物车与结算页注册真实交易路径", () => {
     productDetailLogic,
     /wx\.navigateTo\(\{\s*url: "\/pages\/cart\/standalone\/standalone"/
   );
-  assert.match(previewTemplate, /bindtap="onImportAddress"/);
+  assert.match(previewTemplate, /bindtap="onAddAddress">新增地址</);
+  assert.doesNotMatch(previewTemplate, /微信地址|onImportAddress/);
+  assert.doesNotMatch(previewLogic, /wx\.chooseAddress|createAddress/);
   assert.match(previewTemplate, /bindtap="onPayTap"/);
   assert.match(previewTemplate, /立即支付/);
   assert.doesNotMatch(previewTemplate, /应付金额|提交订单/);

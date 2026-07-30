@@ -5,6 +5,7 @@ import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentStateResponse;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentProfileResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentWorkStatusRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationDetailResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationSummaryResponse;
@@ -15,6 +16,9 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.SendMessag
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequestResponse;
 import org.muybaby.shopserver.customerservice.service.CustomerServiceService;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.ReportQuery;
+import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.ServiceStatisticsReport;
+import org.muybaby.shopserver.operation.service.OperationsStatisticsService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ResponseEntity;
@@ -37,9 +41,20 @@ import java.util.List;
 public class AdminCustomerServiceController {
 
     private final CustomerServiceService customerServiceService;
+    private final OperationsStatisticsService operationsStatisticsService;
 
-    public AdminCustomerServiceController(CustomerServiceService customerServiceService) {
+    public AdminCustomerServiceController(
+            CustomerServiceService customerServiceService,
+            OperationsStatisticsService operationsStatisticsService
+    ) {
         this.customerServiceService = customerServiceService;
+        this.operationsStatisticsService = operationsStatisticsService;
+    }
+
+    @GetMapping("/overview")
+    @PreAuthorize("hasAuthority('customer-service:conversation:read')")
+    public ApiResponse<ServiceStatisticsReport> overview(ReportQuery query) {
+        return ApiResponse.success(operationsStatisticsService.serviceStatistics(query));
     }
 
     @GetMapping("/conversations")
@@ -218,6 +233,14 @@ public class AdminCustomerServiceController {
             @AuthenticationPrincipal AuthenticatedPrincipal principal
     ) {
         return ApiResponse.success(customerServiceService.agentState(principal));
+    }
+
+    @GetMapping("/profile")
+    @PreAuthorize("hasAuthority('customer-service:conversation:read')")
+    public ApiResponse<AgentProfileResponse> profile(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal
+    ) {
+        return ApiResponse.success(customerServiceService.agentProfile(principal));
     }
 
     @PutMapping("/agent-state")

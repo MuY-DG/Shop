@@ -40,7 +40,7 @@
         </view>
         <view wx:else class="address-card__empty">
           <view>请选择收货地址</view>
-          <text>可从微信地址快速导入</text>
+          <text>新增后即可在这里选择</text>
         </view>
         <view class="address-card__arrow">›</view>
       </view>
@@ -121,10 +121,12 @@
   <view wx:if="{{loaded && preview}}" class="submit-bar">
     <button
       class="submit-action"
-      loading="{{submitting}}"
       disabled="{{loading || submitting}}"
       bindtap="onPayTap"
-    >{{selectedAddress ? '立即支付 ' + preview.payableAmountText : '请选择收货地址'}}</button>
+    >
+      <text class="submit-action__label">{{selectedAddress ? (submitting ? '支付中…' : '立即支付') : '请选择收货地址'}}</text>
+      <text wx:if="{{selectedAddress && !submitting}}" class="submit-action__amount">{{preview.payableAmountText}}</text>
+    </button>
   </view>
 
   <view wx:if="{{addressSheetOpen}}" class="sheet-layer" catchtouchmove="onSheetTouchMove">
@@ -134,38 +136,60 @@
       <view class="address-sheet__heading">
         <view>
           <view class="address-sheet__title">选择收货地址</view>
-          <view class="address-sheet__subtitle">地址会保存到灶香集账户</view>
+          <view class="address-sheet__subtitle">请选择已保存的地址</view>
         </view>
-        <button disabled="{{importingAddress}}" bindtap="onAddressSheetClose">关闭</button>
+        <button bindtap="onAddressSheetClose">关闭</button>
       </view>
 
-      <scroll-view wx:if="{{addresses.length}}" class="address-options" scroll-y="{{true}}">
-        <view
-          wx:for="{{addresses}}"
-          wx:key="id"
-          class="address-option {{selectedAddress && selectedAddress.id === item.id ? 'address-option--selected' : ''}}"
-          data-id="{{item.id}}"
-          bindtap="onAddressSelect"
-        >
-          <view class="address-option__check">{{selectedAddress && selectedAddress.id === item.id ? '✓' : ''}}</view>
-          <view class="address-option__body">
-            <view class="address-option__receiver">
-              <text>{{item.receiverName}}</text>
-              <text>{{item.receiverPhone}}</text>
-              <text wx:if="{{item.isDefault}}" class="default-tag">默认</text>
+      <scroll-view
+        class="address-sheet__scroll"
+        scroll-y="{{true}}"
+        enhanced="{{true}}"
+        bounces="{{true}}"
+        enable-passive="{{true}}"
+        show-scrollbar="{{false}}"
+      >
+        <view wx:if="{{addressLoading && !addressLoaded}}" class="address-sheet-state">
+          正在加载收货地址…
+        </view>
+        <view wx:elif="{{addressErrorText && !addresses.length}}" class="address-sheet-state address-sheet-state--error">
+          <text>{{addressErrorText}}</text>
+          <button class="address-retry" bindtap="onAddressRetry">重新加载</button>
+        </view>
+        <view wx:elif="{{!addresses.length}}" class="address-sheet-state">
+          <text class="address-sheet-state__title">还没有收货地址</text>
+          <text>新增后即可在这里选择</text>
+        </view>
+        <view wx:else class="address-options">
+          <view wx:if="{{addressErrorText}}" class="address-inline-error">
+            <text>{{addressErrorText}}</text>
+            <button bindtap="onAddressRetry">重试</button>
+          </view>
+          <view
+            wx:for="{{addresses}}"
+            wx:key="id"
+            class="address-option {{selectedAddress && selectedAddress.id === item.id ? 'address-option--selected' : ''}}"
+            data-id="{{item.id}}"
+            bindtap="onAddressSelect"
+            aria-role="button"
+            aria-label="选择{{item.receiverName}}的收货地址"
+          >
+            <view class="address-option__check">{{selectedAddress && selectedAddress.id === item.id ? '✓' : ''}}</view>
+            <view class="address-option__body">
+              <view class="address-option__receiver">
+                <text>{{item.receiverName}}</text>
+                <text>{{item.receiverPhone}}</text>
+                <text wx:if="{{item.isDefault}}" class="default-tag">默认</text>
+              </view>
+              <view class="address-option__detail">{{item.formattedAddress}}</view>
             </view>
-            <view class="address-option__detail">{{item.formattedAddress}}</view>
           </view>
         </view>
       </scroll-view>
-      <view wx:else class="address-options-empty">还没有保存的地址</view>
 
-      <button
-        class="import-address-action"
-        loading="{{importingAddress}}"
-        disabled="{{importingAddress}}"
-        bindtap="onImportAddress"
-      >从微信地址导入</button>
+      <view class="address-sheet__footer">
+        <button class="add-address-action" bindtap="onAddAddress">新增地址</button>
+      </view>
     </view>
   </view>
 

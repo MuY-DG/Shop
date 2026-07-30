@@ -52,6 +52,7 @@ public enum ErrorCode {
     STORAGE_ASSET_FOLDER_UNAVAILABLE(800004, "Storage asset folder unavailable"),
     STORAGE_ASSET_FOLDER_IN_USE(800005, "Storage asset folder is not empty"),
     STORAGE_ASSET_FOLDER_CYCLE(800006, "Storage asset folder cycle is not allowed"),
+    STORAGE_IMAGE_COMPRESSION_FAILED(800007, "图片压缩暂时失败，请稍后重试"),
     CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE(900001, "Customer service conversation unavailable"),
     CUSTOMER_SERVICE_STATE_CONFLICT(900002, "Customer service conversation state conflict"),
     CUSTOMER_SERVICE_ASSIGNMENT_REQUIRED(900003, "Customer service assignment required"),
@@ -59,7 +60,9 @@ public enum ErrorCode {
     CUSTOMER_SERVICE_AGENT_NOT_AVAILABLE(900005, "Customer service agent is not available"),
     CUSTOMER_SERVICE_AGENT_CAPACITY_REACHED(900006, "Customer service agent capacity reached"),
     CUSTOMER_SERVICE_TRANSFER_UNAVAILABLE(900007, "Customer service transfer request unavailable"),
-    CUSTOMER_SERVICE_TRANSFER_PENDING(900008, "Customer service transfer request already pending");
+    CUSTOMER_SERVICE_TRANSFER_PENDING(900008, "Customer service transfer request already pending"),
+    CUSTOMER_SERVICE_AGENT_HAS_ACTIVE_CONVERSATIONS(900009, "客服仍有进行中的会话，暂时不能移除"),
+    CUSTOMER_SERVICE_CONFIG_INVALID(900010, "客服配置无效");
 
     private final int code;
     private final String message;

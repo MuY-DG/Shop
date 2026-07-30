@@ -636,7 +636,7 @@
   import { useTableColumns } from '@/hooks/core/useTableColumns'
   import type { ColumnOption } from '@/types'
   import { useAuth } from '@/hooks'
-  import { settleWithConcurrency } from '@/utils/asset-batch'
+  import { ASSET_UPLOAD_CONCURRENCY, settleWithConcurrency } from '@/utils/asset-batch'
   import {
     assetUploadFileKey,
     uniqueAssetUploadFiles,
@@ -1450,7 +1450,7 @@
     loadAssets()
   }
 
-  const prepareAssetListForProgressiveUpload = (folderId?: number) => {
+  const prepareAssetListForUploadResult = (folderId?: number) => {
     clearAssetSelection()
     searchForm.value = {
       keyword: undefined,
@@ -1460,8 +1460,6 @@
     }
     selectedFolderId.value = folderId
     pagination.current = 1
-    pagination.total = 0
-    assets.value = []
   }
 
   const revealUploadedAsset = (asset: Api.Storage.AssetItem) => {
@@ -1517,7 +1515,6 @@
     }
     if (!selection.files.length) return
 
-    prepareAssetListForProgressiveUpload(selectedFolderId.value)
     listUploading.value = true
     listUploadProgress.value = {
       total: selection.files.length,
@@ -1526,16 +1523,20 @@
     }
 
     try {
-      const results = await settleWithConcurrency(selection.files, 3, async (file) => {
-        try {
-          const asset = await uploadAsset({ file, folderId }, { showSuccessMessage: false })
-          listUploadProgress.value.succeeded += 1
-          revealUploadedAsset(asset)
-          return asset
-        } finally {
-          listUploadProgress.value.finished += 1
+      const results = await settleWithConcurrency(
+        selection.files,
+        ASSET_UPLOAD_CONCURRENCY,
+        async (file) => {
+          try {
+            const asset = await uploadAsset({ file, folderId }, { showSuccessMessage: false })
+            listUploadProgress.value.succeeded += 1
+            revealUploadedAsset(asset)
+            return asset
+          } finally {
+            listUploadProgress.value.finished += 1
+          }
         }
-      })
+      )
       const succeeded = results.filter((result) => result.status === 'fulfilled').length
       const failed = results.length - succeeded
       if (failed) {
@@ -1543,6 +1544,7 @@
       } else {
         ElMessage.success(`成功上传 ${succeeded} 个素材`)
       }
+      prepareAssetListForUploadResult(folderId)
       await Promise.all([loadAssets(), loadFolders()])
     } finally {
       listUploading.value = false
@@ -1602,7 +1604,6 @@
       ElMessage.warning('请先选择一个或多个文件')
       return
     }
-    prepareAssetListForProgressiveUpload(uploadFolderId.value)
     uploadProgress.value = {
       total: pendingFiles.length,
       finished: 0,
@@ -1610,27 +1611,32 @@
     }
     uploading.value = true
     try {
-      const results = await settleWithConcurrency(pendingFiles, 3, async (file) => {
-        file.status = 'uploading'
-        try {
-          const asset = await uploadAsset(
-            { file: file.raw!, folderId: uploadFolderId.value },
-            { showSuccessMessage: false }
-          )
-          file.status = 'success'
-          uploadProgress.value.succeeded += 1
-          revealUploadedAsset(asset)
-          return asset
-        } catch (error) {
-          file.status = 'fail'
-          throw error
-        } finally {
-          uploadProgress.value.finished += 1
+      const results = await settleWithConcurrency(
+        pendingFiles,
+        ASSET_UPLOAD_CONCURRENCY,
+        async (file) => {
+          file.status = 'uploading'
+          try {
+            const asset = await uploadAsset(
+              { file: file.raw!, folderId: uploadFolderId.value },
+              { showSuccessMessage: false }
+            )
+            file.status = 'success'
+            uploadProgress.value.succeeded += 1
+            revealUploadedAsset(asset)
+            return asset
+          } catch (error) {
+            file.status = 'fail'
+            throw error
+          } finally {
+            uploadProgress.value.finished += 1
+          }
         }
-      })
+      )
       const succeeded = results.filter((result) => result.status === 'fulfilled').length
       const failed = results.length - succeeded
       uploadSummary.value = { succeeded, failed }
+      prepareAssetListForUploadResult(uploadFolderId.value)
       await Promise.all([loadAssets(), loadFolders()])
       if (failed) {
         uploadFileList.value = pendingFiles.filter((file) => file.status === 'fail')

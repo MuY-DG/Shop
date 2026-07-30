@@ -1646,6 +1646,8 @@ public class OperationsStatisticsService {
     private List<TrendSeries> serviceTrend(ReportContext context) {
         List<LocalDateTime> shipped = timestampsBetween("order_shipment", "shipped_at", context);
         List<LocalDateTime> afterSales = timestampsBetween("after_sale_request", "created_at", context);
+        List<LocalDateTime> conversations = timestampsBetween(
+                "customer_service_conversation", "activated_at", context);
         List<LocalDateTime> refunds = jdbcClient.sql("""
                         select success_at
                         from refund_order
@@ -1659,6 +1661,8 @@ public class OperationsStatisticsService {
                 .query(LocalDateTime.class)
                 .list();
         return List.of(
+                new TrendSeries("conversationCount", "咨询会话", MetricUnit.COUNT,
+                        countPoints(context, conversations)),
                 new TrendSeries("shippedOrderCount", "发货订单", MetricUnit.COUNT, countPoints(context, shipped)),
                 new TrendSeries("afterSaleApplicationCount", "售后申请", MetricUnit.COUNT, countPoints(context, afterSales)),
                 new TrendSeries("successfulRefundCount", "退款成功", MetricUnit.COUNT, countPoints(context, refunds))

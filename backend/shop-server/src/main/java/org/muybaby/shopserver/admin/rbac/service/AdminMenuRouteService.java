@@ -162,7 +162,8 @@ public class AdminMenuRouteService {
                 rs.getString("component"),
                 rs.getString("title"),
                 rs.getString("icon"),
-                rs.getBoolean("keep_alive")
+                rs.getBoolean("keep_alive"),
+                rs.getBoolean("full_page")
         );
     }
 
@@ -174,7 +175,8 @@ public class AdminMenuRouteService {
             String component,
             String title,
             String icon,
-            boolean keepAlive
+            boolean keepAlive,
+            boolean fullPage
     ) {
     }
 
@@ -196,7 +198,13 @@ public class AdminMenuRouteService {
                     menuRow.name(),
                     menuRow.path(),
                     menuRow.component(),
-                    new AdminRouteMetaResponse(menuRow.title(), menuRow.icon(), menuRow.keepAlive(), authList),
+                    new AdminRouteMetaResponse(
+                            menuRow.title(),
+                            menuRow.icon(),
+                            menuRow.keepAlive(),
+                            menuRow.fullPage(),
+                            authList
+                    ),
                     new ArrayList<>()
             );
         }

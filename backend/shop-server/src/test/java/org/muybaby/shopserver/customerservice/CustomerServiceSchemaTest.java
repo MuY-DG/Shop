@@ -40,6 +40,37 @@ class CustomerServiceSchemaTest {
 
         assertThat(jdbcClient.sql("""
                         select count(*)
+                        from admin_menu
+                        where parent_id = 840
+                          and id in (841, 842)
+                          and full_page = true
+                          and enabled = true
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_menu role_menu
+                        join admin_role role_item on role_item.id = role_menu.role_id
+                        where role_item.code = 'R_CUSTOMER_SERVICE_MANAGER'
+                          and role_menu.menu_id in (850, 851, 852)
+                        """)
+                .query(Integer.class)
+                .single()).isZero();
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission role_permission
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        where role_item.code = 'R_CUSTOMER_SERVICE_MANAGER'
+                          and role_permission.permission_id = 16008
+                        """)
+                .query(Integer.class)
+                .single()).isZero();
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
                         from information_schema.tables
                         where table_name in (
                           'customer_service_agent_state',
@@ -48,6 +79,26 @@ class CustomerServiceSchemaTest {
                         """)
                 .query(Integer.class)
                 .single()).isEqualTo(2);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.tables
+                        where table_name in (
+                          'customer_service_config',
+                          'customer_service_agent_profile'
+                        )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role
+                        where code = 'R_CUSTOMER_SERVICE_MANAGER'
+                          and enabled = true
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
 
         assertThat(jdbcClient.sql("""
                         select count(*)
@@ -107,9 +158,10 @@ class CustomerServiceSchemaTest {
                         select count(*)
                         from admin_menu
                         where id = 840
-                          and parent_id = 830
-                          and path = 'customer-service'
+                          and parent_id is null
+                          and path = '/customer-service'
                           and component = '/customer-service/index'
+                          and full_page = true
                           and enabled = true
                         """)
                 .query(Integer.class)

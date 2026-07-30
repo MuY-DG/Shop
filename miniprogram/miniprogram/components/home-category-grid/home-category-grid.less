@@ -9,7 +9,7 @@
   overflow: hidden;
   border: 1rpx solid fade(@color-gold, 14%);
   border-radius: @radius-xl;
-  background: fade(@color-surface, 97%);
+  background: @color-surface;
   box-shadow: @shadow-floating;
   animation: fade-up 360ms ease-out both;
 }
@@ -48,9 +48,6 @@
 .category-visual {
   width: 96rpx;
   height: 96rpx;
-  overflow: hidden;
-  border-radius: 50%;
-  background: @color-surface-muted;
 }
 
 .category-image,
@@ -65,6 +62,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
   color: @color-brand;
   font-family: "Songti SC", "STSong", serif;
   font-size: @font-size-lg;

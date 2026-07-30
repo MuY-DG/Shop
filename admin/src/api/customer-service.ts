@@ -95,12 +95,25 @@ export function fetchCustomerServiceAgentState() {
   })
 }
 
+export function fetchCustomerServiceAgentProfile() {
+  return request.get<Api.CustomerService.AgentProfile>({
+    url: '/admin/customer-service/profile'
+  })
+}
+
 export function updateCustomerServiceAgentState(
-  workStatus: Exclude<Api.CustomerService.AgentWorkStatus, 'OFFLINE'>
+  workStatus: Extract<Api.CustomerService.AgentWorkStatus, 'AVAILABLE' | 'OFFLINE'>
 ) {
   return request.put<Api.CustomerService.AgentState>({
     url: '/admin/customer-service/agent-state',
     data: { workStatus }
+  })
+}
+
+export function fetchCustomerServiceOverview(params: Api.Operations.ReportQuery) {
+  return request.get<Api.Operations.ServiceStatisticsReport>({
+    url: '/admin/customer-service/overview',
+    params
   })
 }
 
@@ -149,5 +162,37 @@ export function fetchCustomerServiceImage(messageId: number) {
 export function issueAdminRealtimeTicket() {
   return request.post<Api.Realtime.Ticket>({
     url: '/admin/realtime/tickets'
+  })
+}
+
+export function fetchCustomerServiceManagedUsers(keyword?: string) {
+  return request.get<Api.CustomerService.ManagedUser[]>({
+    url: '/admin/customer-service/management/users',
+    params: { keyword }
+  })
+}
+
+export function updateCustomerServiceManagedUser(
+  adminUserId: string,
+  data: Api.CustomerService.ManagedUserForm
+) {
+  return request.put<Api.CustomerService.ManagedUser>({
+    url: `/admin/customer-service/management/users/${adminUserId}`,
+    data
+  })
+}
+
+export function fetchCustomerServiceManagementConfig() {
+  return request.get<Api.CustomerService.ManagementConfig>({
+    url: '/admin/customer-service/management/config'
+  })
+}
+
+export function updateCustomerServiceManagementConfig(
+  data: Api.CustomerService.ManagementConfigForm
+) {
+  return request.put<Api.CustomerService.ManagementConfig>({
+    url: '/admin/customer-service/management/config',
+    data
   })
 }

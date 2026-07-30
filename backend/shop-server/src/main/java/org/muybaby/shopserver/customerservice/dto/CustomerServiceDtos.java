@@ -36,7 +36,7 @@ public final class CustomerServiceDtos {
     }
 
     public record AgentWorkStatusRequest(
-            @NotBlank @Pattern(regexp = "AVAILABLE|BUSY") String workStatus
+            @NotBlank @Pattern(regexp = "AVAILABLE|BUSY|OFFLINE") String workStatus
     ) {
     }
 
@@ -47,6 +47,7 @@ public final class CustomerServiceDtos {
             String senderType,
             @JsonStringId Long senderId,
             String senderName,
+            String senderAvatar,
             String messageType,
             String content,
             Long resourceId,
@@ -159,6 +160,13 @@ public final class CustomerServiceDtos {
             int activeConversationCount,
             int maxActiveConversations,
             boolean canReceive
+    ) {
+    }
+
+    public record AgentProfileResponse(
+            Long adminUserId,
+            String serviceName,
+            String avatar
     ) {
     }
 

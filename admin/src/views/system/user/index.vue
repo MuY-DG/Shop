@@ -46,10 +46,12 @@
   import { useTable } from '@/hooks/core/useTable'
   import { useAuth } from '@/hooks/core/useAuth'
   import { disableAdminUser, fetchGetUserList } from '@/api/system-manage'
+  import { updateCustomerServiceManagedUser } from '@/api/customer-service'
   import UserSearch from './modules/user-search.vue'
   import UserDialog from './modules/user-dialog.vue'
   import type { DialogType } from '@/types'
   import { ElAvatar, ElMessage, ElMessageBox, ElTag } from 'element-plus'
+  import { useRouter } from 'vue-router'
 
   defineOptions({ name: 'User' })
 
@@ -61,6 +63,7 @@
   const sessionDrawerVisible = ref(false)
   const sessionUser = ref<UserListItem>()
   const { hasAuth } = useAuth()
+  const router = useRouter()
   const canViewSessions = computed(
     () => hasAuth('system:user:session:read') || hasAuth('system:user:session:revoke')
   )
@@ -179,6 +182,12 @@
                     ]
                   : []),
                 {
+                  key: 'customer-service',
+                  label: row.roleCodes.includes('R_CUSTOMER_SERVICE') ? '客服设置' : '设为客服',
+                  icon: 'ri:customer-service-2-line',
+                  auth: 'customer-service:agent:manage'
+                },
+                {
                   key: 'edit',
                   label: '编辑管理员',
                   icon: 'ri:edit-2-line',
@@ -195,6 +204,7 @@
               ],
               onClick: (item: ButtonMoreItem) => {
                 if (item.key === 'sessions') showSessionDrawer(row)
+                if (item.key === 'customer-service') handleCustomerService(row)
                 if (item.key === 'edit') showDialog('edit', row)
                 if (item.key === 'disable') disableUser(row)
               }
@@ -218,6 +228,25 @@
   const showSessionDrawer = (row: UserListItem) => {
     sessionUser.value = row
     sessionDrawerVisible.value = true
+  }
+
+  const handleCustomerService = async (row: UserListItem) => {
+    if (row.roleCodes.includes('R_CUSTOMER_SERVICE')) {
+      await router.push({
+        path: '/customer-service-management/members',
+        query: { userId: String(row.id) }
+      })
+      return
+    }
+    await updateCustomerServiceManagedUser(String(row.id), {
+      agent: true,
+      manager: row.roleCodes.includes('R_CUSTOMER_SERVICE_MANAGER'),
+      serviceNameOverride: '',
+      maxActiveConversations: 5,
+      routingWeight: 100
+    })
+    ElMessage.success(`已将“${row.displayName}”设为客服`)
+    await refreshData()
   }
 
   const disableUser = async (row: UserListItem) => {

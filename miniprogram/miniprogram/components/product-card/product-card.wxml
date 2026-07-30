@@ -5,7 +5,7 @@
   bindtap="handleTap"
   aria-role="button"
   aria-label="{{product.title}}，{{product.hasPrice ? '¥' + product.priceText : '暂无报价'}}{{product.soldOut ? '，暂时售罄' : ''}}"
->
+  >
   <view class="product-card__image-wrap">
     <image
       wx:if="{{product.hasImage && !imageFailed}}"
@@ -30,7 +30,21 @@
   </view>
 
   <view class="product-card__body">
-    <view class="product-card__title">{{product.title}}</view>
+    <view class="product-card__title-row">
+      <view class="product-card__title {{titleExpanded ? 'product-card__title--expanded' : ''}}">{{product.title}}</view>
+      <view
+        wx:if="{{titleExpandable}}"
+        class="product-card__title-toggle"
+        catchtap="handleTitleToggle"
+        aria-role="button"
+        aria-label="{{titleExpanded ? '收起完整商品名称' : '展开完整商品名称'}}"
+      >
+        <view class="product-card__title-chevron {{titleExpanded ? 'product-card__title-chevron--expanded' : ''}}"></view>
+      </view>
+    </view>
+    <view class="product-card__title-measure-shell" aria-hidden="true">
+      <text class="product-card__title-measure">{{product.title}}</text>
+    </view>
     <view wx:if="{{product.subtitle}}" class="product-card__subtitle">{{product.subtitle}}</view>
 
     <view wx:if="{{product.features.length}}" class="product-card__features">

@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { appendUniqueAssetValues, settleWithConcurrency } from './asset-batch'
+import {
+  appendUniqueAssetValues,
+  ASSET_UPLOAD_CONCURRENCY,
+  settleWithConcurrency
+} from './asset-batch'
+
+test('asset uploads use the bounded production concurrency', () => {
+  assert.equal(ASSET_UPLOAD_CONCURRENCY, 2)
+})
 
 test('appendUniqueAssetValues preserves order, removes duplicates, and enforces the limit', () => {
   const values = appendUniqueAssetValues(

@@ -97,6 +97,12 @@ button.remove-action {
   line-height: 1.4;
 }
 
+button.text-action[disabled],
+button.remove-action[disabled] {
+  color: @color-text-placeholder;
+  background: transparent;
+}
+
 button.text-action::after,
 button.inline-error__action::after,
 button.remove-action::after,

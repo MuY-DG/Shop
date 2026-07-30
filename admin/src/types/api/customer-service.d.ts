@@ -20,6 +20,7 @@ declare namespace Api {
       senderType: SenderType
       senderId: string | null
       senderName: string
+      senderAvatar: string
       messageType: 'TEXT' | 'IMAGE' | 'ORDER_CARD' | 'PRODUCT_CARD' | 'SYSTEM'
       content: string
       resourceId: number | null
@@ -105,6 +106,12 @@ declare namespace Api {
       canReceive: boolean
     }
 
+    interface AgentProfile {
+      adminUserId: number
+      serviceName: string
+      avatar: string
+    }
+
     interface TransferRequest {
       requestId: number
       conversationId: number
@@ -134,6 +141,55 @@ declare namespace Api {
     interface SendMessageForm {
       content: string
       clientMessageId: string
+    }
+
+    interface ManagedUser {
+      adminUserId: string
+      username: string
+      displayName: string
+      adminAvatar: string
+      status: string
+      agent: boolean
+      manager: boolean
+      serviceName: string
+      serviceNameOverride: string | null
+      serviceAvatar: string
+      online: boolean
+      workStatus: AgentWorkStatus
+      activeConversationCount: number
+      maxActiveConversations: number
+      routingWeight: number
+      updatedAt: string
+    }
+
+    interface ManagedUserForm {
+      agent: boolean
+      manager: boolean
+      serviceNameOverride?: string
+      maxActiveConversations: number
+      routingWeight: number
+    }
+
+    type AssignmentStrategy = 'LEAST_LOADED' | 'ROUND_ROBIN' | 'WEIGHTED'
+
+    interface ManagementConfig {
+      defaultServiceName: string
+      avatar: string
+      autoAssignEnabled: boolean
+      assignmentStrategy: AssignmentStrategy
+      stickyAgentEnabled: boolean
+      stickyWindowHours: number
+      updatedBy: string | null
+      updatedAt: string
+    }
+
+    interface ManagementConfigForm {
+      defaultServiceName: string
+      avatar: string
+      autoAssignEnabled: boolean
+      assignmentStrategy: AssignmentStrategy
+      stickyAgentEnabled: boolean
+      stickyWindowHours: number
     }
   }
 

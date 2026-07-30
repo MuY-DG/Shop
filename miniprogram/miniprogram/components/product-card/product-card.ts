@@ -32,6 +32,10 @@ interface ProductCardValue {
   salesText: string;
 }
 
+interface RectResult {
+  width?: number;
+}
+
 const EMPTY_PRODUCT: ProductCardValue = {
   navigationPath: "",
   spuId: 0,
@@ -68,12 +72,26 @@ Component({
       type: Object,
       value: EMPTY_PRODUCT,
       observer() {
-        this.setData({ imageFailed: false });
+        this.setData({
+          imageFailed: false,
+          titleExpanded: false,
+          titleExpandable: false
+        }, () => {
+          this.measureTitleOverflow();
+        });
       }
     },
     variant: {
       type: String,
-      value: "compact"
+      value: "compact",
+      observer() {
+        this.setData({
+          titleExpanded: false,
+          titleExpandable: false
+        }, () => {
+          this.measureTitleOverflow();
+        });
+      }
     },
     adding: {
       type: Boolean,
@@ -82,12 +100,60 @@ Component({
   },
 
   data: {
-    imageFailed: false
+    imageFailed: false,
+    titleExpanded: false,
+    titleExpandable: false
+  },
+
+  lifetimes: {
+    ready() {
+      this.measureTitleOverflow();
+    }
   },
 
   methods: {
     handleImageError() {
       this.setData({ imageFailed: true });
+    },
+
+    measureTitleOverflow() {
+      const product = this.data.product as ProductCardValue;
+      const measuredTitle = product.title;
+      const measuredVariant = this.data.variant;
+      if (!measuredTitle) {
+        return;
+      }
+      const query = this.createSelectorQuery();
+      query.select(".product-card__title-row").boundingClientRect();
+      query.select(".product-card__title-measure").boundingClientRect();
+      query.exec((results) => {
+        const currentProduct = this.data.product as ProductCardValue;
+        if (
+          currentProduct.title !== measuredTitle ||
+          this.data.variant !== measuredVariant
+        ) {
+          return;
+        }
+        const rowRect = results[0] as RectResult | null;
+        const titleRect = results[1] as RectResult | null;
+        const rowWidth = Number(rowRect?.width);
+        const titleWidth = Number(titleRect?.width);
+        if (!Number.isFinite(rowWidth) || !Number.isFinite(titleWidth)) {
+          return;
+        }
+        const titleExpandable = titleWidth > rowWidth + 1;
+        this.setData({
+          titleExpandable,
+          titleExpanded: titleExpandable && this.data.titleExpanded
+        });
+      });
+    },
+
+    handleTitleToggle() {
+      if (!this.data.titleExpandable) {
+        return;
+      }
+      this.setData({ titleExpanded: !this.data.titleExpanded });
     },
 
     handleTap() {

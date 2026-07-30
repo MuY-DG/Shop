@@ -15,6 +15,7 @@ public record AdminMenu(
         String icon,
         Integer sortOrder,
         Boolean keepAlive,
+        Boolean fullPage,
         Boolean visible,
         Boolean enabled,
         LocalDateTime createdAt,

@@ -53,6 +53,8 @@ class AdminMenuControllerTest {
                         "/marketing",
                         "/customers",
                         "/trade",
+                        "/customer-service",
+                        "/customer-service-management",
                         "/decoration",
                         "/development",
                         "/system"
@@ -153,7 +155,7 @@ class AdminMenuControllerTest {
                 )))
                 .andExpect(jsonPath("$.data[4].path").value("/trade"))
                 .andExpect(jsonPath("$.data[4].children[*].path", contains(
-                        "orders", "after-sales", "customer-service"
+                        "orders", "after-sales"
                 )))
                 .andExpect(jsonPath("$.data[4].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "order:read",
@@ -165,8 +167,9 @@ class AdminMenuControllerTest {
                         "aftersale:read",
                         "aftersale:audit"
                 )))
-                .andExpect(jsonPath("$.data[4].children[2].component").value("/customer-service/index"))
-                .andExpect(jsonPath("$.data[4].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[5].path").value("/customer-service"))
+                .andExpect(jsonPath("$.data[5].component").value("/customer-service/index"))
+                .andExpect(jsonPath("$.data[5].meta.authList[*].authMark", containsInAnyOrder(
                         "customer-service:conversation:read",
                         "customer-service:conversation:claim",
                         "customer-service:conversation:transfer",
@@ -174,16 +177,37 @@ class AdminMenuControllerTest {
                         "customer-service:message:send",
                         "customer-service:order:link",
                         "customer-service:product:send",
-                        "customer-service:agent:manage"
+                        "customer-service:agent:manage",
+                        "customer-service:conversation:supervise"
                 )))
-                .andExpect(jsonPath("$.data[5].path").value("/decoration"))
+                .andExpect(jsonPath("$.data[5].meta.isFullPage").value(true))
                 .andExpect(jsonPath("$.data[5].children[*].path", contains(
+                        "overview",
+                        "settings"
+                )))
+                .andExpect(jsonPath("$.data[5].children[0].component")
+                        .value("/customer-service/overview"))
+                .andExpect(jsonPath("$.data[5].children[1].component")
+                        .value("/customer-service/settings"))
+                .andExpect(jsonPath("$.data[6].path").value("/customer-service-management"))
+                .andExpect(jsonPath("$.data[6].children[*].path", contains(
+                        "members"
+                )))
+                .andExpect(jsonPath("$.data[6].children[0].component")
+                        .value("/customer-service-management/members"))
+                .andExpect(jsonPath("$.data[6].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                        "customer-service:agent:manage",
+                        "customer-service:management:read",
+                        "customer-service:identity:update"
+                )))
+                .andExpect(jsonPath("$.data[7].path").value("/decoration"))
+                .andExpect(jsonPath("$.data[7].children[*].path", contains(
                         "home",
                         "contact",
                         "assets"
                 )))
-                .andExpect(jsonPath("$.data[5].children[0].component").value("/content/home-decoration"))
-                .andExpect(jsonPath("$.data[5].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[7].children[0].component").value("/content/home-decoration"))
+                .andExpect(jsonPath("$.data[7].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "content:banner:read",
                         "content:banner:create",
                         "content:banner:update",
@@ -195,50 +219,50 @@ class AdminMenuControllerTest {
                         "content:home-recommended:read",
                         "content:home-recommended:write"
                 )))
-                .andExpect(jsonPath("$.data[5].children[1].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[7].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "content:contact:read",
                         "content:contact:write"
                 )))
-                .andExpect(jsonPath("$.data[5].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[7].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "asset:upload",
                         "asset:read",
                         "asset:delete",
                         "asset:folder"
                 )))
-                .andExpect(jsonPath("$.data[6].path").value("/development"))
-                .andExpect(jsonPath("$.data[6].component").value("/index/index"))
-                .andExpect(jsonPath("$.data[6].children[*].path", contains(
+                .andExpect(jsonPath("$.data[8].path").value("/development"))
+                .andExpect(jsonPath("$.data[8].component").value("/index/index"))
+                .andExpect(jsonPath("$.data[8].children[*].path", contains(
                         "storage",
                         "payment",
                         "amap",
                         "image-compression"
                 )))
-                .andExpect(jsonPath("$.data[6].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[8].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "storage:config:read",
                         "storage:config:write"
                 )))
-                .andExpect(jsonPath("$.data[6].children[1].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[8].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "payment:config:read",
                         "payment:config:write",
                         "payment:config:enable"
                 )))
-                .andExpect(jsonPath("$.data[6].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[8].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "amap:config:read",
                         "amap:config:write"
                 )))
-                .andExpect(jsonPath("$.data[6].children[3].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[8].children[3].meta.authList[*].authMark", containsInAnyOrder(
                         "image-compression:config:read",
                         "image-compression:config:write"
                 )))
-                .andExpect(jsonPath("$.data[7].path").value("/system"))
-                .andExpect(jsonPath("$.data[7].children[*].path", contains(
+                .andExpect(jsonPath("$.data[9].path").value("/system"))
+                .andExpect(jsonPath("$.data[9].children[*].path", contains(
                         "user",
                         "role",
                         "menu",
                         "log"
                 )))
-                .andExpect(jsonPath("$.data[7].children[0].path").value("user"))
-                .andExpect(jsonPath("$.data[7].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[9].children[0].path").value("user"))
+                .andExpect(jsonPath("$.data[9].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "system:user:read",
                         "system:user:create",
                         "system:user:update",
@@ -246,20 +270,20 @@ class AdminMenuControllerTest {
                         "system:user:session:read",
                         "system:user:session:revoke"
                 )))
-                .andExpect(jsonPath("$.data[7].children[1].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[9].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "system:role:read",
                         "system:role:create",
                         "system:role:update",
                         "system:role:assign",
                         "system:role:delete"
                 )))
-                .andExpect(jsonPath("$.data[7].children[2].path").value("menu"))
-                .andExpect(jsonPath("$.data[7].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[9].children[2].path").value("menu"))
+                .andExpect(jsonPath("$.data[9].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "system:menu:read"
                 )))
-                .andExpect(jsonPath("$.data[7].children[3].path").value("log"))
-                .andExpect(jsonPath("$.data[7].children[3].component").value("/system/log"))
-                .andExpect(jsonPath("$.data[7].children[3].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[9].children[3].path").value("log"))
+                .andExpect(jsonPath("$.data[9].children[3].component").value("/system/log"))
+                .andExpect(jsonPath("$.data[9].children[3].meta.authList[*].authMark", containsInAnyOrder(
                         "system:log:read"
                 )));
     }
@@ -281,6 +305,8 @@ class AdminMenuControllerTest {
                         "/marketing",
                         "/customers",
                         "/trade",
+                        "/customer-service",
+                        "/customer-service-management",
                         "/decoration",
                         "/development",
                         "/system"

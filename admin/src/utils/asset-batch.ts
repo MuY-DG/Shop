@@ -1,3 +1,5 @@
+export const ASSET_UPLOAD_CONCURRENCY = 2
+
 export async function settleWithConcurrency<T, R>(
   items: readonly T[],
   concurrency: number,

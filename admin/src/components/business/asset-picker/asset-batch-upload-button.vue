@@ -29,7 +29,7 @@
   import { computed, ref } from 'vue'
   import { ElMessage } from 'element-plus'
   import { uploadAsset } from '@/api/assets'
-  import { settleWithConcurrency } from '@/utils/asset-batch'
+  import { ASSET_UPLOAD_CONCURRENCY, settleWithConcurrency } from '@/utils/asset-batch'
   import {
     assetUploadAccept,
     uniqueAssetUploadFiles,
@@ -110,24 +110,29 @@
 
     uploading.value = true
     try {
-      const uploaded: Api.Common.AssetValue[] = []
-      const results = await settleWithConcurrency(limitedFiles, 3, async (file) => {
-        const asset = await uploadAsset(
-          { file, folderId: props.defaultFolderId },
-          { showSuccessMessage: false }
-        )
-        uploaded.push({
-          fileId: asset.id,
-          url: asset.publicUrl || asset.url || ''
-        })
-        emit('uploaded', [...uploaded])
-        return asset
-      })
-      const failed = results.length - uploaded.length
+      const results = await settleWithConcurrency(
+        limitedFiles,
+        ASSET_UPLOAD_CONCURRENCY,
+        async (file) => {
+          const asset = await uploadAsset(
+            { file, folderId: props.defaultFolderId },
+            { showSuccessMessage: false }
+          )
+          emit('uploaded', [
+            {
+              fileId: asset.id,
+              url: asset.publicUrl || asset.url || ''
+            }
+          ])
+          return asset
+        }
+      )
+      const succeeded = results.filter((result) => result.status === 'fulfilled').length
+      const failed = results.length - succeeded
       if (failed) {
-        ElMessage.warning(`成功上传 ${uploaded.length} 个，失败 ${failed} 个`)
+        ElMessage.warning(`成功上传 ${succeeded} 个，失败 ${failed} 个`)
       } else {
-        ElMessage.success(`成功上传 ${uploaded.length} 个素材`)
+        ElMessage.success(`成功上传 ${succeeded} 个素材`)
       }
     } finally {
       uploading.value = false
