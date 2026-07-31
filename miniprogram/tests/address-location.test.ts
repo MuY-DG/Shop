@@ -3,11 +3,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
-import { API_ENDPOINTS } from "../miniprogram/constants/api-endpoints";
-
 const sourceRoot = resolve(process.cwd(), "miniprogram");
 
-test("收货地址使用微信原生地图选址并保留停用的高德实现", () => {
+test("收货地址使用微信原生地图选址", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")
   ) as {
@@ -21,18 +19,6 @@ test("收货地址使用微信原生地图选址并保留停用的高德实现",
   );
   const editTemplate = readFileSync(
     resolve(sourceRoot, "pages/account/address/edit/edit.wxml"),
-    "utf8"
-  );
-  const pickerLogic = readFileSync(
-    resolve(sourceRoot, "pages/account/address/location-picker/location-picker.ts"),
-    "utf8"
-  );
-  const pickerTemplate = readFileSync(
-    resolve(sourceRoot, "pages/account/address/location-picker/location-picker.wxml"),
-    "utf8"
-  );
-  const pickerStyle = readFileSync(
-    resolve(sourceRoot, "pages/account/address/location-picker/location-picker.less"),
     "utf8"
   );
   const editStyle = readFileSync(
@@ -51,9 +37,6 @@ test("收货地址使用微信原生地图选址并保留停用的高德实现",
     resolve(sourceRoot, "pages/account/address/list/list.ts"),
     "utf8"
   );
-  const designTokens = readFileSync(resolve(sourceRoot, "styles/tokens.less"), "utf8");
-  const amapSdk = readFileSync(resolve(sourceRoot, "libs/amap-wx.ts"), "utf8");
-
   assert.ok(appConfig.requiredPrivateInfos?.includes("chooseLocation"));
   assert.ok(appConfig.requiredPrivateInfos?.includes("chooseAddress"));
   assert.ok(!appConfig.requiredPrivateInfos?.includes("getLocation"));
@@ -61,13 +44,11 @@ test("收货地址使用微信原生地图选址并保留停用的高德实现",
   assert.ok(
     !appConfig.pages?.includes("pages/account/address/location-picker/location-picker")
   );
-  assert.equal(API_ENDPOINTS.location.config, "/app/location/config");
   assert.match(editLogic, /wx\.chooseLocation/);
   assert.match(editLogic, /parseRegionFromLocation/);
   assert.match(editLogic, /选择地理位置/);
   assert.doesNotMatch(editLogic, /location-picker\/location-picker/);
   assert.doesNotMatch(editLogic, /addressSelected/);
-  assert.doesNotMatch(editLogic, /AMapWX|getAmapClientConfig/);
   assert.doesNotMatch(editLogic, /composeAddressDetail/);
   assert.match(editTemplate, /请选择收货地址/);
   assert.match(editTemplate, /正在打开微信地图/);
@@ -101,54 +82,6 @@ test("收货地址使用微信原生地图选址并保留停用的高德实现",
   assert.match(editTemplate, /门牌号/);
   assert.match(editTemplate, /onDoorplateInput/);
   assert.match(editTemplate, /onRegionChange/);
-  assert.match(pickerLogic, /type: "gcj02"/);
-  assert.match(pickerLogic, /new AMapWXConstructor/);
-  assert.match(pickerLogic, /getRegeo/);
-  assert.match(pickerLogic, /getPoiAround/);
-  assert.match(pickerLogic, /getPoiKeywords/);
-  assert.match(pickerLogic, /preferredCity \? \{ city: preferredCity \}/);
-  assert.match(pickerLogic, /this\.data\.currentCity/);
-  assert.match(pickerLogic, /citylimit: false/);
-  assert.match(pickerLogic, /NEARBY_PAGE_SIZE = 8/);
-  assert.match(pickerLogic, /loadMoreNearbyPlaces/);
-  assert.match(pickerLogic, /SEARCH_PAGE_SIZE = 8/);
-  assert.match(pickerLogic, /loadMoreSearchPlaces/);
-  assert.match(pickerLogic, /getCenterLocation/);
-  assert.match(pickerLogic, /event\.causedBy === "update"/);
-  assert.match(pickerTemplate, /<map/);
-  assert.match(pickerTemplate, /class="map-back"/);
-  assert.match(pickerTemplate, /navigation-back\.png/);
-  assert.match(pickerTemplate, /style="height: \{\{mapVisibleHeight\}\}px;"/);
-  assert.match(pickerTemplate, /style="height: \{\{mapHeight\}\}px;"/);
-  assert.match(pickerStyle, /\.picker-content[\s\S]*height: 100vh/);
-  assert.match(pickerLogic, /navigationOverlayMetrics/);
-  assert.match(pickerTemplate, /location-target-active\.png/);
-  assert.match(pickerTemplate, /location-target-idle\.png/);
-  assert.match(pickerTemplate, /bindscrolltolower="onNearbyLoadMore"/);
-  assert.match(pickerTemplate, /bindscrolltolower="onSearchLoadMore"/);
-  assert.match(pickerTemplate, /bindtouchmove="onListTouchMove"/);
-  assert.match(pickerLogic, /panelExpanded/);
-  assert.match(pickerLogic, /expandResultPanel/);
-  assert.match(pickerLogic, /collapseResultPanel/);
-  assert.match(pickerLogic, /scheduleLoadMoreAfterExpand/);
-  assert.match(pickerLogic, /const mapVisibleHeight = clamp/);
-  assert.match(pickerLogic, /mapHeight - mapVisibleHeight/);
-  assert.match(pickerTemplate, /mapLocateBottom/);
-  assert.match(pickerStyle, /\.map-shell--dragging[\s\S]*transition: none/);
-  assert.match(pickerStyle, /transition: height 380ms/);
-  assert.match(pickerStyle, /transition: bottom 380ms/);
-  assert.match(pickerTemplate, /address-check\.svg/);
-  assert.match(pickerTemplate, /address-search\.png/);
-  assert.doesNotMatch(pickerTemplate, /title="地图选择收货地址"/);
-  assert.doesNotMatch(pickerTemplate, /loading="\{\{loading \|\| resolving\}\}"/);
-  assert.doesNotMatch(pickerTemplate, /正在加载高德地图/);
-  assert.match(pickerTemplate, /showSearchResults/);
-  assert.doesNotMatch(pickerTemplate, /place-row__pin|\{\{index \+ 1\}\}/);
-  assert.ok(
-    pickerTemplate.indexOf('class="map-shell"') <
-      pickerTemplate.indexOf('class="search-zone"')
-  );
-  assert.match(pickerLogic, /return text\(preferred\?\.name\) \|\| baseDetail/);
   assert.match(editStyle, /button\.form-field--address[\s\S]*align-items: center/);
   assert.match(editStyle, /\.address-summary__name/);
   assert.match(editStyle, /\.address-summary__detail/);
@@ -177,32 +110,5 @@ test("收货地址使用微信原生地图选址并保留停用的高德实现",
   assert.match(
     addressListStyle,
     /\.address-row__detail\s*\{[\s\S]*?text-overflow: ellipsis[\s\S]*?white-space: nowrap/
-  );
-  assert.doesNotMatch(pickerTemplate, />回到当前位置</);
-  assert.doesNotMatch(pickerTemplate, /当前选点/);
-  assert.match(pickerTemplate, /center-pin__head/);
-  assert.match(pickerTemplate, /拖动地图，让指针落在目标位置/);
-  assert.match(pickerTemplate, /搜索小区、大厦、街道或门店/);
-  assert.match(pickerTemplate, /使用该地址/);
-  assert.match(amapSdk, /restapi\.amap\.com\/v3\/geocode\/regeo/);
-  assert.match(amapSdk, /restapi\.amap\.com\/v3\/place\/around/);
-  assert.match(amapSdk, /restapi\.amap\.com\/v3\/place\/text/);
-  assert.match(amapSdk, /e\.offset=a\.pageSize/);
-  assert.match(amapSdk, /e\.page=a\.pageNumber/);
-  assert.match(amapSdk, /restapi\.amap\.com\/v3\/assistant\/inputtips/);
-  assert.match(amapSdk, /export \{ AMapWX \}/);
-  assert.doesNotMatch(amapSdk, /module\.exports/);
-
-  const definedTokens = new Set(
-    [...designTokens.matchAll(/^(@[\w-]+):/gm)].map((match) => match[1])
-  );
-  const usedTokens = new Set(
-    [...pickerStyle.matchAll(/@[\w-]+/g)]
-      .map((match) => match[0])
-      .filter((token) => token !== "@import")
-  );
-  assert.deepEqual(
-    [...usedTokens].filter((token) => !definedTokens.has(token)),
-    []
   );
 });

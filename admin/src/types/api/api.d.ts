@@ -1345,20 +1345,6 @@ declare namespace Api {
     }
   }
 
-  namespace Amap {
-    interface Config {
-      enabled: boolean
-      keyConfigured: boolean
-      miniProgramKeyMasked: string
-      updatedAt?: string | null
-    }
-
-    interface ConfigForm {
-      enabled: boolean
-      miniProgramKey?: string
-    }
-  }
-
   namespace ImageCompression {
     type ConfigSource = 'AUTO' | 'ENV' | 'DB'
     type OutputFormat = 'WEBP'

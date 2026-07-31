@@ -59,9 +59,6 @@ export const API_ENDPOINTS = Object.freeze({
     item: (addressId: string): string => `/app/addresses/${addressId}`,
     setDefault: (addressId: string): string => `/app/addresses/${addressId}/default`
   },
-  location: {
-    config: "/app/location/config"
-  },
   coupons: {
     available: "/app/coupons/available",
     claimable: "/app/coupons/claimable",

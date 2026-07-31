@@ -1,7 +1,7 @@
-# 微信原生选址与高德备用实现
+# 微信原生地图选址
 
 当前收货地址页使用微信原生 `wx.chooseLocation` 打开地图选点，不再调用
-`wx.getLocation`，也不再从运行链路初始化高德 SDK。
+`wx.getLocation`。
 
 `wx.chooseLocation` 返回地点名称、详细地址和 `gcj02` 经纬度，但不单独返回
 省、市、区。地址表单把地点名称和完整地址合并显示在同一个“地址”入口中，
@@ -17,18 +17,3 @@
 3. `app.json` 的 `requiredPrivateInfos` 声明 `chooseLocation`，并保留
    `scope.userLocation` 用途说明。
 4. 使用真机验证地图选点、取消、拒绝授权、地区补充、门牌号填写和地址保存。
-
-## 暂停使用的高德实现
-
-原高德地图选址页面、类型、服务和 `AMapWX_SDK_V1.3.0` 文件暂时保留，但该
-页面已从 `app.json` 移除，地址编辑页也不再导航到该页面。项目已开启
-`ignoreUploadUnusedFiles`，未引用的高德选址文件不会进入正常运行链路。
-
-后端 `/app/location/config`、管理后台高德配置和相关数据库迁移同样保留，以便
-后续需要恢复高级搜索、附近地点和逆地址解析时复用。恢复前需重新声明并获批
-`getLocation`，配置高德微信小程序 Key 及 `https://restapi.amap.com` 合法域名。
-
-原实现参考：[高德小程序入门](https://lbs.amap.com/api/wx/gettingstarted)、
-[获取地址描述](https://lbs.amap.com/api/wx/guide/get-data/regeo)、
-[获取 POI](https://lbs.amap.com/api/wx/guide/get-data/poi)、
-[获取输入提示](https://lbs.amap.com/api/wx/guide/get-data/get-inputtips)。

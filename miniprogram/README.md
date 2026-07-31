@@ -29,7 +29,7 @@
 - 订单中心状态分组、分页列表、订单详情和确认收货
 - 个人中心订单入口与待付款、待发货、待收货、已完成快捷入口
 - 收货地址列表、新增编辑、默认地址与安全删除
-- 高德小程序 SDK 地图选址、当前定位、附近地点、关键词搜索和收货地址回填
+- 微信原生地图选址和收货地址回填
 - 领券中心、我的优惠券与待使用/已使用/已过期状态筛选
 - 收藏商品与浏览记录列表、分页、单项移除和记录清空
 - 个人中心微信原生在线客服入口
@@ -68,7 +68,7 @@ pnpm check
 
 当前以 WebView 和基础库 2.32.3 为兼容基线。正式版启动时会拒绝 `development` 配置；发布前必须设置生产环境与 HTTPS API，并在微信公众平台分别配置：
 
-- request 合法域名：业务 API 域名与 `https://restapi.amap.com`
+- request 合法域名：业务 API 域名
 - uploadFile 合法域名：业务 API 域名（头像和售后凭证上传依赖此配置）
 - downloadFile 合法域名：`https://oss.muybaby6.icu`、`https://thirdwx.qlogo.cn`、`https://wx.qlogo.cn` 和 `https://mmbiz.qpic.cn`
 
