@@ -1,126 +1,66 @@
 <template>
-  <div class="management-page">
-    <header class="page-heading">
-      <div>
-        <div class="heading-eyebrow"><Headphones :size="16" /> 客服组织</div>
-        <h1>客服管理</h1>
-        <p>管理客服账号、对外名称与客服管理员身份。</p>
-      </div>
-      <div class="heading-actions">
-        <CsButton variant="outline" :loading="loading" @click="loadMembers">
-          <RefreshCw :size="16" />
-          刷新
-        </CsButton>
-        <CsButton @click="openAddDialog">
-          <UserPlus :size="16" />
-          添加客服
-        </CsButton>
-      </div>
-    </header>
+  <div class="management-page art-full-height">
+    <ArtSearchBar
+      v-model="searchForm"
+      :items="searchItems"
+      :show-expand="false"
+      @search="handleSearch"
+      @reset="handleReset"
+    />
 
-    <section class="content-card">
-      <div class="toolbar">
-        <div class="search-box">
-          <Search :size="17" />
-          <input
-            v-model="keyword"
-            placeholder="搜索客服名称或登录账号"
-            @keyup.enter="loadMembers"
-          />
-          <button v-if="keyword" type="button" aria-label="清空搜索" @click="clearSearch">
-            <X :size="15" />
-          </button>
-        </div>
-        <span class="member-count">共 {{ members.length }} 位客服</span>
-      </div>
+    <ElCard class="art-table-card">
+      <ArtTableHeader v-model:columns="columnChecks" :loading="loading" @refresh="loadMembers">
+        <template #left>
+          <div class="table-actions">
+            <ElButton type="primary" @click="openAddDialog">添加客服</ElButton>
+            <span class="table-hint">共 {{ members.length }} 位客服</span>
+          </div>
+        </template>
+      </ArtTableHeader>
 
-      <div v-if="loading && !members.length" class="empty-state">
-        <LoaderCircle class="spin" :size="24" />
-        正在读取客服成员…
-      </div>
+      <ArtTable
+        row-key="adminUserId"
+        :empty-text="searchedKeyword ? '没有匹配的客服' : '还没有客服成员'"
+        :loading="loading"
+        :data="members"
+        :columns="columns"
+      >
+        <template #member="{ row }">
+          <div class="member-identity">
+            <ElAvatar :size="40" :src="row.serviceAvatar">
+              {{ avatarText(row.serviceName) }}
+            </ElAvatar>
+            <div class="member-copy">
+              <div class="member-name">
+                <strong>{{ row.serviceName }}</strong>
+                <ElTag v-if="row.manager" type="primary" size="small" effect="light">
+                  <ShieldCheck :size="13" />
+                  客服管理员
+                </ElTag>
+              </div>
+              <span>客户可见名称</span>
+            </div>
+          </div>
+        </template>
 
-      <div v-else-if="!members.length" class="empty-state">
-        <UsersRound :size="30" />
-        <strong>{{ keyword ? '没有匹配的客服' : '还没有客服成员' }}</strong>
-        <span>{{
-          keyword ? '请尝试其他名称或账号。' : '点击右上角“添加客服”，从游客中选择账号。'
-        }}</span>
-      </div>
+        <template #username="{ row }">
+          <span class="username">@{{ row.username }}</span>
+        </template>
 
-      <div v-else class="table-scroll" :class="{ 'is-refreshing': loading }">
-        <table class="member-table">
-          <thead>
-            <tr>
-              <th>客服</th>
-              <th>账号</th>
-              <th>状态</th>
-              <th>绑定时间</th>
-              <th class="actions-heading">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="member in members" :key="member.adminUserId">
-              <td>
-                <div class="member-identity">
-                  <span class="avatar-shell">
-                    <img v-if="member.serviceAvatar" :src="member.serviceAvatar" alt="" />
-                    <span v-else>{{ avatarText(member.serviceName) }}</span>
-                  </span>
-                  <div>
-                    <div class="member-name">
-                      <strong>{{ member.serviceName }}</strong>
-                      <span v-if="member.manager" class="manager-badge">
-                        <ShieldCheck :size="13" />
-                        客服管理员
-                      </span>
-                    </div>
-                    <small>客户可见名称</small>
-                  </div>
-                </div>
-              </td>
-              <td
-                ><span class="username">@{{ member.username }}</span></td
-              >
-              <td>
-                <span class="status-pill" :class="{ online: member.online }">
-                  <i />
-                  {{ member.online ? '在线' : '离线' }}
-                </span>
-              </td>
-              <td
-                ><span class="bound-at">{{ formatDateTime(member.boundAt) }}</span></td
-              >
-              <td>
-                <div class="member-actions">
-                  <CsButton size="sm" variant="outline" @click="openNameEditor(member)">
-                    <Pencil :size="14" />
-                    编辑名称
-                  </CsButton>
-                  <CsButton
-                    size="sm"
-                    variant="ghost"
-                    :loading="isSaving('manager', member.adminUserId)"
-                    @click="toggleManager(member)"
-                  >
-                    <ShieldCheck :size="14" />
-                    {{ member.manager ? '取消管理员' : '设为管理员' }}
-                  </CsButton>
-                  <CsButton
-                    size="sm"
-                    variant="danger"
-                    :loading="isSaving('delete', member.adminUserId)"
-                    @click="removeMember(member)"
-                  >
-                    <Trash2 :size="14" />
-                    删除
-                  </CsButton>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+        <template #status="{ row }">
+          <ElTag :type="row.online ? 'success' : 'info'" size="small" effect="light">
+            <span class="status-content">
+              <i :class="{ online: row.online }" />
+              {{ row.online ? '在线' : '离线' }}
+            </span>
+          </ElTag>
+        </template>
+
+        <template #boundAt="{ row }">
+          <span class="bound-at">{{ formatDateTime(row.boundAt) }}</span>
+        </template>
+      </ArtTable>
+    </ElCard>
 
     <ElDialog
       v-model="addDialogVisible"
@@ -224,21 +164,13 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onMounted, ref } from 'vue'
+  import { computed, h, onMounted, ref } from 'vue'
   import { ElMessage, ElMessageBox } from 'element-plus'
-  import {
-    Headphones,
-    LoaderCircle,
-    Pencil,
-    RefreshCw,
-    Search,
-    ShieldCheck,
-    Trash2,
-    UserPlus,
-    UsersRound,
-    X
-  } from '@lucide/vue'
-  import CsButton from '@/components/customer-ui/CsButton.vue'
+  import { Search, ShieldCheck } from '@lucide/vue'
+  import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
+  import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
+  import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
+  import { useTableColumns } from '@/hooks/core/useTableColumns'
   import {
     addCustomerServiceMember,
     deleteCustomerServiceMember,
@@ -248,9 +180,14 @@
     updateCustomerServiceMemberName
   } from '@/api/customer-service'
 
-  const members = ref<Api.CustomerService.CustomerServiceMember[]>([])
+  defineOptions({ name: 'CustomerServiceMembers' })
+
+  type CustomerServiceMember = Api.CustomerService.CustomerServiceMember
+
+  const members = ref<CustomerServiceMember[]>([])
   const candidates = ref<Api.CustomerService.GuestCandidate[]>([])
-  const keyword = ref('')
+  const searchForm = ref<{ keyword?: string }>({ keyword: undefined })
+  const searchedKeyword = ref('')
   const candidateKeyword = ref('')
   const selectedGuestId = ref('')
   const addServiceName = ref('')
@@ -264,6 +201,37 @@
   const savingName = ref(false)
   const savingKey = ref('')
 
+  const searchItems = computed<SearchFormItem[]>(() => [
+    {
+      label: '客服关键字',
+      labelWidth: '84px',
+      key: 'keyword',
+      type: 'input',
+      props: {
+        clearable: true,
+        placeholder: '客服名称 / 登录账号'
+      }
+    }
+  ])
+
+  const { columns, columnChecks } = useTableColumns<CustomerServiceMember>(() => [
+    { prop: 'member', label: '客服', minWidth: 260, useSlot: true },
+    { prop: 'username', label: '账号', minWidth: 160, useSlot: true },
+    { prop: 'status', label: '状态', width: 100, useSlot: true },
+    { prop: 'boundAt', label: '绑定时间', width: 180, useSlot: true },
+    {
+      prop: 'operation',
+      label: '操作',
+      width: 110,
+      fixed: 'right',
+      formatter: (row) =>
+        h(ArtButtonMore, {
+          list: getMemberActions(row),
+          onClick: (item: ButtonMoreItem) => handleMoreAction(item, row)
+        })
+    }
+  ])
+
   const selectedGuest = computed(
     () =>
       candidates.value.find((candidate) => candidate.adminUserId === selectedGuestId.value) || null
@@ -274,14 +242,20 @@
   async function loadMembers() {
     loading.value = true
     try {
-      members.value = await fetchCustomerServiceMembers(keyword.value.trim())
+      members.value = await fetchCustomerServiceMembers(searchedKeyword.value)
     } finally {
       loading.value = false
     }
   }
 
-  function clearSearch() {
-    keyword.value = ''
+  function handleSearch(params: { keyword?: string }) {
+    searchedKeyword.value = params.keyword?.trim() || ''
+    void loadMembers()
+  }
+
+  function handleReset() {
+    searchForm.value = { keyword: undefined }
+    searchedKeyword.value = ''
     void loadMembers()
   }
 
@@ -328,6 +302,35 @@
     } finally {
       addingMember.value = false
     }
+  }
+
+  function getMemberActions(member: CustomerServiceMember): ButtonMoreItem[] {
+    return [
+      {
+        key: 'edit-name',
+        label: '编辑名称',
+        icon: 'ri:edit-2-line'
+      },
+      {
+        key: 'toggle-manager',
+        label: member.manager ? '取消管理员' : '设为管理员',
+        icon: 'ri:shield-user-line',
+        disabled: isSaving('manager', member.adminUserId)
+      },
+      {
+        key: 'delete',
+        label: '删除客服',
+        icon: 'ri:delete-bin-line',
+        color: '#f56c6c',
+        disabled: isSaving('delete', member.adminUserId)
+      }
+    ]
+  }
+
+  function handleMoreAction(item: ButtonMoreItem, member: CustomerServiceMember) {
+    if (item.key === 'edit-name') openNameEditor(member)
+    if (item.key === 'toggle-manager') void toggleManager(member)
+    if (item.key === 'delete') void removeMember(member)
   }
 
   function openNameEditor(member: Api.CustomerService.CustomerServiceMember) {
@@ -426,164 +429,21 @@
 </script>
 
 <style scoped>
-  .management-page {
-    min-height: 100%;
-    padding: 28px;
-    color: #0f172a;
-    background: #f6f8fb;
-  }
-
-  .page-heading,
-  .content-card {
-    max-width: 1320px;
-    margin-right: auto;
-    margin-left: auto;
-  }
-
-  .page-heading {
-    display: flex;
-    gap: 24px;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 22px;
-  }
-
-  .heading-eyebrow {
-    display: flex;
-    gap: 7px;
-    align-items: center;
-    margin-bottom: 8px;
-    font-size: 13px;
-    font-weight: 700;
-    color: #2563eb;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 28px;
-    letter-spacing: -0.04em;
-  }
-
-  .page-heading p,
   .dialog-description {
     margin: 9px 0 0;
     font-size: 14px;
-    color: #64748b;
+    color: var(--el-text-color-secondary);
   }
 
-  .heading-actions {
+  .table-actions {
     display: flex;
-    gap: 10px;
-  }
-
-  .content-card {
-    overflow: hidden;
-    background: #fff;
-    border: 1px solid #e5eaf1;
-    border-radius: 16px;
-    box-shadow: 0 1px 2px rgb(15 23 42 / 3%);
-  }
-
-  .toolbar {
-    display: flex;
-    gap: 18px;
+    gap: 12px;
     align-items: center;
-    justify-content: space-between;
-    min-height: 76px;
-    padding: 0 22px;
-    border-bottom: 1px solid #edf0f4;
   }
 
-  .search-box {
-    display: flex;
-    gap: 9px;
-    align-items: center;
-    width: min(420px, 100%);
-    height: 40px;
-    padding: 0 12px;
-    color: #94a3b8;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-  }
-
-  .search-box:focus-within {
-    border-color: #93c5fd;
-    box-shadow: 0 0 0 3px rgb(37 99 235 / 8%);
-  }
-
-  .search-box input {
-    flex: 1;
-    min-width: 0;
+  .table-hint {
     font-size: 14px;
-    color: #0f172a;
-    background: transparent;
-    border: 0;
-    outline: 0;
-  }
-
-  .search-box button {
-    display: grid;
-    place-items: center;
-    padding: 2px;
-    color: #64748b;
-    cursor: pointer;
-    background: transparent;
-    border: 0;
-  }
-
-  .member-count {
-    font-size: 13px;
-    color: #94a3b8;
-  }
-
-  .table-scroll {
-    overflow-x: auto;
-    transition: opacity 0.18s ease;
-  }
-
-  .table-scroll.is-refreshing {
-    pointer-events: none;
-    opacity: 0.58;
-  }
-
-  .member-table {
-    width: 100%;
-    min-width: 1050px;
-    border-collapse: collapse;
-  }
-
-  .member-table th {
-    height: 46px;
-    padding: 0 18px;
-    font-size: 12px;
-    font-weight: 650;
-    color: #64748b;
-    text-align: left;
-    background: #fbfcfd;
-    border-bottom: 1px solid #edf0f4;
-  }
-
-  .member-table td {
-    height: 82px;
-    padding: 12px 18px;
-    border-bottom: 1px solid #f0f2f5;
-  }
-
-  .member-table tbody tr:last-child td {
-    border-bottom: 0;
-  }
-
-  .member-table tbody tr:hover {
-    background: #fbfdff;
-  }
-
-  .member-table th:first-child {
-    width: 30%;
-  }
-
-  .member-table th:last-child {
-    width: 360px;
+    color: var(--el-text-color-secondary);
   }
 
   .member-identity {
@@ -592,11 +452,12 @@
     align-items: center;
   }
 
-  .avatar-shell,
   .candidate-avatar {
     display: grid;
     flex: 0 0 auto;
     place-items: center;
+    width: 40px;
+    height: 40px;
     overflow: hidden;
     font-weight: 750;
     color: #1d4ed8;
@@ -604,12 +465,6 @@
     border-radius: 50%;
   }
 
-  .avatar-shell {
-    width: 44px;
-    height: 44px;
-  }
-
-  .avatar-shell img,
   .candidate-avatar img {
     width: 100%;
     height: 100%;
@@ -627,7 +482,7 @@
     font-size: 14px;
   }
 
-  .member-identity small,
+  .member-copy > span,
   .candidate-copy small {
     display: block;
     margin-top: 4px;
@@ -635,16 +490,10 @@
     color: #94a3b8;
   }
 
-  .manager-badge {
+  .member-name :deep(.el-tag__content) {
     display: inline-flex;
     gap: 4px;
     align-items: center;
-    padding: 3px 7px;
-    font-size: 11px;
-    font-weight: 650;
-    color: #6d28d9;
-    background: #f3e8ff;
-    border-radius: 999px;
   }
 
   .username,
@@ -653,58 +502,21 @@
     color: #475569;
   }
 
-  .status-pill {
+  .status-content {
     display: inline-flex;
-    gap: 7px;
+    gap: 6px;
     align-items: center;
-    font-size: 13px;
-    color: #64748b;
   }
 
-  .status-pill i {
-    width: 8px;
-    height: 8px;
+  .status-content i {
+    width: 6px;
+    height: 6px;
     background: #cbd5e1;
     border-radius: 50%;
   }
 
-  .status-pill.online {
-    color: #15803d;
-  }
-
-  .status-pill.online i {
+  .status-content i.online {
     background: #22c55e;
-    box-shadow: 0 0 0 3px rgb(34 197 94 / 12%);
-  }
-
-  .actions-heading {
-    padding-left: 26px !important;
-  }
-
-  .member-actions {
-    display: flex;
-    gap: 7px;
-    justify-content: flex-end;
-  }
-
-  .empty-state {
-    display: grid;
-    place-content: center;
-    justify-items: center;
-    min-height: 280px;
-    color: #94a3b8;
-    text-align: center;
-  }
-
-  .empty-state strong {
-    margin-top: 12px;
-    font-size: 15px;
-    color: #334155;
-  }
-
-  .empty-state span {
-    margin-top: 6px;
-    font-size: 13px;
   }
 
   .candidate-search {
@@ -748,11 +560,6 @@
     border-color: #93c5fd;
   }
 
-  .candidate-avatar {
-    width: 40px;
-    height: 40px;
-  }
-
   .candidate-copy {
     flex: 1;
     min-width: 0;
@@ -779,36 +586,5 @@
     font-size: 13px;
     font-weight: 650;
     color: #334155;
-  }
-
-  .spin {
-    animation: spin 0.9s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  @media (width <= 760px) {
-    .management-page {
-      padding: 18px;
-    }
-
-    .page-heading,
-    .toolbar {
-      align-items: stretch;
-    }
-
-    .page-heading,
-    .toolbar,
-    .heading-actions {
-      flex-direction: column;
-    }
-
-    .member-count {
-      display: none;
-    }
   }
 </style>
