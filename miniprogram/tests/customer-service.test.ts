@@ -79,7 +79,7 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
     "utf8"
   );
   const sendTextSource = pageSource.slice(
-    pageSource.indexOf("async sendText()"),
+    pageSource.indexOf("sendText()"),
     pageSource.indexOf("onPlusTap()")
   );
   const sendImageSource = pageSource.slice(
@@ -112,7 +112,12 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(template, /message-image--uploading/);
   assert.doesNotMatch(template, /uploadProgress/);
   assert.match(sendTextSource, /appendLocallySentMessage/);
+  assert.match(sendTextSource, /pendingTextMessages/);
+  assert.match(sendTextSource, /deliverPendingText/);
   assert.doesNotMatch(sendTextSource, /refreshConversation/);
+  assert.doesNotMatch(template, /loading="\{\{sending\}\}"/);
+  assert.match(template, /message-send-error/);
+  assert.match(template, /confirm-hold="\{\{true\}\}"/);
   assert.match(sendImageSource, /appendLocallySentMessage/);
   assert.doesNotMatch(sendImageSource, /refreshConversation/);
   assert.match(pageSource, /getBrowseHistory/);

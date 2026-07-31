@@ -73,8 +73,19 @@
 
               <view
                 wx:if="{{item.messageType === 'TEXT'}}"
-                class="message-bubble {{item.isMine ? 'message-bubble--mine' : 'message-bubble--other'}}"
-              >{{item.content}}</view>
+                class="message-delivery"
+              >
+                <button
+                  wx:if="{{item.isMine && item.sendFailed}}"
+                  class="message-send-error"
+                  data-id="{{item.messageId}}"
+                  catchtap="onRetryTextTap"
+                  aria-label="发送失败，点击重试"
+                >!</button>
+                <view
+                  class="message-bubble {{item.isMine ? 'message-bubble--mine' : 'message-bubble--other'}}"
+                >{{item.content}}</view>
+              </view>
 
               <view
                 wx:elif="{{item.messageType === 'IMAGE'}}"
@@ -186,16 +197,26 @@
     </view>
 
     <view class="composer">
+      <button
+        class="composer__plus {{panelMode ? 'composer__plus--active' : ''}}"
+        disabled="{{uploading}}"
+        bindtap="onPlusTap"
+        aria-label="{{panelMode ? '收起更多选项' : '更多发送选项'}}"
+      >
+        <view class="composer__plus-line composer__plus-line--horizontal"></view>
+        <view class="composer__plus-line composer__plus-line--vertical"></view>
+      </button>
       <textarea
         class="composer__input"
         value="{{inputValue}}"
         auto-height
         maxlength="2000"
         confirm-type="send"
+        confirm-hold="{{true}}"
+        show-confirm-bar="{{false}}"
         cursor-spacing="18"
         placeholder="发送消息"
         placeholder-class="composer__placeholder"
-        disabled="{{sending || uploading}}"
         bindinput="onInput"
         bindfocus="onInputFocus"
         bindconfirm="onInputConfirm"
@@ -203,19 +224,8 @@
       <button
         wx:if="{{inputValue}}"
         class="composer__send"
-        loading="{{sending}}"
-        disabled="{{sending || uploading}}"
         bindtap="onSendTap"
       >发送</button>
-      <button
-        class="composer__plus {{panelMode ? 'composer__plus--active' : ''}}"
-        disabled="{{sending || uploading}}"
-        bindtap="onPlusTap"
-        aria-label="更多发送选项"
-      >
-        <view class="composer__plus-line composer__plus-line--horizontal"></view>
-        <view class="composer__plus-line composer__plus-line--vertical"></view>
-      </button>
     </view>
 
     <view class="attachment-panel {{panelMode ? 'attachment-panel--open' : ''}}">

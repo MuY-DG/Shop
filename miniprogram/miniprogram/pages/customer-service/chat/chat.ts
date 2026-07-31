@@ -73,6 +73,7 @@ interface MessageView {
   imageStyle: string;
   imageFailed: boolean;
   imageUploading: boolean;
+  sendFailed: boolean;
   orderId: number;
   orderNo: string;
   orderTitle: string;
@@ -107,6 +108,9 @@ const originalImageTempPaths = new Map<number, string>();
 const imageMessages = new Map<number, CustomerServiceMessage>();
 const imageDownloads = new Set<number>();
 const pendingImageViews = new Map<number, MessageView>();
+const pendingTextMessages = new Map<number, CustomerServiceMessage>();
+const pendingTextViews = new Map<number, MessageView>();
+const pendingTextRequests = new Set<number>();
 const locallyHandledMessageIds = new Map<number, number>();
 const pendingRealtimeMessageIds = new Set<number>();
 
@@ -119,7 +123,7 @@ let unsubscribeRealtime: (() => void) | null = null;
 let unsubscribeRealtimeState: (() => void) | null = null;
 let imageObserver: WechatMiniprogram.IntersectionObserver | null = null;
 let entryContext: CustomerServiceEntryContext = { contextType: "GENERAL" };
-let nextPendingImageId = -1;
+let nextPendingMessageId = -1;
 let localMutationCount = 0;
 let pendingRealtimeChangeWithoutMessage = false;
 
@@ -209,6 +213,7 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
       imageStyle: imageStyle(message),
       imageFailed: false,
       imageUploading: false,
+      sendFailed: false,
       orderId: order?.orderId ?? 0,
       orderNo: cleanText(order?.orderNo),
       orderTitle: cleanText(order?.primaryProductTitle) || "商品订单",
@@ -290,7 +295,6 @@ Page({
     messages: [] as MessageView[],
     scrollTarget: "",
     inputValue: "",
-    sending: false,
     uploading: false,
     panelMode: "" as PanelMode,
     pickerOpen: false,
@@ -309,7 +313,7 @@ Page({
     refreshRunning = false;
     entryContext = customerServiceEntryContext(options.contextType, options.contextId);
     initializeGeneration += 1;
-    nextPendingImageId = -1;
+    nextPendingMessageId = -1;
     localMutationCount = 0;
     pendingRealtimeChangeWithoutMessage = false;
     imageTempPaths.clear();
@@ -317,6 +321,9 @@ Page({
     imageMessages.clear();
     imageDownloads.clear();
     pendingImageViews.clear();
+    pendingTextMessages.clear();
+    pendingTextViews.clear();
+    pendingTextRequests.clear();
     locallyHandledMessageIds.clear();
     pendingRealtimeMessageIds.clear();
   },
@@ -354,6 +361,9 @@ Page({
     imageMessages.clear();
     imageDownloads.clear();
     pendingImageViews.clear();
+    pendingTextMessages.clear();
+    pendingTextViews.clear();
+    pendingTextRequests.clear();
     locallyHandledMessageIds.clear();
     pendingRealtimeMessageIds.clear();
     localMutationCount = 0;
@@ -463,11 +473,26 @@ Page({
 
   applyConversation(conversation: CustomerServiceConversation) {
     const rawMessages = Array.isArray(conversation.messages) ? conversation.messages : [];
+    const persistedClientMessageIds = new Set(
+      rawMessages
+        .map((message) => cleanText(message.clientMessageId))
+        .filter(Boolean)
+    );
+    pendingTextMessages.forEach((message, messageId) => {
+      if (message.clientMessageId && persistedClientMessageIds.has(message.clientMessageId)) {
+        pendingTextMessages.delete(messageId);
+        pendingTextViews.delete(messageId);
+      }
+    });
     imageMessages.clear();
     rawMessages.forEach((message) => imageMessages.set(message.messageId, message));
+    const pendingViews = [
+      ...Array.from(pendingTextViews.values()),
+      ...Array.from(pendingImageViews.values())
+    ].sort((left, right) => right.messageId - left.messageId);
     const views = [
       ...messageViews(rawMessages),
-      ...Array.from(pendingImageViews.values())
+      ...pendingViews
     ];
     const context = conversation.currentContext;
     const contextPreview = conversation.status === "DRAFT"
@@ -578,33 +603,94 @@ Page({
     void this.sendText();
   },
 
-  async sendText() {
+  sendText() {
     const content = this.data.inputValue.trim();
-    if (!content || this.data.sending || this.data.uploading) {
+    if (!content) {
       return;
     }
+    const messageId = nextPendingMessageId;
+    nextPendingMessageId -= 1;
+    const pendingMessage: CustomerServiceMessage = {
+      messageId,
+      conversationId: this.data.conversationId,
+      consultationNo: 1,
+      senderType: "APP_USER",
+      senderName: "我",
+      messageType: "TEXT",
+      content,
+      clientMessageId: customerServiceMessageId(),
+      createdAt: new Date().toISOString()
+    };
+    const pendingView = messageViews([pendingMessage])[0];
+    pendingTextMessages.set(messageId, pendingMessage);
+    pendingTextViews.set(messageId, pendingView);
+    const messages = [...this.data.messages, pendingView];
+    this.setData({
+      inputValue: "",
+      panelMode: "",
+      messages,
+      scrollTarget: `message-${messageId}`
+    });
+    void this.deliverPendingText(messageId);
+  },
+
+  async deliverPendingText(messageId: number) {
+    const pendingMessage = pendingTextMessages.get(messageId);
+    if (!pendingMessage || pendingTextRequests.has(messageId)) {
+      return;
+    }
+    pendingTextRequests.add(messageId);
+    const pendingView = pendingTextViews.get(messageId);
+    if (pendingView?.sendFailed) {
+      pendingView.sendFailed = false;
+      this.syncPendingTextView(pendingView);
+    }
     this.beginLocalMutation();
-    this.setData({ sending: true });
     try {
       const message = await sendCustomerServiceMessage({
-        content,
-        clientMessageId: customerServiceMessageId()
+        content: pendingMessage.content,
+        clientMessageId: pendingMessage.clientMessageId || customerServiceMessageId()
       });
-      this.setData({ inputValue: "", sending: false, panelMode: "" });
-      this.appendLocallySentMessage(message);
-    } catch (error) {
-      this.setData({ sending: false });
-      wx.showToast({
-        title: errorMessage(error, "消息发送失败，请重试"),
-        icon: "none"
-      });
+      pendingTextMessages.delete(messageId);
+      pendingTextViews.delete(messageId);
+      this.appendLocallySentMessage(message, messageId);
+    } catch {
+      const failedView = pendingTextViews.get(messageId);
+      if (failedView) {
+        failedView.sendFailed = true;
+        this.syncPendingTextView(failedView);
+      }
     } finally {
+      pendingTextRequests.delete(messageId);
       this.endLocalMutation();
     }
   },
 
+  syncPendingTextView(pendingView: MessageView) {
+    if (!pageActive) {
+      return;
+    }
+    this.setData({
+      messages: this.data.messages.map((view) => (
+        view.messageId === pendingView.messageId ? { ...pendingView } : view
+      ))
+    });
+  },
+
+  onRetryTextTap(event: DatasetEvent) {
+    const messageId = Number(event.currentTarget.dataset.id);
+    if (!Number.isSafeInteger(messageId) || messageId >= 0) {
+      return;
+    }
+    const pendingView = pendingTextViews.get(messageId);
+    if (!pendingView?.sendFailed) {
+      return;
+    }
+    void this.deliverPendingText(messageId);
+  },
+
   onPlusTap() {
-    if (this.data.sending || this.data.uploading) {
+    if (this.data.uploading) {
       return;
     }
     wx.hideKeyboard();
@@ -645,8 +731,8 @@ Page({
         return;
       }
       const pendingUploads = filePaths.map((filePath, index) => {
-        const messageId = nextPendingImageId;
-        nextPendingImageId -= 1;
+        const messageId = nextPendingMessageId;
+        nextPendingMessageId -= 1;
         imageTempPaths.set(messageId, filePath);
         const pendingMessage: CustomerServiceMessage = {
           messageId,
@@ -970,6 +1056,8 @@ Page({
       messages.push(serverView);
     }
     if (pendingMessageId !== undefined) {
+      pendingTextMessages.delete(pendingMessageId);
+      pendingTextViews.delete(pendingMessageId);
       pendingImageViews.delete(pendingMessageId);
       imageTempPaths.delete(pendingMessageId);
     }

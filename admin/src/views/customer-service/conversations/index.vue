@@ -236,7 +236,19 @@
                   <small>{{ productPrice(message.product) }}</small>
                 </span>
               </button>
-              <div v-else class="message-bubble">{{ message.content }}</div>
+              <div v-else class="message-delivery">
+                <button
+                  v-if="isLocalTextSendFailed(message)"
+                  type="button"
+                  class="message-send-error"
+                  title="发送失败，点击重试"
+                  aria-label="发送失败，点击重试"
+                  @click="retryTextMessage(message)"
+                >
+                  <CircleAlert :size="17" />
+                </button>
+                <div class="message-bubble">{{ message.content }}</div>
+              </div>
             </div>
             <ElEmpty
               v-if="currentDetail.messages.length === 0"
@@ -293,7 +305,6 @@
               v-auth="'customer-service:message:send'"
               type="primary"
               :disabled="!canSend || !messageDraft.trim()"
-              :loading="sending"
               @click="handleSend"
               ><Send :size="15" />发送</ElButton
             >
@@ -558,6 +569,7 @@
   } from 'vue'
   import { ElLoading, ElMessageBox } from 'element-plus'
   import {
+    CircleAlert,
     Image as ImageIcon,
     LoaderCircle,
     PackageSearch,
@@ -627,7 +639,6 @@
   const conversationKeyword = ref('')
   const detailLoading = ref(false)
   const actionLoading = ref(false)
-  const sending = ref(false)
   const uploadingImage = ref(false)
   const messageDraft = ref('')
   const messageListRef = ref<HTMLElement | null>(null)
@@ -639,18 +650,25 @@
   const imageRefreshAttempts = new Set<number>()
   const imageRefreshRequests = new Set<number>()
   const imageTargets = new Map<number, Element>()
-  type LocalImageMessage = Api.CustomerService.Message & {
+  type LocalMessage = Api.CustomerService.Message & {
     localUploadState?: 'uploading'
+    localSendState?: 'sending' | 'failed'
   }
   interface PendingImageUpload {
     conversationId: number
     file: File
     previewUrl: string
-    message: LocalImageMessage
+    message: LocalMessage
+  }
+  interface PendingTextSend {
+    conversationId: number
+    message: LocalMessage
   }
   const pendingImageUploads = new Map<number, PendingImageUpload>()
+  const pendingTextSends = new Map<number, PendingTextSend>()
+  const pendingTextRequests = new Set<number>()
   const detailCache = new Map<number, Api.CustomerService.ConversationDetail>()
-  let nextPendingImageId = -1
+  let nextPendingMessageId = -1
   let imageObserver: IntersectionObserver | null = null
   const transferDialogVisible = ref(false)
   const agents = ref<Api.CustomerService.Agent[]>([])
@@ -799,7 +817,10 @@
   }
 
   const isLocalImageUploading = (message: Api.CustomerService.Message) =>
-    (message as LocalImageMessage).localUploadState === 'uploading'
+    (message as LocalMessage).localUploadState === 'uploading'
+
+  const isLocalTextSendFailed = (message: Api.CustomerService.Message) =>
+    message.messageType === 'TEXT' && (message as LocalMessage).localSendState === 'failed'
 
   const detachCurrentImageUrls = () => {
     imageObserver?.disconnect()
@@ -988,10 +1009,27 @@
     if (isPersistedCustomerServiceMessageId(messageId)) imageObserver?.observe(element)
   }
 
-  const detailWithPendingImages = (detail: Api.CustomerService.ConversationDetail) => {
-    const pendingMessages = Array.from(pendingImageUploads.values())
+  const detailWithPendingMessages = (detail: Api.CustomerService.ConversationDetail) => {
+    const persistedClientMessageIds = new Set(
+      detail.messages
+        .map((message) => message.clientMessageId)
+        .filter((clientMessageId): clientMessageId is string => Boolean(clientMessageId))
+    )
+    pendingTextSends.forEach((pending, messageId) => {
+      if (
+        pending.message.clientMessageId &&
+        persistedClientMessageIds.has(pending.message.clientMessageId)
+      ) {
+        pendingTextSends.delete(messageId)
+      }
+    })
+    const pendingMessages = [
+      ...Array.from(pendingTextSends.values()),
+      ...Array.from(pendingImageUploads.values())
+    ]
       .filter((pending) => pending.conversationId === detail.conversationId)
       .map((pending) => pending.message)
+      .sort((left, right) => right.messageId - left.messageId)
     return {
       ...detail,
       messages: [...detail.messages, ...pendingMessages]
@@ -1053,7 +1091,7 @@
       if (requestId !== detailRequestSequence || selectedConversationId.value !== conversationId)
         return
       detailCache.set(conversationId, detail)
-      currentDetail.value = detailWithPendingImages(detail)
+      currentDetail.value = detailWithPendingMessages(detail)
       syncImageUrls(currentDetail.value.messages)
       await nextTick()
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
@@ -1069,7 +1107,7 @@
     selectedConversationId.value = conversationId
     const cachedDetail = detailCache.get(conversationId)
     if (conversationChanged) {
-      currentDetail.value = cachedDetail ? detailWithPendingImages(cachedDetail) : null
+      currentDetail.value = cachedDetail ? detailWithPendingMessages(cachedDetail) : null
       if (currentDetail.value) {
         syncImageUrls(currentDetail.value.messages)
         await nextTick()
@@ -1132,23 +1170,78 @@
     }
   }
 
-  const handleSend = async () => {
+  const handleSend = () => {
     const content = messageDraft.value.trim()
     if (!selectedConversationId.value || !content || !canSend.value) return
     const conversationId = selectedConversationId.value
-    beginLocalMutation(conversationId)
-    sending.value = true
-    try {
-      const message = await sendCustomerServiceMessage(conversationId, {
-        content,
-        clientMessageId: createClientMessageId()
-      })
-      messageDraft.value = ''
-      applyLocallySentMessage(conversationId, message)
-    } finally {
-      sending.value = false
-      endLocalMutation(conversationId)
+    const pendingMessageId = nextPendingMessageId--
+    const pendingMessage: LocalMessage = {
+      messageId: pendingMessageId,
+      conversationId,
+      consultationNo: currentDetail.value?.consultationNo || 1,
+      senderType: 'ADMIN',
+      senderId: String(currentAdminId.value || ''),
+      senderName: userStore.info.userName || '客服',
+      senderAvatar: userStore.info.avatar || '',
+      messageType: 'TEXT',
+      content,
+      resourceId: null,
+      order: null,
+      product: null,
+      image: null,
+      clientMessageId: createClientMessageId(),
+      createdAt: new Date().toISOString(),
+      localSendState: 'sending'
     }
+    pendingTextSends.set(pendingMessageId, {
+      conversationId,
+      message: pendingMessage
+    })
+    messageDraft.value = ''
+    updateConversationSummary(pendingMessage)
+    if (currentDetail.value?.conversationId === conversationId) {
+      currentDetail.value.messages = [...currentDetail.value.messages, pendingMessage]
+      void nextTick(() => {
+        if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+      })
+    }
+    void deliverPendingText(pendingMessageId)
+  }
+
+  const deliverPendingText = async (pendingMessageId: number) => {
+    const pending = pendingTextSends.get(pendingMessageId)
+    if (!pending || pendingTextRequests.has(pendingMessageId)) return
+    pendingTextRequests.add(pendingMessageId)
+    pending.message.localSendState = 'sending'
+    syncPendingTextMessage(pending.message)
+    beginLocalMutation(pending.conversationId)
+    try {
+      const message = await sendCustomerServiceMessage(pending.conversationId, {
+        content: pending.message.content,
+        clientMessageId: pending.message.clientMessageId || createClientMessageId()
+      })
+      pendingTextSends.delete(pendingMessageId)
+      applyLocallySentMessage(pending.conversationId, message, pendingMessageId)
+    } catch {
+      pending.message.localSendState = 'failed'
+      syncPendingTextMessage(pending.message)
+    } finally {
+      pendingTextRequests.delete(pendingMessageId)
+      endLocalMutation(pending.conversationId)
+    }
+  }
+
+  const syncPendingTextMessage = (message: LocalMessage) => {
+    if (currentDetail.value?.conversationId !== message.conversationId) return
+    currentDetail.value.messages = currentDetail.value.messages.map((currentMessage) =>
+      currentMessage.messageId === message.messageId ? { ...message } : currentMessage
+    )
+  }
+
+  const retryTextMessage = (message: Api.CustomerService.Message) => {
+    const pending = pendingTextSends.get(message.messageId)
+    if (!pending || pending.message.localSendState !== 'failed') return
+    void deliverPendingText(message.messageId)
   }
 
   const openImagePicker = () => imageInputRef.value?.click()
@@ -1159,9 +1252,9 @@
     input.value = ''
     if (!selectedConversationId.value || !file || !canSend.value) return
     const conversationId = selectedConversationId.value
-    const pendingMessageId = nextPendingImageId--
+    const pendingMessageId = nextPendingMessageId--
     const previewUrl = URL.createObjectURL(file)
-    const pendingMessage: LocalImageMessage = {
+    const pendingMessage: LocalMessage = {
       messageId: pendingMessageId,
       conversationId,
       consultationNo: currentDetail.value?.consultationNo || 1,
@@ -1442,15 +1535,11 @@
 
   const applyLocallySentMessage = (
     conversationId: number,
-    message: Api.CustomerService.Message
+    message: Api.CustomerService.Message,
+    pendingMessageId?: number
   ) => {
     markMessageHandledLocally(message.messageId)
     updateConversationSummary(message)
-    if (currentDetail.value?.conversationId !== conversationId) return
-    const messages = currentDetail.value.messages.filter(
-      (currentMessage) => currentMessage.messageId !== message.messageId
-    )
-    currentDetail.value.messages = [...messages, message]
     const cachedDetail = detailCache.get(conversationId)
     if (cachedDetail) {
       detailCache.set(conversationId, {
@@ -1463,6 +1552,13 @@
         ]
       })
     }
+    if (currentDetail.value?.conversationId !== conversationId) return
+    const messages = currentDetail.value.messages.filter(
+      (currentMessage) =>
+        currentMessage.messageId !== message.messageId &&
+        currentMessage.messageId !== pendingMessageId
+    )
+    currentDetail.value.messages = [...messages, message]
     void nextTick(() => {
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
       observeImageTargets()
@@ -1600,6 +1696,8 @@
     localMutationCounts.clear()
     pendingImageUploads.forEach((pending) => URL.revokeObjectURL(pending.previewUrl))
     pendingImageUploads.clear()
+    pendingTextSends.clear()
+    pendingTextRequests.clear()
     detailCache.clear()
     document.removeEventListener('visibilitychange', handleVisibilityChange)
     imageObserver?.disconnect()
@@ -1882,6 +1980,38 @@
     border: 1px solid #e2e8f0;
     border-radius: 4px 14px 14px;
     box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+  }
+
+  .message-delivery {
+    display: flex;
+    gap: 7px;
+    align-items: center;
+    max-width: 76%;
+  }
+
+  .message-delivery .message-bubble {
+    max-width: 100%;
+  }
+
+  .message-send-error {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    color: #ef4444;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    border-radius: 50%;
+  }
+
+  .message-send-error:hover,
+  .message-send-error:focus-visible {
+    color: #dc2626;
+    background: #fee2e2;
+    outline: none;
   }
 
   .message-image {

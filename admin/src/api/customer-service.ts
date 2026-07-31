@@ -80,7 +80,8 @@ export function sendCustomerServiceMessage(
 ) {
   return request.post<Api.CustomerService.Message>({
     url: `/admin/customer-service/conversations/${conversationId}/messages`,
-    data
+    data,
+    showErrorMessage: false
   })
 }
 
