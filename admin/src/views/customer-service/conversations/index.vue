@@ -188,6 +188,7 @@
                   <ElImage
                     v-if="imageUrls[message.messageId]"
                     class="message-image"
+                    :class="{ 'is-uploading': isLocalImageUploading(message) }"
                     :src="imageUrls[message.messageId]"
                     fit="cover"
                     @load="handleImageLoad(message)"
@@ -196,15 +197,7 @@
                     <template #error><div class="message-image__error">图片加载失败</div></template>
                   </ElImage>
                   <div v-else class="message-image message-image__status">
-                    {{
-                      imageLoadStates[message.messageId] === 'error'
-                        ? '图片加载失败'
-                        : message.image?.thumbnailStatus === 'PENDING' ||
-                            message.image?.thumbnailStatus === 'PROCESSING' ||
-                            message.image?.thumbnailStatus === 'FAILED'
-                          ? '缩略图处理中，点击查看原图'
-                          : '图片加载中…'
-                    }}
+                    {{ imageLoadStates[message.messageId] === 'error' ? '图片加载失败' : '' }}
                   </div>
                 </div>
               </template>
@@ -274,8 +267,7 @@
               />
               <ElButton
                 v-auth="'customer-service:message:send'"
-                :disabled="!canSend"
-                :loading="uploadingImage"
+                :disabled="!canSend || uploadingImage"
                 @click="openImagePicker"
                 ><ImageIcon :size="15" />图片</ElButton
               >
@@ -641,8 +633,18 @@
   const imageRefreshAttempts = new Set<number>()
   const imageRefreshRequests = new Set<number>()
   const imageTargets = new Map<number, Element>()
+  type LocalImageMessage = Api.CustomerService.Message & {
+    localUploadState?: 'uploading'
+  }
+  interface PendingImageUpload {
+    conversationId: number
+    file: File
+    previewUrl: string
+    message: LocalImageMessage
+  }
+  const pendingImageUploads = new Map<number, PendingImageUpload>()
+  let nextPendingImageId = -1
   let imageObserver: IntersectionObserver | null = null
-  let thumbnailRefreshTimer: ReturnType<typeof setTimeout> | null = null
   const transferDialogVisible = ref(false)
   const agents = ref<Api.CustomerService.Agent[]>([])
   const targetAgentId = ref<number | null>(null)
@@ -668,7 +670,9 @@
   let pageMounted = false
   let previewRequestSequence = 0
   let previewLoadingInstance: ReturnType<typeof ElLoading.service> | null = null
-  const changedConversationIds = new Set<number>()
+  const pendingRealtimeMessages = new Map<number, Set<number>>()
+  const locallyHandledMessageIds = new Map<number, number>()
+  const localMutationCounts = new Map<number, number>()
 
   const statusConfig: Record<
     Api.CustomerService.ConversationStatus,
@@ -785,9 +789,10 @@
     return `${agent.displayName}（${agent.username}）· ${status} ${agent.activeConversationCount}/${agent.maxActiveConversations}`
   }
 
+  const isLocalImageUploading = (message: Api.CustomerService.Message) =>
+    (message as LocalImageMessage).localUploadState === 'uploading'
+
   const detachCurrentImageUrls = () => {
-    if (thumbnailRefreshTimer) clearTimeout(thumbnailRefreshTimer)
-    thumbnailRefreshTimer = null
     imageObserver?.disconnect()
     imageTargets.clear()
     imageUrls.value = {}
@@ -798,13 +803,6 @@
 
   const loadAuthenticatedImage = (message: Api.CustomerService.Message) => {
     if (imageRefreshRequests.has(message.messageId)) return
-    if (
-      message.image?.thumbnailStatus === 'PENDING' ||
-      message.image?.thumbnailStatus === 'PROCESSING' ||
-      message.image?.thumbnailStatus === 'FAILED'
-    ) {
-      return
-    }
 
     imageRefreshRequests.add(message.messageId)
     imageLoadStates.value = {
@@ -883,7 +881,7 @@
   }
 
   const handleImagePreview = async (message: Api.CustomerService.Message) => {
-    if (previewImageLoading.value) return
+    if (previewImageLoading.value || isLocalImageUploading(message)) return
     const requestId = ++previewRequestSequence
     previewImageLoading.value = true
     previewLoadingInstance = ElLoading.service({
@@ -979,32 +977,12 @@
       const cachedUrl = getCustomerServiceImageUrl(message.messageId)
       if (cachedUrl) nextUrls[message.messageId] = cachedUrl
     })
+    pendingImageUploads.forEach((pending, messageId) => {
+      if (pending.conversationId === selectedConversationId.value) {
+        nextUrls[messageId] = pending.previewUrl
+      }
+    })
     imageUrls.value = nextUrls
-  }
-
-  const scheduleThumbnailStatusRefresh = (messages: Api.CustomerService.Message[]) => {
-    if (thumbnailRefreshTimer) clearTimeout(thumbnailRefreshTimer)
-    thumbnailRefreshTimer = null
-    const imageStatuses = messages
-      .filter((message) => message.messageType === 'IMAGE')
-      .map((message) => message.image?.thumbnailStatus)
-    const hasActiveWork = imageStatuses.some(
-      (status) => status === 'PENDING' || status === 'PROCESSING'
-    )
-    const hasRetryWaiting = imageStatuses.some((status) => status === 'FAILED')
-    if (!hasActiveWork && !hasRetryWaiting) return
-
-    const conversationId = selectedConversationId.value
-    if (!conversationId) return
-    thumbnailRefreshTimer = setTimeout(
-      () => {
-        thumbnailRefreshTimer = null
-        if (selectedConversationId.value === conversationId && !document.hidden) {
-          void loadDetail(conversationId)
-        }
-      },
-      hasActiveWork ? 3_000 : 30_000
-    )
   }
 
   const loadConversations = async (selectFirst = false) => {
@@ -1041,9 +1019,14 @@
     try {
       const detail = await fetchCustomerServiceConversation(conversationId)
       if (requestId !== detailRequestSequence) return
-      currentDetail.value = detail
-      syncImageUrls(detail.messages)
-      scheduleThumbnailStatusRefresh(detail.messages)
+      const pendingMessages = Array.from(pendingImageUploads.values())
+        .filter((pending) => pending.conversationId === conversationId)
+        .map((pending) => pending.message)
+      currentDetail.value = {
+        ...detail,
+        messages: [...detail.messages, ...pendingMessages]
+      }
+      syncImageUrls(currentDetail.value.messages)
       await nextTick()
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
       observeImageTargets()
@@ -1109,17 +1092,19 @@
   const handleSend = async () => {
     const content = messageDraft.value.trim()
     if (!selectedConversationId.value || !content || !canSend.value) return
+    const conversationId = selectedConversationId.value
+    beginLocalMutation(conversationId)
     sending.value = true
     try {
-      await sendCustomerServiceMessage(selectedConversationId.value, {
+      const message = await sendCustomerServiceMessage(conversationId, {
         content,
         clientMessageId: createClientMessageId()
       })
       messageDraft.value = ''
-      await loadDetail(selectedConversationId.value)
-      await loadConversations()
+      applyLocallySentMessage(conversationId, message)
     } finally {
       sending.value = false
+      endLocalMutation(conversationId)
     }
   }
 
@@ -1130,13 +1115,60 @@
     const file = input.files?.[0]
     input.value = ''
     if (!selectedConversationId.value || !file || !canSend.value) return
+    const conversationId = selectedConversationId.value
+    const pendingMessageId = nextPendingImageId--
+    const previewUrl = URL.createObjectURL(file)
+    const pendingMessage: LocalImageMessage = {
+      messageId: pendingMessageId,
+      conversationId,
+      consultationNo: currentDetail.value?.consultationNo || 1,
+      senderType: 'ADMIN',
+      senderId: String(currentAdminId.value || ''),
+      senderName: userStore.info.userName || '客服',
+      senderAvatar: userStore.info.avatar || '',
+      messageType: 'IMAGE',
+      content: '[图片]',
+      resourceId: null,
+      order: null,
+      product: null,
+      image: {
+        originalFilename: file.name,
+        contentType: file.type || 'image/jpeg',
+        width: null,
+        height: null,
+        accessMode: 'AUTHENTICATED_BLOB',
+        thumbnailStatus: 'NONE'
+      },
+      clientMessageId: null,
+      createdAt: new Date().toISOString(),
+      localUploadState: 'uploading'
+    }
+    pendingImageUploads.set(pendingMessageId, {
+      conversationId,
+      file,
+      previewUrl,
+      message: pendingMessage
+    })
+    if (currentDetail.value?.conversationId === conversationId) {
+      currentDetail.value.messages = [...currentDetail.value.messages, pendingMessage]
+      imageUrls.value = { ...imageUrls.value, [pendingMessageId]: previewUrl }
+      await nextTick()
+      if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+    }
+    beginLocalMutation(conversationId)
     uploadingImage.value = true
     try {
-      await uploadCustomerServiceImage(selectedConversationId.value, file)
-      await loadDetail(selectedConversationId.value)
-      await loadConversations()
+      const message = await uploadCustomerServiceImage(conversationId, file)
+      const localImageUrl = cacheCustomerServiceImage(message.messageId, file)
+      removePendingImage(pendingMessageId)
+      imageUrls.value = { ...imageUrls.value, [message.messageId]: localImageUrl }
+      applyLocallySentMessage(conversationId, message)
+    } catch (error) {
+      removePendingImage(pendingMessageId)
+      throw error
     } finally {
       uploadingImage.value = false
+      endLocalMutation(conversationId)
     }
   }
 
@@ -1319,6 +1351,83 @@
     return `admin-${Date.now()}-${Math.random().toString(16).slice(2)}`
   }
 
+  const removePendingImage = (messageId: number) => {
+    const pending = pendingImageUploads.get(messageId)
+    if (!pending) return
+    pendingImageUploads.delete(messageId)
+    URL.revokeObjectURL(pending.previewUrl)
+    if (currentDetail.value?.conversationId === pending.conversationId) {
+      currentDetail.value.messages = currentDetail.value.messages.filter(
+        (message) => message.messageId !== messageId
+      )
+    }
+    const nextUrls = { ...imageUrls.value }
+    delete nextUrls[messageId]
+    imageUrls.value = nextUrls
+  }
+
+  const updateConversationSummary = (message: Api.CustomerService.Message) => {
+    const index = conversationPage.value.records.findIndex(
+      (conversation) => conversation.conversationId === message.conversationId
+    )
+    if (index < 0) return
+    const record = conversationPage.value.records[index]
+    const updated = {
+      ...record,
+      lastMessagePreview: message.messageType === 'IMAGE' ? '[图片]' : message.content,
+      lastMessageAt: message.createdAt,
+      updatedAt: message.createdAt
+    }
+    conversationPage.value.records = [
+      updated,
+      ...conversationPage.value.records.filter(
+        (conversation) => conversation.conversationId !== message.conversationId
+      )
+    ]
+  }
+
+  const pruneHandledMessages = () => {
+    const now = Date.now()
+    locallyHandledMessageIds.forEach((expiresAt, messageId) => {
+      if (expiresAt <= now) locallyHandledMessageIds.delete(messageId)
+    })
+  }
+
+  const markMessageHandledLocally = (messageId: number) => {
+    if (messageId > 0) locallyHandledMessageIds.set(messageId, Date.now() + 15_000)
+  }
+
+  const applyLocallySentMessage = (
+    conversationId: number,
+    message: Api.CustomerService.Message
+  ) => {
+    markMessageHandledLocally(message.messageId)
+    updateConversationSummary(message)
+    if (currentDetail.value?.conversationId !== conversationId) return
+    const messages = currentDetail.value.messages.filter(
+      (currentMessage) => currentMessage.messageId !== message.messageId
+    )
+    currentDetail.value.messages = [...messages, message]
+    void nextTick(() => {
+      if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+      observeImageTargets()
+    })
+  }
+
+  const beginLocalMutation = (conversationId: number) => {
+    localMutationCounts.set(conversationId, (localMutationCounts.get(conversationId) || 0) + 1)
+  }
+
+  const endLocalMutation = (conversationId: number) => {
+    const nextCount = (localMutationCounts.get(conversationId) || 1) - 1
+    if (nextCount > 0) {
+      localMutationCounts.set(conversationId, nextCount)
+      return
+    }
+    localMutationCounts.delete(conversationId)
+    scheduleRealtimeRefresh(0)
+  }
+
   const stopFallbackPolling = () => {
     if (pollTimer) clearInterval(pollTimer)
     pollTimer = null
@@ -1374,22 +1483,42 @@
     if (event.type !== 'CUSTOMER_SERVICE_CONVERSATION_UPDATED') return
     const conversationId = Number(event.data.conversationId || 0)
     if (Number.isSafeInteger(conversationId) && conversationId > 0) {
-      changedConversationIds.add(conversationId)
+      const messageId = Number(event.data.messageId || 0)
+      const messageIds = pendingRealtimeMessages.get(conversationId) || new Set<number>()
+      messageIds.add(Number.isSafeInteger(messageId) && messageId > 0 ? messageId : 0)
+      pendingRealtimeMessages.set(conversationId, messageIds)
     }
-    if (realtimeRefreshTimer) return
+    scheduleRealtimeRefresh(250)
+  }
+
+  const scheduleRealtimeRefresh = (delay: number) => {
+    if (realtimeRefreshTimer || !pendingRealtimeMessages.size) return
     realtimeRefreshTimer = setTimeout(() => {
       realtimeRefreshTimer = null
-      const changedIds = new Set(changedConversationIds)
-      changedConversationIds.clear()
+      pruneHandledMessages()
+      const refreshConversationIds = new Set<number>()
+      let hasDeferredMutation = false
+      pendingRealtimeMessages.forEach((messageIds, conversationId) => {
+        if (localMutationCounts.has(conversationId)) {
+          hasDeferredMutation = true
+          return
+        }
+        pendingRealtimeMessages.delete(conversationId)
+        const needsRefresh = Array.from(messageIds).some(
+          (messageId) => messageId === 0 || !locallyHandledMessageIds.has(messageId)
+        )
+        if (needsRefresh) refreshConversationIds.add(conversationId)
+      })
+      if (hasDeferredMutation) scheduleRealtimeRefresh(100)
+      if (!refreshConversationIds.size) return
       const selectedId = selectedConversationId.value
       void Promise.all([
         loadConversations(),
-        loadAgentState(),
-        selectedId && (!changedIds.size || changedIds.has(selectedId))
+        selectedId && refreshConversationIds.has(selectedId)
           ? loadDetail(selectedId)
           : Promise.resolve()
       ])
-    }, 250)
+    }, delay)
   }
 
   onMounted(async () => {
@@ -1411,7 +1540,11 @@
     unsubscribeRealtime?.()
     stopFallbackPolling()
     if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer)
-    changedConversationIds.clear()
+    pendingRealtimeMessages.clear()
+    locallyHandledMessageIds.clear()
+    localMutationCounts.clear()
+    pendingImageUploads.forEach((pending) => URL.revokeObjectURL(pending.previewUrl))
+    pendingImageUploads.clear()
     document.removeEventListener('visibilitychange', handleVisibilityChange)
     imageObserver?.disconnect()
     imageObserver = null
@@ -1679,6 +1812,14 @@
     overflow: hidden;
     background: var(--el-fill-color);
     border-radius: 10px;
+    transition:
+      filter 220ms ease,
+      opacity 220ms ease;
+  }
+
+  .message-image.is-uploading {
+    filter: grayscale(1);
+    opacity: 0.48;
   }
 
   .message-image-target {
@@ -1704,6 +1845,7 @@
     display: grid;
     place-items: center;
     color: var(--el-text-color-secondary);
+    background: #d8dce2;
   }
 
   .message-card {

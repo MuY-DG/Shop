@@ -217,6 +217,12 @@ button::after {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: filter 220ms ease, opacity 220ms ease;
+}
+
+.message-image--uploading {
+  filter: grayscale(1);
+  opacity: 0.48;
 }
 
 .message-image--loading {
@@ -511,7 +517,6 @@ button::after {
   line-height: 52rpx;
 }
 
-.upload-progress,
 .picker-state {
   display: flex;
   min-height: 250rpx;

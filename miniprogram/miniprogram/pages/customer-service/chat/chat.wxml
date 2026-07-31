@@ -84,7 +84,7 @@
               >
                 <image
                   wx:if="{{item.imageUrl}}"
-                  class="message-image"
+                  class="message-image {{item.imageUploading ? 'message-image--uploading' : ''}}"
                   style="{{item.imageStyle}}"
                   src="{{item.imageUrl}}"
                   mode="aspectFill"
@@ -94,7 +94,9 @@
                   wx:else
                   class="message-image message-image--loading"
                   style="{{item.imageStyle}}"
-                >{{item.imageLoading ? item.imageStatusText : '图片加载失败'}}</view>
+                >
+                  <text wx:if="{{item.imageFailed}}">图片加载失败</text>
+                </view>
               </view>
 
               <view
@@ -217,12 +219,7 @@
     </view>
 
     <view class="attachment-panel {{panelMode ? 'attachment-panel--open' : ''}}">
-      <view wx:if="{{uploading}}" class="upload-progress">
-        <view class="upload-progress__spinner"></view>
-        <text>{{uploadProgress}}</text>
-      </view>
-
-      <view wx:elif="{{panelMode === 'main'}}" class="attachment-grid">
+      <view wx:if="{{panelMode === 'main'}}" class="attachment-grid">
         <view class="attachment-action" bindtap="onAlbumTap" aria-role="button">
           <view class="attachment-action__icon">▧</view>
           <text>相册</text>

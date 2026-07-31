@@ -39,7 +39,7 @@ test("客服会话状态、订单状态和商品价格生成稳定文案", () =>
   assert.equal(customerServicePriceRange(undefined, undefined), "价格以商品详情为准");
 });
 
-test("小程序客服使用自建接口、原图上传和两级商品来源面板", () => {
+test("小程序客服使用自建接口、即时图片预览和两级商品来源面板", () => {
   const endpointSource = readFileSync(
     resolve(sourceRoot, "constants/api-endpoints.ts"),
     "utf8"
@@ -68,6 +68,14 @@ test("小程序客服使用自建接口、原图上传和两级商品来源面�
     resolve(sourceRoot, "pages/product/detail/detail.wxml"),
     "utf8"
   );
+  const sendTextSource = pageSource.slice(
+    pageSource.indexOf("async sendText()"),
+    pageSource.indexOf("onPlusTap()")
+  );
+  const sendImageSource = pageSource.slice(
+    pageSource.indexOf("async selectAndUploadImages"),
+    pageSource.indexOf("onOrderActionTap()")
+  );
 
   assert.match(endpointSource, /customerService/);
   assert.match(endpointSource, /\/app\/customer-service\/conversation\/images/);
@@ -81,13 +89,21 @@ test("小程序客服使用自建接口、原图上传和两级商品来源面�
   assert.match(serviceSource, /thumbnailStatus === "READY"/);
   assert.match(pageSource, /createIntersectionObserver/);
   assert.match(pageSource, /downloadCustomerServiceOriginalImage/);
-  assert.match(pageSource, /scheduleThumbnailStatusRefresh/);
-  assert.match(pageSource, /缩略图处理中，点击查看原图/);
+  assert.doesNotMatch(pageSource, /scheduleThumbnailStatusRefresh/);
+  assert.doesNotMatch(pageSource, /缩略图处理中/);
   assert.match(pageSource, /FALLBACK_POLL_INTERVAL_MS = 15_000/);
   assert.match(pageSource, /subscribeCustomerServiceRealtimeState/);
   assert.match(realtimeSource, /"CONNECTING"[\s\S]*"CONNECTED"[\s\S]*"DISCONNECTED"/);
   assert.match(realtimeSource, /heartbeatTimeoutTimer/);
-  assert.match(pageSource, /sizeType: \["original"\]/);
+  assert.match(pageSource, /sizeType: \["compressed"\]/);
+  assert.doesNotMatch(pageSource, /sizeType: \["original"\]/);
+  assert.match(pageSource, /imageUploading: true/);
+  assert.match(template, /message-image--uploading/);
+  assert.doesNotMatch(template, /uploadProgress/);
+  assert.match(sendTextSource, /appendLocallySentMessage/);
+  assert.doesNotMatch(sendTextSource, /refreshConversation/);
+  assert.match(sendImageSource, /appendLocallySentMessage/);
+  assert.doesNotMatch(sendImageSource, /refreshConversation/);
   assert.match(pageSource, /getBrowseHistory/);
   assert.match(pageSource, /getFavorites/);
   assert.match(pageSource, /getCartItems/);

@@ -71,8 +71,8 @@ interface MessageView {
   timeText: string;
   imageUrl: string;
   imageStyle: string;
-  imageLoading: boolean;
-  imageStatusText: string;
+  imageFailed: boolean;
+  imageUploading: boolean;
   orderId: number;
   orderNo: string;
   orderTitle: string;
@@ -106,17 +106,22 @@ const imageTempPaths = new Map<number, string>();
 const originalImageTempPaths = new Map<number, string>();
 const imageMessages = new Map<number, CustomerServiceMessage>();
 const imageDownloads = new Set<number>();
+const pendingImageViews = new Map<number, MessageView>();
+const locallyHandledMessageIds = new Map<number, number>();
+const pendingRealtimeMessageIds = new Set<number>();
 
 let pageActive = false;
 let initialized = false;
 let initializeGeneration = 0;
 let refreshRunning = false;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
-let thumbnailRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let unsubscribeRealtime: (() => void) | null = null;
 let unsubscribeRealtimeState: (() => void) | null = null;
 let imageObserver: WechatMiniprogram.IntersectionObserver | null = null;
 let entryContext: CustomerServiceEntryContext = { contextType: "GENERAL" };
+let nextPendingImageId = -1;
+let localMutationCount = 0;
+let pendingRealtimeChangeWithoutMessage = false;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -188,13 +193,6 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
     const order = message.order;
     const product = message.product;
     const cachedImage = imageTempPaths.get(message.messageId) ?? "";
-    const thumbnailStatus = message.image?.thumbnailStatus;
-    const imageStatusText =
-      thumbnailStatus === "PENDING" ||
-      thumbnailStatus === "PROCESSING" ||
-      thumbnailStatus === "FAILED"
-        ? "缩略图处理中，点击查看原图"
-        : "图片加载中";
     return {
       messageId: message.messageId,
       senderType: message.senderType,
@@ -209,8 +207,8 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
       timeText: messageTimeText(message.createdAt),
       imageUrl: cachedImage,
       imageStyle: imageStyle(message),
-      imageLoading: message.messageType === "IMAGE" && !cachedImage,
-      imageStatusText,
+      imageFailed: false,
+      imageUploading: false,
       orderId: order?.orderId ?? 0,
       orderNo: cleanText(order?.orderNo),
       orderTitle: cleanText(order?.primaryProductTitle) || "商品订单",
@@ -240,14 +238,7 @@ function stopLiveUpdates(): void {
   pollTimer = null;
 }
 
-function stopThumbnailStatusRefresh(): void {
-  if (thumbnailRefreshTimer) {
-    clearTimeout(thumbnailRefreshTimer);
-  }
-  thumbnailRefreshTimer = null;
-}
-
-function chooseOriginalImages(
+function chooseChatImages(
   sourceType: "album" | "camera",
   count: number
 ): Promise<string[]> {
@@ -256,7 +247,8 @@ function chooseOriginalImages(
       count,
       mediaType: ["image"],
       sourceType: [sourceType],
-      sizeType: ["original"],
+      // 只关闭微信选择器的“原图”选项，不额外调用本地图片压缩 API。
+      sizeType: ["compressed"],
       success: (result) => resolve(
         result.tempFiles
           .map((file) => cleanText(file.tempFilePath))
@@ -300,7 +292,6 @@ Page({
     inputValue: "",
     sending: false,
     uploading: false,
-    uploadProgress: "",
     panelMode: "" as PanelMode,
     pickerOpen: false,
     pickerKind: "" as PickerKind,
@@ -316,13 +307,18 @@ Page({
     pageActive = true;
     initialized = false;
     refreshRunning = false;
-    stopThumbnailStatusRefresh();
     entryContext = customerServiceEntryContext(options.contextType, options.contextId);
     initializeGeneration += 1;
+    nextPendingImageId = -1;
+    localMutationCount = 0;
+    pendingRealtimeChangeWithoutMessage = false;
     imageTempPaths.clear();
     originalImageTempPaths.clear();
     imageMessages.clear();
     imageDownloads.clear();
+    pendingImageViews.clear();
+    locallyHandledMessageIds.clear();
+    pendingRealtimeMessageIds.clear();
   },
 
   onShow() {
@@ -343,7 +339,6 @@ Page({
 
   onHide() {
     pageActive = false;
-    stopThumbnailStatusRefresh();
     stopLiveUpdates();
   },
 
@@ -351,7 +346,6 @@ Page({
     pageActive = false;
     initialized = false;
     initializeGeneration += 1;
-    stopThumbnailStatusRefresh();
     stopLiveUpdates();
     imageObserver?.disconnect();
     imageObserver = null;
@@ -359,6 +353,11 @@ Page({
     originalImageTempPaths.clear();
     imageMessages.clear();
     imageDownloads.clear();
+    pendingImageViews.clear();
+    locallyHandledMessageIds.clear();
+    pendingRealtimeMessageIds.clear();
+    localMutationCount = 0;
+    pendingRealtimeChangeWithoutMessage = false;
   },
 
   async initialize() {
@@ -399,6 +398,19 @@ Page({
     stopLiveUpdates();
     unsubscribeRealtime = subscribeCustomerServiceRealtime((event) => {
       if (event.type === "CUSTOMER_SERVICE_CONVERSATION_UPDATED") {
+        const messageId = positiveId(event.data?.messageId);
+        this.pruneLocallyHandledMessages();
+        if (messageId && locallyHandledMessageIds.has(messageId)) {
+          return;
+        }
+        if (localMutationCount > 0) {
+          if (messageId) {
+            pendingRealtimeMessageIds.add(messageId);
+          } else {
+            pendingRealtimeChangeWithoutMessage = true;
+          }
+          return;
+        }
         void this.refreshConversation(true);
       }
     });
@@ -453,7 +465,10 @@ Page({
     const rawMessages = Array.isArray(conversation.messages) ? conversation.messages : [];
     imageMessages.clear();
     rawMessages.forEach((message) => imageMessages.set(message.messageId, message));
-    const views = messageViews(rawMessages);
+    const views = [
+      ...messageViews(rawMessages),
+      ...Array.from(pendingImageViews.values())
+    ];
     const context = conversation.currentContext;
     const contextPreview = conversation.status === "DRAFT"
       ? context?.product?.title
@@ -476,32 +491,8 @@ Page({
       },
       () => {
         this.observePrivateImages();
-        this.scheduleThumbnailStatusRefresh(rawMessages);
       }
     );
-  },
-
-  scheduleThumbnailStatusRefresh(messages: CustomerServiceMessage[]) {
-    if (thumbnailRefreshTimer) {
-      clearTimeout(thumbnailRefreshTimer);
-    }
-    thumbnailRefreshTimer = null;
-    const statuses = messages
-      .filter((message) => message.messageType === "IMAGE")
-      .map((message) => message.image?.thumbnailStatus);
-    const hasActiveWork = statuses.some(
-      (status) => status === "PENDING" || status === "PROCESSING"
-    );
-    const hasRetryWaiting = statuses.some((status) => status === "FAILED");
-    if (!hasActiveWork && !hasRetryWaiting) {
-      return;
-    }
-    thumbnailRefreshTimer = setTimeout(() => {
-      thumbnailRefreshTimer = null;
-      if (pageActive) {
-        void this.refreshConversation(true);
-      }
-    }, hasActiveWork ? 3_000 : 30_000);
   },
 
   observePrivateImages() {
@@ -529,10 +520,7 @@ Page({
       !message ||
       message.messageType !== "IMAGE" ||
       imageTempPaths.has(messageId) ||
-      imageDownloads.has(messageId) ||
-      message.image?.thumbnailStatus === "PENDING" ||
-      message.image?.thumbnailStatus === "PROCESSING" ||
-      message.image?.thumbnailStatus === "FAILED"
+      imageDownloads.has(messageId)
     ) {
       return;
     }
@@ -550,7 +538,11 @@ Page({
         this.setData({
           messages: this.data.messages.map((view) => (
             view.messageId === messageId
-              ? { ...view, imageUrl: tempFilePath, imageLoading: false }
+              ? {
+                  ...view,
+                  imageUrl: tempFilePath,
+                  imageFailed: false
+                }
               : view
           ))
         });
@@ -560,7 +552,7 @@ Page({
         this.setData({
           messages: this.data.messages.map((view) => (
             view.messageId === messageId
-              ? { ...view, imageLoading: false }
+              ? { ...view, imageFailed: true }
               : view
           ))
         });
@@ -591,20 +583,23 @@ Page({
     if (!content || this.data.sending || this.data.uploading) {
       return;
     }
+    this.beginLocalMutation();
     this.setData({ sending: true });
     try {
-      await sendCustomerServiceMessage({
+      const message = await sendCustomerServiceMessage({
         content,
         clientMessageId: customerServiceMessageId()
       });
       this.setData({ inputValue: "", sending: false, panelMode: "" });
-      await this.refreshConversation(true);
+      this.appendLocallySentMessage(message);
     } catch (error) {
       this.setData({ sending: false });
       wx.showToast({
         title: errorMessage(error, "消息发送失败，请重试"),
         icon: "none"
       });
+    } finally {
+      this.endLocalMutation();
     }
   },
 
@@ -643,39 +638,68 @@ Page({
     if (this.data.uploading) {
       return;
     }
+    let mutationStarted = false;
     try {
-      const filePaths = await chooseOriginalImages(sourceType, count);
+      const filePaths = await chooseChatImages(sourceType, count);
       if (!filePaths.length) {
         return;
       }
-      this.setData({ uploading: true, panelMode: "main" });
+      const pendingUploads = filePaths.map((filePath, index) => {
+        const messageId = nextPendingImageId;
+        nextPendingImageId -= 1;
+        imageTempPaths.set(messageId, filePath);
+        const pendingMessage: CustomerServiceMessage = {
+          messageId,
+          conversationId: this.data.conversationId,
+          consultationNo: 1,
+          senderType: "APP_USER",
+          senderName: "我",
+          messageType: "IMAGE",
+          content: "[图片]",
+          image: {
+            originalFilename: "",
+            contentType: "image/jpeg"
+          },
+          createdAt: new Date().toISOString()
+        };
+        const pendingView = {
+          ...messageViews([pendingMessage])[0],
+          showTime: index === 0,
+          imageUploading: true
+        };
+        pendingImageViews.set(messageId, pendingView);
+        return { filePath, messageId, pendingView };
+      });
+      const nextMessages = [
+        ...this.data.messages,
+        ...pendingUploads.map((pending) => pending.pendingView)
+      ];
+      this.beginLocalMutation();
+      mutationStarted = true;
+      this.setData({
+        uploading: true,
+        panelMode: "",
+        messages: nextMessages,
+        scrollTarget: `message-${pendingUploads[pendingUploads.length - 1].messageId}`
+      });
       let successCount = 0;
       let lastFailure = "";
-      for (let index = 0; index < filePaths.length; index += 1) {
-        this.setData({ uploadProgress: `正在发送 ${index + 1}/${filePaths.length}` });
+      for (const pending of pendingUploads) {
         try {
-          const message = await uploadCustomerServiceImage(filePaths[index]);
-          imageTempPaths.set(message.messageId, filePaths[index]);
-          originalImageTempPaths.set(message.messageId, filePaths[index]);
+          const message = await uploadCustomerServiceImage(pending.filePath);
+          imageTempPaths.set(message.messageId, pending.filePath);
+          originalImageTempPaths.set(message.messageId, pending.filePath);
           imageMessages.set(message.messageId, message);
           successCount += 1;
-          const nextMessages = [
-            ...this.data.messages,
-            ...messageViews([message])
-          ];
-          this.setData({
-            messages: nextMessages,
-            scrollTarget: `message-${message.messageId}`
-          });
+          this.appendLocallySentMessage(message, pending.messageId);
         } catch (error) {
           lastFailure = isApiError(error) && error.code === 800002
-            ? "原图需为常见图片格式，且不超过 5MB"
+            ? "图片需为常见格式，且不超过 5MB"
             : errorMessage(error, "图片发送失败，请重试");
-          // 继续发送同批次中的其他图片，结束后统一提示结果。
+          this.removePendingImage(pending.messageId);
         }
       }
-      this.setData({ uploading: false, uploadProgress: "" });
-      await this.refreshConversation(true);
+      this.setData({ uploading: false });
       if (successCount !== filePaths.length) {
         wx.showToast({
           title: successCount
@@ -685,11 +709,15 @@ Page({
         });
       }
     } catch (error) {
-      this.setData({ uploading: false, uploadProgress: "" });
+      this.setData({ uploading: false });
       wx.showToast({
         title: errorMessage(error, "图片选择失败"),
         icon: "none"
       });
+    } finally {
+      if (mutationStarted) {
+        this.endLocalMutation();
+      }
     }
   },
 
@@ -877,6 +905,86 @@ Page({
       this.setData({ pickerLoading: true, pickerErrorText: "" });
       void this.loadProductCandidates(this.data.pickerProductSource);
     }
+  },
+
+  pruneLocallyHandledMessages() {
+    const now = Date.now();
+    locallyHandledMessageIds.forEach((expiresAt, messageId) => {
+      if (expiresAt <= now) {
+        locallyHandledMessageIds.delete(messageId);
+      }
+    });
+  },
+
+  beginLocalMutation() {
+    localMutationCount += 1;
+  },
+
+  endLocalMutation() {
+    localMutationCount = Math.max(0, localMutationCount - 1);
+    if (localMutationCount > 0) {
+      return;
+    }
+    this.pruneLocallyHandledMessages();
+    const needsRefresh =
+      pendingRealtimeChangeWithoutMessage ||
+      Array.from(pendingRealtimeMessageIds).some(
+        (messageId) => !locallyHandledMessageIds.has(messageId)
+      );
+    pendingRealtimeMessageIds.clear();
+    pendingRealtimeChangeWithoutMessage = false;
+    if (needsRefresh && pageActive) {
+      void this.refreshConversation(true);
+    }
+  },
+
+  removePendingImage(messageId: number) {
+    pendingImageViews.delete(messageId);
+    imageTempPaths.delete(messageId);
+    this.setData({
+      messages: this.data.messages.filter((message) => message.messageId !== messageId)
+    });
+  },
+
+  appendLocallySentMessage(
+    message: CustomerServiceMessage,
+    pendingMessageId?: number
+  ) {
+    locallyHandledMessageIds.set(message.messageId, Date.now() + 15_000);
+    const serverView = messageViews([message])[0];
+    let replaced = false;
+    const messages = this.data.messages
+      .filter((view) => view.messageId !== message.messageId)
+      .map((view) => {
+        if (view.messageId !== pendingMessageId) {
+          return view;
+        }
+        replaced = true;
+        return {
+          ...serverView,
+          showTime: view.showTime,
+          imageUploading: false
+        };
+      });
+    if (!replaced) {
+      messages.push(serverView);
+    }
+    if (pendingMessageId !== undefined) {
+      pendingImageViews.delete(pendingMessageId);
+      imageTempPaths.delete(pendingMessageId);
+    }
+    const wasDraft = this.data.conversationStatus === "DRAFT";
+    const conversationStatus = (
+      wasDraft ? "WAITING" : this.data.conversationStatus
+    ) as CustomerServiceConversation["status"];
+    this.setData({
+      messages,
+      conversationStatus,
+      statusHint: wasDraft
+        ? customerServiceStatusHint(conversationStatus)
+        : this.data.statusHint,
+      scrollTarget: `message-${messages[messages.length - 1].messageId}`
+    });
   },
 
   async onImageTap(event: DatasetEvent) {
