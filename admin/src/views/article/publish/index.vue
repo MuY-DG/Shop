@@ -29,30 +29,7 @@
 
         <div class="p-5 mt-5 art-card-xs">
           <h2 class="mb-5 text-xl font-medium">发布设置</h2>
-          <!-- 图片上传 -->
           <ElForm>
-            <ElFormItem label="封面">
-              <div class="mt-2.5">
-                <ElUpload
-                  :action="uploadImageUrl"
-                  :headers="uploadHeaders"
-                  :show-file-list="false"
-                  :on-success="onSuccess"
-                  :on-error="onError"
-                  :before-upload="beforeUpload"
-                >
-                  <div
-                    v-if="!cover"
-                    class="flex-cc flex-col w-65 h-40 border border-dashed border-[#d9d9d9] rounded-md"
-                  >
-                    <ElIcon class="!text-xl !text-g-600"><Plus /></ElIcon>
-                    <div class="mt-2 text-sm text-g-600">点击上传封面</div>
-                  </div>
-                  <img v-else :src="cover" class="block w-65 h-40 object-cover" />
-                </ElUpload>
-                <div class="mt-2 text-xs text-g-700">建议尺寸 16:9，jpg/png 格式</div>
-              </div>
-            </ElFormItem>
             <ElFormItem label="可见">
               <ElSwitch v-model="visible" />
             </ElFormItem>
@@ -76,10 +53,7 @@
 </template>
 
 <script setup lang="ts">
-  import { Plus } from '@element-plus/icons-vue'
   import { ApiStatus } from '@/utils/http/status'
-  import { useUserStore } from '@/store/modules/user'
-  import EmojiText from '@/utils/ui/emojo'
   import { PageModeEnum } from '@/enums/formEnum'
   import axios from 'axios'
   import { useCommon } from '@/hooks/core/useCommon'
@@ -91,12 +65,6 @@
     name: string
   }
 
-  interface UploadResponse {
-    data: {
-      url: string
-    }
-  }
-
   interface ArticleDetailResponse {
     code: number
     data: {
@@ -106,15 +74,9 @@
     }
   }
 
-  const MAX_IMAGE_SIZE = 2 // MB
   const EMPTY_EDITOR_CONTENT = '<p><br></p>'
 
   const route = useRoute()
-  const userStore = useUserStore()
-  const { accessToken } = userStore
-
-  const uploadImageUrl = `${import.meta.env.VITE_API_URL}/api/common/upload`
-  const uploadHeaders = { Authorization: accessToken }
 
   const pageMode = ref<PageModeEnum>(PageModeEnum.Add)
   const articleName = ref('')
@@ -122,7 +84,6 @@
   const articleTypes = ref<ArticleType[]>([])
   const editorHtml = ref('')
   const createDate = ref('')
-  const cover = ref('')
   const visible = ref(true)
 
   /**
@@ -207,11 +168,6 @@
       return false
     }
 
-    if (!cover.value) {
-      ElMessage.error('请上传封面图片')
-      return false
-    }
-
     return true
   }
 
@@ -236,7 +192,6 @@
       //   title: articleName.value,
       //   type: articleType.value,
       //   content: cleanedContent,
-      //   cover: cover.value,
       //   visible: visible.value
       // }
       // const res = await ArticleService.addArticle(params)
@@ -267,7 +222,6 @@
       //   title: articleName.value,
       //   type: articleType.value,
       //   content: cleanedContent,
-      //   cover: cover.value,
       //   visible: visible.value
       // }
       // const res = await ArticleService.editArticle(params)
@@ -292,41 +246,6 @@
     } else {
       addArticle()
     }
-  }
-
-  /**
-   * 图片上传成功回调
-   */
-  const onSuccess = (response: UploadResponse) => {
-    cover.value = response.data.url
-    ElMessage.success(`图片上传成功 ${EmojiText[200]}`)
-  }
-
-  /**
-   * 图片上传失败回调
-   */
-  const onError = () => {
-    ElMessage.error(`图片上传失败 ${EmojiText[500]}`)
-  }
-
-  /**
-   * 上传前的文件校验
-   */
-  const beforeUpload = (file: File): boolean => {
-    const isImage = file.type.startsWith('image/')
-    const isLt2M = file.size / 1024 / 1024 < MAX_IMAGE_SIZE
-
-    if (!isImage) {
-      ElMessage.error('只能上传图片文件')
-      return false
-    }
-
-    if (!isLt2M) {
-      ElMessage.error(`图片大小不能超过 ${MAX_IMAGE_SIZE}MB`)
-      return false
-    }
-
-    return true
   }
 
   const { scrollToTop } = useCommon()
