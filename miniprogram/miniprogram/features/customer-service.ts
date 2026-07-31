@@ -10,6 +10,10 @@ export interface CustomerServiceEntryContext {
   contextId?: number;
 }
 
+export function isPersistedCustomerServiceMessageId(messageId: unknown): messageId is number {
+  return typeof messageId === "number" && Number.isSafeInteger(messageId) && messageId > 0;
+}
+
 function positiveId(value: unknown): number {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0;

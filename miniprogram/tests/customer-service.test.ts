@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   buildCustomerServiceUrl,
   customerServiceEntryContext,
+  isPersistedCustomerServiceMessageId,
   customerServiceOrderStatusText,
   customerServicePriceRange,
   customerServiceStatusHint
@@ -28,6 +29,15 @@ test("客服入口只携带合法商品或订单上下文", () => {
     buildCustomerServiceUrl("PRODUCT", 42),
     "/pages/customer-service/chat/chat?contextType=PRODUCT&contextId=42"
   );
+});
+
+test("客服图片下载只允许服务端持久化后的消息 ID", () => {
+  assert.equal(isPersistedCustomerServiceMessageId(1), true);
+  assert.equal(isPersistedCustomerServiceMessageId(Number.MAX_SAFE_INTEGER), true);
+  assert.equal(isPersistedCustomerServiceMessageId(-1), false);
+  assert.equal(isPersistedCustomerServiceMessageId(0), false);
+  assert.equal(isPersistedCustomerServiceMessageId(1.5), false);
+  assert.equal(isPersistedCustomerServiceMessageId("1"), false);
 });
 
 test("客服会话状态、订单状态和商品价格生成稳定文案", () => {
@@ -87,6 +97,7 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(serviceSource, /downloadExternalFile/);
   assert.match(serviceSource, /downloadAuthenticatedFile/);
   assert.match(serviceSource, /thumbnailStatus === "READY"/);
+  assert.match(serviceSource, /requirePersistedMessageId/);
   assert.match(pageSource, /createIntersectionObserver/);
   assert.match(pageSource, /downloadCustomerServiceOriginalImage/);
   assert.doesNotMatch(pageSource, /scheduleThumbnailStatusRefresh/);

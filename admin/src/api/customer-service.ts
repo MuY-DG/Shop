@@ -1,4 +1,5 @@
 import request from '@/utils/http'
+import { requirePersistedCustomerServiceMessageId } from '@/utils/customer-service-message'
 
 export function fetchCustomerServiceConversations(params: {
   status?: Api.CustomerService.ConversationStatus
@@ -152,24 +153,27 @@ export function uploadCustomerServiceImage(conversationId: number, file: File) {
 }
 
 export function fetchCustomerServiceImage(messageId: number) {
+  const persistedMessageId = requirePersistedCustomerServiceMessageId(messageId)
   return request.get<Blob>({
-    url: `/admin/customer-service/messages/${messageId}/image`,
+    url: `/admin/customer-service/messages/${persistedMessageId}/image`,
     responseType: 'blob',
     showErrorMessage: false
   })
 }
 
 export function fetchCustomerServiceThumbnail(messageId: number) {
+  const persistedMessageId = requirePersistedCustomerServiceMessageId(messageId)
   return request.get<Blob>({
-    url: `/admin/customer-service/messages/${messageId}/thumbnail`,
+    url: `/admin/customer-service/messages/${persistedMessageId}/thumbnail`,
     responseType: 'blob',
     showErrorMessage: false
   })
 }
 
 export function fetchCustomerServiceImageAccess(messageId: number) {
+  const persistedMessageId = requirePersistedCustomerServiceMessageId(messageId)
   return request.get<Api.CustomerService.ImageMessage>({
-    url: `/admin/customer-service/messages/${messageId}/image-access`,
+    url: `/admin/customer-service/messages/${persistedMessageId}/image-access`,
     showErrorMessage: false
   })
 }

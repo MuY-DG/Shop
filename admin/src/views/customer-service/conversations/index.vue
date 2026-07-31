@@ -156,7 +156,11 @@
           </div>
         </template>
 
-        <div v-loading="detailLoading" class="chat-content">
+        <div class="chat-content">
+          <div v-if="detailLoading && !currentDetail" class="chat-content__loading">
+            <LoaderCircle :size="22" />
+            <span>正在同步会话…</span>
+          </div>
           <div v-if="currentDetail" ref="messageListRef" class="message-list">
             <div
               v-for="message in currentDetail.messages"
@@ -240,7 +244,7 @@
               :image-size="72"
             />
           </div>
-          <ElEmpty v-else description="从左侧选择一个会话" />
+          <ElEmpty v-else-if="!detailLoading" description="从左侧选择一个会话" />
         </div>
 
         <div class="composer">
@@ -555,6 +559,7 @@
   import { ElLoading, ElMessageBox } from 'element-plus'
   import {
     Image as ImageIcon,
+    LoaderCircle,
     PackageSearch,
     RefreshCw,
     Search,
@@ -601,6 +606,7 @@
     evictCustomerServiceImage,
     getCustomerServiceImageUrl
   } from '@/utils/customer-service-image-cache'
+  import { isPersistedCustomerServiceMessageId } from '@/utils/customer-service-message'
 
   const route = useRoute()
   const router = useRouter()
@@ -643,6 +649,7 @@
     message: LocalImageMessage
   }
   const pendingImageUploads = new Map<number, PendingImageUpload>()
+  const detailCache = new Map<number, Api.CustomerService.ConversationDetail>()
   let nextPendingImageId = -1
   let imageObserver: IntersectionObserver | null = null
   const transferDialogVisible = ref(false)
@@ -661,6 +668,8 @@
   const productCandidates = ref<Api.CustomerService.LinkedProduct[]>([])
   const productKeyword = ref('')
   let detailRequestSequence = 0
+  let listRequestSequence = 0
+  let conversationListLoaded = false
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let unsubscribeRealtime: (() => void) | null = null
@@ -802,6 +811,8 @@
   }
 
   const loadAuthenticatedImage = (message: Api.CustomerService.Message) => {
+    if (!isPersistedCustomerServiceMessageId(message.messageId) || isLocalImageUploading(message))
+      return
     if (imageRefreshRequests.has(message.messageId)) return
 
     imageRefreshRequests.add(message.messageId)
@@ -852,6 +863,7 @@
   }
 
   const handleImageError = (message: Api.CustomerService.Message) => {
+    if (!isPersistedCustomerServiceMessageId(message.messageId)) return
     evictCustomerServiceImage(message.messageId)
     const nextUrls = { ...imageUrls.value }
     delete nextUrls[message.messageId]
@@ -881,7 +893,12 @@
   }
 
   const handleImagePreview = async (message: Api.CustomerService.Message) => {
-    if (previewImageLoading.value || isLocalImageUploading(message)) return
+    if (
+      previewImageLoading.value ||
+      isLocalImageUploading(message) ||
+      !isPersistedCustomerServiceMessageId(message.messageId)
+    )
+      return
     const requestId = ++previewRequestSequence
     previewImageLoading.value = true
     previewLoadingInstance = ElLoading.service({
@@ -913,6 +930,7 @@
   }
 
   const ensureImageLoaded = (messageId: number) => {
+    if (!isPersistedCustomerServiceMessageId(messageId)) return
     const message = currentDetail.value?.messages.find(
       (candidate) => candidate.messageId === messageId
     )
@@ -967,13 +985,24 @@
     }
     ;(element as HTMLElement).dataset.messageId = String(messageId)
     imageTargets.set(messageId, element)
-    imageObserver?.observe(element)
+    if (isPersistedCustomerServiceMessageId(messageId)) imageObserver?.observe(element)
+  }
+
+  const detailWithPendingImages = (detail: Api.CustomerService.ConversationDetail) => {
+    const pendingMessages = Array.from(pendingImageUploads.values())
+      .filter((pending) => pending.conversationId === detail.conversationId)
+      .map((pending) => pending.message)
+    return {
+      ...detail,
+      messages: [...detail.messages, ...pendingMessages]
+    }
   }
 
   const syncImageUrls = (messages: Api.CustomerService.Message[]) => {
     const imageMessages = messages.filter((message) => message.messageType === 'IMAGE')
     const nextUrls: Record<number, string> = {}
     imageMessages.forEach((message) => {
+      if (!isPersistedCustomerServiceMessageId(message.messageId)) return
       const cachedUrl = getCustomerServiceImageUrl(message.messageId)
       if (cachedUrl) nextUrls[message.messageId] = cachedUrl
     })
@@ -986,20 +1015,23 @@
   }
 
   const loadConversations = async (selectFirst = false) => {
+    const requestId = ++listRequestSequence
     let firstConversationId: number | null = null
-    listLoading.value = true
+    if (!conversationListLoaded) listLoading.value = true
     try {
       const page = await fetchCustomerServiceConversations({
         current: 1,
         size: 50,
         status: undefined
       })
+      if (requestId !== listRequestSequence) return
       conversationPage.value = page
+      conversationListLoaded = true
       if (selectFirst && !selectedConversationId.value && filteredConversations.value.length) {
         firstConversationId = filteredConversations.value[0].conversationId
       }
     } finally {
-      listLoading.value = false
+      if (requestId === listRequestSequence) listLoading.value = false
     }
     if (firstConversationId) await selectConversation(firstConversationId)
   }
@@ -1015,17 +1047,13 @@
 
   const loadDetail = async (conversationId: number) => {
     const requestId = ++detailRequestSequence
-    detailLoading.value = true
+    detailLoading.value = !currentDetail.value
     try {
       const detail = await fetchCustomerServiceConversation(conversationId)
-      if (requestId !== detailRequestSequence) return
-      const pendingMessages = Array.from(pendingImageUploads.values())
-        .filter((pending) => pending.conversationId === conversationId)
-        .map((pending) => pending.message)
-      currentDetail.value = {
-        ...detail,
-        messages: [...detail.messages, ...pendingMessages]
-      }
+      if (requestId !== detailRequestSequence || selectedConversationId.value !== conversationId)
+        return
+      detailCache.set(conversationId, detail)
+      currentDetail.value = detailWithPendingImages(detail)
       syncImageUrls(currentDetail.value.messages)
       await nextTick()
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
@@ -1036,8 +1064,18 @@
   }
 
   const selectConversation = async (conversationId: number) => {
-    if (selectedConversationId.value !== conversationId) detachCurrentImageUrls()
+    const conversationChanged = selectedConversationId.value !== conversationId
+    if (conversationChanged) detachCurrentImageUrls()
     selectedConversationId.value = conversationId
+    const cachedDetail = detailCache.get(conversationId)
+    if (conversationChanged) {
+      currentDetail.value = cachedDetail ? detailWithPendingImages(cachedDetail) : null
+      if (currentDetail.value) {
+        syncImageUrls(currentDetail.value.messages)
+        await nextTick()
+        observeImageTargets()
+      }
+    }
     await loadDetail(conversationId)
     const record = conversationPage.value.records.find(
       (conversation) => conversation.conversationId === conversationId
@@ -1046,8 +1084,13 @@
   }
 
   const refreshAll = async () => {
-    await Promise.all([loadConversations(), loadAgentState(), loadPendingTransfers()])
-    if (selectedConversationId.value) await loadDetail(selectedConversationId.value)
+    const selectedId = selectedConversationId.value
+    await Promise.all([
+      loadConversations(),
+      loadAgentState(),
+      loadPendingTransfers(),
+      selectedId ? loadDetail(selectedId) : Promise.resolve()
+    ])
   }
 
   const handleStatusChange = async () => {
@@ -1408,6 +1451,18 @@
       (currentMessage) => currentMessage.messageId !== message.messageId
     )
     currentDetail.value.messages = [...messages, message]
+    const cachedDetail = detailCache.get(conversationId)
+    if (cachedDetail) {
+      detailCache.set(conversationId, {
+        ...cachedDetail,
+        messages: [
+          ...cachedDetail.messages.filter(
+            (currentMessage) => currentMessage.messageId !== message.messageId
+          ),
+          message
+        ]
+      })
+    }
     void nextTick(() => {
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
       observeImageTargets()
@@ -1545,6 +1600,7 @@
     localMutationCounts.clear()
     pendingImageUploads.forEach((pending) => URL.revokeObjectURL(pending.previewUrl))
     pendingImageUploads.clear()
+    detailCache.clear()
     document.removeEventListener('visibilitychange', handleVisibilityChange)
     imageObserver?.disconnect()
     imageObserver = null
@@ -1743,6 +1799,29 @@
   .chat-content {
     flex: 1;
     min-height: 0;
+  }
+
+  .chat-content__loading {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    background: #f8fafc;
+  }
+
+  .chat-content__loading svg {
+    color: var(--el-color-primary);
+    animation: chat-loading-spin 900ms linear infinite;
+  }
+
+  @keyframes chat-loading-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .message-list {

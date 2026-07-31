@@ -1,4 +1,5 @@
 import { API_ENDPOINTS } from "../constants/api-endpoints";
+import { isPersistedCustomerServiceMessageId } from "../features/customer-service";
 import type {
   CustomerServiceConversation,
   CustomerServiceImage,
@@ -15,6 +16,13 @@ import {
 } from "../utils/authenticated-download";
 import { request } from "../utils/request";
 import { uploadFile } from "../utils/upload";
+
+function requirePersistedMessageId(messageId: number): number {
+  if (!isPersistedCustomerServiceMessageId(messageId)) {
+    throw new RangeError("Customer-service image requests require a persisted message id");
+  }
+  return messageId;
+}
 
 export function openCustomerServiceConversation(
   data: CustomerServiceOpenRequest
@@ -97,24 +105,26 @@ export function sendCustomerServiceProduct(
 export function downloadCustomerServiceImage(
   message: Pick<CustomerServiceMessage, "messageId" | "image">
 ): Promise<string> {
+  const messageId = requirePersistedMessageId(message.messageId);
   if (message.image?.thumbnailStatus === "READY") {
     return downloadAuthenticatedFile(
-      API_ENDPOINTS.customerService.thumbnail(message.messageId)
+      API_ENDPOINTS.customerService.thumbnail(messageId)
     );
   }
-  return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(message.messageId));
+  return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(messageId));
 }
 
 export function downloadCustomerServiceOriginalImage(
   message: Pick<CustomerServiceMessage, "messageId" | "image">
 ): Promise<string> {
+  const messageId = requirePersistedMessageId(message.messageId);
   if (
     message.image?.accessMode === "SIGNED_URL" &&
     message.image.accessUrl
   ) {
     return downloadExternalFile(message.image.accessUrl)
       .catch(async () => {
-        const refreshed = await refreshCustomerServiceImageAccess(message.messageId)
+        const refreshed = await refreshCustomerServiceImageAccess(messageId)
           .catch(() => null);
         if (refreshed?.accessMode === "SIGNED_URL" && refreshed.accessUrl) {
           try {
@@ -124,18 +134,19 @@ export function downloadCustomerServiceOriginalImage(
           }
         }
         return downloadAuthenticatedFile(
-          API_ENDPOINTS.customerService.image(message.messageId)
+          API_ENDPOINTS.customerService.image(messageId)
         );
       });
   }
-  return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(message.messageId));
+  return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(messageId));
 }
 
 export function refreshCustomerServiceImageAccess(
   messageId: number
 ): Promise<CustomerServiceImage> {
+  const persistedMessageId = requirePersistedMessageId(messageId);
   return request<CustomerServiceImage>({
-    url: API_ENDPOINTS.customerService.imageAccess(messageId),
+    url: API_ENDPOINTS.customerService.imageAccess(persistedMessageId),
     method: "GET"
   });
 }
