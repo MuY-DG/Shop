@@ -3,6 +3,7 @@ import { requirePersistedCustomerServiceMessageId } from '@/utils/customer-servi
 
 export function fetchCustomerServiceConversations(params: {
   status?: Api.CustomerService.ConversationStatus
+  keyword?: string
   current?: number
   size?: number
 }) {
@@ -12,9 +13,30 @@ export function fetchCustomerServiceConversations(params: {
   })
 }
 
+export function fetchCustomerServiceWorkspace(keyword?: string) {
+  return request.get<Api.CustomerService.ConversationWorkspace>({
+    url: '/admin/customer-service/conversations/workspace',
+    params: { keyword }
+  })
+}
+
 export function fetchCustomerServiceConversation(conversationId: number) {
   return request.get<Api.CustomerService.ConversationDetail>({
     url: `/admin/customer-service/conversations/${conversationId}`
+  })
+}
+
+export function fetchCustomerServiceMessages(
+  conversationId: number,
+  params: {
+    afterId?: number
+    beforeId?: number
+    limit?: number
+  }
+) {
+  return request.get<Api.CustomerService.Message[]>({
+    url: `/admin/customer-service/conversations/${conversationId}/messages`,
+    params
   })
 }
 

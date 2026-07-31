@@ -4,18 +4,11 @@
       <ElCard class="conversation-panel" shadow="never" body-class="panel-body">
         <template #header>
           <div class="conversation-heading">
-            <div class="queue-title">
-              <strong>待接入 {{ waitingCount }}</strong>
-              <button
-                type="button"
-                :class="{ active: activeStatus === 'ACTIVE' }"
-                @click="setStatus('ACTIVE')"
-              >
-                已接入 {{ activeCount }}
-              </button>
+            <div>
+              <strong class="conversation-heading__title">会话工作台</strong>
               <ElBadge :value="pendingTransfers.length" :hidden="pendingTransfers.length === 0">
                 <button type="button" class="transfer-entry" @click="pendingDialogVisible = true">
-                  转接
+                  待确认转接
                 </button>
               </ElBadge>
             </div>
@@ -27,60 +20,124 @@
             <Search :size="15" />
             <input v-model="conversationKeyword" placeholder="搜索用户或消息" />
           </div>
-          <div class="filter-tabs">
-            <button
-              v-for="status in statusFilters"
-              :key="status.value"
-              type="button"
-              :class="{ active: activeStatus === status.value }"
-              @click="setStatus(status.value)"
-            >
-              {{ status.label }}
-            </button>
-          </div>
         </template>
-        <div v-loading="listLoading" class="conversation-list">
-          <button
-            v-for="conversation in filteredConversations"
-            :key="conversation.conversationId"
-            type="button"
-            class="conversation-item"
-            :class="{ 'is-active': selectedConversationId === conversation.conversationId }"
-            @click="selectConversation(conversation.conversationId)"
-          >
-            <span class="conversation-avatar">
-              <UserRound :size="18" />
-              <i v-if="conversation.adminUnreadCount > 0" />
-            </span>
-            <div class="conversation-summary">
-              <div class="conversation-item__top">
-                <strong>{{ conversation.userNickname || `用户 ${conversation.appUserId}` }}</strong>
-                <time>{{ shortTime(conversation.lastMessageAt || conversation.createdAt) }}</time>
-              </div>
-              <div class="conversation-item__message">
-                {{ conversation.lastMessagePreview || '用户已打开客服会话' }}
-              </div>
-              <div
-                v-if="conversation.currentContext.type !== 'GENERAL'"
-                class="conversation-item__context"
+        <div v-loading="listLoading" class="conversation-groups">
+          <details class="conversation-group waiting-group" open>
+            <summary>
+              <span><i class="group-dot is-waiting" />待接入</span>
+              <strong>{{ waitingCount }}</strong>
+              <ChevronDown :size="15" />
+            </summary>
+            <div v-if="waitingConversations.length" class="waiting-grid">
+              <article
+                v-for="conversation in waitingConversations"
+                :key="conversation.conversationId"
+                class="waiting-user"
               >
-                {{ contextLabel(conversation.currentContext) }}
-              </div>
-              <div class="conversation-item__meta">
-                <span>{{ statusConfig[conversation.status].label }}</span>
-                <ElBadge
-                  v-if="conversation.adminUnreadCount > 0"
-                  :value="conversation.adminUnreadCount"
-                  :max="99"
-                />
-              </div>
+                <button
+                  v-auth="'customer-service:conversation:claim'"
+                  type="button"
+                  class="waiting-user__avatar"
+                  :disabled="!agentState?.canReceive || claimingConversationId !== null"
+                  :aria-label="`接入 ${conversation.userNickname || `用户 ${conversation.appUserId}`}`"
+                  @click="handleClaim(conversation.conversationId)"
+                >
+                  <img v-if="conversation.userAvatar" :src="conversation.userAvatar" alt="" />
+                  <UserRound v-else :size="23" />
+                  <span class="waiting-user__claim">
+                    {{ claimingConversationId === conversation.conversationId ? '接入中' : '接入' }}
+                  </span>
+                  <i v-if="conversation.adminUnreadCount > 0" />
+                </button>
+                <strong>{{ conversation.userNickname || `用户 ${conversation.appUserId}` }}</strong>
+                <p :title="conversation.lastMessagePreview || ''">
+                  {{ conversation.lastMessagePreview || '用户正在等待接入' }}
+                </p>
+              </article>
             </div>
-          </button>
-          <ElEmpty
-            v-if="!listLoading && filteredConversations.length === 0"
-            description="当前没有会话"
-            :image-size="80"
-          />
+            <div v-else class="group-empty">暂时没有等待接入的用户</div>
+          </details>
+
+          <details class="conversation-group active-group" open>
+            <summary>
+              <span><i class="group-dot is-active" />接待中</span>
+              <strong>{{ activeCount }}</strong>
+              <ChevronDown :size="15" />
+            </summary>
+            <div v-if="activeConversations.length" class="active-conversation-list">
+              <button
+                v-for="conversation in activeConversations"
+                :key="conversation.conversationId"
+                type="button"
+                class="conversation-item"
+                :class="{ 'is-active': selectedConversationId === conversation.conversationId }"
+                @click="selectConversation(conversation.conversationId)"
+              >
+                <span class="conversation-avatar">
+                  <img v-if="conversation.userAvatar" :src="conversation.userAvatar" alt="" />
+                  <UserRound v-else :size="18" />
+                  <i v-if="conversation.adminUnreadCount > 0" />
+                </span>
+                <div class="conversation-summary">
+                  <div class="conversation-item__top">
+                    <strong>{{
+                      conversation.userNickname || `用户 ${conversation.appUserId}`
+                    }}</strong>
+                    <time>{{
+                      shortTime(conversation.lastMessageAt || conversation.createdAt)
+                    }}</time>
+                  </div>
+                  <div class="conversation-item__message">
+                    {{ conversation.lastMessagePreview || '已接入，等待回复' }}
+                  </div>
+                  <div class="conversation-item__meta">
+                    <span>{{ conversation.assignedAdminDisplayName || '当前客服' }}</span>
+                    <ElBadge
+                      v-if="conversation.adminUnreadCount > 0"
+                      :value="conversation.adminUnreadCount"
+                      :max="99"
+                    />
+                  </div>
+                </div>
+              </button>
+            </div>
+            <div v-else class="group-empty">当前没有接待中的会话</div>
+          </details>
+
+          <details class="conversation-group closed-group">
+            <summary>
+              <span><i class="group-dot is-closed" />最近结束</span>
+              <strong>{{ closedCount }}</strong>
+              <ChevronDown :size="15" />
+            </summary>
+            <div v-if="closedConversations.length" class="closed-conversation-list">
+              <button
+                v-for="conversation in closedConversations"
+                :key="conversation.conversationId"
+                type="button"
+                class="conversation-item is-closed"
+                :class="{ 'is-active': selectedConversationId === conversation.conversationId }"
+                @click="selectConversation(conversation.conversationId)"
+              >
+                <span class="conversation-avatar">
+                  <img v-if="conversation.userAvatar" :src="conversation.userAvatar" alt="" />
+                  <UserRound v-else :size="18" />
+                </span>
+                <div class="conversation-summary">
+                  <div class="conversation-item__top">
+                    <strong>{{
+                      conversation.userNickname || `用户 ${conversation.appUserId}`
+                    }}</strong>
+                    <time>{{ shortTime(conversation.closedAt || conversation.updatedAt) }}</time>
+                  </div>
+                  <div class="conversation-item__message">
+                    {{ conversation.lastMessagePreview || '会话已结束' }}
+                  </div>
+                </div>
+              </button>
+            </div>
+            <div v-else class="group-empty">暂无已结束会话</div>
+          </details>
         </div>
       </ElCard>
 
@@ -88,7 +145,10 @@
         <template #header>
           <div class="panel-header chat-header">
             <div class="chat-user">
-              <span class="chat-user__avatar"><UserRound :size="20" /></span>
+              <span class="chat-user__avatar">
+                <img v-if="currentDetail?.userAvatar" :src="currentDetail.userAvatar" alt="" />
+                <UserRound v-else :size="20" />
+              </span>
               <div>
                 <strong>{{ currentDetail?.userNickname || '请选择一个会话' }}</strong>
                 <span v-if="currentDetail" class="chat-header__status">
@@ -106,7 +166,7 @@
                 type="primary"
                 :disabled="!agentState?.canReceive"
                 :loading="actionLoading"
-                @click="handleClaim"
+                @click="handleClaim()"
               >
                 认领会话
               </ElButton>
@@ -162,6 +222,11 @@
             <span>正在同步会话…</span>
           </div>
           <div v-if="currentDetail" ref="messageListRef" class="message-list">
+            <div v-if="hasEarlierMessages" class="message-history-loader">
+              <ElButton link :loading="loadingEarlierMessages" @click="loadEarlierMessages">
+                加载更早的消息
+              </ElButton>
+            </div>
             <div
               v-for="message in currentDetail.messages"
               :key="message.messageId"
@@ -569,6 +634,7 @@
   } from 'vue'
   import { ElLoading, ElMessageBox } from 'element-plus'
   import {
+    ChevronDown,
     CircleAlert,
     Image as ImageIcon,
     LoaderCircle,
@@ -579,7 +645,7 @@
     ShoppingBag,
     UserRound
   } from '@lucide/vue'
-  import { useRoute, useRouter } from 'vue-router'
+  import { useRouter } from 'vue-router'
   import {
     acceptCustomerServiceTransfer,
     claimCustomerServiceConversation,
@@ -587,7 +653,8 @@
     fetchCustomerServiceAgents,
     fetchCustomerServiceAgentState,
     fetchCustomerServiceConversation,
-    fetchCustomerServiceConversations,
+    fetchCustomerServiceMessages,
+    fetchCustomerServiceWorkspace,
     fetchCustomerServiceImage,
     fetchCustomerServiceThumbnail,
     fetchCustomerServiceOrderCandidates,
@@ -605,10 +672,6 @@
   import { useAuth } from '@/hooks/core/useAuth'
   import { useUserStore } from '@/store/modules/user'
   import {
-    customerServiceStatusFromQuery,
-    type CustomerServiceStatusFilter
-  } from '@/utils/business-route-query'
-  import {
     realtimeClient,
     type RealtimeConnectionState,
     type RealtimeEvent
@@ -620,25 +683,29 @@
   } from '@/utils/customer-service-image-cache'
   import { isPersistedCustomerServiceMessageId } from '@/utils/customer-service-message'
 
-  const route = useRoute()
   const router = useRouter()
   const userStore = useUserStore()
   const { hasAuth } = useAuth()
-  const activeStatus = ref<CustomerServiceStatusFilter>(
-    customerServiceStatusFromQuery(route.query.status) || 'ALL'
-  )
   const conversationPage = ref<Api.CustomerService.ConversationPage>({
     records: [],
     current: 1,
-    size: 50,
+    size: 100,
     total: 0
+  })
+  const conversationTotals = ref<Record<'WAITING' | 'ACTIVE' | 'CLOSED', number>>({
+    WAITING: 0,
+    ACTIVE: 0,
+    CLOSED: 0
   })
   const selectedConversationId = ref<number | null>(null)
   const currentDetail = ref<Api.CustomerService.ConversationDetail | null>(null)
   const listLoading = ref(false)
   const conversationKeyword = ref('')
   const detailLoading = ref(false)
+  const loadingEarlierMessages = ref(false)
+  const hasEarlierMessages = ref(false)
   const actionLoading = ref(false)
+  const claimingConversationId = ref<number | null>(null)
   const uploadingImage = ref(false)
   const messageDraft = ref('')
   const messageListRef = ref<HTMLElement | null>(null)
@@ -689,6 +756,7 @@
   let listRequestSequence = 0
   let conversationListLoaded = false
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  let searchTimer: ReturnType<typeof setTimeout> | null = null
   let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let unsubscribeRealtime: (() => void) | null = null
   let unsubscribeRealtimeState: (() => void) | null = null
@@ -698,6 +766,7 @@
   let previewRequestSequence = 0
   let previewLoadingInstance: ReturnType<typeof ElLoading.service> | null = null
   const pendingRealtimeMessages = new Map<number, Set<number>>()
+  const pendingRealtimeFullRefresh = new Set<number>()
   const locallyHandledMessageIds = new Map<number, number>()
   const localMutationCounts = new Map<number, number>()
 
@@ -744,32 +813,18 @@
   const selectedTransferAgent = computed(() =>
     agents.value.find((agent) => agent.adminUserId === targetAgentId.value)
   )
-  const statusFilters: Array<{ label: string; value: CustomerServiceStatusFilter }> = [
-    { label: '全部', value: 'ALL' },
-    { label: '待接入', value: 'WAITING' },
-    { label: '接待中', value: 'ACTIVE' },
-    { label: '已结束', value: 'CLOSED' }
-  ]
-  const waitingCount = computed(
-    () =>
-      conversationPage.value.records.filter((conversation) => conversation.status === 'WAITING')
-        .length
+  const waitingCount = computed(() => conversationTotals.value.WAITING)
+  const activeCount = computed(() => conversationTotals.value.ACTIVE)
+  const closedCount = computed(() => conversationTotals.value.CLOSED)
+  const waitingConversations = computed(() =>
+    conversationPage.value.records.filter((conversation) => conversation.status === 'WAITING')
   )
-  const activeCount = computed(
-    () =>
-      conversationPage.value.records.filter((conversation) => conversation.status === 'ACTIVE')
-        .length
+  const activeConversations = computed(() =>
+    conversationPage.value.records.filter((conversation) => conversation.status === 'ACTIVE')
   )
-  const filteredConversations = computed(() => {
-    const keyword = conversationKeyword.value.trim().toLowerCase()
-    return conversationPage.value.records.filter((conversation) => {
-      if (activeStatus.value !== 'ALL' && conversation.status !== activeStatus.value) return false
-      if (!keyword) return true
-      return [conversation.userNickname, conversation.appUserId, conversation.lastMessagePreview]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(keyword))
-    })
-  })
+  const closedConversations = computed(() =>
+    conversationPage.value.records.filter((conversation) => conversation.status === 'CLOSED')
+  )
 
   const formatDateTime = (value?: string | null) => {
     if (!value) return '-'
@@ -1057,16 +1112,38 @@
     let firstConversationId: number | null = null
     if (!conversationListLoaded) listLoading.value = true
     try {
-      const page = await fetchCustomerServiceConversations({
-        current: 1,
-        size: 50,
-        status: undefined
-      })
+      const workspace = await fetchCustomerServiceWorkspace(
+        conversationKeyword.value.trim() || undefined
+      )
       if (requestId !== listRequestSequence) return
-      conversationPage.value = page
+      conversationPage.value = {
+        records: [...workspace.waiting, ...workspace.active, ...workspace.closed],
+        current: 1,
+        size: 100,
+        total: workspace.waitingTotal + workspace.activeTotal + workspace.closedTotal
+      }
+      conversationTotals.value = {
+        WAITING: workspace.waitingTotal,
+        ACTIVE: workspace.activeTotal,
+        CLOSED: workspace.closedTotal
+      }
+      const selectedId = selectedConversationId.value
+      if (
+        selectedId &&
+        !conversationPage.value.records.some(
+          (conversation) => conversation.conversationId === selectedId
+        )
+      ) {
+        detailRequestSequence += 1
+        detailCache.delete(selectedId)
+        detachCurrentImageUrls()
+        selectedConversationId.value = null
+        currentDetail.value = null
+        hasEarlierMessages.value = false
+      }
       conversationListLoaded = true
-      if (selectFirst && !selectedConversationId.value && filteredConversations.value.length) {
-        firstConversationId = filteredConversations.value[0].conversationId
+      if (selectFirst && !selectedConversationId.value && workspace.active.length) {
+        firstConversationId = workspace.active[0].conversationId
       }
     } finally {
       if (requestId === listRequestSequence) listLoading.value = false
@@ -1092,6 +1169,7 @@
         return
       detailCache.set(conversationId, detail)
       currentDetail.value = detailWithPendingMessages(detail)
+      hasEarlierMessages.value = detail.messages.length >= 50
       syncImageUrls(currentDetail.value.messages)
       await nextTick()
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
@@ -1101,6 +1179,98 @@
     }
   }
 
+  const mergePersistedMessages = (
+    existing: Api.CustomerService.Message[],
+    incoming: Api.CustomerService.Message[]
+  ) => {
+    const messages = new Map<number, Api.CustomerService.Message>()
+    existing.forEach((message) => messages.set(message.messageId, message))
+    incoming.forEach((message) => messages.set(message.messageId, message))
+    return Array.from(messages.values()).sort((left, right) => left.messageId - right.messageId)
+  }
+
+  const loadEarlierMessages = async () => {
+    if (
+      !currentDetail.value ||
+      !selectedConversationId.value ||
+      loadingEarlierMessages.value ||
+      !hasEarlierMessages.value
+    )
+      return
+    const firstMessageId = currentDetail.value.messages.find((message) =>
+      isPersistedCustomerServiceMessageId(message.messageId)
+    )?.messageId
+    if (!firstMessageId) {
+      hasEarlierMessages.value = false
+      return
+    }
+    const conversationId = selectedConversationId.value
+    const list = messageListRef.value
+    const previousHeight = list?.scrollHeight || 0
+    loadingEarlierMessages.value = true
+    try {
+      const messages = await fetchCustomerServiceMessages(conversationId, {
+        beforeId: firstMessageId,
+        limit: 50
+      })
+      if (selectedConversationId.value !== conversationId || !currentDetail.value) return
+      currentDetail.value.messages = mergePersistedMessages(currentDetail.value.messages, messages)
+      hasEarlierMessages.value = messages.length >= 50
+      const cachedDetail = detailCache.get(conversationId)
+      if (cachedDetail) {
+        detailCache.set(conversationId, {
+          ...cachedDetail,
+          messages: mergePersistedMessages(cachedDetail.messages, messages)
+        })
+      }
+      syncImageUrls(currentDetail.value.messages)
+      await nextTick()
+      if (list) list.scrollTop += list.scrollHeight - previousHeight
+      observeImageTargets()
+    } finally {
+      loadingEarlierMessages.value = false
+    }
+  }
+
+  const loadNewMessages = async (conversationId: number) => {
+    if (selectedConversationId.value !== conversationId || !currentDetail.value) return
+    const persistedMessages = currentDetail.value.messages.filter((message) =>
+      isPersistedCustomerServiceMessageId(message.messageId)
+    )
+    const lastMessageId = persistedMessages.at(-1)?.messageId
+    if (!lastMessageId) {
+      await loadDetail(conversationId)
+      return
+    }
+    const list = messageListRef.value
+    const shouldFollow = !list || list.scrollHeight - list.scrollTop - list.clientHeight < 96
+    const messages = await fetchCustomerServiceMessages(conversationId, {
+      afterId: lastMessageId,
+      limit: 100
+    })
+    if (!messages.length || selectedConversationId.value !== conversationId || !currentDetail.value)
+      return
+    const pendingMessages = currentDetail.value.messages.filter(
+      (message) => !isPersistedCustomerServiceMessageId(message.messageId)
+    )
+    currentDetail.value.messages = [
+      ...mergePersistedMessages(persistedMessages, messages),
+      ...pendingMessages
+    ]
+    const cachedDetail = detailCache.get(conversationId)
+    if (cachedDetail) {
+      detailCache.set(conversationId, {
+        ...cachedDetail,
+        messages: mergePersistedMessages(cachedDetail.messages, messages)
+      })
+    }
+    messages.forEach(updateConversationSummary)
+    syncImageUrls(currentDetail.value.messages)
+    await nextTick()
+    if (shouldFollow && list) list.scrollTop = list.scrollHeight
+    observeImageTargets()
+  }
+
   const selectConversation = async (conversationId: number) => {
     const conversationChanged = selectedConversationId.value !== conversationId
     if (conversationChanged) detachCurrentImageUrls()
@@ -1108,6 +1278,7 @@
     const cachedDetail = detailCache.get(conversationId)
     if (conversationChanged) {
       currentDetail.value = cachedDetail ? detailWithPendingMessages(cachedDetail) : null
+      hasEarlierMessages.value = Boolean(cachedDetail && cachedDetail.messages.length >= 50)
       if (currentDetail.value) {
         syncImageUrls(currentDetail.value.messages)
         await nextTick()
@@ -1131,41 +1302,29 @@
     ])
   }
 
-  const handleStatusChange = async () => {
-    detachCurrentImageUrls()
-    selectedConversationId.value = null
-    currentDetail.value = null
-    await loadConversations(true)
-  }
+  watch(conversationKeyword, () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+      searchTimer = null
+      void loadConversations()
+    }, 250)
+  })
 
-  const setStatus = (status: CustomerServiceStatusFilter) => {
-    if (activeStatus.value === status) return
-    activeStatus.value = status
-    void router.replace({
-      path: '/customer-service',
-      query: { ...route.query, status: status === 'ALL' ? undefined : status }
-    })
-    void handleStatusChange()
-  }
-
-  watch(
-    () => route.query.status,
-    async () => {
-      const status = customerServiceStatusFromQuery(route.query.status) || 'ALL'
-      if (route.path !== '/customer-service' || status === activeStatus.value) return
-      activeStatus.value = status
-      await handleStatusChange()
-    }
-  )
-
-  const handleClaim = async () => {
-    if (!selectedConversationId.value) return
+  const handleClaim = async (conversationId?: number) => {
+    const targetConversationId = conversationId || selectedConversationId.value
+    if (!targetConversationId || claimingConversationId.value !== null) return
+    claimingConversationId.value = targetConversationId
     actionLoading.value = true
     try {
-      currentDetail.value = await claimCustomerServiceConversation(selectedConversationId.value)
+      const detail = await claimCustomerServiceConversation(targetConversationId)
+      selectedConversationId.value = targetConversationId
+      currentDetail.value = detailWithPendingMessages(detail)
+      detailCache.set(targetConversationId, detail)
+      syncImageUrls(currentDetail.value.messages)
       await Promise.all([loadConversations(), loadAgentState()])
       ElMessage.success('会话已认领')
     } finally {
+      claimingConversationId.value = null
       actionLoading.value = false
     }
   }
@@ -1377,7 +1536,12 @@
     })
     actionLoading.value = true
     try {
-      currentDetail.value = await releaseCustomerServiceConversation(selectedConversationId.value)
+      const releasedConversationId = selectedConversationId.value
+      await releaseCustomerServiceConversation(releasedConversationId)
+      detailCache.delete(releasedConversationId)
+      detachCurrentImageUrls()
+      selectedConversationId.value = null
+      currentDetail.value = null
       await Promise.all([loadConversations(), loadAgentState()])
       ElMessage.success('会话已退回待接待队列')
     } finally {
@@ -1607,10 +1771,15 @@
   }
 
   const handleRealtimeEvent = (event: RealtimeEvent) => {
+    if (event.type === 'CUSTOMER_SERVICE_QUEUE_UPDATED') {
+      void loadConversations()
+      return
+    }
     if (event.type.startsWith('CUSTOMER_SERVICE_TRANSFER_')) {
-      void Promise.all([loadPendingTransfers(), loadAgentState()])
+      void Promise.all([loadPendingTransfers(), loadAgentState(), loadConversations()])
       const targetAdminUserId = Number(event.data.toAdminUserId || 0)
       const sourceAdminUserId = Number(event.data.fromAdminUserId || 0)
+      const transferredConversationId = Number(event.data.conversationId || 0)
       if (
         event.type === 'CUSTOMER_SERVICE_TRANSFER_REQUESTED' &&
         targetAdminUserId === currentAdminId.value
@@ -1630,6 +1799,18 @@
       ) {
         ElMessage.warning('转接申请已超时，会话仍由你接待')
       }
+      if (
+        sourceAdminUserId === currentAdminId.value &&
+        (event.type === 'CUSTOMER_SERVICE_TRANSFER_ACCEPTED' ||
+          event.type === 'CUSTOMER_SERVICE_TRANSFER_FORCED') &&
+        selectedConversationId.value === transferredConversationId
+      ) {
+        detailCache.delete(transferredConversationId)
+        detachCurrentImageUrls()
+        selectedConversationId.value = null
+        currentDetail.value = null
+        ElMessage.info('会话已完成转接')
+      }
     }
     if (event.type !== 'CUSTOMER_SERVICE_CONVERSATION_UPDATED') return
     const conversationId = Number(event.data.conversationId || 0)
@@ -1638,6 +1819,9 @@
       const messageIds = pendingRealtimeMessages.get(conversationId) || new Set<number>()
       messageIds.add(Number.isSafeInteger(messageId) && messageId > 0 ? messageId : 0)
       pendingRealtimeMessages.set(conversationId, messageIds)
+      if (event.data.changeType !== 'MESSAGE_CREATED') {
+        pendingRealtimeFullRefresh.add(conversationId)
+      }
     }
     scheduleRealtimeRefresh(250)
   }
@@ -1648,6 +1832,7 @@
       realtimeRefreshTimer = null
       pruneHandledMessages()
       const refreshConversationIds = new Set<number>()
+      const fullRefreshConversationIds = new Set<number>()
       let hasDeferredMutation = false
       pendingRealtimeMessages.forEach((messageIds, conversationId) => {
         if (localMutationCounts.has(conversationId)) {
@@ -1655,10 +1840,12 @@
           return
         }
         pendingRealtimeMessages.delete(conversationId)
+        const needsFullRefresh = pendingRealtimeFullRefresh.delete(conversationId)
         const needsRefresh = Array.from(messageIds).some(
           (messageId) => messageId === 0 || !locallyHandledMessageIds.has(messageId)
         )
-        if (needsRefresh) refreshConversationIds.add(conversationId)
+        if (needsFullRefresh) fullRefreshConversationIds.add(conversationId)
+        if (needsRefresh || needsFullRefresh) refreshConversationIds.add(conversationId)
       })
       if (hasDeferredMutation) scheduleRealtimeRefresh(100)
       if (!refreshConversationIds.size) return
@@ -1666,7 +1853,9 @@
       void Promise.all([
         loadConversations(),
         selectedId && refreshConversationIds.has(selectedId)
-          ? loadDetail(selectedId)
+          ? fullRefreshConversationIds.has(selectedId)
+            ? loadDetail(selectedId)
+            : loadNewMessages(selectedId)
           : Promise.resolve()
       ])
     }, delay)
@@ -1690,8 +1879,10 @@
     unsubscribeRealtimeState?.()
     unsubscribeRealtime?.()
     stopFallbackPolling()
+    if (searchTimer) clearTimeout(searchTimer)
     if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer)
     pendingRealtimeMessages.clear()
+    pendingRealtimeFullRefresh.clear()
     locallyHandledMessageIds.clear()
     localMutationCounts.clear()
     pendingImageUploads.forEach((pending) => URL.revokeObjectURL(pending.previewUrl))
@@ -1927,6 +2118,13 @@
     padding: 20px;
     overflow-y: auto;
     background: radial-gradient(circle at 10% 5%, rgb(219 234 254 / 36%), transparent 25%), #f8fafc;
+  }
+
+  .message-history-loader {
+    display: flex;
+    justify-content: center;
+    min-height: 32px;
+    margin-bottom: 10px;
   }
 
   .message-row {
@@ -2259,8 +2457,8 @@
   }
 
   :deep(.conversation-panel .el-card__header) {
-    min-height: 150px;
-    padding: 23px 20px 15px;
+    min-height: 112px;
+    padding: 20px 20px 15px;
   }
 
   :deep(.chat-panel .el-card__header),
@@ -2270,7 +2468,7 @@
   }
 
   :deep(.conversation-panel .panel-body) {
-    height: calc(100% - 150px);
+    height: calc(100% - 112px);
   }
 
   :deep(.chat-panel .chat-panel__body),
@@ -2287,6 +2485,17 @@
 
   .conversation-heading {
     justify-content: space-between;
+  }
+
+  .conversation-heading > div:first-child {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .conversation-heading__title {
+    font-size: 17px;
+    font-weight: 650;
   }
 
   .queue-title {
@@ -2336,7 +2545,7 @@
     align-items: center;
     height: 38px;
     padding: 0 11px;
-    margin-top: 19px;
+    margin-top: 16px;
     color: #999;
     background: #f6f6f6;
     border: 1px solid #ebebeb;
@@ -2372,6 +2581,194 @@
     gap: 12px;
     padding: 15px 18px;
     border-bottom-color: #ededed;
+  }
+
+  .conversation-groups {
+    height: 100%;
+    overflow-y: auto;
+    background: #fff;
+  }
+
+  .conversation-group {
+    display: block;
+    border-bottom: 1px solid #e9e9e9;
+  }
+
+  .conversation-group > summary {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 8px;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 16px;
+    color: #555;
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    background: #fafafa;
+  }
+
+  .conversation-group > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .conversation-group > summary > span {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .conversation-group > summary > strong {
+    min-width: 22px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #777;
+    text-align: center;
+    background: #ededed;
+    border-radius: 10px;
+  }
+
+  .conversation-group > summary svg {
+    color: #999;
+    transition: transform 160ms ease;
+  }
+
+  .conversation-group[open] > summary svg {
+    transform: rotate(180deg);
+  }
+
+  .group-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+  }
+
+  .group-dot.is-waiting {
+    background: #f3a72d;
+    box-shadow: 0 0 0 3px rgb(243 167 45 / 13%);
+  }
+
+  .group-dot.is-active {
+    background: #0abb60;
+    box-shadow: 0 0 0 3px rgb(10 187 96 / 12%);
+  }
+
+  .group-dot.is-closed {
+    background: #a0a0a0;
+  }
+
+  .group-empty {
+    padding: 18px 16px;
+    font-size: 12px;
+    color: #aaa;
+    text-align: center;
+  }
+
+  .waiting-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px 8px;
+    padding: 16px 12px 18px;
+  }
+
+  .waiting-user {
+    min-width: 0;
+    text-align: center;
+  }
+
+  .waiting-user__avatar {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    padding: 0;
+    margin: 0 auto 7px;
+    overflow: hidden;
+    color: #7a7a7a;
+    cursor: pointer;
+    background: #efefef;
+    border: 0;
+    border-radius: 50%;
+  }
+
+  .waiting-user__avatar img,
+  .conversation-avatar img,
+  .chat-user__avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .waiting-user__avatar > i {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 8px;
+    height: 8px;
+    background: #ff5a62;
+    border: 2px solid #fff;
+    border-radius: 50%;
+  }
+
+  .waiting-user__claim {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 650;
+    color: #fff;
+    background: rgb(4 157 79 / 88%);
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .waiting-user__avatar:hover .waiting-user__claim,
+  .waiting-user__avatar:focus-visible .waiting-user__claim {
+    opacity: 1;
+  }
+
+  .waiting-user__avatar:focus-visible {
+    outline: 2px solid rgb(10 187 96 / 28%);
+    outline-offset: 2px;
+  }
+
+  .waiting-user__avatar:disabled {
+    cursor: not-allowed;
+    opacity: 0.58;
+  }
+
+  .waiting-user strong,
+  .waiting-user p {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .waiting-user strong {
+    font-size: 12px;
+    font-weight: 600;
+    color: #444;
+  }
+
+  .waiting-user p {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: #999;
+  }
+
+  .active-conversation-list,
+  .closed-conversation-list {
+    background: #fff;
+  }
+
+  .conversation-item.is-closed {
+    opacity: 0.78;
   }
 
   .conversation-item:hover {

@@ -69,6 +69,7 @@ declare namespace Api {
       conversationId: number
       appUserId: string
       userNickname: string
+      userAvatar: string | null
       status: ConversationStatus
       assignedAdminUserId: number | null
       assignedAdminDisplayName: string | null
@@ -91,6 +92,15 @@ declare namespace Api {
     }
 
     type ConversationPage = Api.Common.PaginatedResponse<ConversationSummary>
+
+    interface ConversationWorkspace {
+      waiting: ConversationSummary[]
+      waitingTotal: number
+      active: ConversationSummary[]
+      activeTotal: number
+      closed: ConversationSummary[]
+      closedTotal: number
+    }
 
     interface Agent {
       adminUserId: number

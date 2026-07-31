@@ -174,19 +174,45 @@ class CustomerServiceControllerTest {
                                 {"content":"我需要人工帮助","clientMessageId":"app-lifecycle-first"}
                                 """))
                 .andExpect(status().isOk());
+        mockMvc.perform(post("/app/customer-service/conversation/messages")
+                        .header("Authorization", bearer(app.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"这是等待期间的补充信息","clientMessageId":"app-lifecycle-second"}
+                                """))
+                .andExpect(status().isOk());
 
         mockMvc.perform(get("/admin/customer-service/conversations")
                         .header("Authorization", bearer(superToken))
                         .param("status", "WAITING"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.records[0].conversationId").value(conversationId));
+                .andExpect(jsonPath("$.data.records[0].conversationId").value(conversationId))
+                .andExpect(jsonPath("$.data.records[0].lastMessagePreview").value("我需要人工帮助"));
+
+        mockMvc.perform(get("/admin/customer-service/conversations/workspace")
+                        .header("Authorization", bearer(targetToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.waitingTotal").value(1))
+                .andExpect(jsonPath("$.data.activeTotal").value(0))
+                .andExpect(jsonPath("$.data.waiting[0].lastMessagePreview").value("我需要人工帮助"));
+
+        mockMvc.perform(get("/admin/customer-service/conversations/{conversationId}", conversationId)
+                        .header("Authorization", bearer(targetToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(900001));
 
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/claim", conversationId)
                         .header("Authorization", bearer(superToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.data.assignedAdminUserId").value(1));
+
+        mockMvc.perform(get("/admin/customer-service/conversations/workspace")
+                        .header("Authorization", bearer(targetToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.waitingTotal").value(0))
+                .andExpect(jsonPath("$.data.activeTotal").value(0));
 
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/messages", conversationId)
                         .header("Authorization", bearer(superToken))
@@ -210,10 +236,53 @@ class CustomerServiceControllerTest {
                 .andReturn().getResponse().getContentAsString();
         long transferRequestId = objectMapper.readTree(transferRequest).path("data").path("requestId").asLong();
 
+        mockMvc.perform(get("/admin/customer-service/conversations")
+                        .header("Authorization", bearer(targetToken))
+                        .param("status", "ACTIVE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0));
+        mockMvc.perform(get("/admin/customer-service/conversations/{conversationId}", conversationId)
+                        .header("Authorization", bearer(targetToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(900001));
+        mockMvc.perform(get(
+                                "/admin/customer-service/conversations/{conversationId}/messages",
+                                conversationId)
+                        .header("Authorization", bearer(targetToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(900001));
+
         mockMvc.perform(post("/admin/customer-service/transfer-requests/{requestId}/accept", transferRequestId)
                         .header("Authorization", bearer(targetToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.assignedAdminUserId").value(targetAdminId));
+
+        mockMvc.perform(get("/admin/customer-service/conversations/workspace")
+                        .header("Authorization", bearer(targetToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.activeTotal").value(1))
+                .andExpect(jsonPath("$.data.active[0].conversationId").value(conversationId));
+
+        String acceptedDetail = mockMvc.perform(
+                                get("/admin/customer-service/conversations/{conversationId}", conversationId)
+                        .header("Authorization", bearer(targetToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.messages.length()").value(5))
+                .andReturn().getResponse().getContentAsString();
+        JsonNode acceptedMessages = objectMapper.readTree(acceptedDetail).path("data").path("messages");
+        long latestPageCursor = acceptedMessages.get(acceptedMessages.size() - 2).path("messageId").asLong();
+
+        mockMvc.perform(get(
+                                "/admin/customer-service/conversations/{conversationId}/messages",
+                                conversationId)
+                        .header("Authorization", bearer(targetToken))
+                        .param("beforeId", String.valueOf(latestPageCursor))
+                        .param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[1].messageId").value(
+                        acceptedMessages.get(acceptedMessages.size() - 3).path("messageId").asLong()
+                ));
 
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/messages", conversationId)
                         .header("Authorization", bearer(superToken))
@@ -244,7 +313,7 @@ class CustomerServiceControllerTest {
                 .andExpect(jsonPath("$.data.assignedAdminUserId").doesNotExist())
                 .andExpect(jsonPath("$.data.consultationNo").value(2))
                 .andExpect(jsonPath("$.data.currentContext.type").value("GENERAL"))
-                .andExpect(jsonPath("$.data.messages.length()").value(7));
+                .andExpect(jsonPath("$.data.messages.length()").value(2));
     }
 
     @Test
@@ -299,8 +368,7 @@ class CustomerServiceControllerTest {
                 .andExpect(jsonPath("$.data.currentContext.order.orderId").value(orderId))
                 .andExpect(jsonPath("$.data.linkedOrders[0].orderId").value(orderId))
                 .andExpect(jsonPath("$.data.linkedProducts.length()").value(0))
-                .andExpect(jsonPath("$.data.messages[0].messageType").value("PRODUCT_CARD"))
-                .andExpect(jsonPath("$.data.messages.length()").value(4));
+                .andExpect(jsonPath("$.data.messages.length()").value(0));
 
         mockMvc.perform(post("/app/customer-service/conversation/messages")
                         .header("Authorization", bearer(app.token()))
@@ -314,10 +382,10 @@ class CustomerServiceControllerTest {
                         .header("Authorization", bearer(app.token())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("WAITING"))
-                .andExpect(jsonPath("$.data.messages.length()").value(7))
-                .andExpect(jsonPath("$.data.messages[4].messageType").value("SYSTEM"))
-                .andExpect(jsonPath("$.data.messages[5].messageType").value("ORDER_CARD"))
-                .andExpect(jsonPath("$.data.messages[6].messageType").value("TEXT"));
+                .andExpect(jsonPath("$.data.messages.length()").value(3))
+                .andExpect(jsonPath("$.data.messages[0].messageType").value("SYSTEM"))
+                .andExpect(jsonPath("$.data.messages[1].messageType").value("ORDER_CARD"))
+                .andExpect(jsonPath("$.data.messages[2].messageType").value("TEXT"));
     }
 
     @Test

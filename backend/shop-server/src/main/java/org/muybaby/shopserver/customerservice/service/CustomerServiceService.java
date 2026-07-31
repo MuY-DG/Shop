@@ -13,6 +13,7 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentProfi
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConsultationContextResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationDetailResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationSummaryResponse;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationWorkspaceResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ImageMessageResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedOrderResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedProductResponse;
@@ -58,6 +59,8 @@ public class CustomerServiceService {
 
     private static final long DEFAULT_PAGE_SIZE = 20L;
     private static final long MAX_PAGE_SIZE = 100L;
+    private static final int DEFAULT_MESSAGE_PAGE_SIZE = 50;
+    private static final int MAX_MESSAGE_PAGE_SIZE = 100;
     private static final Set<String> CONVERSATION_STATUSES = Set.of("WAITING", "ACTIVE", "CLOSED");
     private static final Set<String> CONTEXT_TYPES = Set.of("GENERAL", "PRODUCT", "ORDER");
     private static final Set<String> AGENT_WORK_STATUSES = Set.of("AVAILABLE", "BUSY", "OFFLINE");
@@ -128,7 +131,12 @@ public class CustomerServiceService {
     }
 
     @Transactional
-    public List<MessageResponse> messagesForApp(AuthenticatedPrincipal principal, Long afterId) {
+    public List<MessageResponse> messagesForApp(
+            AuthenticatedPrincipal principal,
+            Long afterId,
+            Long beforeId,
+            Integer limit
+    ) {
         Long appUserId = requirePrincipal(principal, TokenKind.APP);
         Optional<ConversationRow> conversation = findConversationByAppUser(appUserId);
         if (conversation.isEmpty()) {
@@ -142,7 +150,7 @@ public class CustomerServiceService {
                 .param("now", LocalDateTime.now())
                 .param("conversationId", conversation.get().id())
                 .update();
-        return messages(conversation.get().id(), afterId);
+        return messages(conversation.get(), afterId, beforeId, limit);
     }
 
     @Transactional
@@ -191,8 +199,18 @@ public class CustomerServiceService {
         return Objects.requireNonNull(result);
     }
 
-    public PageResult<ConversationSummaryResponse> adminPage(String rawStatus, Long rawCurrent, Long rawSize) {
+    public PageResult<ConversationSummaryResponse> adminPage(
+            AuthenticatedPrincipal principal,
+            String rawStatus,
+            String rawKeyword,
+            Long rawCurrent,
+            Long rawSize
+    ) {
+        Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
+        boolean manager = canManageAgents(principal);
         String status = normalizeStatus(rawStatus);
+        String keyword = normalizeConversationKeyword(rawKeyword);
+        String keywordLike = keyword.isEmpty() ? "" : "%" + keyword.toLowerCase() + "%";
         long current = rawCurrent == null || rawCurrent < 1 ? 1L : rawCurrent;
         long size = rawSize == null || rawSize < 1 ? DEFAULT_PAGE_SIZE : Math.min(rawSize, MAX_PAGE_SIZE);
         long offset = (current - 1) * size;
@@ -200,16 +218,80 @@ public class CustomerServiceService {
         long total = jdbcClient.sql("""
                         select count(*)
                         from customer_service_conversation c
+                        join app_user app on app.id = c.app_user_id
                         where c.status <> 'DRAFT'
                           and (:status = '' or c.status = :status)
+                          and (
+                            :manager = true
+                            or c.status = 'WAITING'
+                            or c.assigned_admin_user_id = :adminUserId
+                          )
+                          and (
+                            :keywordLike = ''
+                            or lower(coalesce(app.nickname, '')) like :keywordLike
+                            or cast(c.app_user_id as char) like :keywordLike
+                            or exists (
+                                select 1
+                                from customer_service_message search_message
+                                where search_message.conversation_id = c.id
+                                  and search_message.consultation_no = c.consultation_no
+                                  and (
+                                    c.status <> 'WAITING'
+                                    or (
+                                      search_message.sender_type = 'APP_USER'
+                                      and search_message.id = (
+                                        select min(first_message.id)
+                                        from customer_service_message first_message
+                                        where first_message.conversation_id = c.id
+                                          and first_message.consultation_no = c.consultation_no
+                                          and first_message.sender_type = 'APP_USER'
+                                      )
+                                    )
+                                  )
+                                  and lower(search_message.content) like :keywordLike
+                            )
+                          )
                         """)
                 .param("status", status)
+                .param("manager", manager)
+                .param("adminUserId", adminUserId)
+                .param("keywordLike", keywordLike)
                 .query(Long.class)
                 .single();
 
         List<ConversationSummaryResponse> records = jdbcClient.sql(summarySelect() + """
                         where c.status <> 'DRAFT'
                           and (:status = '' or c.status = :status)
+                          and (
+                            :manager = true
+                            or c.status = 'WAITING'
+                            or c.assigned_admin_user_id = :adminUserId
+                          )
+                          and (
+                            :keywordLike = ''
+                            or lower(coalesce(app.nickname, '')) like :keywordLike
+                            or cast(c.app_user_id as char) like :keywordLike
+                            or exists (
+                                select 1
+                                from customer_service_message search_message
+                                where search_message.conversation_id = c.id
+                                  and search_message.consultation_no = c.consultation_no
+                                  and (
+                                    c.status <> 'WAITING'
+                                    or (
+                                      search_message.sender_type = 'APP_USER'
+                                      and search_message.id = (
+                                        select min(first_message.id)
+                                        from customer_service_message first_message
+                                        where first_message.conversation_id = c.id
+                                          and first_message.consultation_no = c.consultation_no
+                                          and first_message.sender_type = 'APP_USER'
+                                      )
+                                    )
+                                  )
+                                  and lower(search_message.content) like :keywordLike
+                            )
+                          )
                         order by
                           case c.status when 'WAITING' then 0 when 'ACTIVE' then 1 else 2 end,
                           coalesce(c.last_message_at, c.created_at) desc,
@@ -217,39 +299,71 @@ public class CustomerServiceService {
                         limit :size offset :offset
                         """)
                 .param("status", status)
+                .param("manager", manager)
+                .param("adminUserId", adminUserId)
+                .param("keywordLike", keywordLike)
                 .param("size", size)
                 .param("offset", offset)
                 .query(this::mapConversationSummary)
                 .list();
+        if (!manager) {
+            records = records.stream()
+                    .map(this::redactWaitingConversationSummary)
+                    .toList();
+        }
         return PageResult.of(records, total, current, size);
     }
 
+    public ConversationWorkspaceResponse adminWorkspace(
+            AuthenticatedPrincipal principal,
+            String keyword
+    ) {
+        PageResult<ConversationSummaryResponse> waiting = adminPage(
+                principal, "WAITING", keyword, 1L, MAX_PAGE_SIZE
+        );
+        PageResult<ConversationSummaryResponse> active = adminPage(
+                principal, "ACTIVE", keyword, 1L, MAX_PAGE_SIZE
+        );
+        PageResult<ConversationSummaryResponse> closed = adminPage(
+                principal, "CLOSED", keyword, 1L, MAX_PAGE_SIZE
+        );
+        return new ConversationWorkspaceResponse(
+                waiting.records(),
+                waiting.total(),
+                active.records(),
+                active.total(),
+                closed.records(),
+                closed.total()
+        );
+    }
+
     @Transactional
-    public ConversationDetailResponse adminDetail(Long conversationId) {
-        ConversationRow conversation = requireAdminVisibleConversation(conversationId);
-        jdbcClient.sql("""
-                        update customer_service_conversation
-                        set admin_unread_count = 0, updated_at = :now
-                        where id = :conversationId
-                        """)
-                .param("now", LocalDateTime.now())
-                .param("conversationId", conversationId)
-                .update();
+    public ConversationDetailResponse adminDetail(
+            AuthenticatedPrincipal principal,
+            Long conversationId
+    ) {
+        Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
+        ConversationRow conversation = requireAdminReadableConversation(
+                principal, conversationId
+        );
+        markReadForAssignedAgent(conversation, adminUserId);
         return detail(conversation.id());
     }
 
     @Transactional
-    public List<MessageResponse> messagesForAdmin(Long conversationId, Long afterId) {
-        requireAdminVisibleConversation(conversationId);
-        jdbcClient.sql("""
-                        update customer_service_conversation
-                        set admin_unread_count = 0, updated_at = :now
-                        where id = :conversationId
-                        """)
-                .param("now", LocalDateTime.now())
-                .param("conversationId", conversationId)
-                .update();
-        return messages(conversationId, afterId);
+    public List<MessageResponse> messagesForAdmin(
+            AuthenticatedPrincipal principal,
+            Long conversationId,
+            Long afterId,
+            Long beforeId,
+            Integer limit
+    ) {
+        Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
+        ConversationRow conversation = requireAdminReadableConversation(
+                principal, conversationId
+        );
+        markReadForAssignedAgent(conversation, adminUserId);
+        return messages(conversation, afterId, beforeId, limit);
     }
 
     @Transactional
@@ -489,7 +603,7 @@ public class CustomerServiceService {
         MessageResponse systemMessage = insertSystemMessage(conversationId, "正在为您重新安排客服");
         touchForAppNotification(conversationId, systemMessage.createdAt());
         publish(conversationId, conversation.appUserId(), "CONVERSATION_RELEASED", systemMessage.messageId());
-        return detail(conversationId);
+        return withoutConversationMessages(detail(conversationId));
     }
 
     @Transactional
@@ -636,8 +750,11 @@ public class CustomerServiceService {
         return message;
     }
 
-    public List<LinkedOrderResponse> orderCandidates(Long conversationId) {
-        ConversationRow conversation = requireAdminVisibleConversation(conversationId);
+    public List<LinkedOrderResponse> orderCandidates(
+            AuthenticatedPrincipal principal,
+            Long conversationId
+    ) {
+        ConversationRow conversation = requireAdminReadableConversation(principal, conversationId);
         return orderCandidatesForUser(conversation.appUserId());
     }
 
@@ -672,8 +789,12 @@ public class CustomerServiceService {
         return linked;
     }
 
-    public List<LinkedProductResponse> productCandidates(Long conversationId, String keyword) {
-        requireAdminVisibleConversation(conversationId);
+    public List<LinkedProductResponse> productCandidates(
+            AuthenticatedPrincipal principal,
+            Long conversationId,
+            String keyword
+    ) {
+        requireAdminReadableConversation(principal, conversationId);
         return productCandidates(keyword);
     }
 
@@ -827,9 +948,8 @@ public class CustomerServiceService {
             Long messageId,
             String ifNoneMatch
     ) {
-        requirePrincipal(principal, TokenKind.ADMIN);
         ImageReference image = requireImageReference(messageId);
-        requireConversation(image.conversationId());
+        requireAdminReadableConversation(principal, image.conversationId());
         return storageService.customerServiceImageResource(
                 image.assetId(), image.conversationId(), ifNoneMatch);
     }
@@ -838,9 +958,8 @@ public class CustomerServiceService {
             AuthenticatedPrincipal principal,
             Long messageId
     ) {
-        requirePrincipal(principal, TokenKind.ADMIN);
         ImageReference image = requireImageReference(messageId);
-        requireConversation(image.conversationId());
+        requireAdminReadableConversation(principal, image.conversationId());
         return imageAccess(image);
     }
 
@@ -849,9 +968,8 @@ public class CustomerServiceService {
             Long messageId,
             String ifNoneMatch
     ) {
-        requirePrincipal(principal, TokenKind.ADMIN);
         ImageReference image = requireImageReference(messageId);
-        requireConversation(image.conversationId());
+        requireAdminReadableConversation(principal, image.conversationId());
         return storageService.customerServiceThumbnailResource(
                 image.assetId(), image.conversationId(), ifNoneMatch);
     }
@@ -992,6 +1110,7 @@ public class CustomerServiceService {
     }
 
     private ConversationDetailResponse detail(Long conversationId) {
+        ConversationRow conversation = requireConversation(conversationId);
         ConversationSummaryResponse summary = jdbcClient.sql(summarySelect() + " where c.id = :conversationId")
                 .param("conversationId", conversationId)
                 .query(this::mapConversationSummary)
@@ -1001,6 +1120,7 @@ public class CustomerServiceService {
                 summary.conversationId(),
                 summary.appUserId(),
                 summary.userNickname(),
+                summary.userAvatar(),
                 summary.status(),
                 summary.assignedAdminUserId(),
                 summary.assignedAdminDisplayName(),
@@ -1014,25 +1134,109 @@ public class CustomerServiceService {
                 summary.updatedAt(),
                 summary.consultationNo(),
                 summary.currentContext(),
-                messages(conversationId, null),
+                messages(conversation, null, null, DEFAULT_MESSAGE_PAGE_SIZE),
                 linkedOrders(conversationId, summary.consultationNo()),
                 linkedProducts(conversationId, summary.consultationNo())
         );
     }
 
-    private List<MessageResponse> messages(Long conversationId, Long afterId) {
-        long effectiveAfterId = afterId == null || afterId < 0 ? 0L : afterId;
+    private ConversationDetailResponse withoutConversationMessages(ConversationDetailResponse detail) {
+        return new ConversationDetailResponse(
+                detail.conversationId(),
+                detail.appUserId(),
+                detail.userNickname(),
+                detail.userAvatar(),
+                detail.status(),
+                detail.assignedAdminUserId(),
+                detail.assignedAdminDisplayName(),
+                detail.lastMessagePreview(),
+                detail.lastMessageAt(),
+                detail.appUnreadCount(),
+                detail.adminUnreadCount(),
+                detail.claimedAt(),
+                detail.closedAt(),
+                detail.createdAt(),
+                detail.updatedAt(),
+                detail.consultationNo(),
+                detail.currentContext(),
+                List.of(),
+                List.of(),
+                List.of()
+        );
+    }
+
+    private ConversationSummaryResponse redactWaitingConversationSummary(
+            ConversationSummaryResponse summary
+    ) {
+        if (!"WAITING".equals(summary.status())) {
+            return summary;
+        }
+        return new ConversationSummaryResponse(
+                summary.conversationId(),
+                summary.appUserId(),
+                summary.userNickname(),
+                summary.userAvatar(),
+                summary.status(),
+                null,
+                null,
+                summary.lastMessagePreview(),
+                summary.lastMessageAt(),
+                0,
+                summary.adminUnreadCount(),
+                null,
+                null,
+                summary.createdAt(),
+                summary.updatedAt(),
+                summary.consultationNo(),
+                new ConsultationContextResponse("GENERAL", null, null, null)
+        );
+    }
+
+    private List<MessageResponse> messages(
+            ConversationRow conversation,
+            Long afterId,
+            Long beforeId,
+            Integer rawLimit
+    ) {
+        if (afterId != null && afterId > 0 && beforeId != null && beforeId > 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        int limit = rawLimit == null || rawLimit < 1
+                ? DEFAULT_MESSAGE_PAGE_SIZE
+                : Math.min(rawLimit, MAX_MESSAGE_PAGE_SIZE);
+        Long effectiveAfterId = afterId != null && afterId > 0 ? afterId : null;
+        Long effectiveBeforeId = beforeId != null && beforeId > 0 ? beforeId : null;
         Function<StorageObjectLocation, PrivateObjectAccess> imageAccessResolver =
                 storageService.privateImageAccessResolver();
-        return jdbcClient.sql(messageSelect() + """
-                        where m.conversation_id = :conversationId and m.id > :afterId
-                        order by m.id
-                        limit 500
-                        """)
-                .param("conversationId", conversationId)
-                .param("afterId", effectiveAfterId)
+
+        String cursorFilter;
+        String orderBy;
+        boolean reverse;
+        if (effectiveAfterId != null) {
+            cursorFilter = " and m.id > :cursorId";
+            orderBy = " order by m.id";
+            reverse = false;
+        } else {
+            cursorFilter = effectiveBeforeId == null ? "" : " and m.id < :cursorId";
+            orderBy = " order by m.id desc";
+            reverse = true;
+        }
+        var query = jdbcClient.sql(messageSelect() + """
+                        where m.conversation_id = :conversationId
+                          and m.consultation_no = :consultationNo
+                        """ + cursorFilter + orderBy + " limit :limit")
+                .param("conversationId", conversation.id())
+                .param("consultationNo", conversation.consultationNo())
+                .param("limit", limit);
+        if (effectiveAfterId != null) {
+            query = query.param("cursorId", effectiveAfterId);
+        } else if (effectiveBeforeId != null) {
+            query = query.param("cursorId", effectiveBeforeId);
+        }
+        List<MessageResponse> result = query
                 .query((rs, rowNum) -> mapMessage(rs, rowNum, imageAccessResolver))
                 .list();
+        return reverse ? result.reversed() : result;
     }
 
     private List<LinkedOrderResponse> linkedOrders(Long conversationId, int consultationNo) {
@@ -1675,6 +1879,44 @@ public class CustomerServiceService {
         return conversation;
     }
 
+    private ConversationRow requireAdminReadableConversation(
+            AuthenticatedPrincipal principal,
+            Long conversationId
+    ) {
+        Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
+        ConversationRow conversation = requireAdminVisibleConversation(conversationId);
+        if (canManageAgents(principal)) {
+            return conversation;
+        }
+        if ("WAITING".equals(conversation.status())
+                || conversation.assignedAdminUserId() == null
+                || !conversation.assignedAdminUserId().equals(adminUserId)) {
+            throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
+        }
+        return conversation;
+    }
+
+    private boolean canManageAgents(AuthenticatedPrincipal principal) {
+        return principal != null
+                && principal.permissions().contains("customer-service:agent:manage");
+    }
+
+    private void markReadForAssignedAgent(ConversationRow conversation, Long adminUserId) {
+        if (!adminUserId.equals(conversation.assignedAdminUserId())) {
+            return;
+        }
+        jdbcClient.sql("""
+                        update customer_service_conversation
+                        set admin_unread_count = 0, updated_at = :now
+                        where id = :conversationId
+                          and assigned_admin_user_id = :adminUserId
+                        """)
+                .param("now", LocalDateTime.now())
+                .param("conversationId", conversation.id())
+                .param("adminUserId", adminUserId)
+                .update();
+    }
+
     private MessageResponse insertSystemMessage(Long conversationId, String content) {
         return insertMessage(requireConversation(conversationId), "SYSTEM", null, "SYSTEM", content, null, null);
     }
@@ -1714,9 +1956,16 @@ public class CustomerServiceService {
         if (key == null) {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_STATE_CONFLICT);
         }
-        return messages(conversation.id(), key.longValue() - 1).stream()
-                .filter(message -> message.messageId().equals(key.longValue()))
-                .findFirst()
+        Function<StorageObjectLocation, PrivateObjectAccess> imageAccessResolver =
+                storageService.privateImageAccessResolver();
+        return jdbcClient.sql(messageSelect() + """
+                        where m.conversation_id = :conversationId
+                          and m.id = :messageId
+                        """)
+                .param("conversationId", conversation.id())
+                .param("messageId", key.longValue())
+                .query((rs, rowNum) -> mapMessage(rs, rowNum, imageAccessResolver))
+                .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_SERVICE_STATE_CONFLICT));
     }
 
@@ -2011,6 +2260,17 @@ public class CustomerServiceService {
         return workStatus;
     }
 
+    private String normalizeConversationKeyword(String rawKeyword) {
+        if (!StringUtils.hasText(rawKeyword)) {
+            return "";
+        }
+        String keyword = rawKeyword.trim();
+        if (keyword.length() > 100) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return keyword;
+    }
+
     private String normalizeTransferReason(String rawReasonCode) {
         String reasonCode = StringUtils.hasText(rawReasonCode) ? rawReasonCode.trim().toUpperCase() : "";
         if (reasonCode.isEmpty() || reasonCode.length() > 40) {
@@ -2214,7 +2474,8 @@ public class CustomerServiceService {
 
     private String summarySelect() {
         return """
-                select c.id, c.app_user_id, app.nickname as user_nickname, c.status,
+                select c.id, c.app_user_id, app.nickname as user_nickname,
+                       app.avatar_url as user_avatar, c.status,
                        c.assigned_admin_user_id, admin.display_name as assigned_admin_display_name,
                        (select case m.message_type
                                   when 'IMAGE' then '[图片]'
@@ -2224,7 +2485,11 @@ public class CustomerServiceService {
                                 end
                         from customer_service_message m
                         where m.conversation_id = c.id
-                        order by m.id desc
+                          and m.consultation_no = c.consultation_no
+                          and (c.status <> 'WAITING' or m.sender_type = 'APP_USER')
+                        order by
+                          case when c.status = 'WAITING' then m.id end asc,
+                          case when c.status <> 'WAITING' then m.id end desc
                         limit 1) as last_message_preview,
                        c.last_message_at, c.app_unread_count, c.admin_unread_count,
                        c.claimed_at, c.closed_at, c.created_at, c.updated_at,
@@ -2260,6 +2525,7 @@ public class CustomerServiceService {
                 rs.getLong("id"),
                 appUserId,
                 rs.getString("user_nickname"),
+                rs.getString("user_avatar"),
                 rs.getString("status"),
                 nullableLong(rs, "assigned_admin_user_id"),
                 rs.getString("assigned_admin_display_name"),

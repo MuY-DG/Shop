@@ -9,6 +9,7 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentProfi
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentWorkStatusRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationDetailResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationSummaryResponse;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationWorkspaceResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ImageMessageResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedOrderResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedProductResponse;
@@ -63,26 +64,49 @@ public class AdminCustomerServiceController {
     @GetMapping("/conversations")
     @PreAuthorize("hasAuthority('customer-service:conversation:read')")
     public ApiResponse<PageResult<ConversationSummaryResponse>> conversations(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
             String status,
+            String keyword,
             Long current,
             Long size
     ) {
-        return ApiResponse.success(customerServiceService.adminPage(status, current, size));
+        return ApiResponse.success(
+                customerServiceService.adminPage(principal, status, keyword, current, size)
+        );
+    }
+
+    @GetMapping("/conversations/workspace")
+    @PreAuthorize("hasAuthority('customer-service:conversation:read')")
+    public ApiResponse<ConversationWorkspaceResponse> workspace(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            String keyword
+    ) {
+        return ApiResponse.success(customerServiceService.adminWorkspace(principal, keyword));
     }
 
     @GetMapping("/conversations/{conversationId}")
     @PreAuthorize("hasAuthority('customer-service:conversation:read')")
-    public ApiResponse<ConversationDetailResponse> detail(@PathVariable Long conversationId) {
-        return ApiResponse.success(customerServiceService.adminDetail(conversationId));
+    public ApiResponse<ConversationDetailResponse> detail(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long conversationId
+    ) {
+        return ApiResponse.success(customerServiceService.adminDetail(principal, conversationId));
     }
 
     @GetMapping("/conversations/{conversationId}/messages")
     @PreAuthorize("hasAuthority('customer-service:conversation:read')")
     public ApiResponse<List<MessageResponse>> messages(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long conversationId,
-            @RequestParam(required = false) Long afterId
+            @RequestParam(required = false) Long afterId,
+            @RequestParam(required = false) Long beforeId,
+            @RequestParam(required = false) Integer limit
     ) {
-        return ApiResponse.success(customerServiceService.messagesForAdmin(conversationId, afterId));
+        return ApiResponse.success(
+                customerServiceService.messagesForAdmin(
+                        principal, conversationId, afterId, beforeId, limit
+                )
+        );
     }
 
     @PostMapping("/conversations/{conversationId}/claim")
@@ -170,8 +194,11 @@ public class AdminCustomerServiceController {
 
     @GetMapping("/conversations/{conversationId}/order-candidates")
     @PreAuthorize("hasAnyAuthority('customer-service:conversation:read', 'customer-service:order:link')")
-    public ApiResponse<List<LinkedOrderResponse>> orderCandidates(@PathVariable Long conversationId) {
-        return ApiResponse.success(customerServiceService.orderCandidates(conversationId));
+    public ApiResponse<List<LinkedOrderResponse>> orderCandidates(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long conversationId
+    ) {
+        return ApiResponse.success(customerServiceService.orderCandidates(principal, conversationId));
     }
 
     @PostMapping("/conversations/{conversationId}/orders/{orderId}")
@@ -187,10 +214,13 @@ public class AdminCustomerServiceController {
     @GetMapping("/conversations/{conversationId}/product-candidates")
     @PreAuthorize("hasAnyAuthority('customer-service:conversation:read', 'customer-service:product:send')")
     public ApiResponse<List<LinkedProductResponse>> productCandidates(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long conversationId,
             @RequestParam(required = false) String keyword
     ) {
-        return ApiResponse.success(customerServiceService.productCandidates(conversationId, keyword));
+        return ApiResponse.success(
+                customerServiceService.productCandidates(principal, conversationId, keyword)
+        );
     }
 
     @PostMapping("/conversations/{conversationId}/products/{productId}")

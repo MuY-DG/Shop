@@ -41,6 +41,15 @@ public class RealtimeSessionHub {
                 && connection.principal().permissions().contains(permission));
     }
 
+    public void sendToAdminsMatching(
+            String type,
+            Object data,
+            Predicate<RealtimeConnectionPrincipal> audience
+    ) {
+        send(type, data, connection -> connection.principal().kind() == TokenKind.ADMIN
+                && audience.test(connection.principal()));
+    }
+
     public void sendToAdminUser(Long adminUserId, String type, Object data) {
         send(type, data, connection -> connection.principal().kind() == TokenKind.ADMIN
                 && adminUserId.equals(connection.principal().subjectId()));

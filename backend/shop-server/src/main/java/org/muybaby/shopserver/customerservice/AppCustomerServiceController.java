@@ -60,9 +60,13 @@ public class AppCustomerServiceController {
     @GetMapping("/messages")
     public ApiResponse<List<MessageResponse>> messages(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
-            @RequestParam(required = false) Long afterId
+            @RequestParam(required = false) Long afterId,
+            @RequestParam(required = false) Long beforeId,
+            @RequestParam(required = false) Integer limit
     ) {
-        return ApiResponse.success(customerServiceService.messagesForApp(principal, afterId));
+        return ApiResponse.success(
+                customerServiceService.messagesForApp(principal, afterId, beforeId, limit)
+        );
     }
 
     @PostMapping("/messages")

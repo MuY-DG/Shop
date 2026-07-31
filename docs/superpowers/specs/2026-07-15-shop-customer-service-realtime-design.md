@@ -46,6 +46,15 @@
 - 普通转接接受前负责人不变；拒绝或超时不影响当前接待。管理员可强制转给在线但忙碌或满负荷客服，不能转给离线客服。
 - 认领、转接、退回和关闭都使用带当前状态/负责人条件的更新；更新行数不为 1 时返回状态冲突，避免重复认领和越权操作。
 
+### 可见性与加载边界
+
+- 普通客服都能看到 `WAITING` 队列中的用户头像、昵称和本次咨询的第一条用户消息，但不能在认领前读取会话详情、完整消息、订单、商品或图片。
+- 会话进入 `ACTIVE` 后，只对当前负责人可读写；其他普通客服的列表、详情接口和实时事件都不再包含该会话。
+- 转接申请只向源客服和目标客服发送。目标客服接受前只能看到转接摘要，接受成功后才获得会话详情及本次咨询消息的读取权限。
+- 拥有 `customer-service:agent:manage` 的管理员可以监督全部会话，但查看其他客服的会话不会清除负责人的未读数。
+- 消息接口只返回当前 `consultation_no` 的消息。首次加载取最近 50 条，`beforeId` 向前分页，`afterId` 用于实时增量同步，单次最多 100 条。
+- 会话工作台通过一个分组接口同时取得待接入、接待中和最近结束三组数据，搜索和状态作用域都在服务端执行。
+
 ### 订单关联
 
 会话与订单使用多对多关联表。只允许关联 `shop_order.user_id` 等于会话用户的订单。用户可以从订单详情进入客服并携带 `orderId`；客服可以从该用户的候选订单中选择关联。
@@ -90,7 +99,7 @@
 
 - `GET /app/customer-service/conversation`
 - `POST /app/customer-service/conversation/open`
-- `GET /app/customer-service/conversation/messages?afterId=`
+- `GET /app/customer-service/conversation/messages?afterId=&beforeId=&limit=`
 - `POST /app/customer-service/conversation/messages`
 - `POST /app/customer-service/conversation/orders/{orderId}`
 - `POST /app/realtime/tickets`
@@ -98,8 +107,9 @@
 ### 管理后台
 
 - `GET /admin/customer-service/conversations`
+- `GET /admin/customer-service/conversations/workspace?keyword=`
 - `GET /admin/customer-service/conversations/{conversationId}`
-- `GET /admin/customer-service/conversations/{conversationId}/messages?afterId=`
+- `GET /admin/customer-service/conversations/{conversationId}/messages?afterId=&beforeId=&limit=`
 - `POST /admin/customer-service/conversations/{conversationId}/claim`
 - `POST /admin/customer-service/conversations/{conversationId}/transfer-requests`
 - `GET /admin/customer-service/transfer-requests/pending`
@@ -150,7 +160,8 @@
 ### 管理后台
 
 - 全局实时客户端支持多订阅者、心跳、断线重新申请票据和指数退避重连。
-- 客服页收到客服事件后合并刷新队列、当前会话和未读数。
+- 客服页按“待接入 / 接待中 / 最近结束”纵向展开；待接入使用头像卡片，悬浮后直接接入，接入成功后移入普通会话列表。
+- 客服页收到消息事件后只增量拉取当前会话的新消息；状态变化时重新加载详情和分组列表。
 - 订单页收到 `ORDER_PAID` 后弹出支付通知，并自动刷新列表与状态数量。
 - 实时连接不可用时，客服页 15 秒轮询，订单页保留手动刷新。
 

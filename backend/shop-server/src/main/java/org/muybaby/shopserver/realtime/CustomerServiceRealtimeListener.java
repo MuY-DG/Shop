@@ -2,6 +2,7 @@ package org.muybaby.shopserver.realtime;
 
 import org.muybaby.shopserver.customerservice.CustomerServiceChangedEvent;
 import org.muybaby.shopserver.customerservice.CustomerServiceTransferChangedEvent;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -13,9 +14,14 @@ import java.util.Map;
 public class CustomerServiceRealtimeListener {
 
     private final RealtimeSessionHub realtimeSessionHub;
+    private final JdbcClient jdbcClient;
 
-    public CustomerServiceRealtimeListener(RealtimeSessionHub realtimeSessionHub) {
+    public CustomerServiceRealtimeListener(
+            RealtimeSessionHub realtimeSessionHub,
+            JdbcClient jdbcClient
+    ) {
         this.realtimeSessionHub = realtimeSessionHub;
+        this.jdbcClient = jdbcClient;
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -28,11 +34,39 @@ public class CustomerServiceRealtimeListener {
         realtimeSessionHub.sendToAppUser(
                 event.appUserId(), "CUSTOMER_SERVICE_CONVERSATION_UPDATED", data
         );
-        realtimeSessionHub.sendToAdminsWithPermission(
-                "customer-service:conversation:read",
+        ConversationAudience audience = jdbcClient.sql("""
+                        select status, assigned_admin_user_id
+                        from customer_service_conversation
+                        where id = :conversationId
+                        """)
+                .param("conversationId", event.conversationId())
+                .query((rs, rowNum) -> new ConversationAudience(
+                        rs.getString("status"),
+                        rs.getObject("assigned_admin_user_id", Long.class)
+                ))
+                .optional()
+                .orElse(null);
+        if (audience == null) {
+            return;
+        }
+        realtimeSessionHub.sendToAdminsMatching(
                 "CUSTOMER_SERVICE_CONVERSATION_UPDATED",
-                data
+                data,
+                principal -> principal.permissions().contains("customer-service:conversation:read")
+                        && (
+                            "WAITING".equals(audience.status())
+                            || principal.subjectId().equals(audience.assignedAdminUserId())
+                            || principal.permissions().contains("customer-service:agent:manage")
+                        )
         );
+        if ("CONVERSATION_CLAIMED".equals(event.changeType())
+                || "CONVERSATION_AUTO_ASSIGNED".equals(event.changeType())) {
+            realtimeSessionHub.sendToAdminsWithPermission(
+                    "customer-service:conversation:read",
+                    "CUSTOMER_SERVICE_QUEUE_UPDATED",
+                    Map.of("conversationId", event.conversationId())
+            );
+        }
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -48,5 +82,8 @@ public class CustomerServiceRealtimeListener {
         if (!event.fromAdminUserId().equals(event.toAdminUserId())) {
             realtimeSessionHub.sendToAdminUser(event.toAdminUserId(), type, data);
         }
+    }
+
+    private record ConversationAudience(String status, Long assignedAdminUserId) {
     }
 }

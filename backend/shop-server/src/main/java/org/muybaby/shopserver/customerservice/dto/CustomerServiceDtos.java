@@ -109,6 +109,7 @@ public final class CustomerServiceDtos {
             Long conversationId,
             @JsonStringId Long appUserId,
             String userNickname,
+            String userAvatar,
             String status,
             Long assignedAdminUserId,
             String assignedAdminDisplayName,
@@ -129,6 +130,7 @@ public final class CustomerServiceDtos {
             Long conversationId,
             @JsonStringId Long appUserId,
             String userNickname,
+            String userAvatar,
             String status,
             Long assignedAdminUserId,
             String assignedAdminDisplayName,
@@ -145,6 +147,16 @@ public final class CustomerServiceDtos {
             List<MessageResponse> messages,
             List<LinkedOrderResponse> linkedOrders,
             List<LinkedProductResponse> linkedProducts
+    ) {
+    }
+
+    public record ConversationWorkspaceResponse(
+            List<ConversationSummaryResponse> waiting,
+            long waitingTotal,
+            List<ConversationSummaryResponse> active,
+            long activeTotal,
+            List<ConversationSummaryResponse> closed,
+            long closedTotal
     ) {
     }
 
