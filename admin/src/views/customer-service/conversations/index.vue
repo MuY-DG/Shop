@@ -2,25 +2,6 @@
   <div class="customer-service-page art-full-height">
     <div class="workspace">
       <ElCard class="conversation-panel" shadow="never" body-class="panel-body">
-        <template #header>
-          <div class="conversation-heading">
-            <div>
-              <strong class="conversation-heading__title">会话工作台</strong>
-              <ElBadge :value="pendingTransfers.length" :hidden="pendingTransfers.length === 0">
-                <button type="button" class="transfer-entry" @click="pendingDialogVisible = true">
-                  待确认转接
-                </button>
-              </ElBadge>
-            </div>
-            <button type="button" class="icon-button" title="刷新" @click="refreshAll">
-              <RefreshCw :size="16" />
-            </button>
-          </div>
-          <div class="conversation-search">
-            <Search :size="15" />
-            <input v-model="conversationKeyword" placeholder="搜索用户或消息" />
-          </div>
-        </template>
         <div v-loading="listLoading" class="conversation-groups">
           <details class="conversation-group waiting-group" open>
             <summary>
@@ -34,25 +15,32 @@
                 :key="conversation.conversationId"
                 class="waiting-user"
               >
-                <button
-                  v-auth="'customer-service:conversation:claim'"
-                  type="button"
-                  class="waiting-user__avatar"
-                  :disabled="!agentState?.canReceive || claimingConversationId !== null"
-                  :aria-label="`接入 ${conversation.userNickname || `用户 ${conversation.appUserId}`}`"
-                  @click="handleClaim(conversation.conversationId)"
+                <ElTooltip
+                  :content="conversation.lastMessagePreview || '用户正在等待接入'"
+                  placement="bottom"
+                  effect="light"
+                  popper-class="waiting-message-tooltip"
                 >
-                  <img v-if="conversation.userAvatar" :src="conversation.userAvatar" alt="" />
-                  <UserRound v-else :size="23" />
-                  <span class="waiting-user__claim">
-                    {{ claimingConversationId === conversation.conversationId ? '接入中' : '接入' }}
+                  <span class="waiting-user__trigger">
+                    <button
+                      v-auth="'customer-service:conversation:claim'"
+                      type="button"
+                      class="waiting-user__avatar"
+                      :disabled="!agentState?.canReceive || claimingConversationId !== null"
+                      :aria-label="`接入 ${conversation.userNickname || `用户 ${conversation.appUserId}`}`"
+                      @click="handleClaim(conversation.conversationId)"
+                    >
+                      <img v-if="conversation.userAvatar" :src="conversation.userAvatar" alt="" />
+                      <UserRound v-else :size="18" />
+                      <span class="waiting-user__claim">
+                        {{
+                          claimingConversationId === conversation.conversationId ? '接入中' : '接入'
+                        }}
+                      </span>
+                      <i v-if="conversation.adminUnreadCount > 0" />
+                    </button>
                   </span>
-                  <i v-if="conversation.adminUnreadCount > 0" />
-                </button>
-                <strong>{{ conversation.userNickname || `用户 ${conversation.appUserId}` }}</strong>
-                <p :title="conversation.lastMessagePreview || ''">
-                  {{ conversation.lastMessagePreview || '用户正在等待接入' }}
-                </p>
+                </ElTooltip>
               </article>
             </div>
             <div v-else class="group-empty">暂时没有等待接入的用户</div>
@@ -83,20 +71,12 @@
                     <strong>{{
                       conversation.userNickname || `用户 ${conversation.appUserId}`
                     }}</strong>
-                    <time>{{
-                      shortTime(conversation.lastMessageAt || conversation.createdAt)
+                    <time v-if="conversation.lastMessageAt">{{
+                      shortTime(conversation.lastMessageAt)
                     }}</time>
                   </div>
                   <div class="conversation-item__message">
                     {{ conversation.lastMessagePreview || '已接入，等待回复' }}
-                  </div>
-                  <div class="conversation-item__meta">
-                    <span>{{ conversation.assignedAdminDisplayName || '当前客服' }}</span>
-                    <ElBadge
-                      v-if="conversation.adminUnreadCount > 0"
-                      :value="conversation.adminUnreadCount"
-                      :max="99"
-                    />
                   </div>
                 </div>
               </button>
@@ -141,7 +121,12 @@
         </div>
       </ElCard>
 
-      <ElCard class="chat-panel" shadow="never" body-class="chat-panel__body">
+      <ElCard
+        v-if="selectedConversationId !== null"
+        class="chat-panel"
+        shadow="never"
+        body-class="chat-panel__body"
+      >
         <template #header>
           <div class="panel-header chat-header">
             <div class="chat-user">
@@ -149,26 +134,17 @@
                 <img v-if="currentDetail?.userAvatar" :src="currentDetail.userAvatar" alt="" />
                 <UserRound v-else :size="20" />
               </span>
-              <div>
-                <strong>{{ currentDetail?.userNickname || '请选择一个会话' }}</strong>
-                <span v-if="currentDetail" class="chat-header__status">
-                  {{ statusConfig[currentDetail.status].label }}
-                  <template v-if="currentDetail.assignedAdminDisplayName">
-                    · {{ currentDetail.assignedAdminDisplayName }}
-                  </template>
-                </span>
-              </div>
+              <strong>{{ currentDetail?.userNickname || '正在加载会话' }}</strong>
             </div>
             <div v-if="currentDetail" class="chat-header__actions">
               <ElButton
                 v-if="currentDetail.status === 'WAITING'"
                 v-auth="'customer-service:conversation:claim'"
-                type="primary"
                 :disabled="!agentState?.canReceive"
                 :loading="actionLoading"
                 @click="handleClaim()"
               >
-                认领会话
+                <UserCheck :size="14" />认领会话
               </ElButton>
               <template v-else-if="currentDetail.status === 'ACTIVE'">
                 <ElButton
@@ -177,14 +153,14 @@
                   :loading="actionLoading"
                   @click="openTransferDialog"
                 >
-                  转接
+                  <ArrowRightLeft :size="14" />转接
                 </ElButton>
                 <ElButton
                   v-else-if="hasAgentManage"
                   :loading="actionLoading"
                   @click="openTransferDialog"
                 >
-                  管理转接
+                  <ArrowRightLeft :size="14" />管理转接
                 </ElButton>
                 <ElButton
                   v-if="isCurrentAgent"
@@ -192,24 +168,22 @@
                   :loading="actionLoading"
                   @click="handleRelease"
                 >
-                  退回待接待
+                  <RotateCcw :size="14" />退回待接待
                 </ElButton>
                 <ElButton
                   v-else-if="hasAgentManage"
                   :loading="actionLoading"
                   @click="handleRelease"
                 >
-                  退回待接待
+                  <RotateCcw :size="14" />退回待接待
                 </ElButton>
                 <ElButton
                   v-if="isCurrentAgent"
                   v-auth="'customer-service:conversation:close'"
-                  type="danger"
-                  plain
                   :loading="actionLoading"
                   @click="handleClose"
                 >
-                  结束会话
+                  <CircleX :size="14" />结束会话
                 </ElButton>
               </template>
             </div>
@@ -227,101 +201,133 @@
                 加载更早的消息
               </ElButton>
             </div>
-            <div
-              v-for="message in currentDetail.messages"
+            <template
+              v-for="(message, messageIndex) in currentDetail.messages"
               :key="message.messageId"
-              class="message-row"
-              :class="`is-${message.senderType.toLowerCase()}`"
             >
-              <div v-if="message.senderType !== 'SYSTEM'" class="message-sender">
-                <span class="message-avatar">
-                  <img v-if="message.senderAvatar" :src="message.senderAvatar" alt="" />
-                  <UserRound v-else :size="13" />
-                </span>
-                {{ message.senderName }} · {{ formatDateTime(message.createdAt) }}
+              <div
+                v-if="shouldShowMessageTime(currentDetail.messages, messageIndex)"
+                class="message-time"
+              >
+                {{ formatMessageTime(message.createdAt) }}
               </div>
-              <div v-if="message.senderType === 'SYSTEM'" class="system-message">
-                {{ message.content }}
-              </div>
-              <template v-else-if="message.messageType === 'IMAGE'">
-                <div
-                  :ref="(target) => registerImageTarget(message.messageId, target)"
-                  class="message-image-target"
-                  role="button"
-                  tabindex="0"
-                  aria-label="查看原图"
-                  @click="handleImagePreview(message)"
-                  @keydown.enter.prevent="handleImagePreview(message)"
-                  @keydown.space.prevent="handleImagePreview(message)"
-                >
-                  <ElImage
-                    v-if="imageUrls[message.messageId]"
-                    class="message-image"
-                    :class="{ 'is-uploading': isLocalImageUploading(message) }"
-                    :src="imageUrls[message.messageId]"
-                    fit="cover"
-                    @load="handleImageLoad(message)"
-                    @error="handleImageError(message)"
-                  >
-                    <template #error><div class="message-image__error">图片加载失败</div></template>
-                  </ElImage>
-                  <div v-else class="message-image message-image__status">
-                    {{ imageLoadStates[message.messageId] === 'error' ? '图片加载失败' : '' }}
-                  </div>
+              <div class="message-row" :class="`is-${message.senderType.toLowerCase()}`">
+                <div v-if="message.senderType === 'SYSTEM'" class="system-message">
+                  {{ message.content }}
                 </div>
-              </template>
-              <button
-                v-else-if="message.messageType === 'ORDER_CARD' && message.order"
-                type="button"
-                class="message-card"
-                @click="openOrder(message.order.orderNo)"
-              >
-                <img
-                  v-if="message.order.primaryProductImage"
-                  :src="message.order.primaryProductImage"
-                />
-                <span>
-                  <strong>{{ message.order.orderNo }}</strong>
-                  <small>{{ message.order.primaryProductTitle || '订单商品' }}</small>
-                  <small
-                    >{{ orderStatusLabel(message.order.status) }} ·
-                    {{ formatMoney(message.order.payableAmountCent) }}</small
+                <template v-else-if="message.messageType === 'IMAGE'">
+                  <div
+                    :ref="(target) => registerImageTarget(message.messageId, target)"
+                    class="message-image-target"
+                    role="button"
+                    tabindex="0"
+                    aria-label="查看原图"
+                    @click="handleImagePreview(message)"
+                    @keydown.enter.prevent="handleImagePreview(message)"
+                    @keydown.space.prevent="handleImagePreview(message)"
                   >
-                </span>
-              </button>
-              <button
-                v-else-if="message.messageType === 'PRODUCT_CARD' && message.product"
-                type="button"
-                class="message-card"
-                @click="openProduct(message.product.productId)"
-              >
-                <img v-if="message.product.image" :src="message.product.image" />
-                <span>
-                  <strong>{{ message.product.title }}</strong>
-                  <small>{{ productPrice(message.product) }}</small>
-                </span>
-              </button>
-              <div v-else class="message-delivery">
+                    <ElImage
+                      v-if="imageUrls[message.messageId]"
+                      class="message-image"
+                      :class="{ 'is-uploading': isLocalImageUploading(message) }"
+                      :src="imageUrls[message.messageId]"
+                      fit="cover"
+                      @load="handleImageLoad(message)"
+                      @error="handleImageError(message)"
+                    >
+                      <template #error
+                        ><div class="message-image__error">图片加载失败</div></template
+                      >
+                    </ElImage>
+                    <div v-else class="message-image message-image__status">
+                      {{ imageLoadStates[message.messageId] === 'error' ? '图片加载失败' : '' }}
+                    </div>
+                  </div>
+                </template>
                 <button
-                  v-if="isLocalTextSendFailed(message)"
+                  v-else-if="message.messageType === 'ORDER_CARD' && message.order"
                   type="button"
-                  class="message-send-error"
-                  title="发送失败，点击重试"
-                  aria-label="发送失败，点击重试"
-                  @click="retryTextMessage(message)"
+                  class="message-card"
+                  @click="openOrder(message.order.orderNo)"
                 >
-                  <CircleAlert :size="17" />
+                  <img
+                    v-if="message.order.primaryProductImage"
+                    :src="message.order.primaryProductImage"
+                  />
+                  <span>
+                    <strong>{{ message.order.orderNo }}</strong>
+                    <small>{{ message.order.primaryProductTitle || '订单商品' }}</small>
+                    <small
+                      >{{ orderStatusLabel(message.order.status) }} ·
+                      {{ formatMoney(message.order.payableAmountCent) }}</small
+                    >
+                  </span>
                 </button>
-                <div class="message-bubble">{{ message.content }}</div>
+                <button
+                  v-else-if="message.messageType === 'PRODUCT_CARD' && message.product"
+                  type="button"
+                  class="message-card"
+                  @click="openProduct(message.product.productId)"
+                >
+                  <img v-if="message.product.image" :src="message.product.image" />
+                  <span>
+                    <strong>{{ message.product.title }}</strong>
+                    <small>{{ productPrice(message.product) }}</small>
+                  </span>
+                </button>
+                <div v-else class="message-delivery">
+                  <button
+                    v-if="isLocalTextSendFailed(message)"
+                    type="button"
+                    class="message-send-error"
+                    title="发送失败，点击重试"
+                    aria-label="发送失败，点击重试"
+                    @click="retryTextMessage(message)"
+                  >
+                    <CircleAlert :size="17" />
+                  </button>
+                  <div class="message-bubble">{{ message.content }}</div>
+                </div>
               </div>
-            </div>
+            </template>
             <ElEmpty
               v-if="currentDetail.messages.length === 0"
               description="暂无消息，认领后即可开始回复"
               :image-size="72"
             />
           </div>
-          <ElEmpty v-else-if="!detailLoading" description="从左侧选择一个会话" />
+          <ElEmpty v-else-if="!detailLoading" description="暂无会话内容" />
+        </div>
+
+        <div class="chat-tools">
+          <input
+            ref="imageInputRef"
+            class="image-input"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
+            @change="handleImageSelected"
+          />
+          <ElButton
+            v-auth="'customer-service:message:send'"
+            :disabled="!uploadingImage && !canSend"
+            :type="uploadingImage ? 'danger' : 'default'"
+            @click="uploadingImage ? cancelImageUpload() : openImagePicker()"
+            ><ImageIcon :size="15" />{{
+              uploadingImage ? `取消上传 ${imageUploadPercent}%` : '图片'
+            }}</ElButton
+          >
+          <ElButton
+            v-auth="'customer-service:order:link'"
+            :disabled="!canSend"
+            @click="openOrderDialog"
+            ><ShoppingBag :size="15" />订单</ElButton
+          >
+          <ElButton
+            v-auth="'customer-service:product:send'"
+            :disabled="!canSend"
+            @click="openProductDialog"
+            ><PackageSearch :size="15" />商品</ElButton
+          >
         </div>
 
         <div class="composer">
@@ -338,49 +344,17 @@
             @keydown.meta.enter.prevent="handleSend"
           />
           <div class="composer__footer">
-            <div class="composer__tools">
-              <input
-                ref="imageInputRef"
-                class="image-input"
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
-                @change="handleImageSelected"
-              />
-              <ElButton
-                v-auth="'customer-service:message:send'"
-                :disabled="!uploadingImage && !canSend"
-                :type="uploadingImage ? 'danger' : 'default'"
-                @click="uploadingImage ? cancelImageUpload() : openImagePicker()"
-                ><ImageIcon :size="15" />{{
-                  uploadingImage ? `取消上传 ${imageUploadPercent}%` : '图片'
-                }}</ElButton
-              >
-              <ElButton
-                v-auth="'customer-service:order:link'"
-                :disabled="!canSend"
-                @click="openOrderDialog"
-                ><ShoppingBag :size="15" />订单</ElButton
-              >
-              <ElButton
-                v-auth="'customer-service:product:send'"
-                :disabled="!canSend"
-                @click="openProductDialog"
-                ><PackageSearch :size="15" />商品</ElButton
-              >
-              <span>Ctrl / ⌘ + Enter 发送</span>
-            </div>
-            <ElButton
-              v-auth="'customer-service:message:send'"
-              type="primary"
-              :disabled="!canSend || !messageDraft.trim()"
-              @click="handleSend"
-              ><Send :size="15" />发送</ElButton
-            >
+            <span class="composer__shortcut">Ctrl / ⌘ + Enter 发送</span>
           </div>
         </div>
       </ElCard>
 
-      <ElCard class="context-panel" shadow="never" body-class="context-body">
+      <ElCard
+        v-if="selectedConversationId !== null"
+        class="context-panel"
+        shadow="never"
+        body-class="context-body"
+      >
         <template #header>
           <div class="panel-header">
             <span>基础信息</span>
@@ -463,6 +437,7 @@
         </template>
         <ElEmpty v-else description="暂无用户信息" />
       </ElCard>
+      <div v-else class="workspace-empty">暂无会话内容</div>
     </div>
 
     <ElDialog v-model="transferDialogVisible" title="转接会话" width="520px">
@@ -632,20 +607,20 @@
     onBeforeUnmount,
     onMounted,
     ref,
-    watch,
     type ComponentPublicInstance
   } from 'vue'
   import { ElLoading, ElMessageBox } from 'element-plus'
   import {
+    ArrowRightLeft,
     ChevronDown,
     CircleAlert,
+    CircleX,
     Image as ImageIcon,
     LoaderCircle,
     PackageSearch,
-    RefreshCw,
-    Search,
-    Send,
+    RotateCcw,
     ShoppingBag,
+    UserCheck,
     UserRound
   } from '@lucide/vue'
   import { useRouter } from 'vue-router'
@@ -704,7 +679,6 @@
   const selectedConversationId = ref<number | null>(null)
   const currentDetail = ref<Api.CustomerService.ConversationDetail | null>(null)
   const listLoading = ref(false)
-  const conversationKeyword = ref('')
   const detailLoading = ref(false)
   const loadingEarlierMessages = ref(false)
   const hasEarlierMessages = ref(false)
@@ -761,7 +735,7 @@
   let listRequestSequence = 0
   let conversationListLoaded = false
   let pollTimer: ReturnType<typeof setInterval> | null = null
-  let searchTimer: ReturnType<typeof setTimeout> | null = null
+  let displayClockTimer: ReturnType<typeof setInterval> | null = null
   let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let unsubscribeRealtime: (() => void) | null = null
   let unsubscribeRealtimeState: (() => void) | null = null
@@ -775,16 +749,10 @@
   const pendingRealtimeFullRefresh = new Set<number>()
   const locallyHandledMessageIds = new Map<number, number>()
   const localMutationCounts = new Map<number, number>()
-
-  const statusConfig: Record<
-    Api.CustomerService.ConversationStatus,
-    { label: string; type: 'warning' | 'success' | 'info' }
-  > = {
-    DRAFT: { label: '草稿', type: 'info' },
-    WAITING: { label: '待接待', type: 'warning' },
-    ACTIVE: { label: '接待中', type: 'success' },
-    CLOSED: { label: '已结束', type: 'info' }
-  }
+  const displayNow = ref(Date.now())
+  const MESSAGE_TIME_GAP_MS = 5 * 60 * 1000
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000
+  const weekdayLabels = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
 
   const orderStatusLabels: Record<Api.Order.OrderStatus, string> = {
     CREATED: '待付款',
@@ -836,14 +804,55 @@
     if (!value) return '-'
     return value.replace('T', ' ').slice(0, 19)
   }
+  const calendarDayOrdinal = (date: Date) =>
+    Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / ONE_DAY_MS)
   const shortTime = (value?: string | null) => {
     if (!value) return ''
     const date = new Date(value)
-    const today = new Date()
-    if (date.toDateString() === today.toDateString()) {
-      return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    if (Number.isNaN(date.getTime())) return ''
+    const now = new Date(displayNow.value)
+    const elapsed = now.getTime() - date.getTime()
+    if (Math.abs(elapsed) < 60 * 1000) return '刚刚'
+    if (date.toDateString() === now.toDateString()) {
+      return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+    }
+    if (calendarDayOrdinal(now) - calendarDayOrdinal(date) === 1) return '昨天'
+    if (date.getFullYear() !== now.getFullYear()) {
+      return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`
     }
     return `${date.getMonth() + 1}/${date.getDate()}`
+  }
+  const formatPeriodClock = (date: Date) => {
+    const period = date.getHours() < 12 ? '上午' : '下午'
+    const hour = date.getHours() % 12 || 12
+    const minute = String(date.getMinutes()).padStart(2, '0')
+    return `${period} ${hour}:${minute}`
+  }
+  const formatMessageTime = (value?: string | null) => {
+    if (!value) return ''
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    const now = new Date(displayNow.value)
+    const dayDifference = calendarDayOrdinal(now) - calendarDayOrdinal(date)
+    const clock = formatPeriodClock(date)
+
+    if (dayDifference <= 0) return clock
+    if (dayDifference === 1) return `昨天 ${clock}`
+    if (dayDifference < 7) return `${weekdayLabels[date.getDay()]} ${clock}`
+    return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${clock}`
+  }
+  const shouldShowMessageTime = (messages: Api.CustomerService.Message[], messageIndex: number) => {
+    const currentTime = new Date(messages[messageIndex]?.createdAt || '').getTime()
+    if (Number.isNaN(currentTime)) return false
+    if (messageIndex === 0) return true
+    const previousTime = new Date(messages[messageIndex - 1]?.createdAt || '').getTime()
+    if (Number.isNaN(previousTime)) return false
+    const currentDate = new Date(currentTime)
+    const previousDate = new Date(previousTime)
+    return (
+      calendarDayOrdinal(currentDate) !== calendarDayOrdinal(previousDate) ||
+      currentTime - previousTime >= MESSAGE_TIME_GAP_MS
+    )
   }
   const formatMoney = (value: number) => `¥${(value / 100).toFixed(2)}`
   const orderStatusLabel = (status: Api.Order.OrderStatus) => orderStatusLabels[status] || status
@@ -1185,9 +1194,7 @@
     let firstConversationId: number | null = null
     if (!conversationListLoaded) listLoading.value = true
     try {
-      const workspace = await fetchCustomerServiceWorkspace(
-        conversationKeyword.value.trim() || undefined
-      )
+      const workspace = await fetchCustomerServiceWorkspace()
       if (requestId !== listRequestSequence) return
       conversationPage.value = {
         records: [...workspace.waiting, ...workspace.active, ...workspace.closed],
@@ -1375,14 +1382,6 @@
     ])
   }
 
-  watch(conversationKeyword, () => {
-    if (searchTimer) clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => {
-      searchTimer = null
-      void loadConversations()
-    }, 250)
-  })
-
   const handleClaim = async (conversationId?: number) => {
     const targetConversationId = conversationId || selectedConversationId.value
     if (!targetConversationId || claimingConversationId.value !== null) return
@@ -1484,8 +1483,7 @@
     const contentType = file.type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : file.type
     return (
       ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(extension || '') &&
-      (!contentType ||
-        ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(contentType))
+      (!contentType || ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(contentType))
     )
   }
 
@@ -1875,6 +1873,7 @@
   }
 
   const handleVisibilityChange = () => {
+    if (!document.hidden) displayNow.value = Date.now()
     if (!document.hidden && initialLoadComplete) void refreshAll()
   }
 
@@ -1971,6 +1970,9 @@
 
   onMounted(async () => {
     pageMounted = true
+    displayClockTimer = setInterval(() => {
+      displayNow.value = Date.now()
+    }, 30 * 1000)
     unsubscribeRealtimeState = realtimeClient.subscribeConnectionState(handleRealtimeState)
     unsubscribeRealtime = realtimeClient.subscribe(handleRealtimeEvent)
     await Promise.all([loadConversations(true), loadAgentState(), loadPendingTransfers()])
@@ -1987,7 +1989,8 @@
     unsubscribeRealtimeState?.()
     unsubscribeRealtime?.()
     stopFallbackPolling()
-    if (searchTimer) clearTimeout(searchTimer)
+    if (displayClockTimer) clearInterval(displayClockTimer)
+    displayClockTimer = null
     if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer)
     pendingRealtimeMessages.clear()
     pendingRealtimeFullRefresh.clear()
@@ -2130,8 +2133,7 @@
     box-shadow: inset 3px 0 #2563eb;
   }
 
-  .conversation-item__top,
-  .conversation-item__meta {
+  .conversation-item__top {
     display: flex;
     gap: 8px;
     align-items: center;
@@ -2139,6 +2141,10 @@
 
   .conversation-item__top strong {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .conversation-item__message {
@@ -2148,21 +2154,6 @@
     color: var(--el-text-color-regular);
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .conversation-item__context {
-    margin-bottom: 8px;
-    overflow: hidden;
-    font-size: 12px;
-    color: var(--el-color-primary);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .conversation-item__meta {
-    justify-content: space-between;
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
   }
 
   .chat-header {
@@ -2182,12 +2173,6 @@
     padding: 15px 17px;
     background: #fff;
     border-bottom-color: #edf0f4;
-  }
-
-  .chat-header__status {
-    margin-left: 10px;
-    font-size: 13px;
-    color: var(--el-text-color-secondary);
   }
 
   :deep(.chat-panel__body) {
@@ -2227,7 +2212,12 @@
     height: 100%;
     padding: 20px;
     overflow-y: auto;
+    scrollbar-width: none;
     background: radial-gradient(circle at 10% 5%, rgb(219 234 254 / 36%), transparent 25%), #f8fafc;
+  }
+
+  .message-list::-webkit-scrollbar {
+    display: none;
   }
 
   .message-history-loader {
@@ -2253,30 +2243,12 @@
     margin: 12px 0;
   }
 
-  .message-sender {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    margin-bottom: 5px;
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-  }
-
-  .message-avatar {
-    display: grid;
-    place-items: center;
-    width: 20px;
-    height: 20px;
-    overflow: hidden;
-    color: #64748b;
-    background: #e2e8f0;
-    border-radius: 6px;
-  }
-
-  .message-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  .message-time {
+    margin: 8px 0 14px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #aaa;
+    text-align: center;
   }
 
   .message-bubble {
@@ -2444,7 +2416,7 @@
     color: var(--el-text-color-secondary);
   }
 
-  .composer__tools,
+  .chat-tools,
   .product-search,
   .product-cell {
     display: flex;
@@ -2548,9 +2520,19 @@
   }
 
   .workspace {
-    grid-template-columns: minmax(310px, 360px) minmax(520px, 1fr) minmax(310px, 360px);
+    grid-template-columns: minmax(270px, 320px) minmax(520px, 1fr) minmax(310px, 360px);
     gap: 0;
     height: 100%;
+  }
+
+  .workspace-empty {
+    display: grid;
+    grid-column: 2 / -1;
+    place-items: center;
+    min-width: 0;
+    font-size: 14px;
+    color: #999;
+    background: #eee;
   }
 
   :deep(.conversation-panel),
@@ -2566,19 +2548,18 @@
     border-right: 0;
   }
 
-  :deep(.conversation-panel .el-card__header) {
-    min-height: 112px;
-    padding: 20px 20px 15px;
-  }
-
   :deep(.chat-panel .el-card__header),
   :deep(.context-panel .el-card__header) {
     min-height: 70px;
     padding: 16px 22px;
   }
 
+  :deep(.chat-panel .el-card__header) {
+    background: #f0f0f0;
+  }
+
   :deep(.conversation-panel .panel-body) {
-    height: calc(100% - 112px);
+    height: 100%;
   }
 
   :deep(.chat-panel .chat-panel__body),
@@ -2586,136 +2567,40 @@
     height: calc(100% - 70px);
   }
 
-  .conversation-heading,
-  .queue-title,
   .chat-user {
     display: flex;
     align-items: center;
   }
 
-  .conversation-heading {
-    justify-content: space-between;
-  }
-
-  .conversation-heading > div:first-child {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-  }
-
-  .conversation-heading__title {
-    font-size: 17px;
-    font-weight: 650;
-  }
-
-  .queue-title {
-    gap: 17px;
-  }
-
-  .queue-title strong {
-    font-size: 17px;
-    font-weight: 650;
-  }
-
-  .queue-title button,
-  .filter-tabs button,
-  .icon-button {
-    padding: 0;
-    color: #777;
-    cursor: pointer;
-    background: transparent;
-    border: 0;
-  }
-
-  .queue-title button.active {
-    color: #0abb60;
-  }
-
-  .transfer-entry {
-    font-size: 13px;
-  }
-
-  .icon-button {
-    display: grid;
-    place-items: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 6px;
-  }
-
-  .icon-button:hover {
-    color: #09b95e;
-    background: #f1f7f3;
-  }
-
-  .conversation-search {
-    box-sizing: border-box;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    height: 38px;
-    padding: 0 11px;
-    margin-top: 16px;
-    color: #999;
-    background: #f6f6f6;
-    border: 1px solid #ebebeb;
-    border-radius: 5px;
-  }
-
-  .conversation-search input {
-    flex: 1;
-    min-width: 0;
-    color: #333;
-    background: transparent;
-    border: 0;
-    outline: none;
-  }
-
-  .filter-tabs {
-    display: flex;
-    gap: 18px;
-    margin-top: 14px;
-  }
-
-  .filter-tabs button {
-    font-size: 12px;
-  }
-
-  .filter-tabs button.active {
-    font-weight: 650;
-    color: #0bbf62;
-  }
-
   .conversation-item {
     display: flex;
-    gap: 12px;
-    padding: 15px 18px;
+    gap: 10px;
+    padding: 10px 14px;
     border-bottom-color: #ededed;
   }
 
   .conversation-groups {
     height: 100%;
     overflow-y: auto;
-    background: #fff;
+    background: #f7f7f7;
   }
 
   .conversation-group {
     display: block;
-    border-bottom: 1px solid #e9e9e9;
   }
 
   .conversation-group > summary {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    gap: 8px;
+    display: flex;
+    gap: 6px;
     align-items: center;
+    justify-content: flex-start;
     min-height: 44px;
     padding: 0 16px;
     color: #555;
     list-style: none;
     cursor: pointer;
     user-select: none;
-    background: #fafafa;
+    background: #f7f7f7;
   }
 
   .conversation-group > summary::-webkit-details-marker {
@@ -2780,8 +2665,8 @@
   .waiting-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 14px 8px;
-    padding: 16px 12px 18px;
+    gap: 12px 8px;
+    padding: 14px 12px 16px;
   }
 
   .waiting-user {
@@ -2789,14 +2674,18 @@
     text-align: center;
   }
 
+  .waiting-user__trigger {
+    display: inline-flex;
+  }
+
   .waiting-user__avatar {
     position: relative;
     display: grid;
     place-items: center;
-    width: 54px;
-    height: 54px;
+    width: 44px;
+    height: 44px;
     padding: 0;
-    margin: 0 auto 7px;
+    margin: 0 auto;
     overflow: hidden;
     color: #7a7a7a;
     cursor: pointer;
@@ -2829,7 +2718,7 @@
     inset: 0;
     display: grid;
     place-items: center;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 650;
     color: #fff;
     background: rgb(4 157 79 / 88%);
@@ -2852,29 +2741,15 @@
     opacity: 0.58;
   }
 
-  .waiting-user strong,
-  .waiting-user p {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .waiting-user strong {
-    font-size: 12px;
-    font-weight: 600;
-    color: #444;
-  }
-
-  .waiting-user p {
-    margin: 4px 0 0;
-    font-size: 11px;
-    color: #999;
+  :global(.waiting-message-tooltip) {
+    max-width: 220px;
+    line-height: 1.5;
+    word-break: break-word;
   }
 
   .active-conversation-list,
   .closed-conversation-list {
-    background: #fff;
+    background: #f7f7f7;
   }
 
   .conversation-item.is-closed {
@@ -2914,30 +2789,27 @@
     border-radius: 50%;
   }
 
+  .conversation-avatar {
+    flex-basis: 36px;
+    width: 36px;
+    height: 36px;
+  }
+
   .conversation-summary {
     flex: 1;
     min-width: 0;
   }
 
   .conversation-item__top time {
+    flex: none;
     font-size: 11px;
     color: #aaa;
   }
 
   .conversation-item__message {
-    margin: 6px 0;
+    margin: 4px 0 0;
+    font-size: 12px;
     color: #666;
-  }
-
-  .conversation-item__meta {
-    justify-content: flex-end;
-    min-height: 17px;
-    color: #08b85d;
-  }
-
-  .conversation-item__context {
-    margin-bottom: 6px;
-    color: #7a7a7a;
   }
 
   .chat-user {
@@ -2950,19 +2822,51 @@
     height: 38px;
   }
 
-  .chat-user > div {
-    display: grid;
-    gap: 5px;
+  .chat-user > strong {
+    display: flex;
+    align-items: center;
+    min-height: 38px;
   }
 
-  .chat-header__status {
-    margin-left: 0;
+  .chat-header__actions {
+    gap: 4px;
+  }
+
+  .chat-header__actions :deep(.el-button) {
+    gap: 5px;
+    min-height: 30px;
+    padding: 0 8px;
     font-size: 12px;
+    color: #202124;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    box-shadow: none;
+  }
+
+  .chat-header__actions :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+
+  .chat-header__actions :deep(.el-button:hover:not(.is-disabled)),
+  .chat-header__actions :deep(.el-button:focus-visible:not(.is-disabled)) {
+    color: #202124;
+    background: #e7e7e7;
+  }
+
+  .chat-header__actions :deep(.el-button.is-disabled) {
+    color: #aaa;
+    background: transparent;
+  }
+
+  .chat-content,
+  .chat-content__loading {
+    background: #f0f0f0;
   }
 
   .message-list {
     padding: 26px 22px;
-    background: #f3f3f3;
+    background: #f0f0f0;
   }
 
   .message-bubble {
@@ -2981,23 +2885,42 @@
     box-shadow: none;
   }
 
-  .message-sender {
-    color: #a0a0a0;
-  }
-
   .system-message {
     color: #aaa;
     background: transparent;
   }
 
+  .chat-tools {
+    flex: 0 0 auto;
+    padding: 6px 14px 0;
+    background: #f0f0f0;
+  }
+
+  .chat-tools :deep(.el-button) {
+    padding: 8px;
+    color: #202124;
+    background: transparent;
+    border: 0;
+  }
+
+  .chat-tools :deep(.el-button:hover:not(.is-disabled)),
+  .chat-tools :deep(.el-button:focus-visible:not(.is-disabled)) {
+    color: #202124;
+    background: #e7e7e7;
+  }
+
   .composer {
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
     min-height: 180px;
-    padding: 12px 20px 16px;
+    padding: 8px 20px 12px;
+    background: #f0f0f0;
     border-top-color: #dedede;
   }
 
   .composer :deep(.el-textarea) {
+    flex: 1;
     border: 0;
     border-radius: 0;
   }
@@ -3008,18 +2931,24 @@
   }
 
   .composer :deep(.el-textarea__inner) {
-    min-height: 88px !important;
+    height: 100%;
+    min-height: 112px !important;
     padding: 10px 0;
+    background: transparent;
   }
 
-  .composer__tools :deep(.el-button) {
-    padding: 8px;
-    border: 0;
+  .composer :deep(.el-input__count),
+  .composer :deep(.el-input__count-inner) {
+    background: transparent;
   }
 
-  .composer__footer > :deep(.el-button--primary) {
-    background: #0bc666;
-    border-color: #0bc666;
+  .composer__footer {
+    flex: 0 0 auto;
+  }
+
+  .composer__shortcut {
+    margin-left: auto;
+    white-space: nowrap;
   }
 
   .context-panel :deep(.context-body) {
@@ -3074,6 +3003,11 @@
     .workspace {
       grid-template-columns: 1fr;
       min-height: 1000px;
+    }
+
+    .workspace-empty {
+      grid-column: 1;
+      min-height: 640px;
     }
 
     .conversation-panel {

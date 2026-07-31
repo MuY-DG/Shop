@@ -202,7 +202,7 @@
     align-items: center;
     width: 78px;
     padding: 24px 0 18px;
-    background: #fafafa;
+    background: #f7f7f7;
     border-right: 1px solid #e8e8e8;
   }
 
@@ -241,7 +241,7 @@
     width: 10px;
     height: 10px;
     background: #b9b9b9;
-    border: 2px solid #fafafa;
+    border: 2px solid #f7f7f7;
     border-radius: 50%;
   }
 
