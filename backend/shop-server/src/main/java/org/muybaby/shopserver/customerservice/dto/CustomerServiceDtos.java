@@ -67,7 +67,11 @@ public final class CustomerServiceDtos {
             Integer height,
             String accessMode,
             String accessUrl,
-            Instant accessExpiresAt
+            Instant accessExpiresAt,
+            String thumbnailStatus,
+            String thumbnailAccessMode,
+            String thumbnailAccessUrl,
+            Instant thumbnailAccessExpiresAt
     ) {
     }
 

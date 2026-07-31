@@ -109,13 +109,13 @@ For an ENV-sourced payment, migration `V41` adds a content-addressed configurati
 
 Migration `V44` adds a nullable opaque callback route to each payment/refund. New routes are 192-bit random Base64URL values and produce `/wxpay/pay/notify/r/{token}` or `/wxpay/refund/notify/r/{token}`. They reveal neither row IDs nor configuration fingerprints. The routed handler resolves the exact historical configuration before decrypting, compares the persisted token byte-for-byte after the database lookup, and compares the decrypted merchant number with the routed row. Existing token-null rows keep using the legacy fixed endpoints. Invalid, unknown, unverified, or unbound callback input is rejected without growing `payment_callback_log`. Because the fixed endpoints must still scan a bounded set of historical configurations, rate-limit and alert on them at ingress until token-null inventory has drained; then retire them after the provider retry window.
 
-Migration `V45` adds envelope metadata and a monotonic secret revision for DB payment APIv3 keys, ENV snapshots, and persisted COS credentials. Version 2 uses AES-256-GCM as `v2:<keyId>:<base64url nonce>:<base64url ciphertext+tag>` and AAD binds every ciphertext to its domain, row, and field. `SHOP_PAYMENT_SECRET_KEY` remains the legacy v1 read key during transition. Version 2 keys are supplied explicitly as semicolon-separated `id=base64:<32-byte-key>` entries; key IDs must use canonical lowercase ASCII, and an unknown key ID never falls back to trial-decryption with other keys. Background rotation verifies metadata and snapshot fingerprints, atomically claims each domain's next keyset range through a durable database checkpoint, and uses revision compare-and-set updates so process restarts, another node, or an administrator update cannot starve or overwrite healthy work.
+Migration `V45` adds envelope metadata and a monotonic secret revision for DB payment APIv3 keys, ENV snapshots, persisted COS credentials, and other database-managed secrets. Version 2 uses AES-256-GCM as `v2:<keyId>:<base64url nonce>:<base64url ciphertext+tag>` and AAD binds every ciphertext to its domain, row, and field. `SHOP_SECRET_ENCRYPTION_LEGACY_KEY` remains the legacy v1 read key during transition. This application master key is generated independently; it is not a Tencent COS SecretId or SecretKey. Version 2 keys are supplied explicitly as semicolon-separated `id=base64:<32-byte-key>` entries; key IDs must use canonical lowercase ASCII, and an unknown key ID never falls back to trial-decryption with other keys. Background rotation verifies metadata and snapshot fingerprints, atomically claims each domain's next keyset range through a durable database checkpoint, and uses revision compare-and-set updates so process restarts, another node, or an administrator update cannot starve or overwrite healthy work.
 
 Use this rolling deployment order:
 
-1. Deploy V44/V45 and all callback handlers with `SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false`, `SHOP_PAYMENT_SECRET_WRITE_VERSION=1`, and rotation disabled.
+1. Deploy V44/V45 and all callback handlers with `SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false`, `SHOP_SECRET_ENCRYPTION_WRITE_VERSION=1`, and rotation disabled.
 2. After every application instance accepts routed paths, verify configured callback bases pass routed readiness (public HTTPS, valid port, no user-info/query/fragment, and at most 220 characters after trailing-slash normalization), then enable `SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=true` for newly created payments/refunds. Keep the two ingress-limited legacy handlers while token-null work can still receive retries.
-3. Put the active and any old v2 keys in `SHOP_PAYMENT_SECRET_KEY_RING`; keep the existing `SHOP_PAYMENT_SECRET_KEY` available for v1 rows. After every instance can read v2 and the rollback window to a v1-only binary has closed, set write version 2. Once any v2 row exists, do not roll back to a binary that understands only v1; use the current dual-reader binary with write version temporarily returned to 1, or roll forward.
+3. Put the active and any old v2 keys in `SHOP_SECRET_ENCRYPTION_KEY_RING`; keep the existing key available as `SHOP_SECRET_ENCRYPTION_LEGACY_KEY` for v1 rows. After every instance can read v2 and the rollback window to a v1-only binary has closed, set write version 2. Once any v2 row exists, do not roll back to a binary that understands only v1; use the current dual-reader binary with write version temporarily returned to 1, or roll forward.
 4. Enable the small-batch rotation. Remove an old key only after all three tables have zero inventory for it and the replica, database backup, and restore retention windows have expired.
 
 ## Local WeChat Mini Program Credentials
@@ -147,12 +147,12 @@ WECHAT_PAY_VERIFY_MODE=PUBLIC_KEY
 WECHAT_PAY_PUBLIC_KEY_ID=<wechat-pay-public-key-id>
 WECHAT_PAY_PUBLIC_KEY_PATH=<absolute-path-to-local-wechat-pay-public-key.pem>
 SHOP_PAY_EXPIRE_MINUTES=15
-SHOP_PAYMENT_SECRET_KEY=<local-32-byte-payment-secret-key>
+SHOP_SECRET_ENCRYPTION_LEGACY_KEY=<local-32-byte-application-master-key>
 SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false
-SHOP_PAYMENT_SECRET_WRITE_VERSION=1
-SHOP_PAYMENT_SECRET_ACTIVE_KEY_ID=
-SHOP_PAYMENT_SECRET_KEY_RING=
-SHOP_PAYMENT_SECRET_ROTATION_ENABLED=false
+SHOP_SECRET_ENCRYPTION_WRITE_VERSION=1
+SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID=
+SHOP_SECRET_ENCRYPTION_KEY_RING=
+SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED=false
 SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
 ```
 
@@ -162,20 +162,17 @@ The configured callback bases must be complete public HTTPS paths with no query,
 
 The `开发配置 -> 支付配置` menu has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from the active profile's environment file. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
 
-For DB config, upload the required merchant private key and WeChat Pay public key, plus the optional merchant certificate, only through the payment-owned `/admin/pay/configs/secret-files` endpoint. Updating a config with a null merchant-certificate ID explicitly clears that optional reference; the old secret enters its 24-hour release window after its final active reference is removed. These secret assets never appear in the reusable asset library; do not commit uploaded files or the local upload directory.
+For DB config, upload the required merchant private key and WeChat Pay public key, plus the optional merchant certificate, only through the payment-owned `/admin/pay/configs/secret-files` endpoint. Updating a config with a null merchant-certificate ID explicitly clears that optional reference; the old secret enters its 24-hour release window after its final active reference is removed. These secret assets never appear in the reusable asset library.
 
-Never commit `.env.*.local`, merchant certificates, private keys, APIv3 keys, public-key files, local upload roots, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
+Never commit `.env.*.local`, merchant certificates, private keys, APIv3 keys, public-key files, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
 
 ## Object Storage
 
-The admin `开发配置 -> 对象存储配置` page selects the active provider at runtime. It stores the local public base URL and the Tencent COS public base URL independently, while the compatibility `publicBaseUrl` response field always reports the URL for the currently active provider. Its database setting takes effect without restarting the backend; when no database row exists, the backend falls back to the active profile's `.env.dev.local` or `.env.prod.local`.
+The application supports Tencent Cloud COS only. Configure the region, bucket, SecretId, SecretKey, and optional public/custom domain through `开发配置 -> 对象存储配置`. The values are read from `storage_runtime_setting` and take effect without restarting the backend. There is no local provider and no storage environment-file fallback; uploads fail with `STORAGE_NOT_CONFIGURED` until the database configuration is complete.
 
-Local storage defaults can be configured with:
+Only non-provider upload policy remains configurable through environment defaults:
 
 ```properties
-SHOP_STORAGE_PROVIDER=LOCAL
-SHOP_STORAGE_LOCAL_ROOT=var/uploads
-SHOP_STORAGE_PUBLIC_BASE_URL=http://localhost:8080
 SHOP_STORAGE_IMAGE_MAX_SIZE=5MB
 SHOP_STORAGE_IMAGE_MAX_WIDTH=8192
 SHOP_STORAGE_IMAGE_MAX_HEIGHT=8192
@@ -206,18 +203,11 @@ Tinify output requests are fixed to WebP. The integration does not send Tinify's
 
 The admin page shows the latest provider count and estimated remaining monthly budget. Refreshing the count sends Tinify a non-billable empty-input credential probe and reads the provider count from its response. If the known remaining budget is insufficient for the next operation, or Tinify reports that the quota is exhausted, compression is automatically made ineffective for following uploads. The current upload still proceeds with the validated original image, so a provider, key, or quota problem does not interrupt normal uploads; fallback originals retain their original format and metadata.
 
-Tencent Cloud COS can also be supplied through environment defaults:
+COS public files return the configured default or custom source domain directly. Every asset records the COS bucket and region used at upload time; current credentials must retain access to every recorded bucket. Private files, including payment certificates and keys, never receive a public URL. COS credentials are envelope-encrypted in the database with the independent `SHOP_SECRET_ENCRYPTION_*` master key configuration and are never returned in full.
 
-```properties
-SHOP_STORAGE_PROVIDER=TENCENT_COS
-SHOP_STORAGE_TENCENT_COS_REGION=ap-guangzhou
-SHOP_STORAGE_TENCENT_COS_BUCKET=<bucket-name-appid>
-SHOP_STORAGE_TENCENT_COS_SECRET_ID=<secret-id>
-SHOP_STORAGE_TENCENT_COS_SECRET_KEY=<secret-key>
-SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL=https://<bucket-name-appid>.cos.ap-guangzhou.myqcloud.com
-```
+Migration `V69` removes the local runtime-setting columns and adds a database constraint that permits only `TENCENT_COS` assets. It intentionally fails when any `storage_asset.provider = 'LOCAL'` row remains. Before deploying it to an existing installation, copy those objects to COS and migrate every stored URL/reference plus the asset provider, bucket, and region metadata; do not delete the old files until the migrated application and backups have been verified.
 
-`SHOP_STORAGE_LOCAL_ROOT` should point to a writable local directory and should not be committed to Git. Local public files are served by the backend through `/files/public/**`; COS public files return the configured COS default or custom source domain directly. Every asset records the LOCAL root or COS bucket/region used at upload time, so changing the active provider or location does not redirect existing objects. COS reads and deletes still use the currently configured credentials, which must retain access to each recorded bucket. Private files, including payment certificates and keys, never receive a public URL. Unclaimed after-sale evidence expires after 24 hours; staged payment secrets expire after two hours, and replaced secrets receive a 24-hour release window. These windows, their validation, and cleanup all use the database clock, so the JVM and database may safely run in different time zones. The cleanup job leases expired, unreferenced private assets and retries provider failures with bounded backoff; fresh expirations use a separate batch so failed deletions cannot block them. COS credentials saved from the admin page are encrypted in the database and are never returned in full.
+Unclaimed after-sale evidence expires after 24 hours; staged payment secrets expire after two hours, and replaced secrets receive a 24-hour release window. These windows, their validation, and cleanup all use the database clock, so the JVM and database may safely run in different time zones. The cleanup job leases expired, unreferenced private assets and retries provider failures with bounded backoff; fresh expirations use a separate batch so failed deletions cannot block them.
 
 File storage and home banner smoke checks are documented in `docs/smoke-checks.md#file-storage-and-home-banner-smoke-checks`.
 

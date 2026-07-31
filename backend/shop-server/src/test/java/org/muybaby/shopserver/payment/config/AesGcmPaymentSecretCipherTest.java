@@ -5,8 +5,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.payment.PaymentProperties;
-import org.muybaby.shopserver.payment.PaymentSecretEncryptionProperties;
+import org.muybaby.shopserver.common.secret.SecretEncryptionProperties;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -222,38 +221,18 @@ class AesGcmPaymentSecretCipherTest {
             int writeVersion,
             String activeKeyId,
             String keyRing,
-            String legacyKey
+        String legacyKey
     ) {
         return new AesGcmPaymentSecretCipher(
-                paymentProperties(legacyKey),
-                new PaymentSecretEncryptionProperties(
+                new SecretEncryptionProperties(
                         writeVersion,
                         activeKeyId,
                         keyRing,
+                        legacyKey,
                         false,
                         Duration.ofMinutes(1),
                         50
                 )
-        );
-    }
-
-    private static PaymentProperties paymentProperties(String legacyKey) {
-        return new PaymentProperties(
-                false,
-                false,
-                PaymentConfigSource.AUTO,
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                PaymentVerifyMode.PUBLIC_KEY,
-                "",
-                "",
-                15,
-                legacyKey
         );
     }
 

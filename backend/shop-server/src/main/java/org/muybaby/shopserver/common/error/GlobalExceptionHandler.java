@@ -139,7 +139,8 @@ public class GlobalExceptionHandler {
             case ADMIN_LOGIN_RATE_LIMITED, ANALYTICS_RATE_LIMITED,
                  APP_USER_AVATAR_RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
             case AUTHENTICATION_TEMPORARILY_UNAVAILABLE,
-                 STORAGE_IMAGE_COMPRESSION_FAILED -> HttpStatus.SERVICE_UNAVAILABLE;
+                 STORAGE_IMAGE_COMPRESSION_FAILED,
+                 STORAGE_NOT_CONFIGURED -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.BAD_REQUEST;
         };
     }

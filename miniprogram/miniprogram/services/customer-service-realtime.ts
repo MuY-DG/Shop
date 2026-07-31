@@ -9,12 +9,22 @@ interface CustomerServiceRealtimeEvent {
 }
 
 type CustomerServiceRealtimeHandler = (event: CustomerServiceRealtimeEvent) => void;
+export type CustomerServiceRealtimeState =
+  | "CONNECTING"
+  | "CONNECTED"
+  | "DISCONNECTED";
+type CustomerServiceRealtimeStateHandler = (
+  state: CustomerServiceRealtimeState
+) => void;
 
 class CustomerServiceRealtimeClient {
   private socket: WechatMiniprogram.SocketTask | null = null;
   private subscribers = new Set<CustomerServiceRealtimeHandler>();
+  private stateSubscribers = new Set<CustomerServiceRealtimeStateHandler>();
+  private connectionState: CustomerServiceRealtimeState = "DISCONNECTED";
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempt = 0;
   private generation = 0;
   private socketOpen = false;
@@ -31,10 +41,23 @@ class CustomerServiceRealtimeClient {
     };
   }
 
+  subscribeState(handler: CustomerServiceRealtimeStateHandler): () => void {
+    this.stateSubscribers.add(handler);
+    handler(this.connectionState);
+    return () => {
+      this.stateSubscribers.delete(handler);
+    };
+  }
+
   private async connect(): Promise<void> {
-    if (this.subscribers.size === 0 || this.socket) {
+    if (
+      this.subscribers.size === 0 ||
+      this.socket ||
+      this.connectionState === "CONNECTING"
+    ) {
       return;
     }
+    this.setConnectionState("CONNECTING");
     const generation = ++this.generation;
     try {
       const grant = await issueCustomerServiceRealtimeTicket();
@@ -51,6 +74,7 @@ class CustomerServiceRealtimeClient {
         }
         this.socketOpen = true;
         this.reconnectAttempt = 0;
+        this.setConnectionState("CONNECTED");
         this.startHeartbeat(socket);
       });
       socket.onMessage((message) => {
@@ -81,7 +105,11 @@ class CustomerServiceRealtimeClient {
     }
     try {
       const event = JSON.parse(raw) as Partial<CustomerServiceRealtimeEvent>;
-      if (!event.eventId || !event.type || event.type === "PONG") {
+      if (event.type === "PONG") {
+        this.clearHeartbeatTimeout();
+        return;
+      }
+      if (!event.eventId || !event.type) {
         return;
       }
       if (this.seenEventIds.has(event.eventId)) {
@@ -113,6 +141,7 @@ class CustomerServiceRealtimeClient {
     this.clearHeartbeat();
     this.socket = null;
     this.socketOpen = false;
+    this.setConnectionState("DISCONNECTED");
     if (this.subscribers.size === 0 || this.reconnectTimer) {
       return;
     }
@@ -129,6 +158,10 @@ class CustomerServiceRealtimeClient {
     this.heartbeatTimer = setInterval(() => {
       if (this.socketOpen) {
         socket.send({ data: JSON.stringify({ type: "PING" }) });
+        this.clearHeartbeatTimeout();
+        this.heartbeatTimeoutTimer = setTimeout(() => {
+          socket.close({});
+        }, 10_000);
       }
     }, 25_000);
   }
@@ -138,6 +171,22 @@ class CustomerServiceRealtimeClient {
       clearInterval(this.heartbeatTimer);
     }
     this.heartbeatTimer = null;
+    this.clearHeartbeatTimeout();
+  }
+
+  private clearHeartbeatTimeout(): void {
+    if (this.heartbeatTimeoutTimer) {
+      clearTimeout(this.heartbeatTimeoutTimer);
+    }
+    this.heartbeatTimeoutTimer = null;
+  }
+
+  private setConnectionState(state: CustomerServiceRealtimeState): void {
+    if (this.connectionState === state) {
+      return;
+    }
+    this.connectionState = state;
+    this.stateSubscribers.forEach((subscriber) => subscriber(state));
   }
 
   private stop(): void {
@@ -151,6 +200,7 @@ class CustomerServiceRealtimeClient {
     this.socket = null;
     this.socketOpen = false;
     this.reconnectAttempt = 0;
+    this.setConnectionState("DISCONNECTED");
   }
 }
 
@@ -160,4 +210,10 @@ export function subscribeCustomerServiceRealtime(
   handler: CustomerServiceRealtimeHandler
 ): () => void {
   return realtimeClient.subscribe(handler);
+}
+
+export function subscribeCustomerServiceRealtimeState(
+  handler: CustomerServiceRealtimeStateHandler
+): () => void {
+  return realtimeClient.subscribeState(handler);
 }

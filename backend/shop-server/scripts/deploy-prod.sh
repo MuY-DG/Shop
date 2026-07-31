@@ -48,7 +48,6 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
     tar -xzf - -C "$stage_dir"
     sudo install -d -o 10001 -g 10001 -m 750 /opt/shop/shop-server
     sudo install -d -o 10001 -g 10001 -m 750 /opt/shop/shop-server/secrets
-    sudo install -d -o 10001 -g 10001 -m 750 /opt/shop/shop-server/var/uploads
     sudo install -d -o root -g root -m 700 /opt/shop/shop-server/backups
     sudo install -o root -g root -m 644 "$stage_dir/compose.prod.yaml" /opt/shop/shop-server/compose.prod.yaml
     sudo install -o 10001 -g 10001 -m 600 "$stage_dir/.env.prod.local" /opt/shop/shop-server/.env.prod.local

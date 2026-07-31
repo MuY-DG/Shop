@@ -6,24 +6,8 @@ import org.springframework.util.unit.DataSize;
 
 @ConfigurationProperties(prefix = "shop.storage")
 public record StorageProperties(
-        StorageProviderKind provider,
-        String publicBaseUrl,
-        Local local,
-        TencentCos tencentCos,
         Limits limits
 ) {
-    public record Local(String root) {
-    }
-
-    public record TencentCos(
-            String region,
-            String bucket,
-            String secretId,
-            String secretKey,
-            String publicBaseUrl
-    ) {
-    }
-
     public record Limits(
             DataSize imageMaxSize,
             DataSize videoMaxSize,

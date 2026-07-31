@@ -4,9 +4,9 @@ import com.qcloud.cos.COSClient;
 import com.qcloud.cos.http.HttpMethodName;
 import com.qcloud.cos.http.HttpProtocol;
 import com.qcloud.cos.model.CannedAccessControlList;
+import com.qcloud.cos.model.GeneratePresignedUrlRequest;
 import com.qcloud.cos.model.PutObjectRequest;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
@@ -16,7 +16,6 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URL;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,41 +40,7 @@ import static org.mockito.Mockito.when;
 class RoutingStorageProviderTest {
 
     private static final String PUBLIC_CACHE_CONTROL = "public, max-age=31536000, immutable";
-
-    @TempDir
-    Path tempDir;
-
-    @Test
-    void recordedLocalRootSurvivesRuntimeRootChanges() throws Exception {
-        Path originalRoot = tempDir.resolve("original");
-        Path replacementRoot = tempDir.resolve("replacement");
-        StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
-        when(configService.effective()).thenReturn(
-                localConfig(originalRoot),
-                localConfig(replacementRoot),
-                localConfig(replacementRoot)
-        );
-        RoutingStorageProvider provider = new RoutingStorageProvider(configService);
-        StorageObjectLocation location = new StorageObjectLocation(
-                StorageProviderKind.LOCAL,
-                originalRoot.toAbsolutePath().normalize().toString(),
-                "",
-                "private/secret.txt"
-        );
-        byte[] content = "recorded-location".getBytes();
-
-        provider.put(location, "text/plain", new ByteArrayInputStream(content), content.length);
-
-        StoredObject storedObject = provider.open(location);
-        try (InputStream inputStream = storedObject.inputStream()) {
-            assertThat(inputStream.readAllBytes()).isEqualTo(content);
-        }
-        assertThat(replacementRoot.resolve("private/secret.txt")).doesNotExist();
-
-        provider.delete(location);
-
-        assertThat(originalRoot.resolve("private/secret.txt")).doesNotExist();
-    }
+    private static final String PRIVATE_IMAGE_CACHE_CONTROL = "private, max-age=300";
 
     @Test
     void differentCosRegionsKeepIndependentClientsUntilProviderShutdown() {
@@ -183,10 +148,7 @@ class RoutingStorageProviderTest {
     void privateCosAccessSignsTheConfiguredCustomDomainWithoutOpeningTheObject() throws Exception {
         StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
         ResolvedStorageConfig config = new ResolvedStorageConfig(
-                StorageProviderKind.TENCENT_COS,
-                "http://localhost:8080",
                 "https://oss.muybaby6.icu",
-                tempDir.resolve("unused-local").toString(),
                 "ap-guangzhou",
                 "shop-test-123",
                 "secret-id",
@@ -198,12 +160,8 @@ class RoutingStorageProviderTest {
         URL signedUrl = new URL(
                 "https://oss.muybaby6.icu/private/customer-service/image.png?q-signature=test"
         );
-        when(signingClient.generatePresignedUrl(
-                eq("shop-test-123"),
-                eq("private/customer-service/image.png"),
-                any(),
-                eq(HttpMethodName.GET)
-        )).thenReturn(signedUrl);
+        when(signingClient.generatePresignedUrl(any(GeneratePresignedUrlRequest.class)))
+                .thenReturn(signedUrl);
         AtomicReference<HttpProtocol> protocol = new AtomicReference<>();
         AtomicReference<String> endpoint = new AtomicReference<>();
         RoutingStorageProvider provider = new RoutingStorageProvider(
@@ -226,6 +184,17 @@ class RoutingStorageProviderTest {
         assertThat(access.expiresAt()).isNotNull();
         assertThat(protocol).hasValue(HttpProtocol.https);
         assertThat(endpoint).hasValue("oss.muybaby6.icu");
+        ArgumentCaptor<GeneratePresignedUrlRequest> requestCaptor =
+                ArgumentCaptor.forClass(GeneratePresignedUrlRequest.class);
+        verify(signingClient).generatePresignedUrl(requestCaptor.capture());
+        GeneratePresignedUrlRequest request = requestCaptor.getValue();
+        assertThat(request.getBucketName()).isEqualTo("shop-test-123");
+        assertThat(request.getKey()).isEqualTo("private/customer-service/image.png");
+        assertThat(request.getMethod()).isEqualTo(HttpMethodName.GET);
+        assertThat(request.getExpiration()).isNotNull();
+        assertThat(request.isSignPrefixMode()).isFalse();
+        assertThat(request.getResponseHeaders().getCacheControl())
+                .isEqualTo(PRIVATE_IMAGE_CACHE_CONTROL);
         verify(objectClient, never()).getObject(anyString(), anyString());
 
         provider.shutdown();
@@ -237,10 +206,7 @@ class RoutingStorageProviderTest {
     void realCosSdkPresignedUrlUsesTheCustomDomainAsItsSignedHost() throws Exception {
         StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
         when(configService.effective()).thenReturn(new ResolvedStorageConfig(
-                StorageProviderKind.TENCENT_COS,
-                "http://localhost:8080",
                 "https://oss.muybaby6.icu",
-                tempDir.resolve("unused-local").toString(),
                 "ap-guangzhou",
                 "shop-test-123",
                 "secret-id",
@@ -256,47 +222,13 @@ class RoutingStorageProviderTest {
         assertThat(access.mode()).isEqualTo(PrivateObjectAccess.Mode.SIGNED_URL);
         assertThat(URI.create(access.url()).getHost()).isEqualTo("oss.muybaby6.icu");
         assertThat(access.url()).contains("q-signature=");
+        assertThat(access.url()).contains("response-cache-control=");
         provider.shutdown();
-    }
-
-    @Test
-    void localPrivateAccessKeepsAuthenticatedBlobFallback() {
-        StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
-        when(configService.effective()).thenReturn(localConfig(tempDir.resolve("local")));
-        RoutingStorageProvider provider = new RoutingStorageProvider(configService);
-
-        PrivateObjectAccess access = provider.privateReadAccess(
-                new StorageObjectLocation(
-                        StorageProviderKind.LOCAL,
-                        tempDir.resolve("local").toString(),
-                        "",
-                        "private/customer-service/image.png"
-                ),
-                Duration.ofMinutes(5)
-        );
-
-        assertThat(access).isEqualTo(PrivateObjectAccess.authenticatedBlob());
-    }
-
-    private ResolvedStorageConfig localConfig(Path root) {
-        return new ResolvedStorageConfig(
-                StorageProviderKind.LOCAL,
-                "http://localhost:8080",
-                "",
-                root.toString(),
-                "",
-                "",
-                "",
-                ""
-        );
     }
 
     private ResolvedStorageConfig cosConfig() {
         return new ResolvedStorageConfig(
-                StorageProviderKind.TENCENT_COS,
-                "http://localhost:8080",
                 "https://shop-test-123.cos.ap-guangzhou.myqcloud.com",
-                tempDir.resolve("unused-local").toString(),
                 "ap-guangzhou",
                 "shop-test-123",
                 "secret-id",

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.common.secret.SecretEncryptionProperties;
 import org.muybaby.shopserver.payment.config.AesGcmPaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.MaskedPaymentConfig;
 import org.muybaby.shopserver.payment.config.PaymentConfigMasker;
@@ -111,8 +112,7 @@ class PaymentConfigResolverTest {
                 PaymentVerifyMode.PUBLIC_KEY,
                 "pub_key_test",
                 publicKeyPath.toString(),
-                15,
-                "0123456789abcdef0123456789abcdef"
+                15
         );
 
         ResolvedPaymentConfig resolved = resolver.resolve(envProperties);
@@ -150,8 +150,7 @@ class PaymentConfigResolverTest {
                 PaymentVerifyMode.CERTIFICATE,
                 "",
                 "",
-                15,
-                "0123456789abcdef0123456789abcdef"
+                15
         );
 
         assertThatThrownBy(() -> resolver.resolve(envProperties))
@@ -199,8 +198,7 @@ class PaymentConfigResolverTest {
                 PaymentVerifyMode.PUBLIC_KEY,
                 "",
                 "",
-                15,
-                "0123456789abcdef0123456789abcdef"
+                15
         ));
 
         assertThat(resolved.source()).isEqualTo(PaymentConfigSource.DB);
@@ -253,8 +251,7 @@ class PaymentConfigResolverTest {
                 PaymentVerifyMode.PUBLIC_KEY,
                 "",
                 "",
-                15,
-                "0123456789abcdef0123456789abcdef"
+                15
         )))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
@@ -381,23 +378,8 @@ class PaymentConfigResolverTest {
 
     @Test
     void dbSecretEncryptionFailsValidationWhenSecretKeyIsMissing() {
-        PaymentSecretCipher cipherWithoutKey = new AesGcmPaymentSecretCipher(new PaymentProperties(
-                true,
-                false,
-                PaymentConfigSource.DB,
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                "",
-                PaymentVerifyMode.PUBLIC_KEY,
-                "",
-                "",
-                15,
-                ""
-        ), legacyEncryptionProperties());
+        PaymentSecretCipher cipherWithoutKey =
+                new AesGcmPaymentSecretCipher(legacyEncryptionProperties(""));
 
         assertThatThrownBy(() -> cipherWithoutKey.encrypt("api_v3_secret_test"))
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
@@ -408,29 +390,12 @@ class PaymentConfigResolverTest {
     void environmentPaymentIsNotSnapshottedWhenRootEncryptionKeyIsMissing() throws Exception {
         PaymentProperties sourceProperties = environmentProperties("missing_root_key");
         ResolvedPaymentConfig environmentConfig = resolver.resolve(sourceProperties);
-        PaymentProperties propertiesWithoutRootKey = new PaymentProperties(
-                sourceProperties.enabled(),
-                sourceProperties.mockEnabled(),
-                sourceProperties.configSource(),
-                sourceProperties.appId(),
-                sourceProperties.mchId(),
-                sourceProperties.merchantSerialNo(),
-                sourceProperties.privateKeyPath(),
-                sourceProperties.apiV3Key(),
-                sourceProperties.notifyUrl(),
-                sourceProperties.refundNotifyUrl(),
-                sourceProperties.verifyMode(),
-                sourceProperties.publicKeyId(),
-                sourceProperties.publicKeyPath(),
-                sourceProperties.expireMinutes(),
-                ""
-        );
         PaymentSecretCipher cipherWithoutKey = new AesGcmPaymentSecretCipher(
-                propertiesWithoutRootKey, legacyEncryptionProperties());
+                legacyEncryptionProperties(""));
         PaymentConfigSnapshotStore storeWithoutKey = new PaymentConfigSnapshotStore(
                 jdbcClient, cipherWithoutKey);
         PaymentConfigResolver resolverWithoutKey = new PaymentConfigResolver(
-                propertiesWithoutRootKey,
+                sourceProperties,
                 jdbcClient,
                 cipherWithoutKey,
                 privateStorageFileService,
@@ -493,7 +458,7 @@ class PaymentConfigResolverTest {
                             (id, scope, media_kind, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (:id, 'SECRET', 'DOCUMENT', 'PRIVATE', 'LOCAL', '', :objectKey, 'key.pem',
+                            (:id, 'SECRET', 'DOCUMENT', 'PRIVATE', 'TENCENT_COS', '', :objectKey, 'key.pem',
                              'text/plain', 'pem', :sizeBytes, '', 'ACTIVE', 'ADMIN', 1)
                         """)
                 .param("id", id)
@@ -514,11 +479,12 @@ class PaymentConfigResolverTest {
         );
     }
 
-    private PaymentSecretEncryptionProperties legacyEncryptionProperties() {
-        return new PaymentSecretEncryptionProperties(
+    private SecretEncryptionProperties legacyEncryptionProperties(String legacyKey) {
+        return new SecretEncryptionProperties(
                 1,
                 "",
                 "",
+                legacyKey,
                 false,
                 Duration.ofMinutes(1),
                 50
@@ -552,8 +518,7 @@ class PaymentConfigResolverTest {
                 PaymentVerifyMode.PUBLIC_KEY,
                 "public_" + suffix,
                 publicKeyPath.toString(),
-                15,
-                "0123456789abcdef0123456789abcdef"
+                15
         );
     }
 

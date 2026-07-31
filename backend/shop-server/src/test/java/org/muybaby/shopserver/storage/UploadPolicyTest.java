@@ -21,10 +21,6 @@ class UploadPolicyTest {
     @BeforeEach
     void setUp() {
         uploadPolicy = new UploadPolicy(new StorageProperties(
-                StorageProviderKind.LOCAL,
-                "http://localhost:8080",
-                new StorageProperties.Local("var/uploads"),
-                new StorageProperties.TencentCos("", "", "", "", ""),
                 new StorageProperties.Limits(
                         DataSize.ofMegabytes(5),
                         DataSize.ofMegabytes(50),

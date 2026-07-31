@@ -1,16 +1,11 @@
 package org.muybaby.shopserver.storage.dto;
 
 public record AdminStorageConfigResponse(
-        String provider,
-        boolean persisted,
-        String defaultProvider,
+        boolean configured,
         String publicBaseUrl,
-        String localPublicBaseUrl,
-        String cosPublicBaseUrl,
-        String localRoot,
-        String cosRegion,
-        String cosBucket,
-        String cosSecretIdMasked,
-        boolean cosSecretKeyConfigured
+        String region,
+        String bucket,
+        String secretIdMasked,
+        boolean secretKeyConfigured
 ) {
 }

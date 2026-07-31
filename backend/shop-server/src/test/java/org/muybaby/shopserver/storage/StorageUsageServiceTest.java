@@ -269,7 +269,7 @@ class StorageUsageServiceTest {
                              content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
                              public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (:scope, :mediaKind, null, :visibility, 'LOCAL', '', :objectKey, :originalFilename,
+                            (:scope, :mediaKind, null, :visibility, 'TENCENT_COS', '', :objectKey, :originalFilename,
                              :contentType, :extension, 68, 'abc123', 1, 1, '', null,
                              'http://localhost:8080/files/public/test.png', :status, 'ADMIN', 1)
                         """)

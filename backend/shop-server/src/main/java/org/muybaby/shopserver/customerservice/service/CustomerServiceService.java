@@ -5,6 +5,7 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.customerservice.CustomerServiceChangedEvent;
+import org.muybaby.shopserver.customerservice.CustomerServiceImageThumbnailRequestedEvent;
 import org.muybaby.shopserver.customerservice.CustomerServiceTransferChangedEvent;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentStateResponse;
@@ -734,6 +735,8 @@ public class CustomerServiceService {
                         asset.originalFilename(), asset.id(), null
                 );
                 storageService.bindCustomerServiceImage(asset.id(), conversation.id());
+                eventPublisher.publishEvent(
+                        new CustomerServiceImageThumbnailRequestedEvent(asset.id()));
                 touchForAppNotification(conversation.id(), message.createdAt());
                 publish(conversation.id(), conversation.appUserId(), "MESSAGE_CREATED", message.messageId());
                 return message;
@@ -767,6 +770,8 @@ public class CustomerServiceService {
                         asset.originalFilename(), asset.id(), null
                 );
                 storageService.bindCustomerServiceImage(asset.id(), conversation.id());
+                eventPublisher.publishEvent(
+                        new CustomerServiceImageThumbnailRequestedEvent(asset.id()));
                 touchForAdminNotification(conversation.id(), message.createdAt());
                 publish(conversation.id(), appUserId, "MESSAGE_CREATED", message.messageId());
                 return message;
@@ -776,6 +781,21 @@ public class CustomerServiceService {
 
     public ResponseEntity<InputStreamResource> imageForApp(
             AuthenticatedPrincipal principal,
+            Long messageId,
+            String ifNoneMatch
+    ) {
+        Long appUserId = requirePrincipal(principal, TokenKind.APP);
+        ImageReference image = requireImageReference(messageId);
+        ConversationRow conversation = requireConversation(image.conversationId());
+        if (!conversation.appUserId().equals(appUserId)) {
+            throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
+        }
+        return storageService.customerServiceImageResource(
+                image.assetId(), conversation.id(), ifNoneMatch);
+    }
+
+    public ImageMessageResponse imageAccessForApp(
+            AuthenticatedPrincipal principal,
             Long messageId
     ) {
         Long appUserId = requirePrincipal(principal, TokenKind.APP);
@@ -784,17 +804,56 @@ public class CustomerServiceService {
         if (!conversation.appUserId().equals(appUserId)) {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
         }
-        return storageService.customerServiceImageResource(image.assetId(), conversation.id());
+        return imageAccess(image);
+    }
+
+    public ResponseEntity<InputStreamResource> thumbnailForApp(
+            AuthenticatedPrincipal principal,
+            Long messageId,
+            String ifNoneMatch
+    ) {
+        Long appUserId = requirePrincipal(principal, TokenKind.APP);
+        ImageReference image = requireImageReference(messageId);
+        ConversationRow conversation = requireConversation(image.conversationId());
+        if (!conversation.appUserId().equals(appUserId)) {
+            throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
+        }
+        return storageService.customerServiceThumbnailResource(
+                image.assetId(), conversation.id(), ifNoneMatch);
     }
 
     public ResponseEntity<InputStreamResource> imageForAdmin(
+            AuthenticatedPrincipal principal,
+            Long messageId,
+            String ifNoneMatch
+    ) {
+        requirePrincipal(principal, TokenKind.ADMIN);
+        ImageReference image = requireImageReference(messageId);
+        requireConversation(image.conversationId());
+        return storageService.customerServiceImageResource(
+                image.assetId(), image.conversationId(), ifNoneMatch);
+    }
+
+    public ImageMessageResponse imageAccessForAdmin(
             AuthenticatedPrincipal principal,
             Long messageId
     ) {
         requirePrincipal(principal, TokenKind.ADMIN);
         ImageReference image = requireImageReference(messageId);
         requireConversation(image.conversationId());
-        return storageService.customerServiceImageResource(image.assetId(), image.conversationId());
+        return imageAccess(image);
+    }
+
+    public ResponseEntity<InputStreamResource> thumbnailForAdmin(
+            AuthenticatedPrincipal principal,
+            Long messageId,
+            String ifNoneMatch
+    ) {
+        requirePrincipal(principal, TokenKind.ADMIN);
+        ImageReference image = requireImageReference(messageId);
+        requireConversation(image.conversationId());
+        return storageService.customerServiceThumbnailResource(
+                image.assetId(), image.conversationId(), ifNoneMatch);
     }
 
     public List<AgentResponse> agents() {
@@ -1497,19 +1556,97 @@ public class CustomerServiceService {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
         return jdbcClient.sql("""
-                        select conversation_id, resource_id
-                        from customer_service_message
-                        where id = :messageId
-                          and message_type = 'IMAGE'
-                          and resource_id is not null
+                        select message.conversation_id,
+                               asset.id as asset_id,
+                               asset.original_filename,
+                               asset.content_type,
+                               asset.width,
+                               asset.height,
+                               asset.provider,
+                               asset.storage_container,
+                               asset.storage_region,
+                               asset.object_key,
+                               asset.thumbnail_status,
+                               asset.thumbnail_object_key
+                        from customer_service_message message
+                        join storage_asset asset on asset.id = message.resource_id
+                        where message.id = :messageId
+                          and message.message_type = 'IMAGE'
+                          and asset.scope = 'ATTACHMENT'
+                          and asset.media_kind = 'IMAGE'
+                          and asset.visibility = 'PRIVATE'
+                          and asset.status = 'ACTIVE'
+                          and asset.upload_context_type = 'CUSTOMER_SERVICE_CONVERSATION'
+                          and asset.upload_context_id = message.conversation_id
                         """)
                 .param("messageId", messageId)
                 .query((rs, rowNum) -> new ImageReference(
                         rs.getLong("conversation_id"),
-                        rs.getLong("resource_id")
+                        rs.getLong("asset_id"),
+                        rs.getString("original_filename"),
+                        rs.getString("content_type"),
+                        rs.getObject("width", Integer.class),
+                        rs.getObject("height", Integer.class),
+                        StorageProviderKind.valueOf(rs.getString("provider")),
+                        rs.getString("storage_container"),
+                        rs.getString("storage_region"),
+                        rs.getString("object_key"),
+                        rs.getString("thumbnail_status"),
+                        rs.getString("thumbnail_object_key")
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+    }
+
+    private ImageMessageResponse imageAccess(ImageReference image) {
+        return imageResponse(
+                image.originalFilename(),
+                image.contentType(),
+                image.width(),
+                image.height(),
+                image.provider(),
+                image.storageContainer(),
+                image.storageRegion(),
+                image.objectKey(),
+                image.thumbnailStatus(),
+                image.thumbnailObjectKey(),
+                storageService.privateImageAccessResolver()
+        );
+    }
+
+    private ImageMessageResponse imageResponse(
+            String originalFilename,
+            String contentType,
+            Integer width,
+            Integer height,
+            StorageProviderKind provider,
+            String storageContainer,
+            String storageRegion,
+            String objectKey,
+            String thumbnailStatus,
+            String thumbnailObjectKey,
+            Function<StorageObjectLocation, PrivateObjectAccess> accessResolver
+    ) {
+        PrivateObjectAccess originalAccess = accessResolver.apply(new StorageObjectLocation(
+                provider, storageContainer, storageRegion, objectKey));
+        PrivateObjectAccess thumbnailAccess =
+                "READY".equals(thumbnailStatus) && StringUtils.hasText(thumbnailObjectKey)
+                        ? accessResolver.apply(new StorageObjectLocation(
+                                provider, storageContainer, storageRegion, thumbnailObjectKey))
+                        : null;
+        return new ImageMessageResponse(
+                originalFilename,
+                contentType,
+                width,
+                height,
+                originalAccess.mode().name(),
+                originalAccess.url(),
+                originalAccess.expiresAt(),
+                StringUtils.hasText(thumbnailStatus) ? thumbnailStatus : "NONE",
+                thumbnailAccess == null ? null : thumbnailAccess.mode().name(),
+                thumbnailAccess == null ? null : thumbnailAccess.url(),
+                thumbnailAccess == null ? null : thumbnailAccess.expiresAt()
+        );
     }
 
     private Optional<ConversationRow> findConversationByAppUser(Long appUserId) {
@@ -1991,7 +2128,9 @@ public class CustomerServiceService {
                        image_asset.provider as image_provider,
                        image_asset.storage_container as image_storage_container,
                        image_asset.storage_region as image_storage_region,
-                       image_asset.object_key as image_object_key
+                       image_asset.object_key as image_object_key,
+                       image_asset.thumbnail_status as image_thumbnail_status,
+                       image_asset.thumbnail_object_key as image_thumbnail_object_key
                 from customer_service_message m
                 left join app_user app
                   on m.sender_type = 'APP_USER' and app.id = m.sender_id
@@ -2154,22 +2293,18 @@ public class CustomerServiceService {
                 : mapProductCard(rs);
         ImageMessageResponse image = null;
         if (nullableLong(rs, "image_asset_id") != null) {
-            PrivateObjectAccess access = imageAccessResolver.apply(
-                    new StorageObjectLocation(
-                            StorageProviderKind.valueOf(rs.getString("image_provider")),
-                            rs.getString("image_storage_container"),
-                            rs.getString("image_storage_region"),
-                            rs.getString("image_object_key")
-                    )
-            );
-            image = new ImageMessageResponse(
+            image = imageResponse(
                     rs.getString("image_original_filename"),
                     rs.getString("image_content_type"),
                     rs.getObject("image_width", Integer.class),
                     rs.getObject("image_height", Integer.class),
-                    access.mode().name(),
-                    access.url(),
-                    access.expiresAt()
+                    StorageProviderKind.valueOf(rs.getString("image_provider")),
+                    rs.getString("image_storage_container"),
+                    rs.getString("image_storage_region"),
+                    rs.getString("image_object_key"),
+                    rs.getString("image_thumbnail_status"),
+                    rs.getString("image_thumbnail_object_key"),
+                    imageAccessResolver
             );
         }
         return new MessageResponse(
@@ -2320,7 +2455,20 @@ public class CustomerServiceService {
     ) {
     }
 
-    private record ImageReference(Long conversationId, Long assetId) {
+    private record ImageReference(
+            Long conversationId,
+            Long assetId,
+            String originalFilename,
+            String contentType,
+            Integer width,
+            Integer height,
+            StorageProviderKind provider,
+            String storageContainer,
+            String storageRegion,
+            String objectKey,
+            String thumbnailStatus,
+            String thumbnailObjectKey
+    ) {
     }
 
     private record ImageMessageContext(Long conversationId, Long appUserId) {

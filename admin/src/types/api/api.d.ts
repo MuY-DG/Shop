@@ -640,32 +640,21 @@ declare namespace Api {
   }
 
   namespace Storage {
-    type Provider = 'LOCAL' | 'TENCENT_COS'
-
     interface Config {
-      provider: Provider
-      persisted: boolean
-      defaultProvider: Provider
+      configured: boolean
       publicBaseUrl: string
-      localPublicBaseUrl: string
-      cosPublicBaseUrl: string
-      localRoot: string
-      cosRegion: string
-      cosBucket: string
-      cosSecretIdMasked: string
-      cosSecretKeyConfigured: boolean
+      region: string
+      bucket: string
+      secretIdMasked: string
+      secretKeyConfigured: boolean
     }
 
     interface ConfigForm {
-      provider: Provider
-      publicBaseUrl?: string
-      localPublicBaseUrl: string
-      cosPublicBaseUrl: string
-      localRoot: string
-      cosRegion: string
-      cosBucket: string
-      cosSecretId?: string
-      cosSecretKey?: string
+      publicBaseUrl: string
+      region: string
+      bucket: string
+      secretId?: string
+      secretKey?: string
     }
 
     type AssetScope = 'LIBRARY' | 'ATTACHMENT' | 'SECRET'

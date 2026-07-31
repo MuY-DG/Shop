@@ -2,7 +2,7 @@ package org.muybaby.shopserver.payment.config;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.payment.PaymentSecretEncryptionProperties;
+import org.muybaby.shopserver.common.secret.SecretEncryptionProperties;
 import org.muybaby.shopserver.storage.compression.config.ImageCompressionRuntimeConfigService;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
 import org.slf4j.Logger;
@@ -43,7 +43,7 @@ public class PaymentSecretRotationService {
     private final PaymentSecretCipher secretCipher;
     private final PaymentConfigSnapshotStore snapshotStore;
     private final PaymentConfigResolver paymentConfigResolver;
-    private final PaymentSecretEncryptionProperties properties;
+    private final SecretEncryptionProperties properties;
     private final TransactionTemplate requiresNewTransaction;
 
     public PaymentSecretRotationService(
@@ -51,7 +51,7 @@ public class PaymentSecretRotationService {
             PaymentSecretCipher secretCipher,
             PaymentConfigSnapshotStore snapshotStore,
             PaymentConfigResolver paymentConfigResolver,
-            PaymentSecretEncryptionProperties properties,
+            SecretEncryptionProperties properties,
             PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;

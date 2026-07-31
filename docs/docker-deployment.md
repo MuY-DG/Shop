@@ -26,12 +26,11 @@ Spring Boot 通过隔离的 `data` 网络访问；`ops` 网络只负责 Docker �
 - `.env.prod.local`：Spring Boot 生产配置、业务凭据以及应用使用的数据库/Redis 密码。
 - `.env.infrastructure.local`：只给 MySQL/Redis 使用的基础设施密码。
 - `secrets/`：微信支付 PEM 文件，只读挂载到应用容器。
-- `var/`：本地上传文件持久化目录。
 - `backups/`：本机 MySQL 备份目录。
 - `scripts/deploy-prod.sh`：本地测试、精简源码上传、服务器缓存构建和远程切换的一条命令。
 - `scripts/backup-mysql.sh`：供 1Panel 计划任务调用的 MySQL 备份脚本。
 
-所有 `.env.*.local`、`secrets/`、`var/` 和 `backups/` 均被 Git 忽略。
+所有 `.env.*.local`、`secrets/` 和 `backups/` 均被 Git 忽略。对象存储只使用后台数据库中配置的腾讯云 COS，生产环境文件中不保存 COS 区域、桶或凭证。
 
 ## 首次准备生产配置
 
@@ -51,6 +50,13 @@ cd /Users/muybaby/Project/Production/Shop/backend/shop-server
 ```
 
 脚本不会打印密码，并会把两个本地环境文件权限设为 `600`。
+
+升级已有环境时，先把旧的 `SHOP_PAYMENT_SECRET_*` 值一一改名为
+`SHOP_SECRET_ENCRYPTION_*`（其中旧 `SHOP_PAYMENT_SECRET_KEY` 改为
+`SHOP_SECRET_ENCRYPTION_LEGACY_KEY`），再删除所有
+`SHOP_STORAGE_PROVIDER`、`SHOP_STORAGE_PUBLIC_BASE_URL`、
+`SHOP_STORAGE_LOCAL_ROOT` 和 `SHOP_STORAGE_TENCENT_COS_*` 行。COS
+区域、存储桶和凭证只在管理后台保存；校验脚本会拒绝仍含这些已移除变量的生产文件。
 
 全新数据库默认不会启用公共 Super。确实需要首次引导账号时：
 

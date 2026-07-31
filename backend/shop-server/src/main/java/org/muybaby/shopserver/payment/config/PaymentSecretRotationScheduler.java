@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @ConditionalOnProperty(
-        prefix = "shop.pay.secret-encryption",
+        prefix = "shop.secret-encryption",
         name = "rotation-enabled",
         havingValue = "true"
 )
@@ -23,8 +23,8 @@ public class PaymentSecretRotationScheduler {
     }
 
     @Scheduled(
-            fixedDelayString = "${shop.pay.secret-encryption.rotation-delay:1m}",
-            initialDelayString = "${shop.pay.secret-encryption.rotation-delay:1m}"
+            fixedDelayString = "${shop.secret-encryption.rotation-delay:1m}",
+            initialDelayString = "${shop.secret-encryption.rotation-delay:1m}"
     )
     public void runOnce() {
         try {

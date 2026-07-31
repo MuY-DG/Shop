@@ -52,6 +52,10 @@ test("小程序客服使用自建接口、原图上传和两级商品来源面�
     resolve(sourceRoot, "pages/customer-service/chat/chat.ts"),
     "utf8"
   );
+  const realtimeSource = readFileSync(
+    resolve(sourceRoot, "services/customer-service-realtime.ts"),
+    "utf8"
+  );
   const template = readFileSync(
     resolve(sourceRoot, "pages/customer-service/chat/chat.wxml"),
     "utf8"
@@ -67,10 +71,22 @@ test("小程序客服使用自建接口、原图上传和两级商品来源面�
 
   assert.match(endpointSource, /customerService/);
   assert.match(endpointSource, /\/app\/customer-service\/conversation\/images/);
+  assert.match(endpointSource, /messages\/\$\{messageId\}\/image-access/);
+  assert.match(endpointSource, /messages\/\$\{messageId\}\/thumbnail/);
   assert.match(serviceSource, /uploadCustomerServiceImage/);
   assert.match(serviceSource, /accessMode === "SIGNED_URL"/);
+  assert.match(serviceSource, /refreshCustomerServiceImageAccess/);
   assert.match(serviceSource, /downloadExternalFile/);
   assert.match(serviceSource, /downloadAuthenticatedFile/);
+  assert.match(serviceSource, /thumbnailStatus === "READY"/);
+  assert.match(pageSource, /createIntersectionObserver/);
+  assert.match(pageSource, /downloadCustomerServiceOriginalImage/);
+  assert.match(pageSource, /scheduleThumbnailStatusRefresh/);
+  assert.match(pageSource, /缩略图处理中，点击查看原图/);
+  assert.match(pageSource, /FALLBACK_POLL_INTERVAL_MS = 15_000/);
+  assert.match(pageSource, /subscribeCustomerServiceRealtimeState/);
+  assert.match(realtimeSource, /"CONNECTING"[\s\S]*"CONNECTED"[\s\S]*"DISCONNECTED"/);
+  assert.match(realtimeSource, /heartbeatTimeoutTimer/);
   assert.match(pageSource, /sizeType: \["original"\]/);
   assert.match(pageSource, /getBrowseHistory/);
   assert.match(pageSource, /getFavorites/);

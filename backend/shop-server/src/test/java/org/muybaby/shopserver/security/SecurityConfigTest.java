@@ -211,11 +211,16 @@ class SecurityConfigTest {
         assertNotAuthenticationBlocked("/admin/auth/login");
         assertNotAuthenticationBlocked("/app/auth/login");
         assertNotAuthenticationBlocked("/app/auth/refresh");
-        assertNotAuthenticationBlocked("/files/public/health-probe.png");
         assertNotAuthenticationBlocked("/wxpay/notify");
         assertNotAuthenticationBlocked("/wechat/events");
         assertNotAuthenticationBlocked("/actuator/health");
         assertNotAuthenticationBlocked("/actuator/info");
+    }
+
+    @Test
+    void removedLocalPublicFileEndpointIsDenied() throws Exception {
+        mockMvc.perform(get("/files/public/health-probe.png"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

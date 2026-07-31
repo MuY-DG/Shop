@@ -53,6 +53,7 @@ public enum ErrorCode {
     STORAGE_ASSET_FOLDER_IN_USE(800005, "Storage asset folder is not empty"),
     STORAGE_ASSET_FOLDER_CYCLE(800006, "Storage asset folder cycle is not allowed"),
     STORAGE_IMAGE_COMPRESSION_FAILED(800007, "图片压缩暂时失败，请稍后重试"),
+    STORAGE_NOT_CONFIGURED(800008, "腾讯云 COS 尚未配置，请先在管理后台完成对象存储配置"),
     CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE(900001, "Customer service conversation unavailable"),
     CUSTOMER_SERVICE_STATE_CONFLICT(900002, "Customer service conversation state conflict"),
     CUSTOMER_SERVICE_ASSIGNMENT_REQUIRED(900003, "Customer service assignment required"),

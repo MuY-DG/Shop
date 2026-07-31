@@ -138,7 +138,7 @@ class PrivateStorageFileServiceTest {
                             (id, scope, media_kind, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (:id, :scope, :mediaKind, :visibility, 'LOCAL', '', :objectKey, 'file.txt',
+                            (:id, :scope, :mediaKind, :visibility, 'TENCENT_COS', '', :objectKey, 'file.txt',
                              'text/plain', 'txt', :sizeBytes, :sha256, :status, 'ADMIN', 1)
                         """)
                 .param("id", id)

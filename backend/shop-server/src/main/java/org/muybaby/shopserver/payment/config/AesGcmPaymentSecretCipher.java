@@ -2,8 +2,7 @@ package org.muybaby.shopserver.payment.config;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.payment.PaymentProperties;
-import org.muybaby.shopserver.payment.PaymentSecretEncryptionProperties;
+import org.muybaby.shopserver.common.secret.SecretEncryptionProperties;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -32,19 +31,18 @@ public class AesGcmPaymentSecretCipher implements PaymentSecretCipher {
     private static final Pattern CONTEXT_PART_PATTERN = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private final PaymentProperties paymentProperties;
     private final int writeVersion;
     private final String activeKeyId;
     private final Map<String, byte[]> keyRing;
+    private final String legacyKey;
 
     public AesGcmPaymentSecretCipher(
-            PaymentProperties paymentProperties,
-            PaymentSecretEncryptionProperties encryptionProperties
+            SecretEncryptionProperties encryptionProperties
     ) {
-        this.paymentProperties = paymentProperties;
         this.writeVersion = encryptionProperties.effectiveWriteVersion();
         this.activeKeyId = normalizeKeyId(encryptionProperties.activeKeyId());
         this.keyRing = parseKeyRing(encryptionProperties.keyRing());
+        this.legacyKey = encryptionProperties.legacyKey();
         validateWriteConfiguration();
     }
 
@@ -257,7 +255,7 @@ public class AesGcmPaymentSecretCipher implements PaymentSecretCipher {
     }
 
     private byte[] legacyKeyBytes() {
-        String secretKey = paymentProperties.secretKey();
+        String secretKey = legacyKey;
         if (!StringUtils.hasText(secretKey)) {
             throw validationFailure();
         }

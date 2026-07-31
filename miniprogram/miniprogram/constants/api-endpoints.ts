@@ -26,7 +26,11 @@ export const API_ENDPOINTS = Object.freeze({
     product: (productId: number): string =>
       `/app/customer-service/conversation/products/${productId}`,
     image: (messageId: number): string =>
-      `/app/customer-service/conversation/messages/${messageId}/image`
+      `/app/customer-service/conversation/messages/${messageId}/image`,
+    thumbnail: (messageId: number): string =>
+      `/app/customer-service/conversation/messages/${messageId}/thumbnail`,
+    imageAccess: (messageId: number): string =>
+      `/app/customer-service/conversation/messages/${messageId}/image-access`
   },
   product: {
     categories: "/app/product/categories",

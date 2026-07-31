@@ -201,7 +201,9 @@ public class AssetModelMigrationTest {
                             "secret_reencrypted_at");
             assertThat(columnNames(statement, "storage_runtime_setting"))
                     .contains("secret_cipher_version", "secret_key_id", "secret_revision",
-                            "secret_reencrypted_at", "local_public_base_url", "cos_public_base_url");
+                            "secret_reencrypted_at", "cos_public_base_url", "cos_region", "cos_bucket")
+                    .doesNotContain(
+                            "provider", "public_base_url", "local_public_base_url", "local_root");
 
             assertThat(columnNames(statement, "storage_asset")).containsExactly(
                     "id", "scope", "media_kind", "folder_id", "visibility", "provider",
@@ -210,7 +212,10 @@ public class AssetModelMigrationTest {
                     "width", "height", "duration_seconds", "alt_text", "tags_json", "public_url", "status",
                     "uploaded_by_type", "uploaded_by_id", "upload_context_type", "upload_context_id", "expires_at",
                     "cleanup_attempts", "cleanup_next_retry_at", "cleanup_lease_token",
-                    "deleted_at", "created_at", "updated_at"
+                    "deleted_at", "created_at", "updated_at",
+                    "thumbnail_status", "thumbnail_object_key", "thumbnail_content_type",
+                    "thumbnail_size_bytes", "thumbnail_sha256", "thumbnail_width", "thumbnail_height",
+                    "thumbnail_attempts", "thumbnail_started_at", "thumbnail_next_retry_at"
             ).doesNotContain("purpose", "asset_category_id");
             assertThat(columnNames(statement, "storage_asset_folder")).containsExactly(
                     "id", "parent_id", "parent_key", "name", "sort_order", "status", "created_at", "updated_at"

@@ -434,8 +434,7 @@ class AppPaymentControllerTest extends PaymentTestSupport {
                 PaymentVerifyMode.PUBLIC_KEY,
                 paymentProperties.publicKeyId(),
                 paymentProperties.publicKeyPath(),
-                paymentProperties.expireMinutes(),
-                paymentProperties.secretKey()
+                paymentProperties.expireMinutes()
         );
     }
 }

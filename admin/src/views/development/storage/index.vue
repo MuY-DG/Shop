@@ -1,7 +1,8 @@
 <template>
   <div class="storage-config">
     <ElAlert
-      title="保存后会立即应用到后续上传；已有文件仍按各自记录的存储提供方读取。"
+      title="所有文件统一存储到腾讯云 COS；配置加密保存在数据库，保存后立即生效。"
+      description="SecretId/SecretKey 是 COS 访问凭证；加密它们的应用主密钥由服务端独立配置，不是这两个值。"
       type="info"
       :closable="false"
       show-icon
@@ -11,12 +12,12 @@
       <template #header>
         <div class="section-header">
           <div>
-            <div class="section-header__title">对象存储配置</div>
-            <div class="section-header__subtitle">选择文件保存位置，并配置公开文件的访问域名</div>
+            <div class="section-header__title">腾讯云 COS 配置</div>
+            <div class="section-header__subtitle">配置存储桶、公开访问域名和访问凭证</div>
           </div>
           <div class="section-header__aside">
-            <ElTag type="success">
-              {{ config ? `正在使用：${formatProvider(config.provider)}` : '配置加载中' }}
+            <ElTag :type="config?.configured ? 'success' : 'warning'">
+              {{ config?.configured ? '已配置' : '待配置' }}
             </ElTag>
           </div>
         </div>
@@ -30,57 +31,35 @@
         label-width="128px"
         class="storage-form"
       >
-        <ElFormItem label="存储方式" prop="provider">
-          <ElSegmented v-model="formData.provider" :options="providerOptions" />
+        <ElFormItem label="地域" prop="region">
+          <ElInput v-model="formData.region" placeholder="例如：ap-guangzhou" />
         </ElFormItem>
-
-        <template v-if="formData.provider === 'LOCAL'">
-          <ElFormItem label="本地目录" prop="localRoot">
-            <ElInput v-model="formData.localRoot" placeholder="例如：var/uploads" />
-            <div class="form-tip">相对于后端启动目录，也可以填写绝对路径。</div>
-          </ElFormItem>
-          <ElFormItem label="公开访问地址" prop="localPublicBaseUrl">
-            <ElInput
-              v-model="formData.localPublicBaseUrl"
-              placeholder="例如：http://localhost:8080"
-            />
-            <div class="form-tip">返回链接会拼接为：该地址 /files/public/文件路径。</div>
-          </ElFormItem>
-        </template>
-
-        <template v-else>
-          <ElFormItem label="地域" prop="cosRegion">
-            <ElInput v-model="formData.cosRegion" placeholder="例如：ap-guangzhou" />
-          </ElFormItem>
-          <ElFormItem label="存储桶" prop="cosBucket">
-            <ElInput v-model="formData.cosBucket" placeholder="例如：shop-1250000000" />
-            <div class="form-tip">请填写包含 APPID 后缀的完整存储桶名称。</div>
-          </ElFormItem>
-          <ElFormItem label="SecretId" prop="cosSecretId">
-            <ElInput
-              v-model="formData.cosSecretId"
-              autocomplete="new-password"
-              :placeholder="secretIdPlaceholder"
-            />
-          </ElFormItem>
-          <ElFormItem label="SecretKey" prop="cosSecretKey">
-            <ElInput
-              v-model="formData.cosSecretKey"
-              type="password"
-              show-password
-              autocomplete="new-password"
-              :placeholder="
-                config?.cosSecretKeyConfigured ? '已配置，留空不修改' : '请输入 SecretKey'
-              "
-            />
-          </ElFormItem>
-          <ElFormItem label="公开访问域名" prop="cosPublicBaseUrl">
-            <ElInput v-model="formData.cosPublicBaseUrl" :placeholder="cosDomainPlaceholder" />
-            <div class="form-tip"
-              >可留空使用 COS 默认域名；如已绑定自定义源站域名，可填写 HTTPS 地址。</div
-            >
-          </ElFormItem>
-        </template>
+        <ElFormItem label="存储桶" prop="bucket">
+          <ElInput v-model="formData.bucket" placeholder="例如：shop-1250000000" />
+          <div class="form-tip">请填写包含 APPID 后缀的完整存储桶名称。</div>
+        </ElFormItem>
+        <ElFormItem label="SecretId" prop="secretId">
+          <ElInput
+            v-model="formData.secretId"
+            autocomplete="new-password"
+            :placeholder="secretIdPlaceholder"
+          />
+        </ElFormItem>
+        <ElFormItem label="SecretKey" prop="secretKey">
+          <ElInput
+            v-model="formData.secretKey"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :placeholder="config?.secretKeyConfigured ? '已配置，留空不修改' : '请输入 SecretKey'"
+          />
+        </ElFormItem>
+        <ElFormItem label="公开访问域名" prop="publicBaseUrl">
+          <ElInput v-model="formData.publicBaseUrl" :placeholder="cosDomainPlaceholder" />
+          <div class="form-tip"
+            >可留空使用 COS 默认域名；如已绑定自定义源站域名，可填写 HTTP(S) 地址。</div
+          >
+        </ElFormItem>
 
         <ElFormItem>
           <ElButton
@@ -89,7 +68,7 @@
             :loading="saving"
             @click="handleSave"
           >
-            {{ formData.provider === config?.provider ? '保存配置' : '保存并使用' }}
+            保存配置
           </ElButton>
           <ElButton :disabled="!dirty || loading || saving" @click="resetUnsavedChanges">
             撤销未保存修改
@@ -114,50 +93,40 @@
   const formRef = ref<FormInstance>()
 
   const createDefaultForm = (): Api.Storage.ConfigForm => ({
-    provider: 'LOCAL',
-    localPublicBaseUrl: '',
-    cosPublicBaseUrl: '',
-    localRoot: 'var/uploads',
-    cosRegion: '',
-    cosBucket: '',
-    cosSecretId: '',
-    cosSecretKey: ''
+    publicBaseUrl: '',
+    region: '',
+    bucket: '',
+    secretId: '',
+    secretKey: ''
   })
 
   const formData = reactive<Api.Storage.ConfigForm>(createDefaultForm())
   const snapshot = () =>
     JSON.stringify({
-      provider: formData.provider,
-      localPublicBaseUrl: formData.localPublicBaseUrl,
-      cosPublicBaseUrl: formData.cosPublicBaseUrl,
-      localRoot: formData.localRoot,
-      cosRegion: formData.cosRegion,
-      cosBucket: formData.cosBucket,
-      cosSecretId: formData.cosSecretId,
-      cosSecretKey: formData.cosSecretKey
+      publicBaseUrl: formData.publicBaseUrl,
+      region: formData.region,
+      bucket: formData.bucket,
+      secretId: formData.secretId,
+      secretKey: formData.secretKey
     })
   const dirty = computed(() => snapshot() !== baseline.value)
-  const providerOptions: Array<{ label: string; value: Api.Storage.Provider }> = [
-    { label: '本地存储', value: 'LOCAL' },
-    { label: '腾讯云 COS', value: 'TENCENT_COS' }
-  ]
 
   const cosDomainPlaceholder = computed(() => {
-    if (formData.cosBucket && formData.cosRegion) {
-      return `https://${formData.cosBucket}.cos.${formData.cosRegion}.myqcloud.com`
+    if (formData.bucket && formData.region) {
+      return `https://${formData.bucket}.cos.${formData.region}.myqcloud.com`
     }
     return '留空自动生成 COS 默认域名'
   })
 
   const secretIdPlaceholder = computed(() =>
-    config.value?.cosSecretIdMasked
-      ? `当前：${config.value.cosSecretIdMasked}，留空不修改`
+    config.value?.secretIdMasked
+      ? `当前：${config.value.secretIdMasked}，留空不修改`
       : '请输入 SecretId'
   )
 
-  const requireCosSecret = (configured: boolean, message: string) => ({
+  const requireSecret = (configured: boolean, message: string) => ({
     validator: (_rule: unknown, value: string | undefined, callback: (error?: Error) => void) => {
-      if (formData.provider !== 'TENCENT_COS' || String(value || '').trim() || configured) {
+      if (String(value || '').trim() || configured) {
         callback()
         return
       }
@@ -167,93 +136,48 @@
   })
 
   const rules = computed<FormRules<Api.Storage.ConfigForm>>(() => ({
-    provider: [{ required: true, message: '请选择存储方式', trigger: 'change' }],
-    localRoot: [
-      {
-        validator: (_rule, value, callback) => {
-          if (formData.provider !== 'LOCAL' || String(value || '').trim()) callback()
-          else callback(new Error('请输入本地目录'))
-        },
-        trigger: 'blur'
-      }
-    ],
-    localPublicBaseUrl: [
+    publicBaseUrl: [
       {
         validator: (_rule, value, callback) => {
           const text = String(value || '').trim()
-          if (!/^https?:\/\/[^\s]+$/i.test(text)) {
-            callback(new Error('请输入正确的 HTTP(S) 地址'))
+          if (!text || /^https?:\/\/[^\s]+$/i.test(text)) {
+            callback()
             return
           }
-          callback()
+          callback(new Error('请输入正确的 HTTP(S) 地址'))
         },
         trigger: 'blur'
       }
     ],
-    cosPublicBaseUrl: [
+    region: [
       {
         validator: (_rule, value, callback) => {
-          const text = String(value || '').trim()
-          if (!text) {
-            callback()
-            return
-          }
-          if (!/^https?:\/\/[^\s]+$/i.test(text)) {
-            callback(new Error('请输入正确的 HTTP(S) 地址'))
-            return
-          }
-          callback()
-        },
-        trigger: 'blur'
-      }
-    ],
-    cosRegion: [
-      {
-        validator: (_rule, value, callback) => {
-          if (
-            formData.provider !== 'TENCENT_COS' ||
-            /^[a-z0-9-]{2,64}$/.test(String(value || '').trim())
-          )
-            callback()
+          if (/^[a-z0-9-]{2,64}$/.test(String(value || '').trim())) callback()
           else callback(new Error('请输入正确的 COS 地域简称'))
         },
         trigger: 'blur'
       }
     ],
-    cosBucket: [
+    bucket: [
       {
         validator: (_rule, value, callback) => {
-          if (
-            formData.provider !== 'TENCENT_COS' ||
-            /^[a-z0-9][a-z0-9-]{0,116}-[0-9]{5,20}$/.test(String(value || '').trim())
-          )
-            callback()
+          if (/^[a-z0-9][a-z0-9-]{0,116}-[0-9]{5,20}$/.test(String(value || '').trim())) callback()
           else callback(new Error('请输入包含 APPID 后缀的完整存储桶名称'))
         },
         trigger: 'blur'
       }
     ],
-    cosSecretId: [requireCosSecret(Boolean(config.value?.cosSecretIdMasked), '请输入 SecretId')],
-    cosSecretKey: [
-      requireCosSecret(Boolean(config.value?.cosSecretKeyConfigured), '请输入 SecretKey')
-    ]
+    secretId: [requireSecret(Boolean(config.value?.secretIdMasked), '请输入 SecretId')],
+    secretKey: [requireSecret(Boolean(config.value?.secretKeyConfigured), '请输入 SecretKey')]
   }))
-
-  const formatProvider = (provider?: Api.Storage.Provider) =>
-    provider === 'TENCENT_COS' ? '腾讯云 COS' : '本地存储'
 
   const fillForm = (value: Api.Storage.Config) => {
     Object.assign(formData, {
-      provider: value.provider,
-      localPublicBaseUrl:
-        value.localPublicBaseUrl ?? (value.provider === 'LOCAL' ? value.publicBaseUrl : ''),
-      cosPublicBaseUrl:
-        value.cosPublicBaseUrl ?? (value.provider === 'TENCENT_COS' ? value.publicBaseUrl : ''),
-      localRoot: value.localRoot,
-      cosRegion: value.cosRegion,
-      cosBucket: value.cosBucket,
-      cosSecretId: '',
-      cosSecretKey: ''
+      publicBaseUrl: value.publicBaseUrl,
+      region: value.region,
+      bucket: value.bucket,
+      secretId: '',
+      secretKey: ''
     })
     baseline.value = snapshot()
     formRef.value?.clearValidate()
@@ -278,21 +202,14 @@
     saving.value = true
     try {
       const payload: Api.Storage.ConfigForm = {
-        provider: formData.provider,
-        publicBaseUrl:
-          formData.provider === 'TENCENT_COS'
-            ? String(formData.cosPublicBaseUrl || '').trim()
-            : String(formData.localPublicBaseUrl || '').trim(),
-        localPublicBaseUrl: String(formData.localPublicBaseUrl || '').trim(),
-        cosPublicBaseUrl: String(formData.cosPublicBaseUrl || '').trim(),
-        localRoot: String(formData.localRoot || '').trim(),
-        cosRegion: String(formData.cosRegion || '').trim(),
-        cosBucket: String(formData.cosBucket || '').trim()
+        publicBaseUrl: String(formData.publicBaseUrl || '').trim(),
+        region: String(formData.region || '').trim(),
+        bucket: String(formData.bucket || '').trim()
       }
-      const secretId = String(formData.cosSecretId || '').trim()
-      const secretKey = String(formData.cosSecretKey || '').trim()
-      if (secretId) payload.cosSecretId = secretId
-      if (secretKey) payload.cosSecretKey = secretKey
+      const secretId = String(formData.secretId || '').trim()
+      const secretKey = String(formData.secretKey || '').trim()
+      if (secretId) payload.secretId = secretId
+      if (secretKey) payload.secretKey = secretKey
       config.value = await updateStorageConfig(payload)
       fillForm(config.value)
     } finally {
@@ -337,9 +254,5 @@
 
   .storage-form {
     max-width: 820px;
-  }
-
-  .form-tip {
-    width: 100%;
   }
 </style>

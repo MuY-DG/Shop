@@ -14,6 +14,10 @@ declare namespace Api {
       accessMode: 'SIGNED_URL' | 'AUTHENTICATED_BLOB'
       accessUrl?: string | null
       accessExpiresAt?: string | null
+      thumbnailStatus: 'NONE' | 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED' | 'UNAVAILABLE'
+      thumbnailAccessMode?: 'SIGNED_URL' | 'AUTHENTICATED_BLOB' | null
+      thumbnailAccessUrl?: string | null
+      thumbnailAccessExpiresAt?: string | null
     }
 
     interface Message {

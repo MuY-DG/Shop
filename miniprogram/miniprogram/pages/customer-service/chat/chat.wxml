@@ -79,7 +79,7 @@
               <view
                 wx:elif="{{item.messageType === 'IMAGE'}}"
                 class="message-image-shell"
-                data-url="{{item.imageUrl}}"
+                data-id="{{item.messageId}}"
                 bindtap="onImageTap"
               >
                 <image
@@ -88,12 +88,13 @@
                   style="{{item.imageStyle}}"
                   src="{{item.imageUrl}}"
                   mode="aspectFill"
+                  lazy-load
                 />
                 <view
                   wx:else
                   class="message-image message-image--loading"
                   style="{{item.imageStyle}}"
-                >{{item.imageLoading ? '图片加载中' : '图片加载失败'}}</view>
+                >{{item.imageLoading ? item.imageStatusText : '图片加载失败'}}</view>
               </view>
 
               <view

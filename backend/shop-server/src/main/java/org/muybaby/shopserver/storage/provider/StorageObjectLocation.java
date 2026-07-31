@@ -3,10 +3,7 @@ package org.muybaby.shopserver.storage.provider;
 import org.muybaby.shopserver.storage.StorageProviderKind;
 
 /**
- * Immutable provider location captured when an object is uploaded.
- *
- * <p>The container is the normalized local root for LOCAL storage and the
- * bucket name for Tencent COS. The region is empty for LOCAL storage.</p>
+ * Immutable Tencent COS location captured when an object is uploaded.
  */
 public record StorageObjectLocation(
         StorageProviderKind provider,

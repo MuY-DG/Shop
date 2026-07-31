@@ -23,10 +23,10 @@ class OrderSchemaTest {
                              content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
                              public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (7001, 'LIBRARY', 'IMAGE', null, 'PUBLIC', 'LOCAL', '', 'public/schema/main.png', 'schema-main.png',
+                            (7001, 'LIBRARY', 'IMAGE', null, 'PUBLIC', 'TENCENT_COS', '', 'public/schema/main.png', 'schema-main.png',
                              'image/png', 'png', 68, 'schema-main', 1, 1, '', null,
                              'http://localhost:8080/files/public/schema/main.png', 'ACTIVE', 'ADMIN', 1),
-                            (7002, 'LIBRARY', 'IMAGE', null, 'PUBLIC', 'LOCAL', '', 'public/schema/sku.png', 'schema-sku.png',
+                            (7002, 'LIBRARY', 'IMAGE', null, 'PUBLIC', 'TENCENT_COS', '', 'public/schema/sku.png', 'schema-sku.png',
                              'image/png', 'png', 68, 'schema-sku', 1, 1, '', null,
                              'http://localhost:8080/files/public/schema/sku.png', 'ACTIVE', 'ADMIN', 1)
                         """)

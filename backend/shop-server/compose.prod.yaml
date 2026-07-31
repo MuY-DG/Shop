@@ -130,10 +130,6 @@ services:
         source: ./secrets
         target: /opt/shop/shop-server/secrets
         read_only: true
-      # LOCAL 存储回退和私密上传需要持久化；使用 COS 时仍保留应急目录。
-      - type: bind
-        source: ./var
-        target: /opt/shop/shop-server/var
 
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/actuator/health"]

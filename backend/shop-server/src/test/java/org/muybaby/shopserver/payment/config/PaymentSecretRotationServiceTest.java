@@ -2,8 +2,7 @@ package org.muybaby.shopserver.payment.config;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.muybaby.shopserver.payment.PaymentProperties;
-import org.muybaby.shopserver.payment.PaymentSecretEncryptionProperties;
+import org.muybaby.shopserver.common.secret.SecretEncryptionProperties;
 import org.muybaby.shopserver.storage.compression.config.ImageCompressionRuntimeConfigService;
 import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
@@ -18,13 +17,13 @@ import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(properties = {
-        "shop.pay.secret-encryption.write-version=2",
-        "shop.pay.secret-encryption.active-key-id=new-2026",
-        "shop.pay.secret-encryption.key-ring="
+        "shop.secret-encryption.write-version=2",
+        "shop.secret-encryption.active-key-id=new-2026",
+        "shop.secret-encryption.key-ring="
                 + "old-2025=base64:b2xkLWtleS1tYXRlcmlhbC0zMi1ieXRlcy0wMDAwMDA=;"
                 + "new-2026=base64:bmV3LWtleS1tYXRlcmlhbC0zMi1ieXRlcy0wMDAwMDA=",
-        "shop.pay.secret-encryption.rotation-enabled=false",
-        "shop.pay.secret-encryption.rotation-batch-size=10"
+        "shop.secret-encryption.rotation-enabled=false",
+        "shop.secret-encryption.rotation-batch-size=10"
 })
 @ActiveProfiles("test")
 class PaymentSecretRotationServiceTest {
@@ -41,10 +40,7 @@ class PaymentSecretRotationServiceTest {
     private JdbcClient jdbcClient;
 
     @Autowired
-    private PaymentProperties paymentProperties;
-
-    @Autowired
-    private PaymentSecretEncryptionProperties encryptionProperties;
+    private SecretEncryptionProperties encryptionProperties;
 
     @Autowired
     private PaymentSecretCipher activeCipher;
@@ -82,9 +78,14 @@ class PaymentSecretRotationServiceTest {
         resetCheckpoint("storage-runtime-setting", "0");
         resetCheckpoint("image-compression-runtime-setting", "0");
         legacyCipher = new AesGcmPaymentSecretCipher(
-                paymentProperties,
-                new PaymentSecretEncryptionProperties(
-                        1, "", "", false, Duration.ofMinutes(1), 10));
+                new SecretEncryptionProperties(
+                        1,
+                        "",
+                        "",
+                        encryptionProperties.legacyKey(),
+                        false,
+                        Duration.ofMinutes(1),
+                        10));
         seedLegacyPaymentConfig();
         seedLegacySnapshot();
         seedLegacyStorageConfig();
@@ -134,8 +135,8 @@ class PaymentSecretRotationServiceTest {
         assertActiveEnvelope(snapshotEnvelope);
 
         ResolvedStorageConfig storage = storageRuntimeConfigService.effective();
-        assertThat(storage.cosSecretId()).isEqualTo(COS_SECRET_ID);
-        assertThat(storage.cosSecretKey()).isEqualTo(COS_SECRET_KEY);
+        assertThat(storage.secretId()).isEqualTo(COS_SECRET_ID);
+        assertThat(storage.secretKey()).isEqualTo(COS_SECRET_KEY);
         SecretEnvelope storageEnvelope = jdbcClient.sql("""
                         select cos_secret_id_ciphertext as ciphertext,
                                secret_cipher_version, secret_key_id
@@ -258,10 +259,11 @@ class PaymentSecretRotationServiceTest {
                 activeCipher,
                 snapshotStore,
                 resolver,
-                new PaymentSecretEncryptionProperties(
+                new SecretEncryptionProperties(
                         2,
                         encryptionProperties.activeKeyId(),
                         encryptionProperties.keyRing(),
+                        encryptionProperties.legacyKey(),
                         false,
                         Duration.ofMinutes(1),
                         batchSize),
@@ -376,12 +378,12 @@ class PaymentSecretRotationServiceTest {
                 StorageRuntimeConfigService.secretContext("cos-secret-key"), COS_SECRET_KEY);
         jdbcClient.sql("""
                         insert into storage_runtime_setting
-                            (id, provider, public_base_url, local_root, cos_region, cos_bucket,
+                            (id, cos_public_base_url, cos_region, cos_bucket,
                              cos_secret_id_ciphertext, cos_secret_key_ciphertext,
                              secret_cipher_version, secret_key_id)
                         values
-                            (1, 'TENCENT_COS', 'https://rotation-bucket-1250000000.cos.ap-guangzhou.myqcloud.com',
-                             'var/uploads', 'ap-guangzhou', 'rotation-bucket-1250000000',
+                            (1, 'https://rotation-bucket-1250000000.cos.ap-guangzhou.myqcloud.com',
+                             'ap-guangzhou', 'rotation-bucket-1250000000',
                              :secretId, :secretKey, 1, '')
                         """)
                 .param("secretId", secretId.ciphertext())

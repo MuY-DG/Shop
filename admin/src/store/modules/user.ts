@@ -42,6 +42,7 @@ import { setPageTitle } from '@/utils/router'
 import { resetRouterState } from '@/router/guards/beforeEach'
 import { useMenuStore } from './menu'
 import { StorageConfig } from '@/utils/storage/storage-config'
+import { clearCustomerServiceImageCache } from '@/utils/customer-service-image-cache'
 
 const USER_STORE_STORAGE_KEY = 'user'
 const USER_STORE_PERSISTED_KEY = StorageConfig.generateStorageKey(USER_STORE_STORAGE_KEY)
@@ -201,6 +202,7 @@ export const useUserStore = defineStore(
       refreshToken.value = stored.refreshToken
       isLogin.value = nextIsLogin
       if (!nextIsLogin) {
+        clearCustomerServiceImageCache()
         info.value = {}
         isLock.value = false
         lockPassword.value = ''
@@ -252,6 +254,7 @@ export const useUserStore = defineStore(
       }
 
       // 清空用户信息
+      clearCustomerServiceImageCache()
       info.value = {}
       // 重置登录状态
       isLogin.value = false

@@ -315,7 +315,7 @@ class StorageServiceTest {
         assertThat(response.contentType()).isEqualTo("video/mp4");
         assertThat(response.width()).isNull();
         assertThat(response.height()).isNull();
-        assertThat(response.publicUrl()).contains("/files/public/library/video/");
+        assertThat(response.publicUrl()).contains("/public/library/video/");
     }
 
     @Test

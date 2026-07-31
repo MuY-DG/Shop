@@ -9,8 +9,10 @@ import com.qcloud.cos.http.HttpMethodName;
 import com.qcloud.cos.http.HttpProtocol;
 import com.qcloud.cos.model.COSObject;
 import com.qcloud.cos.model.CannedAccessControlList;
+import com.qcloud.cos.model.GeneratePresignedUrlRequest;
 import com.qcloud.cos.model.ObjectMetadata;
 import com.qcloud.cos.model.PutObjectRequest;
+import com.qcloud.cos.model.ResponseHeaderOverrides;
 import com.qcloud.cos.region.Region;
 import jakarta.annotation.PreDestroy;
 import org.muybaby.shopserver.storage.StorageProviderKind;
@@ -21,7 +23,6 @@ import org.springframework.util.StringUtils;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
@@ -33,13 +34,13 @@ import java.util.function.Function;
 public class RoutingStorageProvider implements StorageProvider {
 
     private static final String PUBLIC_CACHE_CONTROL = "public, max-age=31536000, immutable";
+    private static final String PRIVATE_IMAGE_CACHE_CONTROL = "private, max-age=300";
 
     private final StorageRuntimeConfigService configService;
     private final CosClientFactory cosClientFactory;
     private final CosSigningClientFactory cosSigningClientFactory;
     private final ConcurrentMap<CosKey, COSClient> cosClients = new ConcurrentHashMap<>();
     private final ConcurrentMap<CosSigningKey, COSClient> cosSigningClients = new ConcurrentHashMap<>();
-    private volatile LocalHolder localHolder;
 
     public RoutingStorageProvider(StorageRuntimeConfigService configService) {
         this(
@@ -66,7 +67,7 @@ public class RoutingStorageProvider implements StorageProvider {
     @Override
     public StoredObject put(String objectKey, String contentType, InputStream inputStream, long sizeBytes) {
         ResolvedStorageConfig config = configService.effective();
-        return put(currentLocation(config, config.provider(), objectKey), contentType, inputStream, sizeBytes);
+        return put(currentLocation(config, objectKey), contentType, inputStream, sizeBytes);
     }
 
     @Override
@@ -77,8 +78,9 @@ public class RoutingStorageProvider implements StorageProvider {
             InputStream inputStream,
             long sizeBytes
     ) {
+        requireTencentCos(provider);
         ResolvedStorageConfig config = configService.effective();
-        return put(currentLocation(config, provider, objectKey), contentType, inputStream, sizeBytes);
+        return put(currentLocation(config, objectKey), contentType, inputStream, sizeBytes);
     }
 
     @Override
@@ -90,10 +92,6 @@ public class RoutingStorageProvider implements StorageProvider {
     ) {
         ResolvedStorageConfig config = configService.effective();
         StorageObjectLocation resolved = resolveLocation(location, config);
-        if (resolved.provider() == StorageProviderKind.LOCAL) {
-            return local(resolved.container()).put(resolved.objectKey(), contentType, inputStream, sizeBytes);
-        }
-
         requireCosLocation(resolved, config);
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(sizeBytes);
@@ -113,22 +111,20 @@ public class RoutingStorageProvider implements StorageProvider {
     @Override
     public StoredObject open(String objectKey) {
         ResolvedStorageConfig config = configService.effective();
-        return open(currentLocation(config, config.provider(), objectKey));
+        return open(currentLocation(config, objectKey));
     }
 
     @Override
     public StoredObject open(StorageProviderKind provider, String objectKey) {
+        requireTencentCos(provider);
         ResolvedStorageConfig config = configService.effective();
-        return open(currentLocation(config, provider, objectKey));
+        return open(currentLocation(config, objectKey));
     }
 
     @Override
     public StoredObject open(StorageObjectLocation location) {
         ResolvedStorageConfig config = configService.effective();
         StorageObjectLocation resolved = resolveLocation(location, config);
-        if (resolved.provider() == StorageProviderKind.LOCAL) {
-            return local(resolved.container()).open(resolved.objectKey());
-        }
         requireCosLocation(resolved, config);
         COSObject object = cos(config, resolved.region()).getObject(resolved.container(), resolved.objectKey());
         ObjectMetadata metadata = object.getObjectMetadata();
@@ -163,23 +159,20 @@ public class RoutingStorageProvider implements StorageProvider {
     @Override
     public void delete(String objectKey) {
         ResolvedStorageConfig config = configService.effective();
-        delete(currentLocation(config, config.provider(), objectKey));
+        delete(currentLocation(config, objectKey));
     }
 
     @Override
     public void delete(StorageProviderKind provider, String objectKey) {
+        requireTencentCos(provider);
         ResolvedStorageConfig config = configService.effective();
-        delete(currentLocation(config, provider, objectKey));
+        delete(currentLocation(config, objectKey));
     }
 
     @Override
     public void delete(StorageObjectLocation location) {
         ResolvedStorageConfig config = configService.effective();
         StorageObjectLocation resolved = resolveLocation(location, config);
-        if (resolved.provider() == StorageProviderKind.LOCAL) {
-            local(resolved.container()).delete(resolved.objectKey());
-            return;
-        }
         requireCosLocation(resolved, config);
         cos(config, resolved.region()).deleteObject(resolved.container(), resolved.objectKey());
     }
@@ -198,28 +191,9 @@ public class RoutingStorageProvider implements StorageProvider {
         }
     }
 
-    private LocalStorageProvider local(String localRoot) {
-        if (!StringUtils.hasText(localRoot)) {
-            throw new IllegalStateException("Local storage root is not configured");
-        }
-        Path root = Path.of(localRoot).toAbsolutePath().normalize();
-        LocalHolder holder = localHolder;
-        if (holder != null && holder.root().equals(root)) {
-            return holder.provider();
-        }
-        synchronized (this) {
-            holder = localHolder;
-            if (holder == null || !holder.root().equals(root)) {
-                holder = new LocalHolder(root, new LocalStorageProvider(root));
-                localHolder = holder;
-            }
-            return holder.provider();
-        }
-    }
-
     private COSClient cos(ResolvedStorageConfig config, String region) {
         requireCosCredentials(config);
-        CosKey key = new CosKey(region, config.cosSecretId(), config.cosSecretKey());
+        CosKey key = new CosKey(region, config.secretId(), config.secretKey());
         return cosClients.computeIfAbsent(
                 key,
                 ignored -> cosClientFactory.create(key.region(), key.secretId(), key.secretKey())
@@ -239,8 +213,8 @@ public class RoutingStorageProvider implements StorageProvider {
         requireCosCredentials(config);
         CosSigningKey key = new CosSigningKey(
                 region,
-                config.cosSecretId(),
-                config.cosSecretKey(),
+                config.secretId(),
+                config.secretKey(),
                 endpoint.protocol(),
                 endpoint.host()
         );
@@ -263,19 +237,22 @@ public class RoutingStorageProvider implements StorageProvider {
     ) {
         try {
             StorageObjectLocation resolved = resolveLocation(location, config);
-            if (resolved.provider() != StorageProviderKind.TENCENT_COS) {
-                return PrivateObjectAccess.authenticatedBlob();
-            }
             requireCosLocation(resolved, config);
             SigningEndpoint endpoint = signingEndpoint(resolved, config);
             Instant expiresAt = Instant.now().plus(normalizeValidity(validity));
             COSClient client = signingCos(config, resolved.region(), endpoint);
-            String signedUrl = client.generatePresignedUrl(
+            GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
                     resolved.container(),
                     resolved.objectKey(),
-                    Date.from(expiresAt),
                     HttpMethodName.GET
-            ).toString();
+            )
+                    .withExpiration(Date.from(expiresAt))
+                    .withResponseHeaders(
+                            new ResponseHeaderOverrides()
+                                    .withCacheControl(PRIVATE_IMAGE_CACHE_CONTROL)
+                    );
+            request.setSignPrefixMode(false);
+            String signedUrl = client.generatePresignedUrl(request).toString();
             return PrivateObjectAccess.signedUrl(signedUrl, expiresAt);
         } catch (RuntimeException ex) {
             return PrivateObjectAccess.authenticatedBlob();
@@ -302,10 +279,10 @@ public class RoutingStorageProvider implements StorageProvider {
             StorageObjectLocation location,
             ResolvedStorageConfig config
     ) {
-        if (location.container().equals(config.cosBucket())
-                && location.region().equals(config.cosRegion())
-                && StringUtils.hasText(config.cosPublicBaseUrl())) {
-            SigningEndpoint configured = parseSigningEndpoint(config.cosPublicBaseUrl());
+        if (location.container().equals(config.bucket())
+                && location.region().equals(config.region())
+                && StringUtils.hasText(config.publicBaseUrl())) {
+            SigningEndpoint configured = parseSigningEndpoint(config.publicBaseUrl());
             if (configured != null) {
                 return configured;
             }
@@ -350,8 +327,8 @@ public class RoutingStorageProvider implements StorageProvider {
     }
 
     private void requireCosCredentials(ResolvedStorageConfig config) {
-        if (!StringUtils.hasText(config.cosSecretId())
-                || !StringUtils.hasText(config.cosSecretKey())) {
+        if (!StringUtils.hasText(config.secretId())
+                || !StringUtils.hasText(config.secretKey())) {
             throw new IllegalStateException("Tencent COS credentials are not configured");
         }
     }
@@ -363,40 +340,38 @@ public class RoutingStorageProvider implements StorageProvider {
         }
     }
 
-    private StorageObjectLocation currentLocation(
-            ResolvedStorageConfig config,
-            StorageProviderKind provider,
-            String objectKey
-    ) {
-        if (provider == StorageProviderKind.LOCAL) {
-            return new StorageObjectLocation(provider, normalizeLocalRoot(config.localRoot()), "", objectKey);
-        }
-        return new StorageObjectLocation(provider, config.cosBucket(), config.cosRegion(), objectKey);
+    private StorageObjectLocation currentLocation(ResolvedStorageConfig config, String objectKey) {
+        return new StorageObjectLocation(
+                StorageProviderKind.TENCENT_COS,
+                config.bucket(),
+                config.region(),
+                objectKey
+        );
     }
 
     private StorageObjectLocation resolveLocation(StorageObjectLocation location, ResolvedStorageConfig config) {
-        if (location == null || location.provider() == null || !StringUtils.hasText(location.objectKey())) {
+        if (location == null || !StringUtils.hasText(location.objectKey())) {
             throw new IllegalStateException("Storage object location is incomplete");
         }
-        if (location.provider() == StorageProviderKind.LOCAL) {
-            String root = StringUtils.hasText(location.container())
-                    ? normalizeLocalRoot(location.container())
-                    : normalizeLocalRoot(config.localRoot());
-            return new StorageObjectLocation(location.provider(), root, "", location.objectKey());
-        }
-        String bucket = StringUtils.hasText(location.container()) ? location.container() : config.cosBucket();
-        String region = StringUtils.hasText(location.region()) ? location.region() : config.cosRegion();
-        return new StorageObjectLocation(location.provider(), bucket, region, location.objectKey());
+        requireTencentCos(location.provider());
+        String bucket = StringUtils.hasText(location.container())
+                ? location.container()
+                : config.bucket();
+        String region = StringUtils.hasText(location.region())
+                ? location.region()
+                : config.region();
+        return new StorageObjectLocation(
+                StorageProviderKind.TENCENT_COS,
+                bucket,
+                region,
+                location.objectKey()
+        );
     }
 
-    private String normalizeLocalRoot(String localRoot) {
-        if (!StringUtils.hasText(localRoot)) {
-            throw new IllegalStateException("Local storage root is not configured");
+    private void requireTencentCos(StorageProviderKind provider) {
+        if (provider != StorageProviderKind.TENCENT_COS) {
+            throw new IllegalStateException("Only Tencent COS storage is supported");
         }
-        return Path.of(localRoot).toAbsolutePath().normalize().toString();
-    }
-
-    private record LocalHolder(Path root, LocalStorageProvider provider) {
     }
 
     private record CosKey(String region, String secretId, String secretKey) {

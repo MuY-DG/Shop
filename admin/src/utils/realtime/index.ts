@@ -2,12 +2,17 @@ import { issueAdminRealtimeTicket } from '@/api/customer-service'
 
 export type RealtimeEvent = Api.Realtime.Event<Record<string, unknown>>
 export type RealtimeEventHandler = (event: RealtimeEvent) => void
+export type RealtimeConnectionState = 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED'
+export type RealtimeConnectionStateHandler = (state: RealtimeConnectionState) => void
 
 class RealtimeClient {
   private socket: WebSocket | null = null
   private subscribers = new Set<RealtimeEventHandler>()
+  private connectionStateSubscribers = new Set<RealtimeConnectionStateHandler>()
+  private connectionState: RealtimeConnectionState = 'DISCONNECTED'
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  private heartbeatTimeoutTimer: ReturnType<typeof setTimeout> | null = null
   private closeTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectAttempt = 0
   private generation = 0
@@ -28,14 +33,22 @@ class RealtimeClient {
     }
   }
 
+  subscribeConnectionState(handler: RealtimeConnectionStateHandler) {
+    this.connectionStateSubscribers.add(handler)
+    handler(this.connectionState)
+    return () => this.connectionStateSubscribers.delete(handler)
+  }
+
   private async connect() {
     if (
       this.subscribers.size === 0 ||
+      this.connectionState === 'CONNECTING' ||
       this.socket?.readyState === WebSocket.OPEN ||
       this.socket?.readyState === WebSocket.CONNECTING
     ) {
       return
     }
+    this.setConnectionState('CONNECTING')
     const generation = ++this.generation
     try {
       const ticket = await issueAdminRealtimeTicket()
@@ -45,6 +58,7 @@ class RealtimeClient {
       socket.onopen = () => {
         if (generation !== this.generation) return
         this.reconnectAttempt = 0
+        this.setConnectionState('CONNECTED')
         this.startHeartbeat(socket)
       }
       socket.onmessage = (message) => this.handleMessage(message)
@@ -68,7 +82,11 @@ class RealtimeClient {
     if (typeof message.data !== 'string') return
     try {
       const event = JSON.parse(message.data) as RealtimeEvent
-      if (!event.eventId || !event.type || event.type === 'PONG') return
+      if (event.type === 'PONG') {
+        this.clearHeartbeatTimeout()
+        return
+      }
+      if (!event.eventId || !event.type) return
       if (this.seenEventIds.has(event.eventId)) return
       this.seenEventIds.add(event.eventId)
       if (this.seenEventIds.size > 500) {
@@ -85,6 +103,7 @@ class RealtimeClient {
     if (generation !== this.generation) return
     this.clearHeartbeat()
     this.socket = null
+    this.setConnectionState('DISCONNECTED')
     if (this.subscribers.size === 0 || this.reconnectTimer) return
     const delay = Math.min(1000 * 2 ** this.reconnectAttempt, 30000)
     this.reconnectAttempt += 1
@@ -97,13 +116,28 @@ class RealtimeClient {
   private startHeartbeat(socket: WebSocket) {
     this.clearHeartbeat()
     this.heartbeatTimer = setInterval(() => {
-      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: 'PING' }))
+      if (socket.readyState !== WebSocket.OPEN) return
+      socket.send(JSON.stringify({ type: 'PING' }))
+      this.clearHeartbeatTimeout()
+      this.heartbeatTimeoutTimer = setTimeout(() => socket.close(), 10000)
     }, 25000)
   }
 
   private clearHeartbeat() {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer)
     this.heartbeatTimer = null
+    this.clearHeartbeatTimeout()
+  }
+
+  private clearHeartbeatTimeout() {
+    if (this.heartbeatTimeoutTimer) clearTimeout(this.heartbeatTimeoutTimer)
+    this.heartbeatTimeoutTimer = null
+  }
+
+  private setConnectionState(state: RealtimeConnectionState) {
+    if (this.connectionState === state) return
+    this.connectionState = state
+    this.connectionStateSubscribers.forEach((subscriber) => subscriber(state))
   }
 
   private stop() {
@@ -113,6 +147,8 @@ class RealtimeClient {
     this.reconnectTimer = null
     this.socket?.close(1000, 'No active subscribers')
     this.socket = null
+    this.reconnectAttempt = 0
+    this.setConnectionState('DISCONNECTED')
   }
 }
 

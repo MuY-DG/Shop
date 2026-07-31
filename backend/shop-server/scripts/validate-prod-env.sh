@@ -31,6 +31,41 @@ require_value() {
   fi
 }
 
+reject_property() {
+  local file="$1"
+  local key="$2"
+  if awk -v prefix="${key}=" '
+      index($0, prefix) == 1 { found = 1 }
+      END { exit found ? 0 : 1 }
+    ' "$file"; then
+    printf '%s 中仍存在已移除的配置 %s，请删除该行。\n' "$file" "$key" >&2
+    exit 1
+  fi
+}
+
+for key in \
+  SHOP_STORAGE_PROVIDER \
+  SHOP_STORAGE_PUBLIC_BASE_URL \
+  SHOP_STORAGE_LOCAL_ROOT \
+  SHOP_STORAGE_TENCENT_COS_REGION \
+  SHOP_STORAGE_TENCENT_COS_BUCKET \
+  SHOP_STORAGE_TENCENT_COS_SECRET_ID \
+  SHOP_STORAGE_TENCENT_COS_SECRET_KEY \
+  SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL; do
+  reject_property "$prod_file" "$key"
+done
+
+for key in \
+  SHOP_PAYMENT_SECRET_KEY \
+  SHOP_PAYMENT_SECRET_WRITE_VERSION \
+  SHOP_PAYMENT_SECRET_ACTIVE_KEY_ID \
+  SHOP_PAYMENT_SECRET_KEY_RING \
+  SHOP_PAYMENT_SECRET_ROTATION_ENABLED \
+  SHOP_PAYMENT_SECRET_ROTATION_DELAY \
+  SHOP_PAYMENT_SECRET_ROTATION_BATCH_SIZE; do
+  reject_property "$prod_file" "$key"
+done
+
 for key in MYSQL_DATABASE MYSQL_USER MYSQL_PASSWORD MYSQL_ROOT_PASSWORD REDIS_PASSWORD; do
   require_value "$infra_file" "$key"
 done
@@ -45,9 +80,9 @@ for key in \
   SHOP_TRUSTED_PROXY_CIDRS \
   SHOP_MAX_FORWARDED_HOPS \
   SHOP_DEFAULT_ADMIN_PASSWORD_HASH \
-  SHOP_PAYMENT_SECRET_KEY \
-  SHOP_PAYMENT_SECRET_ACTIVE_KEY_ID \
-  SHOP_PAYMENT_SECRET_KEY_RING; do
+  SHOP_SECRET_ENCRYPTION_LEGACY_KEY \
+  SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID \
+  SHOP_SECRET_ENCRYPTION_KEY_RING; do
   require_value "$prod_file" "$key"
 done
 

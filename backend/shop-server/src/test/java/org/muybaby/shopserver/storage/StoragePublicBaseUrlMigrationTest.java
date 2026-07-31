@@ -58,6 +58,7 @@ class StoragePublicBaseUrlMigrationTest {
 
         Flyway.configure()
                 .dataSource(jdbcUrl, "sa", "")
+                .target("56")
                 .placeholders(safeSeedPlaceholders())
                 .load()
                 .migrate();

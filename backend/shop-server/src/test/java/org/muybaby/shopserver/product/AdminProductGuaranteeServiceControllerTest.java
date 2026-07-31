@@ -203,7 +203,7 @@ class AdminProductGuaranteeServiceControllerTest {
                              content_type, extension, size_bytes, sha256, public_url, status,
                              uploaded_by_type, uploaded_by_id)
                         values
-                            (:id, 'LIBRARY', 'IMAGE', null, 'PUBLIC', 'LOCAL', '', 'guarantee/test-icon.png',
+                            (:id, 'LIBRARY', 'IMAGE', null, 'PUBLIC', 'TENCENT_COS', '', 'guarantee/test-icon.png',
                              'test-icon.png', 'image/png', 'png', 128, '', :url, 'ACTIVE', 'ADMIN', 1)
                         """)
                 .param("id", ICON_FILE_ID)

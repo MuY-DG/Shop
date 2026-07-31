@@ -10,6 +10,7 @@ import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.mock.web.MockMultipartFile;
@@ -17,8 +18,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.web.socket.WebSocketSession;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -30,6 +37,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -378,7 +386,7 @@ class CustomerServiceControllerTest {
                 .andReturn().getResponse().getContentAsString();
         long conversationId = objectMapper.readTree(opened).path("data").path("conversationId").asLong();
         MockMultipartFile appImage = new MockMultipartFile(
-                "file", "app.png", "image/png", onePixelPng()
+                "file", "app.png", "image/png", png(1440, 900)
         );
 
         String appImageResponse = mockMvc.perform(multipart("/app/customer-service/conversation/images")
@@ -392,12 +400,69 @@ class CustomerServiceControllerTest {
                 .andReturn().getResponse().getContentAsString();
         long appMessageId = objectMapper.readTree(appImageResponse).path("data").path("messageId").asLong();
 
-        mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", appMessageId)
+        MvcResult originalResult = mockMvc.perform(
+                        get("/app/customer-service/conversation/messages/{messageId}/image", appMessageId)
                         .header("Authorization", bearer(app.token())))
                 .andExpect(status().isOk())
-                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo("image/png"));
+                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo("image/png"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache, private"))
+                .andReturn();
+        String originalEtag = originalResult.getResponse().getHeader(HttpHeaders.ETAG);
+        assertThat(originalEtag).isNotBlank();
+        mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", appMessageId)
+                        .header("Authorization", bearer(app.token()))
+                        .header(HttpHeaders.IF_NONE_MATCH, originalEtag))
+                .andExpect(status().isNotModified())
+                .andExpect(header().string(HttpHeaders.ETAG, originalEtag));
+
+        MvcResult thumbnailResult = mockMvc.perform(
+                        get("/app/customer-service/conversation/messages/{messageId}/thumbnail", appMessageId)
+                                .header("Authorization", bearer(app.token())))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentType())
+                        .isIn("image/webp", "image/jpeg"))
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache, private"))
+                .andReturn();
+        String thumbnailContentType = thumbnailResult.getResponse().getContentType();
+        String thumbnailEtag = thumbnailResult.getResponse().getHeader(HttpHeaders.ETAG);
+        assertThat(thumbnailEtag).isNotBlank().isNotEqualTo(originalEtag);
+        mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/thumbnail", appMessageId)
+                        .header("Authorization", bearer(app.token()))
+                        .header(HttpHeaders.IF_NONE_MATCH, thumbnailEtag))
+                .andExpect(status().isNotModified())
+                .andExpect(header().string(HttpHeaders.ETAG, thumbnailEtag));
+        assertThat(jdbcClient.sql("""
+                        select thumbnail_status, thumbnail_content_type,
+                               thumbnail_width, thumbnail_height
+                        from storage_asset
+                        where id = (
+                            select resource_id
+                            from customer_service_message
+                            where id = :messageId
+                        )
+                        """)
+                .param("messageId", appMessageId)
+                .query((rs, rowNum) -> List.of(
+                        rs.getString("thumbnail_status"),
+                        rs.getString("thumbnail_content_type"),
+                        rs.getString("thumbnail_width"),
+                        rs.getString("thumbnail_height")
+                ))
+                .single()).containsExactly("READY", thumbnailContentType, "720", "450");
+        mockMvc.perform(get(
+                        "/app/customer-service/conversation/messages/{messageId}/image-access",
+                        appMessageId
+                ).header("Authorization", bearer(app.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accessMode").value("AUTHENTICATED_BLOB"))
+                .andExpect(jsonPath("$.data.accessUrl").doesNotExist());
         mockMvc.perform(get("/app/customer-service/conversation/messages/{messageId}/image", appMessageId)
                         .header("Authorization", bearer(other.token())))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get(
+                        "/app/customer-service/conversation/messages/{messageId}/image-access",
+                        appMessageId
+                ).header("Authorization", bearer(other.token())))
                 .andExpect(status().isBadRequest());
 
         mockMvc.perform(post("/app/customer-service/conversation/messages")
@@ -434,6 +499,13 @@ class CustomerServiceControllerTest {
         mockMvc.perform(get("/admin/customer-service/messages/{messageId}/image", adminMessageId)
                         .header("Authorization", bearer(adminToken)))
                 .andExpect(status().isOk());
+        mockMvc.perform(get(
+                        "/admin/customer-service/messages/{messageId}/image-access",
+                        adminMessageId
+                ).header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accessMode").value("AUTHENTICATED_BLOB"))
+                .andExpect(jsonPath("$.data.accessUrl").doesNotExist());
 
         assertThat(jdbcClient.sql("""
                         select count(*)
@@ -589,6 +661,20 @@ class CustomerServiceControllerTest {
         return java.util.Base64.getDecoder().decode(
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
         );
+    }
+
+    private byte[] png(int width, int height) throws Exception {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = image.createGraphics();
+        try {
+            graphics.setColor(new Color(196, 64, 48));
+            graphics.fillRect(0, 0, width, height);
+        } finally {
+            graphics.dispose();
+        }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", output);
+        return output.toByteArray();
     }
 
     private String bearer(String token) {

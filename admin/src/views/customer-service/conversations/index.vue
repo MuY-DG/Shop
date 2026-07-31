@@ -175,21 +175,37 @@
                 {{ message.content }}
               </div>
               <template v-else-if="message.messageType === 'IMAGE'">
-                <ElImage
-                  v-if="imageUrls[message.messageId]"
-                  class="message-image"
-                  :src="imageUrls[message.messageId]"
-                  :preview-src-list="[imageUrls[message.messageId]]"
-                  fit="cover"
-                  preview-teleported
-                  @error="handleImageError(message)"
+                <div
+                  :ref="(target) => registerImageTarget(message.messageId, target)"
+                  class="message-image-target"
+                  role="button"
+                  tabindex="0"
+                  aria-label="查看原图"
+                  @click="handleImagePreview(message)"
+                  @keydown.enter.prevent="handleImagePreview(message)"
+                  @keydown.space.prevent="handleImagePreview(message)"
                 >
-                  <template #error><div class="message-image__error">图片加载失败</div></template>
-                </ElImage>
-                <div v-else class="message-image message-image__status">
-                  {{
-                    imageLoadStates[message.messageId] === 'error' ? '图片加载失败' : '图片加载中…'
-                  }}
+                  <ElImage
+                    v-if="imageUrls[message.messageId]"
+                    class="message-image"
+                    :src="imageUrls[message.messageId]"
+                    fit="cover"
+                    @load="handleImageLoad(message)"
+                    @error="handleImageError(message)"
+                  >
+                    <template #error><div class="message-image__error">图片加载失败</div></template>
+                  </ElImage>
+                  <div v-else class="message-image message-image__status">
+                    {{
+                      imageLoadStates[message.messageId] === 'error'
+                        ? '图片加载失败'
+                        : message.image?.thumbnailStatus === 'PENDING' ||
+                            message.image?.thumbnailStatus === 'PROCESSING' ||
+                            message.image?.thumbnailStatus === 'FAILED'
+                          ? '缩略图处理中，点击查看原图'
+                          : '图片加载中…'
+                    }}
+                  </div>
                 </div>
               </template>
               <button
@@ -524,12 +540,27 @@
         </ElTableColumn>
       </ElTable>
     </ElDialog>
+    <ElImageViewer
+      v-if="previewImageUrl"
+      :url-list="[previewImageUrl]"
+      hide-on-click-modal
+      teleported
+      @close="closeImagePreview"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-  import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-  import { ElMessageBox } from 'element-plus'
+  import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+    type ComponentPublicInstance
+  } from 'vue'
+  import { ElLoading, ElMessageBox } from 'element-plus'
   import {
     Image as ImageIcon,
     PackageSearch,
@@ -549,6 +580,7 @@
     fetchCustomerServiceConversation,
     fetchCustomerServiceConversations,
     fetchCustomerServiceImage,
+    fetchCustomerServiceThumbnail,
     fetchCustomerServiceOrderCandidates,
     fetchCustomerServiceProductCandidates,
     fetchPendingCustomerServiceTransfers,
@@ -567,7 +599,16 @@
     customerServiceStatusFromQuery,
     type CustomerServiceStatusFilter
   } from '@/utils/business-route-query'
-  import { realtimeClient, type RealtimeEvent } from '@/utils/realtime'
+  import {
+    realtimeClient,
+    type RealtimeConnectionState,
+    type RealtimeEvent
+  } from '@/utils/realtime'
+  import {
+    cacheCustomerServiceImage,
+    evictCustomerServiceImage,
+    getCustomerServiceImageUrl
+  } from '@/utils/customer-service-image-cache'
 
   const route = useRoute()
   const router = useRouter()
@@ -594,8 +635,14 @@
   const messageListRef = ref<HTMLElement | null>(null)
   const imageInputRef = ref<HTMLInputElement | null>(null)
   const imageUrls = ref<Record<number, string>>({})
-  const imageUrlExpiresAt = ref<Record<number, number>>({})
   const imageLoadStates = ref<Record<number, 'loading' | 'error'>>({})
+  const previewImageUrl = ref('')
+  const previewImageLoading = ref(false)
+  const imageRefreshAttempts = new Set<number>()
+  const imageRefreshRequests = new Set<number>()
+  const imageTargets = new Map<number, Element>()
+  let imageObserver: IntersectionObserver | null = null
+  let thumbnailRefreshTimer: ReturnType<typeof setTimeout> | null = null
   const transferDialogVisible = ref(false)
   const agents = ref<Api.CustomerService.Agent[]>([])
   const targetAgentId = ref<number | null>(null)
@@ -615,6 +662,13 @@
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
   let unsubscribeRealtime: (() => void) | null = null
+  let unsubscribeRealtimeState: (() => void) | null = null
+  let realtimeState: RealtimeConnectionState = 'DISCONNECTED'
+  let initialLoadComplete = false
+  let pageMounted = false
+  let previewRequestSequence = 0
+  let previewLoadingInstance: ReturnType<typeof ElLoading.service> | null = null
+  const changedConversationIds = new Set<number>()
 
   const statusConfig: Record<
     Api.CustomerService.ConversationStatus,
@@ -731,105 +785,226 @@
     return `${agent.displayName}（${agent.username}）· ${status} ${agent.activeConversationCount}/${agent.maxActiveConversations}`
   }
 
-  const clearImageUrls = () => {
-    Object.values(imageUrls.value).forEach((url) => {
-      if (url.startsWith('blob:')) URL.revokeObjectURL(url)
-    })
+  const detachCurrentImageUrls = () => {
+    if (thumbnailRefreshTimer) clearTimeout(thumbnailRefreshTimer)
+    thumbnailRefreshTimer = null
+    imageObserver?.disconnect()
+    imageTargets.clear()
     imageUrls.value = {}
-    imageUrlExpiresAt.value = {}
     imageLoadStates.value = {}
+    imageRefreshAttempts.clear()
+    closeImagePreview()
   }
 
-  const loadAuthenticatedImage = (message: Api.CustomerService.Message, requestId: number) => {
+  const loadAuthenticatedImage = (message: Api.CustomerService.Message) => {
+    if (imageRefreshRequests.has(message.messageId)) return
+    if (
+      message.image?.thumbnailStatus === 'PENDING' ||
+      message.image?.thumbnailStatus === 'PROCESSING' ||
+      message.image?.thumbnailStatus === 'FAILED'
+    ) {
+      return
+    }
+
+    imageRefreshRequests.add(message.messageId)
     imageLoadStates.value = {
       ...imageLoadStates.value,
       [message.messageId]: 'loading'
     }
-    void fetchCustomerServiceImage(message.messageId)
+    const request =
+      message.image?.thumbnailStatus === 'READY'
+        ? fetchCustomerServiceThumbnail(message.messageId)
+        : fetchCustomerServiceImage(message.messageId)
+    void request
       .then((blob) => {
-        const url = URL.createObjectURL(blob)
-        if (requestId !== detailRequestSequence) {
-          URL.revokeObjectURL(url)
+        const url = cacheCustomerServiceImage(message.messageId, blob)
+        if (
+          !currentDetail.value?.messages.some(
+            (currentMessage) => currentMessage.messageId === message.messageId
+          )
+        )
           return
-        }
         imageUrls.value = { ...imageUrls.value, [message.messageId]: url }
-        imageUrlExpiresAt.value = { ...imageUrlExpiresAt.value, [message.messageId]: 0 }
         const nextStates = { ...imageLoadStates.value }
         delete nextStates[message.messageId]
         imageLoadStates.value = nextStates
       })
       .catch(() => {
-        if (requestId !== detailRequestSequence) return
+        if (
+          !currentDetail.value?.messages.some(
+            (currentMessage) => currentMessage.messageId === message.messageId
+          )
+        )
+          return
         imageLoadStates.value = {
           ...imageLoadStates.value,
           [message.messageId]: 'error'
         }
       })
+      .finally(() => {
+        imageRefreshRequests.delete(message.messageId)
+      })
+  }
+
+  const handleImageLoad = (message: Api.CustomerService.Message) => {
+    imageRefreshAttempts.delete(message.messageId)
+    const nextStates = { ...imageLoadStates.value }
+    delete nextStates[message.messageId]
+    imageLoadStates.value = nextStates
   }
 
   const handleImageError = (message: Api.CustomerService.Message) => {
-    const current = imageUrls.value[message.messageId]
-    if (message.image?.accessMode !== 'SIGNED_URL' || current?.startsWith('blob:')) {
+    evictCustomerServiceImage(message.messageId)
+    const nextUrls = { ...imageUrls.value }
+    delete nextUrls[message.messageId]
+    imageUrls.value = nextUrls
+    if (imageRefreshAttempts.has(message.messageId)) {
       imageLoadStates.value = {
         ...imageLoadStates.value,
         [message.messageId]: 'error'
       }
       return
     }
-    const nextUrls = { ...imageUrls.value }
-    const nextExpiresAt = { ...imageUrlExpiresAt.value }
-    delete nextUrls[message.messageId]
-    delete nextExpiresAt[message.messageId]
-    imageUrls.value = nextUrls
-    imageUrlExpiresAt.value = nextExpiresAt
-    loadAuthenticatedImage(message, detailRequestSequence)
+    imageRefreshAttempts.add(message.messageId)
+    loadAuthenticatedImage(message)
   }
 
-  const syncImageUrls = (messages: Api.CustomerService.Message[], requestId: number) => {
-    const imageMessages = messages.filter((message) => message.messageType === 'IMAGE')
-    const nextUrls = { ...imageUrls.value }
-    const nextExpiresAt = { ...imageUrlExpiresAt.value }
-    const now = Date.now()
+  const releasePreviewImage = () => {
+    if (previewImageUrl.value.startsWith('blob:')) URL.revokeObjectURL(previewImageUrl.value)
+    previewImageUrl.value = ''
+  }
 
-    imageMessages.forEach((message) => {
-      const access = message.image
-      if (access?.accessMode === 'SIGNED_URL' && access.accessUrl) {
-        const currentExpiry = nextExpiresAt[message.messageId] || 0
-        if (!nextUrls[message.messageId] || (currentExpiry > 0 && currentExpiry <= now + 30_000)) {
-          const previous = nextUrls[message.messageId]
-          if (previous?.startsWith('blob:')) URL.revokeObjectURL(previous)
-          nextUrls[message.messageId] = access.accessUrl
-          nextExpiresAt[message.messageId] = access.accessExpiresAt
-            ? Date.parse(access.accessExpiresAt)
-            : 0
-        }
+  const closeImagePreview = () => {
+    previewRequestSequence += 1
+    previewImageLoading.value = false
+    previewLoadingInstance?.close()
+    previewLoadingInstance = null
+    releasePreviewImage()
+  }
+
+  const handleImagePreview = async (message: Api.CustomerService.Message) => {
+    if (previewImageLoading.value) return
+    const requestId = ++previewRequestSequence
+    previewImageLoading.value = true
+    previewLoadingInstance = ElLoading.service({
+      fullscreen: true,
+      lock: true,
+      text: '正在加载原图…',
+      background: 'rgb(15 23 42 / 38%)'
+    })
+    try {
+      const original = await fetchCustomerServiceImage(message.messageId)
+      if (
+        requestId !== previewRequestSequence ||
+        !currentDetail.value?.messages.some(
+          (currentMessage) => currentMessage.messageId === message.messageId
+        )
+      )
         return
+      releasePreviewImage()
+      previewImageUrl.value = URL.createObjectURL(original)
+    } catch {
+      if (requestId === previewRequestSequence) ElMessage.error('原图加载失败，请重试')
+    } finally {
+      if (requestId === previewRequestSequence) {
+        previewImageLoading.value = false
+        previewLoadingInstance?.close()
+        previewLoadingInstance = null
       }
+    }
+  }
 
-      const previous = nextUrls[message.messageId]
-      if (previous && !previous.startsWith('blob:')) {
-        delete nextUrls[message.messageId]
-        delete nextExpiresAt[message.messageId]
+  const ensureImageLoaded = (messageId: number) => {
+    const message = currentDetail.value?.messages.find(
+      (candidate) => candidate.messageId === messageId
+    )
+    if (!message || message.messageType !== 'IMAGE') return
+    const cachedUrl = getCustomerServiceImageUrl(messageId)
+    if (cachedUrl) {
+      imageUrls.value = { ...imageUrls.value, [messageId]: cachedUrl }
+      return
+    }
+    if (imageLoadStates.value[messageId] === 'loading') return
+    loadAuthenticatedImage(message)
+  }
+
+  const observeImageTargets = () => {
+    imageObserver?.disconnect()
+    imageObserver = null
+    if (typeof IntersectionObserver === 'undefined') {
+      imageTargets.forEach((_target, messageId) => ensureImageLoaded(messageId))
+      return
+    }
+    imageObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return
+          const messageId = Number((entry.target as HTMLElement).dataset.messageId)
+          if (Number.isSafeInteger(messageId)) ensureImageLoaded(messageId)
+        })
+      },
+      {
+        root: messageListRef.value,
+        rootMargin: '600px 0px'
       }
+    )
+    imageTargets.forEach((target) => imageObserver?.observe(target))
+  }
+
+  const registerImageTarget = (
+    messageId: number,
+    target: Element | ComponentPublicInstance | null
+  ) => {
+    const previous = imageTargets.get(messageId)
+    if (previous) imageObserver?.unobserve(previous)
+    const element =
+      target instanceof Element
+        ? target
+        : target && '$el' in target && target.$el instanceof Element
+          ? target.$el
+          : null
+    if (!element) {
+      imageTargets.delete(messageId)
+      return
+    }
+    ;(element as HTMLElement).dataset.messageId = String(messageId)
+    imageTargets.set(messageId, element)
+    imageObserver?.observe(element)
+  }
+
+  const syncImageUrls = (messages: Api.CustomerService.Message[]) => {
+    const imageMessages = messages.filter((message) => message.messageType === 'IMAGE')
+    const nextUrls: Record<number, string> = {}
+    imageMessages.forEach((message) => {
+      const cachedUrl = getCustomerServiceImageUrl(message.messageId)
+      if (cachedUrl) nextUrls[message.messageId] = cachedUrl
     })
     imageUrls.value = nextUrls
-    imageUrlExpiresAt.value = nextExpiresAt
-    const nextStates = { ...imageLoadStates.value }
-    imageMessages.forEach((message) => {
-      if (message.image?.accessMode === 'SIGNED_URL' && message.image.accessUrl) {
-        delete nextStates[message.messageId]
-      }
-    })
-    imageLoadStates.value = nextStates
+  }
 
-    const missing = imageMessages.filter(
-      (message) =>
-        !(message.image?.accessMode === 'SIGNED_URL' && message.image.accessUrl) &&
-        !imageUrls.value[message.messageId]
+  const scheduleThumbnailStatusRefresh = (messages: Api.CustomerService.Message[]) => {
+    if (thumbnailRefreshTimer) clearTimeout(thumbnailRefreshTimer)
+    thumbnailRefreshTimer = null
+    const imageStatuses = messages
+      .filter((message) => message.messageType === 'IMAGE')
+      .map((message) => message.image?.thumbnailStatus)
+    const hasActiveWork = imageStatuses.some(
+      (status) => status === 'PENDING' || status === 'PROCESSING'
     )
-    if (!missing.length) return
+    const hasRetryWaiting = imageStatuses.some((status) => status === 'FAILED')
+    if (!hasActiveWork && !hasRetryWaiting) return
 
-    missing.forEach((message) => loadAuthenticatedImage(message, requestId))
+    const conversationId = selectedConversationId.value
+    if (!conversationId) return
+    thumbnailRefreshTimer = setTimeout(
+      () => {
+        thumbnailRefreshTimer = null
+        if (selectedConversationId.value === conversationId && !document.hidden) {
+          void loadDetail(conversationId)
+        }
+      },
+      hasActiveWork ? 3_000 : 30_000
+    )
   }
 
   const loadConversations = async (selectFirst = false) => {
@@ -867,16 +1042,18 @@
       const detail = await fetchCustomerServiceConversation(conversationId)
       if (requestId !== detailRequestSequence) return
       currentDetail.value = detail
-      syncImageUrls(detail.messages, requestId)
+      syncImageUrls(detail.messages)
+      scheduleThumbnailStatusRefresh(detail.messages)
       await nextTick()
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+      observeImageTargets()
     } finally {
       if (requestId === detailRequestSequence) detailLoading.value = false
     }
   }
 
   const selectConversation = async (conversationId: number) => {
-    if (selectedConversationId.value !== conversationId) clearImageUrls()
+    if (selectedConversationId.value !== conversationId) detachCurrentImageUrls()
     selectedConversationId.value = conversationId
     await loadDetail(conversationId)
     const record = conversationPage.value.records.find(
@@ -891,6 +1068,7 @@
   }
 
   const handleStatusChange = async () => {
+    detachCurrentImageUrls()
     selectedConversationId.value = null
     currentDetail.value = null
     await loadConversations(true)
@@ -1141,6 +1319,33 @@
     return `admin-${Date.now()}-${Math.random().toString(16).slice(2)}`
   }
 
+  const stopFallbackPolling = () => {
+    if (pollTimer) clearInterval(pollTimer)
+    pollTimer = null
+  }
+
+  const startFallbackPolling = () => {
+    if (pollTimer || !initialLoadComplete) return
+    pollTimer = setInterval(() => {
+      if (!document.hidden) void refreshAll()
+    }, 15000)
+  }
+
+  const handleRealtimeState = (state: RealtimeConnectionState) => {
+    if (state === realtimeState) return
+    realtimeState = state
+    if (state === 'CONNECTED') {
+      stopFallbackPolling()
+      if (initialLoadComplete) void refreshAll()
+      return
+    }
+    startFallbackPolling()
+  }
+
+  const handleVisibilityChange = () => {
+    if (!document.hidden && initialLoadComplete) void refreshAll()
+  }
+
   const handleRealtimeEvent = (event: RealtimeEvent) => {
     if (event.type.startsWith('CUSTOMER_SERVICE_TRANSFER_')) {
       void Promise.all([loadPendingTransfers(), loadAgentState()])
@@ -1167,28 +1372,51 @@
       }
     }
     if (event.type !== 'CUSTOMER_SERVICE_CONVERSATION_UPDATED') return
-    if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer)
+    const conversationId = Number(event.data.conversationId || 0)
+    if (Number.isSafeInteger(conversationId) && conversationId > 0) {
+      changedConversationIds.add(conversationId)
+    }
+    if (realtimeRefreshTimer) return
     realtimeRefreshTimer = setTimeout(() => {
       realtimeRefreshTimer = null
-      void refreshAll()
+      const changedIds = new Set(changedConversationIds)
+      changedConversationIds.clear()
+      const selectedId = selectedConversationId.value
+      void Promise.all([
+        loadConversations(),
+        loadAgentState(),
+        selectedId && (!changedIds.size || changedIds.has(selectedId))
+          ? loadDetail(selectedId)
+          : Promise.resolve()
+      ])
     }, 250)
   }
 
   onMounted(async () => {
+    pageMounted = true
+    unsubscribeRealtimeState = realtimeClient.subscribeConnectionState(handleRealtimeState)
     unsubscribeRealtime = realtimeClient.subscribe(handleRealtimeEvent)
-    await new Promise((resolve) => setTimeout(resolve, 300))
     await Promise.all([loadConversations(true), loadAgentState(), loadPendingTransfers()])
-    pollTimer = setInterval(() => {
-      if (!document.hidden) void refreshAll()
-    }, 15000)
+    if (!pageMounted) return
+    initialLoadComplete = true
+    if (realtimeState !== 'CONNECTED') startFallbackPolling()
+    document.addEventListener('visibilitychange', handleVisibilityChange)
   })
 
   onBeforeUnmount(() => {
     detailRequestSequence += 1
+    pageMounted = false
+    initialLoadComplete = false
+    unsubscribeRealtimeState?.()
     unsubscribeRealtime?.()
-    if (pollTimer) clearInterval(pollTimer)
+    stopFallbackPolling()
     if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer)
-    clearImageUrls()
+    changedConversationIds.clear()
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    imageObserver?.disconnect()
+    imageObserver = null
+    imageTargets.clear()
+    detachCurrentImageUrls()
   })
 </script>
 
@@ -1451,6 +1679,18 @@
     overflow: hidden;
     background: var(--el-fill-color);
     border-radius: 10px;
+  }
+
+  .message-image-target {
+    width: fit-content;
+    max-width: 100%;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .message-image-target:focus-visible {
+    border-radius: 10px;
+    box-shadow: 0 0 0 2px var(--el-color-primary-light-5);
   }
 
   .message-image__error {

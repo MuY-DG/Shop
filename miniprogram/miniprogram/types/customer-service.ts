@@ -26,6 +26,16 @@ export interface CustomerServiceImage {
   accessMode?: "SIGNED_URL" | "AUTHENTICATED_BLOB";
   accessUrl?: string;
   accessExpiresAt?: string;
+  thumbnailStatus?:
+    | "NONE"
+    | "PENDING"
+    | "PROCESSING"
+    | "READY"
+    | "FAILED"
+    | "UNAVAILABLE";
+  thumbnailAccessMode?: "SIGNED_URL" | "AUTHENTICATED_BLOB";
+  thumbnailAccessUrl?: string;
+  thumbnailAccessExpiresAt?: string;
 }
 
 export interface CustomerServiceOrder {

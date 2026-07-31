@@ -229,6 +229,54 @@ class StorageImageCompressionIntegrationTest {
     }
 
     @Test
+    void miniProgramCustomerServiceUploadBypassesCompressionAndKeepsTheOriginal() {
+        long userId = 93001L;
+        long conversationId = 93002L;
+        jdbcClient.sql("""
+                        insert into app_user (id, openid, status)
+                        values (:userId, 'compression-customer-service-app-user', 'ENABLED')
+                        """)
+                .param("userId", userId)
+                .update();
+        jdbcClient.sql("""
+                        insert into customer_service_conversation (id, app_user_id, status)
+                        values (:conversationId, :userId, 'ACTIVE')
+                        """)
+                .param("conversationId", conversationId)
+                .param("userId", userId)
+                .update();
+        byte[] source = noisyImage("png", 80, 80);
+        List<ProviderWrite> providerWrites = captureProviderWrites();
+
+        StorageAssetResponse response = storageService.uploadCustomerServiceImageFromApp(
+                appPrincipal(userId),
+                conversationId,
+                multipart("mini-program-customer-service.png", "image/png", source)
+        );
+
+        verifyNoInteractions(imageCompressionService);
+        assertThat(response.originalFilename())
+                .isEqualTo("mini-program-customer-service.png");
+        assertOriginalPngWasStored(response, source, providerWrites.getFirst());
+    }
+
+    @Test
+    void adminCustomerServiceUploadBypassesCompressionAndKeepsTheOriginal() {
+        byte[] source = noisyImage("png", 80, 80);
+        List<ProviderWrite> providerWrites = captureProviderWrites();
+
+        StorageAssetResponse response = storageService.uploadCustomerServiceImage(
+                adminPrincipal(),
+                94001L,
+                multipart("admin-customer-service.png", "image/png", source)
+        );
+
+        verifyNoInteractions(imageCompressionService);
+        assertThat(response.originalFilename()).isEqualTo("admin-customer-service.png");
+        assertOriginalPngWasStored(response, source, providerWrites.getFirst());
+    }
+
+    @Test
     void transientCompressionFailureRetriesTheSameSourceAndStoresWebp() {
         byte[] source = noisyImage("png", 80, 80);
         List<ProviderWrite> providerWrites = captureProviderWrites();

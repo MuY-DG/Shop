@@ -159,6 +159,21 @@ export function fetchCustomerServiceImage(messageId: number) {
   })
 }
 
+export function fetchCustomerServiceThumbnail(messageId: number) {
+  return request.get<Blob>({
+    url: `/admin/customer-service/messages/${messageId}/thumbnail`,
+    responseType: 'blob',
+    showErrorMessage: false
+  })
+}
+
+export function fetchCustomerServiceImageAccess(messageId: number) {
+  return request.get<Api.CustomerService.ImageMessage>({
+    url: `/admin/customer-service/messages/${messageId}/image-access`,
+    showErrorMessage: false
+  })
+}
+
 export function issueAdminRealtimeTicket() {
   return request.post<Api.Realtime.Ticket>({
     url: '/admin/realtime/tickets'

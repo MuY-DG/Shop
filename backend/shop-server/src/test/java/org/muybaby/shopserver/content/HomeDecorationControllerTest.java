@@ -357,7 +357,7 @@ class HomeDecorationControllerTest {
                              original_filename, content_type, extension, size_bytes, sha256, width, height,
                              alt_text, tags_json, public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (:scope, 'IMAGE', null, :visibility, 'LOCAL', '', :objectKey,
+                            (:scope, 'IMAGE', null, :visibility, 'TENCENT_COS', '', :objectKey,
                              :filename, 'image/png', 'png', 68, :sha256, 1, 1,
                              '', null, :publicUrl, 'ACTIVE', 'ADMIN', 1)
                         """)

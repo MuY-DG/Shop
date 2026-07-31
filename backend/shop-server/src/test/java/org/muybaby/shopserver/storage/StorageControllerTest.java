@@ -15,7 +15,6 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.net.URI;
 import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,7 +23,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -74,7 +72,7 @@ class StorageControllerTest {
     }
 
     @Test
-    void libraryUploadListDetailMovePublicReadAndDeleteFormOneLifecycle() throws Exception {
+    void libraryUploadListDetailMoveCosUrlAndDeleteFormOneLifecycle() throws Exception {
         String token = adminToken();
         long folderId = createFolder(token, 0, "商品素材", "ENABLED");
 
@@ -117,9 +115,8 @@ class StorageControllerTest {
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.records[0].folderId").doesNotExist());
 
-        mockMvc.perform(get(URI.create(asset.publicUrl()).getPath()))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.IMAGE_PNG));
+        assertThat(asset.publicUrl())
+                .startsWith("https://shop-test-1250000000.cos.ap-guangzhou.myqcloud.com/public/");
 
         mockMvc.perform(delete("/admin/assets/{assetId}", asset.id())
                         .header("Authorization", bearer(token)))
@@ -158,9 +155,8 @@ class StorageControllerTest {
                 .query(String.class)
                 .single()).isEqualTo(objectKeyBefore);
 
-        mockMvc.perform(get(URI.create(asset.publicUrl()).getPath()))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(MediaType.IMAGE_PNG));
+        assertThat(asset.publicUrl())
+                .startsWith("https://shop-test-1250000000.cos.ap-guangzhou.myqcloud.com/public/");
     }
 
     @Test
@@ -594,7 +590,7 @@ class StorageControllerTest {
                              original_filename, content_type, extension, size_bytes, sha256,
                              alt_text, public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            ('SECRET', 'DOCUMENT', null, 'PRIVATE', 'LOCAL', '', :objectKey,
+                            ('SECRET', 'DOCUMENT', null, 'PRIVATE', 'TENCENT_COS', '', :objectKey,
                              'secret.pem', 'text/plain', 'pem', 10, '', '', null, 'ACTIVE', 'ADMIN', 1)
                         """)
                 .param("objectKey", objectKey)

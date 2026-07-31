@@ -862,7 +862,7 @@ class AdminProductServiceTest {
                              content_type, extension, size_bytes, sha256, width, height, alt_text, tags_json,
                              public_url, status, uploaded_by_type, uploaded_by_id)
                         values
-                            ('LIBRARY', 'IMAGE', null, 'PUBLIC', 'LOCAL', '', :objectKey, :originalFilename,
+                            ('LIBRARY', 'IMAGE', null, 'PUBLIC', 'TENCENT_COS', '', :objectKey, :originalFilename,
                              'image/png', 'png', 68, :sha256, 1, 1, '', null,
                              :publicUrl, 'ACTIVE', 'ADMIN', 1)
                         """)

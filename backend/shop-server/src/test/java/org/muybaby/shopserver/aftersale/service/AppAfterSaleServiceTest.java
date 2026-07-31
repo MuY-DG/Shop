@@ -260,7 +260,7 @@ class AppAfterSaleServiceTest {
                              content_type, extension, size_bytes, status, uploaded_by_type, uploaded_by_id,
                              created_at, updated_at)
                         values
-                            (:assetId, 'ATTACHMENT', 'IMAGE', 'PRIVATE', 'LOCAL', :objectKey, :filename,
+                            (:assetId, 'ATTACHMENT', 'IMAGE', 'PRIVATE', 'TENCENT_COS', :objectKey, :filename,
                              'image/png', 'png', :sizeBytes, 'ACTIVE', 'APP', :uploadedById, :now, :now)
                         """)
                 .param("assetId", assetId)

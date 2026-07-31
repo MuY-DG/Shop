@@ -74,6 +74,91 @@ upsert_property() {
   mv "$temporary" "$file"
 }
 
+remove_property() {
+  local file="$1"
+  local key="$2"
+  local temporary
+  temporary="$(mktemp "${file}.tmp.XXXXXX")"
+
+  awk -v key="$key" '
+    index($0, key "=") == 1 { next }
+    { print }
+  ' "$file" >"$temporary"
+
+  chmod 600 "$temporary"
+  mv "$temporary" "$file"
+}
+
+migrate_property() {
+  local file="$1"
+  local old_key="$2"
+  local new_key="$3"
+  local comment="$4"
+  local old_value
+  local new_value
+  old_value="$(read_property "$file" "$old_key")"
+  [[ -n "$old_value" ]] || return 0
+
+  new_value="$(read_property "$file" "$new_key")"
+  if [[ -n "$new_value" && "$new_value" != "$old_value" ]]; then
+    printf '%s 中的 %s 与待迁移的 %s 值不一致，请人工确认主密钥。\n' \
+      "$file" "$new_key" "$old_key" >&2
+    exit 1
+  fi
+  if [[ -z "$new_value" ]]; then
+    upsert_property "$file" "$new_key" "$old_value" "$comment"
+  fi
+  remove_property "$file" "$old_key"
+}
+
+migrate_property \
+  "$prod_file" \
+  SHOP_PAYMENT_SECRET_WRITE_VERSION \
+  SHOP_SECRET_ENCRYPTION_WRITE_VERSION \
+  "敏感配置新写入密文使用的格式版本。"
+migrate_property \
+  "$prod_file" \
+  SHOP_PAYMENT_SECRET_ACTIVE_KEY_ID \
+  SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID \
+  "当前用于加密新敏感配置的主密钥 ID。"
+migrate_property \
+  "$prod_file" \
+  SHOP_PAYMENT_SECRET_KEY_RING \
+  SHOP_SECRET_ENCRYPTION_KEY_RING \
+  "可读取当前及历史敏感配置密文的主密钥集合。"
+migrate_property \
+  "$prod_file" \
+  SHOP_PAYMENT_SECRET_KEY \
+  SHOP_SECRET_ENCRYPTION_LEGACY_KEY \
+  "仅用于读取或迁移旧版 v1 密文的兼容主密钥。"
+migrate_property \
+  "$prod_file" \
+  SHOP_PAYMENT_SECRET_ROTATION_ENABLED \
+  SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED \
+  "是否启用敏感配置主密钥轮换任务。"
+migrate_property \
+  "$prod_file" \
+  SHOP_PAYMENT_SECRET_ROTATION_DELAY \
+  SHOP_SECRET_ENCRYPTION_ROTATION_DELAY \
+  "敏感配置密钥轮换任务每批之间的等待时间。"
+migrate_property \
+  "$prod_file" \
+  SHOP_PAYMENT_SECRET_ROTATION_BATCH_SIZE \
+  SHOP_SECRET_ENCRYPTION_ROTATION_BATCH_SIZE \
+  "敏感配置密钥轮换任务每批处理数量。"
+
+for obsolete_storage_key in \
+  SHOP_STORAGE_PROVIDER \
+  SHOP_STORAGE_PUBLIC_BASE_URL \
+  SHOP_STORAGE_LOCAL_ROOT \
+  SHOP_STORAGE_TENCENT_COS_REGION \
+  SHOP_STORAGE_TENCENT_COS_BUCKET \
+  SHOP_STORAGE_TENCENT_COS_SECRET_ID \
+  SHOP_STORAGE_TENCENT_COS_SECRET_KEY \
+  SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL; do
+  remove_property "$prod_file" "$obsolete_storage_key"
+done
+
 mysql_password="$(read_property "$infra_file" MYSQL_PASSWORD)"
 if [[ "$rotate" == true ]] || ! is_usable_secret "$mysql_password"; then
   mysql_password="$(read_property "$prod_file" SHOP_DB_PASSWORD)"

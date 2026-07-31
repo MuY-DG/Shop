@@ -35,6 +35,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -70,7 +72,6 @@ import javax.xml.parsers.ParserConfigurationException;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -639,45 +640,65 @@ public class StorageService {
         }
     }
 
-    public ResponseEntity<InputStreamResource> publicResource(String publicPath) {
-        String normalizedPath = normalizePublicPath(publicPath);
-        AssetRow row = namedParameterJdbcTemplate.query(
-                        assetSelect() + """
-                                where a.object_key = :objectKey
-                                  and a.scope = 'LIBRARY'
-                                  and a.visibility = 'PUBLIC'
-                                  and a.status = 'ACTIVE'
-                                """,
-                        new MapSqlParameterSource("objectKey", "public/" + normalizedPath),
-                        this::mapAssetRow
-                ).stream()
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
-
-        try {
-            StoredObject storedObject = storageProvider.open(row.objectLocation());
-            MediaType mediaType = MediaType.parseMediaType(
-                    StringUtils.hasText(storedObject.contentType()) ? storedObject.contentType() : row.contentType()
-            );
-            return ResponseEntity.ok()
-                    .contentType(mediaType)
-                    .contentLength(row.sizeBytes())
-                    .body(new InputStreamResource(storedObject.inputStream()));
-        } catch (RuntimeException ex) {
-            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
-        }
-    }
-
     public ResponseEntity<InputStreamResource> customerServiceImageResource(
             Long assetId,
             Long conversationId
     ) {
+        return customerServiceImageResource(assetId, conversationId, null);
+    }
+
+    public ResponseEntity<InputStreamResource> customerServiceImageResource(
+            Long assetId,
+            Long conversationId,
+            String ifNoneMatch
+    ) {
+        return customerServicePrivateImageResource(
+                assetId, conversationId, false, ifNoneMatch);
+    }
+
+    public ResponseEntity<InputStreamResource> customerServiceThumbnailResource(
+            Long assetId,
+            Long conversationId
+    ) {
+        return customerServiceThumbnailResource(assetId, conversationId, null);
+    }
+
+    public ResponseEntity<InputStreamResource> customerServiceThumbnailResource(
+            Long assetId,
+            Long conversationId,
+            String ifNoneMatch
+    ) {
+        return customerServicePrivateImageResource(
+                assetId, conversationId, true, ifNoneMatch);
+    }
+
+    private ResponseEntity<InputStreamResource> customerServicePrivateImageResource(
+            Long assetId,
+            Long conversationId,
+            boolean thumbnail,
+            String ifNoneMatch
+    ) {
         if (assetId == null || assetId <= 0 || conversationId == null || conversationId <= 0) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
+        String objectKeyExpression = thumbnail
+                ? "coalesce(thumbnail_object_key, object_key)"
+                : "object_key";
+        String contentTypeExpression = thumbnail
+                ? "coalesce(thumbnail_content_type, content_type)"
+                : "content_type";
+        String sizeExpression = thumbnail
+                ? "coalesce(thumbnail_size_bytes, size_bytes)"
+                : "size_bytes";
+        String sha256Expression = thumbnail
+                ? "coalesce(thumbnail_sha256, sha256)"
+                : "sha256";
         PrivateAttachmentRow row = jdbcClient.sql("""
-                        select provider, storage_container, storage_region, object_key,
-                               content_type, size_bytes
+                        select provider, storage_container, storage_region,
+                               %s as object_key,
+                               %s as content_type,
+                               %s as size_bytes,
+                               %s as content_sha256
                         from storage_asset
                         where id = :assetId
                           and scope = 'ATTACHMENT'
@@ -686,7 +707,12 @@ public class StorageService {
                           and status = 'ACTIVE'
                           and upload_context_type = :contextType
                           and upload_context_id = :conversationId
-                        """)
+                        """.formatted(
+                        objectKeyExpression,
+                        contentTypeExpression,
+                        sizeExpression,
+                        sha256Expression
+                ))
                 .param("assetId", assetId)
                 .param("contextType", CUSTOMER_SERVICE_CONVERSATION_CONTEXT)
                 .param("conversationId", conversationId)
@@ -696,10 +722,19 @@ public class StorageService {
                         rs.getString("storage_region"),
                         rs.getString("object_key"),
                         rs.getString("content_type"),
-                        rs.getLong("size_bytes")
+                        rs.getLong("size_bytes"),
+                        rs.getString("content_sha256")
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
+        String etag = quotedEtag(row.sha256());
+        CacheControl cacheControl = CacheControl.noCache().cachePrivate();
+        if (etagMatches(ifNoneMatch, etag)) {
+            return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
+                    .cacheControl(cacheControl)
+                    .eTag(etag)
+                    .build();
+        }
         try {
             StoredObject storedObject = storageProvider.open(row.objectLocation());
             MediaType mediaType = MediaType.parseMediaType(
@@ -708,12 +743,34 @@ public class StorageService {
                             : row.contentType()
             );
             return ResponseEntity.ok()
+                    .cacheControl(cacheControl)
+                    .eTag(etag)
                     .contentType(mediaType)
                     .contentLength(row.sizeBytes())
                     .body(new InputStreamResource(storedObject.inputStream()));
         } catch (RuntimeException ex) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
+    }
+
+    private String quotedEtag(String sha256) {
+        String value = StringUtils.hasText(sha256) ? sha256 : "missing";
+        return "\"" + value + "\"";
+    }
+
+    private boolean etagMatches(String ifNoneMatch, String etag) {
+        if (!StringUtils.hasText(ifNoneMatch)) {
+            return false;
+        }
+        for (String candidate : ifNoneMatch.split(",")) {
+            String normalized = candidate.trim();
+            if ("*".equals(normalized)
+                    || etag.equals(normalized)
+                    || ("W/" + etag).equals(normalized)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public Function<StorageObjectLocation, PrivateObjectAccess> privateImageAccessResolver() {
@@ -890,10 +947,10 @@ public class StorageService {
                 sourceBytes.length,
                 profile.mediaKind() != StorageMediaKind.IMAGE || sourceImage != null
         );
-        PreparedUpload prepared = uploadedByType == UploadedByType.APP
-                ? new PreparedUpload(originalFilename, sourceBytes, sourceImage, sourceDecision)
-                : prepareCompressedUpload(
-                        profile, originalFilename, sourceBytes, sourceImage, sourceDecision);
+        PreparedUpload prepared = shouldAttemptImageCompression(profile, uploadedByType)
+                ? prepareCompressedUpload(
+                        profile, originalFilename, sourceBytes, sourceImage, sourceDecision)
+                : new PreparedUpload(originalFilename, sourceBytes, sourceImage, sourceDecision);
 
         String objectKey = storageObjectKeyGenerator.nextKey(
                 profile, prepared.decision().extension(), LocalDate.now());
@@ -942,6 +999,19 @@ public class StorageService {
             throw ex;
         }
         return toResponse(findAssetRow(assetId), List.of());
+    }
+
+    private boolean shouldAttemptImageCompression(
+            StorageUploadProfile profile,
+            UploadedByType uploadedByType
+    ) {
+        if (profile.mediaKind() != StorageMediaKind.IMAGE) {
+            return false;
+        }
+        return switch (uploadedByType) {
+            case APP -> false;
+            case ADMIN -> profile != StorageUploadProfile.CUSTOMER_SERVICE_IMAGE;
+        };
     }
 
     private PreparedUpload prepareCompressedUpload(
@@ -1023,13 +1093,14 @@ public class StorageService {
                              original_filename, content_type, extension, size_bytes, sha256, width, height,
                              duration_seconds, alt_text, tags_json, public_url, status, uploaded_by_type,
                              uploaded_by_id, upload_context_type, upload_context_id, expires_at,
-                             cleanup_attempts, cleanup_next_retry_at, cleanup_lease_token)
+                             thumbnail_status, cleanup_attempts,
+                             cleanup_next_retry_at, cleanup_lease_token)
                         values
                             (:scope, :mediaKind, :folderId, :visibility, :provider, :storageContainer, :storageRegion, :objectKey,
                              :originalFilename, :contentType, :extension, :sizeBytes, :sha256, :width, :height,
                              null, '', null, null, 'UPLOAD_PENDING', :uploadedByType,
                              :uploadedById, :uploadContextType, :uploadContextId, :expiresAt,
-                             0, :cleanupNotBefore, null)
+                             :thumbnailStatus, 0, :cleanupNotBefore, null)
                         """)
                 .param("scope", decision.scope().name())
                 .param("mediaKind", decision.mediaKind().name())
@@ -1051,6 +1122,12 @@ public class StorageService {
                 .param("uploadContextType", uploadContextType)
                 .param("uploadContextId", uploadContextId)
                 .param("expiresAt", expiresAt)
+                .param(
+                        "thumbnailStatus",
+                        decision.profile() == StorageUploadProfile.CUSTOMER_SERVICE_IMAGE
+                                ? "PENDING"
+                                : "NONE"
+                )
                 .param("cleanupNotBefore", cleanupNotBefore)
                 .update(keyHolder, "id");
         if (inserted != 1 || keyHolder.getKey() == null) {
@@ -1989,38 +2066,21 @@ public class StorageService {
         return StringUtils.hasText(contentType) ? contentType : MediaType.APPLICATION_OCTET_STREAM_VALUE;
     }
 
-    private String normalizePublicPath(String publicPath) {
-        String normalized = publicPath == null ? "" : publicPath.trim();
-        while (normalized.startsWith("/")) {
-            normalized = normalized.substring(1);
-        }
-        if (!StringUtils.hasText(normalized) || normalized.contains("..") || normalized.contains("\\")) {
-            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
-        }
-        return normalized;
-    }
-
     private String publicUrl(ResolvedStorageConfig config, String objectKey) {
         String baseUrl = config.publicBaseUrl();
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
-        if (config.provider() == StorageProviderKind.TENCENT_COS) {
-            return baseUrl + "/" + objectKey;
-        }
-        String relativePath = objectKey.startsWith("public/") ? objectKey.substring("public/".length()) : objectKey;
-        return baseUrl + "/files/public/" + relativePath;
+        return baseUrl + "/" + objectKey;
     }
 
     private StorageObjectLocation objectLocation(ResolvedStorageConfig config, String objectKey) {
-        if (config.provider() == StorageProviderKind.LOCAL) {
-            if (!StringUtils.hasText(config.localRoot())) {
-                throw new IllegalStateException("Local storage root is not configured");
-            }
-            String normalizedRoot = Path.of(config.localRoot()).toAbsolutePath().normalize().toString();
-            return new StorageObjectLocation(config.provider(), normalizedRoot, "", objectKey);
-        }
-        return new StorageObjectLocation(config.provider(), config.cosBucket(), config.cosRegion(), objectKey);
+        return new StorageObjectLocation(
+                StorageProviderKind.TENCENT_COS,
+                config.bucket(),
+                config.region(),
+                objectKey
+        );
     }
 
     private LocalDateTime databaseNow() {
@@ -2131,7 +2191,8 @@ public class StorageService {
             String storageRegion,
             String objectKey,
             String contentType,
-            long sizeBytes
+            long sizeBytes,
+            String sha256
     ) {
         private StorageObjectLocation objectLocation() {
             return new StorageObjectLocation(provider, storageContainer, storageRegion, objectKey);

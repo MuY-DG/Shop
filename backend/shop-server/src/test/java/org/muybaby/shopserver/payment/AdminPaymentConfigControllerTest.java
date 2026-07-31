@@ -781,7 +781,7 @@ class AdminPaymentConfigControllerTest {
                              content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id,
                              expires_at)
                         values
-                            (:scope, :mediaKind, :visibility, 'LOCAL', '', :objectKey, :filename,
+                            (:scope, :mediaKind, :visibility, 'TENCENT_COS', '', :objectKey, :filename,
                              'text/plain', 'pem', :sizeBytes, :sha256, 'ACTIVE', 'ADMIN', 1, :expiresAt)
                         """)
                 .param("scope", scope)

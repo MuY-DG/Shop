@@ -19,7 +19,6 @@ public record PaymentProperties(
         PaymentVerifyMode verifyMode,
         String publicKeyId,
         String publicKeyPath,
-        Integer expireMinutes,
-        String secretKey
+        Integer expireMinutes
 ) {
 }

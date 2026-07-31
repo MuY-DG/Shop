@@ -1,6 +1,7 @@
 import { API_ENDPOINTS } from "../constants/api-endpoints";
 import type {
   CustomerServiceConversation,
+  CustomerServiceImage,
   CustomerServiceMessage,
   CustomerServiceOpenRequest,
   CustomerServiceOrder,
@@ -96,16 +97,47 @@ export function sendCustomerServiceProduct(
 export function downloadCustomerServiceImage(
   message: Pick<CustomerServiceMessage, "messageId" | "image">
 ): Promise<string> {
+  if (message.image?.thumbnailStatus === "READY") {
+    return downloadAuthenticatedFile(
+      API_ENDPOINTS.customerService.thumbnail(message.messageId)
+    );
+  }
+  return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(message.messageId));
+}
+
+export function downloadCustomerServiceOriginalImage(
+  message: Pick<CustomerServiceMessage, "messageId" | "image">
+): Promise<string> {
   if (
     message.image?.accessMode === "SIGNED_URL" &&
     message.image.accessUrl
   ) {
     return downloadExternalFile(message.image.accessUrl)
-      .catch(() => downloadAuthenticatedFile(
-        API_ENDPOINTS.customerService.image(message.messageId)
-      ));
+      .catch(async () => {
+        const refreshed = await refreshCustomerServiceImageAccess(message.messageId)
+          .catch(() => null);
+        if (refreshed?.accessMode === "SIGNED_URL" && refreshed.accessUrl) {
+          try {
+            return await downloadExternalFile(refreshed.accessUrl);
+          } catch {
+            // A single renewal failed to load; use the authenticated stream.
+          }
+        }
+        return downloadAuthenticatedFile(
+          API_ENDPOINTS.customerService.image(message.messageId)
+        );
+      });
   }
   return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(message.messageId));
+}
+
+export function refreshCustomerServiceImageAccess(
+  messageId: number
+): Promise<CustomerServiceImage> {
+  return request<CustomerServiceImage>({
+    url: API_ENDPOINTS.customerService.imageAccess(messageId),
+    method: "GET"
+  });
 }
 
 export function issueCustomerServiceRealtimeTicket(): Promise<CustomerServiceRealtimeTicket> {

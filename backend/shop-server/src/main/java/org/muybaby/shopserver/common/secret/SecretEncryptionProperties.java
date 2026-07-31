@@ -1,14 +1,15 @@
-package org.muybaby.shopserver.payment;
+package org.muybaby.shopserver.common.secret;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 
-@ConfigurationProperties(prefix = "shop.pay.secret-encryption")
-public record PaymentSecretEncryptionProperties(
+@ConfigurationProperties(prefix = "shop.secret-encryption")
+public record SecretEncryptionProperties(
         Integer writeVersion,
         String activeKeyId,
         String keyRing,
+        String legacyKey,
         boolean rotationEnabled,
         Duration rotationDelay,
         Integer rotationBatchSize

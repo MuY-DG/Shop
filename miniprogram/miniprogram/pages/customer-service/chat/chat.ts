@@ -11,6 +11,7 @@ import {
 import { getCartItems } from "../../../services/cart";
 import {
   downloadCustomerServiceImage,
+  downloadCustomerServiceOriginalImage,
   getCustomerServiceConversation,
   getCustomerServiceOrderCandidates,
   openCustomerServiceConversation,
@@ -19,7 +20,10 @@ import {
   sendCustomerServiceProduct,
   uploadCustomerServiceImage
 } from "../../../services/customer-service";
-import { subscribeCustomerServiceRealtime } from "../../../services/customer-service-realtime";
+import {
+  subscribeCustomerServiceRealtime,
+  subscribeCustomerServiceRealtimeState
+} from "../../../services/customer-service-realtime";
 import {
   getBrowseHistory,
   getFavorites
@@ -49,7 +53,6 @@ interface DatasetEvent {
     dataset: {
       id?: number | string;
       source?: "browse" | "favorite" | "cart";
-      url?: string;
     };
   };
 }
@@ -69,6 +72,7 @@ interface MessageView {
   imageUrl: string;
   imageStyle: string;
   imageLoading: boolean;
+  imageStatusText: string;
   orderId: number;
   orderNo: string;
   orderTitle: string;
@@ -97,9 +101,10 @@ type PanelMode = "" | "main" | "product";
 type PickerKind = "" | "order" | "product";
 type ProductSource = "browse" | "favorite" | "cart";
 
-const POLL_INTERVAL_MS = 5000;
-const PRIVATE_IMAGE_CONCURRENCY = 3;
+const FALLBACK_POLL_INTERVAL_MS = 15_000;
 const imageTempPaths = new Map<number, string>();
+const originalImageTempPaths = new Map<number, string>();
+const imageMessages = new Map<number, CustomerServiceMessage>();
 const imageDownloads = new Set<number>();
 
 let pageActive = false;
@@ -107,7 +112,10 @@ let initialized = false;
 let initializeGeneration = 0;
 let refreshRunning = false;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let thumbnailRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 let unsubscribeRealtime: (() => void) | null = null;
+let unsubscribeRealtimeState: (() => void) | null = null;
+let imageObserver: WechatMiniprogram.IntersectionObserver | null = null;
 let entryContext: CustomerServiceEntryContext = { contextType: "GENERAL" };
 
 function cleanText(value: unknown): string {
@@ -180,6 +188,13 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
     const order = message.order;
     const product = message.product;
     const cachedImage = imageTempPaths.get(message.messageId) ?? "";
+    const thumbnailStatus = message.image?.thumbnailStatus;
+    const imageStatusText =
+      thumbnailStatus === "PENDING" ||
+      thumbnailStatus === "PROCESSING" ||
+      thumbnailStatus === "FAILED"
+        ? "缩略图处理中，点击查看原图"
+        : "图片加载中";
     return {
       messageId: message.messageId,
       senderType: message.senderType,
@@ -195,6 +210,7 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
       imageUrl: cachedImage,
       imageStyle: imageStyle(message),
       imageLoading: message.messageType === "IMAGE" && !cachedImage,
+      imageStatusText,
       orderId: order?.orderId ?? 0,
       orderNo: cleanText(order?.orderNo),
       orderTitle: cleanText(order?.primaryProductTitle) || "商品订单",
@@ -214,12 +230,21 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
 }
 
 function stopLiveUpdates(): void {
+  unsubscribeRealtimeState?.();
+  unsubscribeRealtimeState = null;
+  unsubscribeRealtime?.();
+  unsubscribeRealtime = null;
   if (pollTimer) {
     clearInterval(pollTimer);
   }
   pollTimer = null;
-  unsubscribeRealtime?.();
-  unsubscribeRealtime = null;
+}
+
+function stopThumbnailStatusRefresh(): void {
+  if (thumbnailRefreshTimer) {
+    clearTimeout(thumbnailRefreshTimer);
+  }
+  thumbnailRefreshTimer = null;
 }
 
 function chooseOriginalImages(
@@ -291,9 +316,12 @@ Page({
     pageActive = true;
     initialized = false;
     refreshRunning = false;
+    stopThumbnailStatusRefresh();
     entryContext = customerServiceEntryContext(options.contextType, options.contextId);
     initializeGeneration += 1;
     imageTempPaths.clear();
+    originalImageTempPaths.clear();
+    imageMessages.clear();
     imageDownloads.clear();
   },
 
@@ -315,6 +343,7 @@ Page({
 
   onHide() {
     pageActive = false;
+    stopThumbnailStatusRefresh();
     stopLiveUpdates();
   },
 
@@ -322,8 +351,13 @@ Page({
     pageActive = false;
     initialized = false;
     initializeGeneration += 1;
+    stopThumbnailStatusRefresh();
     stopLiveUpdates();
+    imageObserver?.disconnect();
+    imageObserver = null;
     imageTempPaths.clear();
+    originalImageTempPaths.clear();
+    imageMessages.clear();
     imageDownloads.clear();
   },
 
@@ -368,9 +402,24 @@ Page({
         void this.refreshConversation(true);
       }
     });
-    pollTimer = setInterval(() => {
-      void this.refreshConversation(true);
-    }, POLL_INTERVAL_MS);
+    unsubscribeRealtimeState = subscribeCustomerServiceRealtimeState((state) => {
+      if (!pageActive) {
+        return;
+      }
+      if (state === "CONNECTED") {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+        void this.refreshConversation(true);
+        return;
+      }
+      if (!pollTimer) {
+        pollTimer = setInterval(() => {
+          void this.refreshConversation(true);
+        }, FALLBACK_POLL_INTERVAL_MS);
+      }
+    });
   },
 
   async refreshConversation(silent: boolean) {
@@ -402,6 +451,8 @@ Page({
 
   applyConversation(conversation: CustomerServiceConversation) {
     const rawMessages = Array.isArray(conversation.messages) ? conversation.messages : [];
+    imageMessages.clear();
+    rawMessages.forEach((message) => imageMessages.set(message.messageId, message));
     const views = messageViews(rawMessages);
     const context = conversation.currentContext;
     const contextPreview = conversation.status === "DRAFT"
@@ -411,65 +462,112 @@ Page({
           ? `将咨询订单：${context.order.orderNo}`
           : ""
       : "";
-    this.setData({
-      conversationId: conversation.conversationId,
-      conversationStatus: conversation.status,
-      statusHint: customerServiceStatusHint(
-        conversation.status,
-        conversation.assignedAdminDisplayName
-      ),
-      contextPreview,
-      messages: views,
-      scrollTarget: views.length ? `message-${views[views.length - 1].messageId}` : ""
-    });
-    void this.loadPrivateImages(rawMessages);
+    this.setData(
+      {
+        conversationId: conversation.conversationId,
+        conversationStatus: conversation.status,
+        statusHint: customerServiceStatusHint(
+          conversation.status,
+          conversation.assignedAdminDisplayName
+        ),
+        contextPreview,
+        messages: views,
+        scrollTarget: views.length ? `message-${views[views.length - 1].messageId}` : ""
+      },
+      () => {
+        this.observePrivateImages();
+        this.scheduleThumbnailStatusRefresh(rawMessages);
+      }
+    );
   },
 
-  async loadPrivateImages(messages: CustomerServiceMessage[]) {
-    const pending = messages.filter((message) => (
-      message.messageType === "IMAGE" &&
-      !imageTempPaths.has(message.messageId) &&
-      !imageDownloads.has(message.messageId)
-    ));
-    pending.forEach((message) => imageDownloads.add(message.messageId));
-    let cursor = 0;
-    const worker = async () => {
-      while (cursor < pending.length) {
-        const message = pending[cursor];
-        cursor += 1;
-        try {
-          const tempFilePath = await downloadCustomerServiceImage(message);
-          imageTempPaths.set(message.messageId, tempFilePath);
-          if (pageActive) {
-            this.setData({
-              messages: this.data.messages.map((view) => (
-                view.messageId === message.messageId
-                  ? { ...view, imageUrl: tempFilePath, imageLoading: false }
-                  : view
-              ))
-            });
-          }
-        } catch {
-          if (pageActive) {
-            this.setData({
-              messages: this.data.messages.map((view) => (
-                view.messageId === message.messageId
-                  ? { ...view, imageLoading: false }
-                  : view
-              ))
-            });
-          }
-        } finally {
-          imageDownloads.delete(message.messageId);
-        }
-      }
-    };
-    await Promise.all(
-      Array.from(
-        { length: Math.min(PRIVATE_IMAGE_CONCURRENCY, pending.length) },
-        () => worker()
-      )
+  scheduleThumbnailStatusRefresh(messages: CustomerServiceMessage[]) {
+    if (thumbnailRefreshTimer) {
+      clearTimeout(thumbnailRefreshTimer);
+    }
+    thumbnailRefreshTimer = null;
+    const statuses = messages
+      .filter((message) => message.messageType === "IMAGE")
+      .map((message) => message.image?.thumbnailStatus);
+    const hasActiveWork = statuses.some(
+      (status) => status === "PENDING" || status === "PROCESSING"
     );
+    const hasRetryWaiting = statuses.some((status) => status === "FAILED");
+    if (!hasActiveWork && !hasRetryWaiting) {
+      return;
+    }
+    thumbnailRefreshTimer = setTimeout(() => {
+      thumbnailRefreshTimer = null;
+      if (pageActive) {
+        void this.refreshConversation(true);
+      }
+    }, hasActiveWork ? 3_000 : 30_000);
+  },
+
+  observePrivateImages() {
+    imageObserver?.disconnect();
+    imageObserver = this.createIntersectionObserver({
+      observeAll: true,
+      thresholds: [0, 0.01]
+    });
+    imageObserver
+      .relativeToViewport({ top: 600, bottom: 600 })
+      .observe(".message-image-shell", (result) => {
+        if (result.intersectionRatio <= 0) {
+          return;
+        }
+        const messageId = positiveId(result.dataset.id);
+        if (messageId) {
+          void this.loadPrivateImage(messageId);
+        }
+      });
+  },
+
+  async loadPrivateImage(messageId: number) {
+    const message = imageMessages.get(messageId);
+    if (
+      !message ||
+      message.messageType !== "IMAGE" ||
+      imageTempPaths.has(messageId) ||
+      imageDownloads.has(messageId) ||
+      message.image?.thumbnailStatus === "PENDING" ||
+      message.image?.thumbnailStatus === "PROCESSING" ||
+      message.image?.thumbnailStatus === "FAILED"
+    ) {
+      return;
+    }
+    imageDownloads.add(messageId);
+    try {
+      const tempFilePath = await downloadCustomerServiceImage(message);
+      imageTempPaths.set(messageId, tempFilePath);
+      if (
+        message.image?.thumbnailStatus !== "READY" &&
+        !originalImageTempPaths.has(messageId)
+      ) {
+        originalImageTempPaths.set(messageId, tempFilePath);
+      }
+      if (pageActive) {
+        this.setData({
+          messages: this.data.messages.map((view) => (
+            view.messageId === messageId
+              ? { ...view, imageUrl: tempFilePath, imageLoading: false }
+              : view
+          ))
+        });
+      }
+    } catch {
+      if (pageActive) {
+        this.setData({
+          messages: this.data.messages.map((view) => (
+            view.messageId === messageId
+              ? { ...view, imageLoading: false }
+              : view
+          ))
+        });
+      }
+    } finally {
+      imageDownloads.delete(messageId);
+    }
   },
 
   onInput(event: InputEvent) {
@@ -558,6 +656,8 @@ Page({
         try {
           const message = await uploadCustomerServiceImage(filePaths[index]);
           imageTempPaths.set(message.messageId, filePaths[index]);
+          originalImageTempPaths.set(message.messageId, filePaths[index]);
+          imageMessages.set(message.messageId, message);
           successCount += 1;
           const nextMessages = [
             ...this.data.messages,
@@ -779,11 +879,29 @@ Page({
     }
   },
 
-  onImageTap(event: DatasetEvent) {
-    const url = cleanText(event.currentTarget.dataset.url);
-    if (url) {
-      wx.previewImage({ current: url, urls: [url] });
+  async onImageTap(event: DatasetEvent) {
+    const messageId = positiveId(event.currentTarget.dataset.id);
+    const message = imageMessages.get(messageId);
+    if (!message) {
+      return;
     }
+    let originalPath = originalImageTempPaths.get(messageId);
+    if (!originalPath) {
+      wx.showLoading({ title: "正在加载原图", mask: true });
+      try {
+        originalPath = await downloadCustomerServiceOriginalImage(message);
+        originalImageTempPaths.set(messageId, originalPath);
+      } catch (error) {
+        wx.showToast({
+          title: errorMessage(error, "原图加载失败，请重试"),
+          icon: "none"
+        });
+        return;
+      } finally {
+        wx.hideLoading();
+      }
+    }
+    wx.previewImage({ current: originalPath, urls: [originalPath] });
   },
 
   onOrderCardTap(event: DatasetEvent) {

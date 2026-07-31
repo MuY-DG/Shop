@@ -10,7 +10,7 @@ spring:
       port: 6379
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    locations: classpath:db/migration,classpath:db/testmigration
     placeholders:
       seed_super_status: ENABLED
       seed_super_password_hash: "$2y$10$VtYIL778Ftr75pHOJ3dV0efoMsPK20vZncmZ/vB6tkYj3aW9fqT.i"
@@ -20,6 +20,10 @@ spring:
       max-request-size: 51MB
 
 shop:
+  secret-encryption:
+    write-version: 1
+    legacy-key: 0123456789abcdef0123456789abcdef
+    rotation-enabled: false
   customer-service:
     transfer-timeout-job-enabled: false
   auth:
@@ -42,8 +46,6 @@ shop:
     retention:
       enabled: false
   storage:
-    provider: local
-    public-base-url: http://localhost:8080
     image-compression:
       requested-enabled: true
       config-source: AUTO
@@ -52,14 +54,6 @@ shop:
       request-timeout: 60s
       max-attempts: 2
       retry-delay: 1ms
-    local:
-      root: ${java.io.tmpdir}/shop-server-test-uploads
-    tencent-cos:
-      region:
-      bucket:
-      secret-id:
-      secret-key:
-      public-base-url:
     limits:
       image-max-size: 5MB
       image-max-width: 8192
@@ -82,4 +76,3 @@ shop:
       enabled: false
     config-source: DB
     expire-minutes: 1440
-    secret-key: 0123456789abcdef0123456789abcdef

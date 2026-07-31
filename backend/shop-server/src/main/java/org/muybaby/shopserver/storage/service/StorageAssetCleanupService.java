@@ -72,6 +72,9 @@ public class StorageAssetCleanupService {
         }
         try {
             storageProvider.delete(asset.objectLocation());
+            if (asset.thumbnailLocation() != null) {
+                storageProvider.delete(asset.thumbnailLocation());
+            }
         } catch (RuntimeException ex) {
             RetrySchedule retry = transactionTemplate.execute(status -> scheduleRetry(asset));
             if (retry != null && retry.scheduled()) {
@@ -184,7 +187,8 @@ public class StorageAssetCleanupService {
         CleanupAsset asset = jdbcClient.sql("""
                         select id, scope, status, expires_at, cleanup_attempts, created_at,
                                cleanup_next_retry_at, provider,
-                               storage_container, storage_region, object_key
+                               storage_container, storage_region, object_key,
+                               thumbnail_object_key
                         from storage_asset
                         where id = :assetId
                         for update
@@ -340,6 +344,15 @@ public class StorageAssetCleanupService {
                             folder_id = null,
                             public_url = null,
                             expires_at = null,
+                            thumbnail_status = 'NONE',
+                            thumbnail_object_key = null,
+                            thumbnail_content_type = null,
+                            thumbnail_size_bytes = null,
+                            thumbnail_sha256 = null,
+                            thumbnail_width = null,
+                            thumbnail_height = null,
+                            thumbnail_started_at = null,
+                            thumbnail_next_retry_at = null,
                             cleanup_next_retry_at = null,
                             cleanup_lease_token = null,
                             deleted_at = current_timestamp,
@@ -400,6 +413,7 @@ public class StorageAssetCleanupService {
                 rs.getString("storage_container"),
                 rs.getString("storage_region"),
                 rs.getString("object_key"),
+                rs.getString("thumbnail_object_key"),
                 null
         );
     }
@@ -416,12 +430,13 @@ public class StorageAssetCleanupService {
             String storageContainer,
             String storageRegion,
             String objectKey,
+            String thumbnailObjectKey,
             String leaseToken
     ) {
         private CleanupAsset withLeaseToken(String token) {
             return new CleanupAsset(
                     id, scope, status, expiresAt, cleanupAttempts, createdAt, cleanupNextRetryAt,
-                    provider, storageContainer, storageRegion, objectKey, token
+                    provider, storageContainer, storageRegion, objectKey, thumbnailObjectKey, token
             );
         }
 
@@ -431,6 +446,18 @@ public class StorageAssetCleanupService {
                     storageContainer,
                     storageRegion,
                     objectKey
+            );
+        }
+
+        private StorageObjectLocation thumbnailLocation() {
+            if (thumbnailObjectKey == null || thumbnailObjectKey.isBlank()) {
+                return null;
+            }
+            return new StorageObjectLocation(
+                    StorageProviderKind.valueOf(provider),
+                    storageContainer,
+                    storageRegion,
+                    thumbnailObjectKey
             );
         }
     }

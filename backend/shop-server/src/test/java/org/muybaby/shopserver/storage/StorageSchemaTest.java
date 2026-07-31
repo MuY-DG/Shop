@@ -31,7 +31,8 @@ class StorageSchemaTest {
         assertThat(columnIsAutoIncrement("storage_asset_folder", "id")).isTrue();
         assertThat(columnIsAutoIncrement("storage_asset_usage", "id")).isTrue();
         assertThat(columnNames("storage_runtime_setting"))
-                .contains("public_base_url", "local_public_base_url", "cos_public_base_url");
+                .contains("cos_public_base_url", "cos_region", "cos_bucket")
+                .doesNotContain("provider", "public_base_url", "local_public_base_url", "local_root");
 
         assertThat(columnNames("storage_asset")).contains(
                 "id", "scope", "media_kind", "folder_id", "visibility", "provider",
@@ -54,6 +55,7 @@ class StorageSchemaTest {
         );
 
         assertThat(constraintExists("storage_asset", "uk_storage_asset_object_key", "UNIQUE")).isTrue();
+        assertThat(constraintExists("storage_asset", "chk_storage_asset_cos_only", "CHECK")).isTrue();
         assertThat(indexExists("storage_asset", "idx_storage_asset_scope_kind_status_created")).isTrue();
         assertThat(indexExists("storage_asset", "idx_storage_asset_folder_status_created")).isTrue();
         assertThat(indexExists("storage_asset", "idx_storage_asset_upload_context")).isTrue();

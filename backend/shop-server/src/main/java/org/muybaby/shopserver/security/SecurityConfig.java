@@ -56,7 +56,6 @@ public class SecurityConfig {
                                 "/wechat/**"
                         ).permitAll()
                         .requestMatchers(HttpMethod.POST, "/app/analytics/events/batch").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/files/public/**").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/app/product/categories", "/app/product/filter-facets",
                                 "/app/product/spus", "/app/product/spus/*",

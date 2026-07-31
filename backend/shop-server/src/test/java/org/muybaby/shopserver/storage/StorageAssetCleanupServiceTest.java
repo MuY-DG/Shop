@@ -82,6 +82,50 @@ class StorageAssetCleanupServiceTest {
     }
 
     @Test
+    void cleanupDeletesGeneratedThumbnailTogetherWithOriginal() {
+        InsertedAsset expired = insertExpiredAsset("ATTACHMENT");
+        String thumbnailObjectKey = expired.objectKey().replace(".txt", ".thumb-720.webp");
+        byte[] thumbnailBytes = "thumbnail".getBytes();
+        storageProvider.put(
+                thumbnailObjectKey,
+                "image/webp",
+                new ByteArrayInputStream(thumbnailBytes),
+                thumbnailBytes.length
+        );
+        jdbcClient.sql("""
+                        update storage_asset
+                        set thumbnail_status = 'READY',
+                            thumbnail_object_key = :thumbnailObjectKey,
+                            thumbnail_content_type = 'image/webp',
+                            thumbnail_size_bytes = :thumbnailSize,
+                            thumbnail_sha256 = 'thumbnail-sha'
+                        where id = :assetId
+                        """)
+                .param("thumbnailObjectKey", thumbnailObjectKey)
+                .param("thumbnailSize", thumbnailBytes.length)
+                .param("assetId", expired.id())
+                .update();
+
+        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+
+        assertThat(status(expired.id())).isEqualTo("DELETED");
+        assertThatThrownBy(() -> storageProvider.open(expired.objectKey()))
+                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> storageProvider.open(thumbnailObjectKey))
+                .isInstanceOf(RuntimeException.class);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from storage_asset
+                        where id = :assetId
+                          and thumbnail_status = 'NONE'
+                          and thumbnail_object_key is null
+                        """)
+                .param("assetId", expired.id())
+                .query(Integer.class)
+                .single()).isOne();
+    }
+
+    @Test
     void failedProviderDeleteUsesABackoffLeaseWithoutBlockingNewExpiredAssets() {
         long failedAssetId = insertFailedCosRetry();
         long secondFailedAssetId = insertFailedCosRetry();
@@ -235,7 +279,7 @@ class StorageAssetCleanupServiceTest {
                              original_filename, content_type, extension, size_bytes, sha256, status,
                              uploaded_by_type, uploaded_by_id, expires_at)
                         values
-                            (:scope, 'DOCUMENT', 'PRIVATE', 'LOCAL', '', :objectKey,
+                            (:scope, 'DOCUMENT', 'PRIVATE', 'TENCENT_COS', '', :objectKey,
                              'cleanup.txt', 'text/plain', 'txt', :sizeBytes, '', 'ACTIVE',
                              'ADMIN', 1, :expiresAt)
                         """)
@@ -262,7 +306,7 @@ class StorageAssetCleanupServiceTest {
                              original_filename, content_type, extension, size_bytes, sha256, status,
                              uploaded_by_type, uploaded_by_id, cleanup_next_retry_at, created_at, updated_at)
                         values
-                            ('ATTACHMENT', 'DOCUMENT', 'PRIVATE', 'LOCAL', '', :objectKey,
+                            ('ATTACHMENT', 'DOCUMENT', 'PRIVATE', 'TENCENT_COS', '', :objectKey,
                              'pending.txt', 'text/plain', 'txt', :sizeBytes, '', 'UPLOAD_PENDING',
                              'ADMIN', 1, :cleanupNotBefore, :createdAt, :createdAt)
                         """)
@@ -291,7 +335,7 @@ class StorageAssetCleanupServiceTest {
                              status, uploaded_by_type, uploaded_by_id, upload_context_type,
                              upload_context_id, created_at, updated_at)
                         values
-                            ('LIBRARY', 'IMAGE', 'PUBLIC', 'LOCAL', '', :objectKey,
+                            ('LIBRARY', 'IMAGE', 'PUBLIC', 'TENCENT_COS', '', :objectKey,
                              'avatar.png', 'image/png', 'png', :sizeBytes, '', :publicUrl,
                              'ACTIVE', 'APP', 991, 'APP_USER_AVATAR', 991, :createdAt, :createdAt)
                         """)

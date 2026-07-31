@@ -41,7 +41,7 @@ class AfterSaleSchemaTest {
                              alt_text, tags_json, public_url, status, uploaded_by_type, uploaded_by_id,
                              upload_context_type, upload_context_id, expires_at)
                         values
-                            (19302, 'ATTACHMENT', 'IMAGE', null, 'PRIVATE', 'LOCAL', '',
+                            (19302, 'ATTACHMENT', 'IMAGE', null, 'PRIVATE', 'TENCENT_COS', '',
                              'private/schema/refund.png', 'refund.png', 'image/png', 'png', 68,
                              'refund-evidence-schema', 1, 1, '', null, null, 'ACTIVE', 'APP', 1,
                              'ORDER', 19301, dateadd('HOUR', 24, current_timestamp))

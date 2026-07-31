@@ -317,7 +317,7 @@ public abstract class PaymentTestSupport {
                              public_url, status, uploaded_by_type, uploaded_by_id,
                              upload_context_type, upload_context_id, expires_at)
                         values
-                            (:fileId, :scope, :mediaKind, :visibility, 'LOCAL', '', :objectKey, :originalFilename,
+                            (:fileId, :scope, :mediaKind, :visibility, 'TENCENT_COS', '', :objectKey, :originalFilename,
                              'image/png', 'png', 68, :sha256, 1, 1, '', null, null, :status, 'APP', :uploadedById,
                              :uploadContextType, :uploadContextId, :expiresAt)
                         """)
@@ -485,7 +485,7 @@ public abstract class PaymentTestSupport {
                             (id, scope, media_kind, visibility, provider, storage_container, object_key, original_filename,
                              content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id)
                         values
-                            (:id, 'SECRET', 'DOCUMENT', 'PRIVATE', 'LOCAL', '', :objectKey, :originalFilename,
+                            (:id, 'SECRET', 'DOCUMENT', 'PRIVATE', 'TENCENT_COS', '', :objectKey, :originalFilename,
                              'text/plain', 'pem', :sizeBytes, '', 'ACTIVE', 'ADMIN', 1)
                         """)
                 .param("id", fileId)

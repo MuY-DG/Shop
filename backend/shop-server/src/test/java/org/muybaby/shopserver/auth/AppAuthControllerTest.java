@@ -9,6 +9,7 @@ import org.muybaby.shopserver.auth.token.TokenGrant;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenPair;
 import org.muybaby.shopserver.auth.token.TokenSession;
+import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,8 +22,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.lang.reflect.Field;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -68,6 +67,9 @@ class AppAuthControllerTest {
 
     @Autowired
     private JdbcClient jdbcClient;
+
+    @Autowired
+    private StorageProvider storageProvider;
 
     @Test
     void appLoginExchangesCodeAndIssuesAppToken() throws Exception {
@@ -144,7 +146,8 @@ class AppAuthControllerTest {
                         .file(new MockMultipartFile("file", "avatar.png", "image/png", TINY_PNG))
                         .header("Authorization", bearer(login.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.avatarUrl", startsWith("http://localhost:8080/files/public/")))
+                .andExpect(jsonPath("$.data.avatarUrl",
+                        startsWith("https://shop-test-1250000000.cos.ap-guangzhou.myqcloud.com/public/")))
                 .andReturn();
         String avatarUrl = read(uploadResult, "/data/avatarUrl").asText();
 
@@ -161,8 +164,8 @@ class AppAuthControllerTest {
     }
 
     @Test
-    void replacingUploadedAvatarDeletesPreviousLocalFile() throws Exception {
-        AppSession login = login("avatar-local-cleanup-user");
+    void replacingUploadedAvatarDeletesPreviousCosObject() throws Exception {
+        AppSession login = login("avatar-cos-cleanup-user");
 
         MvcResult firstUpload = mockMvc.perform(multipart("/app/users/me/avatar")
                         .file(new MockMultipartFile("file", "first-avatar.png", "image/png", TINY_PNG))
@@ -171,7 +174,8 @@ class AppAuthControllerTest {
                 .andReturn();
         String firstAvatarUrl = read(firstUpload, "/data/avatarUrl").asText();
         StoredAvatarAsset firstAsset = storedAvatarAsset(firstAvatarUrl);
-        org.assertj.core.api.Assertions.assertThat(Files.exists(firstAsset.path())).isTrue();
+        org.assertj.core.api.Assertions.assertThat(storageProvider.open(firstAsset.objectKey()).sizeBytes())
+                .isPositive();
 
         MvcResult secondUpload = mockMvc.perform(multipart("/app/users/me/avatar")
                         .file(new MockMultipartFile("file", "second-avatar.png", "image/png", TINY_PNG))
@@ -181,7 +185,9 @@ class AppAuthControllerTest {
         String secondAvatarUrl = read(secondUpload, "/data/avatarUrl").asText();
 
         org.assertj.core.api.Assertions.assertThat(assetStatus(firstAsset.id())).isEqualTo("DELETED");
-        org.assertj.core.api.Assertions.assertThat(Files.exists(firstAsset.path())).isFalse();
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> storageProvider.open(firstAsset.objectKey()))
+                .isInstanceOf(IllegalStateException.class);
         org.assertj.core.api.Assertions.assertThat(assetStatus(storedAvatarAsset(secondAvatarUrl).id()))
                 .isEqualTo("ACTIVE");
     }
@@ -451,14 +457,14 @@ class AppAuthControllerTest {
 
     private StoredAvatarAsset storedAvatarAsset(String publicUrl) {
         return jdbcClient.sql("""
-                        select id, storage_container, object_key
+                        select id, object_key
                         from storage_asset
                         where public_url = :publicUrl
                         """)
                 .param("publicUrl", publicUrl)
                 .query((rs, rowNum) -> new StoredAvatarAsset(
                         rs.getLong("id"),
-                        Path.of(rs.getString("storage_container")).resolve(rs.getString("object_key"))
+                        rs.getString("object_key")
                 ))
                 .single();
     }
@@ -489,6 +495,6 @@ class AppAuthControllerTest {
     private record AppSession(String token, String refreshToken, long userId, String nickname) {
     }
 
-    private record StoredAvatarAsset(long id, Path path) {
+    private record StoredAvatarAsset(long id, String objectKey) {
     }
 }
