@@ -111,6 +111,7 @@ public class CosCustomDomainVerifier {
         COSCredentials credentials = new BasicCOSCredentials(secretId, secretKey);
         ClientConfig clientConfig = new ClientConfig(new Region(region));
         clientConfig.setHttpProtocol(HttpProtocol.https);
+        clientConfig.setPrintShutdownStackTrace(false);
         clientConfig.setConnectionTimeout(CONNECTION_TIMEOUT_MILLIS);
         clientConfig.setSocketTimeout(SOCKET_TIMEOUT_MILLIS);
         clientConfig.setRequestTimeout(REQUEST_TIMEOUT_MILLIS);
