@@ -343,14 +343,17 @@
                 ref="imageInputRef"
                 class="image-input"
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,.svg"
+                accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
                 @change="handleImageSelected"
               />
               <ElButton
                 v-auth="'customer-service:message:send'"
-                :disabled="!canSend || uploadingImage"
-                @click="openImagePicker"
-                ><ImageIcon :size="15" />图片</ElButton
+                :disabled="!uploadingImage && !canSend"
+                :type="uploadingImage ? 'danger' : 'default'"
+                @click="uploadingImage ? cancelImageUpload() : openImagePicker()"
+                ><ImageIcon :size="15" />{{
+                  uploadingImage ? `取消上传 ${imageUploadPercent}%` : '图片'
+                }}</ElButton
               >
               <ElButton
                 v-auth="'customer-service:order:link'"
@@ -653,6 +656,7 @@
     fetchCustomerServiceAgents,
     fetchCustomerServiceAgentState,
     fetchCustomerServiceConversation,
+    fetchCustomerServiceImageAccess,
     fetchCustomerServiceMessages,
     fetchCustomerServiceWorkspace,
     fetchCustomerServiceImage,
@@ -707,6 +711,7 @@
   const actionLoading = ref(false)
   const claimingConversationId = ref<number | null>(null)
   const uploadingImage = ref(false)
+  const imageUploadPercent = ref(0)
   const messageDraft = ref('')
   const messageListRef = ref<HTMLElement | null>(null)
   const imageInputRef = ref<HTMLInputElement | null>(null)
@@ -765,6 +770,7 @@
   let pageMounted = false
   let previewRequestSequence = 0
   let previewLoadingInstance: ReturnType<typeof ElLoading.service> | null = null
+  let imageUploadAbortController: AbortController | null = null
   const pendingRealtimeMessages = new Map<number, Set<number>>()
   const pendingRealtimeFullRefresh = new Set<number>()
   const locallyHandledMessageIds = new Map<number, number>()
@@ -886,23 +892,76 @@
     closeImagePreview()
   }
 
-  const loadAuthenticatedImage = (message: Api.CustomerService.Message) => {
+  const usableSignedUrl = (
+    accessMode: Api.CustomerService.ImageMessage['accessMode'] | null | undefined,
+    accessUrl: string | null | undefined,
+    expiresAt: string | null | undefined
+  ) => {
+    if (accessMode !== 'SIGNED_URL' || !accessUrl) return ''
+    if (!expiresAt) return accessUrl
+    const expiration = Date.parse(expiresAt)
+    return Number.isFinite(expiration) && expiration > Date.now() + 5_000 ? accessUrl : ''
+  }
+
+  const preferredMessageImageUrl = (image: Api.CustomerService.ImageMessage | null) => {
+    if (!image) return ''
+    if (image.thumbnailStatus === 'READY') {
+      const thumbnailUrl = usableSignedUrl(
+        image.thumbnailAccessMode,
+        image.thumbnailAccessUrl,
+        image.thumbnailAccessExpiresAt
+      )
+      if (thumbnailUrl) return thumbnailUrl
+    }
+    return usableSignedUrl(image.accessMode, image.accessUrl, image.accessExpiresAt)
+  }
+
+  const updateMessageImageAccess = (messageId: number, image: Api.CustomerService.ImageMessage) => {
+    if (!currentDetail.value) return
+    currentDetail.value.messages = currentDetail.value.messages.map((message) =>
+      message.messageId === messageId ? { ...message, image } : message
+    )
+  }
+
+  const loadAuthenticatedImage = (message: Api.CustomerService.Message, refreshAccess = false) => {
     if (!isPersistedCustomerServiceMessageId(message.messageId) || isLocalImageUploading(message))
       return
     if (imageRefreshRequests.has(message.messageId)) return
+
+    const existingSignedUrl = preferredMessageImageUrl(message.image)
+    if (existingSignedUrl && !refreshAccess) {
+      imageUrls.value = { ...imageUrls.value, [message.messageId]: existingSignedUrl }
+      return
+    }
 
     imageRefreshRequests.add(message.messageId)
     imageLoadStates.value = {
       ...imageLoadStates.value,
       [message.messageId]: 'loading'
     }
-    const request =
-      message.image?.thumbnailStatus === 'READY'
-        ? fetchCustomerServiceThumbnail(message.messageId)
-        : fetchCustomerServiceImage(message.messageId)
-    void request
-      .then((blob) => {
-        const url = cacheCustomerServiceImage(message.messageId, blob)
+    void (async () => {
+      let image = message.image
+      let accessRefreshed = false
+      if (refreshAccess) {
+        try {
+          image = await fetchCustomerServiceImageAccess(message.messageId)
+          accessRefreshed = true
+          updateMessageImageAccess(message.messageId, image)
+        } catch {
+          // The authenticated blob endpoint remains a compatibility fallback.
+        }
+      }
+
+      const signedUrl = !refreshAccess || accessRefreshed ? preferredMessageImageUrl(image) : ''
+      if (signedUrl) return signedUrl
+
+      const blob =
+        image?.thumbnailStatus === 'READY'
+          ? await fetchCustomerServiceThumbnail(message.messageId)
+          : await fetchCustomerServiceImage(message.messageId)
+      return cacheCustomerServiceImage(message.messageId, blob)
+    })()
+      .then((url) => {
         if (
           !currentDetail.value?.messages.some(
             (currentMessage) => currentMessage.messageId === message.messageId
@@ -952,7 +1011,7 @@
       return
     }
     imageRefreshAttempts.add(message.messageId)
-    loadAuthenticatedImage(message)
+    loadAuthenticatedImage(message, true)
   }
 
   const releasePreviewImage = () => {
@@ -984,7 +1043,20 @@
       background: 'rgb(15 23 42 / 38%)'
     })
     try {
-      const original = await fetchCustomerServiceImage(message.messageId)
+      let image = message.image
+      let originalUrl = image
+        ? usableSignedUrl(image.accessMode, image.accessUrl, image.accessExpiresAt)
+        : ''
+      if (!originalUrl) {
+        try {
+          image = await fetchCustomerServiceImageAccess(message.messageId)
+          updateMessageImageAccess(message.messageId, image)
+          originalUrl = usableSignedUrl(image.accessMode, image.accessUrl, image.accessExpiresAt)
+        } catch {
+          // Fall through to the authenticated endpoint for older storage responses.
+        }
+      }
+      const original = originalUrl ? null : await fetchCustomerServiceImage(message.messageId)
       if (
         requestId !== previewRequestSequence ||
         !currentDetail.value?.messages.some(
@@ -993,7 +1065,7 @@
       )
         return
       releasePreviewImage()
-      previewImageUrl.value = URL.createObjectURL(original)
+      previewImageUrl.value = originalUrl || URL.createObjectURL(original!)
     } catch {
       if (requestId === previewRequestSequence) ElMessage.error('原图加载失败，请重试')
     } finally {
@@ -1097,7 +1169,8 @@
     imageMessages.forEach((message) => {
       if (!isPersistedCustomerServiceMessageId(message.messageId)) return
       const cachedUrl = getCustomerServiceImageUrl(message.messageId)
-      if (cachedUrl) nextUrls[message.messageId] = cachedUrl
+      const signedUrl = preferredMessageImageUrl(message.image)
+      if (cachedUrl || signedUrl) nextUrls[message.messageId] = cachedUrl || signedUrl
     })
     pendingImageUploads.forEach((pending, messageId) => {
       if (pending.conversationId === selectedConversationId.value) {
@@ -1404,12 +1477,31 @@
   }
 
   const openImagePicker = () => imageInputRef.value?.click()
+  const cancelImageUpload = () => imageUploadAbortController?.abort()
+
+  const isSupportedChatImage = (file: File) => {
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    const contentType = file.type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : file.type
+    return (
+      ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(extension || '') &&
+      (!contentType ||
+        ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(contentType))
+    )
+  }
 
   const handleImageSelected = async (event: Event) => {
     const input = event.target as HTMLInputElement
     const file = input.files?.[0]
     input.value = ''
     if (!selectedConversationId.value || !file || !canSend.value) return
+    if (!isSupportedChatImage(file)) {
+      ElMessage.warning('聊天图片仅支持 JPG、PNG、WebP 或 GIF')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      ElMessage.warning('聊天图片不能超过 5 MB')
+      return
+    }
     const conversationId = selectedConversationId.value
     const pendingMessageId = nextPendingMessageId--
     const previewUrl = URL.createObjectURL(file)
@@ -1451,18 +1543,34 @@
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
     }
     beginLocalMutation(conversationId)
+    const abortController = new AbortController()
+    imageUploadAbortController = abortController
+    imageUploadPercent.value = 0
     uploadingImage.value = true
     try {
-      const message = await uploadCustomerServiceImage(conversationId, file)
+      const message = await uploadCustomerServiceImage(conversationId, file, {
+        signal: abortController.signal,
+        onProgress: ({ percent }) => {
+          imageUploadPercent.value = percent
+        }
+      })
       const localImageUrl = cacheCustomerServiceImage(message.messageId, file)
       removePendingImage(pendingMessageId)
       imageUrls.value = { ...imageUrls.value, [message.messageId]: localImageUrl }
       applyLocallySentMessage(conversationId, message)
     } catch (error) {
       removePendingImage(pendingMessageId)
-      throw error
+      if (error instanceof Error && error.name === 'AbortError') {
+        ElMessage.info('已取消图片上传')
+      } else if (!(error instanceof Error) || error.name !== 'HttpError') {
+        ElMessage.error(error instanceof Error ? error.message : '图片上传失败，请重试')
+      }
     } finally {
-      uploadingImage.value = false
+      if (imageUploadAbortController === abortController) {
+        imageUploadAbortController = null
+        uploadingImage.value = false
+        imageUploadPercent.value = 0
+      }
       endLocalMutation(conversationId)
     }
   }
@@ -1885,6 +1993,8 @@
     pendingRealtimeFullRefresh.clear()
     locallyHandledMessageIds.clear()
     localMutationCounts.clear()
+    imageUploadAbortController?.abort()
+    imageUploadAbortController = null
     pendingImageUploads.forEach((pending) => URL.revokeObjectURL(pending.previewUrl))
     pendingImageUploads.clear()
     pendingTextSends.clear()

@@ -10,9 +10,12 @@ import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.user.service.AppUserAvatarService;
 import org.muybaby.shopserver.user.service.AppUserAvatarRateLimiter;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionRequest;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionResponse;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -52,6 +55,34 @@ public class AppUserController {
             @RequestParam("file") MultipartFile file
     ) {
         return avatarResponse(appUserAvatarService.updateAvatar(principal, file));
+    }
+
+    @PostMapping("/me/avatar/upload-sessions")
+    public ApiResponse<DirectUploadSessionResponse> createAvatarUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @Valid @RequestBody DirectUploadSessionRequest request
+    ) {
+        return ApiResponse.success(
+                appUserAvatarService.createDirectUploadSession(principal, request));
+    }
+
+    @PostMapping("/me/avatar/upload-sessions/{uploadId}/complete")
+    public ResponseEntity<ApiResponse<AppUserAvatarUpdateResponse>> completeAvatarUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @org.springframework.web.bind.annotation.PathVariable String uploadId
+    ) {
+        return avatarResponse(
+                appUserAvatarService.completeDirectUploadSession(
+                        principal, uploadId));
+    }
+
+    @DeleteMapping("/me/avatar/upload-sessions/{uploadId}")
+    public ApiResponse<Void> cancelAvatarUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @org.springframework.web.bind.annotation.PathVariable String uploadId
+    ) {
+        appUserAvatarService.cancelDirectUploadSession(principal, uploadId);
+        return ApiResponse.success();
     }
 
     @PutMapping("/me/avatar")

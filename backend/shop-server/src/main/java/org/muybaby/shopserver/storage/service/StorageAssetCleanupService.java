@@ -349,6 +349,7 @@ public class StorageAssetCleanupService {
                             thumbnail_content_type = null,
                             thumbnail_size_bytes = null,
                             thumbnail_sha256 = null,
+                            thumbnail_object_etag = null,
                             thumbnail_width = null,
                             thumbnail_height = null,
                             thumbnail_started_at = null,

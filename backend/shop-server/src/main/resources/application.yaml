@@ -104,15 +104,14 @@ shop: # 商城项目自定义业务配置的统一入口。
       max-batches-per-run: ${SHOP_ANALYTICS_RETENTION_MAX_BATCHES:100} # 单次任务最多执行 100 个删除批次。
       cron: ${SHOP_ANALYTICS_RETENTION_CRON:0 15 3 * * *} # 默认每天凌晨 3:15 执行清理任务。
   storage: # 图片、视频和私有文件的素材存储配置。
-    image-compression: # 上传图片写入对象存储前的 Tinify 压缩配置。
-      requested-enabled: ${SHOP_IMAGE_COMPRESSION_ENABLED:true} # 管理员尚未保存数据库配置时默认请求启用压缩。
-      config-source: ${SHOP_IMAGE_COMPRESSION_CONFIG_SOURCE:AUTO} # AUTO 优先使用有效环境密钥，否则使用数据库密钥。
-      api-key: ${TINIFY_API_KEY:} # Tinify 密钥仅从环境变量读取，禁止提交明文。
-      monthly-limit: ${SHOP_IMAGE_COMPRESSION_MONTHLY_LIMIT:500} # 本系统每月可使用的压缩次数预算。
-      request-timeout: ${SHOP_IMAGE_COMPRESSION_REQUEST_TIMEOUT:60s} # 单次 Tinify HTTP 请求最长等待 60 秒。
-      max-attempts: ${SHOP_IMAGE_COMPRESSION_MAX_ATTEMPTS:2} # 瞬时故障最多执行 2 次，即自动重试 1 次。
-      retry-delay: ${SHOP_IMAGE_COMPRESSION_RETRY_DELAY:1s} # 重试前短暂退避，避免立即再次争抢出带宽。
-    customer-service-thumbnail: # 客服聊天图片在本机异步生成的列表缩略图，不调用 Tinify。
+    direct-upload: # 客户端直传 COS 的短期会话与清理策略。
+      session-retention: ${SHOP_DIRECT_UPLOAD_SESSION_RETENTION:7d} # 已完成或已过期的会话审计记录默认保留 7 天。
+      max-active-sessions-per-principal: ${SHOP_DIRECT_UPLOAD_MAX_ACTIVE_SESSIONS:10} # 每个登录主体最多同时保留 10 个待完成直传，避免临时对象滥用。
+      max-sessions-per-hour-app: ${SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_APP:60} # 每位小程序用户每小时最多签发 60 次直传。
+      max-sessions-per-hour-admin: ${SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_ADMIN:600} # 每位管理员每小时最多签发 600 次直传。
+      cleanup-initial-delay: ${SHOP_DIRECT_UPLOAD_CLEANUP_INITIAL_DELAY:1m} # 启动后 1 分钟开始回收过期暂存对象。
+      cleanup-fixed-delay: ${SHOP_DIRECT_UPLOAD_CLEANUP_FIXED_DELAY:10m} # 每 10 分钟回收暂存对象和历史会话。
+    customer-service-thumbnail: # 旧 Multipart 客服图片使用本地异步缩略图；直传路径由数据万象同步生成。
       max-dimension: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_MAX_DIMENSION:720} # 默认将最长边缩放至 720 像素且不放大小图。
       webp-enabled: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_WEBP_ENABLED:true} # WebP 不可用时自动降级为本地 JPEG，不阻塞消息。
       batch-size: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_BATCH_SIZE:20} # 恢复任务每轮最多处理 20 张。

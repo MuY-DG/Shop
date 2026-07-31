@@ -62,7 +62,8 @@ function chooseEvidenceImages(count: number): Promise<LocalImage[]> {
       count,
       mediaType: ["image"],
       sourceType: ["album", "camera"],
-      sizeType: ["original"],
+      // 选择阶段先使用微信的高质量压缩结果，云端仍会统一生成 WebP 展示图。
+      sizeType: ["compressed"],
       success: (result) => resolve(result.tempFiles
         .map((file) => ({
           tempFilePath: file.tempFilePath,

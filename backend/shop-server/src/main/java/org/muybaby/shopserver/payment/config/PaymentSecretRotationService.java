@@ -3,7 +3,6 @@ package org.muybaby.shopserver.payment.config;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.common.secret.SecretEncryptionProperties;
-import org.muybaby.shopserver.storage.compression.config.ImageCompressionRuntimeConfigService;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,8 +33,6 @@ public class PaymentSecretRotationService {
     private static final String PAYMENT_CONFIG_CHECKPOINT = "payment-config";
     private static final String SNAPSHOT_CHECKPOINT = "payment-config-snapshot";
     private static final String STORAGE_CHECKPOINT = "storage-runtime-setting";
-    private static final String IMAGE_COMPRESSION_CHECKPOINT =
-            "image-compression-runtime-setting";
     private static final String NUMERIC_CURSOR_START = "0";
     private static final String TEXT_CURSOR_START = "";
 
@@ -96,13 +93,6 @@ public class PaymentSecretRotationService {
             rotated += rotateSafely(
                     STORAGE_CHECKPOINT, Long.toString(candidate.id()), candidate.keyId(),
                     () -> rotateStorage(candidate));
-        }
-        for (ImageCompressionEnvelope candidate : imageCompressionCandidates(batchSize)) {
-            rotated += rotateSafely(
-                    IMAGE_COMPRESSION_CHECKPOINT,
-                    Long.toString(candidate.id()),
-                    candidate.keyId(),
-                    () -> rotateImageCompression(candidate));
         }
         return rotated;
     }
@@ -428,77 +418,6 @@ public class PaymentSecretRotationService {
         return secretCipher.encrypt(StorageRuntimeConfigService.secretContext(fieldName), plaintext);
     }
 
-    private List<ImageCompressionEnvelope> imageCompressionCandidates(int batchSize) {
-        return claimCandidates(
-                IMAGE_COMPRESSION_CHECKPOINT,
-                NUMERIC_CURSOR_START,
-                cursor -> queryImageCompressionCandidates(parseNumericCursor(cursor), batchSize),
-                candidate -> Long.toString(candidate.id())
-        );
-    }
-
-    private List<ImageCompressionEnvelope> queryImageCompressionCandidates(
-            long afterId,
-            int batchSize
-    ) {
-        return jdbcClient.sql("""
-                        select id, api_key_ciphertext, secret_cipher_version, secret_key_id,
-                               secret_revision
-                        from image_compression_runtime_setting
-                        where id > :afterId
-                          and api_key_ciphertext <> ''
-                        order by id
-                        limit :batchSize
-                        """)
-                .param("afterId", afterId)
-                .param("batchSize", batchSize)
-                .query((rs, rowNum) -> new ImageCompressionEnvelope(
-                        rs.getLong("id"),
-                        rs.getString("api_key_ciphertext"),
-                        rs.getInt("secret_cipher_version"),
-                        rs.getString("secret_key_id"),
-                        rs.getLong("secret_revision")))
-                .list();
-    }
-
-    private int rotateImageCompression(ImageCompressionEnvelope candidate) {
-        if (candidate.id() != 1L) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        if (!secretCipher.shouldReencrypt(candidate.version(), candidate.keyId())) {
-            return 0;
-        }
-        PaymentSecretCipher.DecryptedSecret decrypted = secretCipher.decrypt(
-                ImageCompressionRuntimeConfigService.secretContext(),
-                candidate.ciphertext());
-        requireMetadata(decrypted, candidate.version(), candidate.keyId());
-        if (!secretCipher.shouldReencrypt(decrypted.version(), decrypted.keyId())) {
-            return 0;
-        }
-        PaymentSecretCipher.EncryptedSecret encrypted = secretCipher.encrypt(
-                ImageCompressionRuntimeConfigService.secretContext(),
-                decrypted.plaintext());
-        requireTargetEnvelope(encrypted);
-
-        return jdbcClient.sql("""
-                        update image_compression_runtime_setting
-                        set api_key_ciphertext = :newCiphertext,
-                            secret_cipher_version = :newVersion,
-                            secret_key_id = :newKeyId,
-                            secret_revision = secret_revision + 1,
-                            secret_reencrypted_at = current_timestamp,
-                            updated_at = current_timestamp
-                        where id = :id
-                          and secret_revision = :oldRevision
-                        """)
-                .param("newCiphertext", encrypted.ciphertext())
-                .param("newVersion", encrypted.version())
-                .param("newKeyId", encrypted.keyId())
-                .param("id", candidate.id())
-                .param("oldRevision", candidate.revision())
-                .update();
-    }
-
     private void requireMetadata(
             PaymentSecretCipher.DecryptedSecret decrypted,
             int expectedVersion,
@@ -571,12 +490,4 @@ public class PaymentSecretRotationService {
     ) {
     }
 
-    private record ImageCompressionEnvelope(
-            long id,
-            String ciphertext,
-            int version,
-            String keyId,
-            long revision
-    ) {
-    }
 }

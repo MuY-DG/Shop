@@ -54,10 +54,12 @@
             :placeholder="config?.secretKeyConfigured ? '已配置，留空不修改' : '请输入 SecretKey'"
           />
         </ElFormItem>
-        <ElFormItem label="公开访问域名" prop="publicBaseUrl">
+        <ElFormItem label="COS 客户端域名" prop="publicBaseUrl">
           <ElInput v-model="formData.publicBaseUrl" :placeholder="cosDomainPlaceholder" />
           <div class="form-tip"
-            >可留空使用 COS 默认域名；如已绑定自定义源站域名，可填写 HTTP(S) 地址。</div
+            >可留空使用 COS 默认域名；也可填写已绑定到当前存储桶的 HTTPS
+            自定义源站根域名。客户端上传、公开读取和私有签名下载都会使用该配置，自定义源站不会开启
+            CDN。</div
           >
         </ElFormItem>
 
@@ -124,6 +126,30 @@
       : '请输入 SecretId'
   )
 
+  const httpsRootHostname =
+    /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/i
+
+  const isHttpsRootOrigin = (value: string) => {
+    const candidate = value.trim()
+    const authority = /^https:\/\/([^/?#]+)\/?$/i.exec(candidate)?.[1]
+    if (!authority || !httpsRootHostname.test(authority)) return false
+    try {
+      const parsed = new URL(candidate)
+      return (
+        parsed.protocol === 'https:' &&
+        !parsed.username &&
+        !parsed.password &&
+        !parsed.port &&
+        (parsed.pathname === '/' || parsed.pathname === '') &&
+        !parsed.search &&
+        !parsed.hash &&
+        httpsRootHostname.test(parsed.hostname)
+      )
+    } catch {
+      return false
+    }
+  }
+
   const requireSecret = (configured: boolean, message: string) => ({
     validator: (_rule: unknown, value: string | undefined, callback: (error?: Error) => void) => {
       if (String(value || '').trim() || configured) {
@@ -140,11 +166,11 @@
       {
         validator: (_rule, value, callback) => {
           const text = String(value || '').trim()
-          if (!text || /^https?:\/\/[^\s]+$/i.test(text)) {
+          if (!text || isHttpsRootOrigin(text)) {
             callback()
             return
           }
-          callback(new Error('请输入正确的 HTTP(S) 地址'))
+          callback(new Error('请输入不带端口、路径或参数的 HTTPS 根域名'))
         },
         trigger: 'blur'
       }

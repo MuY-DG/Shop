@@ -57,16 +57,16 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void imageCompressionFailureReturnsServiceUnavailable() {
+    void imageProcessingFailureReturnsServiceUnavailable() {
         GlobalExceptionHandler handler = new GlobalExceptionHandler();
 
         ResponseEntity<ApiResponse<Void>> response = handler.handleBusinessException(
-                new BusinessException(ErrorCode.STORAGE_IMAGE_COMPRESSION_FAILED));
+                new BusinessException(ErrorCode.STORAGE_IMAGE_PROCESSING_FAILED));
 
         assertThat(response.getStatusCode().value()).isEqualTo(503);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().code()).isEqualTo(800007);
-        assertThat(response.getBody().msg()).isEqualTo("图片压缩暂时失败，请稍后重试");
+        assertThat(response.getBody().msg()).isEqualTo("COS 图片处理暂时失败，请稍后重试");
     }
 
     @Test

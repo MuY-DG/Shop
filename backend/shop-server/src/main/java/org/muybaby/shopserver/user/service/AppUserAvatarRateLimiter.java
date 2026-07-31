@@ -85,6 +85,32 @@ public class AppUserAvatarRateLimiter {
         return Math.max(0, DAILY_LIMIT - changeCount);
     }
 
+    public int remaining(long userId) {
+        LocalDate limitDate = LocalDate.ofInstant(clock.instant(), BUSINESS_ZONE);
+        Integer changeCount = jdbcClient.sql("""
+                        SELECT change_count
+                        FROM app_user_avatar_daily_limit
+                        WHERE user_id = :userId AND limit_date = :limitDate
+                        """)
+                .param("userId", userId)
+                .param("limitDate", limitDate)
+                .query(Integer.class)
+                .optional()
+                .orElse(0);
+        return Math.max(0, DAILY_LIMIT - changeCount);
+    }
+
+    public void requireAvailable(long userId) {
+        if (remaining(userId) > 0) {
+            return;
+        }
+        Instant now = clock.instant();
+        throw new RateLimitException(
+                ErrorCode.APP_USER_AVATAR_RATE_LIMITED,
+                secondsUntilNextBusinessDay(now)
+        );
+    }
+
     private boolean incrementExisting(long userId, LocalDate limitDate, Instant now) {
         return jdbcClient.sql("""
                         UPDATE app_user_avatar_daily_limit

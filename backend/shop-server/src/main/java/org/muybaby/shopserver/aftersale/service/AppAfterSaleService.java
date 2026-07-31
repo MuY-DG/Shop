@@ -18,6 +18,10 @@ import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionRequest;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionResponse;
+import org.muybaby.shopserver.storage.StorageUploadProfile;
+import org.muybaby.shopserver.storage.service.DirectUploadService;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -68,6 +72,7 @@ public class AppAfterSaleService {
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final StorageService storageService;
+    private final DirectUploadService directUploadService;
     private final StorageUsageService storageUsageService;
     private final OrderStatusLogService orderStatusLogService;
 
@@ -75,12 +80,14 @@ public class AppAfterSaleService {
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             StorageService storageService,
+            DirectUploadService directUploadService,
             StorageUsageService storageUsageService,
             OrderStatusLogService orderStatusLogService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageService = storageService;
+        this.directUploadService = directUploadService;
         this.storageUsageService = storageUsageService;
         this.orderStatusLogService = orderStatusLogService;
     }
@@ -97,6 +104,60 @@ public class AppAfterSaleService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         return storageService.uploadAfterSaleEvidence(principal, order.orderId(), file);
+    }
+
+    public DirectUploadSessionResponse createEvidenceUploadSession(
+            AuthenticatedPrincipal principal,
+            Long orderId,
+            DirectUploadSessionRequest request
+    ) {
+        Long userId = requireAppUser(principal);
+        OrderRow order = findOwnedOrder(orderId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        if (!ALLOWED_ORDER_STATUSES.contains(order.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return directUploadService.create(
+                principal,
+                StorageUploadProfile.AFTER_SALE_EVIDENCE,
+                null,
+                "ORDER",
+                order.orderId(),
+                request
+        );
+    }
+
+    public StorageAssetResponse completeEvidenceUploadSession(
+            AuthenticatedPrincipal principal,
+            Long orderId,
+            String uploadId
+    ) {
+        Long userId = requireAppUser(principal);
+        OrderRow order = findOwnedOrder(orderId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        if (!ALLOWED_ORDER_STATUSES.contains(order.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return directUploadService.complete(
+                principal,
+                uploadId,
+                StorageUploadProfile.AFTER_SALE_EVIDENCE,
+                order.orderId()
+        ).asset();
+    }
+
+    public void cancelEvidenceUploadSession(
+            AuthenticatedPrincipal principal,
+            Long orderId,
+            String uploadId
+    ) {
+        requireAppUser(principal);
+        directUploadService.cancel(
+                principal,
+                uploadId,
+                StorageUploadProfile.AFTER_SALE_EVIDENCE,
+                orderId
+        );
     }
 
     @Transactional

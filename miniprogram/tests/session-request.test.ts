@@ -22,6 +22,8 @@ import {
   saveAvatar,
   updateMyProfile
 } from "../miniprogram/services/user-profile";
+import { uploadAfterSaleEvidence } from "../miniprogram/services/after-sale";
+import { uploadCustomerServiceImage } from "../miniprogram/services/customer-service";
 
 interface FakeRequestResponse {
   data: unknown;
@@ -35,6 +37,7 @@ interface FakeRequestCall {
   method?: string;
   data?: unknown;
   header?: Record<string, string>;
+  timeout?: number;
   success?: (response: FakeRequestResponse) => void;
   fail?: (error: { errMsg: string }) => void;
 }
@@ -55,7 +58,18 @@ interface FakeUploadCall {
   filePath: string;
   name: string;
   header?: Record<string, string>;
+  formData?: Record<string, string>;
   success?: (response: FakeUploadResponse) => void;
+  fail?: (error: { errMsg: string }) => void;
+}
+
+interface FakeGetFileInfoOptions {
+  success?: (result: { size: number }) => void;
+  fail?: (error: { errMsg: string }) => void;
+}
+
+interface FakeGetImageInfoOptions {
+  success?: (result: { type: string }) => void;
   fail?: (error: { errMsg: string }) => void;
 }
 
@@ -88,6 +102,16 @@ const wxMock = {
   uploadFile(options: FakeUploadCall): WechatMiniprogram.UploadTask {
     pendingUploads.push(options);
     return {} as WechatMiniprogram.UploadTask;
+  },
+  getFileSystemManager(): WechatMiniprogram.FileSystemManager {
+    return {
+      getFileInfo(options: FakeGetFileInfoOptions): void {
+        options.success?.({ size: 1024 });
+      }
+    } as unknown as WechatMiniprogram.FileSystemManager;
+  },
+  getImageInfo(options: FakeGetImageInfoOptions): void {
+    options.success?.({ type: "png" });
   }
 } as unknown as WechatMiniprogram.Wx;
 
@@ -154,6 +178,31 @@ function respondUpload<T>(
     statusCode,
     header
   });
+}
+
+function respondRawUpload(
+  call: FakeUploadCall,
+  statusCode: number,
+  data = ""
+): void {
+  assert.ok(call.success, `上传请求 ${call.url} 缺少 success 回调`);
+  call.success({
+    data,
+    statusCode,
+    header: {}
+  });
+}
+
+function directUploadGrant(uploadId: string) {
+  return {
+    uploadId,
+    uploadUrl: "https://uploads.storage.example",
+    formData: {
+      key: `staging/${uploadId}.png`,
+      policy: "signed-policy"
+    },
+    expiresAt: "2099-01-01T00:00:00Z"
+  };
 }
 
 async function flushTasks(): Promise<void> {
@@ -431,11 +480,51 @@ test("微信昵称和头像更新会同步到当前会话", async () => {
 
   const avatarUpdate = saveAvatar("/tmp/avatar.png");
   await flushTasks();
-  const avatarCall = takeUpload("/app/users/me/avatar");
-  assert.equal(avatarCall.filePath, "/tmp/avatar.png");
-  assert.equal(avatarCall.name, "file");
-  respondUpload(
-    avatarCall,
+  const avatarInitCall = takeRequest("/app/users/me/avatar/upload-sessions");
+  assert.equal(avatarInitCall.method, "POST");
+  assert.deepEqual(avatarInitCall.data, {
+    originalFilename: "avatar.png",
+    contentType: "image/png",
+    sizeBytes: 1024
+  });
+  respond(
+    avatarInitCall,
+    200,
+    {
+      code: 200,
+      msg: "success",
+      data: {
+        uploadId: "avatar-upload-1",
+        uploadUrl: "https://uploads.storage.example",
+        formData: {
+          key: "staging/avatar-upload-1.png",
+          policy: "signed-policy"
+        },
+        expiresAt: "2099-01-01T00:00:00Z"
+      }
+    }
+  );
+  await flushTasks();
+
+  const avatarCosCall = takeUpload(
+    "uploads.storage.example"
+  );
+  assert.equal(avatarCosCall.filePath, "/tmp/avatar.png");
+  assert.equal(avatarCosCall.name, "file");
+  assert.equal(avatarCosCall.header?.Authorization, undefined);
+  assert.deepEqual(avatarCosCall.formData, {
+    key: "staging/avatar-upload-1.png",
+    policy: "signed-policy"
+  });
+  respondRawUpload(avatarCosCall, 204);
+  await flushTasks();
+
+  const avatarCompleteCall = takeRequest(
+    "/app/users/me/avatar/upload-sessions/avatar-upload-1/complete"
+  );
+  assert.equal(avatarCompleteCall.timeout, 180_000);
+  respond(
+    avatarCompleteCall,
     200,
     {
       code: 200,
@@ -466,9 +555,9 @@ test("头像文件上传达到每日限制时保留服务端提示", async () =>
   await establishSession("1");
   const avatarUpdate = saveAvatar("/tmp/avatar.png");
   await flushTasks();
-  const avatarCall = takeUpload("/app/users/me/avatar");
-  respondUpload(
-    avatarCall,
+  const avatarInitCall = takeRequest("/app/users/me/avatar/upload-sessions");
+  respond(
+    avatarInitCall,
     429,
     {
       code: 100104,
@@ -483,6 +572,235 @@ test("头像文件上传达到每日限制时保留服务端提示", async () =>
       error.code === 100104 &&
       /每天最多修改 3 次头像/.test(error.message)
   );
+});
+
+test("小程序只接受合法的动态 HTTPS 根域名直传凭证", async () => {
+  await establishSession("1");
+
+  for (const uploadUrl of [
+    "http://uploads.storage.example",
+    "https://user:password@uploads.storage.example",
+    "https://uploads.storage.example:443",
+    "https://uploads.storage.example:8443",
+    "https://uploads.storage.example/path",
+    "https://uploads.storage.example?redirect=1",
+    "https://uploads.storage.example#fragment",
+    "https://localhost",
+    "https://127.0.0.1",
+    "https://bad_host.storage.example"
+  ]) {
+    const avatarUpdate = saveAvatar("/tmp/avatar.png");
+    await flushTasks();
+    respond(
+      takeRequest("/app/users/me/avatar/upload-sessions"),
+      200,
+      {
+        code: 200,
+        msg: "success",
+        data: {
+          ...directUploadGrant("invalid-origin"),
+          uploadUrl
+        }
+      }
+    );
+
+    await assert.rejects(
+      avatarUpdate,
+      (error: unknown) => isApiError(error) &&
+        error.kind === "PROTOCOL" &&
+        /直传凭证格式不正确/.test(error.message)
+    );
+    assert.equal(pendingUploads.length, 0);
+  }
+});
+
+test("头像 COS 上传中止后释放会话且取消失败不覆盖原错误", async () => {
+  await establishSession("1");
+  const avatarUpdate = saveAvatar("/tmp/avatar.png");
+  await flushTasks();
+  respond(
+    takeRequest("/app/users/me/avatar/upload-sessions"),
+    200,
+    {
+      code: 200,
+      msg: "success",
+      data: directUploadGrant("avatar-cancel-1")
+    }
+  );
+  await flushTasks();
+
+  const cosUpload = takeUpload(
+    "uploads.storage.example"
+  );
+  assert.ok(cosUpload.fail);
+  cosUpload.fail({ errMsg: "uploadFile:fail abort" });
+  await flushTasks();
+
+  const cancelCall = takeRequest(
+    "/app/users/me/avatar/upload-sessions/avatar-cancel-1"
+  );
+  assert.equal(cancelCall.method, "DELETE");
+  assert.equal(cancelCall.timeout, 5_000);
+  respond(cancelCall, 500, { code: 500, msg: "会话释放暂时失败" });
+
+  await assert.rejects(avatarUpdate, (error: unknown) => {
+    assert.ok(isApiError(error));
+    assert.equal(error.kind, "NETWORK");
+    assert.match(error.message, /图片上传失败/);
+    return true;
+  });
+  assert.equal(pendingRequests.length, 0);
+  assert.equal(pendingUploads.length, 0);
+});
+
+test("进入头像 complete 后失败不会取消已上传的 COS 会话", async () => {
+  await establishSession("1");
+  const avatarUpdate = saveAvatar("/tmp/avatar.png");
+  await flushTasks();
+  respond(
+    takeRequest("/app/users/me/avatar/upload-sessions"),
+    200,
+    {
+      code: 200,
+      msg: "success",
+      data: {
+        ...directUploadGrant("avatar-complete-failed-1"),
+        uploadUrl: "https://bucket-1250000000.cos.ap-guangzhou.myqcloud.com"
+      }
+    }
+  );
+  await flushTasks();
+  respondRawUpload(takeUpload(
+    "bucket-1250000000.cos.ap-guangzhou.myqcloud.com"
+  ), 204);
+  await flushTasks();
+
+  const completeCall = takeRequest(
+    "/app/users/me/avatar/upload-sessions/avatar-complete-failed-1/complete"
+  );
+  respond(completeCall, 500, { code: 500, msg: "处理失败" });
+
+  await assert.rejects(
+    avatarUpdate,
+    (error: unknown) => isApiError(error) && error.kind === "SERVER"
+  );
+  assert.equal(pendingRequests.length, 0);
+  assert.equal(pendingUploads.length, 0);
+});
+
+test("售后和客服 COS 上传失败后释放各自的直传会话", async () => {
+  await establishSession("1");
+
+  const evidenceUpload = uploadAfterSaleEvidence(42, "/tmp/evidence.png");
+  await flushTasks();
+  respond(
+    takeRequest("/app/orders/42/after-sale-evidence/upload-sessions"),
+    200,
+    {
+      code: 200,
+      msg: "success",
+      data: directUploadGrant("evidence-cancel-1")
+    }
+  );
+  await flushTasks();
+  respondRawUpload(takeUpload(
+    "uploads.storage.example"
+  ), 403, "<Error><Message>Access denied</Message></Error>");
+  await flushTasks();
+
+  const evidenceCancel = takeRequest(
+    "/app/orders/42/after-sale-evidence/upload-sessions/evidence-cancel-1"
+  );
+  assert.equal(evidenceCancel.method, "DELETE");
+  respond(evidenceCancel, 200, { code: 200, msg: "success" });
+  await assert.rejects(evidenceUpload, (error: unknown) => {
+    assert.ok(isApiError(error));
+    assert.equal(error.kind, "STORAGE");
+    assert.equal(error.httpStatus, 403);
+    assert.equal(error.message, "Access denied");
+    return true;
+  });
+
+  const chatUpload = uploadCustomerServiceImage("/tmp/chat.png");
+  await flushTasks();
+  respond(
+    takeRequest("/app/customer-service/images/upload-sessions"),
+    200,
+    {
+      code: 200,
+      msg: "success",
+      data: directUploadGrant("chat-cancel-1")
+    }
+  );
+  await flushTasks();
+  const chatCosUpload = takeUpload(
+    "uploads.storage.example"
+  );
+  assert.ok(chatCosUpload.fail);
+  chatCosUpload.fail({ errMsg: "uploadFile:fail network" });
+  await flushTasks();
+
+  const chatCancel = takeRequest(
+    "/app/customer-service/images/upload-sessions/chat-cancel-1"
+  );
+  assert.equal(chatCancel.method, "DELETE");
+  respond(chatCancel, 200, { code: 200, msg: "success" });
+  await assert.rejects(
+    chatUpload,
+    (error: unknown) => isApiError(error) && error.kind === "NETWORK"
+  );
+
+  assert.equal(pendingRequests.length, 0);
+  assert.equal(pendingUploads.length, 0);
+});
+
+test("后端明确声明直传不可用时才回退业务上传接口", async () => {
+  await establishSession("1");
+  const avatarUpdate = saveAvatar("/tmp/avatar.png");
+  await flushTasks();
+  const avatarInitCall = takeRequest("/app/users/me/avatar/upload-sessions");
+  respond(avatarInitCall, 409, {
+    code: 800009,
+    msg: "该文件暂不支持 COS 直传，请使用兼容上传方式"
+  });
+  await flushTasks();
+
+  const legacyUpload = takeUpload("/app/users/me/avatar");
+  assert.equal(legacyUpload.header?.Authorization, "Bearer access-1");
+  respondUpload(legacyUpload, 200, {
+    code: 200,
+    msg: "success",
+    data: {
+      userId: "1",
+      nickname: "灶香集会员",
+      avatarUrl: "https://oss.example.test/avatar-fallback.png",
+      openidMasked: "openid****",
+      phoneAuthorized: true,
+      phoneNumberMasked: "138****5678",
+      remainingChanges: 1
+    }
+  });
+
+  const result = await avatarUpdate;
+  assert.equal(result.profile.avatarUrl, "https://oss.example.test/avatar-fallback.png");
+  assert.equal(pendingUploads.length, 0);
+});
+
+test("图片校验失败不会回退并重复占用业务服务器带宽", async () => {
+  await establishSession("1");
+  const avatarUpdate = saveAvatar("/tmp/avatar.png");
+  await flushTasks();
+  const avatarInitCall = takeRequest("/app/users/me/avatar/upload-sessions");
+  respond(avatarInitCall, 422, {
+    code: 800002,
+    msg: "图片格式或尺寸不符合要求"
+  });
+
+  await assert.rejects(
+    avatarUpdate,
+    (error: unknown) => isApiError(error) && error.code === 800002
+  );
+  assert.equal(pendingUploads.length, 0);
 });
 
 test("受保护请求的并发 401 共用一次刷新并各自只重试一次", async () => {

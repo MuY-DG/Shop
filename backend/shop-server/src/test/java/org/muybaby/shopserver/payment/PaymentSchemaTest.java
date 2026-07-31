@@ -119,8 +119,6 @@ class PaymentSchemaTest {
                           and (
                             (id = 801 and path = 'storage' and component = '/development/storage' and title = '对象存储配置')
                             or (id = 802 and path = 'payment' and component = '/payment/config' and title = '支付配置')
-                            or (id = 804 and path = 'image-compression'
-                                and component = '/configuration/image-compression' and title = '图片压缩配置')
                           )
                         """)
                 .query(Integer.class)
@@ -130,14 +128,13 @@ class PaymentSchemaTest {
                         from admin_menu_permission
                         where (menu_id = 801 and permission_id in (15001, 15002))
                            or (menu_id = 802 and permission_id in (8001, 8002, 8003))
-                           or (menu_id = 804 and permission_id in (18003, 18004))
                         """)
                 .query(Integer.class)
                 .single();
 
         assertThat(parentMenuCount).isEqualTo(1);
-        assertThat(childMenuCount).isEqualTo(3);
-        assertThat(childPermissionCount).isEqualTo(7);
+        assertThat(childMenuCount).isEqualTo(2);
+        assertThat(childPermissionCount).isEqualTo(5);
     }
 
     @Test

@@ -14,7 +14,6 @@ import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.StorageUploadProfile;
 import org.muybaby.shopserver.storage.UploadedByType;
-import org.muybaby.shopserver.storage.compression.UploadImageCompressionCoordinator;
 import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
 import org.muybaby.shopserver.storage.dto.StorageAssetBatchDeleteResponse;
@@ -170,7 +169,6 @@ public class StorageService {
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final StorageProvider storageProvider;
     private final UploadPolicy uploadPolicy;
-    private final UploadImageCompressionCoordinator imageCompressionCoordinator;
     private final StorageObjectKeyGenerator storageObjectKeyGenerator;
     private final StorageUsageService storageUsageService;
     private final StorageRuntimeConfigService storageRuntimeConfigService;
@@ -185,7 +183,6 @@ public class StorageService {
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             StorageProvider storageProvider,
             UploadPolicy uploadPolicy,
-            UploadImageCompressionCoordinator imageCompressionCoordinator,
             StorageObjectKeyGenerator storageObjectKeyGenerator,
             StorageUsageService storageUsageService,
             StorageRuntimeConfigService storageRuntimeConfigService,
@@ -198,7 +195,6 @@ public class StorageService {
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageProvider = storageProvider;
         this.uploadPolicy = uploadPolicy;
-        this.imageCompressionCoordinator = imageCompressionCoordinator;
         this.storageObjectKeyGenerator = storageObjectKeyGenerator;
         this.storageUsageService = storageUsageService;
         this.storageRuntimeConfigService = storageRuntimeConfigService;
@@ -453,6 +449,31 @@ public class StorageService {
         return toResponse(row, includeUsages ? storageUsageService.usages(assetId) : null);
     }
 
+    /**
+     * Internal hand-off used after COS has finalized a direct upload. Unlike the
+     * admin detail endpoint this also returns private attachment assets.
+     */
+    StorageAssetResponse directAssetResponse(Long assetId) {
+        AssetRow row = findAssetRow(assetId);
+        if (!StorageFileStatus.ACTIVE.name().equals(row.status())) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+        return toResponse(row, List.of());
+    }
+
+    /**
+     * Validates and locks the target folder before a direct-upload session is
+     * issued. The final foreign key is still checked when the asset is inserted.
+     */
+    @Transactional
+    public void requireDirectUploadFolder(Long folderId) {
+        Long normalizedFolderId = normalizeFolderId(folderId);
+        if (normalizedFolderId != null) {
+            lockFolderTree();
+            requireEnabledFolderChain(normalizedFolderId, true);
+        }
+    }
+
     public List<StorageAssetUsageResponse> usages(Long assetId) {
         findLibraryAssetRow(assetId, false);
         return storageUsageService.usages(assetId);
@@ -690,15 +711,15 @@ public class StorageService {
         String sizeExpression = thumbnail
                 ? "coalesce(thumbnail_size_bytes, size_bytes)"
                 : "size_bytes";
-        String sha256Expression = thumbnail
-                ? "coalesce(thumbnail_sha256, sha256)"
-                : "sha256";
+        String etagExpression = thumbnail
+                ? "coalesce(thumbnail_object_etag, thumbnail_sha256, object_etag, sha256)"
+                : "coalesce(object_etag, sha256)";
         PrivateAttachmentRow row = jdbcClient.sql("""
                         select provider, storage_container, storage_region,
                                %s as object_key,
                                %s as content_type,
                                %s as size_bytes,
-                               %s as content_sha256
+                               %s as content_etag
                         from storage_asset
                         where id = :assetId
                           and scope = 'ATTACHMENT'
@@ -711,7 +732,7 @@ public class StorageService {
                         objectKeyExpression,
                         contentTypeExpression,
                         sizeExpression,
-                        sha256Expression
+                        etagExpression
                 ))
                 .param("assetId", assetId)
                 .param("contextType", CUSTOMER_SERVICE_CONVERSATION_CONTEXT)
@@ -723,11 +744,11 @@ public class StorageService {
                         rs.getString("object_key"),
                         rs.getString("content_type"),
                         rs.getLong("size_bytes"),
-                        rs.getString("content_sha256")
+                        rs.getString("content_etag")
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE));
-        String etag = quotedEtag(row.sha256());
+        String etag = quotedEtag(row.etag());
         CacheControl cacheControl = CacheControl.noCache().cachePrivate();
         if (etagMatches(ifNoneMatch, etag)) {
             return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
@@ -753,8 +774,8 @@ public class StorageService {
         }
     }
 
-    private String quotedEtag(String sha256) {
-        String value = StringUtils.hasText(sha256) ? sha256 : "missing";
+    private String quotedEtag(String contentTag) {
+        String value = StringUtils.hasText(contentTag) ? contentTag : "missing";
         return "\"" + value + "\"";
     }
 
@@ -947,10 +968,8 @@ public class StorageService {
                 sourceBytes.length,
                 profile.mediaKind() != StorageMediaKind.IMAGE || sourceImage != null
         );
-        PreparedUpload prepared = shouldAttemptImageCompression(profile, uploadedByType)
-                ? prepareCompressedUpload(
-                        profile, originalFilename, sourceBytes, sourceImage, sourceDecision)
-                : new PreparedUpload(originalFilename, sourceBytes, sourceImage, sourceDecision);
+        PreparedUpload prepared =
+                new PreparedUpload(originalFilename, sourceBytes, sourceImage, sourceDecision);
 
         String objectKey = storageObjectKeyGenerator.nextKey(
                 profile, prepared.decision().extension(), LocalDate.now());
@@ -999,73 +1018,6 @@ public class StorageService {
             throw ex;
         }
         return toResponse(findAssetRow(assetId), List.of());
-    }
-
-    private boolean shouldAttemptImageCompression(
-            StorageUploadProfile profile,
-            UploadedByType uploadedByType
-    ) {
-        if (profile.mediaKind() != StorageMediaKind.IMAGE) {
-            return false;
-        }
-        return switch (uploadedByType) {
-            case APP -> false;
-            case ADMIN -> profile != StorageUploadProfile.CUSTOMER_SERVICE_IMAGE;
-        };
-    }
-
-    private PreparedUpload prepareCompressedUpload(
-            StorageUploadProfile profile,
-            String sourceFilename,
-            byte[] sourceBytes,
-            ImageMetadata sourceImage,
-            UploadPolicy.UploadDecision sourceDecision
-    ) {
-        PreparedUpload source = new PreparedUpload(
-                sourceFilename, sourceBytes, sourceImage, sourceDecision);
-        if (profile.mediaKind() != StorageMediaKind.IMAGE) {
-            return source;
-        }
-
-        UploadImageCompressionCoordinator.CompressionOutcome outcome =
-                imageCompressionCoordinator.compress(
-                        sourceBytes,
-                        sourceDecision.contentType(),
-                        uploadPolicy.imageMaxSizeBytes()
-                );
-        if (!outcome.compressed()) {
-            return source;
-        }
-
-        byte[] compressedBytes = outcome.content();
-        try {
-            String compressedFilename = replaceFilenameExtension(sourceFilename, "webp");
-            ImageMetadata compressedImage = readImageMetadataIfNeeded(
-                    compressedBytes, StorageMediaKind.IMAGE, outcome.contentType());
-            if (compressedImage == null
-                    || sourceImage == null
-                    || compressedImage.width() != sourceImage.width()
-                    || compressedImage.height() != sourceImage.height()
-                    || !Objects.equals(outcome.providerWidth(), compressedImage.width())
-                    || !Objects.equals(outcome.providerHeight(), compressedImage.height())) {
-                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
-            }
-            UploadPolicy.UploadDecision compressedDecision = uploadPolicy.requireAllowed(
-                    profile,
-                    compressedFilename,
-                    outcome.contentType(),
-                    compressedBytes.length,
-                    true
-            );
-            return new PreparedUpload(
-                    compressedFilename, compressedBytes, compressedImage, compressedDecision);
-        } catch (BusinessException ex) {
-            log.warn(
-                    "Tinify output failed local image validation; upload rejected (type={})",
-                    sourceDecision.contentType()
-            );
-            throw new BusinessException(ErrorCode.STORAGE_IMAGE_COMPRESSION_FAILED);
-        }
     }
 
     private Long insertPendingUpload(
@@ -2192,7 +2144,7 @@ public class StorageService {
             String objectKey,
             String contentType,
             long sizeBytes,
-            String sha256
+            String etag
     ) {
         private StorageObjectLocation objectLocation() {
             return new StorageObjectLocation(provider, storageContainer, storageRegion, objectKey);

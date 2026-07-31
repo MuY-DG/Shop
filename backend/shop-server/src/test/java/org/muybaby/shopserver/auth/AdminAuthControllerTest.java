@@ -145,8 +145,6 @@ class AdminAuthControllerTest {
                         "payment:config:enable",
                         "storage:config:read",
                         "storage:config:write",
-                        "image-compression:config:read",
-                        "image-compression:config:write",
                         "aftersale:read",
                         "aftersale:audit",
                         "asset:upload",

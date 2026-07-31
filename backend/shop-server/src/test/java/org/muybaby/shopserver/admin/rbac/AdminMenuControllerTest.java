@@ -233,8 +233,7 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[8].component").value("/index/index"))
                 .andExpect(jsonPath("$.data[8].children[*].path", contains(
                         "storage",
-                        "payment",
-                        "image-compression"
+                        "payment"
                 )))
                 .andExpect(jsonPath("$.data[8].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "storage:config:read",
@@ -244,10 +243,6 @@ class AdminMenuControllerTest {
                         "payment:config:read",
                         "payment:config:write",
                         "payment:config:enable"
-                )))
-                .andExpect(jsonPath("$.data[8].children[2].meta.authList[*].authMark", containsInAnyOrder(
-                        "image-compression:config:read",
-                        "image-compression:config:write"
                 )))
                 .andExpect(jsonPath("$.data[9].path").value("/system"))
                 .andExpect(jsonPath("$.data[9].children[*].path", contains(

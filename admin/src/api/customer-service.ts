@@ -1,5 +1,32 @@
 import request from '@/utils/http'
 import { requirePersistedCustomerServiceMessageId } from '@/utils/customer-service-message'
+import {
+  uploadFileToCosPostWithSessionCancellation,
+  type CosPostUploadProgress
+} from '@/utils/cos-post-upload'
+import { isHttpError, showError } from '@/utils/http/error'
+
+const DIRECT_UPLOAD_UNAVAILABLE_HTTP_STATUSES = new Set([404, 405, 501])
+const DIRECT_UPLOAD_UNAVAILABLE_CODE = 800009
+const LEGACY_IMAGE_UPLOAD_TIMEOUT_MS = 180_000
+const DIRECT_UPLOAD_COMPLETE_TIMEOUT_MS = 180_000
+const DIRECT_UPLOAD_CANCEL_TIMEOUT_MS = 5_000
+const DIRECT_UPLOAD_PROCESSING_RETRY_DELAYS_MS = [5_500, 10_500] as const
+const DIRECT_UPLOAD_PROCESSING_FAILED_CODE = 800007
+
+const customerServiceImageContentType = (file: File) => {
+  if (file.type) return file.type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : file.type
+  const extension = file.name.split('.').pop()?.toLowerCase()
+  return (
+    {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      gif: 'image/gif'
+    }[extension || ''] || 'application/octet-stream'
+  )
+}
 
 export function fetchCustomerServiceConversations(params: {
   status?: Api.CustomerService.ConversationStatus
@@ -166,13 +193,83 @@ export function linkCustomerServiceProduct(conversationId: number, productId: nu
   })
 }
 
-export function uploadCustomerServiceImage(conversationId: number, file: File) {
-  const data = new FormData()
-  data.append('file', file)
-  return request.post<Api.CustomerService.Message>({
-    url: `/admin/customer-service/conversations/${conversationId}/images`,
-    data
-  })
+export async function uploadCustomerServiceImage(
+  conversationId: number,
+  file: File,
+  options: {
+    signal?: AbortSignal
+    onProgress?: (progress: CosPostUploadProgress) => void
+  } = {}
+) {
+  let session: Api.Storage.AssetUploadSession
+  try {
+    session = await request.post<Api.Storage.AssetUploadSession>({
+      url: `/admin/customer-service/conversations/${conversationId}/images/upload-sessions`,
+      data: {
+        originalFilename: file.name,
+        contentType: customerServiceImageContentType(file),
+        sizeBytes: file.size
+      },
+      showErrorMessage: false
+    })
+  } catch (error) {
+    if (
+      isHttpError(error) &&
+      (error.code === DIRECT_UPLOAD_UNAVAILABLE_CODE ||
+        (error.httpStatus !== undefined &&
+          DIRECT_UPLOAD_UNAVAILABLE_HTTP_STATUSES.has(error.httpStatus)))
+    ) {
+      const formData = new FormData()
+      formData.append('file', file)
+      return request.post<Api.CustomerService.Message>({
+        url: `/admin/customer-service/conversations/${conversationId}/images`,
+        data: formData,
+        signal: options.signal,
+        timeout: LEGACY_IMAGE_UPLOAD_TIMEOUT_MS,
+        onUploadProgress: (event) => {
+          const total = event.total || file.size
+          options.onProgress?.({
+            loaded: Math.min(event.loaded, total),
+            total,
+            percent: total > 0 ? Math.min(100, Math.round((event.loaded / total) * 100)) : 0
+          })
+        }
+      })
+    }
+    if (isHttpError(error)) showError(error)
+    throw error
+  }
+  await uploadFileToCosPostWithSessionCancellation(
+    { uploadUrl: session.uploadUrl, formData: session.formData },
+    file,
+    () =>
+      request.del<void>({
+        url: `/admin/customer-service/conversations/${conversationId}/images/upload-sessions/${encodeURIComponent(session.uploadId)}`,
+        timeout: DIRECT_UPLOAD_CANCEL_TIMEOUT_MS,
+        showErrorMessage: false
+      }),
+    options
+  )
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await request.post<Api.CustomerService.Message>({
+        url: `/admin/customer-service/conversations/${conversationId}/images/upload-sessions/${encodeURIComponent(session.uploadId)}/complete`,
+        timeout: DIRECT_UPLOAD_COMPLETE_TIMEOUT_MS,
+        showErrorMessage: false
+      })
+    } catch (error) {
+      const retryDelay = DIRECT_UPLOAD_PROCESSING_RETRY_DELAYS_MS[attempt]
+      if (
+        !isHttpError(error) ||
+        error.code !== DIRECT_UPLOAD_PROCESSING_FAILED_CODE ||
+        retryDelay === undefined
+      ) {
+        if (isHttpError(error)) showError(error)
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelay))
+    }
+  }
 }
 
 export function fetchCustomerServiceImage(messageId: number) {

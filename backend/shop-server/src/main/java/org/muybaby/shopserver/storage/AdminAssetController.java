@@ -13,6 +13,9 @@ import org.muybaby.shopserver.storage.dto.StorageAssetQueryRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
 import org.muybaby.shopserver.storage.dto.StorageAssetUsageQueryRequest;
 import org.muybaby.shopserver.storage.dto.StorageAssetUsageResponse;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionRequest;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionResponse;
+import org.muybaby.shopserver.storage.service.DirectUploadService;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,9 +35,14 @@ import org.springframework.web.multipart.MultipartFile;
 public class AdminAssetController {
 
     private final StorageService storageService;
+    private final DirectUploadService directUploadService;
 
-    public AdminAssetController(StorageService storageService) {
+    public AdminAssetController(
+            StorageService storageService,
+            DirectUploadService directUploadService
+    ) {
         this.storageService = storageService;
+        this.directUploadService = directUploadService;
     }
 
     @PostMapping("/upload")
@@ -45,6 +53,35 @@ public class AdminAssetController {
             @RequestParam("file") MultipartFile file
     ) {
         return ApiResponse.success(storageService.uploadLibrary(principal, folderId, file));
+    }
+
+    @PostMapping("/upload-sessions")
+    @PreAuthorize("hasAuthority('asset:upload')")
+    public ApiResponse<DirectUploadSessionResponse> createUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @Valid @RequestBody DirectUploadSessionRequest request
+    ) {
+        return ApiResponse.success(directUploadService.createLibrary(principal, request));
+    }
+
+    @PostMapping("/upload-sessions/{uploadId}/complete")
+    @PreAuthorize("hasAuthority('asset:upload')")
+    public ApiResponse<StorageAssetResponse> completeUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable String uploadId
+    ) {
+        return ApiResponse.success(
+                directUploadService.completeLibrary(principal, uploadId));
+    }
+
+    @DeleteMapping("/upload-sessions/{uploadId}")
+    @PreAuthorize("hasAuthority('asset:upload')")
+    public ApiResponse<Void> cancelUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable String uploadId
+    ) {
+        directUploadService.cancelLibrary(principal, uploadId);
+        return ApiResponse.success();
     }
 
     @GetMapping

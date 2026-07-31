@@ -18,6 +18,8 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.SendMessag
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequestResponse;
 import org.muybaby.shopserver.customerservice.service.CustomerServiceService;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionRequest;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionResponse;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.ReportQuery;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.ServiceStatisticsReport;
 import org.muybaby.shopserver.operation.service.OperationsStatisticsService;
@@ -28,6 +30,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -243,6 +246,42 @@ public class AdminCustomerServiceController {
             @RequestParam("file") MultipartFile file
     ) {
         return ApiResponse.success(customerServiceService.sendImageFromAdmin(principal, conversationId, file));
+    }
+
+    @PostMapping("/conversations/{conversationId}/images/upload-sessions")
+    @PreAuthorize("hasAuthority('customer-service:message:send')")
+    public ApiResponse<DirectUploadSessionResponse> createImageUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long conversationId,
+            @Valid @RequestBody DirectUploadSessionRequest request
+    ) {
+        return ApiResponse.success(
+                customerServiceService.createImageUploadSessionFromAdmin(
+                        principal, conversationId, request));
+    }
+
+    @PostMapping("/conversations/{conversationId}/images/upload-sessions/{uploadId}/complete")
+    @PreAuthorize("hasAuthority('customer-service:message:send')")
+    public ApiResponse<MessageResponse> completeImageUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long conversationId,
+            @PathVariable String uploadId
+    ) {
+        return ApiResponse.success(
+                customerServiceService.completeImageUploadSessionFromAdmin(
+                        principal, conversationId, uploadId));
+    }
+
+    @DeleteMapping("/conversations/{conversationId}/images/upload-sessions/{uploadId}")
+    @PreAuthorize("hasAuthority('customer-service:message:send')")
+    public ApiResponse<Void> cancelImageUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long conversationId,
+            @PathVariable String uploadId
+    ) {
+        customerServiceService.cancelImageUploadSessionFromAdmin(
+                principal, conversationId, uploadId);
+        return ApiResponse.success();
     }
 
     @GetMapping("/messages/{messageId}/image")

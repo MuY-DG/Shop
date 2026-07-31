@@ -89,9 +89,13 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
 
   assert.match(endpointSource, /customerService/);
   assert.match(endpointSource, /\/app\/customer-service\/conversation\/images/);
+  assert.match(endpointSource, /\/app\/customer-service\/images\/upload-sessions/);
   assert.match(endpointSource, /messages\/\$\{messageId\}\/image-access/);
   assert.match(endpointSource, /messages\/\$\{messageId\}\/thumbnail/);
   assert.match(serviceSource, /uploadCustomerServiceImage/);
+  assert.match(serviceSource, /uploadFileDirect<CustomerServiceMessage>/);
+  assert.match(serviceSource, /thumbnailAccessMode === "SIGNED_URL"/);
+  assert.match(serviceSource, /loadCachedImageFile/);
   assert.match(serviceSource, /accessMode === "SIGNED_URL"/);
   assert.match(serviceSource, /refreshCustomerServiceImageAccess/);
   assert.match(serviceSource, /downloadExternalFile/);

@@ -4,6 +4,7 @@ import org.muybaby.shopserver.storage.StorageProviderKind;
 
 import java.io.InputStream;
 import java.time.Duration;
+import java.util.List;
 import java.util.function.Function;
 
 public interface StorageProvider {
@@ -52,6 +53,35 @@ public interface StorageProvider {
         return location -> privateReadAccess(location, validity);
     }
 
+    default DirectUploadGrant createDirectUploadGrant(
+            StorageObjectLocation location,
+            String contentType,
+            long exactSizeBytes,
+            Duration validity
+    ) {
+        throw new UnsupportedOperationException("Direct uploads are not supported");
+    }
+
+    default DirectObjectMetadata metadata(StorageObjectLocation location) {
+        throw new UnsupportedOperationException("Object metadata is not supported");
+    }
+
+    default List<ProcessedImage> processImage(
+            StorageObjectLocation source,
+            List<ImageProcessOutput> outputs
+    ) {
+        throw new UnsupportedOperationException("Image processing is not supported");
+    }
+
+    default void copy(
+            StorageObjectLocation source,
+            StorageObjectLocation destination,
+            String contentType,
+            boolean publicRead
+    ) {
+        throw new UnsupportedOperationException("Server-side copy is not supported");
+    }
+
     void delete(String objectKey);
 
     default void delete(StorageProviderKind provider, String objectKey) {
@@ -60,5 +90,13 @@ public interface StorageProvider {
 
     default void delete(StorageObjectLocation location) {
         delete(location.provider(), location.objectKey());
+    }
+
+    record ImageProcessOutput(
+            String objectKey,
+            int maxDimension,
+            int quality,
+            boolean publicRead
+    ) {
     }
 }

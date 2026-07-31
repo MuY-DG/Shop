@@ -193,7 +193,7 @@ test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
   assert.match(orderDetailTemplate, /onAfterSaleDetailTap/);
 });
 
-test("小程序只在售后选择原图且不调用图片压缩 API", () => {
+test("小程序售后凭证使用选择器压缩结果并由云端统一处理", () => {
   const sourceRoot = resolve(process.cwd(), "miniprogram");
   const applyLogic = readFileSync(
     resolve(sourceRoot, "pages/after-sale/apply/apply.ts"),
@@ -205,10 +205,10 @@ test("小程序只在售后选择原图且不调用图片压缩 API", () => {
   );
 
   assert.match(applyLogic, /wx\.chooseMedia\(/);
-  assert.match(applyLogic, /sizeType:\s*\["original"\]/);
-  assert.doesNotMatch(applyLogic, /sizeType:\s*\["compressed"\]/);
+  assert.match(applyLogic, /sizeType:\s*\["compressed"\]/);
+  assert.doesNotMatch(applyLogic, /sizeType:\s*\["original"\]/);
   assert.doesNotMatch(applyLogic, /wx\.compressImage/);
-  assert.match(applyTemplate, /最多 3 张原图，单张不超过 5MB/);
+  assert.match(applyTemplate, /最多 3 张清晰图片，单张不超过 5MB/);
 
   const profileLogic = readFileSync(
     resolve(sourceRoot, "pages/account/profile/profile.ts"),

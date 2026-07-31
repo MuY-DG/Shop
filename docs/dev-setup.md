@@ -168,7 +168,18 @@ Never commit `.env.*.local`, merchant certificates, private keys, APIv3 keys, pu
 
 ## Object Storage
 
-The application supports Tencent Cloud COS only. Configure the region, bucket, SecretId, SecretKey, and optional public/custom domain through `开发配置 -> 对象存储配置`. The values are read from `storage_runtime_setting` and take effect without restarting the backend. There is no local provider and no storage environment-file fallback; uploads fail with `STORAGE_NOT_CONFIGURED` until the database configuration is complete.
+The application supports Tencent Cloud COS only. Configure the region, bucket,
+SecretId, and SecretKey through `开发配置 -> 对象存储配置`. The COS client
+domain can be left empty for the bucket's default COS origin, or set to the
+HTTPS custom origin that COS has bound to the same bucket. It must be a legal
+root hostname without credentials, a port, path, query, or fragment. The backend
+verifies the configured origin, while both clients consume the upload origin
+dynamically from the signed upload-session response and enforce the same URL
+shape. This COS custom origin points directly to the bucket and does not require
+or enable CDN. The values are read
+from `storage_runtime_setting` and take effect without restarting the backend.
+There is no local provider and no storage environment-file fallback; uploads
+fail with `STORAGE_NOT_CONFIGURED` until the database configuration is complete.
 
 Only non-provider upload policy remains configurable through environment defaults:
 
@@ -178,32 +189,66 @@ SHOP_STORAGE_IMAGE_MAX_WIDTH=8192
 SHOP_STORAGE_IMAGE_MAX_HEIGHT=8192
 SHOP_STORAGE_IMAGE_MAX_PIXELS=25000000
 SHOP_STORAGE_VIDEO_MAX_SIZE=50MB
-SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE=1MB
+SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE=10MB
+SHOP_DIRECT_UPLOAD_SESSION_RETENTION=7d
+SHOP_DIRECT_UPLOAD_MAX_ACTIVE_SESSIONS=10
+SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_APP=60
+SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_ADMIN=600
 SHOP_STORAGE_CLEANUP_INITIAL_DELAY=10m
 SHOP_STORAGE_CLEANUP_FIXED_DELAY=10m
 SHOP_STORAGE_CLEANUP_BATCH_SIZE=100
 ```
 
-Image uploads are rejected when the extension, declared MIME, and decoded format disagree, or when width, height, GIF logical canvas, frame count, or cumulative pixels exceed the validation limits. JPEG, PNG, GIF, and WebP are decoded through ImageIO; WebP support is an explicit runtime dependency. SVG is parsed with external entities disabled, allows standard W3C SVG doctypes and passive HTTP(S) namespace-alias entities used by design tools, checks for safe passive content and local fragment references, and is bounded by its intrinsic dimensions or viewBox. Keep the byte-size limit as well: it controls transfer/storage size, while the dimension/frame limits protect the JVM from decompression-bomb memory pressure.
+JPEG, PNG, WebP, and GIF now use a signed COS POST upload session. The browser or
+mini program sends the source object directly to a private staging key. The
+completion request performs only COS HEAD, Cloud Infinite processing, metadata
+writes, and database updates; the application JVM never reads the image body.
+Cloud Infinite reports the decoded source format, dimensions, and frame count,
+which are checked against the same storage limits before the WebP output becomes
+an active asset.
 
-### Tinify Image Compression
+Tinify, its environment variables, runtime configuration page, quota probe, and
+database-managed key are no longer used. SVG remains on the legacy Multipart
+endpoint because it requires the application safety parser and is not part of
+the normal Cloud Infinite raster pipeline. Legacy clients can temporarily keep
+using the Multipart endpoints during rollout, but those requests no longer call
+Tinify.
 
-JPEG and PNG uploads can pass through Tinify before they are written to the active storage provider. Compression is requested by default, and its environment defaults can be configured with:
+All persistent raster outputs use WebP. Library images use a 2560px longest
+edge, avatars 1024px, after-sale evidence 4096px, and chat display images
+1920px. Chat completion creates a 720px thumbnail in the same Cloud Infinite
+request. The sender keeps an immediate local preview, while the mini program
+caches downloaded thumbnails for seven days. AVIF and CDN delivery are
+intentionally not used.
 
-```properties
-SHOP_IMAGE_COMPRESSION_ENABLED=true
-SHOP_IMAGE_COMPRESSION_CONFIG_SOURCE=AUTO
-TINIFY_API_KEY=<tinify-api-key>
-SHOP_IMAGE_COMPRESSION_MONTHLY_LIMIT=500
-```
+For the current bucket, direct POST uploads, public file URLs, and private signed
+image URLs all use the configured COS origin (custom or default), without a CDN
+layer. The POST Policy remains scoped to one bucket/key/type/size, while private
+URLs are signed for the configured Host rather than rewritten after signing.
+Historical locations from a different bucket or region retain their own default
+COS origin. Every asset records the COS bucket and region used at upload time;
+current credentials must retain access to every recorded bucket. Private files,
+including payment certificates and keys, never receive a public URL. COS
+credentials are envelope-encrypted in the database
+with the independent `SHOP_SECRET_ENCRYPTION_*` master key configuration and are
+never returned in full.
 
-The admin `开发配置 -> 图片压缩配置` page controls the runtime switch, key source, database key, and monthly budget without restarting the backend. `AUTO` uses a configured `TINIFY_API_KEY` first and otherwise falls back to the database key; `ENV` requires the environment key; `DB` requires the key saved from the admin page. Until an administrator saves an explicit override, `SHOP_IMAGE_COMPRESSION_ENABLED`, `SHOP_IMAGE_COMPRESSION_CONFIG_SOURCE`, and `SHOP_IMAGE_COMPRESSION_MONTHLY_LIMIT` remain the active defaults even after provider usage has been recorded. A database key is envelope-encrypted with the payment secret key infrastructure and is returned to the admin UI only as a mask; never commit a Tinify key to an environment example or tracked configuration file.
+If production data predates this migration and already embeds a CDN URL in
+product HTML, order snapshots, avatars, or historical asset rows, inventory and
+rewrite those stored strings to their matching COS origin before disabling the
+CDN. The application intentionally does not perform a blind migration because
+those values can belong to different historical buckets or unrelated domains.
 
-Tinify output requests are fixed to WebP. The integration does not send Tinify's `preserve` option, so metadata such as copyright, capture time, and GPS is not retained in a successfully processed result. JPEG and PNG usually consume two Tinify compression counts because shrinking and WebP conversion are separate provider operations. Existing WebP images, GIF, and SVG bypass Tinify and retain their original formats.
-
-The admin page shows the latest provider count and estimated remaining monthly budget. Refreshing the count sends Tinify a non-billable empty-input credential probe and reads the provider count from its response. If the known remaining budget is insufficient for the next operation, or Tinify reports that the quota is exhausted, compression is automatically made ineffective for following uploads. The current upload still proceeds with the validated original image, so a provider, key, or quota problem does not interrupt normal uploads; fallback originals retain their original format and metadata.
-
-COS public files return the configured default or custom source domain directly. Every asset records the COS bucket and region used at upload time; current credentials must retain access to every recorded bucket. Private files, including payment certificates and keys, never receive a public URL. COS credentials are envelope-encrypted in the database with the independent `SHOP_SECRET_ENCRYPTION_*` master key configuration and are never returned in full.
+Before enabling direct upload, configure the admin Origin in the COS bucket's
+CORS rules and add the configured COS origin to the mini program `uploadFile`
+and `downloadFile` allowlists. Keep the default COS origin in both allowlists
+during client rollout for old versions, historical objects, and rollback. Also
+verify that the bucket is bound to
+Cloud Infinite. A one-day lifecycle deletion rule for
+`private/direct-upload/` is recommended as defense in depth. The exact
+permissions, CORS values, output profiles, rollout order, and smoke checklist
+are documented in
+[`docs/cos-direct-upload.md`](./cos-direct-upload.md).
 
 Migration `V69` removes the local runtime-setting columns and adds a database constraint that permits only `TENCENT_COS` assets. It intentionally fails when any `storage_asset.provider = 'LOCAL'` row remains. Before deploying it to an existing installation, copy those objects to COS and migrate every stored URL/reference plus the asset provider, bucket, and region metadata; do not delete the old files until the migrated application and backups have been verified.
 

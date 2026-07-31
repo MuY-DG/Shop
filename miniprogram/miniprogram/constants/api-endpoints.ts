@@ -7,7 +7,8 @@ export const API_ENDPOINTS = Object.freeze({
   },
   user: {
     me: "/app/users/me",
-    avatar: "/app/users/me/avatar"
+    avatar: "/app/users/me/avatar",
+    avatarUploads: "/app/users/me/avatar/upload-sessions"
   },
   home: "/app/home",
   contact: "/app/contact",
@@ -19,6 +20,7 @@ export const API_ENDPOINTS = Object.freeze({
     open: "/app/customer-service/conversation/open",
     messages: "/app/customer-service/conversation/messages",
     images: "/app/customer-service/conversation/images",
+    imageUploads: "/app/customer-service/images/upload-sessions",
     orderCandidates: "/app/customer-service/conversation/order-candidates",
     order: (orderId: number): string =>
       `/app/customer-service/conversation/orders/${orderId}`,
@@ -80,6 +82,8 @@ export const API_ENDPOINTS = Object.freeze({
     list: "/app/after-sales",
     detail: (afterSaleId: number): string => `/app/after-sales/${afterSaleId}`,
     forOrder: (orderId: number): string => `/app/orders/${orderId}/after-sales`,
-    evidence: (orderId: number): string => `/app/orders/${orderId}/after-sale-evidence`
+    evidence: (orderId: number): string => `/app/orders/${orderId}/after-sale-evidence`,
+    evidenceUploads: (orderId: number): string =>
+      `/app/orders/${orderId}/after-sale-evidence/upload-sessions`
   }
 });

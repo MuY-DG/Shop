@@ -1,12 +1,93 @@
 import request from '@/utils/http'
+import { isHttpError, showError } from '@/utils/http/error'
+import {
+  uploadFileToCosPostWithSessionCancellation,
+  type CosPostUploadOptions,
+  type CosPostUploadProgress
+} from '@/utils/cos-post-upload'
 
-// Asset uploads may include two Tinify requests per compression attempt plus one bounded retry.
-// Keep this endpoint-specific timeout separate from normal admin API requests.
-const ASSET_UPLOAD_TIMEOUT_MS = 180_000
+const LEGACY_ASSET_UPLOAD_TIMEOUT_MS = 180_000
+const DIRECT_UPLOAD_COMPLETE_TIMEOUT_MS = 180_000
+const DIRECT_UPLOAD_CANCEL_TIMEOUT_MS = 5_000
+const DIRECT_UPLOAD_PROCESSING_RETRY_DELAYS_MS = [5_500, 10_500] as const
+const DIRECT_UPLOAD_PROCESSING_FAILED_CODE = 800007
+const LEGACY_ONLY_EXTENSIONS = new Set(['svg'])
+const DIRECT_UPLOAD_UNAVAILABLE_HTTP_STATUSES = new Set([404, 405, 501])
+const DIRECT_UPLOAD_UNAVAILABLE_CODE = 800009
 
-export function uploadAsset(
+export interface AssetUploadOptions {
+  showSuccessMessage?: boolean
+  signal?: AbortSignal
+  onProgress?: (progress: CosPostUploadProgress) => void
+}
+
+const fileExtension = (filename: string) =>
+  filename.includes('.') ? filename.split('.').pop()?.toLowerCase() || '' : ''
+
+const contentTypeForUpload = (file: File) => {
+  if (file.type) return file.type.toLowerCase() === 'image/jpg' ? 'image/jpeg' : file.type
+  const extension = fileExtension(file.name)
+  const knownTypes: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    svg: 'image/svg+xml',
+    mp4: 'video/mp4',
+    webm: 'video/webm'
+  }
+  return knownTypes[extension] || 'application/octet-stream'
+}
+
+function createAssetUploadSession(data: Api.Storage.AssetUploadPayload) {
+  return request.post<Api.Storage.AssetUploadSession>({
+    url: '/admin/assets/upload-sessions',
+    data: {
+      folderId: data.folderId && data.folderId > 0 ? data.folderId : null,
+      originalFilename: data.file.name,
+      contentType: contentTypeForUpload(data.file),
+      sizeBytes: data.file.size
+    } satisfies Api.Storage.AssetUploadSessionPayload,
+    showErrorMessage: false
+  })
+}
+
+async function completeAssetUploadSession(uploadId: string, showSuccessMessage: boolean) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await request.post<Api.Storage.Asset>({
+        url: `/admin/assets/upload-sessions/${encodeURIComponent(uploadId)}/complete`,
+        timeout: DIRECT_UPLOAD_COMPLETE_TIMEOUT_MS,
+        showErrorMessage: false,
+        showSuccessMessage
+      })
+    } catch (error) {
+      const retryDelay = DIRECT_UPLOAD_PROCESSING_RETRY_DELAYS_MS[attempt]
+      if (
+        !isHttpError(error) ||
+        error.code !== DIRECT_UPLOAD_PROCESSING_FAILED_CODE ||
+        retryDelay === undefined
+      ) {
+        if (isHttpError(error)) showError(error)
+        throw error
+      }
+      await new Promise((resolve) => setTimeout(resolve, retryDelay))
+    }
+  }
+}
+
+function cancelAssetUploadSession(uploadId: string) {
+  return request.del<void>({
+    url: `/admin/assets/upload-sessions/${encodeURIComponent(uploadId)}`,
+    timeout: DIRECT_UPLOAD_CANCEL_TIMEOUT_MS,
+    showErrorMessage: false
+  })
+}
+
+function uploadAssetThroughBusinessApi(
   data: Api.Storage.AssetUploadPayload,
-  options: { showSuccessMessage?: boolean } = {}
+  options: AssetUploadOptions
 ) {
   const formData = new FormData()
   formData.append('file', data.file)
@@ -18,9 +99,61 @@ export function uploadAsset(
   return request.post<Api.Storage.Asset>({
     url: '/admin/assets/upload',
     data: formData,
-    timeout: ASSET_UPLOAD_TIMEOUT_MS,
+    timeout: LEGACY_ASSET_UPLOAD_TIMEOUT_MS,
+    signal: options.signal,
+    onUploadProgress: (event) => {
+      const total = event.total || data.file.size
+      options.onProgress?.({
+        loaded: Math.min(event.loaded, total),
+        total,
+        percent: total > 0 ? Math.min(100, Math.round((event.loaded / total) * 100)) : 0
+      })
+    },
     showSuccessMessage: options.showSuccessMessage ?? true
   })
+}
+
+const shouldUseLegacyUpload = (file: File) => LEGACY_ONLY_EXTENSIONS.has(fileExtension(file.name))
+
+const shouldFallbackAfterSessionFailure = (error: unknown) => {
+  if (!isHttpError(error)) return false
+  return (
+    error.code === DIRECT_UPLOAD_UNAVAILABLE_CODE ||
+    (error.httpStatus !== undefined &&
+      DIRECT_UPLOAD_UNAVAILABLE_HTTP_STATUSES.has(error.httpStatus))
+  )
+}
+
+export async function uploadAsset(
+  data: Api.Storage.AssetUploadPayload,
+  options: AssetUploadOptions = {}
+) {
+  if (shouldUseLegacyUpload(data.file)) {
+    return uploadAssetThroughBusinessApi(data, options)
+  }
+
+  let session: Api.Storage.AssetUploadSession
+  try {
+    session = await createAssetUploadSession(data)
+  } catch (error) {
+    if (shouldFallbackAfterSessionFailure(error)) {
+      return uploadAssetThroughBusinessApi(data, options)
+    }
+    if (isHttpError(error)) showError(error)
+    throw error
+  }
+
+  await uploadFileToCosPostWithSessionCancellation(
+    { uploadUrl: session.uploadUrl, formData: session.formData },
+    data.file,
+    () => cancelAssetUploadSession(session.uploadId),
+    {
+      signal: options.signal,
+      onProgress: options.onProgress
+    } satisfies CosPostUploadOptions
+  )
+
+  return completeAssetUploadSession(session.uploadId, options.showSuccessMessage ?? true)
 }
 
 export function fetchAssets(params: Api.Storage.AssetQueryParams) {

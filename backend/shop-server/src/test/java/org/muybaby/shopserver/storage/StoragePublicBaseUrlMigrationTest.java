@@ -24,9 +24,9 @@ class StoragePublicBaseUrlMigrationTest {
         );
         assertBackfill(
                 "TENCENT_COS",
-                "https://oss.muybaby6.icu",
+                "https://oss.example.test",
                 "",
-                "https://oss.muybaby6.icu"
+                "https://oss.example.test"
         );
     }
 

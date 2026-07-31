@@ -24,10 +24,14 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRe
 import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.StorageProviderKind;
+import org.muybaby.shopserver.storage.StorageUploadProfile;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionRequest;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionResponse;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
 import org.muybaby.shopserver.storage.provider.PrivateObjectAccess;
 import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.muybaby.shopserver.storage.service.StorageService;
+import org.muybaby.shopserver.storage.service.DirectUploadService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.dao.DuplicateKeyException;
@@ -71,6 +75,7 @@ public class CustomerServiceService {
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final ApplicationEventPublisher eventPublisher;
     private final StorageService storageService;
+    private final DirectUploadService directUploadService;
     private final RealtimeSessionHub realtimeSessionHub;
     private final TransactionTemplate requiresNewTransaction;
     private final TransactionTemplate withoutTransaction;
@@ -80,6 +85,7 @@ public class CustomerServiceService {
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             ApplicationEventPublisher eventPublisher,
             StorageService storageService,
+            DirectUploadService directUploadService,
             RealtimeSessionHub realtimeSessionHub,
             PlatformTransactionManager transactionManager
     ) {
@@ -87,6 +93,7 @@ public class CustomerServiceService {
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
+        this.directUploadService = directUploadService;
         this.realtimeSessionHub = realtimeSessionHub;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -865,6 +872,92 @@ public class CustomerServiceService {
         }));
     }
 
+    public DirectUploadSessionResponse createImageUploadSessionFromAdmin(
+            AuthenticatedPrincipal principal,
+            Long conversationId,
+            DirectUploadSessionRequest request
+    ) {
+        Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
+        ImageMessageContext context = requireTransactionResult(
+                requiresNewTransaction.execute(status -> {
+                    ConversationRow conversation =
+                            requireAdminVisibleConversation(conversationId);
+                    requireAssigned(conversation, adminUserId);
+                    return new ImageMessageContext(
+                            conversation.id(), conversation.appUserId());
+                }));
+        return directUploadService.create(
+                principal,
+                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                null,
+                "CUSTOMER_SERVICE_CONVERSATION",
+                context.conversationId(),
+                request
+        );
+    }
+
+    public MessageResponse completeImageUploadSessionFromAdmin(
+            AuthenticatedPrincipal principal,
+            Long conversationId,
+            String uploadId
+    ) {
+        Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
+        requireTransactionResult(requiresNewTransaction.execute(status -> {
+            ConversationRow conversation =
+                    requireAdminVisibleConversation(conversationId);
+            requireAssigned(conversation, adminUserId);
+            return conversation.id();
+        }));
+        DirectUploadService.Completion completion = directUploadService.complete(
+                principal,
+                uploadId,
+                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                conversationId
+        );
+        StorageAssetResponse asset = completion.asset();
+        return directUploadService.completeBusiness(
+                principal,
+                uploadId,
+                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                this::requireMessageById,
+                () -> {
+                    ConversationRow conversation =
+                            requireAdminVisibleConversation(conversationId);
+                    requireAssigned(conversation, adminUserId);
+                    MessageResponse message = insertMessage(
+                            conversation, "ADMIN", adminUserId, "IMAGE",
+                            asset.originalFilename(), asset.id(), null
+                    );
+                    storageService.bindCustomerServiceImage(
+                            asset.id(), conversation.id());
+                    touchForAppNotification(
+                            conversation.id(), message.createdAt());
+                    publish(
+                            conversation.id(),
+                            conversation.appUserId(),
+                            "MESSAGE_CREATED",
+                            message.messageId()
+                    );
+                    return new DirectUploadService.BusinessOutcome<>(
+                            message.messageId(), message);
+                }
+        );
+    }
+
+    public void cancelImageUploadSessionFromAdmin(
+            AuthenticatedPrincipal principal,
+            Long conversationId,
+            String uploadId
+    ) {
+        requirePrincipal(principal, TokenKind.ADMIN);
+        directUploadService.cancel(
+                principal,
+                uploadId,
+                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                conversationId
+        );
+    }
+
     public MessageResponse sendImageFromApp(
             AuthenticatedPrincipal principal,
             MultipartFile file
@@ -898,6 +991,92 @@ public class CustomerServiceService {
                 return message;
             }));
         }));
+    }
+
+    public DirectUploadSessionResponse createImageUploadSessionFromApp(
+            AuthenticatedPrincipal principal,
+            DirectUploadSessionRequest request
+    ) {
+        Long appUserId = requirePrincipal(principal, TokenKind.APP);
+        ImageMessageContext context = requireTransactionResult(
+                requiresNewTransaction.execute(status -> {
+                    ConversationRow conversation =
+                            findOrCreateConversation(appUserId);
+                    if (!conversation.appUserId().equals(appUserId)) {
+                        throw new BusinessException(
+                                ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
+                    }
+                    return new ImageMessageContext(
+                            conversation.id(), conversation.appUserId());
+                }));
+        return directUploadService.create(
+                principal,
+                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                null,
+                "CUSTOMER_SERVICE_CONVERSATION",
+                context.conversationId(),
+                request
+        );
+    }
+
+    public MessageResponse completeImageUploadSessionFromApp(
+            AuthenticatedPrincipal principal,
+            String uploadId
+    ) {
+        Long appUserId = requirePrincipal(principal, TokenKind.APP);
+        DirectUploadService.Completion completion = directUploadService.complete(
+                principal,
+                uploadId,
+                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                null
+        );
+        StorageAssetResponse asset = completion.asset();
+        Long conversationId = completion.contextId();
+        return directUploadService.completeBusiness(
+                principal,
+                uploadId,
+                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                this::requireMessageById,
+                () -> {
+                    ConversationRow conversation =
+                            requireConversation(conversationId);
+                    if (!conversation.appUserId().equals(appUserId)) {
+                        throw new BusinessException(
+                                ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
+                    }
+                    conversation = prepareForAppAction(
+                            conversation, appUserId);
+                    MessageResponse message = insertMessage(
+                            conversation, "APP_USER", appUserId, "IMAGE",
+                            asset.originalFilename(), asset.id(), null
+                    );
+                    storageService.bindCustomerServiceImage(
+                            asset.id(), conversation.id());
+                    touchForAdminNotification(
+                            conversation.id(), message.createdAt());
+                    publish(
+                            conversation.id(),
+                            appUserId,
+                            "MESSAGE_CREATED",
+                            message.messageId()
+                    );
+                    return new DirectUploadService.BusinessOutcome<>(
+                            message.messageId(), message);
+                }
+        );
+    }
+
+    public void cancelImageUploadSessionFromApp(
+            AuthenticatedPrincipal principal,
+            String uploadId
+    ) {
+        requirePrincipal(principal, TokenKind.APP);
+        directUploadService.cancel(
+                principal,
+                uploadId,
+                StorageUploadProfile.CUSTOMER_SERVICE_IMAGE,
+                null
+        );
     }
 
     public ResponseEntity<InputStreamResource> imageForApp(
@@ -1989,6 +2168,18 @@ public class CustomerServiceService {
                 .param("clientMessageId", clientMessageId)
                 .query((rs, rowNum) -> mapMessage(rs, rowNum, imageAccessResolver))
                 .optional();
+    }
+
+    private MessageResponse requireMessageById(Long messageId) {
+        Function<StorageObjectLocation, PrivateObjectAccess> imageAccessResolver =
+                storageService.privateImageAccessResolver();
+        return jdbcClient.sql(messageSelect() + " where m.id = :messageId")
+                .param("messageId", messageId)
+                .query((rs, rowNum) ->
+                        mapMessage(rs, rowNum, imageAccessResolver))
+                .optional()
+                .orElseThrow(() -> new BusinessException(
+                        ErrorCode.CUSTOMER_SERVICE_STATE_CONFLICT));
     }
 
     private void touchForAppNotification(Long conversationId, LocalDateTime at) {

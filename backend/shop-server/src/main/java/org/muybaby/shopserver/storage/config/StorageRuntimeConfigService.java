@@ -7,13 +7,21 @@ import org.muybaby.shopserver.storage.dto.AdminStorageConfigRequest;
 import org.muybaby.shopserver.storage.dto.AdminStorageConfigResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HexFormat;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -24,23 +32,32 @@ public class StorageRuntimeConfigService {
     private static final Pattern REGION_PATTERN = Pattern.compile("[a-z0-9-]{2,64}");
     private static final Pattern BUCKET_PATTERN =
             Pattern.compile("[a-z0-9][a-z0-9-]{0,116}-[0-9]{5,20}");
+    private static final Pattern PUBLIC_ORIGIN_HOST_PATTERN = Pattern.compile(
+            "(?i)(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+"
+                    + "[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?"
+    );
 
     private final JdbcClient jdbcClient;
     private final PaymentSecretCipher secretCipher;
+    private final CosCustomDomainVerifier customDomainVerifier;
+    private final TransactionTemplate transaction;
 
     public StorageRuntimeConfigService(
             JdbcClient jdbcClient,
-            PaymentSecretCipher secretCipher
+            PaymentSecretCipher secretCipher,
+            CosCustomDomainVerifier customDomainVerifier,
+            PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
         this.secretCipher = secretCipher;
+        this.customDomainVerifier = customDomainVerifier;
+        this.transaction = new TransactionTemplate(transactionManager);
     }
 
     public ResolvedStorageConfig effective() {
-        ResolvedStorageConfig config = persistedRow()
-                .map(this::resolve)
-                .orElseThrow(this::notConfigured);
-        if (!configured(config)) {
+        StorageSettingRow row = persistedRow().orElseThrow(this::notConfigured);
+        ResolvedStorageConfig config = resolve(row);
+        if (!configured(config, row)) {
             throw notConfigured();
         }
         return config;
@@ -48,19 +65,21 @@ public class StorageRuntimeConfigService {
 
     public AdminStorageConfigResponse current() {
         Optional<StorageSettingRow> persisted = persistedRow();
-        ResolvedStorageConfig config = persisted
-                .map(this::resolve)
-                .orElseGet(this::emptyConfig);
-        return response(config);
+        if (persisted.isEmpty()) {
+            return response(emptyConfig(), false);
+        }
+        StorageSettingRow row = persisted.orElseThrow();
+        ResolvedStorageConfig config = resolveForEditing(row);
+        return response(config, configured(config, row));
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AdminStorageConfigResponse update(AdminStorageConfigRequest request) {
         if (request == null) {
             throw validationFailure();
         }
         ResolvedStorageConfig current = persistedRow()
-                .map(this::resolve)
+                .map(this::resolveForEditing)
                 .orElseGet(this::emptyConfig);
         String region = optionalTextOrFallback(request.region(), current.region(), 64);
         String bucket = optionalTextOrFallback(request.bucket(), current.bucket(), 128);
@@ -73,6 +92,13 @@ public class StorageRuntimeConfigService {
         if (!StringUtils.hasText(publicBaseUrl)) {
             publicBaseUrl = defaultPublicBaseUrl(bucket, region);
         }
+        requireAllowedClientOrigin(
+                publicBaseUrl, bucket, region, secretId, secretKey);
+        String customDomainVerificationFingerprint =
+                defaultPublicBaseUrl(bucket, region).equals(publicBaseUrl)
+                        ? null
+                        : customDomainVerificationFingerprint(
+                                publicBaseUrl, region, bucket);
 
         PaymentSecretCipher.EncryptedSecret encryptedSecretId =
                 secretCipher.encrypt(secretContext("cos-secret-id"), secretId);
@@ -80,6 +106,28 @@ public class StorageRuntimeConfigService {
                 secretCipher.encrypt(secretContext("cos-secret-key"), secretKey);
         EnvelopeMetadata envelope = requireSameEnvelope(encryptedSecretId, encryptedSecretKey);
 
+        String persistedPublicBaseUrl = publicBaseUrl;
+        transaction.executeWithoutResult(ignored -> persist(
+                persistedPublicBaseUrl,
+                region,
+                bucket,
+                encryptedSecretId,
+                encryptedSecretKey,
+                envelope,
+                customDomainVerificationFingerprint
+        ));
+        return current();
+    }
+
+    private void persist(
+            String publicBaseUrl,
+            String region,
+            String bucket,
+            PaymentSecretCipher.EncryptedSecret encryptedSecretId,
+            PaymentSecretCipher.EncryptedSecret encryptedSecretKey,
+            EnvelopeMetadata envelope,
+            String customDomainVerificationFingerprint
+    ) {
         int updatedRows = jdbcClient.sql("""
                         update storage_runtime_setting
                         set cos_public_base_url = :publicBaseUrl,
@@ -91,6 +139,8 @@ public class StorageRuntimeConfigService {
                             secret_key_id = :secretKeyId,
                             secret_revision = secret_revision + 1,
                             secret_reencrypted_at = null,
+                            cos_custom_domain_verification_fingerprint =
+                                :customDomainVerificationFingerprint,
                             updated_at = current_timestamp
                         where id = :id
                         """)
@@ -101,6 +151,8 @@ public class StorageRuntimeConfigService {
                 .param("secretKeyCiphertext", encryptedSecretKey.ciphertext())
                 .param("secretCipherVersion", envelope.version())
                 .param("secretKeyId", envelope.keyId())
+                .param("customDomainVerificationFingerprint",
+                        customDomainVerificationFingerprint)
                 .param("id", SETTING_ID)
                 .update();
         if (updatedRows == 0) {
@@ -108,11 +160,13 @@ public class StorageRuntimeConfigService {
                             insert into storage_runtime_setting
                                 (id, cos_public_base_url, cos_region, cos_bucket,
                                  cos_secret_id_ciphertext, cos_secret_key_ciphertext,
-                                 secret_cipher_version, secret_key_id, secret_revision)
+                                 secret_cipher_version, secret_key_id, secret_revision,
+                                 cos_custom_domain_verification_fingerprint)
                             values
                                 (:id, :publicBaseUrl, :region, :bucket,
                                  :secretIdCiphertext, :secretKeyCiphertext,
-                                 :secretCipherVersion, :secretKeyId, 1)
+                                 :secretCipherVersion, :secretKeyId, 1,
+                                 :customDomainVerificationFingerprint)
                             """)
                     .param("id", SETTING_ID)
                     .param("publicBaseUrl", publicBaseUrl)
@@ -122,16 +176,18 @@ public class StorageRuntimeConfigService {
                     .param("secretKeyCiphertext", encryptedSecretKey.ciphertext())
                     .param("secretCipherVersion", envelope.version())
                     .param("secretKeyId", envelope.keyId())
+                    .param("customDomainVerificationFingerprint",
+                            customDomainVerificationFingerprint)
                     .update();
         }
-        return current();
     }
 
     private Optional<StorageSettingRow> persistedRow() {
         return jdbcClient.sql("""
                         select cos_public_base_url, cos_region, cos_bucket,
                                cos_secret_id_ciphertext, cos_secret_key_ciphertext,
-                               secret_cipher_version, secret_key_id
+                               secret_cipher_version, secret_key_id,
+                               cos_custom_domain_verification_fingerprint
                         from storage_runtime_setting
                         where id = :id
                         """)
@@ -144,6 +200,30 @@ public class StorageRuntimeConfigService {
         String region = optionalText(row.region(), 64);
         String bucket = optionalText(row.bucket(), 128);
         String publicBaseUrl = normalizePublicBaseUrl(row.publicBaseUrl());
+        if (!StringUtils.hasText(publicBaseUrl)) {
+            publicBaseUrl = defaultPublicBaseUrl(bucket, region);
+        }
+        if (!allowedClientOrigin(publicBaseUrl, bucket, region)) {
+            throw validationFailure();
+        }
+        return new ResolvedStorageConfig(
+                publicBaseUrl,
+                region,
+                bucket,
+                decryptIfPresent("cos-secret-id", row.secretIdCiphertext(), row),
+                decryptIfPresent("cos-secret-key", row.secretKeyCiphertext(), row)
+        );
+    }
+
+    private ResolvedStorageConfig resolveForEditing(StorageSettingRow row) {
+        String region = optionalText(row.region(), 64);
+        String bucket = optionalText(row.bucket(), 128);
+        String publicBaseUrl;
+        try {
+            publicBaseUrl = normalizePublicBaseUrl(row.publicBaseUrl());
+        } catch (BusinessException ex) {
+            publicBaseUrl = trim(row.publicBaseUrl());
+        }
         if (!StringUtils.hasText(publicBaseUrl)) {
             publicBaseUrl = defaultPublicBaseUrl(bucket, region);
         }
@@ -160,9 +240,12 @@ public class StorageRuntimeConfigService {
         return new ResolvedStorageConfig("", "", "", "", "");
     }
 
-    private AdminStorageConfigResponse response(ResolvedStorageConfig config) {
+    private AdminStorageConfigResponse response(
+            ResolvedStorageConfig config,
+            boolean configured
+    ) {
         return new AdminStorageConfigResponse(
-                configured(config),
+                configured,
                 config.publicBaseUrl(),
                 config.region(),
                 config.bucket(),
@@ -171,12 +254,18 @@ public class StorageRuntimeConfigService {
         );
     }
 
-    private boolean configured(ResolvedStorageConfig config) {
+    private boolean configured(
+            ResolvedStorageConfig config,
+            StorageSettingRow row
+    ) {
         return REGION_PATTERN.matcher(config.region()).matches()
                 && BUCKET_PATTERN.matcher(config.bucket()).matches()
                 && StringUtils.hasText(config.publicBaseUrl())
                 && StringUtils.hasText(config.secretId())
-                && StringUtils.hasText(config.secretKey());
+                && StringUtils.hasText(config.secretKey())
+                && allowedClientOrigin(
+                        config.publicBaseUrl(), config.bucket(), config.region())
+                && verifiedClientOrigin(config, row);
     }
 
     private void requireCosConfig(String region, String bucket, String secretId, String secretKey) {
@@ -195,25 +284,77 @@ public class StorageRuntimeConfigService {
         return "https://" + bucket + ".cos." + region + ".myqcloud.com";
     }
 
+    private void requireAllowedClientOrigin(
+            String origin,
+            String bucket,
+            String region,
+            String secretId,
+            String secretKey
+    ) {
+        if (defaultPublicBaseUrl(bucket, region).equals(origin)) {
+            return;
+        }
+        customDomainVerifier.requireEnabledRestDomain(
+                URI.create(origin).getHost(), region, bucket, secretId, secretKey);
+    }
+
+    private boolean allowedClientOrigin(String origin, String bucket, String region) {
+        if (defaultPublicBaseUrl(bucket, region).equals(origin)) {
+            return true;
+        }
+        try {
+            return normalizePublicBaseUrl(origin).equals(origin);
+        } catch (BusinessException ex) {
+            return false;
+        }
+    }
+
+    private boolean verifiedClientOrigin(
+            ResolvedStorageConfig config,
+            StorageSettingRow row
+    ) {
+        if (defaultPublicBaseUrl(config.bucket(), config.region())
+                .equals(config.publicBaseUrl())) {
+            return true;
+        }
+        return customDomainVerificationFingerprint(
+                config.publicBaseUrl(), config.region(), config.bucket())
+                .equals(row.customDomainVerificationFingerprint());
+    }
+
+    private String customDomainVerificationFingerprint(
+            String publicBaseUrl,
+            String region,
+            String bucket
+    ) {
+        String canonical = publicBaseUrl + '\0' + region + '\0' + bucket;
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        }
+    }
+
     private String normalizePublicBaseUrl(String value) {
         String normalized = trim(value);
         if (!StringUtils.hasText(normalized)) {
             return "";
         }
-        while (normalized.endsWith("/")) {
-            normalized = normalized.substring(0, normalized.length() - 1);
-        }
         try {
             URI uri = new URI(normalized);
-            if (!("http".equalsIgnoreCase(uri.getScheme())
-                    || "https".equalsIgnoreCase(uri.getScheme()))
+            String rawPath = uri.getRawPath();
+            if (!"https".equalsIgnoreCase(uri.getScheme())
                     || !StringUtils.hasText(uri.getHost())
+                    || !PUBLIC_ORIGIN_HOST_PATTERN.matcher(uri.getHost()).matches()
                     || uri.getUserInfo() != null
+                    || uri.getPort() != -1
+                    || (StringUtils.hasText(rawPath) && !"/".equals(rawPath))
                     || uri.getQuery() != null
                     || uri.getFragment() != null) {
                 throw validationFailure();
             }
-            return normalized;
+            return "https://" + uri.getHost().toLowerCase(Locale.ROOT);
         } catch (URISyntaxException ex) {
             throw validationFailure();
         }
@@ -301,7 +442,8 @@ public class StorageRuntimeConfigService {
                 rs.getString("cos_secret_id_ciphertext"),
                 rs.getString("cos_secret_key_ciphertext"),
                 rs.getInt("secret_cipher_version"),
-                rs.getString("secret_key_id")
+                rs.getString("secret_key_id"),
+                rs.getString("cos_custom_domain_verification_fingerprint")
         );
     }
 
@@ -312,7 +454,8 @@ public class StorageRuntimeConfigService {
             String secretIdCiphertext,
             String secretKeyCiphertext,
             int secretCipherVersion,
-            String secretKeyId
+            String secretKeyId,
+            String customDomainVerificationFingerprint
     ) {
     }
 

@@ -31,7 +31,12 @@ class StorageSchemaTest {
         assertThat(columnIsAutoIncrement("storage_asset_folder", "id")).isTrue();
         assertThat(columnIsAutoIncrement("storage_asset_usage", "id")).isTrue();
         assertThat(columnNames("storage_runtime_setting"))
-                .contains("cos_public_base_url", "cos_region", "cos_bucket")
+                .contains(
+                        "cos_public_base_url",
+                        "cos_region",
+                        "cos_bucket",
+                        "cos_custom_domain_verification_fingerprint"
+                )
                 .doesNotContain("provider", "public_base_url", "local_public_base_url", "local_root");
 
         assertThat(columnNames("storage_asset")).contains(

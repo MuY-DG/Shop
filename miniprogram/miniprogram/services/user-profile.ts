@@ -6,6 +6,7 @@ import type {
   UpdateAppUserProfileRequest
 } from "../types/auth";
 import { request } from "../utils/request";
+import { uploadFileDirect } from "../utils/direct-upload";
 import { uploadFile } from "../utils/upload";
 import { updateSessionUser } from "./session";
 
@@ -53,11 +54,16 @@ export async function saveAvatar(
     };
   }
 
-  const response = await uploadFile<AppUserAvatarUpdateResponse>({
-    url: API_ENDPOINTS.user.avatar,
+  const response = await uploadFileDirect<AppUserAvatarUpdateResponse>({
+    initUrl: API_ENDPOINTS.user.avatarUploads,
     filePath: avatarUrl,
-    name: "file",
-    timeoutMs: 30_000
+    timeoutMs: 60_000,
+    legacyFallback: () => uploadFile<AppUserAvatarUpdateResponse>({
+      url: API_ENDPOINTS.user.avatar,
+      filePath: avatarUrl,
+      name: "file",
+      timeoutMs: 30_000
+    })
   });
   const { remainingChanges, ...profile } = response;
   return {

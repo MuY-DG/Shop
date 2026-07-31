@@ -184,6 +184,13 @@ public class AssetModelMigrationTest {
             assertThat(tableExists(statement, "storage_asset_folder")).isTrue();
             assertThat(tableExists(statement, "storage_asset_folder_guard")).isTrue();
             assertThat(tableExists(statement, "storage_asset_usage")).isTrue();
+            assertThat(tableExists(statement, "storage_upload_session")).isTrue();
+            assertThat(tableExists(statement, "storage_upload_principal_guard")).isTrue();
+            assertThat(columnNames(statement, "storage_upload_session"))
+                    .contains(
+                            "processing_attempts",
+                            "next_processing_attempt_at"
+                    );
             assertThat(tableExists(statement, "storage_file")).isFalse();
             assertThat(tableExists(statement, "storage_asset_category")).isFalse();
             assertThat(tableExists(statement, "storage_file_usage")).isFalse();
@@ -201,7 +208,8 @@ public class AssetModelMigrationTest {
                             "secret_reencrypted_at");
             assertThat(columnNames(statement, "storage_runtime_setting"))
                     .contains("secret_cipher_version", "secret_key_id", "secret_revision",
-                            "secret_reencrypted_at", "cos_public_base_url", "cos_region", "cos_bucket")
+                            "secret_reencrypted_at", "cos_public_base_url", "cos_region", "cos_bucket",
+                            "cos_custom_domain_verification_fingerprint")
                     .doesNotContain(
                             "provider", "public_base_url", "local_public_base_url", "local_root");
 
@@ -215,7 +223,8 @@ public class AssetModelMigrationTest {
                     "deleted_at", "created_at", "updated_at",
                     "thumbnail_status", "thumbnail_object_key", "thumbnail_content_type",
                     "thumbnail_size_bytes", "thumbnail_sha256", "thumbnail_width", "thumbnail_height",
-                    "thumbnail_attempts", "thumbnail_started_at", "thumbnail_next_retry_at"
+                    "thumbnail_attempts", "thumbnail_started_at", "thumbnail_next_retry_at",
+                    "object_etag", "thumbnail_object_etag"
             ).doesNotContain("purpose", "asset_category_id");
             assertThat(columnNames(statement, "storage_asset_folder")).containsExactly(
                     "id", "parent_id", "parent_key", "name", "sort_order", "status", "created_at", "updated_at"

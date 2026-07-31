@@ -790,6 +790,22 @@ declare namespace Api {
       folderId?: number | null
     }
 
+    interface AssetUploadSessionPayload {
+      /** null or omitted means ungrouped. */
+      folderId?: number | null
+      originalFilename: string
+      contentType: string
+      sizeBytes: number
+    }
+
+    interface AssetUploadSession {
+      uploadId: string
+      uploadUrl: string
+      /** Signed COS POST Object fields. The client must append the file field last. */
+      formData: Record<string, string>
+      expiresAt: string
+    }
+
     interface AssetMovePayload {
       /** 0 means move to ungrouped. */
       folderId: number
@@ -1342,37 +1358,6 @@ declare namespace Api {
       deliveryId: string
       deliveryName: string
       syncedAt: string
-    }
-  }
-
-  namespace ImageCompression {
-    type ConfigSource = 'AUTO' | 'ENV' | 'DB'
-    type OutputFormat = 'WEBP'
-
-    interface Config {
-      requestedEnabled: boolean
-      effectiveEnabled: boolean
-      configSource: ConfigSource
-      persisted: boolean
-      defaultConfigSource: ConfigSource
-      keyConfigured: boolean
-      apiKeyMasked: string
-      outputFormat: OutputFormat
-      preserveMetadata: false
-      monthlyLimit: number | null
-      compressionCount: number | null
-      remainingCount: number | null
-      quotaPeriod: string | null
-      lastCheckedAt: string | null
-      autoDisabledReason: string | null
-      updatedAt: string | null
-    }
-
-    interface ConfigForm {
-      requestedEnabled: boolean
-      configSource: ConfigSource
-      apiKey?: string
-      monthlyLimit?: number | null
     }
   }
 

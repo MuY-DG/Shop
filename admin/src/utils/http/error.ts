@@ -39,6 +39,8 @@ export interface ErrorResponse {
 export interface ErrorLogData {
   /** 错误状态码 */
   code: number
+  /** HTTP 响应状态；网络错误或本地错误没有该值 */
+  httpStatus?: number
   /** 错误消息 */
   message: string
   /** 错误附加数据 */
@@ -56,6 +58,7 @@ export interface ErrorLogData {
 // 自定义 HttpError 类
 export class HttpError extends Error {
   public readonly code: number
+  public readonly httpStatus?: number
   public readonly data?: unknown
   public readonly timestamp: string
   public readonly url?: string
@@ -66,6 +69,7 @@ export class HttpError extends Error {
     code: number,
     options?: {
       data?: unknown
+      httpStatus?: number
       url?: string
       method?: string
     }
@@ -73,6 +77,7 @@ export class HttpError extends Error {
     super(message)
     this.name = 'HttpError'
     this.code = code
+    this.httpStatus = options?.httpStatus
     this.data = options?.data
     this.timestamp = new Date().toISOString()
     this.url = options?.url
@@ -82,6 +87,7 @@ export class HttpError extends Error {
   public toLogData(): ErrorLogData {
     return {
       code: this.code,
+      httpStatus: this.httpStatus,
       message: this.message,
       data: this.data,
       timestamp: this.timestamp,
@@ -141,6 +147,7 @@ export function handleError(error: AxiosError<ErrorResponse>): never {
   if (typeof responseData?.code === 'number' && responseData.msg) {
     throw new HttpError(responseData.msg, responseData.code, {
       data: responseData,
+      httpStatus: statusCode,
       url: requestConfig?.url,
       method: requestConfig?.method?.toUpperCase()
     })
@@ -152,6 +159,7 @@ export function handleError(error: AxiosError<ErrorResponse>): never {
     : errorMessage || $t('httpMsg.requestFailed')
   throw new HttpError(message, statusCode || ApiStatus.error, {
     data: error.response.data,
+    httpStatus: statusCode,
     url: requestConfig?.url,
     method: requestConfig?.method?.toUpperCase()
   })

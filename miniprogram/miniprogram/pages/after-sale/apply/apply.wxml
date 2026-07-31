@@ -76,7 +76,7 @@
         <view class="evidence-heading">
           <view>
             <view class="section-heading">图片凭证（选填）</view>
-            <view class="evidence-copy">最多 3 张原图，单张不超过 5MB</view>
+            <view class="evidence-copy">最多 3 张清晰图片，单张不超过 5MB</view>
           </view>
           <text>{{evidenceFiles.length}}/3</text>
         </view>

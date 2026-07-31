@@ -7,8 +7,12 @@ import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionRequest;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionResponse;
+import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -43,6 +47,39 @@ public class AppAfterSaleController {
             @RequestParam("file") MultipartFile file
     ) {
         return ApiResponse.success(appAfterSaleService.uploadEvidence(principal, orderId, file));
+    }
+
+    @PostMapping("/app/orders/{orderId}/after-sale-evidence/upload-sessions")
+    public ApiResponse<DirectUploadSessionResponse> createEvidenceUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @Valid @RequestBody DirectUploadSessionRequest request
+    ) {
+        return ApiResponse.success(
+                appAfterSaleService.createEvidenceUploadSession(
+                        principal, orderId, request));
+    }
+
+    @PostMapping("/app/orders/{orderId}/after-sale-evidence/upload-sessions/{uploadId}/complete")
+    public ApiResponse<StorageAssetResponse> completeEvidenceUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @PathVariable String uploadId
+    ) {
+        return ApiResponse.success(
+                appAfterSaleService.completeEvidenceUploadSession(
+                        principal, orderId, uploadId));
+    }
+
+    @DeleteMapping("/app/orders/{orderId}/after-sale-evidence/upload-sessions/{uploadId}")
+    public ApiResponse<Void> cancelEvidenceUploadSession(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @PathVariable String uploadId
+    ) {
+        appAfterSaleService.cancelEvidenceUploadSession(
+                principal, orderId, uploadId);
+        return ApiResponse.success();
     }
 
     @GetMapping("/app/orders/{orderId}/after-sales")

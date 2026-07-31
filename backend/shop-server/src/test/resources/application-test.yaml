@@ -46,14 +46,6 @@ shop:
     retention:
       enabled: false
   storage:
-    image-compression:
-      requested-enabled: true
-      config-source: AUTO
-      api-key:
-      monthly-limit: 500
-      request-timeout: 60s
-      max-attempts: 2
-      retry-delay: 1ms
     limits:
       image-max-size: 5MB
       image-max-width: 8192

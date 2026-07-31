@@ -110,7 +110,7 @@
         maxFileSize: mergedUploadConfig.value.maxFileSize,
         maxNumberOfFiles: mergedUploadConfig.value.maxNumberOfFiles,
         allowedFileTypes: mergedUploadConfig.value.allowedFileTypes,
-        server: props.uploadConfig?.server || '/admin/assets/upload',
+        server: props.uploadConfig?.server,
         onSuccess() {
           ElMessage.success(`图片上传成功 ${EmojiText[200]}`)
         },

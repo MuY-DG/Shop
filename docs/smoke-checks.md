@@ -713,7 +713,17 @@ CLAIMED
 
 ## File Storage And Home Banner Smoke Checks
 
-This is a real local smoke checklist for the file upload, asset library, and home banner phase. It uses the local backend and local database path. In the `test` profile, WeChat login is backed by the mock WeChat mini program client, but upload, storage metadata, product usage, banner usage, delete protection, and mini program banner APIs go through the real local backend APIs.
+This is a real local smoke checklist for the file upload, asset library, and home
+banner phase. It uses the local backend and database, plus a dedicated real COS
+test bucket with Cloud Infinite enabled. In the `test` profile, WeChat login is
+backed by the mock WeChat mini program client, but upload, Cloud Infinite
+processing, storage metadata, product usage, banner usage, delete protection,
+and mini program banner APIs use the real application and COS paths.
+
+Before starting, save a valid Tencent COS runtime configuration through
+`开发配置 -> 对象存储配置`. The credentials must have the permissions listed in
+[`docs/cos-direct-upload.md`](./cos-direct-upload.md). Do not use a production
+bucket for this destructive smoke check.
 
 Start backend:
 
@@ -768,7 +778,10 @@ with open(sys.argv[1], "wb") as f:
 PY
 ```
 
-Create a library folder, upload reusable public image/video assets, and upload one staged payment-owned secret document. The image asset is deliberately reused below as product cover, category icon, gallery/SKU image, rich-text image, and home banner:
+Create a library folder, upload reusable public image/video assets directly to
+COS, and upload one staged payment-owned secret document through its intentionally
+server-mediated endpoint. The image asset is deliberately reused below as product
+cover, category icon, gallery/SKU image, rich-text image, and home banner:
 
 ```bash
 ASSET_FOLDER_ID=$(
@@ -779,11 +792,71 @@ ASSET_FOLDER_ID=$(
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.parentId !== 0) process.exit(1); console.log(body.data.id); });'
 )
 
+# The helper first asks the business API for a single-object POST Policy, sends
+# the file body to the returned COS source URL, and then completes the session.
+# It prints only the completed asset JSON so callers can inspect the result.
+direct_asset_upload() {
+  node - "$ADMIN_TOKEN" "$ASSET_FOLDER_ID" "$1" "$2" "$3" <<'NODE'
+const fs = require("node:fs");
+const [token, folderId, filePath, filename, contentType] = process.argv.slice(2);
+const source = fs.readFileSync(filePath);
+const api = "http://localhost:8080";
+
+async function readApi(response) {
+  const body = await response.json();
+  if (!response.ok || body.code !== 200) {
+    throw new Error(JSON.stringify(body));
+  }
+  return body.data;
+}
+
+(async () => {
+  const session = await readApi(await fetch(`${api}/admin/assets/upload-sessions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      folderId: Number(folderId),
+      originalFilename: filename,
+      contentType,
+      sizeBytes: source.length
+    })
+  }));
+
+  const form = new FormData();
+  for (const [key, value] of Object.entries(session.formData)) {
+    form.append(key, value);
+  }
+  // POST Object requires the binary file part to be last.
+  form.append("file", new Blob([source], { type: contentType }), filename);
+  const uploaded = await fetch(session.uploadUrl, { method: "POST", body: form });
+  if (!uploaded.ok) {
+    throw new Error(`COS POST failed: ${uploaded.status} ${await uploaded.text()}`);
+  }
+
+  const completed = await fetch(
+    `${api}/admin/assets/upload-sessions/${encodeURIComponent(session.uploadId)}/complete`,
+    { method: "POST", headers: { Authorization: `Bearer ${token}` } }
+  );
+  const completedBody = await completed.json();
+  if (!completed.ok || completedBody.code !== 200) {
+    throw new Error(JSON.stringify(completedBody));
+  }
+  process.stdout.write(JSON.stringify(completedBody));
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+NODE
+}
+
 SHARED_ASSET_JSON=$(
-  curl -s -X POST http://localhost:8080/admin/assets/upload \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -F folderId="${ASSET_FOLDER_ID}" \
-    -F file=@"${SMOKE_DIR}/tiny.png;type=image/png"
+  direct_asset_upload \
+    "${SMOKE_DIR}/tiny.png" \
+    "tiny.png" \
+    "image/png"
 )
 
 SHARED_ASSET_ID=$(
@@ -797,10 +870,10 @@ SHARED_ASSET_URL=$(
 )
 
 LIBRARY_VIDEO_ID=$(
-  curl -s -X POST http://localhost:8080/admin/assets/upload \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -F folderId="${ASSET_FOLDER_ID}" \
-    -F file=@"${SMOKE_DIR}/tiny.mp4;type=video/mp4" \
+  direct_asset_upload \
+    "${SMOKE_DIR}/tiny.mp4" \
+    "tiny.mp4" \
+    "video/mp4" \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.scope !== "LIBRARY" || body.data.mediaKind !== "VIDEO" || body.data.visibility !== "PUBLIC" || !body.data.url) process.exit(1); console.log(body.data.id); });'
 )
 
@@ -908,35 +981,60 @@ curl -s -X DELETE "http://localhost:8080/admin/assets/${BANNER_FILE_ID}" \
 Verify invalid uploads are rejected:
 
 ```bash
-curl -s -X POST http://localhost:8080/admin/assets/upload \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -F file=@"${SMOKE_DIR}/bad.exe;type=application/octet-stream" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+assert_session_rejected() {
+  curl -s -X POST http://localhost:8080/admin/assets/upload-sessions \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"folderId\":${ASSET_FOLDER_ID},\"originalFilename\":\"$1\",\"contentType\":\"$2\",\"sizeBytes\":$3}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+}
 
-curl -s -X POST http://localhost:8080/admin/assets/upload \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -F file=@"${SMOKE_DIR}/empty.png;type=image/png" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+assert_session_rejected "bad.exe" "application/octet-stream" 19
+assert_session_rejected "empty.png" "image/png" 0
+assert_session_rejected "large.png" "image/png" $((6 * 1024 * 1024 + 8))
+assert_session_rejected "../tiny.png" "image/png" 68
 
-curl -s -X POST http://localhost:8080/admin/assets/upload \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -F file=@"${SMOKE_DIR}/large.png;type=image/png" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
-
-curl -s -X POST http://localhost:8080/admin/assets/upload \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -F 'file=@"'"${SMOKE_DIR}"'/tiny.png";filename=../tiny.png;type=image/png' \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log(body.msg); });'
+# A valid-looking name and MIME do not bypass decoded-format validation. The
+# bytes go to COS, but completion must fail before an active asset is created.
+if direct_asset_upload \
+  "${SMOKE_DIR}/bad.exe" \
+  "spoofed.png" \
+  "image/png"
+then
+  echo "spoofed image unexpectedly completed"
+  exit 1
+else
+  echo "spoofed image rejected after Cloud Infinite inspection"
+fi
 ```
 
 UI smoke checklist after starting the admin dev server and opening the mini program in WeChat DevTools:
 
-- Admin uploads one image from `/storage/files` and reuses it as product, SKU, specification value, category icon, guarantee icon, banner, or rich-text media without any purpose restriction.
+- In browser DevTools, an admin upload from `/storage/files` sends the large
+  multipart request to the COS source host; the two business API requests contain
+  only JSON/session metadata and no image body.
+- The completed raster asset is WebP at or below the configured profile size and
+  returns from the configured COS source domain with a long immutable cache
+  header; a custom COS origin is allowed, but no CDN domain is involved.
+- Admin reuses that image as product, SKU, specification value, category icon,
+  guarantee icon, banner, or rich-text media without any purpose restriction.
 - Admin creates, renames, disables, and deletes empty folders; disabled folders reject uploads and moves.
 - Admin asset detail shows every actual usage location and the referenced/unreferenced filter follows active usages.
 - Assets referenced by product, banner, order snapshots, or other active usages cannot be deleted.
 - Payment configuration uploads a `.pem` only through `/admin/pay/configs/secret-files`; the secret never appears in the asset library and has no public URL or preview.
-- Mini program after-sale evidence uploads only through `/app/orders/{orderId}/after-sale-evidence`; it never appears in the asset library.
+- Mini program avatar, after-sale evidence, and customer-service images send the
+  file body to the configured COS `uploadFile` domain. After-sale evidence never
+  appears in the reusable asset library.
+- A customer-service sender sees the local preview immediately. The other side
+  loads the 720px signed COS thumbnail first, and reopening the conversation
+  reuses the mini program's local image cache; opening preview fetches the 1920px
+  signed display image.
+- A simulated `800007` completion failure retries the same upload session after
+  backoff and does not issue a second COS POST; all other completion errors stop
+  without falling back to the business upload endpoint.
+- A blocked, failed, or manually aborted COS POST issues one best-effort DELETE
+  for the same `uploadId`; retrying uploads does not exhaust the ten active-session
+  slots. Completion-stage failures must not issue that DELETE.
 - Illegal extension, oversized file, empty file, and path traversal filename are rejected.
 
 ## Mock Payment Automated Smoke Checks

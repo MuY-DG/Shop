@@ -23,16 +23,16 @@ class ApplicationYamlSafetyTest {
                 .containsEntry("spring.data.redis.port", "${SHOP_REDIS_PORT:6379}")
                 .containsEntry("spring.data.redis.database", "${SHOP_REDIS_DATABASE:0}")
                 .containsEntry(
-                        "shop.storage.image-compression.request-timeout",
-                        "${SHOP_IMAGE_COMPRESSION_REQUEST_TIMEOUT:60s}"
+                        "shop.storage.direct-upload.session-retention",
+                        "${SHOP_DIRECT_UPLOAD_SESSION_RETENTION:7d}"
                 )
                 .containsEntry(
-                        "shop.storage.image-compression.max-attempts",
-                        "${SHOP_IMAGE_COMPRESSION_MAX_ATTEMPTS:2}"
+                        "shop.storage.direct-upload.cleanup-initial-delay",
+                        "${SHOP_DIRECT_UPLOAD_CLEANUP_INITIAL_DELAY:1m}"
                 )
                 .containsEntry(
-                        "shop.storage.image-compression.retry-delay",
-                        "${SHOP_IMAGE_COMPRESSION_RETRY_DELAY:1s}"
+                        "shop.storage.direct-upload.cleanup-fixed-delay",
+                        "${SHOP_DIRECT_UPLOAD_CLEANUP_FIXED_DELAY:10m}"
                 )
                 .containsEntry("logging.pattern.level", "%5p [requestId=%X{requestId:-}]")
                 .containsEntry(

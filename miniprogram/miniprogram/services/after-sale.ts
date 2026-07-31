@@ -7,6 +7,7 @@ import type {
   StorageAssetUploadResponse
 } from "../types/after-sale";
 import { request } from "../utils/request";
+import { uploadFileDirect } from "../utils/direct-upload";
 import { uploadFile } from "../utils/upload";
 
 export function getAfterSales(
@@ -50,10 +51,15 @@ export function uploadAfterSaleEvidence(
   orderId: number,
   filePath: string
 ): Promise<StorageAssetUploadResponse> {
-  return uploadFile<StorageAssetUploadResponse>({
-    url: API_ENDPOINTS.afterSales.evidence(orderId),
+  return uploadFileDirect<StorageAssetUploadResponse>({
+    initUrl: API_ENDPOINTS.afterSales.evidenceUploads(orderId),
     filePath,
-    name: "file",
-    timeoutMs: 30_000
+    timeoutMs: 60_000,
+    legacyFallback: () => uploadFile<StorageAssetUploadResponse>({
+      url: API_ENDPOINTS.afterSales.evidence(orderId),
+      filePath,
+      name: "file",
+      timeoutMs: 30_000
+    })
   });
 }

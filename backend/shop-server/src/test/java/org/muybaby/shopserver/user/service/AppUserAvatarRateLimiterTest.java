@@ -45,6 +45,12 @@ class AppUserAvatarRateLimiterTest {
         limiter.acquire(userId);
         AppUserAvatarRateLimiter.Permit third = limiter.acquire(userId);
 
+        assertThatThrownBy(() -> limiter.requireAvailable(userId))
+                .isInstanceOfSatisfying(RateLimitException.class, exception -> {
+                    assertThat(exception.errorCode())
+                            .isEqualTo(ErrorCode.APP_USER_AVATAR_RATE_LIMITED);
+                    assertThat(exception.retryAfterSeconds()).isEqualTo(30);
+                });
         assertThatThrownBy(() -> limiter.acquire(userId))
                 .isInstanceOfSatisfying(RateLimitException.class, exception -> {
                     assertThat(exception.errorCode())

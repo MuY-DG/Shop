@@ -1619,7 +1619,12 @@
           try {
             const asset = await uploadAsset(
               { file: file.raw!, folderId: uploadFolderId.value },
-              { showSuccessMessage: false }
+              {
+                showSuccessMessage: false,
+                onProgress: ({ percent }) => {
+                  file.percentage = percent
+                }
+              }
             )
             file.status = 'success'
             uploadProgress.value.succeeded += 1

@@ -145,10 +145,10 @@ class RoutingStorageProviderTest {
     }
 
     @Test
-    void privateCosAccessSignsTheConfiguredCustomDomainWithoutOpeningTheObject() throws Exception {
+    void privateCosAccessSignsTheConfiguredCustomOriginWithoutOpeningTheObject() throws Exception {
         StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
         ResolvedStorageConfig config = new ResolvedStorageConfig(
-                "https://oss.muybaby6.icu",
+                "https://oss.example.test",
                 "ap-guangzhou",
                 "shop-test-123",
                 "secret-id",
@@ -158,7 +158,7 @@ class RoutingStorageProviderTest {
         COSClient objectClient = mock(COSClient.class);
         COSClient signingClient = mock(COSClient.class);
         URL signedUrl = new URL(
-                "https://oss.muybaby6.icu/private/customer-service/image.png?q-signature=test"
+                "https://oss.example.test/private/customer-service/image.png?q-signature=test"
         );
         when(signingClient.generatePresignedUrl(any(GeneratePresignedUrlRequest.class)))
                 .thenReturn(signedUrl);
@@ -183,7 +183,7 @@ class RoutingStorageProviderTest {
         assertThat(access.url()).isEqualTo(signedUrl.toString());
         assertThat(access.expiresAt()).isNotNull();
         assertThat(protocol).hasValue(HttpProtocol.https);
-        assertThat(endpoint).hasValue("oss.muybaby6.icu");
+        assertThat(endpoint).hasValue("oss.example.test");
         ArgumentCaptor<GeneratePresignedUrlRequest> requestCaptor =
                 ArgumentCaptor.forClass(GeneratePresignedUrlRequest.class);
         verify(signingClient).generatePresignedUrl(requestCaptor.capture());
@@ -203,10 +203,10 @@ class RoutingStorageProviderTest {
     }
 
     @Test
-    void realCosSdkPresignedUrlUsesTheCustomDomainAsItsSignedHost() throws Exception {
+    void realCosSdkPresignedUrlUsesTheConfiguredCustomOriginAsItsSignedHost() throws Exception {
         StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
         when(configService.effective()).thenReturn(new ResolvedStorageConfig(
-                "https://oss.muybaby6.icu",
+                "https://oss.example.test",
                 "ap-guangzhou",
                 "shop-test-123",
                 "secret-id",
@@ -220,9 +220,46 @@ class RoutingStorageProviderTest {
         );
 
         assertThat(access.mode()).isEqualTo(PrivateObjectAccess.Mode.SIGNED_URL);
-        assertThat(URI.create(access.url()).getHost()).isEqualTo("oss.muybaby6.icu");
+        assertThat(URI.create(access.url()).getHost())
+                .isEqualTo("oss.example.test");
         assertThat(access.url()).contains("q-signature=");
         assertThat(access.url()).contains("response-cache-control=");
+        provider.shutdown();
+    }
+
+    @Test
+    void historicalCosLocationKeepsItsOwnDefaultSignedOrigin() throws Exception {
+        StorageRuntimeConfigService configService = mock(StorageRuntimeConfigService.class);
+        when(configService.effective()).thenReturn(new ResolvedStorageConfig(
+                "https://oss.example.test",
+                "ap-guangzhou",
+                "shop-test-123",
+                "secret-id",
+                "secret-key"
+        ));
+        COSClient signingClient = mock(COSClient.class);
+        when(signingClient.generatePresignedUrl(any(GeneratePresignedUrlRequest.class)))
+                .thenReturn(new URL(
+                        "https://shop-test-123.cos.ap-shanghai.myqcloud.com/private/old.png?q-signature=test"
+                ));
+        AtomicReference<String> endpoint = new AtomicReference<>();
+        RoutingStorageProvider provider = new RoutingStorageProvider(
+                configService,
+                (region, secretId, secretKey) -> mock(COSClient.class),
+                (region, secretId, secretKey, protocol, requestedEndpoint) -> {
+                    endpoint.set(requestedEndpoint);
+                    return signingClient;
+                }
+        );
+
+        PrivateObjectAccess access = provider.privateReadAccess(
+                cosLocation("ap-shanghai", "private/old.png"),
+                Duration.ofMinutes(5)
+        );
+
+        assertThat(access.mode()).isEqualTo(PrivateObjectAccess.Mode.SIGNED_URL);
+        assertThat(endpoint).hasValue(
+                "shop-test-123.cos.ap-shanghai.myqcloud.com");
         provider.shutdown();
     }
 

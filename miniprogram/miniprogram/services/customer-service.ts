@@ -14,6 +14,8 @@ import {
   downloadAuthenticatedFile,
   downloadExternalFile
 } from "../utils/authenticated-download";
+import { uploadFileDirect } from "../utils/direct-upload";
+import { loadCachedImageFile } from "../utils/image-file-cache";
 import { request } from "../utils/request";
 import { uploadFile } from "../utils/upload";
 
@@ -64,9 +66,14 @@ export function sendCustomerServiceMessage(
 export function uploadCustomerServiceImage(
   filePath: string
 ): Promise<CustomerServiceMessage> {
-  return uploadFile<CustomerServiceMessage>({
-    url: API_ENDPOINTS.customerService.images,
-    filePath
+  return uploadFileDirect<CustomerServiceMessage>({
+    initUrl: API_ENDPOINTS.customerService.imageUploads,
+    filePath,
+    timeoutMs: 60_000,
+    legacyFallback: () => uploadFile<CustomerServiceMessage>({
+      url: API_ENDPOINTS.customerService.images,
+      filePath
+    })
   });
 }
 
@@ -107,9 +114,44 @@ export function downloadCustomerServiceImage(
 ): Promise<string> {
   const messageId = requirePersistedMessageId(message.messageId);
   if (message.image?.thumbnailStatus === "READY") {
-    return downloadAuthenticatedFile(
-      API_ENDPOINTS.customerService.thumbnail(messageId)
+    return loadCachedImageFile(
+      `customer-service:${messageId}:thumbnail`,
+      async () => {
+        if (
+          message.image?.thumbnailAccessMode === "SIGNED_URL" &&
+          message.image.thumbnailAccessUrl
+        ) {
+          try {
+            return await downloadExternalFile(message.image.thumbnailAccessUrl);
+          } catch {
+            const refreshed = await refreshCustomerServiceImageAccess(messageId)
+              .catch(() => null);
+            if (
+              refreshed?.thumbnailAccessMode === "SIGNED_URL" &&
+              refreshed.thumbnailAccessUrl
+            ) {
+              try {
+                return await downloadExternalFile(refreshed.thumbnailAccessUrl);
+              } catch {
+                // 临时 URL 续签后仍失败，最后使用鉴权流作为兼容兜底。
+              }
+            }
+          }
+        }
+        return downloadAuthenticatedFile(
+          API_ENDPOINTS.customerService.thumbnail(messageId)
+        );
+      }
     );
+  }
+  if (
+    message.image?.accessMode === "SIGNED_URL" &&
+    message.image.accessUrl
+  ) {
+    return downloadExternalFile(message.image.accessUrl)
+      .catch(() => downloadAuthenticatedFile(
+        API_ENDPOINTS.customerService.image(messageId)
+      ));
   }
   return downloadAuthenticatedFile(API_ENDPOINTS.customerService.image(messageId));
 }

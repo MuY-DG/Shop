@@ -315,7 +315,7 @@
 
 <script setup lang="ts">
   import { computed, reactive, ref, watch } from 'vue'
-  import { ElMessage, type UploadRequestOptions } from 'element-plus'
+  import { ElMessage, type UploadProgressEvent, type UploadRequestOptions } from 'element-plus'
   import {
     CircleCloseFilled,
     FolderOpened,
@@ -557,15 +557,31 @@
     return validation.valid
   }
 
-  const uploadSingleFile = async (file: File) => {
+  const uploadSingleFile = async (
+    file: File,
+    onProgress?: (event: UploadProgressEvent) => void
+  ) => {
     if (!validateUpload(file)) return null
     uploading.value = true
     resetSingleDragging()
     try {
-      const asset = await uploadAsset({
-        folderId: props.defaultFolderId ?? 0,
-        file
-      })
+      const asset = await uploadAsset(
+        {
+          folderId: props.defaultFolderId ?? 0,
+          file
+        },
+        {
+          onProgress: ({ loaded, total, percent }) => {
+            const event = new ProgressEvent('progress', {
+              lengthComputable: total > 0,
+              loaded,
+              total
+            }) as UploadProgressEvent
+            event.percent = percent
+            onProgress?.(event)
+          }
+        }
+      )
       if (asset.mediaKind !== props.mediaKind) {
         throw new Error(`上传文件不是${mediaKindLabel.value}`)
       }
@@ -580,7 +596,7 @@
 
   const handleUploadRequest = async (options: UploadRequestOptions) => {
     try {
-      const asset = await uploadSingleFile(options.file)
+      const asset = await uploadSingleFile(options.file, options.onProgress)
       if (!asset) {
         options.onError?.(new Error(`Invalid ${props.mediaKind.toLowerCase()} asset`) as any)
         return

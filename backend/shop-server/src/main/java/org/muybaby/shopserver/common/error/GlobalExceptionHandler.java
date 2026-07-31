@@ -137,10 +137,12 @@ public class GlobalExceptionHandler {
             case AUTHENTICATION_REQUIRED -> HttpStatus.UNAUTHORIZED;
             case PERMISSION_DENIED -> HttpStatus.FORBIDDEN;
             case ADMIN_LOGIN_RATE_LIMITED, ANALYTICS_RATE_LIMITED,
-                 APP_USER_AVATAR_RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
+                 APP_USER_AVATAR_RATE_LIMITED,
+                 STORAGE_DIRECT_UPLOAD_RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
             case AUTHENTICATION_TEMPORARILY_UNAVAILABLE,
-                 STORAGE_IMAGE_COMPRESSION_FAILED,
-                 STORAGE_NOT_CONFIGURED -> HttpStatus.SERVICE_UNAVAILABLE;
+                 STORAGE_IMAGE_PROCESSING_FAILED,
+                 STORAGE_NOT_CONFIGURED,
+                 STORAGE_CUSTOM_DOMAIN_VERIFICATION_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             default -> HttpStatus.BAD_REQUEST;
         };
     }

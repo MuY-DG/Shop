@@ -64,7 +64,8 @@ test("个人资料页接受原生头像选择结果并直接保存", () => {
   assert.doesNotMatch(avatarButton, /loading=/);
   assert.match(styles, /\.avatar-button\s*\{[\s\S]*?opacity:\s*0;/);
   assert.match(styles, /\.avatar-button\[disabled\]/);
-  assert.match(service, /uploadFile<AppUserAvatarUpdateResponse>/);
+  assert.match(service, /uploadFileDirect<AppUserAvatarUpdateResponse>/);
+  assert.match(service, /avatarUploads/);
   assert.match(service, /remainingChanges/);
   assert.doesNotMatch(service, /compressImage|chooseImage|chooseMedia/);
   assert.match(logic, /logoutSession/);
