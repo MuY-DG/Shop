@@ -152,6 +152,21 @@ export function fetchCustomerServiceAgentProfile() {
   })
 }
 
+export function fetchCustomerServicePersonalSettings() {
+  return request.get<Api.CustomerService.PersonalSettings>({
+    url: '/admin/customer-service/settings'
+  })
+}
+
+export function updateCustomerServicePersonalSettings(
+  data: Api.CustomerService.PersonalSettingsForm
+) {
+  return request.put<Api.CustomerService.PersonalSettings>({
+    url: '/admin/customer-service/settings',
+    data
+  })
+}
+
 export function updateCustomerServiceAgentState(
   workStatus: Extract<Api.CustomerService.AgentWorkStatus, 'AVAILABLE' | 'OFFLINE'>
 ) {
@@ -304,20 +319,50 @@ export function issueAdminRealtimeTicket() {
   })
 }
 
-export function fetchCustomerServiceManagedUsers(keyword?: string) {
-  return request.get<Api.CustomerService.ManagedUser[]>({
+export function fetchCustomerServiceMembers(keyword?: string) {
+  return request.get<Api.CustomerService.CustomerServiceMember[]>({
     url: '/admin/customer-service/management/users',
     params: { keyword }
   })
 }
 
-export function updateCustomerServiceManagedUser(
-  adminUserId: string,
-  data: Api.CustomerService.ManagedUserForm
-) {
-  return request.put<Api.CustomerService.ManagedUser>({
+export function fetchCustomerServiceGuestCandidates(keyword?: string) {
+  return request.get<Api.CustomerService.GuestCandidate[]>({
+    url: '/admin/customer-service/management/guests',
+    params: { keyword }
+  })
+}
+
+export function addCustomerServiceMember(adminUserId: string, data: { serviceName: string }) {
+  return request.post<Api.CustomerService.CustomerServiceMember>({
     url: `/admin/customer-service/management/users/${adminUserId}`,
     data
+  })
+}
+
+export function updateCustomerServiceMemberName(
+  adminUserId: string,
+  data: { serviceName: string }
+) {
+  return request.put<Api.CustomerService.CustomerServiceMember>({
+    url: `/admin/customer-service/management/users/${adminUserId}/name`,
+    data
+  })
+}
+
+export function updateCustomerServiceMemberManager(
+  adminUserId: string,
+  data: { manager: boolean }
+) {
+  return request.put<Api.CustomerService.CustomerServiceMember>({
+    url: `/admin/customer-service/management/users/${adminUserId}/manager`,
+    data
+  })
+}
+
+export function deleteCustomerServiceMember(adminUserId: string) {
+  return request.del<void>({
+    url: `/admin/customer-service/management/users/${adminUserId}`
   })
 }
 
@@ -327,11 +372,20 @@ export function fetchCustomerServiceManagementConfig() {
   })
 }
 
-export function updateCustomerServiceManagementConfig(
-  data: Api.CustomerService.ManagementConfigForm
+export function updateCustomerServiceManagementRouting(
+  data: Api.CustomerService.ManagementRoutingForm
 ) {
   return request.put<Api.CustomerService.ManagementConfig>({
-    url: '/admin/customer-service/management/config',
+    url: '/admin/customer-service/management/routing',
+    data
+  })
+}
+
+export function updateCustomerServiceManagementIdentity(
+  data: Api.CustomerService.ManagementIdentityForm
+) {
+  return request.put<Api.CustomerService.ManagementConfig>({
+    url: '/admin/customer-service/management/identity',
     data
   })
 }

@@ -98,6 +98,8 @@ class CustomerServiceControlledTransferControllerTest {
 
         jdbcClient.sql("update customer_service_agent_state set max_active_conversations = 1 where admin_user_id = 1")
                 .update();
+        jdbcClient.sql("update customer_service_config set assignment_strategy = 'WEIGHTED' where id = 1")
+                .update();
         long secondConversationId = openWaitingConversation("controlled-claim-two");
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/claim", secondConversationId)
                         .header("Authorization", bearer(superToken)))
@@ -137,7 +139,7 @@ class CustomerServiceControlledTransferControllerTest {
         assertThat(target.path("online").asBoolean()).isTrue();
         assertThat(target.path("workStatus").asText()).isEqualTo("AVAILABLE");
         assertThat(target.path("activeConversationCount").asInt()).isZero();
-        assertThat(target.path("maxActiveConversations").asInt()).isEqualTo(5);
+        assertThat(target.path("maxActiveConversations").isMissingNode()).isTrue();
         assertThat(target.path("canReceive").asBoolean()).isTrue();
 
         String requested = mockMvc.perform(post(
@@ -232,7 +234,7 @@ class CustomerServiceControlledTransferControllerTest {
     }
 
     @Test
-    void superCanForceTransferToOnlineBusyOrFullAgentButNeverOfflineAgent() throws Exception {
+    void superCannotForceTransferToOfflineBusyOrWeightedFullAgent() throws Exception {
         String superToken = adminLogin("Super", "123456");
         long targetId = insertCustomerServiceAgent("ForceTarget", "强制目标客服", "agent-pass");
         String targetToken = adminLogin("ForceTarget", "agent-pass");
@@ -247,6 +249,9 @@ class CustomerServiceControlledTransferControllerTest {
                 .andExpect(jsonPath("$.code").value(900005));
 
         connectAdmin(targetId);
+        setWorkStatus(targetToken, "AVAILABLE").andExpect(status().isOk());
+        jdbcClient.sql("update customer_service_config set assignment_strategy = 'WEIGHTED' where id = 1")
+                .update();
         jdbcClient.sql("""
                         update customer_service_agent_state
                         set max_active_conversations = 1
@@ -261,23 +266,14 @@ class CustomerServiceControlledTransferControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(transferBody(targetId, "OTHER", "普通转接应被限制")))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(900005));
+                .andExpect(jsonPath("$.code").value(900006));
 
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/force-transfer", conversationId)
                         .header("Authorization", bearer(superToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(transferBody(targetId, "SUPERVISOR", "紧急交接")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.assignedAdminUserId").value(targetId));
-        assertThat(jdbcClient.sql("""
-                        select reason_note
-                        from customer_service_transfer_request
-                        where conversation_id = :conversationId and status = 'ACCEPTED'
-                        order by id desc limit 1
-                        """)
-                .param("conversationId", conversationId)
-                .query(String.class)
-                .single()).isEqualTo("紧急交接");
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(900006));
     }
 
     private long claimAsSuper(String superToken, String appCode) throws Exception {

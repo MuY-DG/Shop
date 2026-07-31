@@ -197,8 +197,7 @@ class AdminMenuControllerTest {
                         .value("/customer-service-management/members"))
                 .andExpect(jsonPath("$.data[6].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "customer-service:agent:manage",
-                        "customer-service:management:read",
-                        "customer-service:identity:update"
+                        "customer-service:management:read"
                 )))
                 .andExpect(jsonPath("$.data[7].path").value("/decoration"))
                 .andExpect(jsonPath("$.data[7].children[*].path", contains(
@@ -299,7 +298,8 @@ class AdminMenuControllerTest {
                         "/customer-service-management",
                         "/decoration",
                         "/development",
-                        "/system"
+                        "/system",
+                        "/guest"
                 )));
     }
 

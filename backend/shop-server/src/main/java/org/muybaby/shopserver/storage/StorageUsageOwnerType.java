@@ -11,5 +11,6 @@ public enum StorageUsageOwnerType {
     HOME_PRODUCT_ITEM,
     ORDER_ITEM,
     AFTER_SALE,
-    PAYMENT_CONFIG
+    PAYMENT_CONFIG,
+    CUSTOMER_SERVICE_CONFIG
 }

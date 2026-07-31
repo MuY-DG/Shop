@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   appendAuthenticatedUtilityRoutes,
+  GUEST_ROUTE_PATH,
   USER_CENTER_ROUTE_PATH
 } from './authenticatedUtilityRoutes'
 import { RoutePermissionValidator } from '../core/RoutePermissionValidator'
@@ -49,4 +50,29 @@ test('an existing personal center route is not duplicated', () => {
   ]
 
   assert.equal(appendAuthenticatedUtilityRoutes(menu), menu)
+})
+
+test('guest accounts only retain the guest introduction route', () => {
+  const guestRoute = {
+    path: GUEST_ROUTE_PATH,
+    name: 'GuestIntroduction',
+    component: '/guest/index',
+    meta: { title: '游客' }
+  }
+  const menu = [
+    guestRoute,
+    {
+      path: '/dashboard',
+      name: 'Dashboard',
+      component: '/dashboard/index',
+      meta: { title: 'Dashboard' }
+    }
+  ]
+
+  const result = appendAuthenticatedUtilityRoutes(menu, ['R_GUEST'])
+
+  assert.deepEqual(result, [guestRoute])
+  assert.equal(RoutePermissionValidator.hasPermission(GUEST_ROUTE_PATH, result), true)
+  assert.equal(RoutePermissionValidator.hasPermission(USER_CENTER_ROUTE_PATH, result), false)
+  assert.equal(RoutePermissionValidator.hasPermission('/dashboard', result), false)
 })

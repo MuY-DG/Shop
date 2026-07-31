@@ -178,11 +178,12 @@ class CustomerServiceSchemaTest {
                           'customer-service:message:send',
                           'customer-service:order:link',
                           'customer-service:product:send',
-                          'customer-service:agent:manage'
+                          'customer-service:agent:manage',
+                          'customer-service:settings:update'
                         )
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(8);
+                .single()).isEqualTo(9);
 
         assertThat(jdbcClient.sql("""
                         select count(*)
@@ -193,17 +194,17 @@ class CustomerServiceSchemaTest {
                           and p.auth_mark like 'customer-service:%'
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(7);
+                .single()).isEqualTo(8);
 
         assertThat(jdbcClient.sql("""
                         select count(*)
                         from admin_role_menu rm
                         join admin_role r on r.id = rm.role_id
                         where r.code = 'R_CUSTOMER_SERVICE'
-                          and rm.menu_id in (830, 501, 821, 840)
+                          and rm.menu_id in (830, 501, 821, 840, 842)
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(4);
+                .single()).isEqualTo(5);
 
         assertThat(jdbcClient.sql("""
                         select count(*)
@@ -250,5 +251,120 @@ class CustomerServiceSchemaTest {
                         """)
                 .query(Integer.class)
                 .single()).isZero();
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where table_name = 'customer_service_agent_profile'
+                          and column_name in (
+                            'auto_accept_enabled', 'auto_accept_below',
+                            'auto_accept_count', 'bound_at'
+                          )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(4);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where table_name = 'customer_service_agent_state'
+                          and column_name = 'max_active_conversations'
+                          and is_nullable = 'YES'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from customer_service_agent_state
+                        where max_active_conversations is not null
+                        """)
+                .query(Integer.class)
+                .single()).isZero();
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where table_name = 'customer_service_config'
+                          and (
+                            column_name = 'avatar_file_id'
+                            or (column_name = 'avatar' and character_maximum_length >= 500)
+                          )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from customer_service_config
+                        where id = 1 and auto_assign_enabled = true
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.indexes
+                        where index_name = 'idx_customer_service_conversation_agent_active'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_menu role_menu
+                        join admin_role role_item on role_item.id = role_menu.role_id
+                        join admin_menu menu_item on menu_item.id = role_menu.menu_id
+                        where role_item.code = 'R_GUEST'
+                          and menu_item.path = '/guest'
+                          and menu_item.component = '/guest/index'
+                          and menu_item.full_page = true
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission role_permission
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        join admin_permission permission_item
+                          on permission_item.id = role_permission.permission_id
+                        where permission_item.auth_mark = 'customer-service:settings:update'
+                          and role_item.code in ('R_SUPER', 'R_CUSTOMER_SERVICE')
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission role_permission
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        where role_permission.permission_id = 16011
+                          and role_item.code = 'R_CUSTOMER_SERVICE_MANAGER'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission role_permission
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        where role_permission.permission_id = 16011
+                          and role_item.code <> 'R_CUSTOMER_SERVICE_MANAGER'
+                        """)
+                .query(Integer.class)
+                .single()).isZero();
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission role_permission
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        join admin_permission permission_item
+                          on permission_item.id = role_permission.permission_id
+                        where role_item.code = 'R_CUSTOMER_SERVICE_MANAGER'
+                          and permission_item.auth_mark in ('asset:upload', 'asset:read')
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
     }
 }

@@ -295,7 +295,9 @@ async function handleDynamicRoutes(
     const menuStore = useMenuStore()
     menuStore.setMenuList(menuList)
     const roles = userStore.info.roles || []
-    if (roles.includes('R_CUSTOMER_SERVICE') && !roles.includes('R_SUPER')) {
+    if (roles.includes('R_GUEST')) {
+      menuStore.setHomePath('/guest')
+    } else if (roles.includes('R_CUSTOMER_SERVICE') && !roles.includes('R_SUPER')) {
       menuStore.setHomePath('/customer-service')
     } else if (roles.includes('R_CUSTOMER_SERVICE_MANAGER') && !roles.includes('R_SUPER')) {
       menuStore.setHomePath('/customer-service/settings')

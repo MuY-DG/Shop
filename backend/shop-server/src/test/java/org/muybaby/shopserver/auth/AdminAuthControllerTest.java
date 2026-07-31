@@ -138,7 +138,7 @@ class AdminAuthControllerTest {
                         "customer-service:agent:manage",
                         "customer-service:management:read",
                         "customer-service:routing:update",
-                        "customer-service:identity:update",
+                        "customer-service:settings:update",
                         "customer-service:conversation:supervise",
                         "payment:config:read",
                         "payment:config:write",

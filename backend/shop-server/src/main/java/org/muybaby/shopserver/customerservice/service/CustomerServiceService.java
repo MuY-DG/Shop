@@ -18,6 +18,8 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ImageMessa
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedOrderResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedProductResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.MessageResponse;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.PersonalSettingsResponse;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.PersonalSettingsUpdateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.SendMessageRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequestResponse;
@@ -53,6 +55,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -69,7 +75,6 @@ public class CustomerServiceService {
     private static final Set<String> CONTEXT_TYPES = Set.of("GENERAL", "PRODUCT", "ORDER");
     private static final Set<String> AGENT_WORK_STATUSES = Set.of("AVAILABLE", "BUSY", "OFFLINE");
     private static final long TRANSFER_REQUEST_TTL_SECONDS = 60L;
-    private static final int DEFAULT_AGENT_CAPACITY = 5;
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -610,6 +615,7 @@ public class CustomerServiceService {
         MessageResponse systemMessage = insertSystemMessage(conversationId, "正在为您重新安排客服");
         touchForAppNotification(conversationId, systemMessage.createdAt());
         publish(conversationId, conversation.appUserId(), "CONVERSATION_RELEASED", systemMessage.messageId());
+        reassignReleasedConversation(conversationId, previousAdminUserId);
         return withoutConversationMessages(detail(conversationId));
     }
 
@@ -629,7 +635,7 @@ public class CustomerServiceService {
         }
         Long targetAdminUserId = request.targetAdminUserId();
         requireCustomerServiceAgent(targetAdminUserId);
-        requireOnline(targetAdminUserId);
+        requireCanReceive(targetAdminUserId);
         if (targetAdminUserId.equals(conversation.assignedAdminUserId())) {
             return detail(conversationId);
         }
@@ -730,6 +736,7 @@ public class CustomerServiceService {
         MessageResponse systemMessage = insertSystemMessage(conversationId, "本次会话已结束");
         touchForAppNotification(conversationId, systemMessage.createdAt());
         publish(conversationId, conversation.appUserId(), "CONVERSATION_CLOSED", systemMessage.messageId());
+        drainWaitingQueue(adminUserId);
         return detail(conversationId);
     }
 
@@ -1154,10 +1161,11 @@ public class CustomerServiceService {
     }
 
     public List<AgentResponse> agents() {
+        boolean weighted = isWeightedAssignment();
         return jdbcClient.sql("""
                         select u.id, u.username, u.display_name, u.avatar,
                                coalesce(state.work_status, 'OFFLINE') as manual_work_status,
-                               coalesce(state.max_active_conversations, 5) as max_active_conversations,
+                               state.max_active_conversations,
                                (select count(*)
                                 from customer_service_conversation conversation
                                 where conversation.status = 'ACTIVE'
@@ -1182,7 +1190,9 @@ public class CustomerServiceService {
                     String manualWorkStatus = rs.getString("manual_work_status");
                     String effectiveWorkStatus = online ? manualWorkStatus : "OFFLINE";
                     int activeCount = rs.getInt("active_conversation_count");
-                    int maxActive = rs.getInt("max_active_conversations");
+                    Integer maxActive = rs.getObject("max_active_conversations", Integer.class);
+                    boolean withinCapacity = !weighted
+                            || (maxActive != null && activeCount < maxActive);
                     return new AgentResponse(
                             adminUserId,
                             rs.getString("username"),
@@ -1192,7 +1202,7 @@ public class CustomerServiceService {
                             effectiveWorkStatus,
                             activeCount,
                             maxActive,
-                            online && "AVAILABLE".equals(manualWorkStatus) && activeCount < maxActive
+                            online && "AVAILABLE".equals(manualWorkStatus) && withinCapacity
                     );
                 })
                 .list();
@@ -1227,6 +1237,79 @@ public class CustomerServiceService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE));
     }
 
+    public PersonalSettingsResponse personalSettings(AuthenticatedPrincipal principal) {
+        Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
+        requireCustomerServiceAgent(adminUserId);
+        return personalSettings(adminUserId);
+    }
+
+    @Transactional
+    public PersonalSettingsResponse updatePersonalSettings(
+            AuthenticatedPrincipal principal,
+            PersonalSettingsUpdateRequest request
+    ) {
+        Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
+        requireCustomerServiceAgent(adminUserId);
+        LocalDateTime now = LocalDateTime.now();
+        try {
+            jdbcClient.sql("""
+                            insert into customer_service_agent_state
+                                (admin_user_id, work_status, max_active_conversations, updated_at)
+                            select :adminUserId, 'OFFLINE', null, :now
+                            where not exists (
+                                select 1 from customer_service_agent_state
+                                where admin_user_id = :adminUserId
+                            )
+                            """)
+                    .param("adminUserId", adminUserId)
+                    .param("now", now)
+                    .update();
+        } catch (DuplicateKeyException ignored) {
+            // Another settings/state update created the row first.
+        }
+        lockAutoAssignAgentStates(adminUserId);
+        int updated = jdbcClient.sql("""
+                        update customer_service_agent_profile
+                        set service_name_override = :serviceName,
+                            auto_accept_enabled = :autoAcceptEnabled,
+                            auto_accept_below = :autoAcceptBelow,
+                            auto_accept_count = :autoAcceptCount,
+                            updated_by = :adminUserId,
+                            updated_at = :now
+                        where admin_user_id = :adminUserId
+                        """)
+                .param("serviceName", request.serviceName().trim())
+                .param("autoAcceptEnabled", request.autoAcceptEnabled())
+                .param("autoAcceptBelow", request.autoAcceptBelow())
+                .param("autoAcceptCount", request.autoAcceptCount())
+                .param("adminUserId", adminUserId)
+                .param("now", now)
+                .update();
+        if (updated != 1) {
+            jdbcClient.sql("""
+                            insert into customer_service_agent_profile
+                                (admin_user_id, service_name_override, routing_weight,
+                                 auto_accept_enabled, auto_accept_below, auto_accept_count,
+                                 bound_at, updated_by, updated_at)
+                            values
+                                (:adminUserId, :serviceName, 100,
+                                 :autoAcceptEnabled, :autoAcceptBelow, :autoAcceptCount,
+                                 :now, :adminUserId, :now)
+                            """)
+                    .param("adminUserId", adminUserId)
+                    .param("serviceName", request.serviceName().trim())
+                    .param("autoAcceptEnabled", request.autoAcceptEnabled())
+                    .param("autoAcceptBelow", request.autoAcceptBelow())
+                    .param("autoAcceptCount", request.autoAcceptCount())
+                    .param("now", now)
+                    .update();
+        }
+        if (Boolean.TRUE.equals(request.autoAcceptEnabled())) {
+            drainWaitingQueue(adminUserId);
+        }
+        return personalSettings(adminUserId);
+    }
+
     @Transactional
     public AgentStateResponse updateAgentState(
             AuthenticatedPrincipal principal,
@@ -1250,11 +1333,10 @@ public class CustomerServiceService {
                                 insert into customer_service_agent_state
                                     (admin_user_id, work_status, max_active_conversations, updated_at)
                                 values
-                                    (:adminUserId, :workStatus, :maxActiveConversations, :now)
+                                    (:adminUserId, :workStatus, NULL, :now)
                                 """)
                         .param("adminUserId", adminUserId)
                         .param("workStatus", workStatus)
-                        .param("maxActiveConversations", DEFAULT_AGENT_CAPACITY)
                         .param("now", now)
                         .update();
             } catch (DuplicateKeyException ex) {
@@ -1269,7 +1351,41 @@ public class CustomerServiceService {
                         .update();
             }
         }
+        if ("AVAILABLE".equals(workStatus)) {
+            drainWaitingQueue(adminUserId);
+        }
         return agentState(adminUserId);
+    }
+
+    private PersonalSettingsResponse personalSettings(Long adminUserId) {
+        return jdbcClient.sql("""
+                        select coalesce(profile.service_name_override, config.default_service_name)
+                                   as service_name,
+                               coalesce(profile.auto_accept_enabled, false) as auto_accept_enabled,
+                               coalesce(profile.auto_accept_below, 5) as auto_accept_below,
+                               coalesce(profile.auto_accept_count, 1) as auto_accept_count,
+                               (select count(*)
+                                from customer_service_conversation conversation
+                                where conversation.status = 'ACTIVE'
+                                  and conversation.assigned_admin_user_id = admin.id)
+                                   as active_conversation_count
+                        from admin_user admin
+                        cross join customer_service_config config
+                        left join customer_service_agent_profile profile
+                          on profile.admin_user_id = admin.id
+                        where admin.id = :adminUserId
+                          and admin.status = 'ENABLED'
+                        """)
+                .param("adminUserId", adminUserId)
+                .query((rs, rowNum) -> new PersonalSettingsResponse(
+                        rs.getString("service_name"),
+                        rs.getBoolean("auto_accept_enabled"),
+                        rs.getInt("auto_accept_below"),
+                        rs.getInt("auto_accept_count"),
+                        rs.getInt("active_conversation_count")
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE));
     }
 
     private ConversationDetailResponse detailForApp(Long conversationId, Long appUserId) {
@@ -1675,39 +1791,155 @@ public class CustomerServiceService {
         if (message != null) {
             touchForAdminNotification(conversation.id(), message.createdAt());
         }
-        attemptAutoAssign(conversation);
+        drainWaitingQueue(null);
     }
 
-    private void attemptAutoAssign(ConversationRow conversation) {
-        AutoAssignConfig config = jdbcClient.sql("""
-                        select auto_assign_enabled, assignment_strategy,
-                               sticky_agent_enabled, sticky_window_hours
+    private void drainWaitingQueue(Long triggerAdminUserId) {
+        drainWaitingQueue(triggerAdminUserId, null);
+    }
+
+    private void drainWaitingQueue(Long triggerAdminUserId, Long excludedConversationId) {
+        drainWaitingQueue(triggerAdminUserId, excludedConversationId, new HashMap<>());
+    }
+
+    private void drainWaitingQueue(
+            Long triggerAdminUserId,
+            Long excludedConversationId,
+            Map<Long, Integer> assignedThisDrain
+    ) {
+        lockAutoAssignAgentStates(triggerAdminUserId);
+        AutoAssignConfig config = autoAssignConfig();
+        for (int iteration = 0; iteration < 1000; iteration++) {
+            ConversationRow conversation = oldestWaitingConversation(excludedConversationId);
+            if (conversation == null) {
+                return;
+            }
+            List<AutoAssignCandidate> candidates = autoAssignCandidates(
+                    config, triggerAdminUserId, assignedThisDrain
+            );
+            if (candidates.isEmpty()) {
+                return;
+            }
+            boolean assigned = false;
+            for (AutoAssignCandidate candidate : orderedAutoAssignCandidates(
+                    config, conversation, candidates
+            )) {
+                if (tryAutoAssign(
+                        config,
+                        conversation,
+                        candidate,
+                        assignedThisDrain.getOrDefault(candidate.adminUserId(), 0)
+                )) {
+                    assignedThisDrain.merge(candidate.adminUserId(), 1, Integer::sum);
+                    assigned = true;
+                    break;
+                }
+            }
+            if (!assigned && "WAITING".equals(requireConversation(conversation.id()).status())) {
+                return;
+            }
+        }
+    }
+
+    private void reassignReleasedConversation(Long conversationId, Long previousAdminUserId) {
+        ConversationRow conversation = requireConversation(conversationId);
+        if (!"WAITING".equals(conversation.status())) {
+            return;
+        }
+        lockAutoAssignAgentStates(null);
+        AutoAssignConfig config = autoAssignConfig();
+        Map<Long, Integer> assignedThisDrain = new HashMap<>();
+        List<AutoAssignCandidate> candidates = autoAssignCandidates(config, null, assignedThisDrain)
+                .stream()
+                .filter(candidate -> !previousAdminUserId.equals(candidate.adminUserId()))
+                .toList();
+        for (AutoAssignCandidate candidate : orderedAutoAssignCandidates(config, conversation, candidates)) {
+            if (tryAutoAssign(config, conversation, candidate, 0)) {
+                assignedThisDrain.put(candidate.adminUserId(), 1);
+                break;
+            }
+        }
+        drainWaitingQueue(null, conversationId, assignedThisDrain);
+    }
+
+    private void lockAutoAssignAgentStates(Long triggerAdminUserId) {
+        String triggerFilter = triggerAdminUserId == null
+                ? ""
+                : " and state.admin_user_id = :adminUserId\n";
+        JdbcClient.StatementSpec query = jdbcClient.sql("""
+                        select state.admin_user_id
+                        from customer_service_agent_state state
+                        join admin_user_role user_role on user_role.user_id = state.admin_user_id
+                        join admin_role role_item on role_item.id = user_role.role_id
+                        where role_item.code = 'R_CUSTOMER_SERVICE'
+                          and role_item.enabled = true
+                        """ + triggerFilter + """
+                        order by state.admin_user_id
+                        for update
+                        """);
+        if (triggerAdminUserId != null) {
+            query = query.param("adminUserId", triggerAdminUserId);
+        }
+        // Every drain acquires all relevant state rows in the same order before strategy ordering.
+        query.query(Long.class).list();
+    }
+
+    private AutoAssignConfig autoAssignConfig() {
+        return jdbcClient.sql("""
+                        select assignment_strategy, sticky_agent_enabled, sticky_window_hours
                         from customer_service_config
                         where id = 1
                         """)
                 .query((rs, rowNum) -> new AutoAssignConfig(
-                        rs.getBoolean("auto_assign_enabled"),
                         rs.getString("assignment_strategy"),
                         rs.getBoolean("sticky_agent_enabled"),
                         rs.getInt("sticky_window_hours")
                 ))
                 .single();
-        if (!config.enabled() || !"WAITING".equals(conversation.status())) {
-            return;
-        }
+    }
 
-        List<AutoAssignCandidate> candidates = jdbcClient.sql("""
+    private ConversationRow oldestWaitingConversation(Long excludedConversationId) {
+        String exclusion = excludedConversationId == null
+                ? ""
+                : " and id <> :excludedConversationId\n";
+        JdbcClient.StatementSpec query = jdbcClient.sql(conversationRowSelect() + """
+                        where status = 'WAITING'
+                          and assigned_admin_user_id is null
+                        """ + exclusion + """
+                        order by coalesce(activated_at, created_at), id
+                        limit 1
+                        """);
+        if (excludedConversationId != null) {
+            query = query.param("excludedConversationId", excludedConversationId);
+        }
+        return query.query(this::mapConversationRow).optional().orElse(null);
+    }
+
+    private List<AutoAssignCandidate> autoAssignCandidates(
+            AutoAssignConfig config,
+            Long triggerAdminUserId,
+            Map<Long, Integer> assignedThisDrain
+    ) {
+        boolean weighted = "WEIGHTED".equals(config.strategy());
+        String triggerFilter = triggerAdminUserId == null
+                ? ""
+                : " and admin.id = :triggerAdminUserId\n";
+        String capacityFilter = weighted
+                ? " and state.max_active_conversations is not null"
+                        + " and coalesce(active_count.active_count, 0) < state.max_active_conversations\n"
+                : "";
+        JdbcClient.StatementSpec query = jdbcClient.sql("""
                         select admin.id,
                                coalesce(active_count.active_count, 0) as active_count,
                                state.max_active_conversations,
-                               coalesce(profile.routing_weight, 100) as routing_weight,
+                               profile.auto_accept_below,
+                               profile.auto_accept_count,
                                profile.last_assigned_at
                         from admin_user admin
                         join admin_user_role user_role on user_role.user_id = admin.id
                         join admin_role role_item on role_item.id = user_role.role_id
                         join customer_service_agent_state state on state.admin_user_id = admin.id
-                        left join customer_service_agent_profile profile
-                               on profile.admin_user_id = admin.id
+                        join customer_service_agent_profile profile on profile.admin_user_id = admin.id
                         left join (
                             select assigned_admin_user_id, count(*) as active_count
                             from customer_service_conversation
@@ -1718,90 +1950,145 @@ public class CustomerServiceService {
                           and role_item.enabled = true
                           and role_item.code = 'R_CUSTOMER_SERVICE'
                           and state.work_status = 'AVAILABLE'
-                          and coalesce(active_count.active_count, 0) < state.max_active_conversations
-                        order by coalesce(active_count.active_count, 0),
-                                 profile.last_assigned_at,
-                                 admin.id
-                        """)
-                .query((rs, rowNum) -> new AutoAssignCandidate(
+                          and profile.auto_accept_enabled = true
+                          and coalesce(active_count.active_count, 0) < profile.auto_accept_below
+                        """ + triggerFilter + capacityFilter + """
+                        order by coalesce(active_count.active_count, 0), admin.id
+                        """);
+        if (triggerAdminUserId != null) {
+            query = query.param("triggerAdminUserId", triggerAdminUserId);
+        }
+        return query.query((rs, rowNum) -> new AutoAssignCandidate(
                         rs.getLong("id"),
                         rs.getInt("active_count"),
-                        rs.getInt("max_active_conversations"),
-                        rs.getInt("routing_weight"),
+                        rs.getObject("max_active_conversations", Integer.class),
+                        rs.getInt("auto_accept_below"),
+                        rs.getInt("auto_accept_count"),
                         localDateTime(rs, "last_assigned_at")
                 ))
                 .list()
                 .stream()
                 .filter(candidate -> realtimeSessionHub.isAdminOnline(candidate.adminUserId()))
+                .filter(candidate -> assignedThisDrain.getOrDefault(candidate.adminUserId(), 0)
+                        < candidate.autoAcceptCount())
                 .toList();
-        if (candidates.isEmpty()) {
-            return;
-        }
+    }
 
+    private List<AutoAssignCandidate> orderedAutoAssignCandidates(
+            AutoAssignConfig config,
+            ConversationRow conversation,
+            List<AutoAssignCandidate> candidates
+    ) {
+        List<AutoAssignCandidate> remaining = new ArrayList<>(candidates);
+        List<AutoAssignCandidate> ordered = new ArrayList<>(candidates.size());
         Long stickyAdminUserId = config.stickyAgentEnabled()
                 ? recentAssignedAdmin(conversation.id(), config.stickyWindowHours())
                 : null;
-        AutoAssignCandidate selected = stickyAdminUserId == null
-                ? null
-                : candidates.stream()
-                        .filter(candidate -> stickyAdminUserId.equals(candidate.adminUserId()))
-                        .findFirst()
-                        .orElse(null);
-        if (selected == null) {
-            if ("WEIGHTED".equals(config.strategy())) {
-                int totalWeight = candidates.stream()
-                        .mapToInt(AutoAssignCandidate::routingWeight)
+        if (stickyAdminUserId != null) {
+            remaining.stream()
+                    .filter(candidate -> stickyAdminUserId.equals(candidate.adminUserId()))
+                    .findFirst()
+                    .ifPresent(candidate -> {
+                        ordered.add(candidate);
+                        remaining.remove(candidate);
+                    });
+        }
+        if ("WEIGHTED".equals(config.strategy())) {
+            while (!remaining.isEmpty()) {
+                int totalWeight = remaining.stream()
+                        .map(AutoAssignCandidate::maxActiveConversations)
+                        .filter(Objects::nonNull)
+                        .mapToInt(Integer::intValue)
                         .sum();
+                if (totalWeight <= 0) {
+                    ordered.addAll(remaining);
+                    break;
+                }
                 int cursor = java.util.concurrent.ThreadLocalRandom.current().nextInt(totalWeight);
-                for (AutoAssignCandidate candidate : candidates) {
-                    cursor -= candidate.routingWeight();
+                AutoAssignCandidate selected = remaining.getFirst();
+                for (AutoAssignCandidate candidate : remaining) {
+                    cursor -= candidate.maxActiveConversations();
                     if (cursor < 0) {
                         selected = candidate;
                         break;
                     }
                 }
-            } else if ("ROUND_ROBIN".equals(config.strategy())) {
-                selected = candidates.stream()
-                        .min(java.util.Comparator
-                                .comparing(
-                                        AutoAssignCandidate::lastAssignedAt,
-                                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())
-                                )
-                                .thenComparing(AutoAssignCandidate::adminUserId))
-                        .orElse(candidates.getFirst());
-            } else {
-                selected = candidates.getFirst();
+                ordered.add(selected);
+                remaining.remove(selected);
             }
+        } else {
+            Comparator<AutoAssignCandidate> comparator = "ROUND_ROBIN".equals(config.strategy())
+                    ? Comparator.comparing(
+                                    AutoAssignCandidate::lastAssignedAt,
+                                    Comparator.nullsFirst(Comparator.naturalOrder())
+                            )
+                            .thenComparing(AutoAssignCandidate::adminUserId)
+                    : Comparator.comparingInt(AutoAssignCandidate::activeConversationCount)
+                            .thenComparing(AutoAssignCandidate::adminUserId);
+            remaining.sort(comparator);
+            ordered.addAll(remaining);
         }
+        return ordered;
+    }
 
-        Integer lockedCapacity = jdbcClient.sql("""
-                        select max_active_conversations
+    private boolean tryAutoAssign(
+            AutoAssignConfig config,
+            ConversationRow conversation,
+            AutoAssignCandidate candidate,
+            int assignedThisDrain
+    ) {
+        LockedAgentState state = jdbcClient.sql("""
+                        select work_status, max_active_conversations
                         from customer_service_agent_state
                         where admin_user_id = :adminUserId
-                          and work_status = 'AVAILABLE'
                         for update
                         """)
-                .param("adminUserId", selected.adminUserId())
-                .query(Integer.class)
+                .param("adminUserId", candidate.adminUserId())
+                .query((rs, rowNum) -> new LockedAgentState(
+                        rs.getString("work_status"),
+                        rs.getObject("max_active_conversations", Integer.class)
+                ))
                 .optional()
                 .orElse(null);
-        if (lockedCapacity == null
-                || !realtimeSessionHub.isAdminOnline(selected.adminUserId())) {
-            return;
+        if (state == null
+                || !"AVAILABLE".equals(state.workStatus())
+                || !realtimeSessionHub.isAdminOnline(candidate.adminUserId())) {
+            return false;
         }
-        int currentActiveCount = jdbcClient.sql("""
-                        select id
+        AutoAcceptSettings settings = jdbcClient.sql("""
+                        select auto_accept_enabled, auto_accept_below, auto_accept_count
+                        from customer_service_agent_profile
+                        where admin_user_id = :adminUserId
+                        """)
+                .param("adminUserId", candidate.adminUserId())
+                .query((rs, rowNum) -> new AutoAcceptSettings(
+                        rs.getBoolean("auto_accept_enabled"),
+                        rs.getInt("auto_accept_below"),
+                        rs.getInt("auto_accept_count")
+                ))
+                .optional()
+                .orElse(null);
+        if (settings == null
+                || !settings.enabled()
+                || assignedThisDrain >= settings.count()) {
+            return false;
+        }
+        int activeCount = jdbcClient.sql("""
+                        select count(*)
                         from customer_service_conversation
                         where assigned_admin_user_id = :adminUserId
                           and status = 'ACTIVE'
-                        for update
                         """)
-                .param("adminUserId", selected.adminUserId())
-                .query(Long.class)
-                .list()
-                .size();
-        if (currentActiveCount >= lockedCapacity) {
-            return;
+                .param("adminUserId", candidate.adminUserId())
+                .query(Integer.class)
+                .single();
+        if (activeCount >= settings.below()) {
+            return false;
+        }
+        if ("WEIGHTED".equals(config.strategy())
+                && (state.maxActiveConversations() == null
+                        || activeCount >= state.maxActiveConversations())) {
+            return false;
         }
 
         LocalDateTime now = LocalDateTime.now();
@@ -1816,12 +2103,12 @@ public class CustomerServiceService {
                           and status = 'WAITING'
                           and assigned_admin_user_id is null
                         """)
-                .param("adminUserId", selected.adminUserId())
+                .param("adminUserId", candidate.adminUserId())
                 .param("now", now)
                 .param("conversationId", conversation.id())
                 .update();
         if (updated != 1) {
-            return;
+            return false;
         }
         jdbcClient.sql("""
                         update customer_service_agent_profile
@@ -1829,14 +2116,14 @@ public class CustomerServiceService {
                         where admin_user_id = :adminUserId
                         """)
                 .param("now", now)
-                .param("adminUserId", selected.adminUserId())
+                .param("adminUserId", candidate.adminUserId())
                 .update();
         recordAssignment(
-                conversation.id(), "AUTO_ASSIGN", null, selected.adminUserId(), "SYSTEM", null
+                conversation.id(), "AUTO_ASSIGN", null, candidate.adminUserId(), "SYSTEM", null
         );
         MessageResponse systemMessage = insertSystemMessage(
                 conversation.id(),
-                "客服 " + customerServiceDisplayName(selected.adminUserId()) + " 已接入"
+                "客服 " + customerServiceDisplayName(candidate.adminUserId()) + " 已接入"
         );
         touchForAppNotification(conversation.id(), systemMessage.createdAt());
         publish(
@@ -1845,6 +2132,7 @@ public class CustomerServiceService {
                 "CONVERSATION_AUTO_ASSIGNED",
                 systemMessage.messageId()
         );
+        return true;
     }
 
     private Long recentAssignedAdmin(Long conversationId, int stickyWindowHours) {
@@ -1853,6 +2141,12 @@ public class CustomerServiceService {
                         from customer_service_assignment_log assignment
                         where assignment.conversation_id = :conversationId
                           and assignment.to_admin_user_id is not null
+                          and assignment.id > coalesce((
+                              select max(released.id)
+                              from customer_service_assignment_log released
+                              where released.conversation_id = :conversationId
+                                and released.action = 'RELEASE'
+                          ), 0)
                           and assignment.created_at >= :cutoff
                         order by assignment.id desc
                         limit 1
@@ -2291,7 +2585,9 @@ public class CustomerServiceService {
         if (!state.online() || !"AVAILABLE".equals(state.workStatus())) {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_AGENT_NOT_AVAILABLE);
         }
-        if (state.activeConversationCount() >= state.maxActiveConversations()) {
+        if (isWeightedAssignment()
+                && (state.maxActiveConversations() == null
+                        || state.activeConversationCount() >= state.maxActiveConversations())) {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_AGENT_CAPACITY_REACHED);
         }
     }
@@ -2300,7 +2596,7 @@ public class CustomerServiceService {
         AgentSnapshot snapshot = jdbcClient.sql("""
                         select u.id,
                                coalesce(state.work_status, 'OFFLINE') as manual_work_status,
-                               coalesce(state.max_active_conversations, 5) as max_active_conversations,
+                               state.max_active_conversations,
                                (select count(*)
                                 from customer_service_conversation conversation
                                 where conversation.status = 'ACTIVE'
@@ -2315,15 +2611,18 @@ public class CustomerServiceService {
                         rs.getLong("id"),
                         rs.getString("manual_work_status"),
                         rs.getInt("active_conversation_count"),
-                        rs.getInt("max_active_conversations")
+                        rs.getObject("max_active_conversations", Integer.class)
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE));
         boolean online = realtimeSessionHub.isAdminOnline(adminUserId);
         String effectiveWorkStatus = online ? snapshot.manualWorkStatus() : "OFFLINE";
+        boolean withinCapacity = !isWeightedAssignment()
+                || (snapshot.maxActiveConversations() != null
+                        && snapshot.activeConversationCount() < snapshot.maxActiveConversations());
         boolean canReceive = online
                 && "AVAILABLE".equals(snapshot.manualWorkStatus())
-                && snapshot.activeConversationCount() < snapshot.maxActiveConversations();
+                && withinCapacity;
         return new AgentStateResponse(
                 snapshot.adminUserId(),
                 online,
@@ -2332,6 +2631,16 @@ public class CustomerServiceService {
                 snapshot.maxActiveConversations(),
                 canReceive
         );
+    }
+
+    private boolean isWeightedAssignment() {
+        return "WEIGHTED".equals(jdbcClient.sql("""
+                        select assignment_strategy
+                        from customer_service_config
+                        where id = 1
+                        """)
+                .query(String.class)
+                .single());
     }
 
     private TransferRequestResponse requireTransferRequest(Long requestId) {
@@ -2885,7 +3194,6 @@ public class CustomerServiceService {
     }
 
     private record AutoAssignConfig(
-            boolean enabled,
             String strategy,
             boolean stickyAgentEnabled,
             int stickyWindowHours
@@ -2895,9 +3203,23 @@ public class CustomerServiceService {
     private record AutoAssignCandidate(
             Long adminUserId,
             int activeConversationCount,
-            int maxActiveConversations,
-            int routingWeight,
+            Integer maxActiveConversations,
+            int autoAcceptBelow,
+            int autoAcceptCount,
             LocalDateTime lastAssignedAt
+    ) {
+    }
+
+    private record LockedAgentState(
+            String workStatus,
+            Integer maxActiveConversations
+    ) {
+    }
+
+    private record AutoAcceptSettings(
+            boolean enabled,
+            int below,
+            int count
     ) {
     }
 
@@ -2908,7 +3230,7 @@ public class CustomerServiceService {
             Long adminUserId,
             String manualWorkStatus,
             int activeConversationCount,
-            int maxActiveConversations
+            Integer maxActiveConversations
     ) {
     }
 

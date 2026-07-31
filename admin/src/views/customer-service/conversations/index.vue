@@ -883,7 +883,8 @@
         : agent.canReceive
           ? '可接待'
           : '已满'
-    return `${agent.displayName}（${agent.username}）· ${status} ${agent.activeConversationCount}/${agent.maxActiveConversations}`
+    const capacity = agent.maxActiveConversations ?? '∞'
+    return `${agent.displayName}（${agent.username}）· ${status} ${agent.activeConversationCount}/${capacity}`
   }
 
   const isLocalImageUploading = (message: Api.CustomerService.Message) =>

@@ -3,6 +3,7 @@ package org.muybaby.shopserver.realtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -66,6 +67,27 @@ public class RealtimeSessionHub {
             }
             return connection.principal().kind() == TokenKind.ADMIN
                     && adminUserId.equals(connection.principal().subjectId());
+        });
+    }
+
+    public void disconnectAdmin(Long adminUserId) {
+        if (adminUserId == null) {
+            return;
+        }
+        connections.forEach((sessionId, connection) -> {
+            if (connection.principal().kind() != TokenKind.ADMIN
+                    || !adminUserId.equals(connection.principal().subjectId())
+                    || !connections.remove(sessionId, connection)) {
+                return;
+            }
+            try {
+                if (connection.session().isOpen()) {
+                    connection.session().close(
+                            CloseStatus.POLICY_VIOLATION.withReason("Account roles changed"));
+                }
+            } catch (IOException ignored) {
+                // The connection has already been removed from the live registry.
+            }
         });
     }
 

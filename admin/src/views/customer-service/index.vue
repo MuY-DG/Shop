@@ -85,6 +85,7 @@
   const canManageSettings = computed(
     () => roles.value.includes('R_SUPER') || roles.value.includes('R_CUSTOMER_SERVICE_MANAGER')
   )
+  const canViewSettings = computed(() => isAgent.value || canManageSettings.value)
   const profileAvatar = computed(() => agentProfile.value?.avatar || userStore.info.avatar || '')
   const isAvailable = computed(
     () => Boolean(agentState.value?.online) && agentState.value?.workStatus === 'AVAILABLE'
@@ -104,7 +105,7 @@
         active: route.path === '/customer-service/overview'
       }
     ]
-    if (canManageSettings.value) {
+    if (canViewSettings.value) {
       items.push({
         label: '设置',
         path: '/customer-service/settings',

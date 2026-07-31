@@ -29,15 +29,19 @@ import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class AdminManagementService {
 
     private static final long DEFAULT_PAGE_SIZE = 20L;
     private static final long MAX_PAGE_SIZE = 100L;
+    private static final Set<String> CUSTOMER_SERVICE_ROLE_CODES = Set.of(
+            "R_CUSTOMER_SERVICE", "R_CUSTOMER_SERVICE_MANAGER");
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -116,6 +120,7 @@ public class AdminManagementService {
         }
         List<Long> roleIds = distinctIds(request.roleIds());
         requireRoles(roleIds);
+        requireGeneralCreateRoleSelection(roleIds);
         int maxSessions = normalizeMaxSessions(request.maxSessions(), 0);
 
         KeyHolder keyHolder = new GeneratedKeyHolder();
@@ -150,6 +155,7 @@ public class AdminManagementService {
         }
         List<Long> roleIds = distinctIds(request.roleIds());
         requireRoles(roleIds);
+        requireGeneralUpdateRoleSelection(userId, roleIds);
         LocalDateTime now = LocalDateTime.now();
         boolean passwordChanged = StringUtils.hasText(request.password());
         boolean disabled = !"DISABLED".equals(current.status()) && "DISABLED".equals(request.status());
@@ -550,6 +556,51 @@ public class AdminManagementService {
             throw new BusinessException(ErrorCode.ADMIN_ROLE_UNAVAILABLE);
         }
         requireIdsExist("admin_role", roleIds, ErrorCode.ADMIN_ROLE_UNAVAILABLE);
+    }
+
+    private void requireGeneralCreateRoleSelection(List<Long> roleIds) {
+        Set<String> requestedRoleCodes = roleCodes(roleIds);
+        requireGuestRoleExclusive(requestedRoleCodes);
+        if (requestedRoleCodes.stream().anyMatch(CUSTOMER_SERVICE_ROLE_CODES::contains)) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+        }
+    }
+
+    private void requireGeneralUpdateRoleSelection(Long userId, List<Long> roleIds) {
+        Set<String> requestedRoleCodes = roleCodes(roleIds);
+        requireGuestRoleExclusive(requestedRoleCodes);
+        Set<String> requestedCustomerServiceRoles = new HashSet<>(requestedRoleCodes);
+        requestedCustomerServiceRoles.retainAll(CUSTOMER_SERVICE_ROLE_CODES);
+        Set<String> currentCustomerServiceRoles = new HashSet<>(jdbcClient.sql("""
+                        SELECT role_item.code
+                        FROM admin_user_role user_role
+                        JOIN admin_role role_item ON role_item.id = user_role.role_id
+                        WHERE user_role.user_id = :userId
+                          AND role_item.code IN ('R_CUSTOMER_SERVICE', 'R_CUSTOMER_SERVICE_MANAGER')
+                        """)
+                .param("userId", userId)
+                .query(String.class)
+                .list());
+        if (!requestedCustomerServiceRoles.equals(currentCustomerServiceRoles)) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+        }
+    }
+
+    private Set<String> roleCodes(List<Long> roleIds) {
+        if (roleIds.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(namedParameterJdbcTemplate.queryForList(
+                "SELECT code FROM admin_role WHERE id IN (:ids)",
+                new MapSqlParameterSource("ids", roleIds),
+                String.class
+        ));
+    }
+
+    private void requireGuestRoleExclusive(Set<String> roleCodes) {
+        if (roleCodes.contains("R_GUEST") && roleCodes.size() != 1) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
+        }
     }
 
     private void requireIdsExist(String tableName, List<Long> ids, ErrorCode errorCode) {

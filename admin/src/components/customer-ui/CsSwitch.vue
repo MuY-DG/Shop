@@ -3,8 +3,10 @@
     type="button"
     role="switch"
     class="cs-switch"
-    :class="{ 'cs-switch--checked': modelValue }"
+    :class="{ 'cs-switch--checked': modelValue, 'cs-switch--disabled': disabled }"
+    :disabled="disabled"
     :aria-checked="modelValue"
+    :aria-disabled="disabled"
     @click="$emit('update:modelValue', !modelValue)"
   >
     <span class="cs-switch__thumb" />
@@ -12,7 +14,9 @@
 </template>
 
 <script setup lang="ts">
-  defineProps<{ modelValue: boolean }>()
+  withDefaults(defineProps<{ modelValue: boolean; disabled?: boolean }>(), {
+    disabled: false
+  })
   defineEmits<{ 'update:modelValue': [value: boolean] }>()
 </script>
 
@@ -36,6 +40,11 @@
 
   .cs-switch--checked {
     background: #2563eb;
+  }
+
+  .cs-switch--disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
   }
 
   .cs-switch__thumb {

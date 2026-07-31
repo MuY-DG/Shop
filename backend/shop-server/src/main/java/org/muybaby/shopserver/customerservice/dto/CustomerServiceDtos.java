@@ -1,6 +1,8 @@
 package org.muybaby.shopserver.customerservice.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Pattern;
@@ -38,6 +40,23 @@ public final class CustomerServiceDtos {
 
     public record AgentWorkStatusRequest(
             @NotBlank @Pattern(regexp = "AVAILABLE|BUSY|OFFLINE") String workStatus
+    ) {
+    }
+
+    public record PersonalSettingsUpdateRequest(
+            @NotBlank @Size(max = 64) String serviceName,
+            @NotNull Boolean autoAcceptEnabled,
+            @NotNull @Min(1) @Max(1000) Integer autoAcceptBelow,
+            @NotNull @Min(1) @Max(1000) Integer autoAcceptCount
+    ) {
+    }
+
+    public record PersonalSettingsResponse(
+            String serviceName,
+            boolean autoAcceptEnabled,
+            int autoAcceptBelow,
+            int autoAcceptCount,
+            int activeConversationCount
     ) {
     }
 
@@ -168,7 +187,7 @@ public final class CustomerServiceDtos {
             boolean online,
             String workStatus,
             int activeConversationCount,
-            int maxActiveConversations,
+            Integer maxActiveConversations,
             boolean canReceive
     ) {
     }
@@ -178,7 +197,7 @@ public final class CustomerServiceDtos {
             boolean online,
             String workStatus,
             int activeConversationCount,
-            int maxActiveConversations,
+            Integer maxActiveConversations,
             boolean canReceive
     ) {
     }

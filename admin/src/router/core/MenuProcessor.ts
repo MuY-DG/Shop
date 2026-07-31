@@ -58,8 +58,9 @@ export class MenuProcessor {
    * 处理后端控制模式的菜单
    */
   private async processBackendMenu(): Promise<AppRouteRecord[]> {
+    const userStore = useUserStore()
     const list = await fetchGetMenuList()
-    return this.filterEmptyMenus(appendAuthenticatedUtilityRoutes(list))
+    return this.filterEmptyMenus(appendAuthenticatedUtilityRoutes(list, userStore.info.roles || []))
   }
 
   /**

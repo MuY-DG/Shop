@@ -14,6 +14,8 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ImageMessa
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedOrderResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedProductResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.MessageResponse;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.PersonalSettingsResponse;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.PersonalSettingsUpdateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.SendMessageRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequestResponse;
@@ -333,6 +335,23 @@ public class AdminCustomerServiceController {
             @AuthenticationPrincipal AuthenticatedPrincipal principal
     ) {
         return ApiResponse.success(customerServiceService.agentProfile(principal));
+    }
+
+    @GetMapping("/settings")
+    @PreAuthorize("hasAuthority('customer-service:settings:update')")
+    public ApiResponse<PersonalSettingsResponse> settings(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal
+    ) {
+        return ApiResponse.success(customerServiceService.personalSettings(principal));
+    }
+
+    @PutMapping("/settings")
+    @PreAuthorize("hasAuthority('customer-service:settings:update')")
+    public ApiResponse<PersonalSettingsResponse> updateSettings(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @Valid @RequestBody PersonalSettingsUpdateRequest request
+    ) {
+        return ApiResponse.success(customerServiceService.updatePersonalSettings(principal, request));
     }
 
     @PutMapping("/agent-state")

@@ -110,7 +110,7 @@ declare namespace Api {
       online: boolean
       workStatus: AgentWorkStatus
       activeConversationCount: number
-      maxActiveConversations: number
+      maxActiveConversations: number | null
       canReceive: boolean
     }
 
@@ -119,7 +119,7 @@ declare namespace Api {
       online: boolean
       workStatus: AgentWorkStatus
       activeConversationCount: number
-      maxActiveConversations: number
+      maxActiveConversations: number | null
       canReceive: boolean
     }
 
@@ -160,53 +160,75 @@ declare namespace Api {
       clientMessageId: string
     }
 
-    interface ManagedUser {
+    interface CustomerServiceMember {
+      adminUserId: string
+      username: string
+      serviceName: string
+      serviceAvatar: string
+      online: boolean
+      manager: boolean
+      boundAt: string
+    }
+
+    interface GuestCandidate {
       adminUserId: string
       username: string
       displayName: string
-      adminAvatar: string
-      status: string
-      agent: boolean
-      manager: boolean
-      serviceName: string
-      serviceNameOverride: string | null
-      serviceAvatar: string
-      online: boolean
-      workStatus: AgentWorkStatus
-      activeConversationCount: number
-      maxActiveConversations: number
-      routingWeight: number
-      updatedAt: string
-    }
-
-    interface ManagedUserForm {
-      agent: boolean
-      manager: boolean
-      serviceNameOverride?: string
-      maxActiveConversations: number
-      routingWeight: number
+      avatar: string
     }
 
     type AssignmentStrategy = 'LEAST_LOADED' | 'ROUND_ROBIN' | 'WEIGHTED'
 
+    interface PersonalSettings {
+      serviceName: string
+      autoAcceptEnabled: boolean
+      autoAcceptBelow: number
+      autoAcceptCount: number
+      activeConversationCount: number
+    }
+
+    interface PersonalSettingsForm {
+      serviceName: string
+      autoAcceptEnabled: boolean
+      autoAcceptBelow: number
+      autoAcceptCount: number
+    }
+
+    interface RoutingAgent {
+      adminUserId: string
+      username: string
+      serviceName: string
+      online: boolean
+      maxActiveConversations: number | null
+      calculatedWeight: number
+      calculatedWeightPercent: number
+    }
+
+    interface RoutingAgentForm {
+      adminUserId: string
+      maxActiveConversations: number | null
+    }
+
     interface ManagementConfig {
       defaultServiceName: string
       avatar: string
-      autoAssignEnabled: boolean
+      avatarFileId: number | null
       assignmentStrategy: AssignmentStrategy
       stickyAgentEnabled: boolean
       stickyWindowHours: number
-      updatedBy: string | null
-      updatedAt: string
+      routingAgents: RoutingAgent[]
     }
 
-    interface ManagementConfigForm {
-      defaultServiceName: string
-      avatar: string
-      autoAssignEnabled: boolean
+    interface ManagementRoutingForm {
       assignmentStrategy: AssignmentStrategy
       stickyAgentEnabled: boolean
       stickyWindowHours: number
+      agents: RoutingAgentForm[]
+    }
+
+    interface ManagementIdentityForm {
+      defaultServiceName: string
+      avatarFileId: number | null
     }
   }
 
