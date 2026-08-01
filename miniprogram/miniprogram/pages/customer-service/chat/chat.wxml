@@ -42,27 +42,31 @@
       class="message-scroll"
       scroll-y
       enhanced
+      enable-passive="{{true}}"
       show-scrollbar="{{false}}"
       upper-threshold="80"
-      scroll-with-animation="{{scrollWithAnimation}}"
-      scroll-into-view="{{scrollTarget}}"
-      scroll-top="{{messageScrollTop}}"
       bindscroll="onMessageListScroll"
+      binddragend="onMessageListDragEnd"
       bindscrolltoupper="onScrollToUpper"
       bindscrolltolower="onScrollToLower"
     >
       <view class="message-list">
-        <view wx:if="{{historyLoading}}" class="history-loader">
-          <view class="message-send-loading__spinner"></view>
-          <text>正在加载更早记录</text>
-        </view>
-        <button
-          wx:elif="{{hasMoreHistory}}"
-          class="history-loader history-loader--action"
-          bindtap="onHistoryTap"
-        >查看更早记录</button>
-        <view wx:elif="{{historyExhausted}}" class="history-loader history-loader--complete">
-          <text>已显示全部记录</text>
+        <view
+          wx:if="{{historyLoading || hasMoreHistory || historyExhausted}}"
+          class="history-loader"
+        >
+          <view wx:if="{{historyLoading}}" class="history-loader__status">
+            <view class="message-send-loading__spinner"></view>
+            <text>正在加载更早记录</text>
+          </view>
+          <button
+            wx:elif="{{hasMoreHistory}}"
+            class="history-loader__action"
+            bindtap="onHistoryTap"
+          >查看更早记录</button>
+          <view wx:else class="history-loader__complete">
+            <text>已显示全部记录</text>
+          </view>
         </view>
 
         <block wx:for="{{messages}}" wx:key="renderKey">
@@ -287,8 +291,7 @@
           </view>
         </block>
 
-        <view id="message-list-bottom-a" class="message-list__bottom-anchor"></view>
-        <view id="message-list-bottom-b" class="message-list__bottom"></view>
+        <view class="message-list__bottom"></view>
       </view>
     </scroll-view>
 

@@ -1,5 +1,7 @@
 import {
   buildCustomerServiceUrl,
+  CustomerServiceHistoryLoadGate,
+  CustomerServiceHistoryScrollIntent,
   customerServiceEntryContext,
   customerServiceMessageId,
   customerServiceOrderStatusText,
@@ -58,6 +60,13 @@ interface ScrollEvent {
   detail: {
     scrollTop: number;
   };
+}
+
+interface HistoryScrollMetrics {
+  scrollTop: number | null;
+  scrollHeight: number | null;
+  viewportHeight: number | null;
+  anchorOffset: number | null;
 }
 
 interface DatasetEvent {
@@ -125,13 +134,24 @@ type ProductSource = "browse" | "favorite" | "cart";
 
 const FALLBACK_POLL_INTERVAL_MS = 15_000;
 const HISTORY_PAGE_SIZE = 50;
-const HISTORY_REARM_SCROLL_TOP = 160;
-const HISTORY_SCROLL_TARGET_IDLE = "message-list-history-idle";
 const MESSAGE_LIST_BOTTOM_SCROLL_TOP = 1_000_000_000;
-const MESSAGE_LIST_BOTTOM_IDS = [
-  "message-list-bottom-a",
-  "message-list-bottom-b"
-] as const;
+const HISTORY_SCROLL_SETTLE_TOLERANCE = 3;
+const HISTORY_SCROLL_SETTLE_ATTEMPTS = 16;
+const HISTORY_SCROLL_SETTLE_INTERVAL_MS = 16;
+const HISTORY_SCROLL_RESTORE_STABLE_READS = 4;
+const HISTORY_MOTION_SETTLE_TOLERANCE = 0.5;
+const HISTORY_MOTION_SETTLE_ATTEMPTS = 24;
+const HISTORY_MOTION_STABLE_READS = 4;
+const HISTORY_SCROLL_REARM_TOP = 160;
+const HISTORY_SCROLL_LOAD_TOP = 80;
+const HISTORY_SCROLL_DIRECTION_TOLERANCE_PX = 2;
+const HISTORY_SCROLL_GESTURE_DISTANCE_PX = 24;
+const HISTORY_SCROLL_GESTURE_SAMPLES = 2;
+const HISTORY_SCROLL_END_DEBOUNCE_MS = 120;
+const HISTORY_SCROLL_DRAIN_STABLE_READS = 8;
+const HISTORY_SCROLL_DRAIN_ATTEMPTS = 24;
+const MESSAGE_SCROLL_CONTEXT_ATTEMPTS = 6;
+const MESSAGE_BOTTOM_SETTLE_ATTEMPTS = 24;
 const imageTempPaths = new Map<number, string>();
 const originalImageTempPaths = new Map<number, string>();
 const imageMessages = new Map<number, CustomerServiceMessage>();
@@ -151,6 +171,7 @@ const messageRenderKeyById = new Map<number, string>();
 let pageActive = false;
 let initialized = false;
 let initializeGeneration = 0;
+let historyLoadGeneration = 0;
 let refreshRunning = false;
 let refreshQueued = false;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -169,10 +190,22 @@ let choosingMedia = false;
 let panelInteractionGeneration = 0;
 let pickerRequestGeneration = 0;
 let latestPersistedMessageId = 0;
-let nextBottomAnchorIndex = 0;
-let historyUpperArmed = true;
 let messageListScrollTop = 0;
 let messageListFollowingLatest = true;
+let messageListScrollEventSequence = 0;
+let historyScrollEndTimer: ReturnType<typeof setTimeout> | null = null;
+let historyScrollEndGeneration = 0;
+let historyScrollReleasePending = false;
+let messageScrollContext: WechatMiniprogram.ScrollViewContext | null = null;
+let messageScrollCommandGeneration = 0;
+const historyLoadGate = new CustomerServiceHistoryLoadGate();
+const historyScrollIntent = new CustomerServiceHistoryScrollIntent({
+  rearmScrollTop: HISTORY_SCROLL_REARM_TOP,
+  loadScrollTop: HISTORY_SCROLL_LOAD_TOP,
+  directionTolerance: HISTORY_SCROLL_DIRECTION_TOLERANCE_PX,
+  minimumTowardUpperDistance: HISTORY_SCROLL_GESTURE_DISTANCE_PX,
+  minimumTowardUpperSamples: HISTORY_SCROLL_GESTURE_SAMPLES
+});
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -191,16 +224,32 @@ function errorMessage(error: unknown, fallback: string): string {
       : fallback;
 }
 
-function nextMessageListBottomId(): string {
-  const target = MESSAGE_LIST_BOTTOM_IDS[nextBottomAnchorIndex];
-  nextBottomAnchorIndex = (nextBottomAnchorIndex + 1) % MESSAGE_LIST_BOTTOM_IDS.length;
-  return target;
+function waitForMilliseconds(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function nextMessageListBottomScrollTop(current: number): number {
-  return current === MESSAGE_LIST_BOTTOM_SCROLL_TOP
-    ? MESSAGE_LIST_BOTTOM_SCROLL_TOP - 1
-    : MESSAGE_LIST_BOTTOM_SCROLL_TOP;
+function resetHistoryScrollIntent(
+  scrollTop = messageListScrollTop,
+  canLoad = false,
+  cancelGate = true
+): void {
+  historyScrollIntent.reset(scrollTop, canLoad);
+  if (cancelGate) {
+    historyLoadGate.cancelGesture();
+  }
+}
+
+function clearHistoryScrollEndTimer(): void {
+  if (historyScrollEndTimer) {
+    clearTimeout(historyScrollEndTimer);
+    historyScrollEndTimer = null;
+  }
+}
+
+function resetHistoryScrollRelease(): void {
+  clearHistoryScrollEndTimer();
+  historyScrollEndGeneration += 1;
+  historyScrollReleasePending = false;
 }
 
 function messageTimeText(value: string): string {
@@ -416,9 +465,6 @@ Page({
     historyLoading: false,
     hasMoreHistory: false,
     historyExhausted: false,
-    scrollTarget: "",
-    messageScrollTop: 0,
-    scrollWithAnimation: false,
     inputValue: "",
     uploading: false,
     panelMode: "" as PanelMode,
@@ -437,6 +483,12 @@ Page({
     initialized = false;
     refreshRunning = false;
     refreshQueued = false;
+    historyLoadGeneration += 1;
+    historyLoadGate.reset();
+    resetHistoryScrollIntent(0, false, false);
+    resetHistoryScrollRelease();
+    messageScrollContext = null;
+    messageScrollCommandGeneration += 1;
     entryContext = customerServiceEntryContext(options.contextType, options.contextId);
     initializeGeneration += 1;
     nextPendingMessageId = -1;
@@ -463,10 +515,9 @@ Page({
     messageRenderKeyById.clear();
     choosingMedia = false;
     latestPersistedMessageId = 0;
-    nextBottomAnchorIndex = 0;
-    historyUpperArmed = true;
     messageListScrollTop = 0;
     messageListFollowingLatest = true;
+    messageListScrollEventSequence = 0;
     panelInteractionGeneration += 1;
     pickerRequestGeneration += 1;
   },
@@ -489,6 +540,11 @@ Page({
 
   onHide() {
     pageActive = false;
+    historyLoadGeneration += 1;
+    historyLoadGate.reset();
+    resetHistoryScrollIntent(0, false, false);
+    resetHistoryScrollRelease();
+    messageScrollCommandGeneration += 1;
     panelInteractionGeneration += 1;
     stopLiveUpdates();
     this.setData({ historyLoading: false });
@@ -498,6 +554,12 @@ Page({
     pageActive = false;
     initialized = false;
     initializeGeneration += 1;
+    historyLoadGeneration += 1;
+    historyLoadGate.reset();
+    resetHistoryScrollIntent(0, false, false);
+    resetHistoryScrollRelease();
+    messageScrollContext = null;
+    messageScrollCommandGeneration += 1;
     stopLiveUpdates();
     imageObserver?.disconnect();
     imageObserver = null;
@@ -523,9 +585,9 @@ Page({
     pendingRealtimeChangeWithoutMessage = false;
     choosingMedia = false;
     latestPersistedMessageId = 0;
-    historyUpperArmed = true;
     messageListScrollTop = 0;
     messageListFollowingLatest = true;
+    messageListScrollEventSequence = 0;
     panelInteractionGeneration += 1;
     pickerRequestGeneration += 1;
   },
@@ -543,7 +605,14 @@ Page({
       }
       initialized = true;
       this.applyConversation(conversation);
-      this.setData({ loading: false, loaded: true, errorText: "" });
+      this.setData(
+        { loading: false, loaded: true, errorText: "" },
+        () => {
+          if (this.data.messages.length) {
+            this.positionLatestWithoutAnimation();
+          }
+        }
+      );
       this.startLiveUpdates();
       void this.loadCommonQuestions(generation);
     } catch (error) {
@@ -569,19 +638,26 @@ Page({
           this.data.messages,
           currentConsultationNo
         );
-      this.setData({
-        commonQuestions,
-        commonQuestionAnchorMessageId: commonQuestionAnchorMessageId(
-          this.data.messages,
-          currentConsultationNo
-        ),
-        showCommonQuestions: commonQuestionEngaged ||
-          shouldShowCustomerServiceCommonQuestions(
-            this.data.conversationStatus as CustomerServiceConversation["status"],
-            commonQuestions.length,
-            pendingTextViews.size > 0
-          )
-      });
+      this.setData(
+        {
+          commonQuestions,
+          commonQuestionAnchorMessageId: commonQuestionAnchorMessageId(
+            this.data.messages,
+            currentConsultationNo
+          ),
+          showCommonQuestions: commonQuestionEngaged ||
+            shouldShowCustomerServiceCommonQuestions(
+              this.data.conversationStatus as CustomerServiceConversation["status"],
+              commonQuestions.length,
+              pendingTextViews.size > 0
+            )
+        },
+        () => {
+          if (messageListFollowingLatest && historyLoadGate.phase === "idle") {
+            this.positionLatestWithoutAnimation();
+          }
+        }
+      );
     } catch {
       // 常见问题是增强能力，加载失败不阻塞会话本身。
     }
@@ -753,15 +829,6 @@ Page({
         conversationStatus: conversation.status,
         contextPreview,
         messages: views,
-        scrollTarget: isInitialPositioning && views.length
-          ? nextMessageListBottomId()
-          : this.data.scrollTarget,
-        messageScrollTop: isInitialPositioning && views.length
-          ? nextMessageListBottomScrollTop(this.data.messageScrollTop)
-          : this.data.messageScrollTop,
-        scrollWithAnimation: isInitialPositioning
-          ? false
-          : this.data.scrollWithAnimation,
         hasMoreHistory: isInitialPositioning
           ? rawMessages.length >= HISTORY_PAGE_SIZE
           : this.data.hasMoreHistory,
@@ -781,17 +848,7 @@ Page({
       },
       () => {
         this.observePrivateImages();
-        if (isInitialPositioning) {
-          const requestGeneration = initializeGeneration;
-          wx.nextTick(() => {
-            if (requestGeneration === initializeGeneration && pageActive) {
-              this.setData({
-                scrollTarget: HISTORY_SCROLL_TARGET_IDLE,
-                scrollWithAnimation: true
-              });
-            }
-          });
-        } else if (shouldScrollToLatest) {
+        if (!isInitialPositioning && shouldScrollToLatest) {
           this.scrollToLatest();
         }
       }
@@ -800,75 +857,544 @@ Page({
 
   onMessageListScroll(event: ScrollEvent) {
     const nextScrollTop = Math.max(0, Number(event.detail.scrollTop) || 0);
-    if (nextScrollTop < messageListScrollTop - 2) {
+    const scrollDelta = nextScrollTop - messageListScrollTop;
+    messageListScrollEventSequence += 1;
+    if (scrollDelta < -HISTORY_SCROLL_DIRECTION_TOLERANCE_PX) {
       messageListFollowingLatest = false;
     }
-    messageListScrollTop = nextScrollTop;
-    if (messageListScrollTop > HISTORY_REARM_SCROLL_TOP) {
-      historyUpperArmed = true;
+    if (historyLoadGate.phase === "idle") {
+      historyScrollIntent.recordScroll(
+        messageListScrollTop,
+        nextScrollTop,
+        this.canLoadEarlierMessages()
+      );
     }
+    messageListScrollTop = nextScrollTop;
+    this.scheduleHistoryScrollEnd();
+  },
+
+  onMessageListDragEnd() {
+    if (historyLoadGate.phase !== "idle" || !this.canLoadEarlierMessages()) {
+      return;
+    }
+    historyScrollReleasePending = true;
+    this.scheduleHistoryScrollEnd();
+  },
+
+  scheduleHistoryScrollEnd() {
+    clearHistoryScrollEndTimer();
+    const scrollEndGeneration = ++historyScrollEndGeneration;
+    if (
+      !historyScrollReleasePending ||
+      historyLoadGate.phase !== "idle" ||
+      !this.canLoadEarlierMessages()
+    ) {
+      return;
+    }
+    historyScrollEndTimer = setTimeout(async () => {
+      historyScrollEndTimer = null;
+      const measuredScrollTop = await this.measureMessageListScrollTop();
+      if (scrollEndGeneration !== historyScrollEndGeneration) {
+        return;
+      }
+      if (!historyScrollReleasePending) {
+        return;
+      }
+      historyScrollReleasePending = false;
+      if (measuredScrollTop !== null) {
+        messageListScrollTop = measuredScrollTop;
+      }
+      if (
+        historyLoadGate.phase !== "idle" ||
+        !historyScrollIntent.consumeScrollEnd(
+          messageListScrollTop,
+          this.canLoadEarlierMessages()
+        )
+      ) {
+        return;
+      }
+      historyLoadGate.armGesture(true);
+      this.tryLoadEarlierForGesture();
+    }, HISTORY_SCROLL_END_DEBOUNCE_MS);
   },
 
   onScrollToLower() {
     messageListFollowingLatest = true;
   },
 
-  measureMessageTop(messageId: number): Promise<number | null> {
-    return new Promise((resolve) => {
-      wx.createSelectorQuery()
-        .in(this)
-        .select(`#message-${messageId}`)
-        .boundingClientRect((rect) => {
-          resolve(rect && typeof rect.top === "number" ? rect.top : null);
-        })
-        .exec();
-    });
+  canLoadEarlierMessages(): boolean {
+    return Boolean(
+      pageActive &&
+      this.data.loaded &&
+      !this.data.historyLoading &&
+      this.data.hasMoreHistory
+    );
   },
 
-  onScrollToUpper() {
-    if (
-      !historyUpperArmed ||
-      this.data.historyLoading ||
-      !this.data.hasMoreHistory
-    ) {
+  tryLoadEarlierForGesture() {
+    if (!historyLoadGate.consumeGesture(this.canLoadEarlierMessages())) {
       return;
     }
-    historyUpperArmed = false;
+    resetHistoryScrollRelease();
+    resetHistoryScrollIntent(messageListScrollTop, false, false);
     messageListFollowingLatest = false;
     void this.loadEarlierMessages();
   },
 
+  onScrollToUpper() {
+    messageListScrollTop = Math.min(
+      messageListScrollTop,
+      HISTORY_SCROLL_LOAD_TOP
+    );
+    messageListFollowingLatest = false;
+    this.scheduleHistoryScrollEnd();
+  },
+
   onHistoryTap() {
+    if (!historyLoadGate.beginManualLoad(this.canLoadEarlierMessages())) {
+      return;
+    }
+    resetHistoryScrollRelease();
+    resetHistoryScrollIntent(messageListScrollTop, false, false);
+    messageListFollowingLatest = false;
     void this.loadEarlierMessages();
   },
 
+  getMessageScrollContext(): Promise<WechatMiniprogram.ScrollViewContext | null> {
+    if (messageScrollContext) {
+      return Promise.resolve(messageScrollContext);
+    }
+    const requestGeneration = initializeGeneration;
+    return new Promise((resolve) => {
+      const query = wx.createSelectorQuery().in(this);
+      query.select(".message-scroll").node();
+      query.exec((results) => {
+        const nodeResult = results?.[0] as
+          | Partial<WechatMiniprogram.NodeCallbackResult>
+          | null
+          | undefined;
+        const context = nodeResult?.node as
+          | WechatMiniprogram.ScrollViewContext
+          | undefined;
+        if (
+          requestGeneration === initializeGeneration &&
+          pageActive &&
+          context &&
+          typeof context.scrollTo === "function"
+        ) {
+          messageScrollContext = context;
+          resolve(context);
+          return;
+        }
+        resolve(null);
+      });
+    });
+  },
+
+  async scrollMessageListTo(
+    top: number,
+    animated: boolean,
+    commandGeneration = ++messageScrollCommandGeneration
+  ): Promise<boolean> {
+    const requestGeneration = initializeGeneration;
+    const target = Number.isFinite(top) ? Math.max(0, top) : 0;
+    for (let attempt = 0; attempt < MESSAGE_SCROLL_CONTEXT_ATTEMPTS; attempt += 1) {
+      const context = await this.getMessageScrollContext();
+      if (
+        requestGeneration !== initializeGeneration ||
+        commandGeneration !== messageScrollCommandGeneration ||
+        !pageActive
+      ) {
+        return false;
+      }
+      if (context) {
+        try {
+          context.scrollTo({ top: target, animated });
+          return true;
+        } catch {
+          messageScrollContext = null;
+        }
+      }
+      await waitForMilliseconds(HISTORY_SCROLL_SETTLE_INTERVAL_MS);
+    }
+    return false;
+  },
+
+  async settleMessageListAtBottom(
+    animated: boolean,
+    commandGeneration: number
+  ): Promise<boolean> {
+    const lastMessage = this.data.messages[this.data.messages.length - 1];
+    if (!lastMessage) {
+      return true;
+    }
+    const scrollStarted = await this.scrollMessageListTo(
+      MESSAGE_LIST_BOTTOM_SCROLL_TOP,
+      animated,
+      commandGeneration
+    );
+    if (!scrollStarted) {
+      return false;
+    }
+    let stableReadCount = 0;
+    for (let attempt = 0; attempt < MESSAGE_BOTTOM_SETTLE_ATTEMPTS; attempt += 1) {
+      await waitForMilliseconds(HISTORY_SCROLL_SETTLE_INTERVAL_MS);
+      if (
+        commandGeneration !== messageScrollCommandGeneration ||
+        !pageActive
+      ) {
+        return false;
+      }
+      const metrics = await this.measureHistoryScrollMetrics(lastMessage.messageId);
+      if (
+        commandGeneration !== messageScrollCommandGeneration ||
+        !pageActive
+      ) {
+        return false;
+      }
+      if (
+        metrics.scrollTop === null ||
+        metrics.scrollHeight === null ||
+        metrics.viewportHeight === null
+      ) {
+        stableReadCount = 0;
+        continue;
+      }
+      messageListScrollTop = metrics.scrollTop;
+      const maxScrollTop = Math.max(
+        0,
+        metrics.scrollHeight - metrics.viewportHeight
+      );
+      const settled = maxScrollTop - metrics.scrollTop <=
+        HISTORY_SCROLL_SETTLE_TOLERANCE;
+      stableReadCount = settled ? stableReadCount + 1 : 0;
+      if (stableReadCount >= 2) {
+        return true;
+      }
+      if (attempt === 10) {
+        const retryStarted = await this.scrollMessageListTo(
+          MESSAGE_LIST_BOTTOM_SCROLL_TOP,
+          false,
+          commandGeneration
+        );
+        if (!retryStarted) {
+          return false;
+        }
+      }
+    }
+    return false;
+  },
+
+  async waitForMessageListMotionToSettle(
+    messageId: number,
+    requestIsStale: () => boolean
+  ): Promise<boolean> {
+    let previousScrollTop: number | null = null;
+    let previousAnchorOffset: number | null = null;
+    let stableReadCount = 0;
+    for (let attempt = 0; attempt < HISTORY_MOTION_SETTLE_ATTEMPTS; attempt += 1) {
+      await waitForMilliseconds(HISTORY_SCROLL_SETTLE_INTERVAL_MS);
+      if (requestIsStale()) {
+        return false;
+      }
+      const metrics = await this.measureHistoryScrollMetrics(messageId);
+      if (requestIsStale()) {
+        return false;
+      }
+      if (metrics.scrollTop === null) {
+        stableReadCount = 0;
+        continue;
+      }
+      messageListScrollTop = metrics.scrollTop;
+      const scrollTopStable =
+        previousScrollTop !== null &&
+        Math.abs(metrics.scrollTop - previousScrollTop) <=
+          HISTORY_MOTION_SETTLE_TOLERANCE;
+      const anchorStable =
+        metrics.anchorOffset === null
+          ? previousAnchorOffset === null
+          : (
+          previousAnchorOffset !== null &&
+          Math.abs(metrics.anchorOffset - previousAnchorOffset) <=
+            HISTORY_MOTION_SETTLE_TOLERANCE
+          );
+      if (scrollTopStable && anchorStable) {
+        stableReadCount += 1;
+      } else {
+        stableReadCount = 0;
+      }
+      previousScrollTop = metrics.scrollTop;
+      previousAnchorOffset = metrics.anchorOffset;
+      if (stableReadCount >= HISTORY_MOTION_STABLE_READS) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  async waitForMessageListScrollEventsToDrain(
+    requestIsStale: () => boolean
+  ): Promise<boolean> {
+    let observedSequence = messageListScrollEventSequence;
+    let stableReadCount = 0;
+    for (let attempt = 0; attempt < HISTORY_SCROLL_DRAIN_ATTEMPTS; attempt += 1) {
+      await waitForMilliseconds(HISTORY_SCROLL_SETTLE_INTERVAL_MS);
+      if (requestIsStale()) {
+        return false;
+      }
+      if (messageListScrollEventSequence === observedSequence) {
+        stableReadCount += 1;
+        if (stableReadCount >= HISTORY_SCROLL_DRAIN_STABLE_READS) {
+          return true;
+        }
+      } else {
+        observedSequence = messageListScrollEventSequence;
+        stableReadCount = 0;
+      }
+    }
+    return false;
+  },
+
+  measureMessageListScrollTop(): Promise<number | null> {
+    return new Promise((resolve) => {
+      const query = wx.createSelectorQuery().in(this);
+      query.select(".message-scroll").scrollOffset();
+      query.exec((results) => {
+        const scrollOffset = results?.[0] as
+          | Partial<WechatMiniprogram.ScrollOffsetCallbackResult>
+          | null
+          | undefined;
+        const measuredScrollTop = scrollOffset?.scrollTop;
+        resolve(
+          typeof measuredScrollTop === "number" &&
+          Number.isFinite(measuredScrollTop)
+            ? Math.max(0, measuredScrollTop)
+            : null
+        );
+      });
+    });
+  },
+
+  measureHistoryScrollMetrics(messageId: number): Promise<HistoryScrollMetrics> {
+    return new Promise((resolve) => {
+      const query = wx.createSelectorQuery().in(this);
+      query.select(".message-scroll").scrollOffset();
+      query.select(".message-scroll").boundingClientRect();
+      query.select(`#message-${messageId}`).boundingClientRect();
+      query.exec((results) => {
+        const scrollOffset = results?.[0] as
+          | Partial<WechatMiniprogram.ScrollOffsetCallbackResult>
+          | null
+          | undefined;
+        const viewportRect = results?.[1] as
+          | Partial<WechatMiniprogram.BoundingClientRectCallbackResult>
+          | null
+          | undefined;
+        const anchorRect = results?.[2] as
+          | Partial<WechatMiniprogram.BoundingClientRectCallbackResult>
+          | null
+          | undefined;
+        const measuredScrollTop = scrollOffset?.scrollTop;
+        const measuredScrollHeight = scrollOffset?.scrollHeight;
+        const measuredViewportHeight = viewportRect?.height;
+        const measuredViewportTop = viewportRect?.top;
+        const measuredAnchorTop = anchorRect?.top;
+        const hasAnchorOffset =
+          typeof measuredViewportTop === "number" &&
+          Number.isFinite(measuredViewportTop) &&
+          typeof measuredAnchorTop === "number" &&
+          Number.isFinite(measuredAnchorTop);
+        resolve({
+          scrollTop: typeof measuredScrollTop === "number" &&
+            Number.isFinite(measuredScrollTop)
+            ? Math.max(0, measuredScrollTop)
+            : null,
+          scrollHeight: typeof measuredScrollHeight === "number" &&
+            Number.isFinite(measuredScrollHeight)
+            ? Math.max(0, measuredScrollHeight)
+            : null,
+          viewportHeight: typeof measuredViewportHeight === "number" &&
+            Number.isFinite(measuredViewportHeight)
+            ? Math.max(0, measuredViewportHeight)
+            : null,
+          anchorOffset: hasAnchorOffset
+            ? measuredAnchorTop - measuredViewportTop
+            : null
+        });
+      });
+    });
+  },
+
+  historyScrollTop(
+    metricsBefore: HistoryScrollMetrics,
+    metricsAfter: HistoryScrollMetrics
+  ): number {
+    let target: number;
+    if (
+      metricsAfter.scrollTop !== null &&
+      metricsBefore.anchorOffset !== null &&
+      metricsAfter.anchorOffset !== null
+    ) {
+      target = preserveCustomerServiceHistoryScrollTop(
+        metricsAfter.scrollTop,
+        metricsBefore.anchorOffset,
+        metricsAfter.anchorOffset
+      );
+    } else if (
+      metricsBefore.scrollTop !== null &&
+      metricsBefore.scrollHeight !== null &&
+      metricsAfter.scrollHeight !== null
+    ) {
+      target = metricsBefore.scrollTop + Math.max(
+        0,
+        metricsAfter.scrollHeight - metricsBefore.scrollHeight
+      );
+    } else {
+      target = metricsAfter.scrollTop ?? metricsBefore.scrollTop ?? messageListScrollTop;
+    }
+    return this.clampHistoryScrollTop(target, metricsAfter);
+  },
+
+  clampHistoryScrollTop(target: number, metrics: HistoryScrollMetrics): number {
+    const maxScrollTop =
+      metrics.scrollHeight !== null && metrics.viewportHeight !== null
+        ? Math.max(0, metrics.scrollHeight - metrics.viewportHeight)
+        : null;
+    return Math.max(0, maxScrollTop === null ? target : Math.min(target, maxScrollTop));
+  },
+
+  async waitForHistoryScrollRestore(
+    messageId: number,
+    targetScrollTop: number,
+    desiredAnchorOffset: number | null,
+    commandGeneration: number,
+    requestIsStale: () => boolean
+  ): Promise<boolean> {
+    let nextTargetScrollTop = targetScrollTop;
+    let commandIssued = false;
+    let stableReadCount = 0;
+    for (let attempt = 0; attempt < HISTORY_SCROLL_SETTLE_ATTEMPTS; attempt += 1) {
+      await waitForMilliseconds(HISTORY_SCROLL_SETTLE_INTERVAL_MS);
+      if (
+        requestIsStale() ||
+        commandGeneration !== messageScrollCommandGeneration
+      ) {
+        return false;
+      }
+      const metrics = await this.measureHistoryScrollMetrics(messageId);
+      if (
+        requestIsStale() ||
+        commandGeneration !== messageScrollCommandGeneration
+      ) {
+        return false;
+      }
+      let positionSettled = false;
+      if (metrics.scrollTop !== null) {
+        messageListScrollTop = metrics.scrollTop;
+        const anchorError =
+          desiredAnchorOffset !== null && metrics.anchorOffset !== null
+            ? metrics.anchorOffset - desiredAnchorOffset
+            : null;
+        positionSettled = desiredAnchorOffset !== null
+          ? anchorError !== null &&
+            Math.abs(anchorError) <= HISTORY_SCROLL_SETTLE_TOLERANCE
+          : Math.abs(metrics.scrollTop - nextTargetScrollTop) <=
+            HISTORY_SCROLL_SETTLE_TOLERANCE;
+        stableReadCount = positionSettled ? stableReadCount + 1 : 0;
+        if (stableReadCount >= HISTORY_SCROLL_RESTORE_STABLE_READS) {
+          return true;
+        }
+        if (anchorError !== null) {
+          nextTargetScrollTop = this.clampHistoryScrollTop(
+            metrics.scrollTop + anchorError,
+            metrics
+          );
+        }
+      }
+      if (
+        !positionSettled &&
+        (!commandIssued || attempt % 2 === 0)
+      ) {
+        commandIssued = true;
+        const scrollStarted = await this.scrollMessageListTo(
+          nextTargetScrollTop,
+          false,
+          commandGeneration
+        );
+        if (!scrollStarted) {
+          return false;
+        }
+      }
+    }
+    return false;
+  },
+
   async loadEarlierMessages() {
-    if (this.data.historyLoading || !this.data.hasMoreHistory) {
+    if (historyLoadGate.phase !== "loading" || !this.data.hasMoreHistory) {
+      historyLoadGate.finish();
       return;
     }
     const persistedMessages = Array.from(imageMessages.values())
       .sort((left, right) => left.messageId - right.messageId);
     const firstMessage = persistedMessages[0];
     if (!firstMessage) {
-      this.setData({ hasMoreHistory: false });
+      historyLoadGate.finish();
+      this.setData({ hasMoreHistory: false, historyExhausted: true });
       return;
     }
     const requestGeneration = initializeGeneration;
+    const historyRequestGeneration = ++historyLoadGeneration;
+    const historyStartScrollCommandGeneration = messageScrollCommandGeneration;
+    const requestIsStale = () => (
+      requestGeneration !== initializeGeneration ||
+      historyRequestGeneration !== historyLoadGeneration ||
+      !pageActive
+    );
+    let historyRestoreSucceeded = false;
     messageListFollowingLatest = false;
-    this.setData({
-      historyLoading: true,
-      messageScrollTop: messageListScrollTop
-    });
+    this.setData({ historyLoading: true });
     try {
       const olderMessages = await getCustomerServiceMessages({
         beforeId: firstMessage.messageId,
         limit: HISTORY_PAGE_SIZE
       });
-      if (requestGeneration !== initializeGeneration || !pageActive) {
+      if (requestIsStale()) {
         return;
       }
-      const anchorTopBefore = await this.measureMessageTop(firstMessage.messageId);
-      if (requestGeneration !== initializeGeneration || !pageActive) {
+      const motionSettled = await this.waitForMessageListMotionToSettle(
+        firstMessage.messageId,
+        requestIsStale
+      );
+      if (
+        !motionSettled ||
+        requestIsStale() ||
+        historyStartScrollCommandGeneration !== messageScrollCommandGeneration
+      ) {
+        return;
+      }
+      let scrollContextReady = false;
+      for (
+        let attempt = 0;
+        attempt < MESSAGE_SCROLL_CONTEXT_ATTEMPTS;
+        attempt += 1
+      ) {
+        if (await this.getMessageScrollContext()) {
+          scrollContextReady = true;
+          break;
+        }
+        await waitForMilliseconds(HISTORY_SCROLL_SETTLE_INTERVAL_MS);
+      }
+      if (!scrollContextReady || requestIsStale()) {
+        throw new Error("滚动组件尚未就绪");
+      }
+      const metricsBefore = await this.measureHistoryScrollMetrics(firstMessage.messageId);
+      if (requestIsStale()) {
+        return;
+      }
+      if (
+        requestIsStale() ||
+        historyStartScrollCommandGeneration !== messageScrollCommandGeneration
+      ) {
         return;
       }
       let addedCount = 0;
@@ -880,7 +1406,6 @@ Page({
       });
       if (!addedCount) {
         this.setData({
-          historyLoading: false,
           hasMoreHistory: false,
           historyExhausted: true
         });
@@ -896,67 +1421,88 @@ Page({
         ...messageViews(allPersistedMessages),
         ...pendingViews
       ];
+      const restoreCommandGeneration = ++messageScrollCommandGeneration;
+      historyLoadGate.markRestoring();
       await new Promise<void>((resolve) => {
         this.setData(
           {
             messages: views,
-            scrollWithAnimation: false,
-            scrollTarget: HISTORY_SCROLL_TARGET_IDLE
+            hasMoreHistory: olderMessages.length >= HISTORY_PAGE_SIZE,
+            historyExhausted: olderMessages.length < HISTORY_PAGE_SIZE
           },
           () => wx.nextTick(resolve)
         );
       });
-      if (requestGeneration !== initializeGeneration || !pageActive) {
+      if (requestIsStale()) {
         return;
       }
-      const anchorTopAfter = await this.measureMessageTop(firstMessage.messageId);
-      if (requestGeneration !== initializeGeneration || !pageActive) {
+      const metricsAfter = await this.measureHistoryScrollMetrics(firstMessage.messageId);
+      if (requestIsStale()) {
         return;
       }
-      const canRestorePrecisely = anchorTopBefore !== null && anchorTopAfter !== null;
-      const nextScrollTop = canRestorePrecisely
-        ? preserveCustomerServiceHistoryScrollTop(
-            messageListScrollTop,
-            anchorTopBefore,
-            anchorTopAfter
-          )
-        : messageListScrollTop;
-      messageListScrollTop = nextScrollTop;
-      this.setData(
-        {
-          historyLoading: false,
-          hasMoreHistory: olderMessages.length >= HISTORY_PAGE_SIZE,
-          historyExhausted: olderMessages.length < HISTORY_PAGE_SIZE,
-          messageScrollTop: nextScrollTop,
-          scrollTarget: canRestorePrecisely
-            ? HISTORY_SCROLL_TARGET_IDLE
-            : `message-${firstMessage.messageId}`
-        },
-        () => {
-          this.observePrivateImages();
-          wx.nextTick(() => {
-            if (requestGeneration === initializeGeneration && pageActive) {
-              this.setData({
-                scrollTarget: HISTORY_SCROLL_TARGET_IDLE,
-                scrollWithAnimation: true
-              });
-            }
-          });
-        }
+      const nextScrollTop = this.historyScrollTop(metricsBefore, metricsAfter);
+      historyRestoreSucceeded = await this.waitForHistoryScrollRestore(
+        firstMessage.messageId,
+        nextScrollTop,
+        metricsBefore.anchorOffset,
+        restoreCommandGeneration,
+        requestIsStale
       );
+      if (requestIsStale()) {
+        return;
+      }
+      if (!historyRestoreSucceeded) {
+        throw new Error("历史消息位置恢复失败");
+      }
+      this.observePrivateImages();
     } catch (error) {
-      if (requestGeneration === initializeGeneration && pageActive) {
-        this.setData({ historyLoading: false });
+      if (!requestIsStale()) {
         wx.showToast({
           title: errorMessage(error, "历史消息加载失败，请重试"),
           icon: "none"
         });
+      }
+    } finally {
+      if (historyRequestGeneration === historyLoadGeneration) {
+        if (pageActive) {
+          await new Promise<void>((resolve) => {
+            this.setData(
+              { historyLoading: false },
+              () => wx.nextTick(resolve)
+            );
+          });
+        }
+        if (historyRestoreSucceeded && !requestIsStale()) {
+          historyRestoreSucceeded = await this.waitForMessageListScrollEventsToDrain(
+            requestIsStale
+          );
+          if (historyRestoreSucceeded) {
+            const finalMetrics = await this.measureHistoryScrollMetrics(
+              firstMessage.messageId
+            );
+            if (finalMetrics.scrollTop === null) {
+              historyRestoreSucceeded = false;
+            } else {
+              messageListScrollTop = finalMetrics.scrollTop;
+            }
+          }
+        }
+        historyLoadGate.finish();
+        resetHistoryScrollIntent(
+          messageListScrollTop,
+          historyRestoreSucceeded && this.canLoadEarlierMessages(),
+          false
+        );
       }
     }
   },
 
   observePrivateImages() {
     imageObserver?.disconnect();
+    imageObserver = null;
+    if (!this.data.messages.some((message) => message.messageType === "IMAGE")) {
+      return;
+    }
     imageObserver = this.createIntersectionObserver({
       observeAll: true,
       thresholds: [0, 0.01]
@@ -1089,15 +1635,15 @@ Page({
     }
     const messages = [...this.data.messages, pendingView];
     panelInteractionGeneration += 1;
-    this.setData({
-      inputValue: clearInput ? "" : this.data.inputValue,
-      panelMode: "",
-      showCommonQuestions: fromCommonQuestion || commonQuestionEngaged,
-      messages,
-      scrollWithAnimation: true,
-      scrollTarget: nextMessageListBottomId(),
-      messageScrollTop: nextMessageListBottomScrollTop(this.data.messageScrollTop)
-    });
+    this.setData(
+      {
+        inputValue: clearInput ? "" : this.data.inputValue,
+        panelMode: "",
+        showCommonQuestions: fromCommonQuestion || commonQuestionEngaged,
+        messages
+      },
+      () => this.scrollToLatest()
+    );
     void this.deliverPendingText(messageId);
   },
 
@@ -1220,27 +1766,14 @@ Page({
 
   scrollToLatest() {
     messageListFollowingLatest = true;
-    this.setData({
-      scrollWithAnimation: true,
-      scrollTarget: nextMessageListBottomId(),
-      messageScrollTop: nextMessageListBottomScrollTop(this.data.messageScrollTop)
-    });
+    const commandGeneration = ++messageScrollCommandGeneration;
+    void this.settleMessageListAtBottom(true, commandGeneration);
   },
 
   positionLatestWithoutAnimation() {
     messageListFollowingLatest = true;
-    const requestGeneration = initializeGeneration;
-    this.setData({
-      scrollWithAnimation: false,
-      scrollTarget: nextMessageListBottomId(),
-      messageScrollTop: nextMessageListBottomScrollTop(this.data.messageScrollTop)
-    }, () => {
-      wx.nextTick(() => {
-        if (requestGeneration === initializeGeneration && pageActive) {
-          this.setData({ scrollWithAnimation: true });
-        }
-      });
-    });
+    const commandGeneration = ++messageScrollCommandGeneration;
+    void this.settleMessageListAtBottom(false, commandGeneration);
   },
 
   onAlbumTap() {
@@ -1300,15 +1833,15 @@ Page({
       ];
       this.beginLocalMutation();
       mutationStarted = true;
-      this.setData({
-        uploading: true,
-        panelMode: "",
-        showCommonQuestions: false,
-        messages: nextMessages,
-        scrollWithAnimation: true,
-        scrollTarget: nextMessageListBottomId(),
-        messageScrollTop: nextMessageListBottomScrollTop(this.data.messageScrollTop)
-      });
+      this.setData(
+        {
+          uploading: true,
+          panelMode: "",
+          showCommonQuestions: false,
+          messages: nextMessages
+        },
+        () => this.scrollToLatest()
+      );
       let successCount = 0;
       let lastFailure = "";
       for (const pending of pendingUploads) {
