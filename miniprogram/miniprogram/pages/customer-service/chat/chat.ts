@@ -4,7 +4,6 @@ import {
   customerServiceMessageId,
   customerServiceOrderStatusText,
   customerServicePriceRange,
-  customerServiceStatusHint,
   formatCustomerServiceMoney,
   shouldShowCustomerServiceCommonQuestions,
   type CustomerServiceEntryContext
@@ -48,6 +47,12 @@ interface ChatPageOptions {
 interface InputEvent {
   detail: {
     value: string;
+  };
+}
+
+interface KeyboardHeightEvent {
+  detail: {
+    height: number;
   };
 }
 
@@ -327,7 +332,6 @@ Page({
     errorText: "",
     conversationId: 0,
     conversationStatus: "DRAFT",
-    statusHint: "发送消息后，客服会尽快接待",
     contextPreview: "",
     messages: [] as MessageView[],
     commonQuestions: [] as CustomerServiceCommonQuestion[],
@@ -336,7 +340,7 @@ Page({
     commonQuestionSending: false,
     scrollTarget: "",
     inputValue: "",
-    canSend: false,
+    keyboardHeight: 0,
     uploading: false,
     panelMode: "" as PanelMode,
     pickerOpen: false,
@@ -400,6 +404,7 @@ Page({
     pageActive = false;
     panelInteractionGeneration += 1;
     stopLiveUpdates();
+    this.setData({ keyboardHeight: 0 });
   },
 
   onUnload() {
@@ -629,10 +634,6 @@ Page({
       {
         conversationId: conversation.conversationId,
         conversationStatus: conversation.status,
-        statusHint: customerServiceStatusHint(
-          conversation.status,
-          conversation.assignedAdminDisplayName
-        ),
         contextPreview,
         messages: views,
         commonQuestionAnchorMessageId: commonQuestionAnchorMessageId(views),
@@ -718,11 +719,7 @@ Page({
   },
 
   onInput(event: InputEvent) {
-    const inputValue = event.detail.value;
-    this.setData({
-      inputValue,
-      canSend: Boolean(inputValue.trim())
-    });
+    this.setData({ inputValue: event.detail.value });
   },
 
   onInputFocus() {
@@ -735,14 +732,26 @@ Page({
     }
   },
 
-  onInputConfirm(event: InputEvent) {
-    void this.sendText(event.detail.value);
+  onKeyboardHeightChange(event: KeyboardHeightEvent) {
+    const height = Number(event.detail.height);
+    const keyboardHeight = Number.isFinite(height) && height > 0
+      ? Math.round(height)
+      : 0;
+    if (!pageActive && keyboardHeight > 0) {
+      return;
+    }
+    if (keyboardHeight === this.data.keyboardHeight) {
+      return;
+    }
+    this.setData({ keyboardHeight }, () => {
+      if (keyboardHeight > 0) {
+        this.scrollToLatest();
+      }
+    });
   },
 
-  onSendTap() {
-    if (this.data.canSend) {
-      void this.sendText();
-    }
+  onInputConfirm(event: InputEvent) {
+    void this.sendText(event.detail.value);
   },
 
   onCommonQuestionTap(event: DatasetEvent) {
@@ -793,7 +802,6 @@ Page({
     panelInteractionGeneration += 1;
     this.setData({
       inputValue: clearInput ? "" : this.data.inputValue,
-      canSend: clearInput ? false : this.data.canSend,
       panelMode: "",
       showCommonQuestions: fromCommonQuestion || commonQuestionEngaged,
       messages,
@@ -891,7 +899,7 @@ Page({
           return;
         }
         this.setData(
-          { panelMode: "main", pickerOpen: false },
+          { keyboardHeight: 0, panelMode: "main", pickerOpen: false },
           () => this.scrollToLatest()
         );
       }
@@ -1408,9 +1416,6 @@ Page({
     this.setData({
       messages,
       conversationStatus,
-      statusHint: wasDraft
-        ? customerServiceStatusHint(conversationStatus)
-        : this.data.statusHint,
       scrollTarget: `message-${messages[messages.length - 1].messageId}`
     });
   },

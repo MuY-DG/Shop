@@ -97,11 +97,13 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   const sendImageEnd = pageSource.indexOf("  onOrderActionTap()", sendImageStart);
   const imageTemplateStart = template.indexOf("item.messageType === 'IMAGE'");
   const imageTemplateEnd = template.indexOf("item.messageType === 'ORDER_CARD'");
-  const composerInputStyleStart = style.indexOf(".composer__input {");
+  const composerInputStyleStart = style.indexOf(".composer__input-shell {");
   const composerInputStyleEnd = style.indexOf(
     ".composer__placeholder",
     composerInputStyleStart
   );
+  const composerInputTemplateStart = template.indexOf('class="composer__input-shell"');
+  const composerPlusTemplateStart = template.indexOf('class="composer__plus ');
   for (const boundary of [
     sendTextStart,
     sendTextEnd,
@@ -110,7 +112,9 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
     imageTemplateStart,
     imageTemplateEnd,
     composerInputStyleStart,
-    composerInputStyleEnd
+    composerInputStyleEnd,
+    composerInputTemplateStart,
+    composerPlusTemplateStart
   ]) {
     assert.notEqual(boundary, -1);
   }
@@ -174,6 +178,10 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(pageSource, /commonQuestionMessageIds\.delete\(messageId\)/);
   assert.match(pageSource, /commonQuestionSending: false/);
   assert.doesNotMatch(template, /你好，我是在线客服/);
+  assert.match(template, />MuYbaby</);
+  assert.match(template, />客服会话</);
+  assert.doesNotMatch(template, /title="在线客服"/);
+  assert.doesNotMatch(template, /service-status|statusHint/);
   assert.match(pageSource, /message\.messageType === "SYSTEM"/);
   assert.match(pageSource, /showCommonQuestions: false/);
   assert.match(pageSource, /conversationMutationEpoch/);
@@ -185,10 +193,18 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(pageSource, /pendingRealtimeChangeWithoutMessage = true/);
   assert.match(pageSource, /void this\.loadCommonQuestions\(generation\)/);
   assert.doesNotMatch(pageSource, /Promise\.all\(\[\s*openCustomerServiceConversation/);
+  assert.match(template, /confirm-type="send"/);
   assert.match(template, /confirm-hold="\{\{true\}\}"/);
-  assert.match(template, /disabled="\{\{!canSend\}\}"/);
+  assert.match(template, /adjust-position="\{\{false\}\}"/);
+  assert.match(template, /bindkeyboardheightchange="onKeyboardHeightChange"/);
+  assert.match(template, /bindconfirm="onInputConfirm"/);
+  assert.match(template, /class="keyboard-spacer"[\s\S]*height: \{\{keyboardHeight\}\}px/);
+  assert.match(pageSource, /onKeyboardHeightChange\(event: KeyboardHeightEvent\)/);
+  assert.match(pageSource, /this\.setData\(\{ keyboardHeight \}/);
+  assert.doesNotMatch(template, /composer__send|onSendTap|chat-send\.svg/);
+  assert.ok(composerInputTemplateStart < composerPlusTemplateStart);
   assert.doesNotMatch(template, /wx:if="\{\{inputValue\}\}"/);
-  assert.match(pageSource, /canSend: Boolean\(inputValue\.trim\(\)\)/);
+  assert.doesNotMatch(pageSource, /\bcanSend\b|onSendTap/);
   assert.match(composerInputStyle, /width: 0;[\s\S]*flex: 1 1 0;/);
   assert.match(style, /composer--panel-open/);
   assert.doesNotMatch(style, /attachment-panel--open/);
@@ -211,7 +227,6 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(template, />购物车</);
   for (const icon of [
     "chat-add.svg",
-    "chat-send.svg",
     "chat-photo.svg",
     "chat-camera.svg",
     "chat-order.svg",

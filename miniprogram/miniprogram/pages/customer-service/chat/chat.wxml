@@ -1,16 +1,27 @@
 <view class="chat-page">
   <navigation-bar
-    title="在线客服"
     back="{{true}}"
     background="#F7F7F7"
     color="#111111"
     show-divider="{{true}}"
-  />
-
-  <view class="service-status service-status--{{conversationStatus}}">
-    <view class="service-status__dot"></view>
-    <text>{{statusHint}}</text>
-  </view>
+  >
+    <view
+      slot="center"
+      class="chat-navigation-title"
+      aria-label="MuYbaby，客服会话"
+    >
+      <view class="chat-navigation-title__main">
+        <text>MuYbaby</text>
+        <image
+          class="chat-navigation-title__chevron"
+          src="/assets/icons/chevron-left-medium.svg"
+          mode="aspectFit"
+          aria-hidden="true"
+        />
+      </view>
+      <text class="chat-navigation-title__subtitle">客服会话</text>
+    </view>
+  </navigation-bar>
 
   <view wx:if="{{loading && !loaded}}" class="chat-state">
     <ui-state type="loading" title="正在接入客服" description="会话记录正在同步" />
@@ -264,7 +275,26 @@
       <text class="context-preview__text">{{contextPreview}}</text>
     </view>
 
-    <view class="composer {{panelMode ? 'composer--panel-open' : ''}}">
+    <view class="composer {{panelMode ? 'composer--panel-open' : ''}} {{keyboardHeight ? 'composer--keyboard-open' : ''}}">
+      <view class="composer__input-shell">
+        <textarea
+          class="composer__input"
+          value="{{inputValue}}"
+          auto-height
+          adjust-position="{{false}}"
+          maxlength="2000"
+          confirm-type="send"
+          confirm-hold="{{true}}"
+          show-confirm-bar="{{false}}"
+          cursor-spacing="18"
+          placeholder="发送消息"
+          placeholder-class="composer__placeholder"
+          bindinput="onInput"
+          bindfocus="onInputFocus"
+          bindkeyboardheightchange="onKeyboardHeightChange"
+          bindconfirm="onInputConfirm"
+        />
+      </view>
       <button
         class="composer__plus {{panelMode ? 'composer__plus--active' : ''}}"
         disabled="{{uploading}}"
@@ -278,35 +308,14 @@
           aria-hidden="true"
         />
       </button>
-      <textarea
-        class="composer__input"
-        value="{{inputValue}}"
-        auto-height
-        maxlength="2000"
-        confirm-type="send"
-        confirm-hold="{{true}}"
-        show-confirm-bar="{{false}}"
-        cursor-spacing="18"
-        placeholder="发送消息"
-        placeholder-class="composer__placeholder"
-        bindinput="onInput"
-        bindfocus="onInputFocus"
-        bindconfirm="onInputConfirm"
-      />
-      <button
-        class="composer__send"
-        disabled="{{!canSend}}"
-        bindtap="onSendTap"
-        aria-label="发送消息"
-      >
-        <image
-          class="composer__send-icon"
-          src="/assets/icons/chat-send.svg"
-          mode="aspectFit"
-          aria-hidden="true"
-        />
-      </button>
     </view>
+
+    <view
+      wx:if="{{keyboardHeight}}"
+      class="keyboard-spacer"
+      style="height: {{keyboardHeight}}px;"
+      aria-hidden="true"
+    ></view>
 
     <view wx:if="{{panelMode}}" class="attachment-panel attachment-panel--{{panelMode}}">
       <view wx:if="{{panelMode === 'main'}}" class="attachment-grid">
