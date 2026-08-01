@@ -76,7 +76,7 @@ interface MessageView {
   imageUrl: string;
   imageStyle: string;
   imageFailed: boolean;
-  imageUploading: boolean;
+  sending: boolean;
   sendFailed: boolean;
   orderId: number;
   orderNo: string;
@@ -107,11 +107,13 @@ type PickerKind = "" | "order" | "product";
 type ProductSource = "browse" | "favorite" | "cart";
 
 const FALLBACK_POLL_INTERVAL_MS = 15_000;
+const MESSAGE_LIST_BOTTOM_ID = "message-list-bottom";
 const imageTempPaths = new Map<number, string>();
 const originalImageTempPaths = new Map<number, string>();
 const imageMessages = new Map<number, CustomerServiceMessage>();
 const imageDownloads = new Set<number>();
 const pendingImageViews = new Map<number, MessageView>();
+const pendingImageRequests = new Set<number>();
 const pendingTextMessages = new Map<number, CustomerServiceMessage>();
 const pendingTextViews = new Map<number, MessageView>();
 const pendingTextRequests = new Set<number>();
@@ -136,6 +138,9 @@ let currentConsultationNo = 0;
 let commonQuestionQueued = false;
 let commonQuestionEngaged = false;
 let pendingRealtimeChangeWithoutMessage = false;
+let choosingMedia = false;
+let panelInteractionGeneration = 0;
+let pickerRequestGeneration = 0;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -222,7 +227,7 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
       imageUrl: cachedImage,
       imageStyle: imageStyle(message),
       imageFailed: false,
-      imageUploading: false,
+      sending: false,
       sendFailed: false,
       orderId: order?.orderId ?? 0,
       orderNo: cleanText(order?.orderNo),
@@ -331,6 +336,7 @@ Page({
     commonQuestionSending: false,
     scrollTarget: "",
     inputValue: "",
+    canSend: false,
     uploading: false,
     panelMode: "" as PanelMode,
     pickerOpen: false,
@@ -362,12 +368,16 @@ Page({
     imageMessages.clear();
     imageDownloads.clear();
     pendingImageViews.clear();
+    pendingImageRequests.clear();
     pendingTextMessages.clear();
     pendingTextViews.clear();
     pendingTextRequests.clear();
     commonQuestionMessageIds.clear();
     locallyHandledMessageIds.clear();
     pendingRealtimeMessageIds.clear();
+    choosingMedia = false;
+    panelInteractionGeneration += 1;
+    pickerRequestGeneration += 1;
   },
 
   onShow() {
@@ -388,6 +398,7 @@ Page({
 
   onHide() {
     pageActive = false;
+    panelInteractionGeneration += 1;
     stopLiveUpdates();
   },
 
@@ -403,6 +414,7 @@ Page({
     imageMessages.clear();
     imageDownloads.clear();
     pendingImageViews.clear();
+    pendingImageRequests.clear();
     pendingTextMessages.clear();
     pendingTextViews.clear();
     pendingTextRequests.clear();
@@ -414,6 +426,9 @@ Page({
     commonQuestionQueued = false;
     commonQuestionEngaged = false;
     pendingRealtimeChangeWithoutMessage = false;
+    choosingMedia = false;
+    panelInteractionGeneration += 1;
+    pickerRequestGeneration += 1;
   },
 
   async initialize() {
@@ -446,7 +461,7 @@ Page({
   async loadCommonQuestions(generation: number) {
     try {
       const commonQuestions = await getCustomerServiceCommonQuestions();
-      if (!pageActive || generation !== initializeGeneration) {
+      if (generation !== initializeGeneration) {
         return;
       }
       commonQuestionEngaged = commonQuestionEngaged ||
@@ -518,11 +533,17 @@ Page({
     if (!pageActive) {
       return;
     }
+    if (localMutationCount > 0) {
+      refreshQueued = true;
+      return;
+    }
     if (refreshRunning) {
       refreshQueued = true;
       return;
     }
     refreshRunning = true;
+    refreshQueued = false;
+    const requestGeneration = initializeGeneration;
     const mutationEpoch = conversationMutationEpoch;
     if (!silent) {
       this.setData({ loading: !this.data.loaded, errorText: "" });
@@ -530,22 +551,33 @@ Page({
     try {
       const conversation = await getCustomerServiceConversation();
       if (
+        requestGeneration !== initializeGeneration ||
         !pageActive ||
         !conversation ||
-        mutationEpoch !== conversationMutationEpoch
+        mutationEpoch !== conversationMutationEpoch ||
+        localMutationCount > 0
       ) {
+        if (pageActive && conversation && (
+          mutationEpoch !== conversationMutationEpoch ||
+          localMutationCount > 0
+        )) {
+          refreshQueued = true;
+        }
         return;
       }
       this.applyConversation(conversation);
       this.setData({ loading: false, loaded: true, errorText: "" });
     } catch (error) {
-      if (pageActive && !silent) {
+      if (requestGeneration === initializeGeneration && pageActive && !silent) {
         this.setData({
           loading: false,
           errorText: errorMessage(error, "消息刷新失败，请稍后重试")
         });
       }
     } finally {
+      if (requestGeneration !== initializeGeneration) {
+        return;
+      }
       refreshRunning = false;
       if (refreshQueued && pageActive) {
         refreshQueued = false;
@@ -686,19 +718,31 @@ Page({
   },
 
   onInput(event: InputEvent) {
-    this.setData({ inputValue: event.detail.value.slice(0, 2000) });
+    const inputValue = event.detail.value;
+    this.setData({
+      inputValue,
+      canSend: Boolean(inputValue.trim())
+    });
   },
 
   onInputFocus() {
-    this.closePanels();
+    panelInteractionGeneration += 1;
+    if (this.data.panelMode || this.data.pickerOpen) {
+      this.setData(
+        { panelMode: "", pickerOpen: false },
+        () => this.scrollToLatest()
+      );
+    }
   },
 
-  onInputConfirm() {
-    void this.sendText();
+  onInputConfirm(event: InputEvent) {
+    void this.sendText(event.detail.value);
   },
 
   onSendTap() {
-    void this.sendText();
+    if (this.data.canSend) {
+      void this.sendText();
+    }
   },
 
   onCommonQuestionTap(event: DatasetEvent) {
@@ -713,8 +757,8 @@ Page({
     }
   },
 
-  sendText() {
-    this.queueText(this.data.inputValue);
+  sendText(value?: string) {
+    this.queueText(typeof value === "string" ? value : this.data.inputValue);
   },
 
   queueText(value: string, clearInput = true, fromCommonQuestion = false) {
@@ -735,7 +779,10 @@ Page({
       clientMessageId: customerServiceMessageId(),
       createdAt: new Date().toISOString()
     };
-    const pendingView = messageViews([pendingMessage])[0];
+    const pendingView = {
+      ...messageViews([pendingMessage])[0],
+      sending: true
+    };
     pendingTextMessages.set(messageId, pendingMessage);
     pendingTextViews.set(messageId, pendingView);
     if (fromCommonQuestion) {
@@ -743,8 +790,10 @@ Page({
       commonQuestionMessageIds.add(messageId);
     }
     const messages = [...this.data.messages, pendingView];
+    panelInteractionGeneration += 1;
     this.setData({
       inputValue: clearInput ? "" : this.data.inputValue,
+      canSend: clearInput ? false : this.data.canSend,
       panelMode: "",
       showCommonQuestions: fromCommonQuestion || commonQuestionEngaged,
       messages,
@@ -758,9 +807,11 @@ Page({
     if (!pendingMessage || pendingTextRequests.has(messageId)) {
       return;
     }
+    const requestGeneration = initializeGeneration;
     pendingTextRequests.add(messageId);
     const pendingView = pendingTextViews.get(messageId);
-    if (pendingView?.sendFailed) {
+    if (pendingView) {
+      pendingView.sending = true;
       pendingView.sendFailed = false;
       this.syncPendingTextView(pendingView);
     }
@@ -770,6 +821,9 @@ Page({
         content: pendingMessage.content,
         clientMessageId: pendingMessage.clientMessageId || customerServiceMessageId()
       });
+      if (requestGeneration !== initializeGeneration) {
+        return;
+      }
       pendingTextMessages.delete(messageId);
       pendingTextViews.delete(messageId);
       this.appendLocallySentMessage(message, messageId);
@@ -777,25 +831,28 @@ Page({
       // 即使实时事件短暂丢失，也能立即拿到 FAQ / 智能 / 离线回复。
       pendingRealtimeChangeWithoutMessage = true;
     } catch {
+      if (requestGeneration !== initializeGeneration) {
+        return;
+      }
       const failedView = pendingTextViews.get(messageId);
       if (failedView) {
+        failedView.sending = false;
         failedView.sendFailed = true;
         this.syncPendingTextView(failedView);
       }
     } finally {
-      pendingTextRequests.delete(messageId);
-      if (commonQuestionMessageIds.delete(messageId)) {
-        commonQuestionQueued = false;
-        if (pageActive) this.setData({ commonQuestionSending: false });
+      if (requestGeneration === initializeGeneration) {
+        pendingTextRequests.delete(messageId);
+        if (commonQuestionMessageIds.delete(messageId)) {
+          commonQuestionQueued = false;
+          this.setData({ commonQuestionSending: false });
+        }
+        this.endLocalMutation();
       }
-      this.endLocalMutation();
     }
   },
 
   syncPendingTextView(pendingView: MessageView) {
-    if (!pageActive) {
-      return;
-    }
     this.setData({
       messages: this.data.messages.map((view) => (
         view.messageId === pendingView.messageId ? { ...pendingView } : view
@@ -816,26 +873,61 @@ Page({
   },
 
   onPlusTap() {
-    if (this.data.uploading) {
+    if (this.data.uploading || choosingMedia) {
       return;
     }
-    wx.hideKeyboard();
-    this.setData({
-      panelMode: this.data.panelMode ? "" : "main",
-      pickerOpen: false
+    if (this.data.panelMode) {
+      this.closePanels();
+      return;
+    }
+    const requestGeneration = initializeGeneration;
+    const panelGeneration = ++panelInteractionGeneration;
+    wx.hideKeyboard({
+      complete: () => {
+        if (
+          requestGeneration !== initializeGeneration ||
+          panelGeneration !== panelInteractionGeneration
+        ) {
+          return;
+        }
+        this.setData(
+          { panelMode: "main", pickerOpen: false },
+          () => this.scrollToLatest()
+        );
+      }
     });
   },
 
   onProductActionTap() {
-    this.setData({ panelMode: "product" });
+    panelInteractionGeneration += 1;
+    this.setData({ panelMode: "product" }, () => this.scrollToLatest());
   },
 
   onPanelBackTap() {
-    this.setData({ panelMode: "main" });
+    panelInteractionGeneration += 1;
+    this.setData({ panelMode: "main" }, () => this.scrollToLatest());
   },
 
   closePanels() {
-    this.setData({ panelMode: "", pickerOpen: false });
+    panelInteractionGeneration += 1;
+    if (!this.data.panelMode && !this.data.pickerOpen) {
+      return;
+    }
+    this.setData(
+      { panelMode: "", pickerOpen: false },
+      () => this.scrollToLatest()
+    );
+  },
+
+  scrollToLatest() {
+    const requestGeneration = initializeGeneration;
+    this.setData({ scrollTarget: "" }, () => {
+      wx.nextTick(() => {
+        if (requestGeneration === initializeGeneration) {
+          this.setData({ scrollTarget: MESSAGE_LIST_BOTTOM_ID });
+        }
+      });
+    });
   },
 
   onAlbumTap() {
@@ -847,12 +939,17 @@ Page({
   },
 
   async selectAndUploadImages(sourceType: "album" | "camera", count: number) {
-    if (this.data.uploading) {
+    if (this.data.uploading || choosingMedia) {
       return;
     }
+    const requestGeneration = initializeGeneration;
+    choosingMedia = true;
     let mutationStarted = false;
     try {
       const filePaths = await chooseChatImages(sourceType, count);
+      if (requestGeneration !== initializeGeneration) {
+        return;
+      }
       if (!filePaths.length) {
         return;
       }
@@ -877,7 +974,7 @@ Page({
         const pendingView = {
           ...messageViews([pendingMessage])[0],
           showTime: index === 0,
-          imageUploading: true
+          sending: true
         };
         pendingImageViews.set(messageId, pendingView);
         return { filePath, messageId, pendingView };
@@ -900,19 +997,29 @@ Page({
       for (const pending of pendingUploads) {
         try {
           const message = await uploadCustomerServiceImage(pending.filePath);
+          if (requestGeneration !== initializeGeneration) {
+            return;
+          }
           imageTempPaths.set(message.messageId, pending.filePath);
           originalImageTempPaths.set(message.messageId, pending.filePath);
           imageMessages.set(message.messageId, message);
           successCount += 1;
           this.appendLocallySentMessage(message, pending.messageId);
         } catch (error) {
+          if (requestGeneration !== initializeGeneration) {
+            return;
+          }
           lastFailure = isApiError(error) && error.code === 800002
             ? "图片需为常见格式，且不超过 5MB"
             : errorMessage(error, "图片发送失败，请重试");
-          this.removePendingImage(pending.messageId);
+          const failedView = pendingImageViews.get(pending.messageId);
+          if (failedView) {
+            failedView.sending = false;
+            failedView.sendFailed = true;
+            this.syncPendingImageView(failedView);
+          }
         }
       }
-      this.setData({ uploading: false });
       if (successCount !== filePaths.length) {
         wx.showToast({
           title: successCount
@@ -922,19 +1029,96 @@ Page({
         });
       }
     } catch (error) {
-      this.setData({ uploading: false });
+      if (requestGeneration === initializeGeneration) {
+        wx.showToast({
+          title: errorMessage(error, "图片选择失败"),
+          icon: "none"
+        });
+      }
+    } finally {
+      if (requestGeneration === initializeGeneration) {
+        choosingMedia = false;
+        this.setData({ uploading: false });
+        if (mutationStarted) {
+          this.endLocalMutation();
+        }
+      }
+    }
+  },
+
+  syncPendingImageView(pendingView: MessageView) {
+    this.setData({
+      messages: this.data.messages.map((view) => (
+        view.messageId === pendingView.messageId ? { ...pendingView } : view
+      ))
+    });
+  },
+
+  onRetryImageTap(event: DatasetEvent) {
+    const messageId = Number(event.currentTarget.dataset.id);
+    if (
+      !Number.isSafeInteger(messageId) ||
+      messageId >= 0 ||
+      this.data.uploading ||
+      pendingImageRequests.has(messageId)
+    ) {
+      return;
+    }
+    const pendingView = pendingImageViews.get(messageId);
+    if (!pendingView?.sendFailed || !imageTempPaths.has(messageId)) {
+      return;
+    }
+    void this.retryPendingImage(messageId);
+  },
+
+  async retryPendingImage(messageId: number) {
+    const filePath = imageTempPaths.get(messageId);
+    const pendingView = pendingImageViews.get(messageId);
+    if (!filePath || !pendingView || pendingImageRequests.has(messageId)) {
+      return;
+    }
+    const requestGeneration = initializeGeneration;
+    pendingImageRequests.add(messageId);
+    pendingView.sending = true;
+    pendingView.sendFailed = false;
+    this.syncPendingImageView(pendingView);
+    this.beginLocalMutation();
+    try {
+      const message = await uploadCustomerServiceImage(filePath);
+      if (requestGeneration !== initializeGeneration) {
+        return;
+      }
+      imageTempPaths.set(message.messageId, filePath);
+      originalImageTempPaths.set(message.messageId, filePath);
+      imageMessages.set(message.messageId, message);
+      this.appendLocallySentMessage(message, messageId);
+    } catch (error) {
+      if (requestGeneration !== initializeGeneration) {
+        return;
+      }
+      const failedView = pendingImageViews.get(messageId);
+      if (failedView) {
+        failedView.sending = false;
+        failedView.sendFailed = true;
+        this.syncPendingImageView(failedView);
+      }
       wx.showToast({
-        title: errorMessage(error, "图片选择失败"),
+        title: isApiError(error) && error.code === 800002
+          ? "图片需为常见格式，且不超过 5MB"
+          : errorMessage(error, "图片发送失败，请重试"),
         icon: "none"
       });
     } finally {
-      if (mutationStarted) {
+      if (requestGeneration === initializeGeneration) {
+        pendingImageRequests.delete(messageId);
         this.endLocalMutation();
       }
     }
   },
 
   onOrderActionTap() {
+    panelInteractionGeneration += 1;
+    const requestGeneration = ++pickerRequestGeneration;
     this.setData({
       panelMode: "",
       pickerOpen: true,
@@ -945,13 +1129,16 @@ Page({
       pickerProductSource: "",
       candidates: []
     });
-    void this.loadOrderCandidates();
+    void this.loadOrderCandidates(requestGeneration);
   },
 
-  async loadOrderCandidates() {
+  async loadOrderCandidates(requestGeneration: number) {
     try {
       const orders = await getCustomerServiceOrderCandidates();
-      if (pageActive && this.data.pickerKind === "order") {
+      if (
+        requestGeneration === pickerRequestGeneration &&
+        this.data.pickerKind === "order"
+      ) {
         this.setData({
           pickerLoading: false,
           candidates: orderCandidateViews(orders),
@@ -959,7 +1146,10 @@ Page({
         });
       }
     } catch (error) {
-      if (pageActive && this.data.pickerKind === "order") {
+      if (
+        requestGeneration === pickerRequestGeneration &&
+        this.data.pickerKind === "order"
+      ) {
         this.setData({
           pickerLoading: false,
           pickerErrorText: errorMessage(error, "订单加载失败，请重试")
@@ -978,6 +1168,8 @@ Page({
       : source === "favorite"
         ? "我的收藏"
         : "购物车商品";
+    panelInteractionGeneration += 1;
+    const requestGeneration = ++pickerRequestGeneration;
     this.setData({
       panelMode: "",
       pickerOpen: true,
@@ -988,10 +1180,13 @@ Page({
       pickerProductSource: source,
       candidates: []
     });
-    void this.loadProductCandidates(source);
+    void this.loadProductCandidates(source, requestGeneration);
   },
 
-  async loadProductCandidates(source: ProductSource) {
+  async loadProductCandidates(
+    source: ProductSource,
+    requestGeneration: number
+  ) {
     try {
       let candidates: CandidateView[];
       if (source === "browse") {
@@ -1040,7 +1235,11 @@ Page({
             disabled: !item.available
           }));
       }
-      if (pageActive && this.data.pickerKind === "product") {
+      if (
+        requestGeneration === pickerRequestGeneration &&
+        this.data.pickerKind === "product" &&
+        this.data.pickerProductSource === source
+      ) {
         this.setData({
           pickerLoading: false,
           candidates,
@@ -1048,7 +1247,11 @@ Page({
         });
       }
     } catch (error) {
-      if (pageActive && this.data.pickerKind === "product") {
+      if (
+        requestGeneration === pickerRequestGeneration &&
+        this.data.pickerKind === "product" &&
+        this.data.pickerProductSource === source
+      ) {
         this.setData({
           pickerLoading: false,
           pickerErrorText: errorMessage(error, "商品加载失败，请重试")
@@ -1073,6 +1276,7 @@ Page({
   },
 
   async sendCandidate(id: number, kind: Exclude<PickerKind, "">) {
+    const pageGeneration = initializeGeneration;
     this.setData({ candidateSendingId: id });
     try {
       if (kind === "order") {
@@ -1080,6 +1284,10 @@ Page({
       } else {
         await sendCustomerServiceProduct(id);
       }
+      if (pageGeneration !== initializeGeneration) {
+        return;
+      }
+      pickerRequestGeneration += 1;
       this.setData({
         candidateSendingId: 0,
         pickerOpen: false,
@@ -1089,6 +1297,9 @@ Page({
       });
       await this.refreshConversation(true);
     } catch (error) {
+      if (pageGeneration !== initializeGeneration) {
+        return;
+      }
       this.setData({ candidateSendingId: 0 });
       wx.showToast({
         title: errorMessage(error, kind === "order" ? "订单发送失败" : "商品发送失败"),
@@ -1099,6 +1310,7 @@ Page({
 
   onPickerCloseTap() {
     if (!this.data.candidateSendingId) {
+      pickerRequestGeneration += 1;
       this.setData({
         pickerOpen: false,
         pickerKind: "",
@@ -1111,13 +1323,18 @@ Page({
 
   onPickerRetry() {
     if (this.data.pickerKind === "order") {
+      const requestGeneration = ++pickerRequestGeneration;
       this.setData({ pickerLoading: true, pickerErrorText: "" });
-      void this.loadOrderCandidates();
+      void this.loadOrderCandidates(requestGeneration);
       return;
     }
     if (this.data.pickerKind === "product" && this.data.pickerProductSource) {
+      const requestGeneration = ++pickerRequestGeneration;
       this.setData({ pickerLoading: true, pickerErrorText: "" });
-      void this.loadProductCandidates(this.data.pickerProductSource);
+      void this.loadProductCandidates(
+        this.data.pickerProductSource,
+        requestGeneration
+      );
     }
   },
 
@@ -1148,17 +1365,10 @@ Page({
       );
     pendingRealtimeMessageIds.clear();
     pendingRealtimeChangeWithoutMessage = false;
-    if (needsRefresh && pageActive) {
+    if ((needsRefresh || refreshQueued) && pageActive) {
+      refreshQueued = false;
       void this.refreshConversation(true);
     }
-  },
-
-  removePendingImage(messageId: number) {
-    pendingImageViews.delete(messageId);
-    imageTempPaths.delete(messageId);
-    this.setData({
-      messages: this.data.messages.filter((message) => message.messageId !== messageId)
-    });
   },
 
   appendLocallySentMessage(
@@ -1178,7 +1388,7 @@ Page({
         return {
           ...serverView,
           showTime: view.showTime,
-          imageUploading: false
+          sending: false
         };
       });
     if (!replaced) {
@@ -1188,6 +1398,7 @@ Page({
       pendingTextMessages.delete(pendingMessageId);
       pendingTextViews.delete(pendingMessageId);
       pendingImageViews.delete(pendingMessageId);
+      pendingImageRequests.delete(pendingMessageId);
       imageTempPaths.delete(pendingMessageId);
     }
     const wasDraft = this.data.conversationStatus === "DRAFT";

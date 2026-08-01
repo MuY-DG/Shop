@@ -79,6 +79,10 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
     resolve(sourceRoot, "pages/customer-service/chat/chat.wxml"),
     "utf8"
   );
+  const style = readFileSync(
+    resolve(sourceRoot, "pages/customer-service/chat/chat.less"),
+    "utf8"
+  );
   const profileTemplate = readFileSync(
     resolve(sourceRoot, "pages/profile/profile.wxml"),
     "utf8"
@@ -87,13 +91,35 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
     resolve(sourceRoot, "pages/product/detail/detail.wxml"),
     "utf8"
   );
-  const sendTextSource = pageSource.slice(
-    pageSource.indexOf("sendText()"),
-    pageSource.indexOf("onPlusTap()")
+  const sendTextStart = pageSource.indexOf("  sendText(value?: string)");
+  const sendTextEnd = pageSource.indexOf("  onPlusTap()", sendTextStart);
+  const sendImageStart = pageSource.indexOf("  async selectAndUploadImages");
+  const sendImageEnd = pageSource.indexOf("  onOrderActionTap()", sendImageStart);
+  const imageTemplateStart = template.indexOf("item.messageType === 'IMAGE'");
+  const imageTemplateEnd = template.indexOf("item.messageType === 'ORDER_CARD'");
+  const composerInputStyleStart = style.indexOf(".composer__input {");
+  const composerInputStyleEnd = style.indexOf(
+    ".composer__placeholder",
+    composerInputStyleStart
   );
-  const sendImageSource = pageSource.slice(
-    pageSource.indexOf("async selectAndUploadImages"),
-    pageSource.indexOf("onOrderActionTap()")
+  for (const boundary of [
+    sendTextStart,
+    sendTextEnd,
+    sendImageStart,
+    sendImageEnd,
+    imageTemplateStart,
+    imageTemplateEnd,
+    composerInputStyleStart,
+    composerInputStyleEnd
+  ]) {
+    assert.notEqual(boundary, -1);
+  }
+  const sendTextSource = pageSource.slice(sendTextStart, sendTextEnd);
+  const sendImageSource = pageSource.slice(sendImageStart, sendImageEnd);
+  const imageTemplate = template.slice(imageTemplateStart, imageTemplateEnd);
+  const composerInputStyle = style.slice(
+    composerInputStyleStart,
+    composerInputStyleEnd
   );
 
   assert.match(endpointSource, /customerService/);
@@ -123,8 +149,12 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(realtimeSource, /heartbeatTimeoutTimer/);
   assert.match(pageSource, /sizeType: \["compressed"\]/);
   assert.doesNotMatch(pageSource, /sizeType: \["original"\]/);
-  assert.match(pageSource, /imageUploading: true/);
-  assert.match(template, /message-image--uploading/);
+  assert.match(pageSource, /sending: true/);
+  assert.match(imageTemplate, /item\.sending/);
+  assert.match(imageTemplate, /message-send-loading/);
+  assert.match(imageTemplate, /onRetryImageTap/);
+  assert.doesNotMatch(template, /message-image--uploading/);
+  assert.doesNotMatch(style, /grayscale/);
   assert.doesNotMatch(template, /uploadProgress/);
   assert.match(sendTextSource, /appendLocallySentMessage/);
   assert.match(sendTextSource, /pendingTextMessages/);
@@ -147,11 +177,27 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(pageSource, /message\.messageType === "SYSTEM"/);
   assert.match(pageSource, /showCommonQuestions: false/);
   assert.match(pageSource, /conversationMutationEpoch/);
+  assert.match(pageSource, /localMutationCount > 0[\s\S]*refreshQueued = true/);
+  assert.match(
+    pageSource,
+    /const requestGeneration = initializeGeneration;[\s\S]*requestGeneration !== initializeGeneration/
+  );
   assert.match(pageSource, /pendingRealtimeChangeWithoutMessage = true/);
   assert.match(pageSource, /void this\.loadCommonQuestions\(generation\)/);
   assert.doesNotMatch(pageSource, /Promise\.all\(\[\s*openCustomerServiceConversation/);
   assert.match(template, /confirm-hold="\{\{true\}\}"/);
+  assert.match(template, /disabled="\{\{!canSend\}\}"/);
+  assert.doesNotMatch(template, /wx:if="\{\{inputValue\}\}"/);
+  assert.match(pageSource, /canSend: Boolean\(inputValue\.trim\(\)\)/);
+  assert.match(composerInputStyle, /width: 0;[\s\S]*flex: 1 1 0;/);
+  assert.match(style, /composer--panel-open/);
+  assert.doesNotMatch(style, /attachment-panel--open/);
+  assert.match(template, /id="message-list-bottom"/);
+  assert.match(pageSource, /panelGeneration !== panelInteractionGeneration/);
   assert.match(sendImageSource, /appendLocallySentMessage/);
+  assert.match(sendImageSource, /failedView\.sending = false/);
+  assert.match(sendImageSource, /failedView\.sendFailed = true/);
+  assert.match(sendImageSource, /retryPendingImage/);
   assert.doesNotMatch(sendImageSource, /refreshConversation/);
   assert.match(pageSource, /getBrowseHistory/);
   assert.match(pageSource, /getFavorites/);
@@ -163,5 +209,36 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(template, />浏览</);
   assert.match(template, />收藏</);
   assert.match(template, />购物车</);
+  for (const icon of [
+    "chat-add.svg",
+    "chat-send.svg",
+    "chat-photo.svg",
+    "chat-camera.svg",
+    "chat-order.svg",
+    "chat-product.svg",
+    "chat-history.svg",
+    "chat-favorite.svg",
+    "chat-cart.svg",
+    "chat-back.svg",
+    "chat-error.svg"
+  ]) {
+    assert.match(template, new RegExp(`/assets/icons/${icon.replace(".", "\\.")}`));
+    assert.match(
+      readFileSync(resolve(sourceRoot, "assets/icons", icon), "utf8"),
+      /<svg[\s\S]*fill="#[0-9a-fA-F]{6}"/
+    );
+  }
+  const staticIconPaths = new Set(
+    Array.from(
+      template.matchAll(/src="(\/assets\/icons\/[^"{]+\.svg)"/g),
+      (match) => match[1]
+    )
+  );
+  staticIconPaths.forEach((iconPath) => {
+    assert.match(
+      readFileSync(resolve(sourceRoot, iconPath.slice(1)), "utf8"),
+      /<svg[\s\S]*<\/svg>/
+    );
+  });
   assert.doesNotMatch(`${profileTemplate}\n${detailTemplate}`, /open-type="contact"/);
 });
