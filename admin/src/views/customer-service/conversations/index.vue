@@ -201,11 +201,15 @@
             <LoaderCircle :size="22" />
             <span>正在同步会话…</span>
           </div>
-          <div v-if="currentDetail" ref="messageListRef" class="message-list">
+          <div
+            v-if="currentDetail"
+            ref="messageListRef"
+            class="message-list"
+            @scroll.passive="handleMessageListScroll"
+          >
             <div v-if="hasEarlierMessages" class="message-history-loader">
-              <ElButton link :loading="loadingEarlierMessages" @click="loadEarlierMessages">
-                加载更早的消息
-              </ElButton>
+              <LoaderCircle v-if="loadingEarlierMessages" :size="14" />
+              <span>{{ loadingEarlierMessages ? '正在加载更早的消息' : '向上滚动加载更早消息' }}</span>
             </div>
             <template
               v-for="(message, messageIndex) in currentDetail.messages"
@@ -217,7 +221,11 @@
               >
                 {{ formatMessageTime(message.createdAt) }}
               </div>
-              <div class="message-row" :class="messageRowClass(message)">
+              <div
+                class="message-row"
+                :class="messageRowClass(message)"
+                :data-message-id="message.messageId"
+              >
                 <div
                   v-if="message.senderType === 'SYSTEM' && message.messageType !== 'AUTO_REPLY'"
                   class="system-message"
@@ -239,6 +247,7 @@
                       v-if="imageUrls[message.messageId]"
                       class="message-image"
                       :class="{ 'is-uploading': isLocalImageUploading(message) }"
+                      :style="messageImageStyle(message)"
                       :src="imageUrls[message.messageId]"
                       fit="cover"
                       @load="handleImageLoad(message)"
@@ -248,7 +257,11 @@
                         ><div class="message-image__error">图片加载失败</div></template
                       >
                     </ElImage>
-                    <div v-else class="message-image message-image__status">
+                    <div
+                      v-else
+                      class="message-image message-image__status"
+                      :style="messageImageStyle(message)"
+                    >
                       {{ imageLoadStates[message.messageId] === 'error' ? '图片加载失败' : '' }}
                     </div>
                   </div>
@@ -716,7 +729,14 @@
     getCustomerServiceImageUrl,
     getCustomerServiceOriginalImageUrl
   } from '@/utils/customer-service-image-cache'
-  import { isPersistedCustomerServiceMessageId } from '@/utils/customer-service-message'
+  import {
+    isPersistedCustomerServiceMessageId,
+    parseCustomerServiceMessageDate,
+    preserveCustomerServiceMessageTimeVisibility,
+    shouldShowCustomerServiceMessageTime
+  } from '@/utils/customer-service-message'
+  import { preserveCustomerServicePrependScrollTop } from '@/utils/customer-service-scroll'
+  import { formatLocalDateTime } from '@/utils/date-time'
 
   const router = useRouter()
   const userStore = useUserStore()
@@ -763,6 +783,7 @@
   type LocalMessage = Api.CustomerService.Message & {
     localUploadState?: 'uploading'
     localSendState?: 'sending' | 'failed'
+    localShowTime?: boolean
   }
   interface PendingImageUpload {
     conversationId: number
@@ -805,6 +826,7 @@
   let realtimeState: RealtimeConnectionState = 'DISCONNECTED'
   let initialLoadComplete = false
   let pageMounted = false
+  let historyAutoLoadArmed = true
   let previewRequestSequence = 0
   let quickReplyLoadSequence = 0
   let previewLoadingInstance: ReturnType<typeof ElLoading.service> | null = null
@@ -814,7 +836,8 @@
   const locallyHandledMessageIds = new Map<number, number>()
   const localMutationCounts = new Map<number, number>()
   const displayNow = ref(Date.now())
-  const MESSAGE_TIME_GAP_MS = 5 * 60 * 1000
+  const HISTORY_AUTO_LOAD_THRESHOLD_PX = 48
+  const HISTORY_AUTO_LOAD_REARM_PX = 180
   const ONE_DAY_MS = 24 * 60 * 60 * 1000
   const weekdayLabels = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
 
@@ -865,15 +888,14 @@
   )
 
   const formatDateTime = (value?: string | null) => {
-    if (!value) return '-'
-    return value.replace('T', ' ').slice(0, 19)
+    return formatLocalDateTime(value)
   }
   const calendarDayOrdinal = (date: Date) =>
     Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / ONE_DAY_MS)
   const shortTime = (value?: string | null) => {
     if (!value) return ''
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return ''
+    const date = parseCustomerServiceMessageDate(value)
+    if (!date) return ''
     const now = new Date(displayNow.value)
     const elapsed = now.getTime() - date.getTime()
     if (Math.abs(elapsed) < 60 * 1000) return '刚刚'
@@ -894,8 +916,8 @@
   }
   const formatMessageTime = (value?: string | null) => {
     if (!value) return ''
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return ''
+    const date = parseCustomerServiceMessageDate(value)
+    if (!date) return ''
     const now = new Date(displayNow.value)
     const dayDifference = calendarDayOrdinal(now) - calendarDayOrdinal(date)
     const clock = formatPeriodClock(date)
@@ -906,16 +928,9 @@
     return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日 ${clock}`
   }
   const shouldShowMessageTime = (messages: Api.CustomerService.Message[], messageIndex: number) => {
-    const currentTime = new Date(messages[messageIndex]?.createdAt || '').getTime()
-    if (Number.isNaN(currentTime)) return false
-    if (messageIndex === 0) return true
-    const previousTime = new Date(messages[messageIndex - 1]?.createdAt || '').getTime()
-    if (Number.isNaN(previousTime)) return false
-    const currentDate = new Date(currentTime)
-    const previousDate = new Date(previousTime)
-    return (
-      calendarDayOrdinal(currentDate) !== calendarDayOrdinal(previousDate) ||
-      currentTime - previousTime >= MESSAGE_TIME_GAP_MS
+    return shouldShowCustomerServiceMessageTime(
+      messages[messageIndex] as LocalMessage | undefined,
+      messages[messageIndex - 1] as LocalMessage | undefined
     )
   }
   const formatMoney = (value: number) => `¥${(value / 100).toFixed(2)}`
@@ -1104,6 +1119,14 @@
     imageLoadStates.value = nextStates
   }
 
+  const messageImageStyle = (message: Api.CustomerService.Message) => {
+    const width = Number(message.image?.width)
+    const height = Number(message.image?.height)
+    return {
+      aspectRatio: width > 0 && height > 0 ? `${width} / ${height}` : '4 / 3'
+    }
+  }
+
   const handleImageError = (message: Api.CustomerService.Message) => {
     if (!isPersistedCustomerServiceMessageId(message.messageId)) return
     evictCustomerServiceImage(message.messageId)
@@ -1262,6 +1285,18 @@
   }
 
   const detailWithPendingMessages = (detail: Api.CustomerService.ConversationDetail) => {
+    const currentMessages =
+      currentDetail.value?.conversationId === detail.conversationId
+        ? currentDetail.value.messages
+        : []
+    const currentMessagesById = new Map(
+      currentMessages.map((message) => [message.messageId, message as LocalMessage])
+    )
+    const currentMessagesByClientId = new Map(
+      currentMessages
+        .filter((message) => Boolean(message.clientMessageId))
+        .map((message) => [message.clientMessageId, message as LocalMessage])
+    )
     const persistedClientMessageIds = new Set(
       detail.messages
         .map((message) => message.clientMessageId)
@@ -1282,9 +1317,16 @@
       .filter((pending) => pending.conversationId === detail.conversationId)
       .map((pending) => pending.message)
       .sort((left, right) => right.messageId - left.messageId)
+    const persistedMessages = detail.messages.map((message) =>
+      preserveCustomerServiceMessageTimeVisibility(
+        message,
+        currentMessagesById.get(message.messageId) ||
+          currentMessagesByClientId.get(message.clientMessageId)
+      )
+    )
     return {
       ...detail,
-      messages: [...detail.messages, ...pendingMessages]
+      messages: [...persistedMessages, ...pendingMessages]
     }
   }
 
@@ -1389,7 +1431,15 @@
   ) => {
     const messages = new Map<number, Api.CustomerService.Message>()
     existing.forEach((message) => messages.set(message.messageId, message))
-    incoming.forEach((message) => messages.set(message.messageId, message))
+    incoming.forEach((message) =>
+      messages.set(
+        message.messageId,
+        preserveCustomerServiceMessageTimeVisibility(
+          message,
+          messages.get(message.messageId) as LocalMessage | undefined
+        )
+      )
+    )
     return Array.from(messages.values()).sort((left, right) => left.messageId - right.messageId)
   }
 
@@ -1409,8 +1459,6 @@
       return
     }
     const conversationId = selectedConversationId.value
-    const list = messageListRef.value
-    const previousHeight = list?.scrollHeight || 0
     loadingEarlierMessages.value = true
     try {
       const messages = await fetchCustomerServiceMessages(conversationId, {
@@ -1418,6 +1466,12 @@
         limit: 50
       })
       if (selectedConversationId.value !== conversationId || !currentDetail.value) return
+      const list = messageListRef.value
+      const previousScrollTop = list?.scrollTop || 0
+      const previousHeight = list?.scrollHeight || 0
+      const previousAnchorTop = list
+        ?.querySelector<HTMLElement>(`[data-message-id="${firstMessageId}"]`)
+        ?.getBoundingClientRect().top
       currentDetail.value.messages = mergePersistedMessages(currentDetail.value.messages, messages)
       hasEarlierMessages.value = messages.length >= 50
       const cachedDetail = detailCache.get(conversationId)
@@ -1429,11 +1483,39 @@
       }
       syncImageUrls(currentDetail.value.messages)
       await nextTick()
-      if (list) list.scrollTop += list.scrollHeight - previousHeight
+      if (list && list === messageListRef.value) {
+        const nextAnchorTop = list
+          .querySelector<HTMLElement>(`[data-message-id="${firstMessageId}"]`)
+          ?.getBoundingClientRect().top
+        list.scrollTop =
+          previousAnchorTop !== undefined && nextAnchorTop !== undefined
+            ? preserveCustomerServicePrependScrollTop(
+                previousScrollTop,
+                previousAnchorTop,
+                nextAnchorTop
+              )
+            : previousScrollTop + Math.max(0, list.scrollHeight - previousHeight)
+      }
       observeImageTargets()
+    } catch {
+      if (selectedConversationId.value === conversationId) {
+        ElMessage.warning('更早消息加载失败，请稍后重试')
+      }
     } finally {
       loadingEarlierMessages.value = false
     }
+  }
+
+  const handleMessageListScroll = () => {
+    const list = messageListRef.value
+    if (!list) return
+    if (list.scrollTop >= HISTORY_AUTO_LOAD_REARM_PX) {
+      historyAutoLoadArmed = true
+      return
+    }
+    if (!historyAutoLoadArmed || list.scrollTop > HISTORY_AUTO_LOAD_THRESHOLD_PX) return
+    historyAutoLoadArmed = false
+    void loadEarlierMessages()
   }
 
   const loadNewMessages = async (conversationId: number) => {
@@ -1478,6 +1560,7 @@
   const selectConversation = async (conversationId: number) => {
     const conversationChanged = selectedConversationId.value !== conversationId
     if (conversationChanged) detachCurrentImageUrls()
+    if (conversationChanged) historyAutoLoadArmed = true
     selectedConversationId.value = conversationId
     const cachedDetail = detailCache.get(conversationId)
     if (conversationChanged) {
@@ -1562,6 +1645,10 @@
       createdAt: new Date().toISOString(),
       localSendState: 'sending'
     }
+    pendingMessage.localShowTime = shouldShowCustomerServiceMessageTime(
+      pendingMessage,
+      currentDetail.value?.messages.at(-1) as LocalMessage | undefined
+    )
     pendingTextSends.set(pendingMessageId, {
       conversationId,
       message: pendingMessage
@@ -1708,6 +1795,10 @@
       createdAt: new Date().toISOString(),
       localUploadState: 'uploading'
     }
+    pendingMessage.localShowTime = shouldShowCustomerServiceMessageTime(
+      pendingMessage,
+      currentDetail.value?.messages.at(-1) as LocalMessage | undefined
+    )
     pendingImageUploads.set(pendingMessageId, {
       conversationId,
       file,
@@ -1733,9 +1824,9 @@
         }
       })
       const localImageUrl = cacheCustomerServiceImage(message.messageId, file)
-      removePendingImage(pendingMessageId)
       imageUrls.value = { ...imageUrls.value, [message.messageId]: localImageUrl }
-      applyLocallySentMessage(conversationId, message)
+      applyLocallySentMessage(conversationId, message, pendingMessageId)
+      removePendingImage(pendingMessageId)
     } catch (error) {
       removePendingImage(pendingMessageId)
       if (error instanceof Error && error.name === 'AbortError') {
@@ -1990,6 +2081,10 @@
   ) => {
     markMessageHandledLocally(message.messageId)
     updateConversationSummary(message)
+    const pendingMessage = currentDetail.value?.messages.find(
+      (currentMessage) => currentMessage.messageId === pendingMessageId
+    ) as LocalMessage | undefined
+    const displayMessage = preserveCustomerServiceMessageTimeVisibility(message, pendingMessage)
     const cachedDetail = detailCache.get(conversationId)
     if (cachedDetail) {
       detailCache.set(conversationId, {
@@ -1998,7 +2093,7 @@
           ...cachedDetail.messages.filter(
             (currentMessage) => currentMessage.messageId !== message.messageId
           ),
-          message
+          displayMessage
         ]
       })
     }
@@ -2008,7 +2103,7 @@
         currentMessage.messageId !== message.messageId &&
         currentMessage.messageId !== pendingMessageId
     )
-    currentDetail.value.messages = [...messages, message]
+    currentDetail.value.messages = [...messages, displayMessage]
     void nextTick(() => {
       if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight
       observeImageTargets()
@@ -2392,6 +2487,7 @@
     height: 100%;
     padding: 20px;
     overflow-y: auto;
+    overflow-anchor: none;
     scrollbar-width: none;
     background: radial-gradient(circle at 10% 5%, rgb(219 234 254 / 36%), transparent 25%), #f8fafc;
   }
@@ -2402,9 +2498,17 @@
 
   .message-history-loader {
     display: flex;
+    gap: 6px;
+    align-items: center;
     justify-content: center;
     min-height: 32px;
     margin-bottom: 10px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .message-history-loader svg {
+    animation: chat-loading-spin 900ms linear infinite;
   }
 
   .message-row {
@@ -2476,9 +2580,9 @@
   }
 
   .message-image {
+    display: block;
     width: 220px;
     max-width: 76%;
-    min-height: 120px;
     overflow: hidden;
     background: var(--el-fill-color);
     border-radius: 10px;

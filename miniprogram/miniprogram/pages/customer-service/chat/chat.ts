@@ -5,6 +5,9 @@ import {
   customerServiceOrderStatusText,
   customerServicePriceRange,
   formatCustomerServiceMoney,
+  parseCustomerServiceDate,
+  preserveCustomerServiceHistoryScrollTop,
+  shouldShowCustomerServiceMessageTime,
   shouldShowCustomerServiceCommonQuestions,
   type CustomerServiceEntryContext
 } from "../../../features/customer-service";
@@ -14,6 +17,7 @@ import {
   downloadCustomerServiceOriginalImage,
   getCustomerServiceCommonQuestions,
   getCustomerServiceConversation,
+  getCustomerServiceMessages,
   getCustomerServiceOrderCandidates,
   openCustomerServiceConversation,
   sendCustomerServiceMessage,
@@ -50,9 +54,9 @@ interface InputEvent {
   };
 }
 
-interface KeyboardHeightEvent {
+interface ScrollEvent {
   detail: {
-    height: number;
+    scrollTop: number;
   };
 }
 
@@ -68,6 +72,9 @@ interface DatasetEvent {
 
 interface MessageView {
   messageId: number;
+  renderKey: string;
+  consultationNo: number;
+  createdAt: string;
   senderType: string;
   isMine: boolean;
   isSystem: boolean;
@@ -96,6 +103,11 @@ interface MessageView {
   productPriceText: string;
 }
 
+interface TimedMessage {
+  consultationNo: number;
+  createdAt: string;
+}
+
 interface CandidateView {
   id: number;
   title: string;
@@ -112,7 +124,14 @@ type PickerKind = "" | "order" | "product";
 type ProductSource = "browse" | "favorite" | "cart";
 
 const FALLBACK_POLL_INTERVAL_MS = 15_000;
-const MESSAGE_LIST_BOTTOM_ID = "message-list-bottom";
+const HISTORY_PAGE_SIZE = 50;
+const HISTORY_REARM_SCROLL_TOP = 160;
+const HISTORY_SCROLL_TARGET_IDLE = "message-list-history-idle";
+const MESSAGE_LIST_BOTTOM_SCROLL_TOP = 1_000_000_000;
+const MESSAGE_LIST_BOTTOM_IDS = [
+  "message-list-bottom-a",
+  "message-list-bottom-b"
+] as const;
 const imageTempPaths = new Map<number, string>();
 const originalImageTempPaths = new Map<number, string>();
 const imageMessages = new Map<number, CustomerServiceMessage>();
@@ -125,6 +144,9 @@ const pendingTextRequests = new Set<number>();
 const commonQuestionMessageIds = new Set<number>();
 const locallyHandledMessageIds = new Map<number, number>();
 const pendingRealtimeMessageIds = new Set<number>();
+const messageTimeVisibilityById = new Map<number, boolean>();
+const messageTimeVisibilityByClientId = new Map<string, boolean>();
+const messageRenderKeyById = new Map<number, string>();
 
 let pageActive = false;
 let initialized = false;
@@ -146,6 +168,11 @@ let pendingRealtimeChangeWithoutMessage = false;
 let choosingMedia = false;
 let panelInteractionGeneration = 0;
 let pickerRequestGeneration = 0;
+let latestPersistedMessageId = 0;
+let nextBottomAnchorIndex = 0;
+let historyUpperArmed = true;
+let messageListScrollTop = 0;
+let messageListFollowingLatest = true;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -164,13 +191,20 @@ function errorMessage(error: unknown, fallback: string): string {
       : fallback;
 }
 
-function parsedDate(value: string): Date | null {
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date : null;
+function nextMessageListBottomId(): string {
+  const target = MESSAGE_LIST_BOTTOM_IDS[nextBottomAnchorIndex];
+  nextBottomAnchorIndex = (nextBottomAnchorIndex + 1) % MESSAGE_LIST_BOTTOM_IDS.length;
+  return target;
+}
+
+function nextMessageListBottomScrollTop(current: number): number {
+  return current === MESSAGE_LIST_BOTTOM_SCROLL_TOP
+    ? MESSAGE_LIST_BOTTOM_SCROLL_TOP - 1
+    : MESSAGE_LIST_BOTTOM_SCROLL_TOP;
 }
 
 function messageTimeText(value: string): string {
-  const date = parsedDate(value);
+  const date = parseCustomerServiceDate(value);
   if (!date) {
     return "";
   }
@@ -186,22 +220,6 @@ function messageTimeText(value: string): string {
   return `${date.getMonth() + 1}月${date.getDate()}日 ${time}`;
 }
 
-function shouldShowMessageTime(
-  message: CustomerServiceMessage,
-  previous?: CustomerServiceMessage
-): boolean {
-  if (!previous || message.consultationNo !== previous.consultationNo) {
-    return true;
-  }
-  const currentDate = parsedDate(message.createdAt);
-  const previousDate = parsedDate(previous.createdAt);
-  return Boolean(
-    currentDate &&
-    previousDate &&
-    currentDate.getTime() - previousDate.getTime() >= 5 * 60 * 1000
-  );
-}
-
 function imageStyle(message: CustomerServiceMessage): string {
   const sourceWidth = message.image?.width ?? 4;
   const sourceHeight = message.image?.height ?? 3;
@@ -211,23 +229,72 @@ function imageStyle(message: CustomerServiceMessage): string {
   return `width:${width}rpx;height:${height}rpx;`;
 }
 
-function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
+function rememberMessageTimeVisibility(
+  message: CustomerServiceMessage,
+  showTime: boolean
+): void {
+  messageTimeVisibilityById.set(message.messageId, showTime);
+  const clientMessageId = cleanText(message.clientMessageId);
+  if (clientMessageId) {
+    messageTimeVisibilityByClientId.set(clientMessageId, showTime);
+  }
+}
+
+function stableMessageTimeVisibility(
+  message: CustomerServiceMessage,
+  previous?: TimedMessage
+): boolean {
+  const clientMessageId = cleanText(message.clientMessageId);
+  const persistedVisibility = messageTimeVisibilityById.get(message.messageId);
+  const clientVisibility = clientMessageId
+    ? messageTimeVisibilityByClientId.get(clientMessageId)
+    : undefined;
+  const showTime = persistedVisibility ?? clientVisibility ??
+    shouldShowCustomerServiceMessageTime(message, previous);
+  rememberMessageTimeVisibility(message, showTime);
+  return showTime;
+}
+
+function messageViews(
+  messages: CustomerServiceMessage[],
+  previousMessage?: TimedMessage
+): MessageView[] {
+  const currentUser = getSessionState().user;
+  const currentUserName = cleanText(currentUser?.nickname);
+  const currentUserAvatar = cleanText(currentUser?.avatarUrl);
   return messages.map((message, index) => {
     const avatar = cleanText(message.senderAvatar);
+    const clientMessageId = cleanText(message.clientMessageId);
+    const isMine = message.senderType === "APP_USER";
+    const senderName = isMine
+      ? currentUserName || cleanText(message.senderName) || "我"
+      : cleanText(message.senderName) || "在线客服";
+    const senderAvatar = isMine ? currentUserAvatar || avatar : avatar;
+    const renderKey = messageRenderKeyById.get(message.messageId) ??
+      (clientMessageId
+        ? `client-${clientMessageId}`
+        : `message-${message.messageId}`);
+    messageRenderKeyById.set(message.messageId, renderKey);
     const order = message.order;
     const product = message.product;
     const cachedImage = imageTempPaths.get(message.messageId) ?? "";
     return {
       messageId: message.messageId,
+      renderKey,
+      consultationNo: message.consultationNo,
+      createdAt: message.createdAt,
       senderType: message.senderType,
-      isMine: message.senderType === "APP_USER",
+      isMine,
       isSystem: message.messageType === "SYSTEM",
-      senderName: cleanText(message.senderName) || "在线客服",
-      senderAvatar: avatar,
-      avatarText: (cleanText(message.senderName) || "客服").slice(0, 1),
+      senderName,
+      senderAvatar,
+      avatarText: (senderName || "客服").slice(0, 1),
       messageType: message.messageType,
       content: cleanText(message.content),
-      showTime: shouldShowMessageTime(message, messages[index - 1]),
+      showTime: stableMessageTimeVisibility(
+        message,
+        messages[index - 1] ?? previousMessage
+      ),
       timeText: messageTimeText(message.createdAt),
       imageUrl: cachedImage,
       imageStyle: imageStyle(message),
@@ -252,9 +319,15 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
   });
 }
 
-function commonQuestionAnchorMessageId(messages: MessageView[]): number {
-  const firstUserMessageIndex = messages.findIndex((message) => message.isMine);
-  const openingMessage = messages.find((message, index) => (
+function commonQuestionAnchorMessageId(
+  messages: MessageView[],
+  consultationNo: number
+): number {
+  const currentMessages = messages.filter(
+    (message) => message.consultationNo === consultationNo
+  );
+  const firstUserMessageIndex = currentMessages.findIndex((message) => message.isMine);
+  const openingMessage = currentMessages.find((message, index) => (
     message.senderType === "BOT" &&
     message.messageType === "AUTO_REPLY" &&
     (firstUserMessageIndex < 0 || index < firstUserMessageIndex)
@@ -264,11 +337,13 @@ function commonQuestionAnchorMessageId(messages: MessageView[]): number {
 
 function hasAskedCommonQuestion(
   questions: CustomerServiceCommonQuestion[],
-  messages: MessageView[]
+  messages: MessageView[],
+  consultationNo: number
 ): boolean {
   const questionTexts = new Set(questions.map((question) => cleanText(question.question)));
   return messages.some((message) => (
     message.isMine &&
+    message.consultationNo === consultationNo &&
     message.messageType === "TEXT" &&
     questionTexts.has(message.content)
   ));
@@ -338,9 +413,13 @@ Page({
     showCommonQuestions: false,
     commonQuestionAnchorMessageId: 0,
     commonQuestionSending: false,
+    historyLoading: false,
+    hasMoreHistory: false,
+    historyExhausted: false,
     scrollTarget: "",
+    messageScrollTop: 0,
+    scrollWithAnimation: false,
     inputValue: "",
-    keyboardHeight: 0,
     uploading: false,
     panelMode: "" as PanelMode,
     pickerOpen: false,
@@ -379,7 +458,15 @@ Page({
     commonQuestionMessageIds.clear();
     locallyHandledMessageIds.clear();
     pendingRealtimeMessageIds.clear();
+    messageTimeVisibilityById.clear();
+    messageTimeVisibilityByClientId.clear();
+    messageRenderKeyById.clear();
     choosingMedia = false;
+    latestPersistedMessageId = 0;
+    nextBottomAnchorIndex = 0;
+    historyUpperArmed = true;
+    messageListScrollTop = 0;
+    messageListFollowingLatest = true;
     panelInteractionGeneration += 1;
     pickerRequestGeneration += 1;
   },
@@ -404,7 +491,7 @@ Page({
     pageActive = false;
     panelInteractionGeneration += 1;
     stopLiveUpdates();
-    this.setData({ keyboardHeight: 0 });
+    this.setData({ historyLoading: false });
   },
 
   onUnload() {
@@ -426,12 +513,19 @@ Page({
     commonQuestionMessageIds.clear();
     locallyHandledMessageIds.clear();
     pendingRealtimeMessageIds.clear();
+    messageTimeVisibilityById.clear();
+    messageTimeVisibilityByClientId.clear();
+    messageRenderKeyById.clear();
     localMutationCount = 0;
     currentConsultationNo = 0;
     commonQuestionQueued = false;
     commonQuestionEngaged = false;
     pendingRealtimeChangeWithoutMessage = false;
     choosingMedia = false;
+    latestPersistedMessageId = 0;
+    historyUpperArmed = true;
+    messageListScrollTop = 0;
+    messageListFollowingLatest = true;
     panelInteractionGeneration += 1;
     pickerRequestGeneration += 1;
   },
@@ -470,10 +564,17 @@ Page({
         return;
       }
       commonQuestionEngaged = commonQuestionEngaged ||
-        hasAskedCommonQuestion(commonQuestions, this.data.messages);
+        hasAskedCommonQuestion(
+          commonQuestions,
+          this.data.messages,
+          currentConsultationNo
+        );
       this.setData({
         commonQuestions,
-        commonQuestionAnchorMessageId: commonQuestionAnchorMessageId(this.data.messages),
+        commonQuestionAnchorMessageId: commonQuestionAnchorMessageId(
+          this.data.messages,
+          currentConsultationNo
+        ),
         showCommonQuestions: commonQuestionEngaged ||
           shouldShowCustomerServiceCommonQuestions(
             this.data.conversationStatus as CustomerServiceConversation["status"],
@@ -610,18 +711,34 @@ Page({
         pendingTextViews.delete(messageId);
       }
     });
-    imageMessages.clear();
     rawMessages.forEach((message) => imageMessages.set(message.messageId, message));
+    const persistedMessages = Array.from(imageMessages.values())
+      .sort((left, right) => left.messageId - right.messageId);
     const pendingViews = [
       ...Array.from(pendingTextViews.values()),
       ...Array.from(pendingImageViews.values())
     ].sort((left, right) => right.messageId - left.messageId);
     const views = [
-      ...messageViews(rawMessages),
+      ...messageViews(persistedMessages),
       ...pendingViews
     ];
+    const nextPersistedMessageId = persistedMessages.length
+      ? persistedMessages[persistedMessages.length - 1].messageId
+      : 0;
+    const isInitialPositioning = !this.data.loaded && latestPersistedMessageId === 0;
+    const shouldScrollToLatest = Boolean(
+      views.length &&
+      nextPersistedMessageId !== latestPersistedMessageId &&
+      messageListFollowingLatest &&
+      !this.data.historyLoading
+    );
+    latestPersistedMessageId = nextPersistedMessageId;
     commonQuestionEngaged = commonQuestionEngaged ||
-      hasAskedCommonQuestion(this.data.commonQuestions, views);
+      hasAskedCommonQuestion(
+        this.data.commonQuestions,
+        views,
+        conversation.consultationNo
+      );
     const context = conversation.currentContext;
     const contextPreview = conversation.status === "DRAFT"
       ? context?.product?.title
@@ -636,19 +753,206 @@ Page({
         conversationStatus: conversation.status,
         contextPreview,
         messages: views,
-        commonQuestionAnchorMessageId: commonQuestionAnchorMessageId(views),
+        scrollTarget: isInitialPositioning && views.length
+          ? nextMessageListBottomId()
+          : this.data.scrollTarget,
+        messageScrollTop: isInitialPositioning && views.length
+          ? nextMessageListBottomScrollTop(this.data.messageScrollTop)
+          : this.data.messageScrollTop,
+        scrollWithAnimation: isInitialPositioning
+          ? false
+          : this.data.scrollWithAnimation,
+        hasMoreHistory: isInitialPositioning
+          ? rawMessages.length >= HISTORY_PAGE_SIZE
+          : this.data.hasMoreHistory,
+        historyExhausted: isInitialPositioning
+          ? false
+          : this.data.historyExhausted,
+        commonQuestionAnchorMessageId: commonQuestionAnchorMessageId(
+          views,
+          conversation.consultationNo
+        ),
         showCommonQuestions: commonQuestionEngaged ||
           shouldShowCustomerServiceCommonQuestions(
             conversation.status,
             this.data.commonQuestions.length,
             pendingTextViews.size > 0
-          ),
-        scrollTarget: views.length ? `message-${views[views.length - 1].messageId}` : ""
+          )
       },
       () => {
         this.observePrivateImages();
+        if (isInitialPositioning) {
+          const requestGeneration = initializeGeneration;
+          wx.nextTick(() => {
+            if (requestGeneration === initializeGeneration && pageActive) {
+              this.setData({
+                scrollTarget: HISTORY_SCROLL_TARGET_IDLE,
+                scrollWithAnimation: true
+              });
+            }
+          });
+        } else if (shouldScrollToLatest) {
+          this.scrollToLatest();
+        }
       }
     );
+  },
+
+  onMessageListScroll(event: ScrollEvent) {
+    const nextScrollTop = Math.max(0, Number(event.detail.scrollTop) || 0);
+    if (nextScrollTop < messageListScrollTop - 2) {
+      messageListFollowingLatest = false;
+    }
+    messageListScrollTop = nextScrollTop;
+    if (messageListScrollTop > HISTORY_REARM_SCROLL_TOP) {
+      historyUpperArmed = true;
+    }
+  },
+
+  onScrollToLower() {
+    messageListFollowingLatest = true;
+  },
+
+  measureMessageTop(messageId: number): Promise<number | null> {
+    return new Promise((resolve) => {
+      wx.createSelectorQuery()
+        .in(this)
+        .select(`#message-${messageId}`)
+        .boundingClientRect((rect) => {
+          resolve(rect && typeof rect.top === "number" ? rect.top : null);
+        })
+        .exec();
+    });
+  },
+
+  onScrollToUpper() {
+    if (
+      !historyUpperArmed ||
+      this.data.historyLoading ||
+      !this.data.hasMoreHistory
+    ) {
+      return;
+    }
+    historyUpperArmed = false;
+    messageListFollowingLatest = false;
+    void this.loadEarlierMessages();
+  },
+
+  onHistoryTap() {
+    void this.loadEarlierMessages();
+  },
+
+  async loadEarlierMessages() {
+    if (this.data.historyLoading || !this.data.hasMoreHistory) {
+      return;
+    }
+    const persistedMessages = Array.from(imageMessages.values())
+      .sort((left, right) => left.messageId - right.messageId);
+    const firstMessage = persistedMessages[0];
+    if (!firstMessage) {
+      this.setData({ hasMoreHistory: false });
+      return;
+    }
+    const requestGeneration = initializeGeneration;
+    messageListFollowingLatest = false;
+    this.setData({
+      historyLoading: true,
+      messageScrollTop: messageListScrollTop
+    });
+    try {
+      const olderMessages = await getCustomerServiceMessages({
+        beforeId: firstMessage.messageId,
+        limit: HISTORY_PAGE_SIZE
+      });
+      if (requestGeneration !== initializeGeneration || !pageActive) {
+        return;
+      }
+      const anchorTopBefore = await this.measureMessageTop(firstMessage.messageId);
+      if (requestGeneration !== initializeGeneration || !pageActive) {
+        return;
+      }
+      let addedCount = 0;
+      olderMessages.forEach((message) => {
+        if (!imageMessages.has(message.messageId)) {
+          addedCount += 1;
+        }
+        imageMessages.set(message.messageId, message);
+      });
+      if (!addedCount) {
+        this.setData({
+          historyLoading: false,
+          hasMoreHistory: false,
+          historyExhausted: true
+        });
+        return;
+      }
+      const allPersistedMessages = Array.from(imageMessages.values())
+        .sort((left, right) => left.messageId - right.messageId);
+      const pendingViews = [
+        ...Array.from(pendingTextViews.values()),
+        ...Array.from(pendingImageViews.values())
+      ].sort((left, right) => right.messageId - left.messageId);
+      const views = [
+        ...messageViews(allPersistedMessages),
+        ...pendingViews
+      ];
+      await new Promise<void>((resolve) => {
+        this.setData(
+          {
+            messages: views,
+            scrollWithAnimation: false,
+            scrollTarget: HISTORY_SCROLL_TARGET_IDLE
+          },
+          () => wx.nextTick(resolve)
+        );
+      });
+      if (requestGeneration !== initializeGeneration || !pageActive) {
+        return;
+      }
+      const anchorTopAfter = await this.measureMessageTop(firstMessage.messageId);
+      if (requestGeneration !== initializeGeneration || !pageActive) {
+        return;
+      }
+      const canRestorePrecisely = anchorTopBefore !== null && anchorTopAfter !== null;
+      const nextScrollTop = canRestorePrecisely
+        ? preserveCustomerServiceHistoryScrollTop(
+            messageListScrollTop,
+            anchorTopBefore,
+            anchorTopAfter
+          )
+        : messageListScrollTop;
+      messageListScrollTop = nextScrollTop;
+      this.setData(
+        {
+          historyLoading: false,
+          hasMoreHistory: olderMessages.length >= HISTORY_PAGE_SIZE,
+          historyExhausted: olderMessages.length < HISTORY_PAGE_SIZE,
+          messageScrollTop: nextScrollTop,
+          scrollTarget: canRestorePrecisely
+            ? HISTORY_SCROLL_TARGET_IDLE
+            : `message-${firstMessage.messageId}`
+        },
+        () => {
+          this.observePrivateImages();
+          wx.nextTick(() => {
+            if (requestGeneration === initializeGeneration && pageActive) {
+              this.setData({
+                scrollTarget: HISTORY_SCROLL_TARGET_IDLE,
+                scrollWithAnimation: true
+              });
+            }
+          });
+        }
+      );
+    } catch (error) {
+      if (requestGeneration === initializeGeneration && pageActive) {
+        this.setData({ historyLoading: false });
+        wx.showToast({
+          title: errorMessage(error, "历史消息加载失败，请重试"),
+          icon: "none"
+        });
+      }
+    }
   },
 
   observePrivateImages() {
@@ -727,27 +1031,11 @@ Page({
     if (this.data.panelMode || this.data.pickerOpen) {
       this.setData(
         { panelMode: "", pickerOpen: false },
-        () => this.scrollToLatest()
+        () => this.positionLatestWithoutAnimation()
       );
-    }
-  },
-
-  onKeyboardHeightChange(event: KeyboardHeightEvent) {
-    const height = Number(event.detail.height);
-    const keyboardHeight = Number.isFinite(height) && height > 0
-      ? Math.round(height)
-      : 0;
-    if (!pageActive && keyboardHeight > 0) {
       return;
     }
-    if (keyboardHeight === this.data.keyboardHeight) {
-      return;
-    }
-    this.setData({ keyboardHeight }, () => {
-      if (keyboardHeight > 0) {
-        this.scrollToLatest();
-      }
-    });
+    this.positionLatestWithoutAnimation();
   },
 
   onInputConfirm(event: InputEvent) {
@@ -780,7 +1068,7 @@ Page({
     const pendingMessage: CustomerServiceMessage = {
       messageId,
       conversationId: this.data.conversationId,
-      consultationNo: 1,
+      consultationNo: currentConsultationNo || 1,
       senderType: "APP_USER",
       senderName: "我",
       messageType: "TEXT",
@@ -788,8 +1076,9 @@ Page({
       clientMessageId: customerServiceMessageId(),
       createdAt: new Date().toISOString()
     };
+    const previousMessage = this.data.messages[this.data.messages.length - 1];
     const pendingView = {
-      ...messageViews([pendingMessage])[0],
+      ...messageViews([pendingMessage], previousMessage)[0],
       sending: true
     };
     pendingTextMessages.set(messageId, pendingMessage);
@@ -805,7 +1094,9 @@ Page({
       panelMode: "",
       showCommonQuestions: fromCommonQuestion || commonQuestionEngaged,
       messages,
-      scrollTarget: `message-${messageId}`
+      scrollWithAnimation: true,
+      scrollTarget: nextMessageListBottomId(),
+      messageScrollTop: nextMessageListBottomScrollTop(this.data.messageScrollTop)
     });
     void this.deliverPendingText(messageId);
   },
@@ -899,7 +1190,7 @@ Page({
           return;
         }
         this.setData(
-          { keyboardHeight: 0, panelMode: "main", pickerOpen: false },
+          { panelMode: "main", pickerOpen: false },
           () => this.scrollToLatest()
         );
       }
@@ -928,11 +1219,25 @@ Page({
   },
 
   scrollToLatest() {
+    messageListFollowingLatest = true;
+    this.setData({
+      scrollWithAnimation: true,
+      scrollTarget: nextMessageListBottomId(),
+      messageScrollTop: nextMessageListBottomScrollTop(this.data.messageScrollTop)
+    });
+  },
+
+  positionLatestWithoutAnimation() {
+    messageListFollowingLatest = true;
     const requestGeneration = initializeGeneration;
-    this.setData({ scrollTarget: "" }, () => {
+    this.setData({
+      scrollWithAnimation: false,
+      scrollTarget: nextMessageListBottomId(),
+      messageScrollTop: nextMessageListBottomScrollTop(this.data.messageScrollTop)
+    }, () => {
       wx.nextTick(() => {
-        if (requestGeneration === initializeGeneration) {
-          this.setData({ scrollTarget: MESSAGE_LIST_BOTTOM_ID });
+        if (requestGeneration === initializeGeneration && pageActive) {
+          this.setData({ scrollWithAnimation: true });
         }
       });
     });
@@ -961,14 +1266,16 @@ Page({
       if (!filePaths.length) {
         return;
       }
-      const pendingUploads = filePaths.map((filePath, index) => {
+      let previousMessage: MessageView | CustomerServiceMessage | undefined =
+        this.data.messages[this.data.messages.length - 1];
+      const pendingUploads = filePaths.map((filePath) => {
         const messageId = nextPendingMessageId;
         nextPendingMessageId -= 1;
         imageTempPaths.set(messageId, filePath);
         const pendingMessage: CustomerServiceMessage = {
           messageId,
           conversationId: this.data.conversationId,
-          consultationNo: 1,
+          consultationNo: currentConsultationNo || 1,
           senderType: "APP_USER",
           senderName: "我",
           messageType: "IMAGE",
@@ -980,10 +1287,10 @@ Page({
           createdAt: new Date().toISOString()
         };
         const pendingView = {
-          ...messageViews([pendingMessage])[0],
-          showTime: index === 0,
+          ...messageViews([pendingMessage], previousMessage)[0],
           sending: true
         };
+        previousMessage = pendingMessage;
         pendingImageViews.set(messageId, pendingView);
         return { filePath, messageId, pendingView };
       });
@@ -998,7 +1305,9 @@ Page({
         panelMode: "",
         showCommonQuestions: false,
         messages: nextMessages,
-        scrollTarget: `message-${pendingUploads[pendingUploads.length - 1].messageId}`
+        scrollWithAnimation: true,
+        scrollTarget: nextMessageListBottomId(),
+        messageScrollTop: nextMessageListBottomScrollTop(this.data.messageScrollTop)
       });
       let successCount = 0;
       let lastFailure = "";
@@ -1384,7 +1693,16 @@ Page({
     pendingMessageId?: number
   ) {
     locallyHandledMessageIds.set(message.messageId, Date.now() + 15_000);
-    const serverView = messageViews([message])[0];
+    imageMessages.set(message.messageId, message);
+    latestPersistedMessageId = message.messageId;
+    const pendingView = pendingMessageId === undefined
+      ? undefined
+      : this.data.messages.find((view) => view.messageId === pendingMessageId);
+    if (pendingView) {
+      rememberMessageTimeVisibility(message, pendingView.showTime);
+      messageRenderKeyById.set(message.messageId, pendingView.renderKey);
+    }
+    const serverView = messageViews([message], pendingView)[0];
     let replaced = false;
     const messages = this.data.messages
       .filter((view) => view.messageId !== message.messageId)
@@ -1408,6 +1726,7 @@ Page({
       pendingImageViews.delete(pendingMessageId);
       pendingImageRequests.delete(pendingMessageId);
       imageTempPaths.delete(pendingMessageId);
+      messageRenderKeyById.delete(pendingMessageId);
     }
     const wasDraft = this.data.conversationStatus === "DRAFT";
     const conversationStatus = (
@@ -1415,8 +1734,7 @@ Page({
     ) as CustomerServiceConversation["status"];
     this.setData({
       messages,
-      conversationStatus,
-      scrollTarget: `message-${messages[messages.length - 1].messageId}`
+      conversationStatus
     });
   },
 

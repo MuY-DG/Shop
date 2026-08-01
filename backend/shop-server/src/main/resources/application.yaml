@@ -94,6 +94,13 @@ shop: # 商城项目自定义业务配置的统一入口。
       batch-size: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_BATCH_SIZE:5000} # 每批最多删除 5000 条过期记录。
       max-batches-per-run: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_MAX_BATCHES:100} # 单次任务最多执行 100 个删除批次。
       cron: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_CRON:0 45 3 * * *} # 默认按北京时间每天凌晨 3:45 执行。
+  customer-service: # 在线客服运行与历史保留配置。
+    retention: # 到期消息按小批次移除，关联图片交给素材清理任务异步删除。
+      enabled: ${SHOP_CUSTOMER_SERVICE_RETENTION_ENABLED:false} # 上线前需按适用法规与售后政策确认，默认不自动删除历史。
+      days: ${SHOP_CUSTOMER_SERVICE_RETENTION_DAYS:365} # 启用后默认保留 365 天。
+      batch-size: ${SHOP_CUSTOMER_SERVICE_RETENTION_BATCH_SIZE:1000} # 每批最多删除 1000 条消息，避免长事务。
+      max-batches-per-run: ${SHOP_CUSTOMER_SERVICE_RETENTION_MAX_BATCHES:100} # 单次任务最多处理 100 批。
+      cron: ${SHOP_CUSTOMER_SERVICE_RETENTION_CRON:0 15 4 * * *} # 默认按北京时间每天凌晨 4:15 执行。
   analytics: # 访问统计、限流和历史数据保留配置。
     rate-limit: # 访问统计事件写入的限流配置。
       enabled: ${SHOP_ANALYTICS_RATE_LIMIT_ENABLED:true} # 默认启用统计事件限流。

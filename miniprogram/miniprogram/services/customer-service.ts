@@ -52,12 +52,26 @@ export function getCustomerServiceCommonQuestions(): Promise<CustomerServiceComm
 }
 
 export function getCustomerServiceMessages(
-  afterId?: number
+  options: {
+    afterId?: number;
+    beforeId?: number;
+    limit?: number;
+  } = {}
 ): Promise<CustomerServiceMessage[]> {
+  const data: WechatMiniprogram.IAnyObject = {};
+  if (options.afterId) {
+    data.afterId = options.afterId;
+  }
+  if (options.beforeId) {
+    data.beforeId = options.beforeId;
+  }
+  if (options.limit) {
+    data.limit = options.limit;
+  }
   return request<CustomerServiceMessage[]>({
     url: API_ENDPOINTS.customerService.messages,
     method: "GET",
-    data: afterId ? { afterId } : undefined
+    data: Object.keys(data).length ? data : undefined
   });
 }
 

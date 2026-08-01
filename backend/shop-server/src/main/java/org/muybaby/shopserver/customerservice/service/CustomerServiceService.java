@@ -1576,10 +1576,8 @@ public class CustomerServiceService {
         }
         var query = jdbcClient.sql(messageSelect() + """
                         where m.conversation_id = :conversationId
-                          and m.consultation_no = :consultationNo
                         """ + cursorFilter + orderBy + " limit :limit")
                 .param("conversationId", conversation.id())
-                .param("consultationNo", conversation.consultationNo())
                 .param("limit", limit);
         if (effectiveAfterId != null) {
             query = query.param("cursorId", effectiveAfterId);

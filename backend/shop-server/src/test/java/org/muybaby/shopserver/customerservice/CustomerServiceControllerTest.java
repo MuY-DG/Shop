@@ -313,11 +313,15 @@ class CustomerServiceControllerTest {
                 .andExpect(jsonPath("$.data.assignedAdminUserId").doesNotExist())
                 .andExpect(jsonPath("$.data.consultationNo").value(2))
                 .andExpect(jsonPath("$.data.currentContext.type").value("GENERAL"))
-                .andExpect(jsonPath("$.data.messages.length()").value(2));
+                .andExpect(jsonPath("$.data.messages.length()").value(8))
+                .andExpect(jsonPath("$.data.messages[0].consultationNo").value(1))
+                .andExpect(jsonPath("$.data.messages[6].consultationNo").value(2))
+                .andExpect(jsonPath("$.data.messages[6].messageType").value("SYSTEM"))
+                .andExpect(jsonPath("$.data.messages[7].content").value("我还有一个问题"));
     }
 
     @Test
-    void productAndOrderEntriesSetCurrentContextAndClosedConversationStartsCleanConsultation() throws Exception {
+    void productAndOrderEntriesResetContextButPreserveClosedConsultationHistory() throws Exception {
         AppLogin app = appLogin("customer-service-context-user");
         long productId = insertProduct("咨询商品一", 2590);
         long orderId = insertOrder(app.userId(), "CS-CONTEXT-ORDER");
@@ -368,7 +372,9 @@ class CustomerServiceControllerTest {
                 .andExpect(jsonPath("$.data.currentContext.order.orderId").value(orderId))
                 .andExpect(jsonPath("$.data.linkedOrders[0].orderId").value(orderId))
                 .andExpect(jsonPath("$.data.linkedProducts.length()").value(0))
-                .andExpect(jsonPath("$.data.messages.length()").value(0));
+                .andExpect(jsonPath("$.data.messages.length()").value(4))
+                .andExpect(jsonPath("$.data.messages[0].consultationNo").value(1))
+                .andExpect(jsonPath("$.data.messages[3].content").value("本次会话已结束"));
 
         mockMvc.perform(post("/app/customer-service/conversation/messages")
                         .header("Authorization", bearer(app.token()))
@@ -382,10 +388,10 @@ class CustomerServiceControllerTest {
                         .header("Authorization", bearer(app.token())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("WAITING"))
-                .andExpect(jsonPath("$.data.messages.length()").value(3))
-                .andExpect(jsonPath("$.data.messages[0].messageType").value("SYSTEM"))
-                .andExpect(jsonPath("$.data.messages[1].messageType").value("ORDER_CARD"))
-                .andExpect(jsonPath("$.data.messages[2].messageType").value("TEXT"));
+                .andExpect(jsonPath("$.data.messages.length()").value(7))
+                .andExpect(jsonPath("$.data.messages[4].messageType").value("SYSTEM"))
+                .andExpect(jsonPath("$.data.messages[5].messageType").value("ORDER_CARD"))
+                .andExpect(jsonPath("$.data.messages[6].messageType").value("TEXT"));
     }
 
     @Test

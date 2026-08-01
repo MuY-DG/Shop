@@ -2,6 +2,7 @@ import type {
   CustomerServiceContextType,
   CustomerServiceConversationStatus
 } from "../types/customer-service";
+import { parseApiDateTime } from "../utils/date-time";
 
 export const CUSTOMER_SERVICE_ROUTE = "/pages/customer-service/chat/chat";
 
@@ -10,8 +11,48 @@ export interface CustomerServiceEntryContext {
   contextId?: number;
 }
 
+interface CustomerServiceTimedMessage {
+  consultationNo: number;
+  createdAt: string;
+}
+
+export function parseCustomerServiceDate(value: unknown): Date | null {
+  return parseApiDateTime(value);
+}
+
+export function shouldShowCustomerServiceMessageTime(
+  message: CustomerServiceTimedMessage,
+  previous?: CustomerServiceTimedMessage
+): boolean {
+  if (!previous || message.consultationNo !== previous.consultationNo) {
+    return true;
+  }
+  const currentDate = parseCustomerServiceDate(message.createdAt);
+  const previousDate = parseCustomerServiceDate(previous.createdAt);
+  return Boolean(
+    currentDate &&
+    previousDate &&
+    currentDate.getTime() - previousDate.getTime() >= 5 * 60 * 1000
+  );
+}
+
 export function isPersistedCustomerServiceMessageId(messageId: unknown): messageId is number {
   return typeof messageId === "number" && Number.isSafeInteger(messageId) && messageId > 0;
+}
+
+export function preserveCustomerServiceHistoryScrollTop(
+  currentScrollTop: number,
+  anchorTopBefore: number,
+  anchorTopAfter: number
+): number {
+  if (
+    !Number.isFinite(currentScrollTop) ||
+    !Number.isFinite(anchorTopBefore) ||
+    !Number.isFinite(anchorTopAfter)
+  ) {
+    return Math.max(0, Number.isFinite(currentScrollTop) ? currentScrollTop : 0);
+  }
+  return Math.max(0, currentScrollTop + anchorTopAfter - anchorTopBefore);
 }
 
 function positiveId(value: unknown): number {

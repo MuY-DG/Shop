@@ -10,6 +10,9 @@ import {
   customerServiceOrderStatusText,
   customerServicePriceRange,
   customerServiceStatusHint,
+  parseCustomerServiceDate,
+  preserveCustomerServiceHistoryScrollTop,
+  shouldShowCustomerServiceMessageTime,
   shouldShowCustomerServiceCommonQuestions
 } from "../miniprogram/features/customer-service";
 
@@ -56,6 +59,48 @@ test("常见问题只在尚未发起咨询的草稿会话展示", () => {
   assert.equal(shouldShowCustomerServiceCommonQuestions("DRAFT", 3, true), false);
   assert.equal(shouldShowCustomerServiceCommonQuestions("WAITING", 3, false), false);
   assert.equal(shouldShowCustomerServiceCommonQuestions("ACTIVE", 3, false), false);
+});
+
+test("客服时间按带偏移的 API 时间契约解析", () => {
+  const localDate = parseCustomerServiceDate("2026-08-01T08:27:30.123456Z");
+  assert.ok(localDate);
+  assert.equal(localDate.toISOString(), "2026-08-01T08:27:30.123Z");
+  assert.equal(
+    parseCustomerServiceDate("2026-08-01T16:27:30Z")?.getTime(),
+    Date.UTC(2026, 7, 1, 16, 27, 30)
+  );
+  assert.equal(parseCustomerServiceDate("2026-08-01T16:27:30"), null);
+  assert.equal(parseCustomerServiceDate("not-a-date"), null);
+});
+
+test("客服临时消息沿用五分钟时间分组，避免发送后时间闪动", () => {
+  const previous = { consultationNo: 1, createdAt: "2026-08-01T08:26:00Z" };
+  assert.equal(
+    shouldShowCustomerServiceMessageTime(
+      { consultationNo: 1, createdAt: "2026-08-01T08:27:00Z" },
+      previous
+    ),
+    false
+  );
+  assert.equal(
+    shouldShowCustomerServiceMessageTime(
+      { consultationNo: 1, createdAt: "2026-08-01T08:31:00Z" },
+      previous
+    ),
+    true
+  );
+  assert.equal(
+    shouldShowCustomerServiceMessageTime(
+      { consultationNo: 2, createdAt: "2026-08-01T08:27:00Z" },
+      previous
+    ),
+    true
+  );
+});
+
+test("客服历史 prepend 后按锚点坐标差保持当前阅读位置", () => {
+  assert.equal(preserveCustomerServiceHistoryScrollTop(12, -44, 1196), 1252);
+  assert.equal(preserveCustomerServiceHistoryScrollTop(0, 20, 10), 0);
 });
 
 test("小程序客服使用自建接口、即时图片预览和两级商品来源面板", () => {
@@ -134,6 +179,8 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(endpointSource, /messages\/\$\{messageId\}\/thumbnail/);
   assert.match(serviceSource, /uploadCustomerServiceImage/);
   assert.match(serviceSource, /getCustomerServiceCommonQuestions/);
+  assert.match(serviceSource, /beforeId\?: number/);
+  assert.match(serviceSource, /limit\?: number/);
   assert.match(serviceSource, /uploadFileDirect<CustomerServiceMessage>/);
   assert.match(serviceSource, /thumbnailAccessMode === "SIGNED_URL"/);
   assert.match(serviceSource, /loadCachedImageFile/);
@@ -195,12 +242,21 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.doesNotMatch(pageSource, /Promise\.all\(\[\s*openCustomerServiceConversation/);
   assert.match(template, /confirm-type="send"/);
   assert.match(template, /confirm-hold="\{\{true\}\}"/);
-  assert.match(template, /adjust-position="\{\{false\}\}"/);
-  assert.match(template, /bindkeyboardheightchange="onKeyboardHeightChange"/);
+  assert.match(template, /adjust-position="\{\{true\}\}"/);
   assert.match(template, /bindconfirm="onInputConfirm"/);
-  assert.match(template, /class="keyboard-spacer"[\s\S]*height: \{\{keyboardHeight\}\}px/);
-  assert.match(pageSource, /onKeyboardHeightChange\(event: KeyboardHeightEvent\)/);
-  assert.match(pageSource, /this\.setData\(\{ keyboardHeight \}/);
+  assert.doesNotMatch(template, /bindkeyboardheightchange|keyboard-spacer|keyboardHeight/);
+  assert.doesNotMatch(pageSource, /KeyboardHeightEvent|keyboardSettleTimer|keyboardTransitionDuration/);
+  assert.match(pageSource, /stableMessageTimeVisibility/);
+  assert.match(pageSource, /rememberMessageTimeVisibility\(message, pendingView\.showTime\)/);
+  assert.match(pageSource, /const currentUser = getSessionState\(\)\.user/);
+  assert.match(pageSource, /const senderAvatar = isMine \? currentUserAvatar \|\| avatar : avatar/);
+  assert.match(pageSource, /messageRenderKeyById\.set\(message\.messageId, pendingView\.renderKey\)/);
+  assert.match(template, /wx:key="renderKey"/);
+  assert.match(template, /item\.senderAvatar \? 'message-avatar--image' : 'message-avatar--mine'/);
+  assert.match(pageSource, /consultationNo: currentConsultationNo \|\| 1/);
+  assert.doesNotMatch(style, /composer--keyboard-open|keyboard-spacer/);
+  assert.match(pageSource, /nextPersistedMessageId !== latestPersistedMessageId/);
+  assert.match(pageSource, /this\.observePrivateImages\(\);[\s\S]*this\.scrollToLatest\(\);/);
   assert.doesNotMatch(template, /composer__send|onSendTap|chat-send\.svg/);
   assert.ok(composerInputTemplateStart < composerPlusTemplateStart);
   assert.doesNotMatch(template, /wx:if="\{\{inputValue\}\}"/);
@@ -208,7 +264,63 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(composerInputStyle, /width: 0;[\s\S]*flex: 1 1 0;/);
   assert.match(style, /composer--panel-open/);
   assert.doesNotMatch(style, /attachment-panel--open/);
-  assert.match(template, /id="message-list-bottom"/);
+  assert.match(template, /id="message-list-bottom-a"/);
+  assert.match(template, /id="message-list-bottom-b"/);
+  assert.match(template, /scroll-with-animation="\{\{scrollWithAnimation\}\}"/);
+  assert.match(template, /scroll-top="\{\{messageScrollTop\}\}"/);
+  assert.doesNotMatch(template, /scroll-anchoring/);
+  assert.match(pageSource, /scrollWithAnimation: false/);
+  assert.match(
+    pageSource,
+    /positionLatestWithoutAnimation\(\)[\s\S]*scrollWithAnimation: false[\s\S]*nextMessageListBottomId\(\)[\s\S]*scrollWithAnimation: true/
+  );
+  assert.match(pageSource, /const isInitialPositioning = !this\.data\.loaded/);
+  assert.match(
+    pageSource,
+    /scrollTarget: isInitialPositioning && views\.length[\s\S]*nextMessageListBottomId\(\)/
+  );
+  assert.match(
+    pageSource,
+    /messageScrollTop: isInitialPositioning && views\.length[\s\S]*nextMessageListBottomScrollTop/
+  );
+  assert.doesNotMatch(pageSource, /this\.setData\(\{ scrollTarget: "" \}/);
+  assert.match(
+    pageSource,
+    /loadEarlierMessages\(\)[\s\S]*beforeId: firstMessage\.messageId[\s\S]*limit: HISTORY_PAGE_SIZE/
+  );
+  assert.match(pageSource, /const HISTORY_SCROLL_TARGET_IDLE = "message-list-history-idle"/);
+  assert.match(
+    pageSource,
+    /anchorTopBefore[\s\S]*messages: views[\s\S]*anchorTopAfter[\s\S]*preserveCustomerServiceHistoryScrollTop/
+  );
+  assert.match(pageSource, /measureMessageTop\(messageId: number\)/);
+  assert.match(template, /bindscrolltoupper="onScrollToUpper"/);
+  assert.match(template, /bindscrolltolower="onScrollToLower"/);
+  assert.match(template, /bindtap="onHistoryTap"/);
+  assert.match(template, />查看更早记录</);
+  assert.match(template, /historyExhausted/);
+  assert.match(template, />已显示全部记录</);
+  assert.match(
+    pageSource,
+    /historyExhausted: olderMessages\.length < HISTORY_PAGE_SIZE/
+  );
+  assert.match(
+    pageSource,
+    /nextPersistedMessageId !== latestPersistedMessageId[\s\S]*messageListFollowingLatest[\s\S]*!this\.data\.historyLoading/
+  );
+  assert.match(
+    pageSource,
+    /nextScrollTop < messageListScrollTop - 2[\s\S]*messageListFollowingLatest = false/
+  );
+  assert.match(pageSource, /onScrollToLower\(\)[\s\S]*messageListFollowingLatest = true/);
+  assert.match(
+    pageSource,
+    /onScrollToUpper\(\)[\s\S]*this\.data\.historyLoading[\s\S]*!this\.data\.hasMoreHistory[\s\S]*historyUpperArmed = false/
+  );
+  assert.match(
+    pageSource,
+    /if \(isInitialPositioning\)[\s\S]*scrollWithAnimation: true[\s\S]*else if \(shouldScrollToLatest\)/
+  );
   assert.match(pageSource, /panelGeneration !== panelInteractionGeneration/);
   assert.match(sendImageSource, /appendLocallySentMessage/);
   assert.match(sendImageSource, /failedView\.sending = false/);

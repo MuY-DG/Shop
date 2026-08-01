@@ -81,8 +81,37 @@ button::after {
   padding: 28rpx 24rpx 12rpx;
 }
 
+.history-loader {
+  display: flex;
+  width: 100%;
+  height: 64rpx;
+  margin: 0 0 20rpx;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  border: 0;
+  color: #777777;
+  background: transparent;
+  font-size: 24rpx;
+  font-weight: 400;
+  line-height: 64rpx;
+}
+
+.history-loader--action {
+  color: #576b95;
+}
+
+.history-loader--complete {
+  color: #a0a0a0;
+}
+
 .message-list__bottom {
   height: 12rpx;
+}
+
+.message-list__bottom-anchor {
+  height: 0;
 }
 
 .message-row {
@@ -115,6 +144,10 @@ button::after {
 
 .message-avatar--mine {
   background: #b72b22;
+}
+
+.message-avatar--image {
+  background: #dedede;
 }
 
 .message-bubble {
@@ -462,14 +495,8 @@ button::after {
   background: rgba(247, 247, 247, 0.98);
 }
 
-.composer--panel-open,
-.composer--keyboard-open {
+.composer--panel-open {
   padding-bottom: 10rpx;
-}
-
-.keyboard-spacer {
-  width: 100%;
-  flex: none;
 }
 
 .composer__input-shell {

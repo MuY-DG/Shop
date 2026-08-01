@@ -43,11 +43,29 @@
       scroll-y
       enhanced
       show-scrollbar="{{false}}"
-      scroll-with-animation
+      upper-threshold="80"
+      scroll-with-animation="{{scrollWithAnimation}}"
       scroll-into-view="{{scrollTarget}}"
+      scroll-top="{{messageScrollTop}}"
+      bindscroll="onMessageListScroll"
+      bindscrolltoupper="onScrollToUpper"
+      bindscrolltolower="onScrollToLower"
     >
       <view class="message-list">
-        <block wx:for="{{messages}}" wx:key="messageId">
+        <view wx:if="{{historyLoading}}" class="history-loader">
+          <view class="message-send-loading__spinner"></view>
+          <text>正在加载更早记录</text>
+        </view>
+        <button
+          wx:elif="{{hasMoreHistory}}"
+          class="history-loader history-loader--action"
+          bindtap="onHistoryTap"
+        >查看更早记录</button>
+        <view wx:elif="{{historyExhausted}}" class="history-loader history-loader--complete">
+          <text>已显示全部记录</text>
+        </view>
+
+        <block wx:for="{{messages}}" wx:key="renderKey">
           <view wx:if="{{item.showTime}}" class="message-time">{{item.timeText}}</view>
 
           <view
@@ -255,7 +273,10 @@
               >{{item.content}}</view>
             </view>
 
-            <view wx:if="{{item.isMine}}" class="message-avatar message-avatar--mine">
+            <view
+              wx:if="{{item.isMine}}"
+              class="message-avatar {{item.senderAvatar ? 'message-avatar--image' : 'message-avatar--mine'}}"
+            >
               <image
                 wx:if="{{item.senderAvatar}}"
                 src="{{item.senderAvatar}}"
@@ -266,7 +287,8 @@
           </view>
         </block>
 
-        <view id="message-list-bottom" class="message-list__bottom"></view>
+        <view id="message-list-bottom-a" class="message-list__bottom-anchor"></view>
+        <view id="message-list-bottom-b" class="message-list__bottom"></view>
       </view>
     </scroll-view>
 
@@ -275,13 +297,13 @@
       <text class="context-preview__text">{{contextPreview}}</text>
     </view>
 
-    <view class="composer {{panelMode ? 'composer--panel-open' : ''}} {{keyboardHeight ? 'composer--keyboard-open' : ''}}">
+    <view class="composer {{panelMode ? 'composer--panel-open' : ''}}">
       <view class="composer__input-shell">
         <textarea
           class="composer__input"
           value="{{inputValue}}"
           auto-height
-          adjust-position="{{false}}"
+          adjust-position="{{true}}"
           maxlength="2000"
           confirm-type="send"
           confirm-hold="{{true}}"
@@ -291,7 +313,6 @@
           placeholder-class="composer__placeholder"
           bindinput="onInput"
           bindfocus="onInputFocus"
-          bindkeyboardheightchange="onKeyboardHeightChange"
           bindconfirm="onInputConfirm"
         />
       </view>
@@ -309,13 +330,6 @@
         />
       </button>
     </view>
-
-    <view
-      wx:if="{{keyboardHeight}}"
-      class="keyboard-spacer"
-      style="height: {{keyboardHeight}}px;"
-      aria-hidden="true"
-    ></view>
 
     <view wx:if="{{panelMode}}" class="attachment-panel attachment-panel--{{panelMode}}">
       <view wx:if="{{panelMode === 'main'}}" class="attachment-grid">
