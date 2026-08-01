@@ -663,8 +663,12 @@
   } from '@/utils/realtime'
   import {
     cacheCustomerServiceImage,
+    cacheCustomerServiceImageUrl,
+    cacheCustomerServiceOriginalImage,
+    cacheCustomerServiceOriginalImageUrl,
     evictCustomerServiceImage,
-    getCustomerServiceImageUrl
+    getCustomerServiceImageUrl,
+    getCustomerServiceOriginalImageUrl
   } from '@/utils/customer-service-image-cache'
   import { isPersistedCustomerServiceMessageId } from '@/utils/customer-service-message'
 
@@ -919,17 +923,38 @@
     return Number.isFinite(expiration) && expiration > Date.now() + 5_000 ? accessUrl : ''
   }
 
-  const preferredMessageImageUrl = (image: Api.CustomerService.ImageMessage | null) => {
-    if (!image) return ''
+  interface MessageImageAccess {
+    url: string
+    expiresAt?: number
+  }
+
+  const signedImageAccess = (
+    accessMode: Api.CustomerService.ImageMessage['accessMode'] | null | undefined,
+    accessUrl: string | null | undefined,
+    expiresAt: string | null | undefined
+  ): MessageImageAccess | null => {
+    const url = usableSignedUrl(accessMode, accessUrl, expiresAt)
+    if (!url) return null
+    const expiration = expiresAt ? Date.parse(expiresAt) : Number.NaN
+    return {
+      url,
+      expiresAt: Number.isFinite(expiration) ? expiration - 5_000 : undefined
+    }
+  }
+
+  const preferredMessageImageAccess = (
+    image: Api.CustomerService.ImageMessage | null
+  ): MessageImageAccess | null => {
+    if (!image) return null
     if (image.thumbnailStatus === 'READY') {
-      const thumbnailUrl = usableSignedUrl(
+      const thumbnailAccess = signedImageAccess(
         image.thumbnailAccessMode,
         image.thumbnailAccessUrl,
         image.thumbnailAccessExpiresAt
       )
-      if (thumbnailUrl) return thumbnailUrl
+      if (thumbnailAccess) return thumbnailAccess
     }
-    return usableSignedUrl(image.accessMode, image.accessUrl, image.accessExpiresAt)
+    return signedImageAccess(image.accessMode, image.accessUrl, image.accessExpiresAt)
   }
 
   const updateMessageImageAccess = (messageId: number, image: Api.CustomerService.ImageMessage) => {
@@ -944,9 +969,14 @@
       return
     if (imageRefreshRequests.has(message.messageId)) return
 
-    const existingSignedUrl = preferredMessageImageUrl(message.image)
-    if (existingSignedUrl && !refreshAccess) {
-      imageUrls.value = { ...imageUrls.value, [message.messageId]: existingSignedUrl }
+    const existingSignedAccess = preferredMessageImageAccess(message.image)
+    if (existingSignedAccess && !refreshAccess) {
+      const url = cacheCustomerServiceImageUrl(
+        message.messageId,
+        existingSignedAccess.url,
+        existingSignedAccess.expiresAt
+      )
+      imageUrls.value = { ...imageUrls.value, [message.messageId]: url }
       return
     }
 
@@ -968,8 +998,15 @@
         }
       }
 
-      const signedUrl = !refreshAccess || accessRefreshed ? preferredMessageImageUrl(image) : ''
-      if (signedUrl) return signedUrl
+      const signedAccess =
+        !refreshAccess || accessRefreshed ? preferredMessageImageAccess(image) : null
+      if (signedAccess) {
+        return cacheCustomerServiceImageUrl(
+          message.messageId,
+          signedAccess.url,
+          signedAccess.expiresAt
+        )
+      }
 
       const blob =
         image?.thumbnailStatus === 'READY'
@@ -1031,7 +1068,6 @@
   }
 
   const releasePreviewImage = () => {
-    if (previewImageUrl.value.startsWith('blob:')) URL.revokeObjectURL(previewImageUrl.value)
     previewImageUrl.value = ''
   }
 
@@ -1050,6 +1086,12 @@
       !isPersistedCustomerServiceMessageId(message.messageId)
     )
       return
+    const cachedOriginalUrl = getCustomerServiceOriginalImageUrl(message.messageId)
+    if (cachedOriginalUrl) {
+      releasePreviewImage()
+      previewImageUrl.value = cachedOriginalUrl
+      return
+    }
     const requestId = ++previewRequestSequence
     previewImageLoading.value = true
     previewLoadingInstance = ElLoading.service({
@@ -1060,19 +1102,32 @@
     })
     try {
       let image = message.image
-      let originalUrl = image
-        ? usableSignedUrl(image.accessMode, image.accessUrl, image.accessExpiresAt)
-        : ''
-      if (!originalUrl) {
+      let originalAccess = image
+        ? signedImageAccess(image.accessMode, image.accessUrl, image.accessExpiresAt)
+        : null
+      if (!originalAccess) {
         try {
           image = await fetchCustomerServiceImageAccess(message.messageId)
           updateMessageImageAccess(message.messageId, image)
-          originalUrl = usableSignedUrl(image.accessMode, image.accessUrl, image.accessExpiresAt)
+          originalAccess = signedImageAccess(
+            image.accessMode,
+            image.accessUrl,
+            image.accessExpiresAt
+          )
         } catch {
           // Fall through to the authenticated endpoint for older storage responses.
         }
       }
-      const original = originalUrl ? null : await fetchCustomerServiceImage(message.messageId)
+      const originalUrl = originalAccess
+        ? cacheCustomerServiceOriginalImageUrl(
+            message.messageId,
+            originalAccess.url,
+            originalAccess.expiresAt
+          )
+        : cacheCustomerServiceOriginalImage(
+            message.messageId,
+            await fetchCustomerServiceImage(message.messageId)
+          )
       if (
         requestId !== previewRequestSequence ||
         !currentDetail.value?.messages.some(
@@ -1081,7 +1136,7 @@
       )
         return
       releasePreviewImage()
-      previewImageUrl.value = originalUrl || URL.createObjectURL(original!)
+      previewImageUrl.value = originalUrl
     } catch {
       if (requestId === previewRequestSequence) ElMessage.error('原图加载失败，请重试')
     } finally {
@@ -1185,8 +1240,16 @@
     imageMessages.forEach((message) => {
       if (!isPersistedCustomerServiceMessageId(message.messageId)) return
       const cachedUrl = getCustomerServiceImageUrl(message.messageId)
-      const signedUrl = preferredMessageImageUrl(message.image)
-      if (cachedUrl || signedUrl) nextUrls[message.messageId] = cachedUrl || signedUrl
+      const signedAccess = preferredMessageImageAccess(message.image)
+      if (cachedUrl) {
+        nextUrls[message.messageId] = cachedUrl
+      } else if (signedAccess) {
+        nextUrls[message.messageId] = cacheCustomerServiceImageUrl(
+          message.messageId,
+          signedAccess.url,
+          signedAccess.expiresAt
+        )
+      }
     })
     pendingImageUploads.forEach((pending, messageId) => {
       if (pending.conversationId === selectedConversationId.value) {
