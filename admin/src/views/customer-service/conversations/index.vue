@@ -675,6 +675,9 @@
   const router = useRouter()
   const userStore = useUserStore()
   const { hasAuth } = useAuth()
+  const agentState = defineModel<Api.CustomerService.AgentState | null>('agentState', {
+    default: null
+  })
   const conversationPage = ref<Api.CustomerService.ConversationPage>({
     records: [],
     current: 1,
@@ -733,7 +736,6 @@
   const transferReasonNote = ref('')
   const pendingDialogVisible = ref(false)
   const pendingTransfers = ref<Api.CustomerService.TransferRequest[]>([])
-  const agentState = ref<Api.CustomerService.AgentState | null>(null)
   const orderDialogVisible = ref(false)
   const orderCandidatesLoading = ref(false)
   const orderCandidates = ref<Api.CustomerService.LinkedOrder[]>([])

@@ -66,7 +66,7 @@
 
     <main class="service-stage">
       <RouterView v-if="route.path !== '/customer-service'" />
-      <CustomerServiceConversations v-else />
+      <CustomerServiceConversations v-else v-model:agent-state="agentState" />
     </main>
   </div>
 </template>
