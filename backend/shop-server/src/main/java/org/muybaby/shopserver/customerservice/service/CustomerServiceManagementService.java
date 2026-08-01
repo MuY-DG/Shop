@@ -151,7 +151,7 @@ public class CustomerServiceManagementService {
 
         setRole(adminUserId, GUEST_ROLE, false);
         setRole(adminUserId, AGENT_ROLE, true);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         String serviceName = nullableTrimmed(request.serviceName());
         int inserted = jdbcClient.sql("""
                         INSERT INTO customer_service_agent_profile
@@ -220,7 +220,7 @@ public class CustomerServiceManagementService {
                         """)
                 .param("serviceName", request.serviceName().trim())
                 .param("operatorUserId", operatorUserId)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("adminUserId", adminUserId)
                 .update();
         if (updated != 1) {
@@ -240,7 +240,7 @@ public class CustomerServiceManagementService {
         boolean current = hasRole(adminUserId, MANAGER_ROLE);
         if (requested != current) {
             setRole(adminUserId, MANAGER_ROLE, requested);
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
             jdbcClient.sql("""
                             UPDATE customer_service_agent_profile
                             SET updated_by = :operatorUserId, updated_at = :now
@@ -270,7 +270,7 @@ public class CustomerServiceManagementService {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_AGENT_HAS_ACTIVE_CONVERSATIONS);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         jdbcClient.sql("""
                         UPDATE customer_service_transfer_request
                         SET status = 'CANCELLED', pending_key = NULL,
@@ -375,7 +375,7 @@ public class CustomerServiceManagementService {
             }
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         for (RoutingAgentUpdateRequest agent : requestedAgents.values()) {
             ensureAgentState(agent.adminUserId(), now);
             jdbcClient.sql("""
@@ -457,7 +457,7 @@ public class CustomerServiceManagementService {
                 .param("avatar", avatar)
                 .param("avatarFileId", avatarFileId)
                 .param("operatorUserId", operatorUserId)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .update();
         if (updated != 1) {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONFIG_INVALID);

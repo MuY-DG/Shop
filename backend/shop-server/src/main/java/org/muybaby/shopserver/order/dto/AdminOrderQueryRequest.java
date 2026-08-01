@@ -3,6 +3,8 @@ package org.muybaby.shopserver.order.dto;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 public record AdminOrderQueryRequest(
         Long current,
@@ -14,8 +16,8 @@ public record AdminOrderQueryRequest(
         String userKeyword,
         String receiverName,
         String receiverPhone,
-        @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime createdStart,
-        @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime createdEnd,
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime createdStart,
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime createdEnd,
         String trackingNo
 ) {
     public long pageCurrent() {
@@ -24,5 +26,17 @@ public record AdminOrderQueryRequest(
 
     public long pageSize() {
         return size == null || size < 1 || size > 100 ? 20 : size;
+    }
+
+    public LocalDateTime createdStartUtc() {
+        return utc(createdStart);
+    }
+
+    public LocalDateTime createdEndUtc() {
+        return utc(createdEnd);
+    }
+
+    private LocalDateTime utc(OffsetDateTime value) {
+        return value == null ? null : value.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime();
     }
 }

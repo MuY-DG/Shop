@@ -105,6 +105,7 @@
   import { ElMessage, ElMessageBox } from 'element-plus'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useTable } from '@/hooks/core/useTable'
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import {
     deleteProductGuaranteeService,
     fetchProductGuaranteeServices,
@@ -151,8 +152,6 @@
       }
     }
   ])
-
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
 
   const {
     columns,

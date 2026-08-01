@@ -69,7 +69,7 @@ public class PaymentFinalizationService {
         }
         paymentConfigIdentityValidator.validate(
                 payment.paymentConfigId(), payment.paymentConfigFingerprint(), verifiedConfig);
-        LocalDateTime effectivePaidAt = paidAt == null ? LocalDateTime.now() : paidAt;
+        LocalDateTime effectivePaidAt = paidAt == null ? LocalDateTime.now(java.time.ZoneOffset.UTC) : paidAt;
         if (OrderStatus.PAID.name().equals(payment.status())) {
             validatePaidDuplicate(payment, transactionId, amountCent);
             validatePaidDuplicateOrder(order, outTradeNo, transactionId, amountCent);
@@ -100,7 +100,7 @@ public class PaymentFinalizationService {
                 .param("transactionId", transactionId)
                 .param("callbackDigest", nullToEmpty(callbackDigest))
                 .param("paidAt", effectivePaidAt)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("outTradeNo", outTradeNo)
                 .update();
         requireUpdated(paymentRows, "payment paid state");
@@ -120,7 +120,7 @@ public class PaymentFinalizationService {
                 .param("paidAt", effectivePaidAt)
                 .param("transactionId", transactionId)
                 .param("outTradeNo", outTradeNo)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("orderId", order.orderId())
                 .update();
         requireUpdated(orderRows, "order paid state");
@@ -164,7 +164,7 @@ public class PaymentFinalizationService {
                           and status = :locked
                         """)
                 .param("confirmed", StockLockStatus.CONFIRMED.name())
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("orderId", order.orderId())
                 .param("locked", StockLockStatus.LOCKED.name())
                 .update();
@@ -185,7 +185,7 @@ public class PaymentFinalizationService {
                     .param("used", UserCouponStatus.USED.name())
                     .param("orderId", order.orderId())
                     .param("usedAt", effectivePaidAt)
-                    .param("updatedAt", LocalDateTime.now())
+                    .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                     .param("userCouponId", order.userCouponId())
                     .param("locked", UserCouponStatus.LOCKED.name())
                     .update();

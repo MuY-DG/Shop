@@ -8,14 +8,12 @@ import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class AdminLastLoginService {
 
     private static final Logger log = LoggerFactory.getLogger(AdminLastLoginService.class);
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final long FAILURE_WARNING_INTERVAL_MILLIS = Duration.ofMinutes(1).toMillis();
 
     private final AdminLastLoginWriter writer;
@@ -24,7 +22,7 @@ public class AdminLastLoginService {
 
     @Autowired
     public AdminLastLoginService(AdminLastLoginWriter writer) {
-        this(writer, Clock.system(BUSINESS_ZONE));
+        this(writer, Clock.systemUTC());
     }
 
     AdminLastLoginService(AdminLastLoginWriter writer, Clock clock) {

@@ -6,6 +6,7 @@ import type {
 } from "../types/after-sale";
 import type { OrderStatus } from "../types/order";
 import { formatMoney } from "./product-catalog";
+import { formatLocalDateTime } from "../utils/date-time";
 
 export const AFTER_SALE_REASONS = Object.freeze([
   "不想要了",
@@ -41,11 +42,6 @@ export interface AfterSaleView extends AfterSaleResponse {
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function dateTimeText(value: unknown): string {
-  const text = cleanText(value);
-  return text ? text.replace("T", " ").slice(0, 16) : "";
 }
 
 function moneyText(value: unknown): string {
@@ -155,9 +151,9 @@ export function buildAfterSaleView(record: AfterSaleResponse): AfterSaleView {
     requestedAmountText: moneyText(record.requestedAmountCent),
     approvedAmountText: approvedAmount > 0 ? moneyText(approvedAmount) : "",
     refundAmountText: refundAmount > 0 ? moneyText(refundAmount) : "",
-    createdAtText: dateTimeText(record.createdAt),
-    reviewedAtText: dateTimeText(record.reviewedAt),
-    refundedAtText: dateTimeText(record.refundOrder?.successAt),
+    createdAtText: formatLocalDateTime(record.createdAt),
+    reviewedAtText: formatLocalDateTime(record.reviewedAt),
+    refundedAtText: formatLocalDateTime(record.refundOrder?.successAt),
     evidenceCountText: evidenceFiles.length ? `${evidenceFiles.length} 张` : "未上传",
     evidenceNames: evidenceFiles.map((file) => cleanText(file.originalFilename) || "售后凭证"),
     progressSteps: progressSteps(record.status)

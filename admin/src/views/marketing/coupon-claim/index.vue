@@ -23,6 +23,7 @@
 </template>
 
 <script setup lang="ts">
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import { computed, h, ref } from 'vue'
   import { ElTag } from 'element-plus'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
@@ -115,7 +116,6 @@
     EXPIRED: { text: '已过期', type: 'danger' }
   }
 
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
   const formatMoney = (cent: number) => `¥${(cent / 100).toFixed(2)}`
 
   const formatDiscount = (row: Api.Marketing.CouponClaimRecord) => {

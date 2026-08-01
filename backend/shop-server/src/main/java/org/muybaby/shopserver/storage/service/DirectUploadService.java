@@ -296,7 +296,7 @@ public class DirectUploadService {
         String finalExtension = profile.mediaKind() == StorageMediaKind.IMAGE
                 ? "webp"
                 : decision.extension();
-        String finalKey = keyGenerator.nextKey(profile, finalExtension, LocalDate.now());
+        String finalKey = keyGenerator.nextKey(profile, finalExtension, LocalDate.now(java.time.ZoneOffset.UTC));
         String thumbnailKey = profile == StorageUploadProfile.CUSTOMER_SERVICE_IMAGE
                 ? finalKey.substring(0, finalKey.length() - ".webp".length()) + ".thumb.webp"
                 : null;

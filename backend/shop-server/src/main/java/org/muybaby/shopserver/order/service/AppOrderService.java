@@ -151,7 +151,7 @@ public class AppOrderService {
             return replayExisting(existing.get(), checkoutRequest);
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         String orderNo = nextOrderNo(now);
         Long orderId;
         try {
@@ -466,7 +466,7 @@ public class AppOrderService {
                           and status = 'CLOSED'
                           and app_deleted_at is null
                         """)
-                .param("deletedAt", LocalDateTime.now())
+                .param("deletedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("orderId", order.orderId())
                 .param("userId", userId)
                 .update();
@@ -603,7 +603,7 @@ public class AppOrderService {
     }
 
     private AppliedCoupon resolveCoupon(Long userId, Long userCouponId, CheckoutContext context, boolean forUpdate) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         if (userCouponId != null) {
             return requireApplicableCoupon(userId, userCouponId, context, now, forUpdate);
         }

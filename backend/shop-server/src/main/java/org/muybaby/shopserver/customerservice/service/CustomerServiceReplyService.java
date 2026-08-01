@@ -85,7 +85,7 @@ public class CustomerServiceReplyService {
         if (questions.size() > MAX_COMMON_QUESTIONS) {
             throw invalidConfig();
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         claimConfigRevision(
                 request.revision(),
                 adminUserId,
@@ -172,7 +172,7 @@ public class CustomerServiceReplyService {
                         """)
                 .param("content", optionalText(request.content(), 2000))
                 .param("adminUserId", adminUserId)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .update();
         if (updated != 1) {
             throw new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE);
@@ -188,7 +188,7 @@ public class CustomerServiceReplyService {
         claimConfigRevision(
                 request.revision(),
                 adminUserId,
-                LocalDateTime.now(),
+                LocalDateTime.now(java.time.ZoneOffset.UTC),
                 null,
                 optionalText(request.content(), 2000)
         );
@@ -204,7 +204,7 @@ public class CustomerServiceReplyService {
         if (replies.size() > MAX_SMART_REPLIES) {
             throw invalidConfig();
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         claimConfigRevision(request.revision(), adminUserId, now, null, null);
         Set<Long> existingIds = new LinkedHashSet<>(jdbcClient.sql("""
                         select id
@@ -338,7 +338,7 @@ public class CustomerServiceReplyService {
                 .query(Integer.class)
                 .single();
         String name = requiredText(request.name(), 64);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into customer_service_quick_reply_group
@@ -374,7 +374,7 @@ public class CustomerServiceReplyService {
                 .param("groupId", request.groupId())
                 .query(Integer.class)
                 .single();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into customer_service_quick_reply
@@ -417,7 +417,7 @@ public class CustomerServiceReplyService {
                 .param("content", requiredText(request.content(), 2000))
                 .param("sortOrder", sortOrder(request.sortOrder(), existing.sortOrder()))
                 .param("adminUserId", adminUserId)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("replyId", replyId)
                 .update();
         if (updated != 1) {
@@ -724,7 +724,7 @@ public class CustomerServiceReplyService {
     }
 
     private boolean claimOfflineReply(Long appUserId) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         try {
             jdbcClient.sql("""
                             insert into customer_service_offline_reply_state
@@ -788,7 +788,7 @@ public class CustomerServiceReplyService {
             String senderType,
             Long senderId
     ) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         try {
             namedParameterJdbcTemplate.update("""

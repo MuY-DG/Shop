@@ -47,6 +47,7 @@
   import { fetchProductSpecTemplates } from '@/api/product'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTableColumns } from '@/hooks/core/useTableColumns'
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import SpecTemplateDialog from './modules/spec-template-dialog.vue'
 
   defineOptions({ name: 'ProductSpecTemplate' })
@@ -56,8 +57,6 @@
   const dialogVisible = ref(false)
   const editingTemplateId = ref<number | null>(null)
   const { hasAuth } = useAuth()
-
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
 
   const { columns, columnChecks } = useTableColumns<Api.Product.SpecTemplateSummary>(() => [
     { prop: 'id', label: 'ID', width: 90 },

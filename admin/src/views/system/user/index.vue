@@ -45,6 +45,7 @@
   import AdminSessionDrawer from '@/components/business/admin-session-drawer/index.vue'
   import { useTable } from '@/hooks/core/useTable'
   import { useAuth } from '@/hooks/core/useAuth'
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import { disableAdminUser, fetchGetUserList } from '@/api/system-manage'
   import UserSearch from './modules/user-search.vue'
   import UserDialog from './modules/user-dialog.vue'
@@ -71,7 +72,6 @@
     status: undefined
   })
 
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
   const formatSessionLimit = (maxSessions: number) => {
     if (maxSessions === 0) return '不限'
     if (maxSessions === 1) return '单设备'

@@ -5,6 +5,7 @@ import {
   type OperationPageModel
 } from './operations-state'
 import { productDrilldown, recentOrderDrilldown, todoDrilldown } from './operations-drilldown'
+import { formatLocalDateTime } from '@/utils/date-time'
 
 const statusLabels: Record<string, string> = {
   CREATED: '已创建',
@@ -97,7 +98,7 @@ function recentOrderBlock(
     return {
       id: item.orderId,
       title: item.orderNo,
-      description: `${item.userName} · ${item.createdAt.replace('T', ' ')}`,
+      description: `${item.userName} · ${formatLocalDateTime(item.createdAt)}`,
       value: item.paidAmountCent,
       unit: 'CENT',
       tag: statusLabels[item.status] || item.status,

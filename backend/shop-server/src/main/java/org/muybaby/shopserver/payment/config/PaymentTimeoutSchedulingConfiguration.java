@@ -14,6 +14,6 @@ public class PaymentTimeoutSchedulingConfiguration {
     @Bean
     @ConditionalOnMissingBean(Clock.class)
     Clock paymentTimeoutClock() {
-        return Clock.systemDefaultZone();
+        return Clock.systemUTC();
     }
 }

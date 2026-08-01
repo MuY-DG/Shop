@@ -56,8 +56,8 @@ test("公开评价过滤无效记录并生成匿名、日期和规格展示", ()
       anonymous: false,
       reviewerName: " 小灶 ",
       verifiedPurchase: true,
-      createdAt: "2026-07-20T09:30:00",
-      updatedAt: "2026-07-20T09:30:00"
+      createdAt: "2026-07-20T09:30:00Z",
+      updatedAt: "2026-07-20T09:30:00Z"
     },
     {
       id: 0,
@@ -86,7 +86,7 @@ test("可评价订单和文字输入生成提交前的安全值", () => {
     orderNo: "SO-3",
     skuId: 7,
     skuSpecText: "",
-    completedAt: "2026-07-01T12:00:00"
+    completedAt: "2026-07-01T12:00:00Z"
   }]);
   assert.equal(items[0]?.label, "默认规格");
   assert.equal(items[0]?.completedAtText, "2026-07-01");
@@ -107,8 +107,8 @@ test("我的评价保留修改和删除所需的订单与匿名状态", () => {
     anonymous: true,
     reviewerName: "匿名用户",
     verifiedPurchase: true,
-    createdAt: "2026-07-20T09:30:00",
-    updatedAt: "2026-07-20T09:30:00"
+    createdAt: "2026-07-20T09:30:00Z",
+    updatedAt: "2026-07-20T09:30:00Z"
   }]);
   assert.equal(views[0]?.id, 13);
   assert.equal(views[0]?.orderItemId, 21);

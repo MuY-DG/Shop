@@ -13,6 +13,7 @@ import org.muybaby.shopserver.auth.session.AdminSessionPolicyChangedEvent;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.common.time.TimePolicy;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -139,7 +140,7 @@ public class AdminManagementService {
                         .addValue("email", request.email().trim())
                         .addValue("avatar", normalize(request.avatar()))
                         .addValue("maxSessions", maxSessions)
-                        .addValue("now", LocalDateTime.now()),
+                        .addValue("now", LocalDateTime.now(java.time.ZoneOffset.UTC)),
                 keyHolder,
                 new String[]{"id"});
         Long userId = requireGeneratedId(keyHolder);
@@ -156,7 +157,7 @@ public class AdminManagementService {
         List<Long> roleIds = distinctIds(request.roleIds());
         requireRoles(roleIds);
         requireGeneralUpdateRoleSelection(userId, roleIds);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         boolean passwordChanged = StringUtils.hasText(request.password());
         boolean disabled = !"DISABLED".equals(current.status()) && "DISABLED".equals(request.status());
         boolean revokeAll = passwordChanged || disabled;
@@ -230,7 +231,7 @@ public class AdminManagementService {
                             updated_at = :now
                         WHERE id = :userId AND status <> 'DISABLED'
                         """)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("userId", userId)
                 .update();
         if (updated != 1) {
@@ -317,7 +318,7 @@ public class AdminManagementService {
                         .addValue("name", request.name().trim())
                         .addValue("description", normalize(request.description()))
                         .addValue("enabled", request.enabled())
-                        .addValue("now", LocalDateTime.now()),
+                        .addValue("now", LocalDateTime.now(java.time.ZoneOffset.UTC)),
                 keyHolder,
                 new String[]{"id"});
         return requireGeneratedId(keyHolder);
@@ -343,7 +344,7 @@ public class AdminManagementService {
                 .param("name", request.name().trim())
                 .param("description", normalize(request.description()))
                 .param("enabled", request.enabled())
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("roleId", roleId)
                 .update();
         if (updated != 1) {
@@ -696,11 +697,11 @@ public class AdminManagementService {
     }
 
     private LocalDateTime startAt(LocalDate value) {
-        return value == null ? LocalDate.of(1970, 1, 1).atStartOfDay() : value.atStartOfDay();
+        return TimePolicy.businessDayStartUtc(value == null ? LocalDate.of(1970, 1, 1) : value);
     }
 
     private LocalDateTime endExclusive(LocalDate value) {
-        return value == null ? LocalDate.of(9999, 12, 31).atStartOfDay() : value.plusDays(1).atStartOfDay();
+        return TimePolicy.businessDayStartUtc(value == null ? LocalDate.of(9999, 12, 31) : value.plusDays(1));
     }
 
     private Long requireGeneratedId(KeyHolder keyHolder) {

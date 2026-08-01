@@ -208,8 +208,8 @@ public class TrafficStatisticsQueryRepository {
             case HOUR -> "timestampdiff(HOUR, :startAt, occurred_at)";
             case DAY -> "timestampdiff(DAY, :startAt, occurred_at)";
             case WEEK -> "floor(timestampdiff(DAY, :startAt, occurred_at) / 7)";
-            case MONTH -> "((extract(year from occurred_at) - :startYear) * 12"
-                    + " + (extract(month from occurred_at) - :startMonth))";
+            case MONTH -> "((extract(year from timestampadd(HOUR, 8, occurred_at)) - :startYear) * 12"
+                    + " + (extract(month from timestampadd(HOUR, 8, occurred_at)) - :startMonth))";
             case AUTO -> throw new IllegalArgumentException("AUTO granularity must be resolved before querying");
         };
     }

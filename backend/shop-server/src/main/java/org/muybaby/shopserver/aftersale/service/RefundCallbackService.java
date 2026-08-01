@@ -152,8 +152,8 @@ public class RefundCallbackService {
                 .param("status", status)
                 .param("errorCode", nullToEmpty(errorCode))
                 .param("errorMessage", nullToEmpty(errorMessage))
-                .param("createdAt", LocalDateTime.now())
-                .param("updatedAt", LocalDateTime.now())
+                .param("createdAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .update(keyHolder, "id");
         if (insertedRows != 1) {
             throw new IllegalStateException("Refund callback log was not inserted");
@@ -177,7 +177,7 @@ public class RefundCallbackService {
                 .param("status", status)
                 .param("errorCode", nullToEmpty(errorCode))
                 .param("errorMessage", nullToEmpty(errorMessage))
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("logId", logId)
                 .update();
     }

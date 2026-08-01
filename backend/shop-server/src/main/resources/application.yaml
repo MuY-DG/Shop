@@ -1,6 +1,9 @@
 spring:
   application:
     name: shop-server
+  datasource:
+    hikari:
+      connection-init-sql: SET time_zone = '+00:00' # 所有数据库连接统一使用 UTC，保证 TIMESTAMP 读写与 JVM、JSON 契约一致。
   jackson:
     default-property-inclusion: non_null # 返回 JSON 时省略值为 null 的字段。
   flyway:

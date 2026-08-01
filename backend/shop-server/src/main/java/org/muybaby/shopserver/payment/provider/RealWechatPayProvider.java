@@ -31,7 +31,7 @@ import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.HexFormat;
 
 @Component
@@ -54,7 +54,7 @@ public class RealWechatPayProvider implements WechatPayProvider {
         prepayRequest.setDescription(request.description());
         prepayRequest.setOutTradeNo(request.outTradeNo());
         prepayRequest.setNotifyUrl(request.notifyUrl());
-        prepayRequest.setTimeExpire(request.timeExpire().atZone(ZoneId.systemDefault()).toOffsetDateTime().toString());
+        prepayRequest.setTimeExpire(request.timeExpire().atOffset(ZoneOffset.UTC).toString());
         Amount amount = new Amount();
         amount.setTotal(Math.toIntExact(request.amountCent()));
         amount.setCurrency(request.currency());

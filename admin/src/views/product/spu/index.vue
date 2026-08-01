@@ -167,6 +167,7 @@
 </template>
 
 <script setup lang="ts">
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import { computed, h, onMounted, reactive, ref } from 'vue'
   import { useRoute, useRouter } from 'vue-router'
   import { useAuth } from '@/hooks/core/useAuth'
@@ -319,11 +320,6 @@
     const min = (row.minPriceCent / 100).toFixed(2)
     const max = (row.maxPriceCent / 100).toFixed(2)
     return row.minPriceCent === row.maxPriceCent ? `¥${min}` : `¥${min} - ¥${max}`
-  }
-
-  const formatDateTime = (value: string | null | undefined) => {
-    if (!value) return '-'
-    return value.replace('T', ' ')
   }
 
   const {

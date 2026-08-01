@@ -41,6 +41,7 @@
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
   import { useTable } from '@/hooks/core/useTable'
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import { disableCouponTemplate, enableCouponTemplate, fetchCouponTemplates } from '@/api/coupon'
   import CouponTemplateDialog from './modules/coupon-template-dialog.vue'
   import { ElMessageBox, ElTag } from 'element-plus'
@@ -107,11 +108,6 @@
   ])
 
   const formatMoney = (cent: number | null | undefined) => `¥${((cent ?? 0) / 100).toFixed(2)}`
-
-  const formatDateTime = (value: string | null | undefined) => {
-    if (!value) return '-'
-    return value.replace('T', ' ')
-  }
 
   const formatCouponType = (row: Api.Marketing.CouponTemplate) => {
     if (row.discountType === 'PERCENT_OFF') {

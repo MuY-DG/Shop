@@ -65,8 +65,9 @@ public class CommerceTrendQueryRepository {
             case HOUR -> "timestampdiff(HOUR, :startAt, " + timestampColumn + ")";
             case DAY -> "timestampdiff(DAY, :startAt, " + timestampColumn + ")";
             case WEEK -> "floor(timestampdiff(DAY, :startAt, " + timestampColumn + ") / 7)";
-            case MONTH -> "((extract(year from " + timestampColumn + ") - :startYear) * 12"
-                    + " + (extract(month from " + timestampColumn + ") - :startMonth))";
+            case MONTH -> "((extract(year from timestampadd(HOUR, 8, " + timestampColumn
+                    + ")) - :startYear) * 12 + (extract(month from timestampadd(HOUR, 8, "
+                    + timestampColumn + ")) - :startMonth))";
             case AUTO -> throw new IllegalArgumentException(
                     "AUTO granularity must be resolved before querying");
         };

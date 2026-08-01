@@ -9,10 +9,13 @@ services:
     # 只向 MySQL 容器注入基础设施变量，不暴露微信支付等应用密钥。
     env_file:
       - ./.env.infrastructure.local
+    environment:
+      TZ: UTC
     # 使用 utf8mb4，并按当前 4 GB 服务器限制连接数与 InnoDB 缓冲池。
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+00:00
       - --innodb-buffer-pool-size=512M
       - --max-connections=100
       - --skip-name-resolve
@@ -107,6 +110,8 @@ services:
     environment:
       # 容器始终启用生产 Profile。
       SPRING_PROFILES_ACTIVE: prod
+      # 应用内部与数据库统一使用 UTC；展示时由客户端转换到设备时区。
+      TZ: UTC
       # 容器内部必须监听所有容器网卡，端口仍只发布到宿主机回环地址。
       SERVER_ADDRESS: 0.0.0.0
 

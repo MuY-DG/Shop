@@ -34,6 +34,7 @@
 </template>
 
 <script setup lang="ts">
+  import { formatLocalDateTime } from '@/utils/date-time'
   import {
     changeTone,
     formatChangeRate,
@@ -84,7 +85,7 @@
   const comparisonLabel = computed(() => formatChangeRate(props.metric))
   const snapshotLabel = computed(() => {
     if (!props.generatedAt) return ''
-    const value = props.generatedAt.replace('T', ' ').replace(/\.\d+$/, '')
+    const value = formatLocalDateTime(props.generatedAt)
     return `截至 ${value}`
   })
   const comparisonClass = computed(() => `is-${changeTone(props.metric, props.betterDirection)}`)

@@ -227,7 +227,7 @@ public class RefundFinalizationService {
                 .param("refundId", nullToEmpty(providerState.refundId()))
                 .param("callbackStatus", providerStatus)
                 .param("callbackDigest", nullToEmpty(providerState.callbackDigest()))
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("refundOrderId", refund.id())
                 .param("expectedStatus", RefundOrderStatus.PROCESSING.name())
                 .update();
@@ -240,7 +240,7 @@ public class RefundFinalizationService {
             ProviderRefundState providerState,
             String providerStatus
     ) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int refundRows = jdbcClient.sql("""
                         update refund_order
                         set status = :status,
@@ -294,7 +294,7 @@ public class RefundFinalizationService {
             ProviderRefundState providerState,
             String providerStatus
     ) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         LocalDateTime successAt = providerState.successAt() == null ? now : providerState.successAt();
         int refundRows = jdbcClient.sql("""
                         update refund_order
@@ -366,7 +366,7 @@ public class RefundFinalizationService {
             ProviderRefundState providerState,
             String providerStatus
     ) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int refundRows = jdbcClient.sql("""
                         update refund_order
                         set status = :status,
@@ -414,7 +414,7 @@ public class RefundFinalizationService {
             ProviderRefundState providerState,
             String providerStatus
     ) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updated = jdbcClient.sql("""
                         update refund_order
                         set failed_at = coalesce(failed_at, :failedAt),

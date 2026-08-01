@@ -48,7 +48,7 @@ public class AppAddressService {
     public AddressResponse create(long userId, AddressUpsertRequest request) {
         List<UserAddress> lockedAddresses = lockAddressBook(userId);
         boolean makeDefault = lockedAddresses.isEmpty() || request.isDefault();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         if (makeDefault && !lockedAddresses.isEmpty()) {
             userAddressMapper.clearDefaults(userId, now);
         }
@@ -75,7 +75,7 @@ public class AppAddressService {
     public AddressResponse update(long userId, long addressId, AddressUpsertRequest request) {
         List<UserAddress> lockedAddresses = lockAddressBook(userId);
         UserAddress existing = findLockedOwned(lockedAddresses, addressId);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         boolean makeDefault = request.isDefault() || Boolean.TRUE.equals(existing.isDefault());
         if (request.isDefault()) {
             userAddressMapper.clearDefaults(userId, now);
@@ -109,7 +109,7 @@ public class AppAddressService {
             lockedAddresses.stream()
                     .filter(address -> !address.id().equals(addressId))
                     .findFirst()
-                    .ifPresent(address -> setDefaultFlag(address, true, LocalDateTime.now()));
+                    .ifPresent(address -> setDefaultFlag(address, true, LocalDateTime.now(java.time.ZoneOffset.UTC)));
         }
     }
 
@@ -117,7 +117,7 @@ public class AppAddressService {
     public AddressResponse setDefault(long userId, long addressId) {
         List<UserAddress> lockedAddresses = lockAddressBook(userId);
         UserAddress existing = findLockedOwned(lockedAddresses, addressId);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         userAddressMapper.clearDefaults(userId, now);
         UserAddress updated = setDefaultFlag(existing, true, now);
         return toResponse(updated);

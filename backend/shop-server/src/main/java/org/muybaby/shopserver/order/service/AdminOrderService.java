@@ -537,8 +537,9 @@ public class AdminOrderService {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
         }
-        if (query.createdStart() != null && query.createdEnd() != null
-                && query.createdStart().isAfter(query.createdEnd())) {
+        LocalDateTime createdStart = query.createdStartUtc();
+        LocalDateTime createdEnd = query.createdEndUtc();
+        if (createdStart != null && createdEnd != null && createdStart.isAfter(createdEnd)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return new OrderQueryFilters(
@@ -549,8 +550,8 @@ public class AdminOrderService {
                 userNicknameLike,
                 like(query.receiverName()),
                 like(query.receiverPhone()),
-                query.createdStart(),
-                query.createdEnd(),
+                createdStart,
+                createdEnd,
                 like(query.trackingNo())
         );
     }

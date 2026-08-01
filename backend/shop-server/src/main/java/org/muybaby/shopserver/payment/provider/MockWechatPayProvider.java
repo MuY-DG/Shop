@@ -51,7 +51,7 @@ public class MockWechatPayProvider implements WechatPayProvider {
     }
 
     protected MockWechatPayProvider(ObjectMapper objectMapper) {
-        this(objectMapper, Clock.systemDefaultZone());
+        this(objectMapper, Clock.systemUTC());
     }
 
     @Override

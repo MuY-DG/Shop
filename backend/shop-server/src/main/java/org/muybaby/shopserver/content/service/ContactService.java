@@ -39,7 +39,7 @@ public class ContactService {
         if (!PHONE_PATTERN.matcher(phone).matches()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        ContactSetting updatedSetting = new ContactSetting(CONTACT_SETTING_ID, phone, LocalDateTime.now());
+        ContactSetting updatedSetting = new ContactSetting(CONTACT_SETTING_ID, phone, LocalDateTime.now(java.time.ZoneOffset.UTC));
         int updated = contactSettingMapper.updateById(updatedSetting);
         if (updated != 1) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);

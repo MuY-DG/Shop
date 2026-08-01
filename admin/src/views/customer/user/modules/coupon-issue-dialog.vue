@@ -88,7 +88,7 @@
             <ElDatePicker
               v-model="form.validRange"
               type="datetimerange"
-              value-format="YYYY-MM-DDTHH:mm:ss"
+              value-format="YYYY-MM-DDTHH:mm:ssZ"
               range-separator="至"
               start-placeholder="开始时间"
               end-placeholder="结束时间"
@@ -199,6 +199,7 @@
   import { computed, nextTick, reactive, ref, watch } from 'vue'
   import type { FormInstance, FormRules } from 'element-plus'
   import { ElMessage } from 'element-plus'
+  import { formatLocalDateTime as formatDateTime, toOffsetDateTime } from '@/utils/date-time'
   import {
     createDirectCustomerCoupon,
     fetchIssuableCouponTemplates,
@@ -238,11 +239,6 @@
     { label: '满减券', value: 'MIN_SPEND' }
   ]
 
-  const toLocalDateTime = (date: Date) => {
-    const localTime = new Date(date.getTime() - date.getTimezoneOffset() * 60_000)
-    return localTime.toISOString().slice(0, 19)
-  }
-
   const defaultForm = (): CouponIssueFormState => {
     const validStartAt = new Date()
     const validEndAt = new Date(validStartAt.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -252,7 +248,7 @@
       couponType: 'NO_THRESHOLD',
       thresholdYuan: 0,
       discountYuan: 0.01,
-      validRange: [toLocalDateTime(validStartAt), toLocalDateTime(validEndAt)],
+      validRange: [toOffsetDateTime(validStartAt), toOffsetDateTime(validEndAt)],
       templateId: undefined,
       note: ''
     }
@@ -343,8 +339,6 @@
 
   const formatScope = (template: Api.Customer.IssuableCouponTemplate) =>
     template.scopeType === 'PRODUCT' ? `指定商品 #${template.scopeValue}` : '全场通用'
-
-  const formatDateTime = (value: string) => value.replace('T', ' ')
 
   const couponOptionLabel = (template: Api.Customer.IssuableCouponTemplate) =>
     `${template.name} · ${formatDiscount(template)} · 库存 ${template.stockRemaining}`

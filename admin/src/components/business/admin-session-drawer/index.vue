@@ -90,6 +90,7 @@
     revokeAdminUserSession
   } from '@/api/system-manage'
   import { useUserStore } from '@/store/modules/user'
+  import { formatLocalDateTime } from '@/utils/date-time'
 
   defineOptions({ name: 'AdminSessionDrawer' })
 
@@ -172,24 +173,7 @@
     return parts.length > 0 ? parts.join(' · ') : '浏览器与系统未知'
   }
 
-  const formatDateTime = (value?: string | null) => {
-    if (!value) return '-'
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) {
-      return value.replace('T', ' ').replace(/Z$/, '').slice(0, 19)
-    }
-    return new Intl.DateTimeFormat('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23'
-    })
-      .format(date)
-      .replaceAll('/', '-')
-  }
+  const formatDateTime = (value?: string | null) => formatLocalDateTime(value, 'second')
 
   const setSessionRevoking = (sessionId: string, revoking: boolean) => {
     const next = new Set(revokingSessionIds.value)

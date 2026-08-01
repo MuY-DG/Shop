@@ -95,7 +95,7 @@ test("收藏与浏览记录映射价格、下架状态和足迹文案", () => {
     minPriceCent: 2990,
     maxPriceCent: 3990,
     available: true,
-    favoritedAt: "2026-07-20T12:00:00"
+    favoritedAt: "2026-07-20T12:00:00Z"
   }]);
   assert.equal(favorites[0]?.priceText, "¥29.90–39.90");
   assert.equal(favorites[0]?.metaText, "2026.07.20 收藏");
@@ -106,8 +106,8 @@ test("收藏与浏览记录映射价格、下架状态和足迹文案", () => {
     title: "清油火锅底料",
     minPriceCent: 1990,
     available: false,
-    firstViewedAt: "2026-07-18T12:00:00",
-    lastViewedAt: "2026-07-21T10:00:00",
+    firstViewedAt: "2026-07-18T12:00:00Z",
+    lastViewedAt: "2026-07-21T10:00:00Z",
     viewCount: 3
   }]);
   assert.equal(history[0]?.priceText, "¥19.90");
@@ -123,8 +123,8 @@ test("领券中心和我的优惠券生成稳定状态与操作", () => {
     couponType: "MIN_SPEND",
     thresholdCent: 5000,
     discountCent: 1000,
-    validStartAt: "2026-07-01T00:00:00",
-    validEndAt: "2026-07-31T23:59:59",
+    validStartAt: "2026-07-01T00:00:00Z",
+    validEndAt: "2026-07-31T23:59:59Z",
     claimedCount: 1,
     perUserLimit: 1,
     claimable: true
@@ -134,8 +134,8 @@ test("领券中心和我的优惠券生成稳定状态与操作", () => {
     couponType: "NO_THRESHOLD",
     thresholdCent: 0,
     discountCent: 500,
-    validStartAt: "2026-07-01T00:00:00",
-    validEndAt: "2026-07-31T23:59:59",
+    validStartAt: "2026-07-01T00:00:00Z",
+    validEndAt: "2026-07-31T23:59:59Z",
     claimedCount: 1,
     perUserLimit: 1,
     claimable: false,
@@ -156,9 +156,9 @@ test("领券中心和我的优惠券生成稳定状态与操作", () => {
     discountCent: 1000,
     scopeType: "ALL",
     status: "CLAIMED",
-    validStartAt: "2026-07-01T00:00:00",
-    validEndAt: "2026-07-31T23:59:59",
-    claimedAt: "2026-07-20T10:00:00"
+    validStartAt: "2026-07-01T00:00:00Z",
+    validEndAt: "2026-07-31T23:59:59Z",
+    claimedAt: "2026-07-20T10:00:00Z"
   }, {
     userCouponId: 10,
     templateId: 2,
@@ -168,9 +168,9 @@ test("领券中心和我的优惠券生成稳定状态与操作", () => {
     discountCent: 500,
     scopeType: "PRODUCT",
     status: "LOCKED",
-    validStartAt: "2026-07-01T00:00:00",
-    validEndAt: "2026-07-31T23:59:59",
-    claimedAt: "2026-07-20T10:00:00"
+    validStartAt: "2026-07-01T00:00:00Z",
+    validEndAt: "2026-07-31T23:59:59Z",
+    claimedAt: "2026-07-20T10:00:00Z"
   }]);
   assert.equal(mine[0]?.statusText, "待使用");
   assert.equal(mine[0]?.actionText, "去选购");

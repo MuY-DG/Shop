@@ -8,6 +8,7 @@ import type {
   ProductBrowseHistoryItem,
   ProductFavoriteItem
 } from "../types/product-engagement";
+import { formatLocalDate } from "../utils/date-time";
 
 export const ACCOUNT_ROUTES = Object.freeze({
   profile: "/pages/account/profile/profile",
@@ -92,8 +93,7 @@ function moneyText(cent: unknown): string {
 }
 
 function dateText(value: unknown): string {
-  const text = cleanText(value).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text.replace(/-/g, ".") : "";
+  return formatLocalDate(value).replace(/-/g, ".");
 }
 
 function priceRangeText(minPriceCent: unknown, maxPriceCent: unknown): string {

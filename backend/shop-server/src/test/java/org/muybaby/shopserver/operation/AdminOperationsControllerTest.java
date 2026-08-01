@@ -253,7 +253,7 @@ class AdminOperationsControllerTest {
                         .param("startDate", "2026-07-01")
                         .param("endDate", "2026-07-07"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.meta.collectionStartedAt").value("2026-07-02T08:00:00"))
+                .andExpect(jsonPath("$.data.meta.collectionStartedAt").value("2026-07-02T08:00:00Z"))
                 .andExpect(jsonPath("$.data.summary.pageViewCount.value").value(2))
                 .andExpect(jsonPath("$.data.summary.visitorCount.value").value(2))
                 .andExpect(jsonPath("$.data.summary.sessionCount.value").value(2))
@@ -685,19 +685,19 @@ class AdminOperationsControllerTest {
                         values
                             (88701, 'trend-july-first', 'trend-july-first-digest',
                              'trend-visitor-a', 'trend-session-a', 'CLIENT', 'PAGE_VIEW', '/first',
-                             timestamp '2026-07-15 00:00:00', timestamp '2026-07-15 00:00:01', date '2026-07-15'),
+                             timestamp '2026-07-14 16:00:00', timestamp '2026-07-14 16:00:01', date '2026-07-15'),
                             (88702, 'trend-july-repeat', 'trend-july-repeat-digest',
                              'trend-visitor-a', 'trend-session-a', 'CLIENT', 'SEARCH', '/search',
-                             timestamp '2026-07-31 23:59:59', timestamp '2026-07-31 23:59:59', date '2026-07-31'),
+                             timestamp '2026-07-31 15:59:59', timestamp '2026-07-31 15:59:59', date '2026-07-31'),
                             (88703, 'trend-july-second', 'trend-july-second-digest',
                              'trend-visitor-b', 'trend-session-b', 'CLIENT', 'PAGE_VIEW', '/second',
-                             timestamp '2026-07-31 12:00:00', timestamp '2026-07-31 12:00:01', date '2026-07-31'),
+                             timestamp '2026-07-31 04:00:00', timestamp '2026-07-31 04:00:01', date '2026-07-31'),
                             (88704, 'trend-august-first', 'trend-august-first-digest',
                              'trend-visitor-a', 'trend-session-a', 'CLIENT', 'PAGE_VIEW', '/first',
-                             timestamp '2026-08-01 00:00:00', timestamp '2026-08-01 00:00:01', date '2026-08-01'),
+                             timestamp '2026-07-31 16:00:00', timestamp '2026-07-31 16:00:01', date '2026-08-01'),
                             (88705, 'trend-august-session', 'trend-august-session-digest',
                              'trend-visitor-a', 'trend-session-c', 'CLIENT', 'SEARCH', '/search',
-                             timestamp '2026-08-02 23:59:59', timestamp '2026-08-02 23:59:59', date '2026-08-02')
+                             timestamp '2026-08-02 15:59:59', timestamp '2026-08-02 15:59:59', date '2026-08-02')
                         """).update();
 
         var report = operationsStatisticsService.trafficStatistics(new ReportQuery(
@@ -725,11 +725,11 @@ class AdminOperationsControllerTest {
                             (id, order_no, user_id, status, idempotency_key, paid_at, created_at, updated_at)
                         values
                             (88901, 'OPS-PRODUCT-TREND-JULY', 88900, 'PAID', 'ops-product-trend-july',
-                             timestamp '2026-07-31 23:00:00', timestamp '2026-07-31 22:00:00',
-                             timestamp '2026-07-31 23:00:00'),
+                             timestamp '2026-07-31 15:00:00', timestamp '2026-07-31 14:00:00',
+                             timestamp '2026-07-31 15:00:00'),
                             (88902, 'OPS-PRODUCT-TREND-AUGUST', 88900, 'PAID', 'ops-product-trend-august',
-                             timestamp '2026-08-01 01:00:00', timestamp '2026-08-01 00:30:00',
-                             timestamp '2026-08-01 01:00:00')
+                             timestamp '2026-07-31 17:00:00', timestamp '2026-07-31 16:30:00',
+                             timestamp '2026-07-31 17:00:00')
                         """).update();
         jdbcClient.sql("""
                         insert into order_item
@@ -737,17 +737,17 @@ class AdminOperationsControllerTest {
                              line_amount_cent, created_at)
                         values
                             (88911, 88901, 88921, 88931, '七月商品 A', 'OPS-JULY-A', 2, 2000,
-                             timestamp '2026-07-31 22:00:00'),
+                             timestamp '2026-07-31 14:00:00'),
                             (88912, 88901, 88922, 88932, '七月商品 B', 'OPS-JULY-B', 1, 1500,
-                             timestamp '2026-07-31 22:00:00'),
+                             timestamp '2026-07-31 14:00:00'),
                             (88913, 88902, 88923, 88933, '八月商品', 'OPS-AUGUST', 4, 5000,
-                             timestamp '2026-08-01 00:30:00')
+                             timestamp '2026-07-31 16:30:00')
                         """).update();
 
         var buckets = commerceTrendQueryRepository.loadProductTrendBuckets(
                 LocalDate.of(2026, 7, 15),
-                LocalDate.of(2026, 7, 15).atStartOfDay(),
-                LocalDate.of(2026, 8, 3).atStartOfDay(),
+                org.muybaby.shopserver.common.time.TimePolicy.businessDayStartUtc(LocalDate.of(2026, 7, 15)),
+                org.muybaby.shopserver.common.time.TimePolicy.businessDayStartUtc(LocalDate.of(2026, 8, 3)),
                 Granularity.MONTH
         );
 

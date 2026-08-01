@@ -229,7 +229,7 @@ test("优惠券选项区分可用状态、门槛和当前选中项", () => {
     discountCent: 500,
     discountAmountCent: 500,
     available: true,
-    validEndAt: "2026-07-31T23:59:59"
+    validEndAt: "2026-07-31T23:59:59Z"
   }, {
     userCouponId: 502,
     templateId: 52,
@@ -240,7 +240,7 @@ test("优惠券选项区分可用状态、门槛和当前选中项", () => {
     discountAmountCent: 0,
     available: false,
     unavailableReason: "THRESHOLD_NOT_MET",
-    validEndAt: "2026-08-31T23:59:59"
+    validEndAt: "2026-08-31T23:59:59Z"
   }];
 
   const views = buildCouponOptionViews(coupons, 501);

@@ -130,7 +130,7 @@
               <ElDatePicker
                 v-model="formData.validRange"
                 type="datetimerange"
-                value-format="YYYY-MM-DDTHH:mm:ss"
+                value-format="YYYY-MM-DDTHH:mm:ssZ"
                 range-separator="至"
                 start-placeholder="开始时间"
                 end-placeholder="结束时间"
@@ -168,6 +168,7 @@
   import type { FormInstance, FormRules } from 'element-plus'
   import { createCouponTemplate, updateCouponTemplate } from '@/api/coupon'
   import { fetchProductSpus } from '@/api/product'
+  import { parseApiDateTime } from '@/utils/date-time'
   import {
     buildCouponTemplatePayload,
     createDefaultCouponTemplateForm,
@@ -272,6 +273,12 @@
         validator: (_rule, value: CouponTemplateFormState['validRange'], callback) => {
           if (!Array.isArray(value) || value.length !== 2 || !value[0] || !value[1]) {
             callback(new Error('请选择有效期'))
+            return
+          }
+          const startAt = parseApiDateTime(value[0])
+          const endAt = parseApiDateTime(value[1])
+          if (!startAt || !endAt || startAt.getTime() >= endAt.getTime()) {
+            callback(new Error('结束时间必须晚于开始时间'))
             return
           }
           callback()

@@ -15,7 +15,7 @@ const meta: Api.Operations.ReportMeta = {
   comparisonRange: { startDate: '2026-07-14', endDate: '2026-07-14' },
   granularity: 'HOUR',
   timezone: 'Asia/Shanghai',
-  generatedAt: '2026-07-15T12:00:00'
+  generatedAt: '2026-07-15T12:00:00Z'
 }
 
 test('labels the overview product ranking with its primary count unit', () => {
@@ -65,7 +65,7 @@ test('attaches reliable overview drilldowns without inventing unsupported filter
           userName: '用户 A',
           paidAmountCent: 9500,
           status: 'PAID',
-          createdAt: '2026-07-15T12:00:00'
+          createdAt: '2026-07-15T12:00:00Z'
         }
       ]
     }

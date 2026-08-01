@@ -4,6 +4,8 @@ import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 public record StorageAssetQueryRequest(
         Long current,
@@ -12,8 +14,8 @@ public record StorageAssetQueryRequest(
         StorageMediaKind mediaKind,
         Long folderId,
         String referenceStatus,
-        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime createdFrom,
-        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime createdTo
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime createdFrom,
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime createdTo
 ) {
     public long pageCurrent() {
         return current == null || current < 1 ? 1L : current;
@@ -24,5 +26,17 @@ public record StorageAssetQueryRequest(
             return 20L;
         }
         return Math.min(size, 100L);
+    }
+
+    public LocalDateTime createdFromUtc() {
+        return utc(createdFrom);
+    }
+
+    public LocalDateTime createdToUtc() {
+        return utc(createdTo);
+    }
+
+    private LocalDateTime utc(OffsetDateTime value) {
+        return value == null ? null : value.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime();
     }
 }

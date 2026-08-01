@@ -157,7 +157,7 @@ public class AdminProductService {
                     .param("iconFileId", normalizedRequest.iconFileId())
                     .param("sortOrder", sortOrder)
                     .param("status", status)
-                    .param("updatedAt", LocalDateTime.now())
+                    .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                     .param("categoryId", categoryId)
                     .update();
         } catch (DuplicateKeyException ex) {
@@ -320,7 +320,7 @@ public class AdminProductService {
                 .param("displayBadgeTone", normalizedRequest.displayBadgeTone())
                 .param("sortOrder", normalizedRequest.sortOrder())
                 .param("status", existingSpu.status())
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("spuId", spuId)
                 .update();
         if (updatedRows != 1) {
@@ -368,7 +368,7 @@ public class AdminProductService {
                         WHERE id = :spuId AND deleted_at IS NULL
                         """)
                 .param("status", ProductStatus.ON_SALE.name())
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("spuId", spuId)
                 .update();
         if (updatedRows != 1) {
@@ -385,7 +385,7 @@ public class AdminProductService {
                         WHERE id = :spuId AND deleted_at IS NULL
                         """)
                 .param("status", ProductStatus.OFF_SALE.name())
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("spuId", spuId)
                 .update();
         if (updatedRows != 1) {
@@ -398,7 +398,7 @@ public class AdminProductService {
     public void deleteSpu(Long spuId) {
         findSpuForUpdate(spuId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE));
-        LocalDateTime deletedAt = LocalDateTime.now();
+        LocalDateTime deletedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updatedRows = jdbcClient.sql("""
                         UPDATE product_spu
                         SET status = :status,
@@ -423,7 +423,7 @@ public class AdminProductService {
         ProductSpu recycledSpu = findRecycledSpuForUpdate(spuId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_IN_RECYCLE_BIN));
         findSkusBySpuIdForUpdate(spuId);
-        LocalDateTime restoredAt = LocalDateTime.now();
+        LocalDateTime restoredAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
 
         restoreLegacyDeletedChildren(spuId, recycledSpu.deletedAt(), restoredAt);
         int updatedRows = jdbcClient.sql("""
@@ -460,7 +460,7 @@ public class AdminProductService {
         requireNoEnabledProductBannerForPurge(productBanners);
         List<HomeProductReference> homeProducts = lockHomeProductsForPurge(spuId);
         requireNoEnabledHomeProductForPurge(homeProducts);
-        LocalDateTime purgedAt = LocalDateTime.now();
+        LocalDateTime purgedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
 
         detachDisabledProductBanners(productBanners, purgedAt);
         deleteDisabledHomeProducts(homeProducts);
@@ -917,7 +917,7 @@ public class AdminProductService {
                         WHERE id = :skuId
                         """)
                 .param("stockAvailable", quantityAfter)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("skuId", skuId)
                 .update();
         if (updatedRows != 1) {
@@ -938,7 +938,7 @@ public class AdminProductService {
                         where id = :skuId and deleted_at is null
                         """)
                 .param("lowStockThreshold", lowStockThreshold)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("skuId", skuId)
                 .update();
         if (updatedRows != 1) {
@@ -1450,7 +1450,7 @@ public class AdminProductService {
             sku.setImageFileId(snapshot.imageFileId());
             syncSkuFileUsages(skuId, sku);
         }
-        LocalDateTime deletedAt = LocalDateTime.now();
+        LocalDateTime deletedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         for (ProductSku existingSku : existingSkusById.values()) {
             if (!retainedSkuIds.contains(existingSku.id()) && existingSku.deletedAt() == null) {
                 jdbcClient.sql("""
@@ -1558,7 +1558,7 @@ public class AdminProductService {
                 .param("isDefault", Boolean.TRUE.equals(request.defaultSelected()))
                 .param("combinationKey", snapshot.combinationKey())
                 .param("sortOrder", request.sortOrder())
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("skuId", skuId)
                 .param("spuId", spuId)
                 .update();
@@ -1896,7 +1896,7 @@ public class AdminProductService {
             replaceSpecValueRows(groupId, group, groupSortOrder, persistedValuesByKey);
         }
 
-        LocalDateTime deletedAt = LocalDateTime.now();
+        LocalDateTime deletedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         for (SpecGroupRow existingGroup : existingGroupsById.values()) {
             if (!retainedGroupIds.contains(existingGroup.id()) && existingGroup.deletedAt() == null) {
                 softDeleteSpecGroup(existingGroup.id(), deletedAt);
@@ -1937,7 +1937,7 @@ public class AdminProductService {
                 .param("name", group.name().trim())
                 .param("imageEnabled", Boolean.TRUE.equals(group.imageEnabled()))
                 .param("sortOrder", sortOrder)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("groupId", groupId)
                 .update();
         return groupId;
@@ -1987,7 +1987,7 @@ public class AdminProductService {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
         }
-        LocalDateTime deletedAt = LocalDateTime.now();
+        LocalDateTime deletedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         for (SpecValueRow existingValue : existingValues) {
             if (!retainedValueIds.contains(existingValue.id()) && existingValue.deletedAt() == null) {
                 jdbcClient.sql("""
@@ -2048,7 +2048,7 @@ public class AdminProductService {
                 .param("image", defaultString(value.image()))
                 .param("imageFileId", imageFileId)
                 .param("sortOrder", sortOrder)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("valueId", valueId)
                 .update();
         return valueId;
@@ -2087,7 +2087,7 @@ public class AdminProductService {
     }
 
     private void softDeleteAllSpecRows(Long spuId) {
-        LocalDateTime deletedAt = LocalDateTime.now();
+        LocalDateTime deletedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         for (SpecGroupRow group : findSpecGroups(spuId)) {
             if (group.deletedAt() == null) {
                 softDeleteSpecGroup(group.id(), deletedAt);

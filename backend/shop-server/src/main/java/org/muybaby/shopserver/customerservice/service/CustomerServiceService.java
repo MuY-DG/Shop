@@ -168,7 +168,7 @@ public class CustomerServiceService {
                         set app_unread_count = 0, updated_at = :now
                         where id = :conversationId
                         """)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("conversationId", conversation.get().id())
                 .update();
         return messages(conversation.get(), afterId, beforeId, limit);
@@ -414,7 +414,7 @@ public class CustomerServiceService {
                         where id = :conversationId and status = 'WAITING'
                         """)
                 .param("adminUserId", adminUserId)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("conversationId", conversationId)
                 .update();
         if (updated != 1) {
@@ -456,7 +456,7 @@ public class CustomerServiceService {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_STATE_CONFLICT);
         }
         requireCanReceive(targetAdminUserId);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         try {
             namedParameterJdbcTemplate.update("""
@@ -506,7 +506,7 @@ public class CustomerServiceService {
                         order by request.created_at, request.id
                         """)
                 .param("adminUserId", adminUserId)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .query(this::mapTransferRequest)
                 .list();
     }
@@ -525,7 +525,7 @@ public class CustomerServiceService {
                 || !request.fromAdminUserId().equals(conversation.assignedAdminUserId())) {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_STATE_CONFLICT);
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int requestUpdated = jdbcClient.sql("""
                         update customer_service_transfer_request
                         set status = 'ACCEPTED', pending_key = null,
@@ -592,7 +592,7 @@ public class CustomerServiceService {
         Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
         expireTransferRequests();
         TransferRequestResponse request = requirePendingTransferRequest(requestId, adminUserId);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updated = jdbcClient.sql("""
                         update customer_service_transfer_request
                         set status = 'REJECTED', pending_key = null,
@@ -632,7 +632,7 @@ public class CustomerServiceService {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_ASSIGNMENT_REQUIRED);
         }
         Long previousAdminUserId = conversation.assignedAdminUserId();
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updated = jdbcClient.sql("""
                         update customer_service_conversation
                         set status = 'WAITING', assigned_admin_user_id = null,
@@ -679,7 +679,7 @@ public class CustomerServiceService {
         if (targetAdminUserId.equals(conversation.assignedAdminUserId())) {
             return detail(conversationId);
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         long auditRequestId = insertResolvedTransferRecord(
                 conversationId,
                 conversation.assignedAdminUserId(),
@@ -730,7 +730,7 @@ public class CustomerServiceService {
 
     @Transactional
     public int expireTransferRequests() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         List<TransferRequestResponse> expired = jdbcClient.sql(transferRequestSelect() + """
                         where request.status = 'PENDING'
                           and request.expires_at <= :now
@@ -767,7 +767,7 @@ public class CustomerServiceService {
         Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
         ConversationRow conversation = requireAdminVisibleConversation(conversationId);
         requireAssigned(conversation, adminUserId);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updated = jdbcClient.sql("""
                         update customer_service_conversation
                         set status = 'CLOSED', closed_at = :now, updated_at = :now
@@ -1302,7 +1302,7 @@ public class CustomerServiceService {
     ) {
         Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
         requireCustomerServiceAgent(adminUserId);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         try {
             jdbcClient.sql("""
                             insert into customer_service_agent_state
@@ -1369,7 +1369,7 @@ public class CustomerServiceService {
     ) {
         Long adminUserId = requirePrincipal(principal, TokenKind.ADMIN);
         String workStatus = normalizeAgentWorkStatus(rawWorkStatus);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updated = jdbcClient.sql("""
                         update customer_service_agent_state
                         set work_status = :workStatus, updated_at = :now
@@ -1456,7 +1456,7 @@ public class CustomerServiceService {
                         set app_unread_count = 0, updated_at = :now
                         where id = :conversationId
                         """)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("conversationId", conversationId)
                 .update();
         return detail(conversationId);
@@ -1698,7 +1698,7 @@ public class CustomerServiceService {
                     .param("resourceId", resourceId)
                     .param("addedByType", addedByType)
                     .param("addedById", addedById)
-                    .param("createdAt", LocalDateTime.now())
+                    .param("createdAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                     .update();
             return true;
         } catch (DuplicateKeyException ignored) {
@@ -1711,7 +1711,7 @@ public class CustomerServiceService {
         if (existing.isPresent()) {
             return existing.get();
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         try {
             namedParameterJdbcTemplate.update("""
@@ -1738,7 +1738,7 @@ public class CustomerServiceService {
     }
 
     private ConversationRow startDraftConsultation(ConversationRow conversation) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updated = jdbcClient.sql("""
                         update customer_service_conversation
                         set status = 'DRAFT',
@@ -1805,7 +1805,7 @@ public class CustomerServiceService {
     }
 
     private ConversationRow activateDraft(ConversationRow conversation, Long appUserId) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updated = jdbcClient.sql("""
                         update customer_service_conversation
                         set status = 'WAITING',
@@ -2156,7 +2156,7 @@ public class CustomerServiceService {
             return false;
         }
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updated = jdbcClient.sql("""
                         update customer_service_conversation
                         set status = 'ACTIVE',
@@ -2227,7 +2227,7 @@ public class CustomerServiceService {
                         limit 1
                         """)
                 .param("conversationId", conversationId)
-                .param("cutoff", LocalDateTime.now().minusHours(stickyWindowHours))
+                .param("cutoff", LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(stickyWindowHours))
                 .query(Long.class)
                 .optional()
                 .orElse(null);
@@ -2271,7 +2271,7 @@ public class CustomerServiceService {
                         """)
                 .param("contextType", contextType)
                 .param("contextId", contextId)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("conversationId", conversationId)
                 .update();
     }
@@ -2459,7 +2459,7 @@ public class CustomerServiceService {
                         where id = :conversationId
                           and assigned_admin_user_id = :adminUserId
                         """)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("conversationId", conversation.id())
                 .param("adminUserId", adminUserId)
                 .update();
@@ -2478,7 +2478,7 @@ public class CustomerServiceService {
             Long resourceId,
             String clientMessageId
     ) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into customer_service_message
@@ -2621,7 +2621,7 @@ public class CustomerServiceService {
                 .param("toAdminUserId", toAdminUserId)
                 .param("operatorType", operatorType)
                 .param("operatorId", operatorId)
-                .param("createdAt", LocalDateTime.now())
+                .param("createdAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .update();
     }
 

@@ -1,4 +1,5 @@
 import { formatMoney } from "./product-catalog";
+import { formatLocalDateTime } from "../utils/date-time";
 import type {
   AppOrderDetailResponse,
   OrderItemResponse,
@@ -78,13 +79,6 @@ export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
 
 function money(cent: unknown): string {
   return `¥${formatMoney(cent) || "0.00"}`;
-}
-
-function dateTimeText(value?: string): string {
-  if (!value) {
-    return "";
-  }
-  return value.replace("T", " ").slice(0, 16);
 }
 
 export function orderStatusText(status: OrderStatus): string {
@@ -176,7 +170,7 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     amountText: money(order.status === "PAID" || order.paidAmountCent > 0
       ? order.paidAmountCent
       : order.payableAmountCent),
-    createdAtText: dateTimeText(order.createdAt),
+    createdAtText: formatLocalDateTime(order.createdAt),
     itemCountText: `共 ${Math.max(0, order.itemCount)} 件商品`
   };
 }
@@ -227,10 +221,10 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     freightText: money(order.freightCent),
     payableAmountText: money(order.payableAmountCent),
     paidAmountText: money(order.paidAmountCent),
-    createdAtText: dateTimeText(order.createdAt),
-    paidAtText: dateTimeText(order.paidAt),
-    shippedAtText: dateTimeText(order.shippedAt),
-    completedAtText: dateTimeText(order.completedAt),
+    createdAtText: formatLocalDateTime(order.createdAt),
+    paidAtText: formatLocalDateTime(order.paidAt),
+    shippedAtText: formatLocalDateTime(order.shippedAt),
+    completedAtText: formatLocalDateTime(order.completedAt),
     canConfirmReceipt: orderActions.canConfirmReceipt && !fulfillmentBlocked,
     hasAfterSale: Boolean(latestAfterSaleView),
     canApplyAfterSale: canApplyAfterSale(order.status, order.latestAfterSale),

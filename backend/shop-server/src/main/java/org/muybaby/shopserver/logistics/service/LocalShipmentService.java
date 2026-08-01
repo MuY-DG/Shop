@@ -80,7 +80,7 @@ public class LocalShipmentService {
         OrderForShipment order = lockPaidOrder(orderId);
         afterSaleFulfillmentPolicy.rejectIfBlocked(orderId);
         NormalizedShipment shipment = normalize(request, order.receiverPhone());
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
 
         try {
             jdbcClient.sql("""

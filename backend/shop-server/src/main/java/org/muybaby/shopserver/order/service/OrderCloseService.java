@@ -39,7 +39,7 @@ public class OrderCloseService {
     }
 
     private void closeOrder(Long orderId, OrderStatus expectedOrderStatus, String closeReason, String operatorType, Long operatorId) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         ClosableOrder order = jdbcClient.sql("""
                         select id as order_id,
                                status,

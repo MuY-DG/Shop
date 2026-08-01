@@ -199,6 +199,7 @@
 <script setup lang="ts">
   import type { TagProps } from 'element-plus'
   import type { EChartsOption } from '@/plugins/echarts'
+  import { formatDateInTimeZone } from '@/utils/date-time'
   import BreakdownPanel from './operation-breakdown-panel.vue'
   import OperationChart from './operation-chart.vue'
   import OperationMetricCard from './operation-metric-card.vue'
@@ -254,7 +255,9 @@
   )
   const partialCollectionCoverage = computed(() => {
     const meta = report.value?.meta
-    const collectionDate = meta?.collectionStartedAt?.slice(0, 10)
+    const collectionDate = meta?.collectionStartedAt
+      ? formatDateInTimeZone(meta.collectionStartedAt, meta.timezone, '')
+      : ''
     return Boolean(collectionDate && meta && meta.range.startDate < collectionDate)
   })
 

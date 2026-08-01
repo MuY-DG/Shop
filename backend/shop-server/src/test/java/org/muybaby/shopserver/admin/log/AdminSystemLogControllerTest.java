@@ -308,8 +308,8 @@ class AdminSystemLogControllerTest {
         mockMvc.perform(get("/admin/system/logs")
                         .header("Authorization", "Bearer " + token)
                         .header("X-Request-Id", invalidQueryRequestId)
-                        .queryParam("occurredStart", "2026-07-27 00:00:00")
-                        .queryParam("occurredEnd", "2026-07-26 00:00:00"))
+                        .queryParam("occurredStart", "2026-07-27T00:00:00Z")
+                        .queryParam("occurredEnd", "2026-07-26T00:00:00Z"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100400));
         LogRow invalidQuery = log(invalidQueryRequestId);
@@ -319,7 +319,7 @@ class AdminSystemLogControllerTest {
 
         mockMvc.perform(get("/admin/system/logs")
                         .header("Authorization", "Bearer " + token)
-                        .queryParam("occurredEnd", "9999-12-31 00:00:00"))
+                        .queryParam("occurredEnd", "9999-12-31T00:00:00Z"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100400));
         mockMvc.perform(get("/admin/system/logs")

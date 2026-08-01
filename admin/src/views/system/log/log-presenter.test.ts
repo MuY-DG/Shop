@@ -25,7 +25,7 @@ test('normalizes system log filters and maps the occurrence range', () => {
       operator: '  Super  ',
       clientIp: '  127.0.0.1 ',
       requestId: ' request-123 ',
-      occurredRange: ['2026-07-20 00:00:00', '2026-07-26 23:59:59']
+      occurredRange: ['2026-07-20T00:00:00Z', '2026-07-26T23:59:59Z']
     }),
     {
       type: 'OPERATION',
@@ -34,8 +34,8 @@ test('normalizes system log filters and maps the occurrence range', () => {
       operator: 'Super',
       clientIp: '127.0.0.1',
       requestId: 'request-123',
-      occurredStart: '2026-07-20 00:00:00',
-      occurredEnd: '2026-07-26 23:59:59'
+      occurredStart: '2026-07-20T00:00:00Z',
+      occurredEnd: '2026-07-26T23:59:59Z'
     }
   )
 })
@@ -48,7 +48,7 @@ test('omits blank filters and incomplete occurrence ranges', () => {
       operator: '',
       clientIp: '  ',
       requestId: '',
-      occurredRange: ['2026-07-20 00:00:00']
+      occurredRange: ['2026-07-20T00:00:00Z']
     }),
     {}
   )
@@ -72,7 +72,7 @@ test('maps log types, levels, and results to stable labels and tag tones', () =>
 })
 
 test('formats list and detail values without inventing request content', () => {
-  assert.equal(formatLogDateTime('2026-07-26T10:20:30'), '2026-07-26 10:20:30')
+  assert.equal(formatLogDateTime('2026-07-26T10:20:30Z'), '2026-07-26 10:20:30')
   assert.equal(formatLogDateTime(undefined), '-')
   assert.equal(formatLogDuration(0), '0 ms')
   assert.equal(formatLogDuration(-1), '-')

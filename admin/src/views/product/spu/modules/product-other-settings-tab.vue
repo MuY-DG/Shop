@@ -183,7 +183,7 @@
             <ElDatePicker
               v-model="couponForm.validStartAt"
               type="datetime"
-              value-format="YYYY-MM-DDTHH:mm:ss"
+              value-format="YYYY-MM-DDTHH:mm:ssZ"
               style="width: 100%"
             />
           </ElFormItem>
@@ -191,7 +191,7 @@
             <ElDatePicker
               v-model="couponForm.validEndAt"
               type="datetime"
-              value-format="YYYY-MM-DDTHH:mm:ss"
+              value-format="YYYY-MM-DDTHH:mm:ssZ"
               style="width: 100%"
             />
           </ElFormItem>
@@ -226,6 +226,7 @@
   import { WarningFilled } from '@element-plus/icons-vue'
   import { fetchCouponTemplates } from '@/api/coupon'
   import { createProductSpuCoupon, fetchProductSpuCoupons } from '@/api/product'
+  import { parseApiDateTime, toOffsetDateTime } from '@/utils/date-time'
   import type { ProductEditorCoupon, ProductEditorForm } from './editor-model'
   import { yuanToCent } from './editor-model'
 
@@ -252,13 +253,6 @@
   const couponSaving = ref(false)
   const couponDialogVisible = ref(false)
 
-  const localDateTime = (date: Date) => {
-    const pad = (value: number) => String(value).padStart(2, '0')
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-      date.getHours()
-    )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
-  }
-
   const createCouponForm = () => {
     const start = new Date()
     const end = new Date(start)
@@ -272,8 +266,8 @@
       discountYuan: null as number | null,
       totalStock: 100,
       perUserLimit: 1,
-      validStartAt: localDateTime(start),
-      validEndAt: localDateTime(end),
+      validStartAt: toOffsetDateTime(start),
+      validEndAt: toOffsetDateTime(end),
       status: 'ENABLED' as 'ENABLED' | 'DISABLED',
       sortOrder: 0
     }
@@ -338,7 +332,9 @@
       ElMessage.error('请选择有效时间')
       return
     }
-    if (couponForm.validStartAt >= couponForm.validEndAt) {
+    const validStartAt = parseApiDateTime(couponForm.validStartAt)
+    const validEndAt = parseApiDateTime(couponForm.validEndAt)
+    if (!validStartAt || !validEndAt || validStartAt.getTime() >= validEndAt.getTime()) {
       ElMessage.error('有效结束时间必须晚于开始时间')
       return
     }

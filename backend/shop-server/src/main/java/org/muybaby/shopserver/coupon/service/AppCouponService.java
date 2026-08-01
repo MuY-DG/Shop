@@ -63,7 +63,7 @@ public class AppCouponService {
 
     public List<AppClaimableCouponResponse> claimable(AuthenticatedPrincipal principal) {
         Long userId = requireAppUser(principal);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         return jdbcClient.sql("""
                         select t.id,
                                t.name,
@@ -108,7 +108,7 @@ public class AppCouponService {
     ) {
         Long userId = requireAppUser(principal);
         requireProduct(spuId);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         return jdbcClient.sql("""
                         select t.id,
                                t.name,
@@ -164,7 +164,7 @@ public class AppCouponService {
     @Transactional
     public AppUserCouponResponse claim(AuthenticatedPrincipal principal, Long templateId) {
         Long userId = requireAppUser(principal);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         CouponTemplateRow preview = findActiveTemplate(templateId, now)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_UNAVAILABLE));
         lockClaimScope(preview);
@@ -194,7 +194,7 @@ public class AppCouponService {
                             updated_at = :updatedAt
                         where id = :templateId
                         """)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("templateId", templateId)
                 .update();
         if (updatedRows != 1) {
@@ -208,7 +208,7 @@ public class AppCouponService {
                 .param("templateId", templateId)
                 .param("userId", userId)
                 .param("userCouponId", userCouponId)
-                .param("claimedAt", LocalDateTime.now())
+                .param("claimedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .update();
 
         return findUserCoupon(userId, userCouponId)
@@ -218,7 +218,7 @@ public class AppCouponService {
     public List<AppUserCouponResponse> mine(AuthenticatedPrincipal principal, String status) {
         Long userId = requireAppUser(principal);
         String normalizedStatus = normalizeStatus(status);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         return jdbcClient.sql("""
                         select id, template_id, template_name, coupon_type, threshold_cent, discount_cent,
                                scope_type,
@@ -252,7 +252,7 @@ public class AppCouponService {
         CheckoutContext context = resolveCheckoutContext(userId, request);
         long cartAmountCent = context.totalAmountCent();
 
-        List<AvailableCouponCandidate> evaluated = findAvailableUserCoupons(userId, LocalDateTime.now()).stream()
+        List<AvailableCouponCandidate> evaluated = findAvailableUserCoupons(userId, LocalDateTime.now(java.time.ZoneOffset.UTC)).stream()
                 .map(candidate -> new AvailableCouponCandidate(candidate, couponDiscountCalculator.calculate(context, candidate.toPromotionCandidate())))
                 .sorted(Comparator
                         .comparing((AvailableCouponCandidate value) -> Boolean.FALSE.equals(value.discountResult().available()))
@@ -407,14 +407,14 @@ public class AppCouponService {
                         .addValue("validStartAt", template.validStartAt())
                         .addValue("validEndAt", template.validEndAt())
                         .addValue("status", UserCouponStatus.CLAIMED.name())
-                        .addValue("claimedAt", LocalDateTime.now()),
+                        .addValue("claimedAt", LocalDateTime.now(java.time.ZoneOffset.UTC)),
                 keyHolder,
                 new String[]{"id"});
         return requireGeneratedId(keyHolder);
     }
 
     private Optional<AppUserCouponResponse> findUserCoupon(Long userId, Long userCouponId) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         return jdbcClient.sql("""
                         select id, template_id, template_name, coupon_type, threshold_cent, discount_cent,
                                scope_type,

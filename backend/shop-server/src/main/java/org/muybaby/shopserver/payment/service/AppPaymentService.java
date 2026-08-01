@@ -76,7 +76,7 @@ public class AppPaymentService {
                 queryResult.outTradeNo(),
                 queryResult.transactionId(),
                 queryResult.amountCent(),
-                queryResult.paidAt() == null ? LocalDateTime.now() : queryResult.paidAt(),
+                queryResult.paidAt() == null ? LocalDateTime.now(java.time.ZoneOffset.UTC) : queryResult.paidAt(),
                 "",
                 config
         );

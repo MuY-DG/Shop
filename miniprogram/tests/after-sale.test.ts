@@ -32,8 +32,8 @@ function afterSale(status: AfterSaleStatus = "REQUESTED"): AfterSaleResponse {
     requestedAmountCent: 6980,
     approvedAmountCent: status === "REQUESTED" || status === "REJECTED" ? undefined : 6980,
     auditNote: status === "REJECTED" ? "请补充清晰凭证" : undefined,
-    reviewedAt: status === "REQUESTED" ? undefined : "2026-07-21T10:30:00",
-    createdAt: "2026-07-21T10:00:00",
+    reviewedAt: status === "REQUESTED" ? undefined : "2026-07-21T10:30:00Z",
+    createdAt: "2026-07-21T10:00:00Z",
     evidenceFileIds: [801],
     evidenceFiles: [{
       fileId: 801,
@@ -55,8 +55,8 @@ function afterSale(status: AfterSaleStatus = "REQUESTED"): AfterSaleResponse {
           refundAmountCent: 6980,
           status: status === "REFUNDED" ? "SUCCESS" : status === "REFUND_FAILED" ? "FAILED" : "PROCESSING",
           callbackStatus: "PENDING",
-          requestedAt: "2026-07-21T10:31:00",
-          successAt: status === "REFUNDED" ? "2026-07-21T10:35:00" : undefined
+          requestedAt: "2026-07-21T10:31:00Z",
+          successAt: status === "REFUNDED" ? "2026-07-21T10:35:00Z" : undefined
         }
       : undefined
   };
@@ -77,7 +77,7 @@ function order(status: OrderStatus, latestAfterSale?: AfterSaleResponse): AppOrd
     receiverName: "小灶",
     receiverPhone: "13800000000",
     receiverAddress: "四川省成都市灶香路 1 号",
-    createdAt: "2026-07-21T09:00:00",
+    createdAt: "2026-07-21T09:00:00Z",
     latestAfterSale,
     items: [{
       orderItemId: 201,

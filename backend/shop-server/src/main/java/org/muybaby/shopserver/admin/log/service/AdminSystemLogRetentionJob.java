@@ -8,12 +8,10 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 @Component
 public class AdminSystemLogRetentionJob {
-
-    static final ZoneId RETENTION_ZONE = ZoneId.of("Asia/Shanghai");
 
     private static final Logger log = LoggerFactory.getLogger(AdminSystemLogRetentionJob.class);
 
@@ -56,6 +54,6 @@ public class AdminSystemLogRetentionJob {
     }
 
     static LocalDateTime cutoffAt(Instant now, int retentionDays) {
-        return LocalDateTime.ofInstant(now, RETENTION_ZONE).minusDays(retentionDays);
+        return LocalDateTime.ofInstant(now.minus(retentionDays, java.time.temporal.ChronoUnit.DAYS), ZoneOffset.UTC);
     }
 }

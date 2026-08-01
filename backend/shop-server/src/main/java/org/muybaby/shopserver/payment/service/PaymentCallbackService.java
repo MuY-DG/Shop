@@ -144,8 +144,8 @@ public class PaymentCallbackService {
                 .param("status", status)
                 .param("errorCode", nullToEmpty(errorCode))
                 .param("errorMessage", nullToEmpty(errorMessage))
-                .param("createdAt", LocalDateTime.now())
-                .param("updatedAt", LocalDateTime.now())
+                .param("createdAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .update(keyHolder, "id");
         if (insertedRows != 1) {
             throw new IllegalStateException("Payment callback log was not inserted");
@@ -169,7 +169,7 @@ public class PaymentCallbackService {
                 .param("status", status)
                 .param("errorCode", nullToEmpty(errorCode))
                 .param("errorMessage", nullToEmpty(errorMessage))
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("logId", logId)
                 .update();
     }

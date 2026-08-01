@@ -86,7 +86,7 @@ class HomeBannerControllerTest {
                                 {"title":"首页热卖","subtitle":"夏季新品","imageFileId":%d,
                                  "jumpType":"PRODUCT","jumpTargetId":101,"jumpPath":"   ",
                                  "status":"DISABLED","sortOrder":20,
-                                 "startAt":"2026-07-01T00:00:00","endAt":"2026-08-01T00:00:00"}
+                                 "startAt":"2026-07-01T00:00:00Z","endAt":"2026-08-01T00:00:00Z"}
                                 """.formatted(uploadedFile.id())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isNumber())
@@ -126,7 +126,7 @@ class HomeBannerControllerTest {
                                 {"title":"首页热卖更新","subtitle":"夏季新品更新","imageFileId":%d,
                                  "jumpType":"APP_PATH","jumpTargetId":999,"jumpPath":" /pages/product/list/list?categoryId=8 ",
                                  "status":"ENABLED","sortOrder":5,
-                                 "startAt":"2026-07-02T00:00:00","endAt":"2026-08-02T00:00:00"}
+                                 "startAt":"2026-07-02T00:00:00Z","endAt":"2026-08-02T00:00:00Z"}
                                 """.formatted(uploadedFile.id())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));

@@ -416,13 +416,13 @@ public class StorageService {
                     )
                     """);
         }
-        if (normalized.createdFrom() != null) {
+        if (normalized.createdFromUtc() != null) {
             predicate.append(" and a.created_at >= :createdFrom");
-            params.addValue("createdFrom", normalized.createdFrom());
+            params.addValue("createdFrom", normalized.createdFromUtc());
         }
-        if (normalized.createdTo() != null) {
+        if (normalized.createdToUtc() != null) {
             predicate.append(" and a.created_at <= :createdTo");
-            params.addValue("createdTo", normalized.createdTo());
+            params.addValue("createdTo", normalized.createdToUtc());
         }
 
         Long total = namedParameterJdbcTemplate.queryForObject(
@@ -972,7 +972,7 @@ public class StorageService {
                 new PreparedUpload(originalFilename, sourceBytes, sourceImage, sourceDecision);
 
         String objectKey = storageObjectKeyGenerator.nextKey(
-                profile, prepared.decision().extension(), LocalDate.now());
+                profile, prepared.decision().extension(), LocalDate.now(java.time.ZoneOffset.UTC));
         ResolvedStorageConfig storageConfig = storageRuntimeConfigService.effective();
         StorageObjectLocation objectLocation = objectLocation(storageConfig, objectKey);
         String publicUrl = prepared.decision().visibility() == FileVisibility.PUBLIC
@@ -1594,8 +1594,8 @@ public class StorageService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         normalizeReferenceStatus(query.referenceStatus());
-        if (query.createdFrom() != null && query.createdTo() != null
-                && query.createdFrom().isAfter(query.createdTo())) {
+        if (query.createdFromUtc() != null && query.createdToUtc() != null
+                && query.createdFromUtc().isAfter(query.createdToUtc())) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
     }

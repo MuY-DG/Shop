@@ -176,7 +176,7 @@ public class AppProductReviewService {
         if (!eligible) {
             throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_ELIGIBLE);
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         try {
             jdbcClient.sql("""
                             INSERT INTO product_review (
@@ -228,7 +228,7 @@ public class AppProductReviewService {
                 .param("rating", request.rating())
                 .param("content", normalizeContent(request.content()))
                 .param("anonymous", Boolean.TRUE.equals(request.anonymous()))
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("reviewId", reviewId)
                 .param("userId", userId)
                 .param("status", PUBLISHED)

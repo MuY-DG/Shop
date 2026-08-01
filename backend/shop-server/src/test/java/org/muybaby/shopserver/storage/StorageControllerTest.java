@@ -83,8 +83,8 @@ class StorageControllerTest {
                         .param("mediaKind", "IMAGE")
                         .param("folderId", String.valueOf(folderId))
                         .param("referenceStatus", "UNREFERENCED")
-                        .param("createdFrom", "2026-01-01T00:00:00")
-                        .param("createdTo", "2027-01-01T00:00:00")
+                        .param("createdFrom", "2026-01-01T00:00:00Z")
+                        .param("createdTo", "2027-01-01T00:00:00Z")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
@@ -280,7 +280,7 @@ class StorageControllerTest {
                 .andExpect(jsonPath("$.data.usages[0].usageType").value("PRODUCT_SPU_MAIN"));
 
         mockMvc.perform(get("/admin/assets")
-                        .param("createdFrom", "2099-01-01T00:00:00")
+                        .param("createdFrom", "2099-01-01T00:00:00Z")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(0));

@@ -60,7 +60,7 @@ public class AppProductPreferenceService {
                             """)
                     .param("userId", userId)
                     .param("spuId", spuId)
-                    .param("createdAt", LocalDateTime.now())
+                    .param("createdAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                     .update();
         } catch (DuplicateKeyException ignored) {
             // 收藏操作幂等，重复请求保持已收藏状态。
@@ -123,7 +123,7 @@ public class AppProductPreferenceService {
     ) {
         long userId = requireAppUser(principal);
         requireVisibleProduct(spuId);
-        LocalDateTime viewedAt = LocalDateTime.now();
+        LocalDateTime viewedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updated = incrementBrowse(userId, spuId, viewedAt);
         if (updated == 0) {
             try {

@@ -15,6 +15,8 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -378,7 +380,7 @@ class ProductCouponControllerTest {
     }
 
     private String couponRequest(String name, String scopeType, String scopeValue) {
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         return """
                 {"name":"%s","description":"product coupon","couponType":"NO_THRESHOLD","discountType":"AMOUNT_OFF",
                  "thresholdCent":0,"discountCent":500,"scopeType":"%s","scopeValue":"%s",

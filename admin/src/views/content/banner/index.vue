@@ -191,7 +191,7 @@
               <ElDatePicker
                 v-model="formData.startAt"
                 type="datetime"
-                value-format="YYYY-MM-DDTHH:mm:ss"
+                value-format="YYYY-MM-DDTHH:mm:ssZ"
                 placeholder="请选择开始时间"
                 style="width: 100%"
               />
@@ -202,7 +202,7 @@
               <ElDatePicker
                 v-model="formData.endAt"
                 type="datetime"
-                value-format="YYYY-MM-DDTHH:mm:ss"
+                value-format="YYYY-MM-DDTHH:mm:ssZ"
                 placeholder="请选择结束时间"
                 style="width: 100%"
               />
@@ -231,6 +231,7 @@
   import AssetPicker from '@/components/business/asset-picker/index.vue'
   import { useAuth } from '@/hooks'
   import { useTableColumns } from '@/hooks/core/useTableColumns'
+  import { formatLocalDateTime as formatDateTime, parseApiDateTime } from '@/utils/date-time'
   import {
     createHomeBanner,
     disableHomeBanner,
@@ -423,8 +424,6 @@
       }
     ]
   }
-
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
 
   const formatEffectiveTime = (row: Api.Content.BannerItem) => {
     const start = formatDateTime(row.startAt)
@@ -774,7 +773,9 @@
       .catch(() => false)
 
     if (!valid) return
-    if (formData.startAt && formData.endAt && formData.startAt > formData.endAt) {
+    const startAt = parseApiDateTime(formData.startAt)
+    const endAt = parseApiDateTime(formData.endAt)
+    if (startAt && endAt && startAt.getTime() >= endAt.getTime()) {
       ElMessage.error('结束时间不能早于开始时间')
       return
     }

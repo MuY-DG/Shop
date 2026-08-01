@@ -40,6 +40,7 @@
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
   import { useTable } from '@/hooks/core/useTable'
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import { fetchCustomers } from '@/api/customer'
   import CouponIssueDialog from './modules/coupon-issue-dialog.vue'
 
@@ -79,8 +80,6 @@
       }
     }
   ])
-
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
 
   const {
     columns,

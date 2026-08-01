@@ -171,6 +171,7 @@
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
   import { useTableColumns } from '@/hooks/core/useTableColumns'
+  import { formatLocalDateTime } from '@/utils/date-time'
   import {
     addCustomerServiceMember,
     deleteCustomerServiceMember,
@@ -414,17 +415,7 @@
   }
 
   function formatDateTime(value: string) {
-    if (!value) return '-'
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return value.replace('T', ' ')
-    return new Intl.DateTimeFormat('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).format(date)
+    return formatLocalDateTime(value)
   }
 </script>
 

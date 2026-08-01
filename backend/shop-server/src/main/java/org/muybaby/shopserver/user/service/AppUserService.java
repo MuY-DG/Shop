@@ -30,7 +30,7 @@ public class AppUserService {
 
     public AppUser upsertByOpenid(WechatCodeSession session) {
         Optional<AppUser> existingUser = findByOpenid(session.openid());
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         if (existingUser.isPresent()) {
             AppUser user = requireEnabled(existingUser.get());
             jdbcClient.sql("""
@@ -68,7 +68,7 @@ public class AppUserService {
     }
 
     public AppUser markPhoneAuthorized(Long userId, WechatPhoneInfo phoneInfo) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int updatedRows = jdbcClient.sql("""
                         UPDATE app_user
                         SET phone_number = :phoneNumber,
@@ -104,7 +104,7 @@ public class AppUserService {
                         WHERE id = :id AND status = :status
                         """)
                 .param("nickname", normalizedNickname)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("id", userId)
                 .param("status", ENABLED_STATUS)
                 .update();
@@ -128,7 +128,7 @@ public class AppUserService {
                         WHERE id = :id AND status = :status
                         """)
                 .param("avatarUrl", avatarUrl)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("id", userId)
                 .param("status", ENABLED_STATUS)
                 .update();

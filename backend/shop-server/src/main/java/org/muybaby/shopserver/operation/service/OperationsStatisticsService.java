@@ -2,6 +2,7 @@ package org.muybaby.shopserver.operation.service;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.common.time.TimePolicy;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.AgentLoadItem;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.AlertItem;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.Availability;
@@ -59,7 +60,7 @@ import java.util.function.ToLongFunction;
 @Service
 public class OperationsStatisticsService {
 
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final ZoneId BUSINESS_ZONE = TimePolicy.BUSINESS_ZONE;
     private static final String BUSINESS_TIMEZONE = BUSINESS_ZONE.getId();
     private static final long MAX_RANGE_DAYS = 366;
     private static final int RANKING_LIMIT = 10;
@@ -167,8 +168,11 @@ public class OperationsStatisticsService {
 
     public UserStatisticsReport userStatistics(ReportQuery query) {
         ReportContext context = normalize(query);
-        UserAggregate current = userAggregate(context.startAt(), context.endExclusive());
-        UserAggregate previous = userAggregate(context.comparisonStartAt(), context.comparisonEndExclusive());
+        UserAggregate current = userAggregate(
+                context.startDate(), context.endDate().plusDays(1), context.startAt(), context.endExclusive());
+        UserAggregate previous = userAggregate(
+                context.comparisonStartDate(), context.comparisonEndDate().plusDays(1),
+                context.comparisonStartAt(), context.comparisonEndExclusive());
         long totalUsers = countUsersBefore(context.endExclusive());
         long previousTotalUsers = countUsersBefore(context.comparisonEndExclusive());
         LocalDateTime activityStartedAt = activityCollectionStartedAt();
@@ -366,10 +370,10 @@ public class OperationsStatisticsService {
                 comparisonStartDate,
                 comparisonEndDate,
                 granularity,
-                startDate.atStartOfDay(),
-                endDate.plusDays(1).atStartOfDay(),
-                comparisonStartDate.atStartOfDay(),
-                comparisonEndDate.plusDays(1).atStartOfDay()
+                TimePolicy.businessDayStartUtc(startDate),
+                TimePolicy.businessDayStartUtc(endDate.plusDays(1)),
+                TimePolicy.businessDayStartUtc(comparisonStartDate),
+                TimePolicy.businessDayStartUtc(comparisonEndDate.plusDays(1))
         );
     }
 
@@ -534,7 +538,12 @@ public class OperationsStatisticsService {
                 .single();
     }
 
-    private UserAggregate userAggregate(LocalDateTime startAt, LocalDateTime endExclusive) {
+    private UserAggregate userAggregate(
+            LocalDate startDate,
+            LocalDate endDateExclusive,
+            LocalDateTime startAt,
+            LocalDateTime endExclusive
+    ) {
         long newUsers = countUsersCreated(startAt, endExclusive);
         long activeUsers = jdbcClient.sql("""
                         select count(distinct user_id)
@@ -542,8 +551,8 @@ public class OperationsStatisticsService {
                         where activity_date >= :startDate
                           and activity_date < :endDate
                         """)
-                .param("startDate", startAt.toLocalDate())
-                .param("endDate", endExclusive.toLocalDate())
+                .param("startDate", startDate)
+                .param("endDate", endDateExclusive)
                 .query(Long.class)
                 .single();
         long paidBuyers = jdbcClient.sql("""
@@ -641,7 +650,7 @@ public class OperationsStatisticsService {
                         """)
                 .param("startAt", startAt)
                 .param("endExclusive", endExclusive)
-                .param("now", LocalDateTime.now(BUSINESS_ZONE))
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .query(Long.class)
                 .single();
         CouponOrderAggregate couponOrders = jdbcClient.sql("""
@@ -1433,7 +1442,7 @@ public class OperationsStatisticsService {
                 .param("startDate", context.startDate())
                 .param("endDate", context.endDate().plusDays(1))
                 .query((rs, rowNum) -> new TimedKey(
-                        rs.getObject("activity_date", LocalDate.class).atStartOfDay(),
+                        TimePolicy.businessDayStartUtc(rs.getObject("activity_date", LocalDate.class)),
                         String.valueOf(rs.getLong("user_id"))
                 ))
                 .list();
@@ -1482,7 +1491,7 @@ public class OperationsStatisticsService {
                 .param("endExclusive", context.endExclusive())
                 .query((rs, rowNum) -> new RegisteredUser(
                         rs.getLong("id"),
-                        rs.getObject("created_at", LocalDateTime.class).toLocalDate()
+                        TimePolicy.businessDate(rs.getObject("created_at", LocalDateTime.class))
                 ))
                 .list();
         if (registeredUsers.isEmpty()) {
@@ -1531,6 +1540,9 @@ public class OperationsStatisticsService {
                         && cohortUsers.stream().allMatch(user -> !user.registeredDate()
                                 .plusDays(dayOffset)
                                 .atStartOfDay()
+                                .atZone(BUSINESS_ZONE)
+                                .withZoneSameInstant(TimePolicy.UTC)
+                                .toLocalDateTime()
                                 .isBefore(collectionStartedAt));
                 if (!fullyCollected) {
                     windows.add(new RetentionWindow(dayOffset, 0, null, null));
@@ -1672,11 +1684,12 @@ public class OperationsStatisticsService {
     private List<TrendPoint> hourlyPaidOrders(ReportContext context) {
         Map<Integer, Long> counts = new HashMap<>();
         jdbcClient.sql("""
-                        select extract(hour from paid_at) as paid_hour, count(*) as item_count
+                        select extract(hour from timestampadd(HOUR, 8, paid_at)) as paid_hour,
+                               count(*) as item_count
                         from shop_order
                         where paid_at >= :startAt
                           and paid_at < :endExclusive
-                        group by extract(hour from paid_at)
+                        group by extract(hour from timestampadd(HOUR, 8, paid_at))
                         order by paid_hour
                         """)
                 .param("startAt", context.startAt())
@@ -1822,9 +1835,10 @@ public class OperationsStatisticsService {
 
     private List<Bucket> buckets(ReportContext context) {
         List<Bucket> buckets = new ArrayList<>();
-        LocalDateTime cursor = context.startAt();
-        while (cursor.isBefore(context.endExclusive())) {
-            LocalDateTime next = context.endExclusive();
+        LocalDateTime cursor = context.startDate().atStartOfDay();
+        LocalDateTime endExclusive = context.endDate().plusDays(1).atStartOfDay();
+        while (cursor.isBefore(endExclusive)) {
+            LocalDateTime next = endExclusive;
             String key = "";
             String label = "";
             switch (context.granularity()) {
@@ -1840,7 +1854,7 @@ public class OperationsStatisticsService {
                 }
                 case WEEK -> {
                     next = cursor.plusDays(7);
-                    LocalDate lastDate = min(next, context.endExclusive()).minusNanos(1).toLocalDate();
+                    LocalDate lastDate = min(next, endExclusive).minusNanos(1).toLocalDate();
                     key = cursor.toLocalDate() + "/" + lastDate;
                     label = cursor.toLocalDate() + " ~ " + lastDate;
                 }
@@ -1851,8 +1865,13 @@ public class OperationsStatisticsService {
                 }
                 case AUTO -> throw new IllegalStateException("AUTO must be resolved before building buckets");
             }
-            LocalDateTime clippedEnd = min(next, context.endExclusive());
-            buckets.add(new Bucket(key, label, cursor, clippedEnd));
+            LocalDateTime clippedEnd = min(next, endExclusive);
+            buckets.add(new Bucket(
+                    key,
+                    label,
+                    TimePolicy.businessWallTimeToUtc(cursor),
+                    TimePolicy.businessWallTimeToUtc(clippedEnd)
+            ));
             cursor = clippedEnd;
         }
         return buckets;
@@ -1863,7 +1882,7 @@ public class OperationsStatisticsService {
     }
 
     private CurrentServiceQueue currentServiceQueue() {
-        LocalDateTime overdueBefore = LocalDateTime.now(BUSINESS_ZONE).minusHours(48);
+        LocalDateTime overdueBefore = LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(48);
         OrderServiceQueue orders = jdbcClient.sql("""
                         select coalesce(sum(case when status = 'PAID' then 1 else 0 end), 0) as to_ship_count,
                                coalesce(sum(case when status = 'PAID' and paid_at < :overdueBefore then 1 else 0 end), 0) as overdue_count
@@ -2238,7 +2257,7 @@ public class OperationsStatisticsService {
                     new DateRange(comparisonStartDate, comparisonEndDate),
                     granularity,
                     BUSINESS_TIMEZONE,
-                    LocalDateTime.now(BUSINESS_ZONE),
+                    LocalDateTime.now(java.time.ZoneOffset.UTC),
                     collectionStartedAt
             );
         }

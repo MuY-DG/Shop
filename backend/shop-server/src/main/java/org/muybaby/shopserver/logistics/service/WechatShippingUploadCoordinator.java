@@ -60,7 +60,7 @@ public class WechatShippingUploadCoordinator {
         if (!shippingProperties.isUploadEnabled()) {
             return;
         }
-        if (!stateStore.claimInitial(shipmentId, LocalDateTime.now())) {
+        if (!stateStore.claimInitial(shipmentId, LocalDateTime.now(java.time.ZoneOffset.UTC))) {
             return;
         }
         executeClaimed(shipmentId);
@@ -68,10 +68,10 @@ public class WechatShippingUploadCoordinator {
 
     public void retry(AuthenticatedPrincipal principal, long orderId) {
         requireAdmin(principal);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         stateStore.reconcileStaleByOrder(orderId, now);
         long shipmentId = stateStore.claimOperatorRetry(
-                orderId, shippingProperties.isUploadEnabled(), LocalDateTime.now()
+                orderId, shippingProperties.isUploadEnabled(), LocalDateTime.now(java.time.ZoneOffset.UTC)
         );
         executeClaimed(shipmentId);
     }
@@ -194,7 +194,7 @@ public class WechatShippingUploadCoordinator {
             String errorMessage,
             List<String> knownSecrets
     ) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         String safeCode = "";
         String safeMessage = "";
         if (uploadStatus != WechatShippingUploadStatus.UPLOADED) {
@@ -225,7 +225,7 @@ public class WechatShippingUploadCoordinator {
                     WechatShippingUploadStateStore.STALE_ERROR_CODE, ex.getClass().getSimpleName()
             );
             try {
-                stateStore.fallbackUnknown(shipmentId, providerMode, LocalDateTime.now());
+                stateStore.fallbackUnknown(shipmentId, providerMode, LocalDateTime.now(java.time.ZoneOffset.UTC));
             } catch (RuntimeException fallbackFailure) {
                 log.warn(
                         "WeChat shipping fallback persistence failed: shipmentId={}, mode={}, status={}, code={}, exception={}",

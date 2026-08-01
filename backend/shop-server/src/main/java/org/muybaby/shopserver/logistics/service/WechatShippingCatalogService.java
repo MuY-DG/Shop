@@ -116,7 +116,7 @@ public class WechatShippingCatalogService {
             throw new IllegalStateException("WeChat delivery company lookup failed");
         }
         List<WechatDeliveryCompanyResult> companies = normalize(fetched);
-        LocalDateTime syncedAt = LocalDateTime.now();
+        LocalDateTime syncedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         transactionTemplate.executeWithoutResult(status -> synchronizeCompanies(companies, syncedAt));
         return listEnabled();
     }

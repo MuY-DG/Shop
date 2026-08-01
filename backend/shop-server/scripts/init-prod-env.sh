@@ -186,7 +186,7 @@ upsert_property "$infra_file" MYSQL_PASSWORD "$mysql_password" "MySQL 业务账�
 upsert_property "$infra_file" MYSQL_ROOT_PASSWORD "$mysql_root_password" "MySQL root 维护密码。"
 upsert_property "$infra_file" REDIS_PASSWORD "$redis_password" "Redis requirepass 密码。"
 
-upsert_property "$prod_file" SHOP_DB_URL 'jdbc:mysql://mysql:3306/hotpot_shop?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false' "Docker Compose 内的生产 MySQL JDBC 地址。"
+upsert_property "$prod_file" SHOP_DB_URL 'jdbc:mysql://mysql:3306/hotpot_shop?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC&allowPublicKeyRetrieval=true&useSSL=false' "Docker Compose 内的生产 MySQL JDBC 地址。"
 upsert_property "$prod_file" SHOP_DB_USERNAME shop "生产 MySQL 业务账号。"
 upsert_property "$prod_file" SHOP_DB_PASSWORD "$mysql_password" "生产 MySQL 业务账号密码。"
 upsert_property "$prod_file" SHOP_REDIS_HOST redis "Docker Compose 内的生产 Redis 服务名。"

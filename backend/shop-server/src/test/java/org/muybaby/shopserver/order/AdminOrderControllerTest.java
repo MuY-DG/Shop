@@ -142,8 +142,8 @@ class AdminOrderControllerTest {
                         .param("userKeyword", String.valueOf(userId))
                         .param("receiverName", "筛选")
                         .param("receiverPhone", "13800138001")
-                        .param("createdStart", "2026-07-07 00:00:00")
-                        .param("createdEnd", "2026-07-08 00:00:00"))
+                        .param("createdStart", "2026-07-07T00:00:00Z")
+                        .param("createdEnd", "2026-07-08T00:00:00Z"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(2))
                 .andExpect(jsonPath("$.data.records[0].userNickname").value("山茶花用户"))
@@ -332,7 +332,7 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data.outTradeNo").value("MCH9302-PAID"))
                 .andExpect(jsonPath("$.data.transactionId").value("wxpay-paid-9302"))
                 .andExpect(jsonPath("$.data.paymentTransactionId").value("wxpay-paid-9302"))
-                .andExpect(jsonPath("$.data.paidAt").value("2026-07-08T12:34:56"));
+                .andExpect(jsonPath("$.data.paidAt").value("2026-07-08T12:34:56Z"));
     }
 
     @Test

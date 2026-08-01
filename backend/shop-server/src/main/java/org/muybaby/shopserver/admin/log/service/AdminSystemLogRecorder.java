@@ -7,13 +7,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Types;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.Objects;
 
 @Service
 public class AdminSystemLogRecorder {
 
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final JdbcClient jdbcClient;
 
@@ -59,7 +57,7 @@ public class AdminSystemLogRecorder {
                         "occurredAt",
                         Objects.requireNonNullElseGet(
                                 record.createdAt(),
-                                () -> LocalDateTime.now(BUSINESS_ZONE)
+                                () -> LocalDateTime.now(java.time.ZoneOffset.UTC)
                         )
                 )
                 .update();

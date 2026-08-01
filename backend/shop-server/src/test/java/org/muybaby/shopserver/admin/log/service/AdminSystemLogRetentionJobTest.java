@@ -16,12 +16,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 class AdminSystemLogRetentionJobTest {
 
     @Test
-    void calculatesCutoffInAsiaShanghaiInsteadOfJvmDefaultTimezone() {
+    void calculatesCutoffAsAnExactUtcInstant() {
         Instant instant = Instant.parse("2026-01-01T16:30:00Z");
 
         assertThat(AdminSystemLogRetentionJob.cutoffAt(instant, 400))
-                .isEqualTo(LocalDateTime.of(2024, 11, 28, 0, 30));
-        assertThat(AdminSystemLogRetentionJob.RETENTION_ZONE.getId()).isEqualTo("Asia/Shanghai");
+                .isEqualTo(LocalDateTime.of(2024, 11, 27, 16, 30));
     }
 
     @Test

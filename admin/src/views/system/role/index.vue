@@ -50,6 +50,7 @@
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import { useTable } from '@/hooks/core/useTable'
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import { deleteAdminRole, fetchGetRoleList } from '@/api/system-manage'
   import RoleSearch from './modules/role-search.vue'
   import RoleEditDialog from './modules/role-edit-dialog.vue'
@@ -72,8 +73,6 @@
   const permissionDialog = ref(false)
   const currentRoleData = ref<RoleListItem>()
   const dialogType = ref<'add' | 'edit'>('add')
-
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
 
   const {
     columns,

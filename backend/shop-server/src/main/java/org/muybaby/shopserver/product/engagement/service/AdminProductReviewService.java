@@ -82,7 +82,7 @@ public class AdminProductReviewService {
                         """)
                 .param("status", status.name())
                 .param("adminUserId", adminUserId)
-                .param("moderatedAt", LocalDateTime.now())
+                .param("moderatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("reviewId", reviewId)
                 .update();
         if (updated != 1) {

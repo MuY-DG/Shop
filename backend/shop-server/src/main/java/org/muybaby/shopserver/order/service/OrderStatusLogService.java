@@ -61,7 +61,7 @@ public class OrderStatusLogService {
                 .param("operatorType", operatorType)
                 .param("operatorId", operatorId)
                 .param("description", description == null ? "" : description)
-                .param("createdAt", createdAt == null ? LocalDateTime.now() : createdAt)
+                .param("createdAt", createdAt == null ? LocalDateTime.now(java.time.ZoneOffset.UTC) : createdAt)
                 .update();
     }
 }

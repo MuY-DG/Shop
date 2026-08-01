@@ -205,7 +205,7 @@ class CommerceFulfillmentMySqlMigrationTest {
     }
 
     @Test
-    void operationsStatisticsUseShanghaiDayBoundariesForLegacyMySqlTimestamps() {
+    void operationsStatisticsUseShanghaiDayBoundariesForUtcMySqlTimestamps() {
         String jdbcUrl = CLEAN_MYSQL.getJdbcUrl();
         CommerceFulfillmentMigrationTest.migrateToLatest(
                 jdbcUrl, CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
@@ -224,17 +224,17 @@ class CommerceFulfillmentMySqlMigrationTest {
                              payable_amount_cent, paid_amount_cent, paid_at, created_at, updated_at)
                         values
                             (990111, 'MYSQL-OPS-BEFORE', 990101, 'PAID', 'mysql-ops-before',
-                             100, 100, timestamp '2029-12-31 23:59:59',
-                             timestamp '2029-12-31 23:59:59', timestamp '2029-12-31 23:59:59'),
+                             100, 100, timestamp '2029-12-31 15:59:59',
+                             timestamp '2029-12-31 15:59:59', timestamp '2029-12-31 15:59:59'),
                             (990112, 'MYSQL-OPS-START', 990101, 'PAID', 'mysql-ops-start',
-                             200, 200, timestamp '2030-01-01 00:00:00',
-                             timestamp '2030-01-01 00:00:00', timestamp '2030-01-01 00:00:00'),
+                             200, 200, timestamp '2029-12-31 16:00:00',
+                             timestamp '2029-12-31 16:00:00', timestamp '2029-12-31 16:00:00'),
                             (990113, 'MYSQL-OPS-END', 990101, 'PAID', 'mysql-ops-end',
-                             300, 300, timestamp '2030-01-01 23:59:59',
-                             timestamp '2030-01-01 23:59:59', timestamp '2030-01-01 23:59:59'),
+                             300, 300, timestamp '2030-01-01 15:59:59',
+                             timestamp '2030-01-01 15:59:59', timestamp '2030-01-01 15:59:59'),
                             (990114, 'MYSQL-OPS-AFTER', 990101, 'PAID', 'mysql-ops-after',
-                             400, 400, timestamp '2030-01-02 00:00:00',
-                             timestamp '2030-01-02 00:00:00', timestamp '2030-01-02 00:00:00')
+                             400, 400, timestamp '2030-01-01 16:00:00',
+                             timestamp '2030-01-01 16:00:00', timestamp '2030-01-01 16:00:00')
                         """)
                 .update();
 
@@ -270,22 +270,22 @@ class CommerceFulfillmentMySqlMigrationTest {
                             (990301, 'mysql-traffic-home', 'mysql-traffic-home-digest',
                              'mysql-traffic-visitor', 'mysql-traffic-session',
                              'CLIENT', 'PAGE_VIEW', '/pages/home/home',
-                             timestamp '2030-02-01 12:00:00', timestamp '2030-02-01 12:00:01',
+                             timestamp '2030-02-01 04:00:00', timestamp '2030-02-01 04:00:01',
                              date '2030-02-01'),
                             (990302, 'mysql-traffic-product', 'mysql-traffic-product-digest',
                              'mysql-traffic-visitor', 'mysql-traffic-session',
                              'CLIENT', 'PRODUCT_VIEW', '/pages/product/detail/detail',
-                             timestamp '2030-02-01 12:01:00', timestamp '2030-02-01 12:01:01',
+                             timestamp '2030-02-01 04:01:00', timestamp '2030-02-01 04:01:01',
                              date '2030-02-01'),
                             (990303, 'mysql-traffic-late-page', 'mysql-traffic-late-page-digest',
                              'mysql-traffic-visitor-2', 'mysql-traffic-session-2',
                              'CLIENT', 'PAGE_VIEW', '/pages/other',
-                             timestamp '2030-02-01 23:59:59', timestamp '2030-02-01 23:59:59',
+                             timestamp '2030-02-01 15:59:59', timestamp '2030-02-01 15:59:59',
                              date '2030-02-01'),
                             (990304, 'mysql-traffic-late-search', 'mysql-traffic-late-search-digest',
                              'mysql-traffic-visitor', 'mysql-traffic-session-3',
                              'CLIENT', 'SEARCH', '/pages/search',
-                             timestamp '2030-02-01 23:59:59', timestamp '2030-02-01 23:59:59',
+                             timestamp '2030-02-01 15:59:59', timestamp '2030-02-01 15:59:59',
                              date '2030-02-01')
                         """)
                 .update();
@@ -350,8 +350,8 @@ class CommerceFulfillmentMySqlMigrationTest {
                 .withDatabaseName(databaseName)
                 .withUsername("shop_test")
                 .withPassword("shop_test")
-                .withEnv("TZ", "Asia/Shanghai")
-                .withUrlParam("serverTimezone", "Asia/Shanghai");
+                .withEnv("TZ", "UTC")
+                .withUrlParam("serverTimezone", "UTC");
     }
 
     private OperationsStatisticsService operationsStatisticsService(JdbcClient jdbcClient) {

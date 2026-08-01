@@ -332,7 +332,7 @@ public class AppCartService {
                         WHERE id = :cartItemId
                         """)
                 .param("quantity", quantity)
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("cartItemId", cartItemId)
                 .update();
         if (updatedRows != 1) {

@@ -187,7 +187,7 @@ public class PublicContentCacheService {
         if (nextTransitionAt == null) {
             return configured;
         }
-        long seconds = ChronoUnit.SECONDS.between(LocalDateTime.now(), nextTransitionAt);
+        long seconds = ChronoUnit.SECONDS.between(LocalDateTime.now(java.time.ZoneOffset.UTC), nextTransitionAt);
         if (seconds <= 0) {
             return Duration.ofSeconds(1);
         }

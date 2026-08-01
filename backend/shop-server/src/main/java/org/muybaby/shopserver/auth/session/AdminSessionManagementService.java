@@ -63,7 +63,7 @@ public class AdminSessionManagementService {
                             updated_at = :now
                         WHERE id = :userId
                         """)
-                .param("now", LocalDateTime.now())
+                .param("now", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("userId", userId)
                 .update();
         if (updated != 1) {

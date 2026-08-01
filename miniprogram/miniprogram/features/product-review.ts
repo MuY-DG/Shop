@@ -4,6 +4,7 @@ import type {
   PublicProductReview,
   ReviewableOrderItem
 } from "../types/product-engagement";
+import { formatLocalDate } from "../utils/date-time";
 
 export interface RatingStarView {
   value: number;
@@ -72,9 +73,7 @@ export function buildRatingStars(rating: unknown): RatingStarView[] {
 }
 
 export function formatReviewDate(value: unknown): string {
-  const text = cleanText(value);
-  const matched = /^(\d{4})-(\d{2})-(\d{2})/.exec(text);
-  return matched ? `${matched[1]}-${matched[2]}-${matched[3]}` : "";
+  return formatLocalDate(value);
 }
 
 export function buildProductReviewSummaryView(

@@ -133,7 +133,7 @@ public class WechatShippingUploadStateStore {
         return Objects.requireNonNull(required.execute(status -> {
             AttemptContext current = loadAttemptContext(shipmentId);
             String uploadTime = nextUploadTime(current.uploadTime());
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
             int updated = jdbcClient.sql("""
                             update order_shipment
                             set upload_time = :uploadTime,

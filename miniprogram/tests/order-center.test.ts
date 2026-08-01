@@ -32,7 +32,7 @@ function summary(status: OrderStatus): OrderSummaryResponse {
       : 0,
     productTitle: "牛油火锅底料",
     itemCount: 3,
-    createdAt: "2026-07-20T12:30:00"
+    createdAt: "2026-07-20T12:30:00Z"
   };
 }
 
@@ -53,9 +53,9 @@ function detail(status: OrderStatus = "PAYING"): AppOrderDetailResponse {
     receiverName: "小灶",
     receiverPhone: "13800000000",
     receiverAddress: "四川省成都市武侯区灶香路 1 号",
-    paymentExpiresAt: "2026-07-20T12:45:00",
+    paymentExpiresAt: "2026-07-20T12:45:00Z",
     paymentRemainingSeconds: 899,
-    createdAt: "2026-07-20T12:30:00",
+    createdAt: "2026-07-20T12:30:00Z",
     items: [{
       orderItemId: 901,
       skuId: 21,

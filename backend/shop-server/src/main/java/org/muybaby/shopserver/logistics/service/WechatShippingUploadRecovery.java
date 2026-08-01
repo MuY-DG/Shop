@@ -22,7 +22,7 @@ public class WechatShippingUploadRecovery {
     @EventListener(ApplicationReadyEvent.class)
     public void recoverStaleClaimsOnStartup() {
         try {
-            int reconciled = stateStore.reconcileStaleBatch(LocalDateTime.now());
+            int reconciled = stateStore.reconcileStaleBatch(LocalDateTime.now(java.time.ZoneOffset.UTC));
             if (reconciled > 0) {
                 log.warn("Reconciled stale WeChat shipping attempts: count={}", reconciled);
             }
@@ -35,6 +35,6 @@ public class WechatShippingUploadRecovery {
     }
 
     public boolean reconcileOrder(long orderId) {
-        return stateStore.reconcileStaleByOrder(orderId, LocalDateTime.now());
+        return stateStore.reconcileStaleByOrder(orderId, LocalDateTime.now(java.time.ZoneOffset.UTC));
     }
 }

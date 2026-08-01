@@ -765,6 +765,7 @@
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
   import { afterSaleStatusGroupFromQuery } from '@/utils/business-route-query'
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import {
     approveAfterSale,
     fetchAfterSaleDetail,
@@ -1020,7 +1021,7 @@
       props: {
         clearable: true,
         style: { width: '100%' },
-        valueFormat: 'YYYY-MM-DD HH:mm:ss',
+        valueFormat: 'YYYY-MM-DDTHH:mm:ssZ',
         startPlaceholder: '开始时间',
         endPlaceholder: '结束时间'
       }
@@ -1078,7 +1079,6 @@
   const formatMoney = (cent: number | null | undefined) => `¥${((cent ?? 0) / 100).toFixed(2)}`
   const formatMoneyOrDash = (cent: number | null | undefined) =>
     cent === null || cent === undefined ? '-' : formatMoney(cent)
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
   const formatText = (value?: string | number | null) =>
     value === null || value === undefined || value === '' ? '-' : String(value)
   const copyText = async (value: string | number, label: string) => {

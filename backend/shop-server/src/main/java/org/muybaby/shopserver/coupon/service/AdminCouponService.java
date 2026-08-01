@@ -132,7 +132,7 @@ public class AdminCouponService {
                 .param("validEndAt", validated.validEndAt())
                 .param("status", validated.status().name())
                 .param("sortOrder", validated.sortOrder())
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("templateId", templateId)
                 .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .update();
@@ -161,7 +161,7 @@ public class AdminCouponService {
                           and distribution_mode = :distributionMode
                         """)
                 .param("status", status.name())
-                .param("updatedAt", LocalDateTime.now())
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
                 .param("templateId", templateId)
                 .param("distributionMode", PUBLIC_DISTRIBUTION_MODE)
                 .update();

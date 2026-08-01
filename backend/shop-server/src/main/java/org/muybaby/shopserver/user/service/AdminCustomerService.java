@@ -63,7 +63,7 @@ public class AdminCustomerService {
         String keywordPattern = "%" + keyword + "%";
         Long keywordUserId = parseUserId(keyword);
         String status = normalizeStatus(normalized.status());
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
 
         Long total = jdbcClient.sql("""
                         select count(*)
@@ -127,7 +127,7 @@ public class AdminCustomerService {
 
     public List<AdminIssuableCouponTemplateResponse> issuableCouponTemplates(Long userId) {
         requireEnabledCustomer(userId, false);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         return jdbcClient.sql("""
                         select t.id, t.name, t.description, t.coupon_type, t.discount_type,
                                t.threshold_cent, t.discount_cent, t.scope_type, t.scope_value,
@@ -182,7 +182,7 @@ public class AdminCustomerService {
             AdminCouponIssueRequest request
     ) {
         requireEnabledCustomer(userId, true);
-        LocalDateTime issuedAt = LocalDateTime.now();
+        LocalDateTime issuedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         CouponTemplateRow preview = findActiveTemplate(request.templateId(), issuedAt, false)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COUPON_UNAVAILABLE));
         validateScopeAndLockProduct(preview);
@@ -255,7 +255,7 @@ public class AdminCustomerService {
             AdminDirectCouponIssueRequest request
     ) {
         requireEnabledCustomer(userId, true);
-        LocalDateTime issuedAt = LocalDateTime.now();
+        LocalDateTime issuedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         DirectCouponDefinition coupon = validateDirectCoupon(request, issuedAt);
         Long templateId = insertDirectTemplate(userId, coupon);
         CouponTemplateRow template = new CouponTemplateRow(

@@ -183,7 +183,7 @@ public class AppAfterSaleService {
         rejectIfActiveAfterSaleExists(order.orderId());
         validateEvidenceFiles(userId, order.orderId(), evidenceFileIds);
 
-        LocalDateTime requestedAt = LocalDateTime.now();
+        LocalDateTime requestedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
         String afterSaleNo = nextAfterSaleNo(requestedAt);
         Long afterSaleId = insertAfterSale(
                 order, afterSaleNo, type, reason, description,

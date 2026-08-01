@@ -42,7 +42,7 @@
         </ElFormItem>
       </ElForm>
 
-      <div v-if="updatedAt" class="updated-at">最后更新：{{ updatedAt }}</div>
+      <div v-if="updatedAt" class="updated-at">最后更新：{{ formatLocalDateTime(updatedAt) }}</div>
     </ElCard>
   </div>
 </template>
@@ -51,6 +51,7 @@
   import { onMounted, reactive, ref } from 'vue'
   import type { FormInstance, FormRules } from 'element-plus'
   import { fetchContactSetting, updateContactSetting } from '@/api/content'
+  import { formatLocalDateTime } from '@/utils/date-time'
   import { trimPhone } from '../home-decoration-state'
 
   defineOptions({ name: 'ContentContact' })

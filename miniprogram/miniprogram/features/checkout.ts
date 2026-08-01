@@ -9,6 +9,7 @@ import type {
   OrderPreviewResponse,
   OrderSubmitRequest
 } from "../types/checkout";
+import { formatLocalDate } from "../utils/date-time";
 
 const PREVIEW_PATH = "/pages/order/preview/preview";
 
@@ -332,7 +333,7 @@ function couponUnavailableText(reason?: string): string {
 }
 
 function couponValidityText(validEndAt: string): string {
-  const dateText = validEndAt.slice(0, 10).replace(/-/g, ".");
+  const dateText = formatLocalDate(validEndAt).replace(/-/g, ".");
   return dateText ? `有效期至 ${dateText}` : "";
 }
 

@@ -41,7 +41,7 @@ public class HomePageQueryService {
     }
 
     public HomePageLoad load() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         List<HomeProductRow> hotProducts = productRows(HomeProductSection.HOT);
         List<HomeProductRow> recommendedProducts = productRows(HomeProductSection.RECOMMENDED);
         List<Long> spuIds = java.util.stream.Stream.concat(hotProducts.stream(), recommendedProducts.stream())

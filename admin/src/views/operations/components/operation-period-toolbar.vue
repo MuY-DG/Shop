@@ -56,6 +56,7 @@
 
 <script setup lang="ts">
   import type { OperationsFilter, PeriodPreset } from '../operations-state'
+  import { formatLocalDateTime } from '@/utils/date-time'
 
   defineOptions({ name: 'OperationPeriodToolbar' })
 
@@ -121,8 +122,7 @@
     () => props.modelValue.preset === 'CUSTOM' && !props.modelValue.customRange
   )
 
-  // 后端 LocalDateTime 已按 meta.timezone 生成，直接格式化可避免浏览器再次做时区换算。
-  const formatMetaDateTime = (value: string) => value.replace('T', ' ').replace(/\.\d+$/, '')
+  const formatMetaDateTime = (value: string) => formatLocalDateTime(value)
   const formattedGeneratedAt = computed(() =>
     props.meta?.generatedAt ? formatMetaDateTime(props.meta.generatedAt) : '-'
   )

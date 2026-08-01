@@ -145,6 +145,7 @@
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
+  import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import { fetchProductReviews, updateProductReviewStatus } from '@/api/product'
 
   defineOptions({ name: 'ProductReview' })
@@ -210,8 +211,6 @@
       }
     }
   ])
-
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
 
   const {
     columns,

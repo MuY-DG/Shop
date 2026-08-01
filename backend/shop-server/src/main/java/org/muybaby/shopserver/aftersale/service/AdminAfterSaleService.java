@@ -382,7 +382,7 @@ public class AdminAfterSaleService {
         OrderRefundRow order = findOrderForUpdate(afterSale.orderId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         String auditNote = requireAuditNote(request == null ? null : request.auditNote());
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         jdbcClient.sql("""
                         update after_sale_request
                         set status = :status,
@@ -487,7 +487,7 @@ public class AdminAfterSaleService {
             }
 
             if (!alreadyManual) {
-                LocalDateTime now = LocalDateTime.now();
+                LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
                 int refundRows = jdbcClient.sql("""
                                 update refund_order
                                 set status = :status,
@@ -536,7 +536,7 @@ public class AdminAfterSaleService {
             orderStatusLogService.record(
                     target.orderId(), afterSaleId, target.orderStatus(), target.orderStatus(),
                     "REFUND_MANUAL_INTERVENTION", "ADMIN", adminUserId,
-                    auditDescription("人工介入退款", note), LocalDateTime.now()
+                    auditDescription("人工介入退款", note), LocalDateTime.now(java.time.ZoneOffset.UTC)
             );
         });
         return new AdminRefundOperationResponse(
@@ -576,7 +576,7 @@ public class AdminAfterSaleService {
                     "ADMIN", adminUserId,
                     auditDescription(
                             resubmitWhenMissing ? "请求安全重提退款" : "请求查询渠道退款状态", note),
-                    LocalDateTime.now()
+                    LocalDateTime.now(java.time.ZoneOffset.UTC)
             );
             return current;
         });
@@ -837,7 +837,7 @@ public class AdminAfterSaleService {
         requireMatchingPreflight(payment, providerPreflight);
         rejectIfRefundOrderExists(afterSaleId);
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         String outRefundNo = nextRefundNo(now);
         String notificationRouteToken = providerPreflight.notificationRouteToken();
         String providerReason = WechatRefundRequest.providerSafeReason(auditNote);
@@ -967,7 +967,7 @@ public class AdminAfterSaleService {
         clearExpiredRecoveryClaimIfPresent(
                 source.refundOrderId(), source.recoveryClaimToken(), source.recoveryClaimedAt());
 
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         String outRefundNo = nextRefundNo(now);
         String notificationRouteToken = providerPreflight.notificationRouteToken();
         String providerReason = source.providerReason() != null
@@ -1045,7 +1045,7 @@ public class AdminAfterSaleService {
 
     private void markRefundProviderAccepted(PreparedRefundRequest refundContext, WechatRefundResult refundResult) {
         refundStateTransaction.executeWithoutResult(status -> {
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
             String providerStatus = StringUtils.hasText(refundResult.status())
                     ? refundResult.status()
                     : RefundOrderStatus.PROCESSING.name();
@@ -1070,7 +1070,7 @@ public class AdminAfterSaleService {
 
     private void markRefundRequestUncertain(PreparedRefundRequest refundContext, RuntimeException failure) {
         refundStateTransaction.executeWithoutResult(status -> {
-            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
             jdbcClient.sql("""
                             update refund_order
                             set callback_status = :callbackStatus,
@@ -1167,8 +1167,9 @@ public class AdminAfterSaleService {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
         }
-        if (query.createdStart() != null && query.createdEnd() != null
-                && query.createdStart().isAfter(query.createdEnd())) {
+        LocalDateTime createdStart = query.createdStartUtc();
+        LocalDateTime createdEnd = query.createdEndUtc();
+        if (createdStart != null && createdEnd != null && createdStart.isAfter(createdEnd)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
 
@@ -1181,8 +1182,8 @@ public class AdminAfterSaleService {
                 userPhone,
                 userNicknameLike,
                 afterSaleType,
-                query.createdStart(),
-                query.createdEnd(),
+                createdStart,
+                createdEnd,
                 like(query.refundNo())
         );
     }
@@ -1321,7 +1322,7 @@ public class AdminAfterSaleService {
                     .orElse(target.orderStatus());
             orderStatusLogService.record(
                     target.orderId(), target.afterSaleId(), target.orderStatus(), currentOrderStatus,
-                    eventType, "ADMIN", adminUserId, description, LocalDateTime.now()
+                    eventType, "ADMIN", adminUserId, description, LocalDateTime.now(java.time.ZoneOffset.UTC)
             );
         });
     }

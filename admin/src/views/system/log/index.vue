@@ -284,7 +284,7 @@
         type: 'datetimerange',
         clearable: true,
         style: { width: '100%' },
-        valueFormat: 'YYYY-MM-DD HH:mm:ss',
+        valueFormat: 'YYYY-MM-DDTHH:mm:ssZ',
         rangeSeparator: '至',
         startPlaceholder: '开始时间',
         endPlaceholder: '结束时间'

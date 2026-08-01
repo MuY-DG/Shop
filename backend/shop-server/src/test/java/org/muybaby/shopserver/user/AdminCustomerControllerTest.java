@@ -14,6 +14,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -188,8 +190,8 @@ class AdminCustomerControllerTest {
     @Test
     void createDirectCouponBuildsExclusiveSnapshotAndExposesReadOnlyAdminTrace() throws Exception {
         seedCustomer(CUSTOMER_ID, "专属券用户", "13700137000", "ENABLED");
-        LocalDateTime validStartAt = LocalDateTime.now().minusMinutes(1);
-        LocalDateTime validEndAt = LocalDateTime.now().plusDays(7);
+        OffsetDateTime validStartAt = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(1);
+        OffsetDateTime validEndAt = OffsetDateTime.now(ZoneOffset.UTC).plusDays(7);
         String token = tokenWith("customer:coupon:issue");
 
         String response = mockMvc.perform(post("/admin/customers/{userId}/direct-coupons", CUSTOMER_ID)

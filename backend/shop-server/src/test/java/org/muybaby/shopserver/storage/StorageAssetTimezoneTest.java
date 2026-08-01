@@ -65,11 +65,11 @@ class StorageAssetTimezoneTest {
     static void mysqlProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", () -> MYSQL.getJdbcUrl()
                 + (MYSQL.getJdbcUrl().contains("?") ? "&" : "?")
-                + "serverTimezone=Asia/Shanghai");
+                + "serverTimezone=UTC");
         registry.add("spring.datasource.username", MYSQL::getUsername);
         registry.add("spring.datasource.password", MYSQL::getPassword);
         registry.add("spring.datasource.driver-class-name", MYSQL::getDriverClassName);
-        registry.add("spring.datasource.hikari.connection-init-sql", () -> "set time_zone = '+08:00'");
+        registry.add("spring.datasource.hikari.connection-init-sql", () -> "set time_zone = '+00:00'");
     }
 
     @Autowired

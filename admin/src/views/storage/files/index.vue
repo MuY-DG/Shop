@@ -638,6 +638,10 @@
   import { useAuth } from '@/hooks'
   import { ASSET_UPLOAD_CONCURRENCY, settleWithConcurrency } from '@/utils/asset-batch'
   import {
+    formatLocalDateTime as formatDateTime,
+    localDateBoundaryToOffsetDateTime
+  } from '@/utils/date-time'
+  import {
     assetUploadFileKey,
     uniqueAssetUploadFiles,
     validateLibraryAssetUploadFile
@@ -951,7 +955,6 @@
     }
   ])
 
-  const formatDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
   const formatMediaKind = (kind?: Api.Storage.MediaKind) => {
     if (kind === 'IMAGE') return '图片'
     if (kind === 'VIDEO') return '视频'
@@ -1125,8 +1128,8 @@
   const dateRangeParams = () => {
     const [start, end] = searchForm.value.createdRange || []
     return {
-      createdFrom: start ? `${start}T00:00:00` : undefined,
-      createdTo: end ? `${end}T23:59:59` : undefined
+      createdFrom: start ? localDateBoundaryToOffsetDateTime(start) : undefined,
+      createdTo: end ? localDateBoundaryToOffsetDateTime(end, true) : undefined
     }
   }
 

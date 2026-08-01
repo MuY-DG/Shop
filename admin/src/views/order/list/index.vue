@@ -1058,7 +1058,7 @@
       props: {
         clearable: true,
         style: { width: '100%' },
-        valueFormat: 'YYYY-MM-DD HH:mm:ss',
+        valueFormat: 'YYYY-MM-DDTHH:mm:ssZ',
         startPlaceholder: '开始时间',
         endPlaceholder: '结束时间'
       }

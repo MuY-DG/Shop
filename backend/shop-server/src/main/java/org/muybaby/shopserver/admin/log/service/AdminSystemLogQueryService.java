@@ -113,8 +113,8 @@ public class AdminSystemLogQueryService {
         String result = enumName(normalized.result(), AdminSystemLogResult.class);
         String operator = normalize(normalized.operator());
         Long operatorId = parsePositiveLong(operator);
-        LocalDateTime start = normalized.occurredStart();
-        LocalDateTime end = normalized.occurredEnd();
+        LocalDateTime start = normalized.occurredStartUtc();
+        LocalDateTime end = normalized.occurredEndUtc();
         if (start != null && end != null && start.isAfter(end)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }

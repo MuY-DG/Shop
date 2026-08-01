@@ -1,3 +1,5 @@
+import { formatLocalDateTime } from '@/utils/date-time'
+
 export type ShippingFormField =
   | 'logisticsType'
   | 'itemDesc'
@@ -110,7 +112,7 @@ export function formatWechatUploadError(shipment?: Api.Order.Shipment | null): s
 }
 
 export function formatOptionalDateTime(value?: string | null): string {
-  return value ? value.replace('T', ' ') : '-'
+  return formatLocalDateTime(value)
 }
 
 export function shippingOutcomeMessage(shipment: Api.Order.Shipment): string {

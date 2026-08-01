@@ -178,7 +178,7 @@ public class HomeBannerService {
     }
 
     public List<AppHomeBannerResponse> appBanners() {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         return jdbcClient.sql("""
                         select id, title, subtitle, image_url, jump_type, jump_target_id, jump_path
                         from home_banner

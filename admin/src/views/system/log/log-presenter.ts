@@ -1,3 +1,5 @@
+import { formatLocalDateTime } from '@/utils/date-time'
+
 export type LogTagTone = 'primary' | 'success' | 'info' | 'warning' | 'danger'
 
 export interface SystemLogSearchForm {
@@ -87,7 +89,7 @@ export const logResultTone = (result: Api.SystemLog.LogResult) => RESULT_TONES[r
 
 export const formatLogText = (value?: string | null) => value?.trim() || '-'
 
-export const formatLogDateTime = (value?: string | null) => (value ? value.replace('T', ' ') : '-')
+export const formatLogDateTime = (value?: string | null) => formatLocalDateTime(value)
 
 export const formatLogDuration = (durationMs?: number | null) =>
   typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0

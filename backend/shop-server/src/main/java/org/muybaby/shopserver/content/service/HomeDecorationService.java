@@ -599,7 +599,7 @@ public class HomeDecorationService {
     }
 
     private List<AutoFillCandidate> autoFillCandidates(HomeProductSection section) {
-        LocalDateTime salesSince = LocalDateTime.now().minusDays(30);
+        LocalDateTime salesSince = LocalDateTime.now(java.time.ZoneOffset.UTC).minusDays(30);
         return jdbcClient.sql("""
                         select s.id as spu_id, s.category_id, s.sort_order,
                                stock.total_stock,

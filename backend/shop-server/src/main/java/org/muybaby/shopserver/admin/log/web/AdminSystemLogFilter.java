@@ -25,7 +25,6 @@ import org.springframework.web.servlet.HandlerMapping;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -35,7 +34,6 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(AdminSystemLogFilter.class);
     private static final String LOGIN_PATH = "/admin/auth/login";
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final long FAILURE_WARNING_INTERVAL_MILLIS = 60_000L;
     private static final Set<String> WRITING_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
     private static final Set<String> EXCLUDED_PATHS = Set.of(
@@ -124,7 +122,7 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
                 clean(attribute(request, RequestIdFilter.REQUEST_ID_ATTRIBUTE), 128),
                 clean(error.code(), 64),
                 clean(error.message(), 255),
-                LocalDateTime.now(BUSINESS_ZONE)
+                LocalDateTime.now(java.time.ZoneOffset.UTC)
         );
         recorder.record(record);
     }
