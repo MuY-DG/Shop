@@ -65,7 +65,24 @@
               <text wx:if="{{!item.isMine}}" class="message-sender">{{item.senderName}}</text>
 
               <view
-                wx:if="{{item.messageType === 'TEXT'}}"
+                wx:if="{{showCommonQuestions && commonQuestionAnchorMessageId === item.messageId}}"
+                class="message-bubble message-bubble--other common-question-bubble"
+              >
+                <text class="common-question-opening">{{item.content}}</text>
+                <view class="common-question-list">
+                  <view
+                    wx:for="{{commonQuestions}}"
+                    wx:key="questionId"
+                    class="common-question-item {{commonQuestionSending ? 'common-question-item--disabled' : ''}}"
+                    data-question="{{item.question}}"
+                    bindtap="onCommonQuestionTap"
+                    aria-role="button"
+                  >{{item.question}}</view>
+                </view>
+              </view>
+
+              <view
+                wx:elif="{{item.messageType === 'TEXT'}}"
                 class="message-delivery"
               >
                 <button
@@ -178,43 +195,7 @@
               <text wx:else>我</text>
             </view>
           </view>
-
-          <view
-            wx:if="{{showCommonQuestions && commonQuestionAnchorMessageId === item.messageId}}"
-            class="common-question-message"
-          >
-            <view class="message-avatar">客</view>
-            <view class="common-question-bubble">
-              <text class="common-question-title">猜你想问</text>
-              <button
-                wx:for="{{commonQuestions}}"
-                wx:key="questionId"
-                class="common-question-item"
-                disabled="{{commonQuestionSending}}"
-                data-question="{{item.question}}"
-                bindtap="onCommonQuestionTap"
-              >{{item.question}}</button>
-            </view>
-          </view>
         </block>
-
-        <view
-          wx:if="{{showCommonQuestions && !commonQuestionAnchorMessageId}}"
-          class="common-question-message"
-        >
-          <view class="message-avatar">客</view>
-          <view class="common-question-bubble">
-            <text class="common-question-title">猜你想问</text>
-            <button
-              wx:for="{{commonQuestions}}"
-              wx:key="questionId"
-              class="common-question-item"
-              disabled="{{commonQuestionSending}}"
-              data-question="{{item.question}}"
-              bindtap="onCommonQuestionTap"
-            >{{item.question}}</button>
-          </view>
-        </view>
 
         <view class="message-list__bottom"></view>
       </view>

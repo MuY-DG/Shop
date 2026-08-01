@@ -132,7 +132,13 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.doesNotMatch(sendTextSource, /refreshConversation/);
   assert.doesNotMatch(template, /loading="\{\{sending\}\}"/);
   assert.match(template, /message-send-error/);
-  assert.match(template, /common-question-message/);
+  assert.match(
+    template,
+    /message-bubble message-bubble--other common-question-bubble[\s\S]*common-question-opening[\s\S]*common-question-list/
+  );
+  assert.doesNotMatch(template, /common-question-title/);
+  assert.doesNotMatch(template, /common-question-message/);
+  assert.doesNotMatch(template, /showCommonQuestions && !commonQuestionAnchorMessageId/);
   assert.match(template, /onCommonQuestionTap/);
   assert.match(template, /commonQuestionAnchorMessageId === item\.messageId/);
   assert.match(pageSource, /commonQuestionMessageIds\.delete\(messageId\)/);
