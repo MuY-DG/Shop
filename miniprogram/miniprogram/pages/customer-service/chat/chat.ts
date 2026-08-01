@@ -115,6 +115,7 @@ const pendingImageViews = new Map<number, MessageView>();
 const pendingTextMessages = new Map<number, CustomerServiceMessage>();
 const pendingTextViews = new Map<number, MessageView>();
 const pendingTextRequests = new Set<number>();
+const commonQuestionMessageIds = new Set<number>();
 const locallyHandledMessageIds = new Map<number, number>();
 const pendingRealtimeMessageIds = new Set<number>();
 
@@ -131,7 +132,9 @@ let entryContext: CustomerServiceEntryContext = { contextType: "GENERAL" };
 let nextPendingMessageId = -1;
 let localMutationCount = 0;
 let conversationMutationEpoch = 0;
+let currentConsultationNo = 0;
 let commonQuestionQueued = false;
+let commonQuestionEngaged = false;
 let pendingRealtimeChangeWithoutMessage = false;
 
 function cleanText(value: unknown): string {
@@ -239,6 +242,28 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
   });
 }
 
+function commonQuestionAnchorMessageId(messages: MessageView[]): number {
+  const firstUserMessageIndex = messages.findIndex((message) => message.isMine);
+  const openingMessage = messages.find((message, index) => (
+    message.senderType === "BOT" &&
+    message.messageType === "AUTO_REPLY" &&
+    (firstUserMessageIndex < 0 || index < firstUserMessageIndex)
+  ));
+  return openingMessage?.messageId ?? 0;
+}
+
+function hasAskedCommonQuestion(
+  questions: CustomerServiceCommonQuestion[],
+  messages: MessageView[]
+): boolean {
+  const questionTexts = new Set(questions.map((question) => cleanText(question.question)));
+  return messages.some((message) => (
+    message.isMine &&
+    message.messageType === "TEXT" &&
+    questionTexts.has(message.content)
+  ));
+}
+
 function stopLiveUpdates(): void {
   unsubscribeRealtimeState?.();
   unsubscribeRealtimeState = null;
@@ -302,6 +327,7 @@ Page({
     messages: [] as MessageView[],
     commonQuestions: [] as CustomerServiceCommonQuestion[],
     showCommonQuestions: false,
+    commonQuestionAnchorMessageId: 0,
     commonQuestionSending: false,
     scrollTarget: "",
     inputValue: "",
@@ -327,7 +353,9 @@ Page({
     nextPendingMessageId = -1;
     localMutationCount = 0;
     conversationMutationEpoch = 0;
+    currentConsultationNo = 0;
     commonQuestionQueued = false;
+    commonQuestionEngaged = false;
     pendingRealtimeChangeWithoutMessage = false;
     imageTempPaths.clear();
     originalImageTempPaths.clear();
@@ -337,6 +365,7 @@ Page({
     pendingTextMessages.clear();
     pendingTextViews.clear();
     pendingTextRequests.clear();
+    commonQuestionMessageIds.clear();
     locallyHandledMessageIds.clear();
     pendingRealtimeMessageIds.clear();
   },
@@ -377,10 +406,13 @@ Page({
     pendingTextMessages.clear();
     pendingTextViews.clear();
     pendingTextRequests.clear();
+    commonQuestionMessageIds.clear();
     locallyHandledMessageIds.clear();
     pendingRealtimeMessageIds.clear();
     localMutationCount = 0;
+    currentConsultationNo = 0;
     commonQuestionQueued = false;
+    commonQuestionEngaged = false;
     pendingRealtimeChangeWithoutMessage = false;
   },
 
@@ -417,13 +449,17 @@ Page({
       if (!pageActive || generation !== initializeGeneration) {
         return;
       }
+      commonQuestionEngaged = commonQuestionEngaged ||
+        hasAskedCommonQuestion(commonQuestions, this.data.messages);
       this.setData({
         commonQuestions,
-        showCommonQuestions: shouldShowCustomerServiceCommonQuestions(
-          this.data.conversationStatus as CustomerServiceConversation["status"],
-          commonQuestions.length,
-          pendingTextViews.size > 0
-        )
+        commonQuestionAnchorMessageId: commonQuestionAnchorMessageId(this.data.messages),
+        showCommonQuestions: commonQuestionEngaged ||
+          shouldShowCustomerServiceCommonQuestions(
+            this.data.conversationStatus as CustomerServiceConversation["status"],
+            commonQuestions.length,
+            pendingTextViews.size > 0
+          )
       });
     } catch {
       // 常见问题是增强能力，加载失败不阻塞会话本身。
@@ -519,6 +555,12 @@ Page({
   },
 
   applyConversation(conversation: CustomerServiceConversation) {
+    if (currentConsultationNo && currentConsultationNo !== conversation.consultationNo) {
+      commonQuestionQueued = false;
+      commonQuestionEngaged = false;
+      commonQuestionMessageIds.clear();
+    }
+    currentConsultationNo = conversation.consultationNo;
     const rawMessages = Array.isArray(conversation.messages) ? conversation.messages : [];
     const persistedClientMessageIds = new Set(
       rawMessages
@@ -541,6 +583,8 @@ Page({
       ...messageViews(rawMessages),
       ...pendingViews
     ];
+    commonQuestionEngaged = commonQuestionEngaged ||
+      hasAskedCommonQuestion(this.data.commonQuestions, views);
     const context = conversation.currentContext;
     const contextPreview = conversation.status === "DRAFT"
       ? context?.product?.title
@@ -559,11 +603,13 @@ Page({
         ),
         contextPreview,
         messages: views,
-        showCommonQuestions: shouldShowCustomerServiceCommonQuestions(
-          conversation.status,
-          this.data.commonQuestions.length,
-          pendingTextViews.size > 0
-        ),
+        commonQuestionAnchorMessageId: commonQuestionAnchorMessageId(views),
+        showCommonQuestions: commonQuestionEngaged ||
+          shouldShowCustomerServiceCommonQuestions(
+            conversation.status,
+            this.data.commonQuestions.length,
+            pendingTextViews.size > 0
+          ),
         scrollTarget: views.length ? `message-${views[views.length - 1].messageId}` : ""
       },
       () => {
@@ -663,7 +709,7 @@ Page({
     if (question) {
       commonQuestionQueued = true;
       this.setData({ commonQuestionSending: true });
-      this.queueText(question, false);
+      this.queueText(question, false, true);
     }
   },
 
@@ -671,7 +717,7 @@ Page({
     this.queueText(this.data.inputValue);
   },
 
-  queueText(value: string, clearInput = true) {
+  queueText(value: string, clearInput = true, fromCommonQuestion = false) {
     const content = value.trim();
     if (!content) {
       return;
@@ -692,11 +738,15 @@ Page({
     const pendingView = messageViews([pendingMessage])[0];
     pendingTextMessages.set(messageId, pendingMessage);
     pendingTextViews.set(messageId, pendingView);
+    if (fromCommonQuestion) {
+      commonQuestionEngaged = true;
+      commonQuestionMessageIds.add(messageId);
+    }
     const messages = [...this.data.messages, pendingView];
     this.setData({
       inputValue: clearInput ? "" : this.data.inputValue,
       panelMode: "",
-      showCommonQuestions: false,
+      showCommonQuestions: fromCommonQuestion || commonQuestionEngaged,
       messages,
       scrollTarget: `message-${messageId}`
     });
@@ -734,6 +784,10 @@ Page({
       }
     } finally {
       pendingTextRequests.delete(messageId);
+      if (commonQuestionMessageIds.delete(messageId)) {
+        commonQuestionQueued = false;
+        if (pageActive) this.setData({ commonQuestionSending: false });
+      }
       this.endLocalMutation();
     }
   },

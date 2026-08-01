@@ -112,6 +112,13 @@ class CustomerServiceAutoReplyRuntimeTest {
         assertThat(automationMessageCount(
                 firstOpen.conversationId(), 1, "智能回复：请在订单详情查看物流"))
                 .isZero();
+        assertThat(customerServiceService.currentForApp(appPrincipal).messages())
+                .extracting(MessageResponse::content)
+                .contains(
+                        "您好，欢迎来到客服会话",
+                        "什么时候发货？！！",
+                        "常见问题：付款后 48 小时内发货"
+                );
 
         customerServiceService.sendFromApp(
                 appPrincipal,
@@ -200,12 +207,28 @@ class CustomerServiceAutoReplyRuntimeTest {
             ConversationDetailResponse claimed = customerServiceService.claim(
                     adminPrincipal, opened.conversationId());
             List<MessageResponse> welcomeMessages = claimed.messages().stream()
-                    .filter(message -> "BOT".equals(message.senderType()))
+                    .filter(message -> "ADMIN".equals(message.senderType()))
                     .filter(message -> "您好，我是手动接入的专属客服".equals(message.content()))
                     .toList();
             assertThat(welcomeMessages).hasSize(1);
             assertThat(welcomeMessages.getFirst().messageType()).isEqualTo("AUTO_REPLY");
-            assertThat(welcomeMessages.getFirst().senderName()).isEqualTo("商城客服");
+            assertThat(welcomeMessages.getFirst().senderId()).isEqualTo(adminUserId);
+            assertThat(welcomeMessages.getFirst().senderName()).isEqualTo("手动接入客服");
+            assertThat(claimed.assignedAdminDisplayName()).isEqualTo("手动接入客服");
+
+            jdbcClient.sql("""
+                            update customer_service_agent_profile
+                            set service_name_override = ''
+                            where admin_user_id = :adminUserId
+                            """)
+                    .param("adminUserId", adminUserId)
+                    .update();
+            ConversationDetailResponse defaultNamed = customerServiceService.currentForApp(appPrincipal);
+            assertThat(defaultNamed.assignedAdminDisplayName()).isEqualTo("商城客服");
+            assertThat(defaultNamed.messages()).filteredOn(message ->
+                            "您好，我是手动接入的专属客服".equals(message.content()))
+                    .singleElement()
+                    .satisfies(message -> assertThat(message.senderName()).isEqualTo("商城客服"));
 
             customerServiceService.claim(adminPrincipal, opened.conversationId());
             assertThat(automationMessageCount(
@@ -352,7 +375,6 @@ class CustomerServiceAutoReplyRuntimeTest {
                         from customer_service_message
                         where conversation_id = :conversationId
                           and consultation_no = :consultationNo
-                          and sender_type = 'BOT'
                           and message_type = 'AUTO_REPLY'
                           and content = :content
                         """)

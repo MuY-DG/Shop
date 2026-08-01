@@ -19,6 +19,16 @@
           <button
             v-if="canUpdate"
             type="button"
+            class="create-button create-button--secondary"
+            :disabled="hasUnsettledSaves"
+            @click="openCreateGroupDialog"
+          >
+            <FolderPlus :size="16" />
+            新增分组
+          </button>
+          <button
+            v-if="canUpdate"
+            type="button"
             class="create-button"
             :disabled="hasUnsettledSaves"
             @click="openCreateDialog"
@@ -101,9 +111,37 @@
       <div v-else-if="!loading" class="empty-library">
         <MessagesSquare :size="30" />
         <strong>暂无快捷回复分组</strong>
-        <span>系统创建默认分组后，即可在这里维护全员共用短语。</span>
+        <span>点击“新增分组”后，即可在这里维护全员共用短语。</span>
       </div>
     </article>
+
+    <ElDialog
+      v-model="createGroupDialogVisible"
+      title="新增快捷回复分组"
+      width="440px"
+      align-center
+      destroy-on-close
+      :close-on-click-modal="!groupCreating"
+      :close-on-press-escape="!groupCreating"
+    >
+      <ElForm label-position="top" @submit.prevent="createGroup">
+        <ElFormItem label="分组名称">
+          <ElInput
+            v-model="newGroupName"
+            maxlength="64"
+            show-word-limit
+            placeholder="例如：售前咨询"
+            @keyup.enter="createGroup"
+          />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton :disabled="groupCreating" @click="createGroupDialogVisible = false">
+          取消
+        </ElButton>
+        <ElButton type="primary" :loading="groupCreating" @click="createGroup">新增分组</ElButton>
+      </template>
+    </ElDialog>
 
     <ElDialog
       v-model="createDialogVisible"
@@ -152,6 +190,7 @@
     CircleAlert,
     CircleCheck,
     FolderOpen,
+    FolderPlus,
     LoaderCircle,
     MessagesSquare,
     Plus,
@@ -162,6 +201,7 @@
   } from '@lucide/vue'
   import {
     createCustomerServiceQuickReply,
+    createCustomerServiceQuickReplyGroup,
     deleteCustomerServiceQuickReply,
     fetchCustomerServiceQuickReplies,
     updateCustomerServiceQuickReply
@@ -175,8 +215,11 @@
 
   const groups = ref<Api.CustomerService.QuickReplyGroup[]>([])
   const loading = ref(false)
+  const groupCreating = ref(false)
   const creating = ref(false)
+  const createGroupDialogVisible = ref(false)
   const createDialogVisible = ref(false)
+  const newGroupName = ref('')
   const newReplyGroupId = ref('')
   const newReplyContent = ref('')
   const saveStates = ref<Record<string, SaveState>>({})
@@ -294,6 +337,29 @@
     newReplyGroupId.value = groups.value[0].groupId
     newReplyContent.value = ''
     createDialogVisible.value = true
+  }
+
+  function openCreateGroupDialog() {
+    newGroupName.value = ''
+    createGroupDialogVisible.value = true
+  }
+
+  async function createGroup() {
+    const name = newGroupName.value.trim()
+    if (!name || groupCreating.value) {
+      if (!name) ElMessage.warning('请填写分组名称')
+      return
+    }
+    groupCreating.value = true
+    try {
+      const group = await createCustomerServiceQuickReplyGroup({ name })
+      groups.value.push(group)
+      groups.value.sort((left, right) => left.sortOrder - right.sortOrder)
+      createGroupDialogVisible.value = false
+      ElMessage.success('快捷回复分组已新增')
+    } finally {
+      groupCreating.value = false
+    }
   }
 
   async function createReply() {
@@ -433,6 +499,12 @@
   .create-button:disabled {
     cursor: not-allowed;
     opacity: 0.55;
+  }
+
+  .create-button--secondary {
+    color: #238653;
+    background: #effaf4;
+    border: 1px solid #ccebd9;
   }
 
   .icon-action,

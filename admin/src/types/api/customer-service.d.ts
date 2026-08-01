@@ -302,6 +302,10 @@ declare namespace Api {
       content: string
     }
 
+    interface QuickReplyGroupCreateForm {
+      name: string
+    }
+
     interface QuickReplyUpdateForm {
       content: string
       sortOrder: number

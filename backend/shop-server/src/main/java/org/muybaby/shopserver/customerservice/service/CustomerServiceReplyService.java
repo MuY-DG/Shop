@@ -10,6 +10,7 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.Commo
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.OfflineAutoReplyUpdateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyConfigResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyCreateRequest;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyGroupCreateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyGroupResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyUpdateRequest;
@@ -327,6 +328,39 @@ public class CustomerServiceReplyService {
     }
 
     @Transactional
+    public QuickReplyGroupResponse createQuickReplyGroup(
+            QuickReplyGroupCreateRequest request
+    ) {
+        int nextSortOrder = jdbcClient.sql("""
+                        select coalesce(max(sort_order), -1) + 1
+                        from customer_service_quick_reply_group
+                        """)
+                .query(Integer.class)
+                .single();
+        String name = requiredText(request.name(), 64);
+        LocalDateTime now = LocalDateTime.now();
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        namedParameterJdbcTemplate.update("""
+                        insert into customer_service_quick_reply_group
+                            (name, sort_order, created_at, updated_at)
+                        values
+                            (:name, :sortOrder, :now, :now)
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("name", name)
+                        .addValue("sortOrder", nextSortOrder)
+                        .addValue("now", now),
+                keyHolder,
+                new String[]{"id"});
+        Number key = keyHolder.getKey();
+        if (key == null) {
+            throw invalidConfig();
+        }
+        return new QuickReplyGroupResponse(
+                key.longValue(), name, nextSortOrder, List.of());
+    }
+
+    @Transactional
     public QuickReplyResponse createQuickReply(
             Long adminUserId,
             QuickReplyCreateRequest request
@@ -422,7 +456,9 @@ public class CustomerServiceReplyService {
                         conversationId,
                         consultationNo,
                         "WELCOME:" + assignmentMessageId,
-                        content
+                        content,
+                        "ADMIN",
+                        adminUserId
                 );
     }
 
@@ -740,6 +776,18 @@ public class CustomerServiceReplyService {
             String automationKey,
             String content
     ) {
+        return insertAutomationMessage(
+                conversationId, consultationNo, automationKey, content, "BOT", null);
+    }
+
+    private AutomationMessage insertAutomationMessage(
+            Long conversationId,
+            int consultationNo,
+            String automationKey,
+            String content,
+            String senderType,
+            Long senderId
+    ) {
         LocalDateTime now = LocalDateTime.now();
         KeyHolder keyHolder = new GeneratedKeyHolder();
         try {
@@ -749,13 +797,15 @@ public class CustomerServiceReplyService {
                                  message_type, content, resource_id, client_message_id,
                                  automation_key, created_at)
                             values
-                                (:conversationId, :consultationNo, 'BOT', null,
+                                (:conversationId, :consultationNo, :senderType, :senderId,
                                  'AUTO_REPLY', :content, null, null,
                                  :automationKey, :createdAt)
                             """,
                     new MapSqlParameterSource()
                             .addValue("conversationId", conversationId)
                             .addValue("consultationNo", consultationNo)
+                            .addValue("senderType", senderType)
+                            .addValue("senderId", senderId)
                             .addValue("content", content)
                             .addValue("automationKey", automationKey)
                             .addValue("createdAt", now),

@@ -99,6 +99,11 @@ public final class CustomerServiceReplyDtos {
     ) {
     }
 
+    public record QuickReplyGroupCreateRequest(
+            @NotBlank @Size(max = 64) String name
+    ) {
+    }
+
     public record QuickReplyUpdateRequest(
             @NotBlank @Size(max = 2000) String content,
             @Min(0) Integer sortOrder

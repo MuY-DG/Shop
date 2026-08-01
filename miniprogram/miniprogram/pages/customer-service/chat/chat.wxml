@@ -178,9 +178,30 @@
               <text wx:else>我</text>
             </view>
           </view>
+
+          <view
+            wx:if="{{showCommonQuestions && commonQuestionAnchorMessageId === item.messageId}}"
+            class="common-question-message"
+          >
+            <view class="message-avatar">客</view>
+            <view class="common-question-bubble">
+              <text class="common-question-title">猜你想问</text>
+              <button
+                wx:for="{{commonQuestions}}"
+                wx:key="questionId"
+                class="common-question-item"
+                disabled="{{commonQuestionSending}}"
+                data-question="{{item.question}}"
+                bindtap="onCommonQuestionTap"
+              >{{item.question}}</button>
+            </view>
+          </view>
         </block>
 
-        <view wx:if="{{showCommonQuestions}}" class="common-question-message">
+        <view
+          wx:if="{{showCommonQuestions && !commonQuestionAnchorMessageId}}"
+          class="common-question-message"
+        >
           <view class="message-avatar">客</view>
           <view class="common-question-bubble">
             <text class="common-question-title">猜你想问</text>

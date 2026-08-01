@@ -142,6 +142,18 @@ class CustomerServiceReplyControllerTest {
         mockMvc.perform(get("/app/customer-service/conversation/common-questions"))
                 .andExpect(status().isUnauthorized());
 
+        String groupResponse = mockMvc.perform(post("/admin/customer-service/quick-reply-groups")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"售前咨询\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.groupId").isString())
+                .andExpect(jsonPath("$.data.name").value("售前咨询"))
+                .andExpect(jsonPath("$.data.replies.length()").value(0))
+                .andReturn().getResponse().getContentAsString();
+        String groupId = objectMapper.readTree(groupResponse)
+                .path("data").path("groupId").asText();
+
         String quickResponse = mockMvc.perform(post("/admin/customer-service/quick-replies")
                         .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -158,7 +170,9 @@ class CustomerServiceReplyControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.groups[0].groupId").value("1"))
                 .andExpect(jsonPath("$.data.groups[0].name").value("默认分组"))
-                .andExpect(jsonPath("$.data.groups[0].replies[0].replyId").value(replyId));
+                .andExpect(jsonPath("$.data.groups[0].replies[0].replyId").value(replyId))
+                .andExpect(jsonPath("$.data.groups[1].groupId").value(groupId))
+                .andExpect(jsonPath("$.data.groups[1].name").value("售前咨询"));
 
         mockMvc.perform(put("/admin/customer-service/quick-replies/{replyId}", replyId)
                         .header("Authorization", bearer(token))
@@ -231,6 +245,11 @@ class CustomerServiceReplyControllerTest {
                         .header("Authorization", bearer(firstToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"groupId\":\"1\",\"content\":\"越权\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/admin/customer-service/quick-reply-groups")
+                        .header("Authorization", bearer(firstToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"越权分组\"}"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/admin/customer-service/quick-replies")
                         .header("Authorization", bearer(firstToken)))

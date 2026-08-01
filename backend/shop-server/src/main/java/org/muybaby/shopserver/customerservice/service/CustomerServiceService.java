@@ -2809,7 +2809,10 @@ public class CustomerServiceService {
 
     private String customerServiceDisplayName(Long adminUserId) {
         return jdbcClient.sql("""
-                        select coalesce(profile.service_name_override, config.default_service_name)
+                        select coalesce(
+                                   nullif(profile.service_name_override, ''),
+                                   config.default_service_name
+                               )
                         from admin_user admin
                         cross join customer_service_config config
                         left join customer_service_agent_profile profile
@@ -2966,7 +2969,10 @@ public class CustomerServiceService {
                        case
                          when m.sender_type = 'APP_USER' then coalesce(app.nickname, '用户')
                          when m.sender_type = 'ADMIN'
-                           then coalesce(agent_profile.service_name_override, service_config.default_service_name)
+                           then coalesce(
+                             nullif(agent_profile.service_name_override, ''),
+                             service_config.default_service_name
+                           )
                          when m.sender_type = 'BOT' then service_config.default_service_name
                          else '系统'
                        end as sender_name,
@@ -3098,7 +3104,14 @@ public class CustomerServiceService {
         return """
                 select c.id, c.app_user_id, app.nickname as user_nickname,
                        app.avatar_url as user_avatar, c.status,
-                       c.assigned_admin_user_id, admin.display_name as assigned_admin_display_name,
+                       c.assigned_admin_user_id,
+                       case
+                         when c.assigned_admin_user_id is null then null
+                         else coalesce(
+                           nullif(agent_profile.service_name_override, ''),
+                           service_config.default_service_name
+                         )
+                       end as assigned_admin_display_name,
                        (select case m.message_type
                                   when 'IMAGE' then '[图片]'
                                   when 'ORDER_CARD' then '[订单]'
@@ -3119,6 +3132,9 @@ public class CustomerServiceService {
                 from customer_service_conversation c
                 join app_user app on app.id = c.app_user_id
                 left join admin_user admin on admin.id = c.assigned_admin_user_id
+                cross join customer_service_config service_config
+                left join customer_service_agent_profile agent_profile
+                  on agent_profile.admin_user_id = admin.id
                 """;
     }
 

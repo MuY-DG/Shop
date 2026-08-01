@@ -134,6 +134,9 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(template, /message-send-error/);
   assert.match(template, /common-question-message/);
   assert.match(template, /onCommonQuestionTap/);
+  assert.match(template, /commonQuestionAnchorMessageId === item\.messageId/);
+  assert.match(pageSource, /commonQuestionMessageIds\.delete\(messageId\)/);
+  assert.match(pageSource, /commonQuestionSending: false/);
   assert.doesNotMatch(template, /你好，我是在线客服/);
   assert.match(pageSource, /message\.messageType === "SYSTEM"/);
   assert.match(pageSource, /showCommonQuestions: false/);

@@ -7,6 +7,8 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.Commo
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.OfflineAutoReplyUpdateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyConfigResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyCreateRequest;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyGroupCreateRequest;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyGroupResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.QuickReplyUpdateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.SmartAutoReplyUpdateRequest;
@@ -82,6 +84,14 @@ public class AdminCustomerServiceReplyController {
     @PreAuthorize("hasAuthority('customer-service:quick-reply:read')")
     public ApiResponse<QuickReplyConfigResponse> quickReplies() {
         return ApiResponse.success(replyService.quickReplies());
+    }
+
+    @PostMapping("/quick-reply-groups")
+    @PreAuthorize("hasAuthority('customer-service:quick-reply:update')")
+    public ApiResponse<QuickReplyGroupResponse> createQuickReplyGroup(
+            @Valid @RequestBody QuickReplyGroupCreateRequest request
+    ) {
+        return ApiResponse.success(replyService.createQuickReplyGroup(request));
     }
 
     @PostMapping("/quick-replies")

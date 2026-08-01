@@ -440,6 +440,15 @@ export function fetchCustomerServiceQuickReplies() {
   })
 }
 
+export function createCustomerServiceQuickReplyGroup(
+  data: Api.CustomerService.QuickReplyGroupCreateForm
+) {
+  return request.post<Api.CustomerService.QuickReplyGroup>({
+    url: '/admin/customer-service/quick-reply-groups',
+    data
+  })
+}
+
 export function createCustomerServiceQuickReply(data: Api.CustomerService.QuickReplyCreateForm) {
   return request.post<Api.CustomerService.QuickReplyItem>({
     url: '/admin/customer-service/quick-replies',
