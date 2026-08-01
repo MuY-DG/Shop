@@ -29,7 +29,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-@SpringBootTest(properties = "shop.storage.cleanup.batch-size=2")
+@SpringBootTest
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class StorageAssetCleanupServiceTest {
@@ -68,7 +68,7 @@ class StorageAssetCleanupServiceTest {
                 .param("assetId", referenced.id())
                 .update();
 
-        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(cleanup()).isEqualTo(1);
 
         assertThat(status(expired.id())).isEqualTo("DELETED");
         assertThat(status(referenced.id())).isEqualTo("ACTIVE");
@@ -77,7 +77,7 @@ class StorageAssetCleanupServiceTest {
         jdbcClient.sql("update storage_asset_usage set status = 'REMOVED' where asset_id = :assetId")
                 .param("assetId", referenced.id())
                 .update();
-        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(cleanup()).isEqualTo(1);
         assertThat(status(referenced.id())).isEqualTo("DELETED");
     }
 
@@ -106,7 +106,7 @@ class StorageAssetCleanupServiceTest {
                 .param("assetId", expired.id())
                 .update();
 
-        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(cleanup()).isEqualTo(1);
 
         assertThat(status(expired.id())).isEqualTo("DELETED");
         assertThatThrownBy(() -> storageProvider.open(expired.objectKey()))
@@ -131,7 +131,7 @@ class StorageAssetCleanupServiceTest {
         long secondFailedAssetId = insertFailedCosRetry();
         InsertedAsset expired = insertExpiredAsset("SECRET");
 
-        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(cleanup()).isEqualTo(1);
         assertThat(status(expired.id())).isEqualTo("DELETED");
         assertThat(status(failedAssetId)).isEqualTo("DELETE_PENDING");
         assertThat(status(secondFailedAssetId)).isEqualTo("DELETE_PENDING");
@@ -152,11 +152,15 @@ class StorageAssetCleanupServiceTest {
         assertThat(jdbcClient.sql("select cleanup_attempts from storage_asset where id = :assetId")
                 .param("assetId", secondFailedAssetId)
                 .query(Integer.class)
-                .single()).isEqualTo(1);
+                .single()).isZero();
 
-        assertThat(cleanupService.cleanupExpiredAssets()).isZero();
+        assertThat(cleanup()).isZero();
         assertThat(jdbcClient.sql("select cleanup_attempts from storage_asset where id = :assetId")
                 .param("assetId", failedAssetId)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select cleanup_attempts from storage_asset where id = :assetId")
+                .param("assetId", secondFailedAssetId)
                 .query(Integer.class)
                 .single()).isEqualTo(1);
     }
@@ -166,13 +170,47 @@ class StorageAssetCleanupServiceTest {
         InsertedAsset stale = insertPendingUpload(LocalDateTime.now().minusHours(1));
         InsertedAsset fresh = insertPendingUpload(LocalDateTime.now());
 
-        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(cleanup()).isEqualTo(1);
 
         assertThat(status(stale.id())).isEqualTo("DELETED");
         assertThat(status(fresh.id())).isEqualTo("UPLOAD_PENDING");
         assertThatThrownBy(() -> storageProvider.open(stale.objectKey())).isInstanceOf(RuntimeException.class);
         assertThat(storageProvider.open(fresh.objectKey()).sizeBytes()).isPositive();
         storageProvider.delete(fresh.objectKey());
+    }
+
+    @Test
+    void cleanupRotatesCandidatePriorityBetweenConsecutiveRuns() {
+        InsertedAsset firstExpired = insertExpiredAsset("SECRET");
+        InsertedAsset secondExpired = insertExpiredAsset("SECRET");
+        InsertedAsset staleUpload = insertPendingUpload(LocalDateTime.now().minusHours(1));
+
+        assertThat(cleanupService.cleanupExpiredAssets(
+                1, Duration.ofMinutes(30), 1L).attemptedCount()).isOne();
+        assertThat(status(firstExpired.id())).isEqualTo("DELETED");
+        assertThat(status(secondExpired.id())).isEqualTo("ACTIVE");
+        assertThat(status(staleUpload.id())).isEqualTo("UPLOAD_PENDING");
+
+        assertThat(cleanupService.cleanupExpiredAssets(
+                1, Duration.ofMinutes(30), 2L).attemptedCount()).isOne();
+        assertThat(status(secondExpired.id())).isEqualTo("ACTIVE");
+        assertThat(status(staleUpload.id())).isEqualTo("DELETED");
+
+        storageProvider.delete(secondExpired.objectKey());
+    }
+
+    @Test
+    void cleanupStopsBeforeDestructiveWorkWhenItsOuterLeaseIsLost() {
+        InsertedAsset expired = insertExpiredAsset("SECRET");
+        try {
+            assertThat(cleanupService.cleanupExpiredAssets(
+                    10, Duration.ofMinutes(30), 1L, () -> false).attemptedCount())
+                    .isZero();
+            assertThat(status(expired.id())).isEqualTo("ACTIVE");
+            assertThat(storageProvider.open(expired.objectKey()).sizeBytes()).isPositive();
+        } finally {
+            storageProvider.delete(expired.objectKey());
+        }
     }
 
     @Test
@@ -187,7 +225,7 @@ class StorageAssetCleanupServiceTest {
                 .param("avatarUrl", publicUrl(referenced.id()))
                 .update();
 
-        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(cleanup()).isEqualTo(1);
 
         assertThat(status(stale.id())).isEqualTo("DELETED");
         assertThat(status(fresh.id())).isEqualTo("ACTIVE");
@@ -213,14 +251,14 @@ class StorageAssetCleanupServiceTest {
         StorageAssetCleanupService firstWorker = new StorageAssetCleanupService(
                 jdbcClient,
                 slowProvider,
-                transactionTemplate,
-                2,
-                Duration.ofMinutes(30)
+                transactionTemplate
         );
 
         ExecutorService executor = Executors.newSingleThreadExecutor();
         try {
-            Future<Integer> result = executor.submit(firstWorker::cleanupExpiredAssets);
+            Future<Integer> result = executor.submit(() -> firstWorker
+                    .cleanupExpiredAssets(2, Duration.ofMinutes(30))
+                    .cleanedCount());
             assertThat(deleteStarted.await(5, TimeUnit.SECONDS)).isTrue();
             jdbcClient.sql("""
                             update storage_asset
@@ -356,6 +394,10 @@ class StorageAssetCleanupServiceTest {
                 .param("assetId", assetId)
                 .query(String.class)
                 .single();
+    }
+
+    private int cleanup() {
+        return cleanupService.cleanupExpiredAssets(2, Duration.ofMinutes(30)).cleanedCount();
     }
 
     private String publicUrl(Long assetId) {

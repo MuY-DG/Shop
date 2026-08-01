@@ -181,7 +181,9 @@ from `storage_runtime_setting` and take effect without restarting the backend.
 There is no local provider and no storage environment-file fallback; uploads
 fail with `STORAGE_NOT_CONFIGURED` until the database configuration is complete.
 
-Only non-provider upload policy remains configurable through environment defaults:
+Only non-provider upload policy remains configurable through environment defaults.
+Retention, cleanup batch size, schedule, and upload-pending grace are stored in
+`data_cleanup_task_setting` and are managed from **配置管理 → 数据清理配置**:
 
 ```properties
 SHOP_STORAGE_IMAGE_MAX_SIZE=5MB
@@ -190,13 +192,9 @@ SHOP_STORAGE_IMAGE_MAX_HEIGHT=8192
 SHOP_STORAGE_IMAGE_MAX_PIXELS=25000000
 SHOP_STORAGE_VIDEO_MAX_SIZE=50MB
 SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE=10MB
-SHOP_DIRECT_UPLOAD_SESSION_RETENTION=7d
 SHOP_DIRECT_UPLOAD_MAX_ACTIVE_SESSIONS=10
 SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_APP=60
 SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_ADMIN=600
-SHOP_STORAGE_CLEANUP_INITIAL_DELAY=10m
-SHOP_STORAGE_CLEANUP_FIXED_DELAY=10m
-SHOP_STORAGE_CLEANUP_BATCH_SIZE=100
 ```
 
 JPEG, PNG, WebP, and GIF now use a signed COS POST upload session. The browser or

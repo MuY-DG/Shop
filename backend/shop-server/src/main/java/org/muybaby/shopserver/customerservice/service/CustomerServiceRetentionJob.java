@@ -1,9 +1,8 @@
 package org.muybaby.shopserver.customerservice.service;
 
-import org.muybaby.shopserver.customerservice.CustomerServiceRetentionProperties;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.muybaby.shopserver.maintenance.cleanup.DataCleanupExecutor;
+import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskCode;
+import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskSetting;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -12,42 +11,23 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 
 @Component
-public class CustomerServiceRetentionJob {
+public class CustomerServiceRetentionJob implements DataCleanupExecutor {
 
-    private static final Logger log = LoggerFactory.getLogger(CustomerServiceRetentionJob.class);
-
-    private final CustomerServiceRetentionProperties properties;
     private final CustomerServiceRetentionService retentionService;
 
-    public CustomerServiceRetentionJob(
-            CustomerServiceRetentionProperties properties,
-            CustomerServiceRetentionService retentionService
-    ) {
-        this.properties = properties;
+    public CustomerServiceRetentionJob(CustomerServiceRetentionService retentionService) {
         this.retentionService = retentionService;
     }
 
-    @Scheduled(
-            cron = "${shop.customer-service.retention.cron:0 15 4 * * *}",
-            zone = "Asia/Shanghai"
-    )
-    public void cleanExpiredMessages() {
-        try {
-            if (!properties.isEnabled()) {
-                return;
-            }
-            LocalDateTime cutoff = cutoffAt(currentInstant(), properties.effectiveDays());
-            int batchSize = properties.effectiveBatchSize();
-            for (int batch = 0; batch < properties.effectiveMaxBatchesPerRun(); batch++) {
-                int deleted = retentionService.deleteBatchBefore(cutoff, batchSize);
-                if (deleted < batchSize) {
-                    return;
-                }
-            }
-            log.info("Customer-service retention reached the configured batch cap; remaining rows will continue next run");
-        } catch (RuntimeException ex) {
-            log.warn("Customer-service retention cleanup failed; business traffic is unaffected", ex);
-        }
+    @Override
+    public DataCleanupTaskCode taskCode() {
+        return DataCleanupTaskCode.CUSTOMER_SERVICE_MESSAGE;
+    }
+
+    @Override
+    public int execute(DataCleanupTaskSetting setting) {
+        LocalDateTime cutoff = cutoffAt(currentInstant(), setting.retentionDays());
+        return retentionService.deleteBatchBefore(cutoff, setting.batchSize());
     }
 
     Instant currentInstant() {

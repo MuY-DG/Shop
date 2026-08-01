@@ -18,6 +18,7 @@ public enum ErrorCode {
     ADMIN_ROLE_IN_USE(110005, "Admin role is assigned to users"),
     CURRENT_ADMIN_DISABLE_FORBIDDEN(110006, "Current admin user cannot be disabled"),
     ADMIN_ROLE_GRANT_INVALID(110007, "Role grant must include parent and owning menus"),
+    DATA_CLEANUP_CONFIG_CONFLICT(110008, "数据清理配置已被其他管理员修改，请刷新后重试"),
     WECHAT_LOGIN_FAILED(100101, "WeChat login failed"),
     WECHAT_PHONE_FAILED(100102, "WeChat phone authorization failed"),
     APP_USER_UNAVAILABLE(100103, "App user unavailable"),

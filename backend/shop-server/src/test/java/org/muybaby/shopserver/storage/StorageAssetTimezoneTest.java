@@ -8,6 +8,10 @@ import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.maintenance.cleanup.DataCleanupConfigService;
+import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskCode;
+import org.muybaby.shopserver.maintenance.cleanup.dto.DataCleanupConfigUpdateRequest;
+import org.muybaby.shopserver.maintenance.cleanup.dto.DataCleanupTaskUpdateRequest;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
@@ -28,6 +32,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.TimeZone;
@@ -87,6 +92,9 @@ class StorageAssetTimezoneTest {
     @Autowired
     private AppAfterSaleService appAfterSaleService;
 
+    @Autowired
+    private DataCleanupConfigService dataCleanupConfigService;
+
     @BeforeEach
     void resetRows() {
         jdbcClient.sql("delete from storage_asset_usage").update();
@@ -141,7 +149,8 @@ class StorageAssetTimezoneTest {
             var inspectedSecret = privateStorageFileService.inspectPaymentSecrets(List.of(secret.id()));
             assertThatCode(() -> privateStorageFileService.lockAndRevalidatePaymentSecrets(
                     inspectedSecret, List.of())).doesNotThrowAnyException();
-            assertThat(cleanupService.cleanupExpiredAssets()).isZero();
+            assertThat(cleanupService.cleanupExpiredAssets(100, Duration.ofMinutes(30)).cleanedCount())
+                    .isZero();
 
             jdbcClient.sql("""
                             update storage_asset
@@ -165,7 +174,8 @@ class StorageAssetTimezoneTest {
             )).isInstanceOfSatisfying(BusinessException.class, exception ->
                     assertThat(exception.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
-            assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(2);
+            assertThat(cleanupService.cleanupExpiredAssets(100, Duration.ofMinutes(30)).cleanedCount())
+                    .isEqualTo(2);
             assertThat(jdbcClient.sql("""
                             select count(*)
                             from storage_asset
@@ -178,6 +188,49 @@ class StorageAssetTimezoneTest {
         } finally {
             TimeZone.setDefault(originalTimeZone);
         }
+    }
+
+    @Test
+    void dataCleanupConfigurationCanBeUpdatedWithMySqlRowLocking() {
+        var current = dataCleanupConfigService.current();
+        List<DataCleanupTaskUpdateRequest> updates = current.tasks().stream()
+                .map(task -> new DataCleanupTaskUpdateRequest(
+                        task.taskCode(),
+                        task.enabled(),
+                        task.retentionDays(),
+                        task.batchSize(),
+                        task.cronExpression(),
+                        task.batchIntervalSeconds(),
+                        task.uploadPendingGraceMinutes()
+                ))
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+        int analyticsIndex = java.util.stream.IntStream.range(0, updates.size())
+                .filter(index -> updates.get(index).taskCode()
+                        == DataCleanupTaskCode.ANALYTICS_EVENT)
+                .findFirst()
+                .orElseThrow();
+        DataCleanupTaskUpdateRequest analytics = updates.get(analyticsIndex);
+        updates.set(analyticsIndex, new DataCleanupTaskUpdateRequest(
+                analytics.taskCode(),
+                analytics.enabled(),
+                analytics.retentionDays(),
+                analytics.batchSize() + 1,
+                analytics.cronExpression(),
+                analytics.batchIntervalSeconds(),
+                analytics.uploadPendingGraceMinutes()
+        ));
+
+        var updated = dataCleanupConfigService.update(
+                new DataCleanupConfigUpdateRequest(current.revision(), updates),
+                1L
+        );
+
+        assertThat(updated.revision()).isEqualTo(current.revision() + 1);
+        assertThat(updated.tasks()).filteredOn(task ->
+                        task.taskCode() == DataCleanupTaskCode.ANALYTICS_EVENT)
+                .singleElement()
+                .extracting(task -> task.batchSize())
+                .isEqualTo(analytics.batchSize() + 1);
     }
 
     @Test

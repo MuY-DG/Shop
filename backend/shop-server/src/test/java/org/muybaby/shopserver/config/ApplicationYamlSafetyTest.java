@@ -22,17 +22,13 @@ class ApplicationYamlSafetyTest {
                 .containsEntry("spring.data.redis.host", "${SHOP_REDIS_HOST:127.0.0.1}")
                 .containsEntry("spring.data.redis.port", "${SHOP_REDIS_PORT:6379}")
                 .containsEntry("spring.data.redis.database", "${SHOP_REDIS_DATABASE:0}")
-                .containsEntry(
+                .doesNotContainKeys(
                         "shop.storage.direct-upload.session-retention",
-                        "${SHOP_DIRECT_UPLOAD_SESSION_RETENTION:7d}"
-                )
-                .containsEntry(
                         "shop.storage.direct-upload.cleanup-initial-delay",
-                        "${SHOP_DIRECT_UPLOAD_CLEANUP_INITIAL_DELAY:1m}"
-                )
-                .containsEntry(
                         "shop.storage.direct-upload.cleanup-fixed-delay",
-                        "${SHOP_DIRECT_UPLOAD_CLEANUP_FIXED_DELAY:10m}"
+                        "shop.analytics.retention.batch-size",
+                        "shop.admin-system-log.retention.batch-size",
+                        "shop.customer-service.retention.batch-size"
                 )
                 .containsEntry("logging.pattern.level", "%5p [requestId=%X{requestId:-}]")
                 .containsEntry(

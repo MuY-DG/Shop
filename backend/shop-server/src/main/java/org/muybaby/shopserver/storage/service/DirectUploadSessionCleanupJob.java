@@ -5,21 +5,20 @@ import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskCode;
 import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskSetting;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
 import java.util.function.BooleanSupplier;
 
 @Component
-public class StorageAssetCleanupJob implements DataCleanupExecutor {
+public class DirectUploadSessionCleanupJob implements DataCleanupExecutor {
 
-    private final StorageAssetCleanupService cleanupService;
+    private final DirectUploadService directUploadService;
 
-    public StorageAssetCleanupJob(StorageAssetCleanupService cleanupService) {
-        this.cleanupService = cleanupService;
+    public DirectUploadSessionCleanupJob(DirectUploadService directUploadService) {
+        this.directUploadService = directUploadService;
     }
 
     @Override
     public DataCleanupTaskCode taskCode() {
-        return DataCleanupTaskCode.STORAGE_ASSET;
+        return DataCleanupTaskCode.DIRECT_UPLOAD_SESSION;
     }
 
     @Override
@@ -32,11 +31,11 @@ public class StorageAssetCleanupJob implements DataCleanupExecutor {
             DataCleanupTaskSetting setting,
             BooleanSupplier leaseActive
     ) {
-        return cleanupService.cleanupExpiredAssets(
+        return directUploadService.cleanupExpiredSessions(
                 setting.batchSize(),
-                Duration.ofMinutes(setting.uploadPendingGraceMinutes()),
+                setting.retentionDays(),
                 setting.runSequence(),
                 leaseActive
-        ).attemptedCount();
+        );
     }
 }

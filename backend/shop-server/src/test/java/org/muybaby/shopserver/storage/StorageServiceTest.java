@@ -32,6 +32,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
@@ -409,7 +410,8 @@ class StorageServiceTest {
                         """)
                 .param("assetId", assetId)
                 .update();
-        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(cleanupService.cleanupExpiredAssets(100, Duration.ofMinutes(30)).cleanedCount())
+                .isEqualTo(1);
         assertThat(assetStatus(assetId)).isEqualTo("DELETED");
     }
 
@@ -450,7 +452,8 @@ class StorageServiceTest {
                         """)
                 .param("assetId", response.id())
                 .update();
-        assertThat(cleanupService.cleanupExpiredAssets()).isEqualTo(1);
+        assertThat(cleanupService.cleanupExpiredAssets(100, Duration.ofMinutes(30)).cleanedCount())
+                .isEqualTo(1);
         assertThat(assetStatus(response.id())).isEqualTo("DELETED");
     }
 

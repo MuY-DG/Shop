@@ -435,12 +435,131 @@ class DirectUploadServiceTest {
             assertThat(persisted.stagingDeletedAt()).isNull();
             assertThat(persisted.outputsDeletedAt()).isNull();
 
-            directUploadService.cleanupExpiredSessions();
+            directUploadService.cleanupExpiredSessions(100, 7);
             CancelState retried = cancelState(session.uploadId());
             assertThat(retried.stagingDeletedAt()).isNotNull();
             assertThat(retried.outputsDeletedAt()).isNotNull();
         } finally {
             deletePrincipalUploadState(uploader);
+        }
+    }
+
+    @Test
+    void cleanupBatchSizeIsAGlobalBudgetAcrossSessionStates() {
+        AuthenticatedPrincipal failedUploader = adminPrincipal(
+                8_000_021L, "cleanup-budget-failed");
+        AuthenticatedPrincipal expiredUploader = adminPrincipal(
+                8_000_022L, "cleanup-budget-expired");
+        DirectUploadSessionResponse failed = directUploadService.createLibrary(
+                failedUploader,
+                new DirectUploadSessionRequest("failed.png", "image/png", 100, null)
+        );
+        DirectUploadSessionResponse expired = directUploadService.createLibrary(
+                expiredUploader,
+                new DirectUploadSessionRequest("expired.png", "image/png", 100, null)
+        );
+        jdbcClient.sql("""
+                        update storage_upload_session
+                        set status = case
+                                when id = :failedId then 'FAILED'
+                                else 'EXPIRED'
+                            end,
+                            updated_at = current_timestamp
+                        where id in (:ids)
+                        """)
+                .param("failedId", failed.uploadId())
+                .param("ids", List.of(failed.uploadId(), expired.uploadId()))
+                .update();
+        try {
+            assertThat(directUploadService.cleanupExpiredSessions(1, 7)).isOne();
+
+            CancelState failedState = cancelState(failed.uploadId());
+            CancelState expiredState = cancelState(expired.uploadId());
+            assertThat(failedState.stagingDeletedAt()).isNotNull();
+            assertThat(failedState.outputsDeletedAt()).isNotNull();
+            assertThat(expiredState.stagingDeletedAt()).isNull();
+            assertThat(expiredState.outputsDeletedAt()).isNull();
+        } finally {
+            deletePrincipalUploadState(failedUploader);
+            deletePrincipalUploadState(expiredUploader);
+        }
+    }
+
+    @Test
+    void cleanupStopsBeforeDestructiveWorkWhenItsOuterLeaseIsLost() {
+        AuthenticatedPrincipal uploader = adminPrincipal(
+                8_000_026L, "cleanup-lease-lost");
+        DirectUploadSessionResponse failed = directUploadService.createLibrary(
+                uploader,
+                new DirectUploadSessionRequest("failed.png", "image/png", 100, null)
+        );
+        jdbcClient.sql("""
+                        update storage_upload_session
+                        set status = 'FAILED',
+                            updated_at = current_timestamp
+                        where id = :id
+                        """)
+                .param("id", failed.uploadId())
+                .update();
+        try {
+            assertThat(directUploadService.cleanupExpiredSessions(
+                    10, 7, 1L, () -> false)).isZero();
+            CancelState state = cancelState(failed.uploadId());
+            assertThat(state.stagingDeletedAt()).isNull();
+            assertThat(state.outputsDeletedAt()).isNull();
+        } finally {
+            deletePrincipalUploadState(uploader);
+        }
+    }
+
+    @Test
+    void cleanupRotatesSessionStagePriorityBetweenConsecutiveRuns() {
+        AuthenticatedPrincipal firstFailedUploader = adminPrincipal(
+                8_000_023L, "cleanup-rotation-failed-one");
+        AuthenticatedPrincipal secondFailedUploader = adminPrincipal(
+                8_000_024L, "cleanup-rotation-failed-two");
+        AuthenticatedPrincipal expiredUploader = adminPrincipal(
+                8_000_025L, "cleanup-rotation-expired");
+        DirectUploadSessionResponse firstFailed = directUploadService.createLibrary(
+                firstFailedUploader,
+                new DirectUploadSessionRequest("failed-one.png", "image/png", 100, null)
+        );
+        DirectUploadSessionResponse secondFailed = directUploadService.createLibrary(
+                secondFailedUploader,
+                new DirectUploadSessionRequest("failed-two.png", "image/png", 100, null)
+        );
+        DirectUploadSessionResponse expired = directUploadService.createLibrary(
+                expiredUploader,
+                new DirectUploadSessionRequest("expired.png", "image/png", 100, null)
+        );
+        jdbcClient.sql("""
+                        update storage_upload_session
+                        set status = case
+                                when id = :expiredId then 'EXPIRED'
+                                else 'FAILED'
+                            end,
+                            updated_at = current_timestamp
+                        where id in (:ids)
+                        """)
+                .param("expiredId", expired.uploadId())
+                .param("ids", List.of(
+                        firstFailed.uploadId(), secondFailed.uploadId(), expired.uploadId()))
+                .update();
+        try {
+            assertThat(directUploadService.cleanupExpiredSessions(1, 7, 2L)).isOne();
+            assertThat(cleanedFailedSessionCount(
+                    firstFailed.uploadId(), secondFailed.uploadId())).isOne();
+            assertThat(cancelState(expired.uploadId()).stagingDeletedAt()).isNull();
+
+            assertThat(directUploadService.cleanupExpiredSessions(1, 7, 3L)).isOne();
+            assertThat(cleanedFailedSessionCount(
+                    firstFailed.uploadId(), secondFailed.uploadId())).isOne();
+            assertThat(cancelState(expired.uploadId()).stagingDeletedAt()).isNotNull();
+            assertThat(cancelState(expired.uploadId()).outputsDeletedAt()).isNotNull();
+        } finally {
+            deletePrincipalUploadState(firstFailedUploader);
+            deletePrincipalUploadState(secondFailedUploader);
+            deletePrincipalUploadState(expiredUploader);
         }
     }
 
@@ -832,7 +951,7 @@ class DirectUploadServiceTest {
                 .query(LocalDateTime.class)
                 .optional()).isEmpty();
 
-        flakyService.cleanupExpiredSessions();
+        flakyService.cleanupExpiredSessions(100, 7);
 
         assertThat(jdbcClient.sql("""
                         select staging_deleted_at
@@ -905,6 +1024,19 @@ class DirectUploadServiceTest {
                                 "staging_deleted_at", LocalDateTime.class),
                         rs.getObject(
                                 "outputs_deleted_at", LocalDateTime.class)))
+                .single();
+    }
+
+    private int cleanedFailedSessionCount(String firstUploadId, String secondUploadId) {
+        return jdbcClient.sql("""
+                        select count(*)
+                        from storage_upload_session
+                        where id in (:ids)
+                          and staging_deleted_at is not null
+                          and outputs_deleted_at is not null
+                        """)
+                .param("ids", List.of(firstUploadId, secondUploadId))
+                .query(Integer.class)
                 .single();
     }
 
@@ -1021,7 +1153,6 @@ class DirectUploadServiceTest {
                 configService,
                 storageService,
                 transactionManager,
-                Duration.ofDays(7),
                 10,
                 60,
                 600

@@ -5,7 +5,6 @@ import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -18,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 
 @Service
 public class StorageAssetCleanupService {
@@ -29,36 +29,80 @@ public class StorageAssetCleanupService {
     private final JdbcClient jdbcClient;
     private final StorageProvider storageProvider;
     private final TransactionTemplate transactionTemplate;
-    private final int cleanupBatchSize;
-    private final Duration uploadPendingGrace;
 
     public StorageAssetCleanupService(
             JdbcClient jdbcClient,
             StorageProvider storageProvider,
-            TransactionTemplate transactionTemplate,
-            @Value("${shop.storage.cleanup.batch-size:100}") int cleanupBatchSize,
-            @Value("${shop.storage.cleanup.upload-pending-grace:30m}") Duration uploadPendingGrace
+            TransactionTemplate transactionTemplate
     ) {
         this.jdbcClient = jdbcClient;
         this.storageProvider = storageProvider;
         this.transactionTemplate = transactionTemplate;
-        this.cleanupBatchSize = Math.max(1, cleanupBatchSize);
-        this.uploadPendingGrace = positiveDuration(uploadPendingGrace, Duration.ofMinutes(30));
     }
 
-    public int cleanupExpiredAssets() {
-        Set<Long> candidateIds = new LinkedHashSet<>(expiredCandidateIds());
-        candidateIds.addAll(retryCandidateIds());
-        candidateIds.addAll(staleUploadCandidateIds());
-        candidateIds.addAll(orphanedUserAvatarCandidateIds());
+    public CleanupBatchResult cleanupExpiredAssets(int batchSize, Duration uploadPendingGrace) {
+        return cleanupExpiredAssets(batchSize, uploadPendingGrace, 0L);
+    }
 
+    public CleanupBatchResult cleanupExpiredAssets(
+            int batchSize,
+            Duration uploadPendingGrace,
+            long runSequence
+    ) {
+        return cleanupExpiredAssets(batchSize, uploadPendingGrace, runSequence, () -> true);
+    }
+
+    public CleanupBatchResult cleanupExpiredAssets(
+            int batchSize,
+            Duration uploadPendingGrace,
+            long runSequence,
+            BooleanSupplier leaseActive
+    ) {
+        if (batchSize < 1 || batchSize > 1_000) {
+            throw new IllegalArgumentException("Invalid storage cleanup batch size");
+        }
+        if (leaseActive == null) {
+            throw new IllegalArgumentException("Storage cleanup lease state is required");
+        }
+        Duration effectiveGrace = positiveDuration(uploadPendingGrace, Duration.ofMinutes(30));
+        Set<Long> candidateIds = new LinkedHashSet<>();
+        int firstCategory = rotationOffset(runSequence, CleanupCandidateCategory.values().length);
+        for (int categoryOffset = 0;
+                categoryOffset < CleanupCandidateCategory.values().length
+                        && remaining(batchSize, candidateIds) > 0
+                        && leaseActive.getAsBoolean();
+                categoryOffset++) {
+            CleanupCandidateCategory category = CleanupCandidateCategory.values()[
+                    (firstCategory + categoryOffset) % CleanupCandidateCategory.values().length];
+            List<Long> candidates = switch (category) {
+                case EXPIRED -> expiredCandidateIds(remaining(batchSize, candidateIds));
+                case STALE_UPLOAD -> staleUploadCandidateIds(
+                        remaining(batchSize, candidateIds), effectiveGrace);
+                case ORPHANED_USER_AVATAR -> orphanedUserAvatarCandidateIds(
+                        remaining(batchSize, candidateIds), effectiveGrace);
+                case RETRY -> retryCandidateIds(remaining(batchSize, candidateIds));
+            };
+            addCandidates(candidateIds, candidates, batchSize);
+        }
+
+        int attempted = 0;
         int cleaned = 0;
         for (Long assetId : candidateIds) {
-            if (cleanupAsset(assetId)) {
+            if (!leaseActive.getAsBoolean()) {
+                break;
+            }
+            attempted++;
+            if (cleanupAsset(assetId, effectiveGrace)) {
                 cleaned++;
             }
         }
-        return cleaned;
+        return new CleanupBatchResult(attempted, cleaned);
+    }
+
+    private int rotationOffset(long runSequence, int categoryCount) {
+        return runSequence <= 0
+                ? 0
+                : Math.floorMod(runSequence - 1, categoryCount);
     }
 
     /**
@@ -66,7 +110,11 @@ public class StorageAssetCleanupService {
      * the short claim and finalize transactions so callers can reuse the same lease/retry protocol.
      */
     public boolean cleanupAsset(Long assetId) {
-        CleanupAsset asset = transactionTemplate.execute(status -> claim(assetId));
+        return cleanupAsset(assetId, Duration.ofMinutes(30));
+    }
+
+    private boolean cleanupAsset(Long assetId, Duration uploadPendingGrace) {
+        CleanupAsset asset = transactionTemplate.execute(status -> claim(assetId, uploadPendingGrace));
         if (asset == null) {
             return false;
         }
@@ -95,7 +143,10 @@ public class StorageAssetCleanupService {
         return Boolean.TRUE.equals(finalized);
     }
 
-    private List<Long> expiredCandidateIds() {
+    private List<Long> expiredCandidateIds(int limit) {
+        if (limit < 1) {
+            return List.of();
+        }
         return jdbcClient.sql("""
                         select asset.id
                         from storage_asset asset
@@ -120,12 +171,15 @@ public class StorageAssetCleanupService {
                         order by asset.expires_at asc, asset.id asc
                         limit :limit
                         """)
-                .param("limit", cleanupBatchSize)
+                .param("limit", limit)
                 .query(Long.class)
                 .list();
     }
 
-    private List<Long> retryCandidateIds() {
+    private List<Long> retryCandidateIds(int limit) {
+        if (limit < 1) {
+            return List.of();
+        }
         return jdbcClient.sql("""
                         select asset.id
                         from storage_asset asset
@@ -135,12 +189,15 @@ public class StorageAssetCleanupService {
                         order by asset.cleanup_next_retry_at asc, asset.id asc
                         limit :limit
                         """)
-                .param("limit", cleanupBatchSize)
+                .param("limit", limit)
                 .query(Long.class)
                 .list();
     }
 
-    private List<Long> staleUploadCandidateIds() {
+    private List<Long> staleUploadCandidateIds(int limit, Duration uploadPendingGrace) {
+        if (limit < 1) {
+            return List.of();
+        }
         LocalDateTime staleBefore = databaseNow().minus(uploadPendingGrace);
         return jdbcClient.sql("""
                         select asset.id
@@ -153,12 +210,15 @@ public class StorageAssetCleanupService {
                         limit :limit
                         """)
                 .param("staleBefore", staleBefore)
-                .param("limit", cleanupBatchSize)
+                .param("limit", limit)
                 .query(Long.class)
                 .list();
     }
 
-    private List<Long> orphanedUserAvatarCandidateIds() {
+    private List<Long> orphanedUserAvatarCandidateIds(int limit, Duration uploadPendingGrace) {
+        if (limit < 1) {
+            return List.of();
+        }
         LocalDateTime staleBefore = databaseNow().minus(uploadPendingGrace);
         return jdbcClient.sql("""
                         select asset.id
@@ -178,12 +238,12 @@ public class StorageAssetCleanupService {
                         limit :limit
                         """)
                 .param("staleBefore", staleBefore)
-                .param("limit", cleanupBatchSize)
+                .param("limit", limit)
                 .query(Long.class)
                 .list();
     }
 
-    private CleanupAsset claim(Long assetId) {
+    private CleanupAsset claim(Long assetId, Duration uploadPendingGrace) {
         CleanupAsset asset = jdbcClient.sql("""
                         select id, scope, status, expires_at, cleanup_attempts, created_at,
                                cleanup_next_retry_at, provider,
@@ -466,11 +526,34 @@ public class StorageAssetCleanupService {
     private record RetrySchedule(boolean scheduled, int attempts, LocalDateTime retryAt) {
     }
 
+    public record CleanupBatchResult(int attemptedCount, int cleanedCount) {
+    }
+
+    private enum CleanupCandidateCategory {
+        EXPIRED,
+        STALE_UPLOAD,
+        ORPHANED_USER_AVATAR,
+        RETRY
+    }
+
     private boolean isPrivateExpirableScope(String scope) {
         return "ATTACHMENT".equals(scope) || "SECRET".equals(scope);
     }
 
     private Duration positiveDuration(Duration value, Duration fallback) {
         return value == null || value.isZero() || value.isNegative() ? fallback : value;
+    }
+
+    private int remaining(int batchSize, Set<Long> candidateIds) {
+        return Math.max(0, batchSize - candidateIds.size());
+    }
+
+    private void addCandidates(Set<Long> target, List<Long> candidates, int batchSize) {
+        for (Long candidate : candidates) {
+            if (target.size() >= batchSize) {
+                return;
+            }
+            target.add(candidate);
+        }
     }
 }

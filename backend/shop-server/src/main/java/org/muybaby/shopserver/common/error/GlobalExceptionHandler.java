@@ -136,6 +136,7 @@ public class GlobalExceptionHandler {
         return switch (errorCode) {
             case AUTHENTICATION_REQUIRED -> HttpStatus.UNAUTHORIZED;
             case PERMISSION_DENIED -> HttpStatus.FORBIDDEN;
+            case DATA_CLEANUP_CONFIG_CONFLICT -> HttpStatus.CONFLICT;
             case ADMIN_LOGIN_RATE_LIMITED, ANALYTICS_RATE_LIMITED,
                  APP_USER_AVATAR_RATE_LIMITED,
                  STORAGE_DIRECT_UPLOAD_RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;

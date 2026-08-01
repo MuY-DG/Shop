@@ -6,6 +6,8 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.maintenance.cleanup.DataCleanupConfigService;
+import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskCode;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.FileVisibility;
 import org.muybaby.shopserver.storage.StorageAssetScope;
@@ -30,7 +32,6 @@ import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.muybaby.shopserver.storage.provider.StoredObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -176,7 +177,7 @@ public class StorageService {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate requiresNewTransaction;
     private final TransactionTemplate withoutTransaction;
-    private final Duration uploadPendingGrace;
+    private final DataCleanupConfigService dataCleanupConfigService;
 
     public StorageService(
             JdbcClient jdbcClient,
@@ -189,7 +190,7 @@ public class StorageService {
             StorageAssetCleanupService storageAssetCleanupService,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager,
-            @Value("${shop.storage.cleanup.upload-pending-grace:30m}") Duration uploadPendingGrace
+            DataCleanupConfigService dataCleanupConfigService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -204,7 +205,7 @@ public class StorageService {
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.withoutTransaction = new TransactionTemplate(transactionManager);
         this.withoutTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
-        this.uploadPendingGrace = positiveDuration(uploadPendingGrace, Duration.ofMinutes(30));
+        this.dataCleanupConfigService = dataCleanupConfigService;
     }
 
     public StorageAssetResponse uploadLibrary(
@@ -1037,7 +1038,10 @@ public class StorageService {
             lockFolderTree();
             requireEnabledFolderChain(folderId, true);
         }
-        LocalDateTime cleanupNotBefore = databaseNow().plus(uploadPendingGrace);
+        int uploadPendingGraceMinutes = dataCleanupConfigService
+                .require(DataCleanupTaskCode.STORAGE_ASSET)
+                .uploadPendingGraceMinutes();
+        LocalDateTime cleanupNotBefore = databaseNow().plusMinutes(uploadPendingGraceMinutes);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         int inserted = jdbcClient.sql("""
                         insert into storage_asset
@@ -1225,10 +1229,6 @@ public class StorageService {
 
     private <T> T outsideTransaction(Supplier<T> action) {
         return Objects.requireNonNull(withoutTransaction.execute(status -> action.get()));
-    }
-
-    private Duration positiveDuration(Duration value, Duration fallback) {
-        return value == null || value.isZero() || value.isNegative() ? fallback : value;
     }
 
     private String assetSelect() {

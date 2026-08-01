@@ -26,7 +26,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -44,6 +43,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -84,7 +84,6 @@ public class DirectUploadService {
     private final StorageRuntimeConfigService configService;
     private final StorageService storageService;
     private final TransactionTemplate transaction;
-    private final Duration sessionRetention;
     private final int maxActiveSessionsPerPrincipal;
     private final int maxSessionsPerHourApp;
     private final int maxSessionsPerHourAdmin;
@@ -97,8 +96,6 @@ public class DirectUploadService {
             StorageRuntimeConfigService configService,
             StorageService storageService,
             PlatformTransactionManager transactionManager,
-            @Value("${shop.storage.direct-upload.session-retention:7d}")
-            Duration sessionRetention,
             @Value("${shop.storage.direct-upload.max-active-sessions-per-principal:10}")
             int maxActiveSessionsPerPrincipal,
             @Value("${shop.storage.direct-upload.max-sessions-per-hour-app:60}")
@@ -112,11 +109,6 @@ public class DirectUploadService {
         this.keyGenerator = keyGenerator;
         this.configService = configService;
         this.storageService = storageService;
-        this.sessionRetention = sessionRetention == null
-                || sessionRetention.isNegative()
-                || sessionRetention.isZero()
-                ? Duration.ofDays(7)
-                : sessionRetention;
         this.maxActiveSessionsPerPrincipal = Math.max(
                 1, maxActiveSessionsPerPrincipal);
         this.maxSessionsPerHourApp = Math.max(1, maxSessionsPerHourApp);
@@ -646,21 +638,74 @@ public class DirectUploadService {
         }));
     }
 
-    @Scheduled(
-            initialDelayString = "${shop.storage.direct-upload.cleanup-initial-delay:1m}",
-            fixedDelayString = "${shop.storage.direct-upload.cleanup-fixed-delay:10m}"
-    )
-    public void cleanupExpiredSessions() {
+    public int cleanupExpiredSessions(int batchSize, int retentionDays) {
+        return cleanupExpiredSessions(batchSize, retentionDays, 0L);
+    }
+
+    public int cleanupExpiredSessions(int batchSize, int retentionDays, long runSequence) {
+        return cleanupExpiredSessions(batchSize, retentionDays, runSequence, () -> true);
+    }
+
+    public int cleanupExpiredSessions(
+            int batchSize,
+            int retentionDays,
+            long runSequence,
+            BooleanSupplier leaseActive
+    ) {
+        if (batchSize < 1 || batchSize > 1_000 || retentionDays < 1 || retentionDays > 365) {
+            throw new IllegalArgumentException("Invalid direct upload cleanup settings");
+        }
+        if (leaseActive == null) {
+            throw new IllegalArgumentException("Direct upload cleanup lease state is required");
+        }
+        LocalDateTime now = databaseNow();
+        LocalDateTime processingCutoff = now.minus(PROCESSING_LEASE);
+        LocalDateTime retentionCutoff = now.minusDays(retentionDays);
+        int attempted = 0;
+        int firstStage = rotationOffset(runSequence, DirectUploadCleanupStage.values().length);
+        for (int stageOffset = 0;
+                stageOffset < DirectUploadCleanupStage.values().length
+                        && remaining(batchSize, attempted) > 0
+                        && leaseActive.getAsBoolean();
+                stageOffset++) {
+            DirectUploadCleanupStage stage = DirectUploadCleanupStage.values()[
+                    (firstStage + stageOffset) % DirectUploadCleanupStage.values().length];
+            int limit = remaining(batchSize, attempted);
+            attempted += switch (stage) {
+                case COMPLETED_STAGING -> cleanupCompletedStagingBatch(limit, leaseActive);
+                case FAILED_OBJECTS -> cleanupFailedObjectsBatch(limit, leaseActive);
+                case EXPIRED_OBJECTS -> cleanupExpiredObjectsBatch(limit, leaseActive);
+                case EXPIRE_SESSIONS -> expireSessionsBatch(
+                        limit, processingCutoff, leaseActive);
+                case RETAINED_SESSIONS -> deleteRetainedSessionsBatch(
+                        limit, retentionCutoff, leaseActive);
+            };
+        }
+        return attempted;
+    }
+
+    private int cleanupCompletedStagingBatch(int limit, BooleanSupplier leaseActive) {
         List<SessionRow> completedWithStaging = jdbcClient.sql(sessionSelect() + """
                         where status = 'COMPLETED'
                           and staging_deleted_at is null
                         order by completed_at
-                        limit 100
+                        limit :limit
                         """)
+                .param("limit", limit)
                 .query(this::mapSession)
                 .list();
-        completedWithStaging.forEach(this::cleanupCompletedStaging);
+        int attempted = 0;
+        for (SessionRow session : completedWithStaging) {
+            if (!leaseActive.getAsBoolean()) {
+                break;
+            }
+            attempted++;
+            cleanupCompletedStaging(session);
+        }
+        return attempted;
+    }
 
+    private int cleanupFailedObjectsBatch(int limit, BooleanSupplier leaseActive) {
         List<SessionRow> failedWithObjects = jdbcClient.sql(sessionSelect() + """
                         where status = 'FAILED'
                           and (
@@ -668,12 +713,23 @@ public class DirectUploadService {
                               or outputs_deleted_at is null
                           )
                         order by updated_at
-                        limit 100
+                        limit :limit
                         """)
+                .param("limit", limit)
                 .query(this::mapSession)
                 .list();
-        failedWithObjects.forEach(this::cleanupTerminalObjects);
+        int attempted = 0;
+        for (SessionRow session : failedWithObjects) {
+            if (!leaseActive.getAsBoolean()) {
+                break;
+            }
+            attempted++;
+            cleanupTerminalObjects(session);
+        }
+        return attempted;
+    }
 
+    private int cleanupExpiredObjectsBatch(int limit, BooleanSupplier leaseActive) {
         List<SessionRow> expiredWithObjects = jdbcClient.sql(sessionSelect() + """
                         where status = 'EXPIRED'
                           and (
@@ -681,13 +737,27 @@ public class DirectUploadService {
                               or outputs_deleted_at is null
                           )
                         order by updated_at
-                        limit 100
+                        limit :limit
                         """)
+                .param("limit", limit)
                 .query(this::mapSession)
                 .list();
-        expiredWithObjects.forEach(this::cleanupTerminalObjects);
+        int attempted = 0;
+        for (SessionRow session : expiredWithObjects) {
+            if (!leaseActive.getAsBoolean()) {
+                break;
+            }
+            attempted++;
+            cleanupTerminalObjects(session);
+        }
+        return attempted;
+    }
 
-        LocalDateTime processingCutoff = databaseNow().minus(PROCESSING_LEASE);
+    private int expireSessionsBatch(
+            int limit,
+            LocalDateTime processingCutoff,
+            BooleanSupplier leaseActive
+    ) {
         List<SessionRow> expired = jdbcClient.sql(sessionSelect() + """
                         where status in ('INITIATED', 'FAILED', 'PROCESSING')
                           and expires_at < current_timestamp
@@ -697,12 +767,18 @@ public class DirectUploadService {
                               or processing_started_at <= :processingCutoff
                           )
                         order by expires_at
-                        limit 100
+                        limit :limit
                         """)
                 .param("processingCutoff", processingCutoff)
+                .param("limit", limit)
                 .query(this::mapSession)
                 .list();
+        int attempted = 0;
         for (SessionRow session : expired) {
+            if (!leaseActive.getAsBoolean()) {
+                break;
+            }
+            attempted++;
             int updated = jdbcClient.sql("""
                             update storage_upload_session
                             set status = 'EXPIRED',
@@ -727,7 +803,14 @@ public class DirectUploadService {
                 cleanupTerminalObjects(session);
             }
         }
-        LocalDateTime retentionCutoff = databaseNow().minus(sessionRetention);
+        return attempted;
+    }
+
+    private int deleteRetainedSessionsBatch(
+            int limit,
+            LocalDateTime retentionCutoff,
+            BooleanSupplier leaseActive
+    ) {
         List<String> retainedIds = jdbcClient.sql("""
                         select id
                         from storage_upload_session
@@ -741,12 +824,18 @@ public class DirectUploadService {
                           )
                           and updated_at < :retentionCutoff
                         order by updated_at
-                        limit 100
+                        limit :limit
                         """)
                 .param("retentionCutoff", retentionCutoff)
+                .param("limit", limit)
                 .query(String.class)
                 .list();
+        int attempted = 0;
         for (String retainedId : retainedIds) {
+            if (!leaseActive.getAsBoolean()) {
+                break;
+            }
+            attempted++;
             jdbcClient.sql("""
                             delete from storage_upload_session
                             where id = :id
@@ -764,6 +853,13 @@ public class DirectUploadService {
                     .param("retentionCutoff", retentionCutoff)
                     .update();
         }
+        return attempted;
+    }
+
+    private int rotationOffset(long runSequence, int stageCount) {
+        return runSequence <= 0
+                ? 0
+                : Math.floorMod(runSequence - 1, stageCount);
     }
 
     private SessionClaim claim(
@@ -1488,6 +1584,18 @@ public class DirectUploadService {
                 || principal.subjectId() == null || principal.subjectId() <= 0) {
             throw new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED);
         }
+    }
+
+    private int remaining(int batchSize, int attempted) {
+        return Math.max(0, batchSize - attempted);
+    }
+
+    private enum DirectUploadCleanupStage {
+        COMPLETED_STAGING,
+        FAILED_OBJECTS,
+        EXPIRED_OBJECTS,
+        EXPIRE_SESSIONS,
+        RETAINED_SESSIONS
     }
 
     public record Completion(

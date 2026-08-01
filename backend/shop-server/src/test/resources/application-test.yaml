@@ -28,8 +28,6 @@ shop:
     rotation-enabled: false
   customer-service:
     transfer-timeout-job-enabled: false
-    retention:
-      enabled: false
   auth:
     token-store: memory
     admin-access-ttl: 2h
@@ -43,11 +41,6 @@ shop:
       store: memory
   analytics:
     rate-limit:
-      enabled: false
-    retention:
-      enabled: false
-  admin-system-log:
-    retention:
       enabled: false
   storage:
     limits:

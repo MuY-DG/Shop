@@ -1,17 +1,17 @@
 package org.muybaby.shopserver.admin.log.service;
 
 import org.junit.jupiter.api.Test;
-import org.muybaby.shopserver.admin.log.AdminSystemLogRetentionProperties;
+import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskCode;
+import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskSetting;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.Mockito.only;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 class AdminSystemLogRetentionJobTest {
 
@@ -24,35 +24,45 @@ class AdminSystemLogRetentionJobTest {
     }
 
     @Test
-    void disabledRetentionDoesNotDeleteLogs() {
+    void executesExactlyOneDatabaseConfiguredBatch() {
         AdminSystemLogRetentionService service = mock(AdminSystemLogRetentionService.class);
         AdminSystemLogRetentionJob job = new AdminSystemLogRetentionJob(
-                new AdminSystemLogRetentionProperties(false, 400, 5_000, 100),
-                service
-        );
-
-        job.cleanExpiredLogs();
-
-        verify(service, never()).deleteBatchBefore(
-                org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.anyInt()
-        );
-    }
-
-    @Test
-    void cutoffCalculationFailureDoesNotEscapeTheScheduledJob() {
-        AdminSystemLogRetentionService service = mock(AdminSystemLogRetentionService.class);
-        AdminSystemLogRetentionJob job = new AdminSystemLogRetentionJob(
-                new AdminSystemLogRetentionProperties(true, 400, 5_000, 100),
                 service
         ) {
             @Override
             Instant currentInstant() {
-                throw new IllegalStateException("clock unavailable");
+                return Instant.parse("2026-01-01T16:30:00Z");
             }
         };
+        LocalDateTime cutoff = LocalDateTime.of(2024, 11, 27, 16, 30);
+        when(service.deleteBatchBefore(cutoff, 37)).thenReturn(37);
 
-        assertThatCode(job::cleanExpiredLogs).doesNotThrowAnyException();
-        verifyNoInteractions(service);
+        int processed = job.execute(setting(400, 37));
+
+        assertThat(processed).isEqualTo(37);
+        assertThat(job.taskCode()).isEqualTo(DataCleanupTaskCode.ADMIN_SYSTEM_LOG);
+        verify(service, only()).deleteBatchBefore(cutoff, 37);
+    }
+
+    private DataCleanupTaskSetting setting(int retentionDays, int batchSize) {
+        return new DataCleanupTaskSetting(
+                DataCleanupTaskCode.ADMIN_SYSTEM_LOG,
+                true,
+                retentionDays,
+                batchSize,
+                "0 45 3 * * *",
+                "Asia/Shanghai",
+                60,
+                null,
+                0L,
+                0L,
+                null,
+                null,
+                null,
+                "NEVER",
+                0,
+                "",
+                null
+        );
     }
 }

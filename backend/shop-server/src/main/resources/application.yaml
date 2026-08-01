@@ -87,40 +87,17 @@ shop: # 商城项目自定义业务配置的统一入口。
       trusted-proxy-cidrs: ${SHOP_TRUSTED_PROXY_CIDRS:127.0.0.0/8,::1/128} # 默认只信任本机反向代理写入的代理头；容器生产网关必须显式配置精确 /32。
       max-forwarded-hops: ${SHOP_MAX_FORWARDED_HOPS:20} # 最多解析 20 层代理转发地址。
       max-forwarded-header-length: ${SHOP_MAX_FORWARDED_HEADER_LENGTH:2048} # 限制转发头最大长度为 2048 字符。
-  admin-system-log: # 后台系统日志的运维配置。
-    retention: # 系统日志定期清理配置。
-      enabled: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_ENABLED:true} # 默认启用过期系统日志清理任务。
-      days: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_DAYS:400} # 默认保留最近 400 天的系统日志。
-      batch-size: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_BATCH_SIZE:5000} # 每批最多删除 5000 条过期记录。
-      max-batches-per-run: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_MAX_BATCHES:100} # 单次任务最多执行 100 个删除批次。
-      cron: ${SHOP_ADMIN_SYSTEM_LOG_RETENTION_CRON:0 45 3 * * *} # 默认按北京时间每天凌晨 3:45 执行。
-  customer-service: # 在线客服运行与历史保留配置。
-    retention: # 到期消息按小批次移除，关联图片交给素材清理任务异步删除。
-      enabled: ${SHOP_CUSTOMER_SERVICE_RETENTION_ENABLED:false} # 上线前需按适用法规与售后政策确认，默认不自动删除历史。
-      days: ${SHOP_CUSTOMER_SERVICE_RETENTION_DAYS:365} # 启用后默认保留 365 天。
-      batch-size: ${SHOP_CUSTOMER_SERVICE_RETENTION_BATCH_SIZE:1000} # 每批最多删除 1000 条消息，避免长事务。
-      max-batches-per-run: ${SHOP_CUSTOMER_SERVICE_RETENTION_MAX_BATCHES:100} # 单次任务最多处理 100 批。
-      cron: ${SHOP_CUSTOMER_SERVICE_RETENTION_CRON:0 15 4 * * *} # 默认按北京时间每天凌晨 4:15 执行。
-  analytics: # 访问统计、限流和历史数据保留配置。
+  analytics: # 访问统计和限流配置。
     rate-limit: # 访问统计事件写入的限流配置。
       enabled: ${SHOP_ANALYTICS_RATE_LIMIT_ENABLED:true} # 默认启用统计事件限流。
       window: ${SHOP_ANALYTICS_RATE_LIMIT_WINDOW:1m} # 使用 1 分钟作为限流统计窗口。
       ip-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_IP_EVENTS:5000} # 每个 IP 每个窗口最多记录 5000 个事件。
       visitor-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_VISITOR_EVENTS:1000} # 每个访客每个窗口最多记录 1000 个事件。
-    retention: # 历史访问统计数据的定期清理配置。
-      enabled: ${SHOP_ANALYTICS_RETENTION_ENABLED:true} # 默认启用过期统计数据清理任务。
-      days: ${SHOP_ANALYTICS_RETENTION_DAYS:400} # 默认保留最近 400 天的统计数据。
-      batch-size: ${SHOP_ANALYTICS_RETENTION_BATCH_SIZE:5000} # 每批最多删除 5000 条过期记录。
-      max-batches-per-run: ${SHOP_ANALYTICS_RETENTION_MAX_BATCHES:100} # 单次任务最多执行 100 个删除批次。
-      cron: ${SHOP_ANALYTICS_RETENTION_CRON:0 15 3 * * *} # 默认每天凌晨 3:15 执行清理任务。
   storage: # 图片、视频和私有文件的素材存储配置。
-    direct-upload: # 客户端直传 COS 的短期会话与清理策略。
-      session-retention: ${SHOP_DIRECT_UPLOAD_SESSION_RETENTION:7d} # 已完成或已过期的会话审计记录默认保留 7 天。
+    direct-upload: # 客户端直传 COS 的短期会话与限流策略。
       max-active-sessions-per-principal: ${SHOP_DIRECT_UPLOAD_MAX_ACTIVE_SESSIONS:10} # 每个登录主体最多同时保留 10 个待完成直传，避免临时对象滥用。
       max-sessions-per-hour-app: ${SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_APP:60} # 每位小程序用户每小时最多签发 60 次直传。
       max-sessions-per-hour-admin: ${SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_ADMIN:600} # 每位管理员每小时最多签发 600 次直传。
-      cleanup-initial-delay: ${SHOP_DIRECT_UPLOAD_CLEANUP_INITIAL_DELAY:1m} # 启动后 1 分钟开始回收过期暂存对象。
-      cleanup-fixed-delay: ${SHOP_DIRECT_UPLOAD_CLEANUP_FIXED_DELAY:10m} # 每 10 分钟回收暂存对象和历史会话。
     customer-service-thumbnail: # 旧 Multipart 客服图片使用本地异步缩略图；直传路径由数据万象同步生成。
       max-dimension: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_MAX_DIMENSION:720} # 默认将最长边缩放至 720 像素且不放大小图。
       webp-enabled: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_WEBP_ENABLED:true} # WebP 不可用时自动降级为本地 JPEG，不阻塞消息。
