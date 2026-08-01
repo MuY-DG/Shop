@@ -26,7 +26,9 @@
                       v-auth="'customer-service:conversation:claim'"
                       type="button"
                       class="waiting-user__avatar"
-                      :disabled="!agentState?.canReceive || claimingConversationId !== null"
+                      :class="{ 'is-unavailable': !agentState?.canReceive }"
+                      :disabled="claimingConversationId !== null"
+                      :aria-disabled="!agentState?.canReceive"
                       :aria-label="`接入 ${conversation.userNickname || `用户 ${conversation.appUserId}`}`"
                       @click="handleClaim(conversation.conversationId)"
                     >
@@ -37,8 +39,12 @@
                           claimingConversationId === conversation.conversationId ? '接入中' : '接入'
                         }}
                       </span>
-                      <i v-if="conversation.adminUnreadCount > 0" />
                     </button>
+                    <i
+                      v-if="conversation.adminUnreadCount > 0"
+                      class="waiting-user__unread"
+                      aria-hidden="true"
+                    />
                   </span>
                 </ElTooltip>
               </article>
@@ -1386,6 +1392,20 @@
   const handleClaim = async (conversationId?: number) => {
     const targetConversationId = conversationId || selectedConversationId.value
     if (!targetConversationId || claimingConversationId.value !== null) return
+    if (!agentState.value) {
+      ElMessage.warning('正在获取客服状态，请稍后再试')
+      return
+    }
+    if (!agentState.value.canReceive) {
+      const unavailableMessage =
+        agentState.value.workStatus === 'OFFLINE'
+          ? '当前为离线状态，请先切换为在线'
+          : agentState.value.workStatus === 'BUSY'
+            ? '当前为忙碌状态，请先切换为在线'
+            : '当前接待已达上限，暂时无法接入新会话'
+      ElMessage.warning(unavailableMessage)
+      return
+    }
     claimingConversationId.value = targetConversationId
     actionLoading.value = true
     try {
@@ -2665,18 +2685,21 @@
 
   .waiting-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px 8px;
+    grid-template-columns: repeat(auto-fill, 44px);
+    gap: 12px;
     padding: 14px 12px 16px;
   }
 
   .waiting-user {
+    width: 44px;
     min-width: 0;
     text-align: center;
   }
 
   .waiting-user__trigger {
+    position: relative;
     display: inline-flex;
+    overflow: visible;
   }
 
   .waiting-user__avatar {
@@ -2703,12 +2726,13 @@
     object-fit: cover;
   }
 
-  .waiting-user__avatar > i {
+  .waiting-user__unread {
     position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 8px;
-    height: 8px;
+    top: -3px;
+    right: -3px;
+    z-index: 2;
+    width: 9px;
+    height: 9px;
     background: #ff5a62;
     border: 2px solid #fff;
     border-radius: 50%;
@@ -2737,9 +2761,13 @@
     outline-offset: 2px;
   }
 
+  .waiting-user__avatar.is-unavailable {
+    cursor: not-allowed;
+  }
+
   .waiting-user__avatar:disabled {
     cursor: not-allowed;
-    opacity: 0.58;
+    opacity: 1;
   }
 
   :global(.waiting-message-tooltip) {

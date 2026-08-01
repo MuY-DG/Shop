@@ -17,7 +17,7 @@
       <header class="page-heading">
         <div>
           <h1>{{ currentSection.label }}</h1>
-          <p>{{ currentSection.description }}</p>
+          <p v-if="currentSection.description">{{ currentSection.description }}</p>
         </div>
         <button type="button" class="save-button" :disabled="saving || loading" @click="save">
           <LoaderCircle v-if="saving" class="spin" :size="16" />
@@ -69,23 +69,6 @@
               />
               <span>人</span>
             </div>
-          </div>
-
-          <div class="setting-block personal-name-block">
-            <div class="setting-title">
-              <div>
-                <h2>我的客服名称</h2>
-                <p>客户在会话中看到的客服名称，最多 64 个字符。</p>
-              </div>
-            </div>
-            <label class="form-field">
-              <span>客服名称</span>
-              <input
-                v-model="personalForm.serviceName"
-                maxlength="64"
-                placeholder="请输入客服名称"
-              />
-            </label>
           </div>
         </template>
 
@@ -214,47 +197,63 @@
           </div>
         </template>
 
-        <template v-else>
+        <template v-else-if="activeSection === 'identity'">
           <div class="setting-block identity-block">
             <div class="setting-title">
               <div>
-                <h2>客服默认形象</h2>
-                <p>统一头像仅客服管理员可配置，个人名称为空时使用默认客服名称。</p>
+                <h2>个人信息</h2>
               </div>
             </div>
 
-            <div class="identity-layout">
-              <div class="identity-preview">
-                <span class="service-avatar">
-                  <img v-if="avatarAsset.url" :src="avatarAsset.url" alt="客服统一头像预览" />
-                  <Headset v-else :size="28" />
-                </span>
-                <span>
-                  <strong>{{ identityForm.defaultServiceName || '商城客服' }}</strong>
-                  <small>客户侧展示预览</small>
-                </span>
-              </div>
-
-              <div class="identity-fields">
-                <label class="form-field">
-                  <span>默认客服名称</span>
-                  <input
-                    v-model="identityForm.defaultServiceName"
-                    maxlength="64"
-                    placeholder="商城客服"
-                  />
-                  <small>客服没有设置个人名称时使用。</small>
-                </label>
-
-                <div class="form-field avatar-field">
-                  <span>统一头像</span>
+            <div class="personal-info-list">
+              <div class="personal-info-row avatar-row">
+                <span class="personal-info-label">客服头像</span>
+                <div class="personal-info-control avatar-field">
                   <AssetPicker
+                    v-if="canManageIdentity"
                     v-model="avatarAsset"
                     media-kind="IMAGE"
                     compact
                     :disabled="loading || saving"
                   />
-                  <small>点击上传图片或从素材库选择，建议使用正方形图片。</small>
+                  <div v-else class="readonly-avatar" aria-label="客服头像">
+                    <img v-if="effectiveAvatarUrl" :src="effectiveAvatarUrl" alt="客服头像" />
+                    <Headset v-else :size="23" />
+                  </div>
+                  <small v-if="canManageIdentity">所有客服共用此头像。</small>
+                </div>
+              </div>
+
+              <div v-if="canManageIdentity" class="personal-info-row">
+                <span class="personal-info-label">默认客服名称</span>
+                <div class="personal-info-control">
+                  <label class="form-field">
+                    <input
+                      v-model="identityForm.defaultServiceName"
+                      maxlength="64"
+                      placeholder="商城客服"
+                      aria-label="默认客服名称"
+                    />
+                    <small>客服未设置个人名称时使用。</small>
+                  </label>
+                </div>
+              </div>
+
+              <div v-if="hasPersonalSettings" class="personal-info-row">
+                <span class="personal-info-label">客服名称</span>
+                <div class="personal-info-control">
+                  <label class="form-field">
+                    <input
+                      v-model="personalServiceName"
+                      maxlength="64"
+                      :placeholder="effectiveDefaultServiceName"
+                      aria-label="客服名称"
+                    />
+                    <small v-if="personalForm.serviceName === null">
+                      当前使用默认客服名称“{{ effectiveDefaultServiceName }}”。
+                    </small>
+                    <small v-else>留空并保存，可恢复使用默认客服名称。</small>
+                  </label>
                 </div>
               </div>
             </div>
@@ -312,7 +311,7 @@
     automatic: {
       key: 'automatic' as const,
       label: '自动接入',
-      description: '控制自己的自动接入规则和客户可见名称。',
+      description: '控制自己的自动接入规则。',
       icon: Zap
     },
     routing: {
@@ -323,8 +322,8 @@
     },
     identity: {
       key: 'identity' as const,
-      label: '对外形象',
-      description: '设置客户可见的默认客服名称和统一头像。',
+      label: '个人设置',
+      description: '',
       icon: UserRoundCog
     }
   }
@@ -332,7 +331,7 @@
     const items = []
     if (hasPersonalSettings.value) items.push(allSettingItems.automatic)
     if (canManageRouting.value) items.push(allSettingItems.routing)
-    if (canManageIdentity.value) items.push(allSettingItems.identity)
+    if (hasPersonalSettings.value || canManageIdentity.value) items.push(allSettingItems.identity)
     return items
   })
   const activeSection = ref<SectionKey>(resolveAvailableSection(route.query.section))
@@ -347,10 +346,14 @@
   const saving = ref(false)
   const personalActiveConversationCount = ref(0)
   const personalForm = reactive<Api.CustomerService.PersonalSettingsForm>({
-    serviceName: '',
+    serviceName: null,
     autoAcceptEnabled: false,
     autoAcceptBelow: 1,
     autoAcceptCount: 1
+  })
+  const personalIdentity = reactive({
+    defaultServiceName: '商城客服',
+    avatar: ''
   })
   const routingForm = reactive<{
     assignmentStrategy: Api.CustomerService.AssignmentStrategy
@@ -368,7 +371,20 @@
     avatarFileId: null
   })
   const avatarAsset = ref<Api.Common.AssetValue>({ fileId: null, url: '' })
-
+  const effectiveDefaultServiceName = computed(() =>
+    canManageIdentity.value
+      ? identityForm.defaultServiceName || '商城客服'
+      : personalIdentity.defaultServiceName || '商城客服'
+  )
+  const effectiveAvatarUrl = computed(() =>
+    canManageIdentity.value ? avatarAsset.value.url : personalIdentity.avatar
+  )
+  const personalServiceName = computed({
+    get: () => personalForm.serviceName ?? effectiveDefaultServiceName.value,
+    set: (value: string) => {
+      personalForm.serviceName = value
+    }
+  })
   const strategies = [
     {
       value: 'LEAST_LOADED' as const,
@@ -406,11 +422,13 @@
   }
 
   function applyPersonalSettings(settings: Api.CustomerService.PersonalSettings) {
-    personalForm.serviceName = settings.serviceName
+    personalForm.serviceName = settings.serviceNameOverride
     personalForm.autoAcceptEnabled = settings.autoAcceptEnabled
     personalForm.autoAcceptBelow = settings.autoAcceptBelow
     personalForm.autoAcceptCount = settings.autoAcceptCount
     personalActiveConversationCount.value = settings.activeConversationCount
+    personalIdentity.defaultServiceName = settings.defaultServiceName
+    personalIdentity.avatar = settings.avatar
   }
 
   function applyRoutingConfig(config: Api.CustomerService.ManagementConfig) {
@@ -451,13 +469,8 @@
     return Number.isInteger(value) && value >= min && value <= max
   }
 
-  async function savePersonalSettings() {
-    const serviceName = personalForm.serviceName.trim()
-    if (!serviceName) {
-      ElMessage.warning('请填写客服名称')
-      return false
-    }
-    if (personalForm.autoAcceptEnabled) {
+  async function savePersonalSettings(validateAutoAccept = true) {
+    if (validateAutoAccept && personalForm.autoAcceptEnabled) {
       if (!isIntegerInRange(personalForm.autoAcceptBelow, 1, 1000)) {
         ElMessage.warning('自动接入触发人数需在 1–1000 之间')
         return false
@@ -473,6 +486,11 @@
     const autoAcceptCount = isIntegerInRange(personalForm.autoAcceptCount, 1, 1000)
       ? personalForm.autoAcceptCount
       : 1
+    const enteredServiceName = personalServiceName.value.trim()
+    const serviceName =
+      !enteredServiceName || enteredServiceName === effectiveDefaultServiceName.value.trim()
+        ? null
+        : enteredServiceName
     applyPersonalSettings(
       await updateCustomerServicePersonalSettings({
         ...personalForm,
@@ -530,17 +548,24 @@
   }
 
   async function saveIdentitySettings() {
-    const defaultServiceName = identityForm.defaultServiceName.trim()
-    if (!defaultServiceName) {
+    if (canManageIdentity.value && !identityForm.defaultServiceName.trim()) {
       ElMessage.warning('请填写默认客服名称')
       return false
     }
-    const config = await updateCustomerServiceManagementIdentity({
-      defaultServiceName,
-      avatarFileId: avatarAsset.value.fileId
-    })
-    applyIdentityConfig(config)
-    return true
+    const requests: Promise<unknown>[] = []
+    if (hasPersonalSettings.value) {
+      requests.push(savePersonalSettings(false))
+    }
+    if (canManageIdentity.value) {
+      requests.push(
+        updateCustomerServiceManagementIdentity({
+          defaultServiceName: identityForm.defaultServiceName.trim(),
+          avatarFileId: avatarAsset.value.fileId
+        }).then(applyIdentityConfig)
+      )
+    }
+    await Promise.all(requests)
+    return requests.length > 0
   }
 
   async function save() {
@@ -775,10 +800,6 @@
     opacity: 0.5;
   }
 
-  .personal-name-block .form-field {
-    max-width: 560px;
-  }
-
   .form-field {
     display: grid;
     gap: 8px;
@@ -795,6 +816,12 @@
     border: 1px solid #dedede;
     border-radius: 6px;
     outline: none;
+  }
+
+  .form-field input[readonly] {
+    color: #666;
+    cursor: default;
+    background: #f7f8f8;
   }
 
   .form-field small {
@@ -1033,67 +1060,71 @@
 
   .identity-block {
     max-width: 940px;
+    margin-bottom: 0;
   }
 
-  .identity-layout {
+  .personal-info-list {
     display: grid;
-    grid-template-columns: 260px minmax(0, 1fr);
-    gap: 34px;
-    margin-top: 24px;
+    gap: 10px;
+    margin-top: 12px;
   }
 
-  .identity-preview {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-    align-items: center;
-    justify-content: center;
-    min-height: 220px;
-    padding: 22px;
-    text-align: center;
-    background: #fafafa;
-    border: 1px solid #ececec;
-    border-radius: 10px;
-  }
-
-  .service-avatar {
+  .personal-info-row {
     display: grid;
-    place-items: center;
-    width: 78px;
-    height: 78px;
-    overflow: hidden;
-    color: #08b95d;
-    background: #eafaf1;
-    border-radius: 50%;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 28px;
+    padding: 8px 0;
   }
 
-  .service-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  .personal-info-label {
+    padding-top: 11px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #3e3e3e;
   }
 
-  .identity-preview > span:last-child {
-    display: grid;
-    gap: 6px;
+  .avatar-row .personal-info-label {
+    padding-top: 33px;
   }
 
-  .identity-preview small {
-    color: #999;
-  }
-
-  .identity-fields {
+  .personal-info-control {
+    max-width: 600px;
     min-width: 0;
   }
 
-  .identity-fields .form-field:first-child {
+  .personal-info-control .form-field {
     margin-top: 0;
   }
 
+  .personal-info-control > small {
+    display: block;
+    margin-top: 8px;
+    font-size: 12px;
+    color: #999;
+  }
+
   .avatar-field :deep(.asset-picker__compact-target) {
-    width: 112px;
-    height: 112px;
-    border-radius: 10px;
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+  }
+
+  .readonly-avatar {
+    display: grid;
+    place-items: center;
+    width: 84px;
+    height: 84px;
+    overflow: hidden;
+    color: #08b95d;
+    background: #eafaf1;
+    border: 1px solid #dcece3;
+    border-radius: 50%;
+  }
+
+  .readonly-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .spin {
@@ -1117,8 +1148,8 @@
       padding: 26px;
     }
 
-    .identity-layout {
-      grid-template-columns: 220px minmax(0, 1fr);
+    .personal-info-row {
+      grid-template-columns: 130px minmax(0, 1fr);
       gap: 24px;
     }
   }

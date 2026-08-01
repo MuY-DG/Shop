@@ -125,6 +125,48 @@ class CustomerServiceAutoAssignmentTest {
     }
 
     @Test
+    void personalSettingsExposeUnifiedIdentityAndPreserveDefaultNameFallback() {
+        long adminUserId = insertAdmin();
+        managementService.addUser(1L, adminUserId, new ManagedUserCreateRequest(null));
+        jdbcClient.sql("""
+                        update customer_service_config
+                        set default_service_name = '商城客服',
+                            avatar = 'https://cdn.example.com/unified-service.png'
+                        where id = 1
+                        """)
+                .update();
+        AuthenticatedPrincipal principal = new AuthenticatedPrincipal(
+                TokenKind.ADMIN,
+                adminUserId,
+                "default-name-agent",
+                List.of("R_CUSTOMER_SERVICE"),
+                List.of("customer-service:settings:update")
+        );
+
+        var initial = customerServiceService.personalSettings(principal);
+        assertThat(initial.serviceName()).isEqualTo("商城客服");
+        assertThat(initial.serviceNameOverride()).isNull();
+        assertThat(initial.defaultServiceName()).isEqualTo("商城客服");
+        assertThat(initial.avatar()).isEqualTo("https://cdn.example.com/unified-service.png");
+
+        var updated = customerServiceService.updatePersonalSettings(
+                principal,
+                new PersonalSettingsUpdateRequest(null, true, 6, 2)
+        );
+        assertThat(updated.serviceName()).isEqualTo("商城客服");
+        assertThat(updated.serviceNameOverride()).isNull();
+
+        jdbcClient.sql("""
+                        update customer_service_config
+                        set default_service_name = '新的默认客服'
+                        where id = 1
+                        """)
+                .update();
+        assertThat(customerServiceService.personalSettings(principal).serviceName())
+                .isEqualTo("新的默认客服");
+    }
+
+    @Test
     void disabledPersonalAutoAcceptLeavesConversationWaiting() {
         AgentFixture agent = createAgent("disabled-agent", false, 5, 1);
         try {

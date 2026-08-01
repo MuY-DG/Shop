@@ -181,6 +181,9 @@ declare namespace Api {
 
     interface PersonalSettings {
       serviceName: string
+      serviceNameOverride: string | null
+      defaultServiceName: string
+      avatar: string
       autoAcceptEnabled: boolean
       autoAcceptBelow: number
       autoAcceptCount: number
@@ -188,7 +191,7 @@ declare namespace Api {
     }
 
     interface PersonalSettingsForm {
-      serviceName: string
+      serviceName: string | null
       autoAcceptEnabled: boolean
       autoAcceptBelow: number
       autoAcceptCount: number

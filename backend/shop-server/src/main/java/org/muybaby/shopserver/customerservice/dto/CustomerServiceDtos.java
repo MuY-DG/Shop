@@ -44,7 +44,7 @@ public final class CustomerServiceDtos {
     }
 
     public record PersonalSettingsUpdateRequest(
-            @NotBlank @Size(max = 64) String serviceName,
+            @Size(max = 64) String serviceName,
             @NotNull Boolean autoAcceptEnabled,
             @NotNull @Min(1) @Max(1000) Integer autoAcceptBelow,
             @NotNull @Min(1) @Max(1000) Integer autoAcceptCount
@@ -53,6 +53,9 @@ public final class CustomerServiceDtos {
 
     public record PersonalSettingsResponse(
             String serviceName,
+            String serviceNameOverride,
+            String defaultServiceName,
+            String avatar,
             boolean autoAcceptEnabled,
             int autoAcceptBelow,
             int autoAcceptCount,

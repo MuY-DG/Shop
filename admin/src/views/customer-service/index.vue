@@ -1,7 +1,12 @@
 <template>
   <div class="customer-service-shell">
     <aside class="service-rail" aria-label="客服导航">
-      <ElDropdown trigger="click" placement="bottom-start" @command="handleAvatarCommand">
+      <ElDropdown
+        trigger="click"
+        placement="bottom-start"
+        @command="handleAvatarCommand"
+        @visible-change="handleProfileMenuVisibility"
+      >
         <button
           type="button"
           class="profile-trigger"
@@ -14,6 +19,16 @@
         </button>
         <template #dropdown>
           <ElDropdownMenu class="profile-menu">
+            <li class="profile-menu__identity" role="presentation">
+              <span class="profile-menu__avatar">
+                <img v-if="profileAvatar" :src="profileAvatar" alt="" />
+                <UserRound v-else :size="17" />
+              </span>
+              <span class="profile-menu__identity-copy">
+                <small>客服名称</small>
+                <strong :title="profileServiceName">{{ profileServiceName }}</strong>
+              </span>
+            </li>
             <ElDropdownItem v-if="isAgent" command="toggle-status" :disabled="statusLoading">
               <WifiOff v-if="isAvailable" :size="16" />
               <Wifi v-else :size="16" />
@@ -87,6 +102,9 @@
   )
   const canViewSettings = computed(() => isAgent.value || canManageSettings.value)
   const profileAvatar = computed(() => agentProfile.value?.avatar || userStore.info.avatar || '')
+  const profileServiceName = computed(
+    () => agentProfile.value?.serviceName || userStore.info.userName || '客服'
+  )
   const isAvailable = computed(
     () => Boolean(agentState.value?.online) && agentState.value?.workStatus === 'AVAILABLE'
   )
@@ -131,6 +149,10 @@
     } catch {
       agentProfile.value = null
     }
+  }
+
+  function handleProfileMenuVisibility(visible: boolean) {
+    if (visible) void loadAgentProfile()
   }
 
   async function toggleStatus() {
@@ -311,6 +333,57 @@
 
   :global(.profile-menu .el-dropdown-menu__item) {
     gap: 9px;
-    min-width: 150px;
+    min-width: 170px;
+  }
+
+  :global(.profile-menu__identity) {
+    box-sizing: border-box;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    min-width: 190px;
+    padding: 10px 14px 12px;
+    list-style: none;
+    border-bottom: 1px solid #eeeeee;
+  }
+
+  :global(.profile-menu__avatar) {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    overflow: hidden;
+    color: #08ad58;
+    background: #eef8f2;
+    border-radius: 50%;
+  }
+
+  :global(.profile-menu__avatar img) {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  :global(.profile-menu__identity-copy) {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  :global(.profile-menu__identity-copy small) {
+    font-size: 11px;
+    line-height: 1;
+    color: #999;
+  }
+
+  :global(.profile-menu__identity-copy strong) {
+    max-width: 130px;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.35;
+    color: #303133;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

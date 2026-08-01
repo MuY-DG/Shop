@@ -1278,7 +1278,7 @@ public class CustomerServiceService {
                             updated_at = :now
                         where admin_user_id = :adminUserId
                         """)
-                .param("serviceName", request.serviceName().trim())
+                .param("serviceName", nullableTrimmed(request.serviceName()))
                 .param("autoAcceptEnabled", request.autoAcceptEnabled())
                 .param("autoAcceptBelow", request.autoAcceptBelow())
                 .param("autoAcceptCount", request.autoAcceptCount())
@@ -1297,7 +1297,7 @@ public class CustomerServiceService {
                                  :now, :adminUserId, :now)
                             """)
                     .param("adminUserId", adminUserId)
-                    .param("serviceName", request.serviceName().trim())
+                    .param("serviceName", nullableTrimmed(request.serviceName()))
                     .param("autoAcceptEnabled", request.autoAcceptEnabled())
                     .param("autoAcceptBelow", request.autoAcceptBelow())
                     .param("autoAcceptCount", request.autoAcceptCount())
@@ -1359,8 +1359,11 @@ public class CustomerServiceService {
 
     private PersonalSettingsResponse personalSettings(Long adminUserId) {
         return jdbcClient.sql("""
-                        select coalesce(profile.service_name_override, config.default_service_name)
+                        select coalesce(nullif(profile.service_name_override, ''), config.default_service_name)
                                    as service_name,
+                               nullif(profile.service_name_override, '') as service_name_override,
+                               config.default_service_name,
+                               config.avatar,
                                coalesce(profile.auto_accept_enabled, false) as auto_accept_enabled,
                                coalesce(profile.auto_accept_below, 5) as auto_accept_below,
                                coalesce(profile.auto_accept_count, 1) as auto_accept_count,
@@ -1379,6 +1382,9 @@ public class CustomerServiceService {
                 .param("adminUserId", adminUserId)
                 .query((rs, rowNum) -> new PersonalSettingsResponse(
                         rs.getString("service_name"),
+                        rs.getString("service_name_override"),
+                        rs.getString("default_service_name"),
+                        rs.getString("avatar"),
                         rs.getBoolean("auto_accept_enabled"),
                         rs.getInt("auto_accept_below"),
                         rs.getInt("auto_accept_count"),
@@ -2796,6 +2802,10 @@ public class CustomerServiceService {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return normalized;
+    }
+
+    private String nullableTrimmed(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     private void publish(Long conversationId, Long appUserId, String changeType, Long messageId) {
