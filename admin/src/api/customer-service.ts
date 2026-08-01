@@ -389,3 +389,76 @@ export function updateCustomerServiceManagementIdentity(
     data
   })
 }
+
+export function fetchCustomerServiceAutoReplies() {
+  return request.get<Api.CustomerService.AutoReplyConfig>({
+    url: '/admin/customer-service/auto-replies'
+  })
+}
+
+export function updateCustomerServiceAutoReplyCommon(
+  data: Api.CustomerService.AutoReplyCommonForm
+) {
+  return request.put<Api.CustomerService.AutoReplyConfig>({
+    url: '/admin/customer-service/auto-replies/common',
+    data,
+    showErrorMessage: false
+  })
+}
+
+export function updateCustomerServiceAutoReplyWelcome(
+  data: Api.CustomerService.AutoReplyContentForm
+) {
+  return request.put<Api.CustomerService.AutoReplyConfig>({
+    url: '/admin/customer-service/auto-replies/welcome',
+    data,
+    showErrorMessage: false
+  })
+}
+
+export function updateCustomerServiceAutoReplyOffline(
+  data: Api.CustomerService.AutoReplyOfflineForm
+) {
+  return request.put<Api.CustomerService.AutoReplyConfig>({
+    url: '/admin/customer-service/auto-replies/offline',
+    data,
+    showErrorMessage: false
+  })
+}
+
+export function updateCustomerServiceAutoReplySmart(data: Api.CustomerService.AutoReplySmartForm) {
+  return request.put<Api.CustomerService.AutoReplyConfig>({
+    url: '/admin/customer-service/auto-replies/smart',
+    data,
+    showErrorMessage: false
+  })
+}
+
+export function fetchCustomerServiceQuickReplies() {
+  return request.get<Api.CustomerService.QuickReplyLibrary>({
+    url: '/admin/customer-service/quick-replies'
+  })
+}
+
+export function createCustomerServiceQuickReply(data: Api.CustomerService.QuickReplyCreateForm) {
+  return request.post<Api.CustomerService.QuickReplyItem>({
+    url: '/admin/customer-service/quick-replies',
+    data
+  })
+}
+
+export function updateCustomerServiceQuickReply(
+  replyId: string,
+  data: Api.CustomerService.QuickReplyUpdateForm
+) {
+  return request.put<Api.CustomerService.QuickReplyItem>({
+    url: `/admin/customer-service/quick-replies/${encodeURIComponent(replyId)}`,
+    data
+  })
+}
+
+export function deleteCustomerServiceQuickReply(replyId: string) {
+  return request.del<void>({
+    url: `/admin/customer-service/quick-replies/${encodeURIComponent(replyId)}`
+  })
+}

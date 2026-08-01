@@ -194,7 +194,105 @@ class CustomerServiceSchemaTest {
                           and p.auth_mark like 'customer-service:%'
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(8);
+                .single()).isEqualTo(11);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.tables
+                        where table_name in (
+                          'customer_service_auto_reply_config',
+                          'customer_service_common_question',
+                          'customer_service_smart_reply_group',
+                          'customer_service_smart_reply_question',
+                          'customer_service_quick_reply_group',
+                          'customer_service_quick_reply',
+                          'customer_service_offline_reply_state'
+                        )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(7);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where (table_name = 'customer_service_agent_profile'
+                               and column_name = 'welcome_message')
+                           or (table_name = 'customer_service_message'
+                               and column_name = 'automation_key')
+                           or (table_name = 'customer_service_auto_reply_config'
+                               and column_name = 'revision')
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(3);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.indexes
+                        where index_name = 'uk_customer_service_message_automation'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission
+                        where auth_mark in (
+                          'customer-service:auto-reply:read',
+                          'customer-service:auto-reply:welcome:update',
+                          'customer-service:auto-reply:update',
+                          'customer-service:quick-reply:read',
+                          'customer-service:quick-reply:update'
+                        )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(5);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission role_permission
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        join admin_permission permission_item
+                          on permission_item.id = role_permission.permission_id
+                        where role_item.code in (
+                                'R_CUSTOMER_SERVICE',
+                                'R_CUSTOMER_SERVICE_MANAGER',
+                                'R_SUPER'
+                              )
+                          and permission_item.auth_mark in (
+                                'customer-service:auto-reply:read',
+                                'customer-service:quick-reply:read'
+                              )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(6);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission role_permission
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        join admin_permission permission_item
+                          on permission_item.id = role_permission.permission_id
+                        where role_item.code = 'R_CUSTOMER_SERVICE'
+                          and permission_item.auth_mark =
+                                'customer-service:auto-reply:welcome:update'
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission role_permission
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        join admin_permission permission_item
+                          on permission_item.id = role_permission.permission_id
+                        where role_item.code = 'R_CUSTOMER_SERVICE_MANAGER'
+                          and permission_item.auth_mark in (
+                                'customer-service:auto-reply:update',
+                                'customer-service:quick-reply:update'
+                              )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
 
         assertThat(jdbcClient.sql("""
                         select count(*)

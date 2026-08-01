@@ -6,12 +6,14 @@ import {
   customerServicePriceRange,
   customerServiceStatusHint,
   formatCustomerServiceMoney,
+  shouldShowCustomerServiceCommonQuestions,
   type CustomerServiceEntryContext
 } from "../../../features/customer-service";
 import { getCartItems } from "../../../services/cart";
 import {
   downloadCustomerServiceImage,
   downloadCustomerServiceOriginalImage,
+  getCustomerServiceCommonQuestions,
   getCustomerServiceConversation,
   getCustomerServiceOrderCandidates,
   openCustomerServiceConversation,
@@ -31,6 +33,7 @@ import {
 import { getSessionState } from "../../../services/session";
 import type {
   CustomerServiceConversation,
+  CustomerServiceCommonQuestion,
   CustomerServiceMessage,
   CustomerServiceOrder
 } from "../../../types/customer-service";
@@ -52,6 +55,7 @@ interface DatasetEvent {
   currentTarget: {
     dataset: {
       id?: number | string;
+      question?: string;
       source?: "browse" | "favorite" | "cart";
     };
   };
@@ -118,6 +122,7 @@ let pageActive = false;
 let initialized = false;
 let initializeGeneration = 0;
 let refreshRunning = false;
+let refreshQueued = false;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let unsubscribeRealtime: (() => void) | null = null;
 let unsubscribeRealtimeState: (() => void) | null = null;
@@ -125,6 +130,8 @@ let imageObserver: WechatMiniprogram.IntersectionObserver | null = null;
 let entryContext: CustomerServiceEntryContext = { contextType: "GENERAL" };
 let nextPendingMessageId = -1;
 let localMutationCount = 0;
+let conversationMutationEpoch = 0;
+let commonQuestionQueued = false;
 let pendingRealtimeChangeWithoutMessage = false;
 
 function cleanText(value: unknown): string {
@@ -201,7 +208,7 @@ function messageViews(messages: CustomerServiceMessage[]): MessageView[] {
       messageId: message.messageId,
       senderType: message.senderType,
       isMine: message.senderType === "APP_USER",
-      isSystem: message.senderType === "SYSTEM" || message.messageType === "SYSTEM",
+      isSystem: message.messageType === "SYSTEM",
       senderName: cleanText(message.senderName) || "在线客服",
       senderAvatar: avatar,
       avatarText: (cleanText(message.senderName) || "客服").slice(0, 1),
@@ -293,6 +300,9 @@ Page({
     statusHint: "发送消息后，客服会尽快接待",
     contextPreview: "",
     messages: [] as MessageView[],
+    commonQuestions: [] as CustomerServiceCommonQuestion[],
+    showCommonQuestions: false,
+    commonQuestionSending: false,
     scrollTarget: "",
     inputValue: "",
     uploading: false,
@@ -311,10 +321,13 @@ Page({
     pageActive = true;
     initialized = false;
     refreshRunning = false;
+    refreshQueued = false;
     entryContext = customerServiceEntryContext(options.contextType, options.contextId);
     initializeGeneration += 1;
     nextPendingMessageId = -1;
     localMutationCount = 0;
+    conversationMutationEpoch = 0;
+    commonQuestionQueued = false;
     pendingRealtimeChangeWithoutMessage = false;
     imageTempPaths.clear();
     originalImageTempPaths.clear();
@@ -367,6 +380,7 @@ Page({
     locallyHandledMessageIds.clear();
     pendingRealtimeMessageIds.clear();
     localMutationCount = 0;
+    commonQuestionQueued = false;
     pendingRealtimeChangeWithoutMessage = false;
   },
 
@@ -385,6 +399,7 @@ Page({
       this.applyConversation(conversation);
       this.setData({ loading: false, loaded: true, errorText: "" });
       this.startLiveUpdates();
+      void this.loadCommonQuestions(generation);
     } catch (error) {
       if (pageActive && generation === initializeGeneration) {
         this.setData({
@@ -393,6 +408,25 @@ Page({
           errorText: errorMessage(error, "客服会话加载失败，请稍后重试")
         });
       }
+    }
+  },
+
+  async loadCommonQuestions(generation: number) {
+    try {
+      const commonQuestions = await getCustomerServiceCommonQuestions();
+      if (!pageActive || generation !== initializeGeneration) {
+        return;
+      }
+      this.setData({
+        commonQuestions,
+        showCommonQuestions: shouldShowCustomerServiceCommonQuestions(
+          this.data.conversationStatus as CustomerServiceConversation["status"],
+          commonQuestions.length,
+          pendingTextViews.size > 0
+        )
+      });
+    } catch {
+      // 常见问题是增强能力，加载失败不阻塞会话本身。
     }
   },
 
@@ -445,16 +479,25 @@ Page({
   },
 
   async refreshConversation(silent: boolean) {
-    if (!pageActive || refreshRunning) {
+    if (!pageActive) {
+      return;
+    }
+    if (refreshRunning) {
+      refreshQueued = true;
       return;
     }
     refreshRunning = true;
+    const mutationEpoch = conversationMutationEpoch;
     if (!silent) {
       this.setData({ loading: !this.data.loaded, errorText: "" });
     }
     try {
       const conversation = await getCustomerServiceConversation();
-      if (!pageActive || !conversation) {
+      if (
+        !pageActive ||
+        !conversation ||
+        mutationEpoch !== conversationMutationEpoch
+      ) {
         return;
       }
       this.applyConversation(conversation);
@@ -468,6 +511,10 @@ Page({
       }
     } finally {
       refreshRunning = false;
+      if (refreshQueued && pageActive) {
+        refreshQueued = false;
+        void this.refreshConversation(true);
+      }
     }
   },
 
@@ -512,6 +559,11 @@ Page({
         ),
         contextPreview,
         messages: views,
+        showCommonQuestions: shouldShowCustomerServiceCommonQuestions(
+          conversation.status,
+          this.data.commonQuestions.length,
+          pendingTextViews.size > 0
+        ),
         scrollTarget: views.length ? `message-${views[views.length - 1].messageId}` : ""
       },
       () => {
@@ -603,8 +655,24 @@ Page({
     void this.sendText();
   },
 
+  onCommonQuestionTap(event: DatasetEvent) {
+    if (commonQuestionQueued) {
+      return;
+    }
+    const question = cleanText(event.currentTarget.dataset.question);
+    if (question) {
+      commonQuestionQueued = true;
+      this.setData({ commonQuestionSending: true });
+      this.queueText(question, false);
+    }
+  },
+
   sendText() {
-    const content = this.data.inputValue.trim();
+    this.queueText(this.data.inputValue);
+  },
+
+  queueText(value: string, clearInput = true) {
+    const content = value.trim();
     if (!content) {
       return;
     }
@@ -626,8 +694,9 @@ Page({
     pendingTextViews.set(messageId, pendingView);
     const messages = [...this.data.messages, pendingView];
     this.setData({
-      inputValue: "",
+      inputValue: clearInput ? "" : this.data.inputValue,
       panelMode: "",
+      showCommonQuestions: false,
       messages,
       scrollTarget: `message-${messageId}`
     });
@@ -654,6 +723,9 @@ Page({
       pendingTextMessages.delete(messageId);
       pendingTextViews.delete(messageId);
       this.appendLocallySentMessage(message, messageId);
+      // 自动回复与用户消息分别持久化；发送完成后拉取一次权威会话，
+      // 即使实时事件短暂丢失，也能立即拿到 FAQ / 智能 / 离线回复。
+      pendingRealtimeChangeWithoutMessage = true;
     } catch {
       const failedView = pendingTextViews.get(messageId);
       if (failedView) {
@@ -765,6 +837,7 @@ Page({
       this.setData({
         uploading: true,
         panelMode: "",
+        showCommonQuestions: false,
         messages: nextMessages,
         scrollTarget: `message-${pendingUploads[pendingUploads.length - 1].messageId}`
       });
@@ -941,6 +1014,7 @@ Page({
     ) {
       return;
     }
+    this.setData({ showCommonQuestions: false });
     void this.sendCandidate(id, this.data.pickerKind);
   },
 
@@ -1004,6 +1078,7 @@ Page({
 
   beginLocalMutation() {
     localMutationCount += 1;
+    conversationMutationEpoch += 1;
   },
 
   endLocalMutation() {

@@ -2,6 +2,7 @@ import { API_ENDPOINTS } from "../constants/api-endpoints";
 import { isPersistedCustomerServiceMessageId } from "../features/customer-service";
 import type {
   CustomerServiceConversation,
+  CustomerServiceCommonQuestion,
   CustomerServiceImage,
   CustomerServiceMessage,
   CustomerServiceOpenRequest,
@@ -39,6 +40,13 @@ export function openCustomerServiceConversation(
 export function getCustomerServiceConversation(): Promise<CustomerServiceConversation | null> {
   return request<CustomerServiceConversation | null>({
     url: API_ENDPOINTS.customerService.conversation,
+    method: "GET"
+  });
+}
+
+export function getCustomerServiceCommonQuestions(): Promise<CustomerServiceCommonQuestion[]> {
+  return request<CustomerServiceCommonQuestion[]>({
+    url: API_ENDPOINTS.customerService.commonQuestions,
     method: "GET"
   });
 }

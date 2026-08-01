@@ -1,7 +1,7 @@
 declare namespace Api {
   namespace CustomerService {
     type ConversationStatus = 'DRAFT' | 'WAITING' | 'ACTIVE' | 'CLOSED'
-    type SenderType = 'APP_USER' | 'ADMIN' | 'SYSTEM'
+    type SenderType = 'APP_USER' | 'ADMIN' | 'SYSTEM' | 'BOT' | 'AUTO_REPLY'
     type ContextType = 'GENERAL' | 'PRODUCT' | 'ORDER'
     type AgentWorkStatus = 'OFFLINE' | 'AVAILABLE' | 'BUSY'
     type TransferRequestStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'TIMEOUT' | 'CANCELLED'
@@ -28,7 +28,7 @@ declare namespace Api {
       senderId: string | null
       senderName: string
       senderAvatar: string
-      messageType: 'TEXT' | 'IMAGE' | 'ORDER_CARD' | 'PRODUCT_CARD' | 'SYSTEM'
+      messageType: 'TEXT' | 'IMAGE' | 'ORDER_CARD' | 'PRODUCT_CARD' | 'SYSTEM' | 'AUTO_REPLY'
       content: string
       resourceId: number | null
       order: LinkedOrder | null
@@ -232,6 +232,79 @@ declare namespace Api {
     interface ManagementIdentityForm {
       defaultServiceName: string
       avatarFileId: number | null
+    }
+
+    interface AutoReplyCommonQuestion {
+      questionId?: string | null
+      question: string
+      answer: string
+      enabled: boolean
+      sortOrder: number
+    }
+
+    interface AutoReplySmartReply {
+      replyId?: string | null
+      name: string
+      questions: string[]
+      reply: string
+      enabled: boolean
+      sortOrder: number
+    }
+
+    interface AutoReplyConfig {
+      revision: number
+      openingMessage: string
+      welcomeMessage: string
+      offlineMessage: string
+      commonQuestions: AutoReplyCommonQuestion[]
+      smartReplies: AutoReplySmartReply[]
+    }
+
+    interface AutoReplyCommonForm {
+      revision: number
+      openingMessage: string
+      commonQuestions: AutoReplyCommonQuestion[]
+    }
+
+    interface AutoReplyContentForm {
+      content: string
+    }
+
+    interface AutoReplyOfflineForm {
+      revision: number
+      content: string
+    }
+
+    interface AutoReplySmartForm {
+      revision: number
+      smartReplies: AutoReplySmartReply[]
+    }
+
+    interface QuickReplyItem {
+      replyId: string
+      content: string
+      sortOrder: number
+    }
+
+    interface QuickReplyGroup {
+      groupId: string
+      name: string
+      sortOrder: number
+      replies: QuickReplyItem[]
+    }
+
+    interface QuickReplyLibrary {
+      groups: QuickReplyGroup[]
+    }
+
+    interface QuickReplyCreateForm {
+      groupId: string
+      content: string
+    }
+
+    interface QuickReplyUpdateForm {
+      content: string
+      sortOrder: number
     }
   }
 

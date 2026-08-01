@@ -82,6 +82,7 @@ public class CustomerServiceService {
     private final StorageService storageService;
     private final DirectUploadService directUploadService;
     private final RealtimeSessionHub realtimeSessionHub;
+    private final CustomerServiceReplyService replyService;
     private final TransactionTemplate requiresNewTransaction;
     private final TransactionTemplate withoutTransaction;
 
@@ -92,6 +93,7 @@ public class CustomerServiceService {
             StorageService storageService,
             DirectUploadService directUploadService,
             RealtimeSessionHub realtimeSessionHub,
+            CustomerServiceReplyService replyService,
             PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
@@ -100,6 +102,7 @@ public class CustomerServiceService {
         this.storageService = storageService;
         this.directUploadService = directUploadService;
         this.realtimeSessionHub = realtimeSessionHub;
+        this.replyService = replyService;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.withoutTransaction = new TransactionTemplate(transactionManager);
@@ -121,6 +124,12 @@ public class CustomerServiceService {
         }
         if ("DRAFT".equals(conversation.status())) {
             replaceDraftContext(conversation, context, appUserId);
+            notifyAutomationMessage(
+                    conversation,
+                    replyService.openingMessage(
+                            conversation.id(), conversation.consultationNo()),
+                    "AUTO_REPLY_OPENING"
+            );
             return detailForApp(conversation.id(), appUserId);
         }
         if ("ORDER".equals(context.type())) {
@@ -184,6 +193,17 @@ public class CustomerServiceService {
         );
         touchForAdminNotification(conversation.id(), message.createdAt());
         publish(conversation.id(), appUserId, "MESSAGE_CREATED", message.messageId());
+        notifyAutomationMessage(
+                conversation,
+                replyService.replyToUserText(
+                        conversation.id(),
+                        conversation.consultationNo(),
+                        appUserId,
+                        message.messageId(),
+                        message.content()
+                ),
+                "AUTO_REPLY_CREATED"
+        );
         return message;
     }
 
@@ -407,6 +427,16 @@ public class CustomerServiceService {
         );
         touchForAppNotification(conversationId, systemMessage.createdAt());
         publish(conversationId, conversation.appUserId(), "CONVERSATION_CLAIMED", systemMessage.messageId());
+        notifyAutomationMessage(
+                conversation,
+                replyService.welcomeMessage(
+                        conversationId,
+                        conversation.consultationNo(),
+                        adminUserId,
+                        systemMessage.messageId()
+                ),
+                "AUTO_REPLY_WELCOME"
+        );
         return detail(conversationId);
     }
 
@@ -539,6 +569,16 @@ public class CustomerServiceService {
         publish(
                 request.conversationId(), conversation.appUserId(),
                 "CONVERSATION_TRANSFERRED", systemMessage.messageId()
+        );
+        notifyAutomationMessage(
+                conversation,
+                replyService.welcomeMessage(
+                        request.conversationId(),
+                        conversation.consultationNo(),
+                        adminUserId,
+                        systemMessage.messageId()
+                ),
+                "AUTO_REPLY_WELCOME"
         );
         publishTransfer(requireTransferRequest(requestId), "ACCEPTED");
         return detail(request.conversationId());
@@ -674,6 +714,16 @@ public class CustomerServiceService {
         );
         touchForAppNotification(conversationId, systemMessage.createdAt());
         publish(conversationId, conversation.appUserId(), "CONVERSATION_TRANSFERRED", systemMessage.messageId());
+        notifyAutomationMessage(
+                conversation,
+                replyService.welcomeMessage(
+                        conversationId,
+                        conversation.consultationNo(),
+                        targetAdminUserId,
+                        systemMessage.messageId()
+                ),
+                "AUTO_REPLY_WELCOME"
+        );
         publishTransfer(requireTransferRequest(auditRequestId), "FORCED");
         return detail(conversationId);
     }
@@ -995,6 +1045,7 @@ public class CustomerServiceService {
                         new CustomerServiceImageThumbnailRequestedEvent(asset.id()));
                 touchForAdminNotification(conversation.id(), message.createdAt());
                 publish(conversation.id(), appUserId, "MESSAGE_CREATED", message.messageId());
+                notifyOfflineReplyForAppMessage(conversation, appUserId, message);
                 return message;
             }));
         }));
@@ -1067,6 +1118,7 @@ public class CustomerServiceService {
                             "MESSAGE_CREATED",
                             message.messageId()
                     );
+                    notifyOfflineReplyForAppMessage(conversation, appUserId, message);
                     return new DirectUploadService.BusinessOutcome<>(
                             message.messageId(), message);
                 }
@@ -1590,6 +1642,9 @@ public class CustomerServiceService {
                     "订单 " + order.orderNo(), orderId, null
             );
             touchForRecipient(conversation.id(), addedByType, message.createdAt());
+            if ("APP_USER".equals(addedByType)) {
+                notifyOfflineReplyForAppMessage(conversation, addedById, message);
+            }
         }
         return order;
     }
@@ -1614,6 +1669,9 @@ public class CustomerServiceService {
                     product.title(), productId, null
             );
             touchForRecipient(conversation.id(), addedByType, message.createdAt());
+            if ("APP_USER".equals(addedByType)) {
+                notifyOfflineReplyForAppMessage(conversation, addedById, message);
+            }
         }
         return product;
     }
@@ -1796,6 +1854,7 @@ public class CustomerServiceService {
         }
         if (message != null) {
             touchForAdminNotification(conversation.id(), message.createdAt());
+            notifyOfflineReplyForAppMessage(conversation, appUserId, message);
         }
         drainWaitingQueue(null);
     }
@@ -2137,6 +2196,16 @@ public class CustomerServiceService {
                 conversation.appUserId(),
                 "CONVERSATION_AUTO_ASSIGNED",
                 systemMessage.messageId()
+        );
+        notifyAutomationMessage(
+                conversation,
+                replyService.welcomeMessage(
+                        conversation.id(),
+                        conversation.consultationNo(),
+                        candidate.adminUserId(),
+                        systemMessage.messageId()
+                ),
+                "AUTO_REPLY_WELCOME"
         );
         return true;
     }
@@ -2496,6 +2565,19 @@ public class CustomerServiceService {
                 .update();
     }
 
+    private void touchForBotNotification(Long conversationId, LocalDateTime at) {
+        jdbcClient.sql("""
+                        update customer_service_conversation
+                        set last_message_at = :at,
+                            app_unread_count = app_unread_count + 1,
+                            updated_at = :at
+                        where id = :conversationId
+                        """)
+                .param("at", at)
+                .param("conversationId", conversationId)
+                .update();
+    }
+
     private void touchForAdminNotification(Long conversationId, LocalDateTime at) {
         jdbcClient.sql("""
                         update customer_service_conversation
@@ -2814,6 +2896,35 @@ public class CustomerServiceService {
         ));
     }
 
+    private void notifyAutomationMessage(
+            ConversationRow conversation,
+            CustomerServiceReplyService.AutomationMessage message,
+            String changeType
+    ) {
+        if (message == null) {
+            return;
+        }
+        touchForBotNotification(conversation.id(), message.createdAt());
+        publish(conversation.id(), conversation.appUserId(), changeType, message.messageId());
+    }
+
+    private void notifyOfflineReplyForAppMessage(
+            ConversationRow conversation,
+            Long appUserId,
+            MessageResponse sourceMessage
+    ) {
+        notifyAutomationMessage(
+                conversation,
+                replyService.replyToOfflineUserMessage(
+                        conversation.id(),
+                        conversation.consultationNo(),
+                        appUserId,
+                        sourceMessage.messageId()
+                ),
+                "AUTO_REPLY_CREATED"
+        );
+    }
+
     private void publishTransfer(TransferRequestResponse request, String changeType) {
         eventPublisher.publishEvent(new CustomerServiceTransferChangedEvent(
                 request.requestId(),
@@ -2856,11 +2967,12 @@ public class CustomerServiceService {
                          when m.sender_type = 'APP_USER' then coalesce(app.nickname, '用户')
                          when m.sender_type = 'ADMIN'
                            then coalesce(agent_profile.service_name_override, service_config.default_service_name)
+                         when m.sender_type = 'BOT' then service_config.default_service_name
                          else '系统'
                        end as sender_name,
                        case
                          when m.sender_type = 'APP_USER' then coalesce(app.avatar_url, '')
-                         when m.sender_type = 'ADMIN' then service_config.avatar
+                         when m.sender_type in ('ADMIN', 'BOT') then service_config.avatar
                          else ''
                        end as sender_avatar,
                        m.message_type, m.content, m.resource_id, m.client_message_id, m.created_at,

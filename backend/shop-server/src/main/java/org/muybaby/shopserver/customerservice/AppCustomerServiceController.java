@@ -9,6 +9,8 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedProd
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.MessageResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.OpenConversationRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.SendMessageRequest;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.CommonQuestionSummaryResponse;
+import org.muybaby.shopserver.customerservice.service.CustomerServiceReplyService;
 import org.muybaby.shopserver.customerservice.service.CustomerServiceService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,9 +34,14 @@ import java.util.List;
 public class AppCustomerServiceController {
 
     private final CustomerServiceService customerServiceService;
+    private final CustomerServiceReplyService replyService;
 
-    public AppCustomerServiceController(CustomerServiceService customerServiceService) {
+    public AppCustomerServiceController(
+            CustomerServiceService customerServiceService,
+            CustomerServiceReplyService replyService
+    ) {
         this.customerServiceService = customerServiceService;
+        this.replyService = replyService;
     }
 
     @GetMapping
@@ -42,6 +49,11 @@ public class AppCustomerServiceController {
             @AuthenticationPrincipal AuthenticatedPrincipal principal
     ) {
         return ApiResponse.success(customerServiceService.currentForApp(principal));
+    }
+
+    @GetMapping("/common-questions")
+    public ApiResponse<List<CommonQuestionSummaryResponse>> commonQuestions() {
+        return ApiResponse.success(replyService.enabledCommonQuestions());
     }
 
     @PostMapping("/open")

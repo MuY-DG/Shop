@@ -6,6 +6,7 @@
         :key="item.key"
         type="button"
         :class="{ active: activeSection === item.key }"
+        :disabled="saving"
         @click="selectSection(item.key)"
       >
         <component :is="item.icon" :size="17" />
@@ -19,7 +20,13 @@
           <h1>{{ currentSection.label }}</h1>
           <p v-if="currentSection.description">{{ currentSection.description }}</p>
         </div>
-        <button type="button" class="save-button" :disabled="saving || loading" @click="save">
+        <button
+          v-if="showSaveButton"
+          type="button"
+          class="save-button"
+          :disabled="saving || loading"
+          @click="save"
+        >
           <LoaderCircle v-if="saving" class="spin" :size="16" />
           <Save v-else :size="16" />
           保存
@@ -71,6 +78,20 @@
             </div>
           </div>
         </template>
+
+        <AutoReplySettings
+          v-else-if="activeSection === 'auto-reply'"
+          ref="autoReplyRef"
+          v-model:active-tab="autoReplyActiveTab"
+          :can-update="canUpdateAutoReply"
+          :can-update-welcome="canUpdateAutoReplyWelcome"
+          :saving="saving"
+        />
+
+        <QuickReplySettings
+          v-else-if="activeSection === 'quick-reply'"
+          :can-update="canUpdateQuickReply"
+        />
 
         <template v-else-if="activeSection === 'routing'">
           <div class="priority-note">
@@ -268,6 +289,7 @@
   import { computed, onMounted, reactive, ref, watch } from 'vue'
   import { ElMessage } from 'element-plus'
   import {
+    Bot,
     ChartNoAxesColumnIncreasing,
     GitBranch,
     Headset,
@@ -276,6 +298,7 @@
     MessagesSquare,
     Save,
     Scale,
+    TextQuote,
     UserRoundCog,
     Waypoints,
     Zap
@@ -283,6 +306,7 @@
   import { useRoute, useRouter } from 'vue-router'
   import AssetPicker from '@/components/business/asset-picker/index.vue'
   import CsSwitch from '@/components/customer-ui/CsSwitch.vue'
+  import { useAuth } from '@/hooks/core/useAuth'
   import { useUserStore } from '@/store/modules/user'
   import {
     fetchCustomerServiceManagementConfig,
@@ -291,14 +315,18 @@
     updateCustomerServiceManagementRouting,
     updateCustomerServicePersonalSettings
   } from '@/api/customer-service'
+  import AutoReplySettings from './components/AutoReplySettings.vue'
+  import QuickReplySettings from './components/QuickReplySettings.vue'
 
   defineOptions({ name: 'CustomerServiceSettings' })
 
-  type SectionKey = 'automatic' | 'routing' | 'identity'
+  type SectionKey = 'automatic' | 'auto-reply' | 'quick-reply' | 'routing' | 'identity'
+  type AutoReplyTab = 'common' | 'welcome' | 'offline' | 'smart'
 
   const route = useRoute()
   const router = useRouter()
   const userStore = useUserStore()
+  const { hasAuth } = useAuth()
   const roles = computed(() => userStore.info.roles || [])
   const hasPersonalSettings = computed(() => roles.value.includes('R_CUSTOMER_SERVICE'))
   const canManageRouting = computed(
@@ -306,6 +334,13 @@
   )
   const canManageIdentity = computed(() => roles.value.includes('R_CUSTOMER_SERVICE_MANAGER'))
   const canReadManagementConfig = computed(() => canManageRouting.value || canManageIdentity.value)
+  const canReadAutoReply = computed(() => hasAuth('customer-service:auto-reply:read'))
+  const canUpdateAutoReplyWelcome = computed(
+    () => hasPersonalSettings.value && hasAuth('customer-service:auto-reply:welcome:update')
+  )
+  const canUpdateAutoReply = computed(() => hasAuth('customer-service:auto-reply:update'))
+  const canReadQuickReply = computed(() => hasAuth('customer-service:quick-reply:read'))
+  const canUpdateQuickReply = computed(() => hasAuth('customer-service:quick-reply:update'))
 
   const allSettingItems = {
     automatic: {
@@ -313,6 +348,18 @@
       label: '自动接入',
       description: '控制自己的自动接入规则。',
       icon: Zap
+    },
+    'auto-reply': {
+      key: 'auto-reply' as const,
+      label: '自动回复',
+      description: '公共自动回复由客服管理员维护；客服可编辑自己的接入欢迎语。',
+      icon: Bot
+    },
+    'quick-reply': {
+      key: 'quick-reply' as const,
+      label: '快捷回复',
+      description: '维护全体客服共用的常见短语。',
+      icon: TextQuote
     },
     routing: {
       key: 'routing' as const,
@@ -330,6 +377,8 @@
   const settingItems = computed(() => {
     const items = []
     if (hasPersonalSettings.value) items.push(allSettingItems.automatic)
+    if (canReadAutoReply.value) items.push(allSettingItems['auto-reply'])
+    if (canReadQuickReply.value) items.push(allSettingItems['quick-reply'])
     if (canManageRouting.value) items.push(allSettingItems.routing)
     if (hasPersonalSettings.value || canManageIdentity.value) items.push(allSettingItems.identity)
     return items
@@ -344,6 +393,18 @@
 
   const loading = ref(true)
   const saving = ref(false)
+  const autoReplyRef = ref<InstanceType<typeof AutoReplySettings> | null>(null)
+  const autoReplyActiveTab = ref<AutoReplyTab>('common')
+  const canUpdateCurrentAutoReply = computed(() =>
+    autoReplyActiveTab.value === 'welcome'
+      ? canUpdateAutoReplyWelcome.value
+      : canUpdateAutoReply.value
+  )
+  const showSaveButton = computed(
+    () =>
+      activeSection.value !== 'quick-reply' &&
+      (activeSection.value !== 'auto-reply' || canUpdateCurrentAutoReply.value)
+  )
   const personalActiveConversationCount = ref(0)
   const personalForm = reactive<Api.CustomerService.PersonalSettingsForm>({
     serviceName: null,
@@ -407,7 +468,12 @@
   ]
 
   function normalizeSection(value: unknown): SectionKey {
-    return value === 'routing' || value === 'identity' ? value : 'automatic'
+    return value === 'auto-reply' ||
+      value === 'quick-reply' ||
+      value === 'routing' ||
+      value === 'identity'
+      ? value
+      : 'automatic'
   }
 
   function resolveAvailableSection(value: unknown): SectionKey {
@@ -417,6 +483,7 @@
   }
 
   function selectSection(section: SectionKey) {
+    if (saving.value) return
     activeSection.value = section
     void router.replace({ path: route.path, query: { ...route.query, section } })
   }
@@ -573,7 +640,9 @@
     try {
       let saved = false
       if (activeSection.value === 'automatic') saved = await savePersonalSettings()
-      else if (activeSection.value === 'routing') saved = await saveRoutingSettings()
+      else if (activeSection.value === 'auto-reply') {
+        saved = Boolean(await autoReplyRef.value?.save())
+      } else if (activeSection.value === 'routing') saved = await saveRoutingSettings()
       else saved = await saveIdentitySettings()
       if (saved) ElMessage.success('设置已保存')
     } finally {
@@ -653,6 +722,11 @@
   .settings-sidebar button.active {
     font-weight: 650;
     color: #0abd61;
+  }
+
+  .settings-sidebar button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
   }
 
   .settings-content {
@@ -1088,8 +1162,8 @@
   }
 
   .personal-info-control {
-    max-width: 600px;
     min-width: 0;
+    max-width: 600px;
   }
 
   .personal-info-control .form-field {

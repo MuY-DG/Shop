@@ -217,8 +217,11 @@
               >
                 {{ formatMessageTime(message.createdAt) }}
               </div>
-              <div class="message-row" :class="`is-${message.senderType.toLowerCase()}`">
-                <div v-if="message.senderType === 'SYSTEM'" class="system-message">
+              <div class="message-row" :class="messageRowClass(message)">
+                <div
+                  v-if="message.senderType === 'SYSTEM' && message.messageType !== 'AUTO_REPLY'"
+                  class="system-message"
+                >
                   {{ message.content }}
                 </div>
                 <template v-else-if="message.messageType === 'IMAGE'">
@@ -313,6 +316,47 @@
             accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
             @change="handleImageSelected"
           />
+          <ElPopover
+            v-if="canReadQuickReplies"
+            v-model:visible="quickReplyVisible"
+            placement="top-start"
+            trigger="click"
+            :width="380"
+            popper-class="customer-quick-reply-popper"
+            @show="loadQuickReplies"
+          >
+            <template #reference>
+              <ElButton :disabled="!canSend"> <MessagesSquare :size="15" />快捷回复 </ElButton>
+            </template>
+            <div class="customer-quick-reply-panel">
+              <div class="customer-quick-reply-panel__heading">
+                <div>
+                  <strong>快捷回复</strong>
+                  <span>点击后写入输入框，不会直接发送</span>
+                </div>
+                <LoaderCircle v-if="quickRepliesLoading" :size="16" class="quick-reply-spin" />
+              </div>
+              <div v-if="quickRepliesLoading && !quickReplyGroups.length" class="quick-reply-empty">
+                正在加载常见短语…
+              </div>
+              <div v-else-if="quickReplyGroups.length" class="customer-quick-reply-groups">
+                <section v-for="group in quickReplyGroups" :key="group.groupId">
+                  <div class="customer-quick-reply-group-name">{{ group.name || '默认分组' }}</div>
+                  <button
+                    v-for="reply in group.replies"
+                    :key="reply.replyId"
+                    type="button"
+                    @click="applyQuickReply(reply.content)"
+                  >
+                    {{ reply.content }}
+                  </button>
+                </section>
+              </div>
+              <div v-else class="quick-reply-empty">
+                {{ quickRepliesError || '暂无快捷回复' }}
+              </div>
+            </div>
+          </ElPopover>
           <ElButton
             v-auth="'customer-service:message:send'"
             :disabled="!uploadingImage && !canSend"
@@ -615,7 +659,7 @@
     ref,
     type ComponentPublicInstance
   } from 'vue'
-  import { ElLoading, ElMessageBox } from 'element-plus'
+  import { ElLoading, ElMessage, ElMessageBox } from 'element-plus'
   import {
     ArrowRightLeft,
     ChevronDown,
@@ -623,6 +667,7 @@
     CircleX,
     Image as ImageIcon,
     LoaderCircle,
+    MessagesSquare,
     PackageSearch,
     RotateCcw,
     ShoppingBag,
@@ -644,6 +689,7 @@
     fetchCustomerServiceThumbnail,
     fetchCustomerServiceOrderCandidates,
     fetchCustomerServiceProductCandidates,
+    fetchCustomerServiceQuickReplies,
     fetchPendingCustomerServiceTransfers,
     forceTransferCustomerServiceConversation,
     linkCustomerServiceOrder,
@@ -675,6 +721,7 @@
   const router = useRouter()
   const userStore = useUserStore()
   const { hasAuth } = useAuth()
+  const canReadQuickReplies = computed(() => hasAuth('customer-service:quick-reply:read'))
   const agentState = defineModel<Api.CustomerService.AgentState | null>('agentState', {
     default: null
   })
@@ -700,6 +747,10 @@
   const uploadingImage = ref(false)
   const imageUploadPercent = ref(0)
   const messageDraft = ref('')
+  const quickReplyVisible = ref(false)
+  const quickRepliesLoading = ref(false)
+  const quickRepliesError = ref('')
+  const quickReplyGroups = ref<Api.CustomerService.QuickReplyGroup[]>([])
   const messageListRef = ref<HTMLElement | null>(null)
   const imageInputRef = ref<HTMLInputElement | null>(null)
   const imageUrls = ref<Record<number, string>>({})
@@ -755,6 +806,7 @@
   let initialLoadComplete = false
   let pageMounted = false
   let previewRequestSequence = 0
+  let quickReplyLoadSequence = 0
   let previewLoadingInstance: ReturnType<typeof ElLoading.service> | null = null
   let imageUploadAbortController: AbortController | null = null
   const pendingRealtimeMessages = new Map<number, Set<number>>()
@@ -1523,6 +1575,48 @@
       })
     }
     void deliverPendingText(pendingMessageId)
+  }
+
+  const loadQuickReplies = async () => {
+    const sequence = ++quickReplyLoadSequence
+    quickRepliesLoading.value = true
+    quickRepliesError.value = ''
+    try {
+      const library = await fetchCustomerServiceQuickReplies()
+      if (sequence !== quickReplyLoadSequence) return
+      quickReplyGroups.value = (library.groups || [])
+        .map((group) => ({
+          ...group,
+          replies: [...(group.replies || [])].sort(
+            (left, right) => left.sortOrder - right.sortOrder
+          )
+        }))
+        .sort((left, right) => left.sortOrder - right.sortOrder)
+    } catch {
+      if (sequence === quickReplyLoadSequence)
+        quickRepliesError.value = '快捷回复加载失败，请重新打开'
+    } finally {
+      if (sequence === quickReplyLoadSequence) quickRepliesLoading.value = false
+    }
+  }
+
+  const applyQuickReply = (content: string) => {
+    const phrase = content.trim()
+    if (!phrase || !canSend.value) return
+    const draft = messageDraft.value.trimEnd()
+    const nextDraft = draft ? `${draft}\n${phrase}` : phrase
+    if (nextDraft.length > 2000) {
+      ElMessage.warning('加入快捷回复后将超过 2000 字，请先精简当前输入内容')
+      return
+    }
+    messageDraft.value = nextDraft
+    quickReplyVisible.value = false
+  }
+
+  const messageRowClass = (message: Api.CustomerService.Message) => {
+    if (message.senderType === 'BOT' || message.senderType === 'AUTO_REPLY') return 'is-bot'
+    if (message.messageType === 'AUTO_REPLY') return 'is-bot'
+    return `is-${message.senderType.toLowerCase()}`
   }
 
   const deliverPendingText = async (pendingMessageId: number) => {
@@ -2320,7 +2414,8 @@
     margin-bottom: 18px;
   }
 
-  .message-row.is-admin {
+  .message-row.is-admin,
+  .message-row.is-bot {
     align-items: flex-end;
   }
 
@@ -2459,7 +2554,8 @@
     white-space: nowrap;
   }
 
-  .is-admin .message-bubble {
+  .is-admin .message-bubble,
+  .is-bot .message-bubble {
     color: #fff;
     background: #2563eb;
     border-color: #2563eb;
@@ -2971,7 +3067,8 @@
     box-shadow: none;
   }
 
-  .is-admin .message-bubble {
+  .is-admin .message-bubble,
+  .is-bot .message-bubble {
     color: #126526;
     background: #8bea63;
     border: 0;
@@ -3001,6 +3098,105 @@
   .chat-tools :deep(.el-button:focus-visible:not(.is-disabled)) {
     color: #202124;
     background: #e7e7e7;
+  }
+
+  :global(.customer-quick-reply-popper) {
+    padding: 0 !important;
+    overflow: hidden;
+    border: 1px solid #dedede !important;
+    border-radius: 8px !important;
+    box-shadow: 0 12px 30px rgb(0 0 0 / 12%) !important;
+  }
+
+  :global(.customer-quick-reply-panel) {
+    max-height: 420px;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  :global(.customer-quick-reply-panel__heading) {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 16px;
+    border-bottom: 1px solid #ededed;
+  }
+
+  :global(.customer-quick-reply-panel__heading > div) {
+    display: grid;
+    gap: 3px;
+  }
+
+  :global(.customer-quick-reply-panel__heading strong) {
+    font-size: 14px;
+    color: #242424;
+  }
+
+  :global(.customer-quick-reply-panel__heading span) {
+    font-size: 11px;
+    color: #999;
+  }
+
+  :global(.customer-quick-reply-groups) {
+    max-height: 350px;
+    padding: 8px;
+    overflow-y: auto;
+  }
+
+  :global(.customer-quick-reply-group-name) {
+    padding: 8px 8px 5px;
+    font-size: 11px;
+    font-weight: 650;
+    color: #8a918d;
+  }
+
+  :global(.customer-quick-reply-groups section + section) {
+    margin-top: 5px;
+    border-top: 1px solid #f0f0f0;
+  }
+
+  :global(.customer-quick-reply-groups button) {
+    display: block;
+    width: 100%;
+    padding: 9px 10px;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 1.45;
+    color: #383838;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+  }
+
+  :global(.customer-quick-reply-groups button:hover) {
+    color: #087f43;
+    background: #edf9f2;
+  }
+
+  :global(.quick-reply-empty) {
+    display: grid;
+    place-items: center;
+    min-height: 112px;
+    padding: 16px;
+    font-size: 12px;
+    color: #999;
+    text-align: center;
+  }
+
+  :global(.quick-reply-spin) {
+    color: #0aaf59;
+    animation: quick-reply-popover-spin 0.9s linear infinite;
+  }
+
+  @keyframes quick-reply-popover-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .composer {

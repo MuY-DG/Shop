@@ -18,6 +18,7 @@ export const API_ENDPOINTS = Object.freeze({
   customerService: {
     conversation: "/app/customer-service/conversation",
     open: "/app/customer-service/conversation/open",
+    commonQuestions: "/app/customer-service/conversation/common-questions",
     messages: "/app/customer-service/conversation/messages",
     images: "/app/customer-service/conversation/images",
     imageUploads: "/app/customer-service/images/upload-sessions",

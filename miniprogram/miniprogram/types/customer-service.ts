@@ -1,8 +1,9 @@
 export type CustomerServiceContextType = "GENERAL" | "PRODUCT" | "ORDER";
 export type CustomerServiceConversationStatus = "DRAFT" | "WAITING" | "ACTIVE" | "CLOSED";
-export type CustomerServiceSenderType = "APP_USER" | "ADMIN" | "SYSTEM";
+export type CustomerServiceSenderType = "APP_USER" | "ADMIN" | "BOT" | "SYSTEM";
 export type CustomerServiceMessageType =
   | "TEXT"
+  | "AUTO_REPLY"
   | "IMAGE"
   | "ORDER_CARD"
   | "PRODUCT_CARD"
@@ -16,6 +17,11 @@ export interface CustomerServiceOpenRequest extends WechatMiniprogram.IAnyObject
 export interface CustomerServiceSendMessageRequest extends WechatMiniprogram.IAnyObject {
   content: string;
   clientMessageId: string;
+}
+
+export interface CustomerServiceCommonQuestion {
+  questionId: string;
+  question: string;
 }
 
 export interface CustomerServiceImage {

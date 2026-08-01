@@ -9,7 +9,8 @@ import {
   isPersistedCustomerServiceMessageId,
   customerServiceOrderStatusText,
   customerServicePriceRange,
-  customerServiceStatusHint
+  customerServiceStatusHint,
+  shouldShowCustomerServiceCommonQuestions
 } from "../miniprogram/features/customer-service";
 
 const sourceRoot = resolve(process.cwd(), "miniprogram");
@@ -47,6 +48,14 @@ test("客服会话状态、订单状态和商品价格生成稳定文案", () =>
   assert.equal(customerServiceOrderStatusText("UNKNOWN"), "订单");
   assert.equal(customerServicePriceRange(1290, 2590), "¥12.90–¥25.90");
   assert.equal(customerServicePriceRange(undefined, undefined), "价格以商品详情为准");
+});
+
+test("常见问题只在尚未发起咨询的草稿会话展示", () => {
+  assert.equal(shouldShowCustomerServiceCommonQuestions("DRAFT", 3, false), true);
+  assert.equal(shouldShowCustomerServiceCommonQuestions("DRAFT", 0, false), false);
+  assert.equal(shouldShowCustomerServiceCommonQuestions("DRAFT", 3, true), false);
+  assert.equal(shouldShowCustomerServiceCommonQuestions("WAITING", 3, false), false);
+  assert.equal(shouldShowCustomerServiceCommonQuestions("ACTIVE", 3, false), false);
 });
 
 test("小程序客服使用自建接口、即时图片预览和两级商品来源面板", () => {
@@ -88,11 +97,13 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   );
 
   assert.match(endpointSource, /customerService/);
+  assert.match(endpointSource, /\/app\/customer-service\/conversation\/common-questions/);
   assert.match(endpointSource, /\/app\/customer-service\/conversation\/images/);
   assert.match(endpointSource, /\/app\/customer-service\/images\/upload-sessions/);
   assert.match(endpointSource, /messages\/\$\{messageId\}\/image-access/);
   assert.match(endpointSource, /messages\/\$\{messageId\}\/thumbnail/);
   assert.match(serviceSource, /uploadCustomerServiceImage/);
+  assert.match(serviceSource, /getCustomerServiceCommonQuestions/);
   assert.match(serviceSource, /uploadFileDirect<CustomerServiceMessage>/);
   assert.match(serviceSource, /thumbnailAccessMode === "SIGNED_URL"/);
   assert.match(serviceSource, /loadCachedImageFile/);
@@ -121,6 +132,15 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.doesNotMatch(sendTextSource, /refreshConversation/);
   assert.doesNotMatch(template, /loading="\{\{sending\}\}"/);
   assert.match(template, /message-send-error/);
+  assert.match(template, /common-question-message/);
+  assert.match(template, /onCommonQuestionTap/);
+  assert.doesNotMatch(template, /你好，我是在线客服/);
+  assert.match(pageSource, /message\.messageType === "SYSTEM"/);
+  assert.match(pageSource, /showCommonQuestions: false/);
+  assert.match(pageSource, /conversationMutationEpoch/);
+  assert.match(pageSource, /pendingRealtimeChangeWithoutMessage = true/);
+  assert.match(pageSource, /void this\.loadCommonQuestions\(generation\)/);
+  assert.doesNotMatch(pageSource, /Promise\.all\(\[\s*openCustomerServiceConversation/);
   assert.match(template, /confirm-hold="\{\{true\}\}"/);
   assert.match(sendImageSource, /appendLocallySentMessage/);
   assert.doesNotMatch(sendImageSource, /refreshConversation/);

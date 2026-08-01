@@ -4,11 +4,13 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.PersonalSettingsUpdateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.SendMessageRequest;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.WelcomeAutoReplyUpdateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceManagementDtos.CustomerServiceRoutingUpdateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceManagementDtos.ManagedUserCreateRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceManagementDtos.RoutingAgentUpdateRequest;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.customerservice.service.CustomerServiceManagementService;
+import org.muybaby.shopserver.customerservice.service.CustomerServiceReplyService;
 import org.muybaby.shopserver.customerservice.service.CustomerServiceService;
 import org.muybaby.shopserver.realtime.RealtimeConnectionPrincipal;
 import org.muybaby.shopserver.realtime.RealtimeSessionHub;
@@ -41,6 +43,9 @@ class CustomerServiceAutoAssignmentTest {
 
     @Autowired
     private CustomerServiceManagementService managementService;
+
+    @Autowired
+    private CustomerServiceReplyService replyService;
 
     @Autowired
     private RealtimeSessionHub realtimeSessionHub;
@@ -78,6 +83,10 @@ class CustomerServiceAutoAssignmentTest {
                     adminPrincipal,
                     new PersonalSettingsUpdateRequest("小满", true, 5, 1)
             );
+            replyService.updateWelcome(
+                    adminUserId,
+                    new WelcomeAutoReplyUpdateRequest("您好，我是自动接入的小满客服")
+            );
             customerServiceService.updateAgentState(adminPrincipal, "AVAILABLE");
             long appUserId = insertAppUser();
             AuthenticatedPrincipal appPrincipal = new AuthenticatedPrincipal(
@@ -112,6 +121,17 @@ class CustomerServiceAutoAssignmentTest {
                     .param("appUserId", appUserId)
                     .query(Long.class)
                     .single();
+            assertThat(jdbcClient.sql("""
+                            select count(*)
+                            from customer_service_message
+                            where conversation_id = :conversationId
+                              and sender_type = 'BOT'
+                              and message_type = 'AUTO_REPLY'
+                              and content = '您好，我是自动接入的小满客服'
+                            """)
+                    .param("conversationId", conversationId)
+                    .query(Integer.class)
+                    .single()).isEqualTo(1);
             var reply = customerServiceService.sendFromAdmin(
                     adminPrincipal,
                     conversationId,

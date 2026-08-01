@@ -77,7 +77,7 @@ button::after {
   height: 12rpx;
 }
 
-.welcome-message,
+.common-question-message,
 .message-row {
   display: flex;
   width: 100%;
@@ -86,7 +86,6 @@ button::after {
   gap: 20rpx;
 }
 
-.welcome-message__avatar,
 .message-avatar {
   display: flex;
   width: 76rpx;
@@ -111,7 +110,6 @@ button::after {
   background: #b72b22;
 }
 
-.welcome-message__bubble,
 .message-bubble {
   position: relative;
   box-sizing: border-box;
@@ -126,7 +124,6 @@ button::after {
   overflow-wrap: anywhere;
 }
 
-.welcome-message__bubble::before,
 .message-bubble--other::before {
   position: absolute;
   top: 24rpx;
@@ -137,6 +134,54 @@ button::after {
   border-right: 14rpx solid #ffffff;
   border-bottom: 10rpx solid transparent;
   content: '';
+}
+
+.common-question-bubble {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  width: 520rpx;
+  padding: 20rpx 24rpx 12rpx;
+  flex-direction: column;
+  border-radius: 8rpx;
+  background: #ffffff;
+}
+
+.common-question-bubble::before {
+  position: absolute;
+  top: 24rpx;
+  left: -12rpx;
+  width: 0;
+  height: 0;
+  border-top: 10rpx solid transparent;
+  border-right: 14rpx solid #ffffff;
+  border-bottom: 10rpx solid transparent;
+  content: '';
+}
+
+.common-question-title {
+  padding-bottom: 12rpx;
+  color: #8c8c8c;
+  font-size: 23rpx;
+}
+
+.common-question-item {
+  width: 100%;
+  min-height: 68rpx;
+  margin: 0;
+  padding: 15rpx 0;
+  border-top: 1rpx solid #ededed;
+  border-radius: 0;
+  color: #526f99;
+  background: transparent;
+  font-size: 28rpx;
+  line-height: 38rpx;
+  text-align: left;
+}
+
+.common-question-item[disabled] {
+  color: #8a9aad;
+  opacity: 0.68;
 }
 
 .message-row--mine {

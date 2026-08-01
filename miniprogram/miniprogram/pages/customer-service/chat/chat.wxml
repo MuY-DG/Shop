@@ -36,13 +36,6 @@
       scroll-into-view="{{scrollTarget}}"
     >
       <view class="message-list">
-        <view wx:if="{{!messages.length}}" class="welcome-message">
-          <view class="welcome-message__avatar">客</view>
-          <view class="welcome-message__bubble">
-            你好，我是在线客服。请描述遇到的问题，我们会尽快回复你。
-          </view>
-        </view>
-
         <block wx:for="{{messages}}" wx:key="messageId">
           <view wx:if="{{item.showTime}}" class="message-time">{{item.timeText}}</view>
 
@@ -186,6 +179,21 @@
             </view>
           </view>
         </block>
+
+        <view wx:if="{{showCommonQuestions}}" class="common-question-message">
+          <view class="message-avatar">客</view>
+          <view class="common-question-bubble">
+            <text class="common-question-title">猜你想问</text>
+            <button
+              wx:for="{{commonQuestions}}"
+              wx:key="questionId"
+              class="common-question-item"
+              disabled="{{commonQuestionSending}}"
+              data-question="{{item.question}}"
+              bindtap="onCommonQuestionTap"
+            >{{item.question}}</button>
+          </view>
+        </view>
 
         <view class="message-list__bottom"></view>
       </view>

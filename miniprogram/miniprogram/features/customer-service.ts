@@ -65,6 +65,14 @@ export function customerServiceStatusHint(
   }
 }
 
+export function shouldShowCustomerServiceCommonQuestions(
+  status: CustomerServiceConversationStatus,
+  questionCount: number,
+  hasPendingUserMessage: boolean
+): boolean {
+  return status === "DRAFT" && questionCount > 0 && !hasPendingUserMessage;
+}
+
 export function formatCustomerServiceMoney(value: unknown): string {
   const cent = typeof value === "number" && Number.isSafeInteger(value) && value >= 0
     ? value
