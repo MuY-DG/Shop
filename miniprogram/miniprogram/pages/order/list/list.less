@@ -87,7 +87,16 @@
 
 .order-card {
   .card-surface();
-  padding: @space-5;
+  overflow: hidden;
+}
+
+.order-card__detail {
+  .press-feedback();
+}
+
+.order-card--pressed {
+  opacity: 0.88;
+  transform: scale(0.992);
 }
 
 .order-card + .order-card {
@@ -95,6 +104,8 @@
 }
 
 .order-card__heading,
+.order-card__merchant,
+.order-card__meta,
 .order-card__product,
 .order-card__actions {
   display: flex;
@@ -102,14 +113,44 @@
 }
 
 .order-card__heading {
+  padding: @space-5 @space-5 @space-3;
   justify-content: space-between;
   gap: @space-5;
 }
 
-.order-card__no {
+.order-card__merchant {
+  min-width: 0;
+  gap: @space-2;
+}
+
+.order-card__merchant-name {
   color: @color-text-primary;
-  font-size: @font-size-sm;
-  font-weight: 650;
+  font-size: @font-size-base;
+  font-weight: 700;
+}
+
+.order-card__chevron {
+  width: 28rpx;
+  height: 28rpx;
+  opacity: 0.58;
+}
+
+.order-card__meta {
+  min-width: 0;
+  padding: 0 @space-5 @space-5;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: @space-1 @space-4;
+}
+
+.order-card__no {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .order-card__time,
@@ -120,7 +161,7 @@
 }
 
 .order-card__time {
-  margin-top: @space-1;
+  flex: none;
 }
 
 .order-status {
@@ -151,25 +192,11 @@
 }
 
 .order-card__product {
-  margin-top: @space-5;
-  padding: @space-4;
-  border-radius: @radius-md;
+  padding: @space-5;
+  border-top: 1rpx solid @color-divider;
   background: @color-surface-muted;
-  gap: @space-4;
-}
-
-.order-card__product-mark {
-  display: flex;
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: @radius-md;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  color: @color-brand;
-  background: @color-brand-soft;
-  font-family: serif;
-  font-size: @font-size-lg;
+  align-items: flex-start;
+  gap: @space-6;
 }
 
 .order-card__product-body {
@@ -178,14 +205,15 @@
 }
 
 .order-card__title {
-  .text-ellipsis(1);
+  .text-ellipsis(2);
   color: @color-text-primary;
   font-size: @font-size-base;
   font-weight: 650;
+  line-height: @line-height-base;
 }
 
 .order-card__count {
-  margin-top: @space-1;
+  margin-top: @space-2;
 }
 
 .order-card__amount {
@@ -194,29 +222,33 @@
 }
 
 .order-card__amount view {
-  margin-top: @space-1;
+  margin-top: @space-2;
   color: @color-price;
   font-family: @font-family-price;
-  font-size: @font-size-md;
+  font-size: @font-size-lg;
   font-weight: 700;
+  line-height: @line-height-tight;
 }
 
 .order-card__actions {
-  margin-top: @space-4;
+  padding: @space-4 @space-5 @space-5;
+  border-top: 1rpx solid @color-divider;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: @space-3;
 }
 
 button.order-action {
+  .press-feedback();
   width: auto;
   min-width: 148rpx;
-  height: 64rpx;
+  height: 88rpx;
+  min-height: 88rpx;
   margin: 0;
   padding: 0 @space-5;
   border-radius: @radius-pill;
   font-size: @font-size-sm;
-  line-height: 64rpx;
+  line-height: 88rpx;
 }
 
 button.order-action--secondary {
@@ -228,6 +260,12 @@ button.order-action--secondary {
 button.order-action--primary {
   color: @color-text-inverse;
   background: linear-gradient(135deg, @color-brand 0, @color-brand-dark 100%);
+  box-shadow: @shadow-action;
+}
+
+button.order-action--pressed {
+  opacity: 0.82;
+  transform: scale(0.97);
 }
 
 button.order-action[disabled] {

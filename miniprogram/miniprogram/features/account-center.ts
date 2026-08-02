@@ -55,6 +55,18 @@ export interface AccountProductView {
   available: boolean;
 }
 
+export interface HistoryProductView extends AccountProductView {
+  historyDateKey: string;
+  historyDateLabel: string;
+  viewCountText: string;
+}
+
+export interface HistoryProductGroup {
+  key: string;
+  label: string;
+  items: HistoryProductView[];
+}
+
 export interface CouponCardView {
   id: number;
   name: string;
@@ -94,6 +106,24 @@ function moneyText(cent: unknown): string {
 
 function dateText(value: unknown): string {
   return formatLocalDate(value).replace(/-/g, ".");
+}
+
+function historyDate(value: unknown): Pick<
+  HistoryProductView,
+  "historyDateKey" | "historyDateLabel"
+> {
+  const localDate = formatLocalDate(value);
+  if (!localDate) {
+    return {
+      historyDateKey: "unknown",
+      historyDateLabel: "日期未知"
+    };
+  }
+  const [, month, day] = localDate.split("-");
+  return {
+    historyDateKey: localDate,
+    historyDateLabel: `${month}月${day}日`
+  };
 }
 
 function priceRangeText(minPriceCent: unknown, maxPriceCent: unknown): string {
@@ -147,17 +177,55 @@ export function buildFavoriteProductViews(
 
 export function buildHistoryProductViews(
   items: ProductBrowseHistoryItem[]
-): AccountProductView[] {
+): HistoryProductView[] {
   return (Array.isArray(items) ? items : [])
     .map((item) => {
       const viewedAt = dateText(item.lastViewedAt);
       const count = positiveId(item.viewCount);
-      return buildProductView(
+      const viewCountText = `浏览 ${count || 1} 次`;
+      const product = buildProductView(
         item,
-        `${viewedAt ? `${viewedAt} · ` : ""}浏览 ${count || 1} 次`
+        `${viewedAt ? `${viewedAt} · ` : ""}${viewCountText}`
       );
+      return product
+        ? {
+            ...product,
+            ...historyDate(item.lastViewedAt),
+            viewCountText
+          }
+        : undefined;
     })
-    .filter((item): item is AccountProductView => Boolean(item));
+    .filter((item): item is HistoryProductView => Boolean(item));
+}
+
+/**
+ * Groups rendered history products without mutating the source array. A map is
+ * used so records from a later page merge into an existing local-date section.
+ */
+export function groupHistoryProductViews(
+  items: HistoryProductView[]
+): HistoryProductGroup[] {
+  const groups: HistoryProductGroup[] = [];
+  const groupsByKey = new Map<string, HistoryProductGroup>();
+
+  (Array.isArray(items) ? items : []).forEach((item) => {
+    const key = cleanText(item?.historyDateKey) || "unknown";
+    const label = cleanText(item?.historyDateLabel) || "日期未知";
+    const existing = groupsByKey.get(key);
+    if (existing) {
+      existing.items.push(item);
+      return;
+    }
+    const group: HistoryProductGroup = {
+      key,
+      label,
+      items: [item]
+    };
+    groupsByKey.set(key, group);
+    groups.push(group);
+  });
+
+  return groups;
 }
 
 function couponCondition(couponType: string, thresholdCent: unknown): string {

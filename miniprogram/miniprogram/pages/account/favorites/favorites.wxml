@@ -1,4 +1,4 @@
-<view class="account-page">
+<view class="account-page favorites-page">
   <navigation-bar title="我的收藏" back="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
 
   <view class="account-content">
@@ -27,24 +27,59 @@
       <view
         wx:for="{{items}}"
         wx:key="spuId"
-        class="account-product {{item.available ? '' : 'account-product--disabled'}}"
-        data-id="{{item.spuId}}"
-        bindtap="onProductTap"
+        class="account-product favorite-product {{item.available ? '' : 'account-product--disabled favorite-product--disabled'}}"
+        aria-role="group"
+        aria-label="{{'收藏商品，' + item.title}}"
       >
-        <view class="account-product__image-wrap">
-          <image wx:if="{{item.hasImage}}" class="account-product__image" src="{{item.imageUrl}}" mode="aspectFill" data-index="{{index}}" binderror="onImageError" />
-          <view wx:else class="account-product__placeholder">{{item.placeholder}}</view>
-          <view wx:if="{{item.availabilityText}}" class="account-product__unavailable">{{item.availabilityText}}</view>
-        </view>
-        <view class="account-product__body">
-          <view class="account-product__title">{{item.title}}</view>
-          <view wx:if="{{item.subtitle}}" class="account-product__subtitle">{{item.subtitle}}</view>
-          <view class="account-product__price">{{item.priceText}}</view>
-          <view class="account-product__footer">
-            <text class="account-product__meta">{{item.metaText}}</text>
-            <button class="account-product__action" data-id="{{item.spuId}}" disabled="{{actionSpuId}}" loading="{{actionSpuId === item.spuId}}" catchtap="onRemoveTap">取消收藏</button>
+        <view
+          class="favorite-product__detail"
+          data-id="{{item.spuId}}"
+          bindtap="onProductTap"
+          hover-class="favorite-product--pressed"
+          hover-stay-time="80"
+          aria-role="button"
+          aria-disabled="{{!item.available}}"
+          aria-label="{{item.available ? item.title + '，' + item.priceText + '，' + item.metaText + '，查看商品详情' : item.title + '，' + item.priceText + '，商品已下架'}}"
+        >
+          <view class="account-product__image-wrap favorite-product__image-wrap">
+            <image
+              wx:if="{{item.hasImage}}"
+              class="account-product__image favorite-product__image"
+              src="{{item.imageUrl}}"
+              mode="aspectFill"
+              lazy-load="{{true}}"
+              data-index="{{index}}"
+              binderror="onImageError"
+              aria-hidden="true"
+            />
+            <view wx:else class="account-product__placeholder favorite-product__placeholder" aria-hidden="true">{{item.placeholder}}</view>
+            <view wx:if="{{item.availabilityText}}" class="account-product__unavailable favorite-product__unavailable">{{item.availabilityText}}</view>
+          </view>
+          <view class="account-product__body favorite-product__body">
+            <view class="favorite-product__headline">
+              <view class="account-product__title favorite-product__title">{{item.title}}</view>
+              <view wx:if="{{item.available}}" class="favorite-product__chevron" aria-hidden="true">
+                <image src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
+              </view>
+            </view>
+            <view wx:if="{{item.subtitle}}" class="account-product__subtitle favorite-product__subtitle">{{item.subtitle}}</view>
+            <view class="account-product__price favorite-product__price">{{item.priceText}}</view>
+            <view class="account-product__footer favorite-product__footer">
+              <text class="account-product__meta favorite-product__meta">{{item.metaText}}</text>
+            </view>
           </view>
         </view>
+        <button
+          class="account-product__action favorite-product__action"
+          data-id="{{item.spuId}}"
+          disabled="{{actionSpuId}}"
+          loading="{{actionSpuId === item.spuId}}"
+          catchtap="onRemoveTap"
+          hover-class="favorite-product__action--pressed"
+          hover-stay-time="80"
+          aria-disabled="{{actionSpuId > 0}}"
+          aria-label="{{'取消收藏' + item.title}}"
+        ><text>取消收藏</text></button>
       </view>
       <view wx:if="{{loadingMore}}" class="list-footer">正在加载更多…</view>
       <view wx:elif="{{items.length && !hasMore}}" class="list-footer">没有更多收藏了</view>

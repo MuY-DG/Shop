@@ -209,6 +209,47 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   );
 });
 
+test("收藏与足迹整卡进入商品详情且移除操作不会冒泡", () => {
+  const favoriteTemplate = readFileSync(
+    resolve(sourceRoot, "pages/account/favorites/favorites.wxml"),
+    "utf8"
+  );
+  const favoriteLogic = readFileSync(
+    resolve(sourceRoot, "pages/account/favorites/favorites.ts"),
+    "utf8"
+  );
+  const historyTemplate = readFileSync(
+    resolve(sourceRoot, "pages/account/history/history.wxml"),
+    "utf8"
+  );
+  const historyLogic = readFileSync(
+    resolve(sourceRoot, "pages/account/history/history.ts"),
+    "utf8"
+  );
+  const orderTemplate = readFileSync(
+    resolve(sourceRoot, "pages/order/list/list.wxml"),
+    "utf8"
+  );
+
+  [favoriteTemplate, historyTemplate].forEach((template) => {
+    assert.match(template, /data-id="\{\{item\.spuId\}\}"[\s\S]*bindtap="onProductTap"/);
+    assert.match(template, /catchtap="on(?:Remove|Delete)Tap"/);
+    assert.match(template, /aria-role="group"/);
+    assert.match(template, /aria-role="button"/);
+    assert.match(template, /aria-disabled="\{\{!item\.available\}\}"/);
+    assert.match(template, /aria-label="\{\{item\.available \?/);
+  });
+  [favoriteLogic, historyLogic].forEach((logic) => {
+    assert.match(logic, /wx\.navigateTo\(\{ url: product\.navigationPath \}\)/);
+    assert.match(logic, /async refresh\(\)[\s\S]{0,180}loadingMore: false/);
+  });
+  assert.match(favoriteLogic, /await removeFavorite\(spuId\);[\s\S]*await this\.refresh\(\);/);
+  assert.match(historyLogic, /await deleteBrowseHistoryItem\(spuId\);[\s\S]*await this\.refresh\(\);/);
+  assert.match(favoriteLogic, /current: 1,[\s\S]*hasMore: false/);
+  assert.match(historyLogic, /current: 1,[\s\S]*hasMore: false/);
+  assert.match(orderTemplate, /class="order-card"[\s\S]*aria-role="group"[\s\S]*class="order-card__detail"[\s\S]*aria-role="button"/);
+});
+
 test("全局导航统一返回图标且不再显示首页按钮", () => {
   const navigationTemplate = readFileSync(
     resolve(sourceRoot, "components/navigation-bar/navigation-bar.wxml"),

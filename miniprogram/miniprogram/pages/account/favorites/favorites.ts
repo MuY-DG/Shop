@@ -78,7 +78,7 @@ Page({
 
   async refresh() {
     const requestId = ++latestRequest;
-    this.setData({ loading: true, errorText: "" });
+    this.setData({ loading: true, loadingMore: false, errorText: "" });
     try {
       const response = await getFavorites(1, PAGE_SIZE);
       if (requestId !== latestRequest) {
@@ -136,9 +136,14 @@ Page({
   onProductTap(event: DatasetEvent) {
     const spuId = parsePositiveId(event.currentTarget.dataset.id);
     const product = this.data.items.find((item) => item.spuId === spuId);
-    if (product?.available) {
-      wx.navigateTo({ url: product.navigationPath });
+    if (!product) {
+      return;
     }
+    if (!product.available) {
+      wx.showToast({ title: "商品已下架", icon: "none" });
+      return;
+    }
+    wx.navigateTo({ url: product.navigationPath });
   },
 
   onImageError(event: DatasetEvent) {
@@ -169,10 +174,13 @@ Page({
       await removeFavorite(spuId);
       this.setData({
         items: this.data.items.filter((item) => item.spuId !== spuId),
+        current: 1,
         total: Math.max(0, this.data.total - 1),
+        hasMore: false,
         actionSpuId: 0
       });
       wx.showToast({ title: "已取消收藏", icon: "success" });
+      await this.refresh();
     } catch (error) {
       this.setData({ actionSpuId: 0 });
       wx.showToast({

@@ -1,4 +1,4 @@
-<view class="account-page">
+<view class="account-page history-page">
   <navigation-bar title="浏览记录" back="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
 
   <view class="account-content">
@@ -7,7 +7,17 @@
         <view class="account-heading__title">浏览记录</view>
         <view class="account-heading__subtitle">最近看过的商品，共 {{total}} 件</view>
       </view>
-      <button wx:if="{{items.length}}" class="account-heading__action" loading="{{clearing}}" disabled="{{clearing || actionSpuId}}" bindtap="onClearTap">清空记录</button>
+      <button
+        wx:if="{{items.length}}"
+        class="account-heading__action history-clear"
+        loading="{{clearing}}"
+        disabled="{{clearing || actionSpuId}}"
+        bindtap="onClearTap"
+        hover-class="history-clear--pressed"
+        hover-stay-time="80"
+        aria-disabled="{{clearing || actionSpuId > 0}}"
+        aria-label="清空全部浏览记录"
+      >清空记录</button>
     </view>
 
     <view wx:if="{{!loaded && loading}}" class="account-state">
@@ -26,24 +36,68 @@
     <block wx:else>
       <view wx:if="{{errorText}}" class="inline-error"><text>{{errorText}}</text><button bindtap="onRetry">重试</button></view>
       <view
-        wx:for="{{items}}"
-        wx:key="spuId"
-        class="account-product {{item.available ? '' : 'account-product--disabled'}}"
-        data-id="{{item.spuId}}"
-        bindtap="onProductTap"
+        wx:for="{{groups}}"
+        wx:for-item="group"
+        wx:key="key"
+        class="history-group"
       >
-        <view class="account-product__image-wrap">
-          <image wx:if="{{item.hasImage}}" class="account-product__image" src="{{item.imageUrl}}" mode="aspectFill" data-index="{{index}}" binderror="onImageError" />
-          <view wx:else class="account-product__placeholder">{{item.placeholder}}</view>
-          <view wx:if="{{item.availabilityText}}" class="account-product__unavailable">{{item.availabilityText}}</view>
+        <view class="history-group__heading" aria-role="heading">
+          <text class="history-group__date">{{group.label}}</text>
+          <text class="history-group__count">{{group.items.length}} 件</text>
         </view>
-        <view class="account-product__body">
-          <view class="account-product__title">{{item.title}}</view>
-          <view wx:if="{{item.subtitle}}" class="account-product__subtitle">{{item.subtitle}}</view>
-          <view class="account-product__price">{{item.priceText}}</view>
-          <view class="account-product__footer">
-            <text class="account-product__meta">{{item.metaText}}</text>
-            <button class="account-product__action" data-id="{{item.spuId}}" disabled="{{actionSpuId || clearing}}" loading="{{actionSpuId === item.spuId}}" catchtap="onDeleteTap">删除</button>
+        <view class="history-grid">
+          <view
+            wx:for="{{group.items}}"
+            wx:for-item="item"
+            wx:key="spuId"
+            class="history-card {{item.available ? '' : 'history-card--disabled'}}"
+            aria-role="group"
+            aria-label="{{'浏览记录，' + item.title}}"
+          >
+            <view
+              class="history-card__detail"
+              data-id="{{item.spuId}}"
+              bindtap="onProductTap"
+              hover-class="{{item.available ? 'history-card--pressed' : 'none'}}"
+              hover-stay-time="80"
+              aria-role="button"
+              aria-disabled="{{!item.available}}"
+              aria-label="{{item.available ? item.title + '，' + item.priceText + '，' + item.metaText + '，查看商品详情' : item.title + '，' + item.priceText + '，商品已下架'}}"
+            >
+              <view class="history-card__image-wrap">
+                <image
+                  wx:if="{{item.hasImage}}"
+                  class="history-card__image"
+                  src="{{item.imageUrl}}"
+                  mode="aspectFill"
+                  lazy-load="{{true}}"
+                  data-id="{{item.spuId}}"
+                  binderror="onImageError"
+                  aria-hidden="true"
+                />
+                <view wx:else class="history-card__placeholder" aria-hidden="true">{{item.placeholder}}</view>
+                <view wx:if="{{item.availabilityText}}" class="history-card__unavailable">{{item.availabilityText}}</view>
+              </view>
+              <view class="history-card__body">
+                <view class="history-card__title">{{item.title}}</view>
+                <view wx:if="{{item.subtitle}}" class="history-card__subtitle">{{item.subtitle}}</view>
+                <view class="history-card__price">{{item.priceText}}</view>
+                <view class="history-card__footer">
+                  <text class="history-card__meta">{{item.viewCountText}}</text>
+                </view>
+              </view>
+            </view>
+            <button
+              class="history-card__delete"
+              data-id="{{item.spuId}}"
+              disabled="{{actionSpuId || clearing}}"
+              loading="{{actionSpuId === item.spuId}}"
+              catchtap="onDeleteTap"
+              hover-class="history-card__delete--pressed"
+              hover-stay-time="80"
+              aria-disabled="{{clearing || actionSpuId > 0}}"
+              aria-label="{{'删除' + item.title + '的浏览记录'}}"
+            ><text>删除</text></button>
           </view>
         </view>
       </view>

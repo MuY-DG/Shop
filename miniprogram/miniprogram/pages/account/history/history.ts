@@ -1,6 +1,8 @@
 import {
   buildHistoryProductViews,
-  type AccountProductView
+  groupHistoryProductViews,
+  type HistoryProductGroup,
+  type HistoryProductView
 } from "../../../features/account-center";
 import { parsePositiveId } from "../../../features/product-catalog";
 import {
@@ -14,7 +16,6 @@ interface DatasetEvent {
   currentTarget: {
     dataset: {
       id?: number | string;
-      index?: number | string;
     };
   };
 }
@@ -43,9 +44,20 @@ function confirmAction(title: string, content: string, confirmText: string): Pro
   });
 }
 
+function historyCollection(items: HistoryProductView[]): {
+  items: HistoryProductView[];
+  groups: HistoryProductGroup[];
+} {
+  return {
+    items,
+    groups: groupHistoryProductViews(items)
+  };
+}
+
 Page({
   data: {
-    items: [] as AccountProductView[],
+    items: [] as HistoryProductView[],
+    groups: [] as HistoryProductGroup[],
     current: 1,
     total: 0,
     hasMore: false,
@@ -80,14 +92,15 @@ Page({
 
   async refresh() {
     const requestId = ++latestRequest;
-    this.setData({ loading: true, errorText: "" });
+    this.setData({ loading: true, loadingMore: false, errorText: "" });
     try {
       const response = await getBrowseHistory(1, PAGE_SIZE);
       if (requestId !== latestRequest) {
         return;
       }
+      const items = buildHistoryProductViews(response.records);
       this.setData({
-        items: buildHistoryProductViews(response.records),
+        ...historyCollection(items),
         current: response.current,
         total: response.total,
         hasMore: response.current * response.size < response.total,
@@ -117,8 +130,12 @@ Page({
       if (requestId !== latestRequest) {
         return;
       }
+      const items = [
+        ...this.data.items,
+        ...buildHistoryProductViews(response.records)
+      ];
       this.setData({
-        items: [...this.data.items, ...buildHistoryProductViews(response.records)],
+        ...historyCollection(items),
         current: response.current,
         total: response.total,
         hasMore: response.current * response.size < response.total,
@@ -138,20 +155,27 @@ Page({
   onProductTap(event: DatasetEvent) {
     const spuId = parsePositiveId(event.currentTarget.dataset.id);
     const product = this.data.items.find((item) => item.spuId === spuId);
-    if (product?.available) {
-      wx.navigateTo({ url: product.navigationPath });
+    if (!product) {
+      return;
     }
+    if (!product.available) {
+      wx.showToast({ title: "商品已下架", icon: "none" });
+      return;
+    }
+    wx.navigateTo({ url: product.navigationPath });
   },
 
   onImageError(event: DatasetEvent) {
-    const index = Number(event.currentTarget.dataset.index);
-    if (!Number.isSafeInteger(index) || index < 0 || index >= this.data.items.length) {
+    const spuId = parsePositiveId(event.currentTarget.dataset.id);
+    const product = this.data.items.find((item) => item.spuId === spuId);
+    if (!product?.hasImage) {
       return;
     }
+    const items = this.data.items.map((item) => (
+      item.spuId === spuId ? { ...item, hasImage: false } : item
+    ));
     this.setData({
-      items: this.data.items.map((item, itemIndex) => (
-        itemIndex === index ? { ...item, hasImage: false } : item
-      ))
+      ...historyCollection(items)
     });
   },
 
@@ -172,12 +196,17 @@ Page({
     this.setData({ actionSpuId: spuId });
     try {
       await deleteBrowseHistoryItem(spuId);
+      const items = this.data.items.filter((item) => item.spuId !== spuId);
+      const total = Math.max(0, this.data.total - 1);
       this.setData({
-        items: this.data.items.filter((item) => item.spuId !== spuId),
-        total: Math.max(0, this.data.total - 1),
+        ...historyCollection(items),
+        current: 1,
+        total,
+        hasMore: false,
         actionSpuId: 0
       });
       wx.showToast({ title: "记录已删除", icon: "success" });
+      await this.refresh();
     } catch (error) {
       this.setData({ actionSpuId: 0 });
       wx.showToast({
@@ -203,7 +232,7 @@ Page({
     try {
       await clearBrowseHistory();
       this.setData({
-        items: [],
+        ...historyCollection([]),
         total: 0,
         hasMore: false,
         clearing: false

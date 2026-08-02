@@ -1,1 +1,243 @@
 @import "../../../styles/account-products.less";
+
+.history-page .account-content {
+  padding-top: @space-4;
+}
+
+.history-clear {
+  .press-feedback();
+}
+
+.history-clear--pressed {
+  color: @color-brand;
+  background: @color-brand-soft;
+  transform: scale(0.96);
+}
+
+.history-group + .history-group {
+  margin-top: @space-8;
+}
+
+.history-group__heading {
+  min-height: 52rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: @space-3;
+}
+
+.history-group__date {
+  color: @color-text-primary;
+  font-size: @font-size-md;
+  font-weight: 750;
+  line-height: @line-height-tight;
+}
+
+.history-group__count {
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.history-grid {
+  display: grid;
+  align-items: stretch;
+  gap: @space-4 @space-3;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.history-card {
+  .card-surface();
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.history-card__detail {
+  .press-feedback();
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.history-card--pressed {
+  opacity: 0.86;
+  transform: scale(0.975);
+}
+
+.history-card--disabled {
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.history-card__image-wrap {
+  position: relative;
+  width: 100%;
+  height: 218rpx;
+  overflow: hidden;
+  flex: none;
+  background: @color-surface-muted;
+}
+
+.history-card__image,
+.history-card__placeholder {
+  width: 100%;
+  height: 100%;
+}
+
+.history-card__image {
+  display: block;
+}
+
+.history-card__placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: @color-gold-text;
+  background: radial-gradient(circle, fade(@color-gold, 14%), transparent 72%);
+  font-family: serif;
+  font-size: @font-size-xl;
+  font-weight: 700;
+}
+
+.history-card--disabled .history-card__image,
+.history-card--disabled .history-card__placeholder {
+  filter: grayscale(0.76);
+  opacity: 0.68;
+}
+
+.history-card__unavailable {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  min-width: 116rpx;
+  box-sizing: border-box;
+  padding: @space-2 @space-3;
+  border: 1rpx solid fade(@color-text-inverse, 52%);
+  border-radius: @radius-pill;
+  color: @color-text-inverse;
+  background: fade(#2e1d16, 76%);
+  font-size: 20rpx;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(4rpx);
+}
+
+.history-card__body {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: @space-3;
+}
+
+.history-card__title {
+  .text-ellipsis(2);
+  min-height: 64rpx;
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.history-card__subtitle {
+  .text-ellipsis(1);
+  margin-top: @space-1;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  line-height: 1.4;
+}
+
+.history-card__price {
+  min-width: 0;
+  margin-top: @space-2;
+  color: @color-price;
+  font-family: @font-family-price;
+  font-size: 26rpx;
+  font-weight: 750;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+  white-space: normal;
+  word-break: break-all;
+}
+
+.history-card--disabled .history-card__price {
+  color: @color-text-muted;
+}
+
+.history-card__footer {
+  min-width: 0;
+  min-height: 108rpx;
+  display: block;
+  box-sizing: border-box;
+  margin-top: auto;
+  padding-top: @space-2;
+  padding-bottom: 76rpx;
+}
+
+.history-card__meta {
+  width: 100%;
+  display: block;
+  overflow: hidden;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-card__delete {
+  .press-feedback();
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: 0;
+  width: 88rpx;
+  min-width: 88rpx;
+  height: 88rpx;
+  min-height: 88rpx;
+  display: flex;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: @color-text-secondary;
+  background: transparent;
+  font-size: @font-size-xs;
+  line-height: 1;
+}
+
+.history-card__delete::after {
+  border: 0;
+}
+
+.history-card__delete text {
+  min-width: 68rpx;
+  height: 48rpx;
+  display: flex;
+  box-sizing: border-box;
+  padding: 0 @space-2;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-pill;
+  align-items: center;
+  justify-content: center;
+  background: @color-surface-muted;
+}
+
+.history-card__delete--pressed text {
+  color: @color-brand;
+  background: @color-brand-soft;
+  transform: scale(0.94);
+}
+
+.history-card__delete[disabled] {
+  opacity: 0.48;
+}

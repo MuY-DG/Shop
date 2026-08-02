@@ -9,6 +9,7 @@ import {
   buildHistoryProductViews,
   buildUserCouponViews,
   composeAddressListTitle,
+  groupHistoryProductViews,
   normalizeAddressForm,
   parseAddressId,
   parseCouponStatusFilter,
@@ -113,6 +114,86 @@ test("收藏与浏览记录映射价格、下架状态和足迹文案", () => {
   assert.equal(history[0]?.priceText, "¥19.90");
   assert.equal(history[0]?.availabilityText, "商品已下架");
   assert.equal(history[0]?.metaText, "2026.07.21 · 浏览 3 次");
+  assert.equal(history[0]?.viewCountText, "浏览 3 次");
+  assert.equal(history[0]?.navigationPath, "/pages/product/detail/detail?id=13");
+});
+
+test("足迹按本地日期分组并在分页、删除和图片降级后重新归组", () => {
+  const originalTimezone = process.env.TZ;
+  try {
+    process.env.TZ = "America/Los_Angeles";
+    const firstPage = buildHistoryProductViews([{
+      spuId: 21,
+      title: "第一页商品",
+      mainImage: "https://example.test/first.jpg",
+      minPriceCent: 1290,
+      available: true,
+      firstViewedAt: "2026-07-29T18:00:00Z",
+      lastViewedAt: "2026-07-30T06:30:00Z",
+      viewCount: 2
+    }]);
+    const nextPage = buildHistoryProductViews([{
+      spuId: 22,
+      title: "同日跨页商品",
+      mainImage: "https://example.test/second.jpg",
+      minPriceCent: 2390,
+      available: true,
+      firstViewedAt: "2026-07-29T17:00:00Z",
+      lastViewedAt: "2026-07-30T05:00:00Z",
+      viewCount: 4
+    }, {
+      spuId: 23,
+      title: "前一日商品",
+      minPriceCent: 3190,
+      available: false,
+      firstViewedAt: "2026-07-28T16:00:00Z",
+      lastViewedAt: "2026-07-29T06:30:00Z",
+      viewCount: 1
+    }]);
+
+    assert.equal(firstPage[0]?.historyDateKey, "2026-07-29");
+    assert.equal(firstPage[0]?.historyDateLabel, "07月29日");
+    assert.equal(firstPage[0]?.metaText, "2026.07.29 · 浏览 2 次");
+
+    const appended = [...firstPage, ...nextPage];
+    const appendedGroups = groupHistoryProductViews(appended);
+    assert.deepEqual(
+      appendedGroups.map((group) => ({
+        key: group.key,
+        label: group.label,
+        ids: group.items.map((item) => item.spuId)
+      })),
+      [{
+        key: "2026-07-29",
+        label: "07月29日",
+        ids: [21, 22]
+      }, {
+        key: "2026-07-28",
+        label: "07月28日",
+        ids: [23]
+      }]
+    );
+
+    const afterDeletion = appended.filter((item) => item.spuId !== 21);
+    assert.deepEqual(
+      groupHistoryProductViews(afterDeletion)[0]?.items.map((item) => item.spuId),
+      [22]
+    );
+
+    const afterImageFallback = appended.map((item) => (
+      item.spuId === 22 ? { ...item, hasImage: false } : item
+    ));
+    const fallbackGroups = groupHistoryProductViews(afterImageFallback);
+    assert.equal(fallbackGroups[0]?.items[1]?.hasImage, false);
+    assert.equal(appended[1]?.hasImage, true);
+    assert.deepEqual(groupHistoryProductViews([]), []);
+  } finally {
+    if (originalTimezone === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = originalTimezone;
+    }
+  }
 });
 
 test("领券中心和我的优惠券生成稳定状态与操作", () => {
