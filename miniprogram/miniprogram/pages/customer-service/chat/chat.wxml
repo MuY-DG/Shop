@@ -39,14 +39,15 @@
 
   <block wx:else>
     <scroll-view
-      class="message-scroll"
+      class="message-scroll {{historyAnchoring ? 'message-scroll--history-anchoring' : ''}}"
       scroll-y
       enhanced
+      scroll-anchoring="{{historyAnchoring}}"
       enable-passive="{{true}}"
       show-scrollbar="{{false}}"
-      scroll-into-view="{{scrollAnchor}}"
-      upper-threshold="600"
+      upper-threshold="80"
       bindscroll="onMessageListScroll"
+      binddragstart="onMessageListDragStart"
       binddragend="onMessageListDragEnd"
       bindscrolltoupper="onScrollToUpper"
       bindscrolltolower="onScrollToLower"
@@ -316,6 +317,8 @@
           placeholder-class="composer__placeholder"
           bindinput="onInput"
           bindfocus="onInputFocus"
+          bindblur="onInputBlur"
+          bindkeyboardheightchange="onKeyboardHeightChange"
           bindconfirm="onInputConfirm"
         />
       </view>

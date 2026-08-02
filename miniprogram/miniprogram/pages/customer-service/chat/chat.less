@@ -72,6 +72,11 @@ button::after {
   width: 100%;
   min-height: 0;
   flex: 1;
+  overflow-anchor: none;
+}
+
+.message-scroll--history-anchoring {
+  overflow-anchor: auto;
 }
 
 .message-list {
@@ -93,6 +98,7 @@ button::after {
   padding: 0;
   align-items: center;
   justify-content: center;
+  overflow-anchor: none;
 }
 
 .history-loader__status,
@@ -125,6 +131,7 @@ button::after {
 
 .message-list__bottom {
   height: 12rpx;
+  overflow-anchor: none;
 }
 
 .message-row {
@@ -133,6 +140,17 @@ button::after {
   margin-bottom: 30rpx;
   align-items: flex-start;
   gap: 20rpx;
+  overflow-anchor: none;
+}
+
+.message-time,
+.system-message {
+  overflow-anchor: none;
+}
+
+.message-scroll--history-anchoring .message-row,
+.message-scroll--history-anchoring .system-message {
+  overflow-anchor: auto;
 }
 
 .message-avatar {

@@ -17,6 +17,7 @@ export class CustomerServiceHistoryLoadGate {
   private nextGestureId = 0;
   private armedGestureId = 0;
   private loadPhase: CustomerServiceHistoryLoadPhase = "idle";
+  private latestPositionPending = false;
 
   get phase(): CustomerServiceHistoryLoadPhase {
     return this.loadPhase;
@@ -62,100 +63,26 @@ export class CustomerServiceHistoryLoadGate {
     this.loadPhase = "idle";
   }
 
+  deferLatestPosition(): void {
+    this.latestPositionPending = true;
+  }
+
+  takeDeferredLatestPosition(): boolean {
+    if (this.loadPhase !== "idle" || !this.latestPositionPending) {
+      return false;
+    }
+    this.latestPositionPending = false;
+    return true;
+  }
+
+  cancelDeferredLatestPosition(): void {
+    this.latestPositionPending = false;
+  }
+
   reset(): void {
     this.nextGestureId = 0;
+    this.latestPositionPending = false;
     this.finish();
-  }
-}
-
-interface CustomerServiceHistoryScrollIntentOptions {
-  rearmScrollTop: number;
-  loadScrollTop: number;
-  directionTolerance: number;
-  minimumTowardUpperDistance: number;
-  minimumTowardUpperSamples: number;
-}
-
-export class CustomerServiceHistoryScrollIntent {
-  private outsideUpperZone = false;
-  private towardUpperDistance = 0;
-  private towardUpperSamples = 0;
-
-  constructor(
-    private readonly options: CustomerServiceHistoryScrollIntentOptions
-  ) {}
-
-  reset(scrollTop: number, canLoad: boolean): void {
-    const normalizedScrollTop = Number.isFinite(scrollTop)
-      ? Math.max(0, scrollTop)
-      : 0;
-    this.outsideUpperZone = canLoad &&
-      normalizedScrollTop >= this.options.rearmScrollTop;
-    this.clearDirectionEvidence();
-  }
-
-  recordScroll(
-    previousScrollTop: number,
-    currentScrollTop: number,
-    canLoad: boolean
-  ): boolean {
-    if (!canLoad) {
-      return false;
-    }
-    const previous = Number.isFinite(previousScrollTop)
-      ? Math.max(0, previousScrollTop)
-      : 0;
-    const current = Number.isFinite(currentScrollTop)
-      ? Math.max(0, currentScrollTop)
-      : 0;
-    const delta = current - previous;
-    if (!this.outsideUpperZone && current >= this.options.rearmScrollTop) {
-      this.outsideUpperZone = true;
-      this.clearDirectionEvidence();
-    }
-    if (delta > this.options.directionTolerance) {
-      this.clearDirectionEvidence();
-    } else if (
-      this.outsideUpperZone &&
-      delta < -this.options.directionTolerance
-    ) {
-      this.towardUpperDistance += Math.abs(delta);
-      this.towardUpperSamples += 1;
-    }
-    return this.isEligible(current);
-  }
-
-  consumeUpper(canLoad: boolean): boolean {
-    return this.consumeScrollEnd(0, canLoad);
-  }
-
-  consumeScrollEnd(scrollTop: number, canLoad: boolean): boolean {
-    const normalizedScrollTop = Number.isFinite(scrollTop)
-      ? Math.max(0, scrollTop)
-      : 0;
-    if (!canLoad || !this.isEligible(normalizedScrollTop)) {
-      return false;
-    }
-    this.outsideUpperZone = false;
-    this.clearDirectionEvidence();
-    return true;
-  }
-
-  private isEligible(scrollTop: number): boolean {
-    if (
-      !this.outsideUpperZone ||
-      scrollTop > this.options.loadScrollTop ||
-      this.towardUpperDistance < this.options.minimumTowardUpperDistance ||
-      this.towardUpperSamples < this.options.minimumTowardUpperSamples
-    ) {
-      return false;
-    }
-    return true;
-  }
-
-  private clearDirectionEvidence(): void {
-    this.towardUpperDistance = 0;
-    this.towardUpperSamples = 0;
   }
 }
 
@@ -201,6 +128,35 @@ export function preserveCustomerServiceHistoryScrollTop(
     return Math.max(0, Number.isFinite(currentScrollTop) ? currentScrollTop : 0);
   }
   return Math.max(0, currentScrollTop + anchorTopAfter - anchorTopBefore);
+}
+
+export function customerServiceBottomScrollTop(
+  scrollHeight: number,
+  viewportHeight: number
+): number | null {
+  if (
+    !Number.isFinite(scrollHeight) ||
+    !Number.isFinite(viewportHeight) ||
+    scrollHeight < 0 ||
+    viewportHeight <= 0
+  ) {
+    return null;
+  }
+  return Math.max(0, scrollHeight - viewportHeight);
+}
+
+export function isCustomerServiceBottomScrollSettled(
+  scrollTop: number,
+  targetScrollTop: number,
+  tolerance: number
+): boolean {
+  return Boolean(
+    Number.isFinite(scrollTop) &&
+    Number.isFinite(targetScrollTop) &&
+    Number.isFinite(tolerance) &&
+    tolerance >= 0 &&
+    Math.abs(scrollTop - targetScrollTop) <= tolerance
+  );
 }
 
 function positiveId(value: unknown): number {
