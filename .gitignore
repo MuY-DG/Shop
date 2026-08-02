@@ -3,6 +3,7 @@
 
 # Codex / Superpowers local brainstorming artifacts
 .superpowers/
+.zcode/
 .worktrees/
 /design-qa.md
 /artifacts/

@@ -44,7 +44,8 @@
       enhanced
       enable-passive="{{true}}"
       show-scrollbar="{{false}}"
-      upper-threshold="80"
+      scroll-into-view="{{scrollAnchor}}"
+      upper-threshold="600"
       bindscroll="onMessageListScroll"
       binddragend="onMessageListDragEnd"
       bindscrolltoupper="onScrollToUpper"
@@ -57,14 +58,13 @@
         >
           <view wx:if="{{historyLoading}}" class="history-loader__status">
             <view class="message-send-loading__spinner"></view>
-            <text>正在加载更早记录</text>
           </view>
           <button
-            wx:elif="{{hasMoreHistory}}"
+            wx:elif="{{hasMoreHistory && !historyButtonSuppressed}}"
             class="history-loader__action"
             bindtap="onHistoryTap"
           >查看更早记录</button>
-          <view wx:else class="history-loader__complete">
+          <view wx:elif="{{historyExhausted}}" class="history-loader__complete">
             <text>已显示全部记录</text>
           </view>
         </view>
@@ -291,7 +291,7 @@
           </view>
         </block>
 
-        <view class="message-list__bottom"></view>
+        <view id="message-list-bottom" class="message-list__bottom"></view>
       </view>
     </scroll-view>
 

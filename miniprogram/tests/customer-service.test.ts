@@ -200,6 +200,9 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
     "  onScrollToLower()",
     messageScrollStart
   );
+  const onScrollToUpperStart = pageSource.indexOf("  onScrollToUpper()");
+  const onHistoryTapStart = pageSource.indexOf("  onHistoryTap()");
+  const messagePreloadStart = pageSource.indexOf("  tryPreloadEarlierMessages()");
   const imageTemplateStart = template.indexOf("item.messageType === 'IMAGE'");
   const imageTemplateEnd = template.indexOf("item.messageType === 'ORDER_CARD'");
   const composerInputStyleStart = style.indexOf(".composer__input-shell {");
@@ -218,6 +221,9 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
     historyLoadEnd,
     messageScrollStart,
     messageScrollEnd,
+    onScrollToUpperStart,
+    onHistoryTapStart,
+    messagePreloadStart,
     imageTemplateStart,
     imageTemplateEnd,
     composerInputStyleStart,
@@ -231,6 +237,14 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   const sendImageSource = pageSource.slice(sendImageStart, sendImageEnd);
   const historyLoadSource = pageSource.slice(historyLoadStart, historyLoadEnd);
   const messageScrollSource = pageSource.slice(messageScrollStart, messageScrollEnd);
+  const onScrollToUpperSource = pageSource.slice(
+    onScrollToUpperStart,
+    onHistoryTapStart
+  );
+  const messagePreloadSource = pageSource.slice(
+    messagePreloadStart,
+    onHistoryTapStart
+  );
   const imageTemplate = template.slice(imageTemplateStart, imageTemplateEnd);
   const composerInputStyle = style.slice(
     composerInputStyleStart,
@@ -330,11 +344,16 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(composerInputStyle, /width: 0;[\s\S]*flex: 1 1 0;/);
   assert.match(style, /composer--panel-open/);
   assert.doesNotMatch(style, /attachment-panel--open/);
-  assert.match(template, /class="message-list__bottom"/);
+  assert.match(template, /id="message-list-bottom" class="message-list__bottom"/);
   assert.match(template, /enable-passive="\{\{true\}\}"/);
   assert.doesNotMatch(template, /scroll-anchoring/);
   assert.doesNotMatch(template, /scroll-with-animation|scroll-top=/);
-  assert.doesNotMatch(template, /scroll-into-view/);
+  assert.match(template, /scroll-into-view="\{\{scrollAnchor\}\}"/);
+  assert.match(template, /upper-threshold="600"/);
+  assert.match(
+    style,
+    /\.message-list \{[\s\S]*display: flex;[\s\S]*min-height: 100%;[\s\S]*flex-direction: column;[\s\S]*justify-content: flex-end;/
+  );
   assert.match(template, /binddragend="onMessageListDragEnd"/);
   assert.doesNotMatch(template, /bindtouch|binddragstart/);
   assert.match(
@@ -353,7 +372,7 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(pageSource, /const isInitialPositioning = !this\.data\.loaded/);
   assert.match(
     pageSource,
-    /loaded: true[\s\S]*positionLatestWithoutAnimation\(\)/
+    /loaded: true[\s\S]*scrollAnchor: "message-list-bottom"[\s\S]*positionLatestReliably\(\)/
   );
   assert.match(
     historyLoadSource,
@@ -398,15 +417,90 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
     pageSource,
     /nextPersistedMessageId !== latestPersistedMessageId[\s\S]*messageListFollowingLatest[\s\S]*!this\.data\.historyLoading/
   );
+  assert.match(pageSource, /const nextSignature = conversationSignature\(conversation\)/);
+  assert.match(
+    pageSource,
+    /this\.data\.loaded && nextSignature === conversationSignatureValue[\s\S]*return;/
+  );
+  assert.match(pageSource, /conversationSignatureValue = nextSignature/);
+  assert.match(pageSource, /function conversationSignature\(/);
+  assert.match(pageSource, /conversation\.conversationId,[\s\S]*conversation\.status,[\s\S]*conversation\.consultationNo[\s\S]*rawMessages\.length[\s\S]*lastMessage\?\.messageId/);
+  assert.match(
+    pageSource,
+    /JSON\.stringify\(context\),[\s\S]*JSON\.stringify\(rawMessages\),[\s\S]*cachedImages/
+  );
+  assert.match(pageSource, /viewKey: string;/);
+  assert.match(
+    pageSource,
+    /function messageViewKey\([\s\S]*message: CustomerServiceMessage,[\s\S]*senderName: string,[\s\S]*senderAvatar: string,[\s\S]*imageUrl: string[\s\S]*\): string/
+  );
+  assert.match(
+    pageSource,
+    /message\.consultationNo,[\s\S]*senderName,[\s\S]*senderAvatar,[\s\S]*imageUrl,[\s\S]*image\?\.width[\s\S]*order\?\.orderId[\s\S]*primaryProductImage[\s\S]*product\?\.productId[\s\S]*product\?\.image/
+  );
+  assert.match(pageSource, /existingViews\?\.get\(message\.messageId\)/);
+  assert.match(
+    pageSource,
+    /existingView\.viewKey === view\.viewKey[\s\S]*existingView\.imageUrl === view\.imageUrl[\s\S]*existingView\.showTime === showTime[\s\S]*return existingView/
+  );
+  assert.match(
+    pageSource,
+    /const existingViews = new Map\(\s*this\.data\.messages\.map\(\(view\) => \[view\.messageId, view\]\)\s*\)/,
+  );
+  assert.match(pageSource, /const imageMessagesNow = this\.data\.messages[\s\S]*\.filter\(\(message\) => message\.messageType === "IMAGE"\)/);
+  assert.match(
+    pageSource,
+    /imageMessagesNow === imageObservationSignature[\s\S]*return;/
+  );
+  assert.match(
+    pageSource,
+    /const messageIndex = this\.data\.messages\.findIndex\([\s\S]*messages\[\$\{messageIndex\}\]\.imageUrl/,
+  );
   assert.match(
     pageSource,
     /scrollDelta < -HISTORY_SCROLL_DIRECTION_TOLERANCE_PX[\s\S]*messageListFollowingLatest = false/
   );
   assert.match(pageSource, /onScrollToLower\(\)[\s\S]*messageListFollowingLatest = true/);
-  assert.doesNotMatch(messageScrollSource, /loadEarlierMessages/);
+  assert.doesNotMatch(messageScrollSource, /void this\.loadEarlierMessages/);
   assert.match(
     messageScrollSource,
     /historyLoadGate\.phase === "idle"[\s\S]*historyScrollIntent\.recordScroll\(/
+  );
+  assert.match(
+    messageScrollSource,
+    /!messageListPositioningLatest[\s\S]*!messageListFollowingLatest[\s\S]*nextScrollTop < HISTORY_PRELOAD_THRESHOLD[\s\S]*this\.tryPreloadEarlierMessages\(\);/
+  );
+  assert.match(
+    messagePreloadSource,
+    /tryPreloadEarlierMessages\(\)[\s\S]*messageListPositioningLatest[\s\S]*messageListFollowingLatest[\s\S]*messageListScrollTop >= HISTORY_PRELOAD_THRESHOLD[\s\S]*historyLoadGate\.beginManualLoad\(this\.canLoadEarlierMessages\(\)\)[\s\S]*this\.loadEarlierMessages\(\)/
+  );
+  assert.match(
+    onScrollToUpperSource,
+    /onScrollToUpper\(\)[\s\S]*messageListPositioningLatest[\s\S]*return;[\s\S]*this\.tryPreloadEarlierMessages\(\)[\s\S]*scheduleHistoryScrollEnd\(\)/
+  );
+  assert.doesNotMatch(onScrollToUpperSource, /void this\.loadEarlierMessages/);
+  assert.doesNotMatch(pageSource, /historyPreloadArmed/);
+  assert.match(
+    pageSource,
+    /wx\.nextTick\(\(\) => \{\s*void this\.positionLatestReliably\(\);\s*\}\)/
+  );
+  assert.match(pageSource, /async positionLatestReliably\(\): Promise<boolean>/);
+  assert.match(
+    pageSource,
+    /positionLatestReliably\(\): Promise<boolean>[\s\S]*waitForMilliseconds\(MESSAGE_INITIAL_POSITION_DELAY_MS\)/
+  );
+  assert.match(pageSource, /HISTORY_POSITION_OUTER_ATTEMPTS/);
+  assert.match(
+    pageSource,
+    /scrollToLatest\(\)[\s\S]*scrollAnchor: ""[\s\S]*scrollAnchor: "message-list-bottom"/
+  );
+  assert.match(
+    pageSource,
+    /commandGeneration !== messageScrollCommandGeneration[\s\S]*!pageActive[\s\S]*!messageListFollowingLatest/
+  );
+  assert.match(
+    pageSource,
+    /attempt % 4 === 3[\s\S]*MESSAGE_LIST_BOTTOM_SCROLL_TOP/
   );
   assert.match(
     pageSource,
@@ -421,15 +515,34 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
       pageSource.indexOf("  onScrollToUpper()"),
       pageSource.indexOf("  onHistoryTap()")
     ),
-    /tryLoadEarlierForGesture|loadEarlierMessages/
+    /tryLoadEarlierForGesture|void this\.loadEarlierMessages/
   );
-  assert.match(pageSource, /waitForMessageListMotionToSettle[\s\S]*HISTORY_MOTION_STABLE_READS/);
+  assert.doesNotMatch(pageSource, /waitForMessageListMotionToSettle|HISTORY_MOTION/);
   assert.match(
     historyLoadSource,
-    /historyLoading: false[\s\S]*waitForMessageListScrollEventsToDrain[\s\S]*historyLoadGate\.finish\(\)[\s\S]*resetHistoryScrollIntent/
+    /metricsBefore[\s\S]*messages: views[\s\S]*metricsAfter[\s\S]*historyScrollTop/
   );
+  assert.match(pageSource, /canLoadEarlierMessages\(\): boolean \{[\s\S]*historyLoadGate\.phase === "idle"/);
+  assert.match(pageSource, /historyButtonSuppressed: false/);
+  assert.match(template, /hasMoreHistory && !historyButtonSuppressed/);
+  assert.match(template, /wx:elif="\{\{historyExhausted\}\}" class="history-loader__complete"/);
+  assert.doesNotMatch(template, />正在加载更早记录</);
+  assert.match(pageSource, /onHistoryTap\(\)[\s\S]*historyButtonSuppressed: true/);
   assert.doesNotMatch(pageSource, /MessageTouchEvent|messageListDragging|messageListTouch/);
-  assert.match(pageSource, /HISTORY_SCROLL_DRAIN_STABLE_READS = 8/);
+  assert.match(pageSource, /HISTORY_SCROLL_RESTORE_STABLE_READS = 2/);
+  assert.match(pageSource, /HISTORY_SCROLL_DRAIN_STABLE_READS = 4/);
+  assert.match(
+    historyLoadSource,
+    /messages: views,[\s\S]*historyLoading: false[\s\S]*historyLoadGate\.finish\(\)[\s\S]*messageListScrollTop < HISTORY_PRELOAD_THRESHOLD[\s\S]*tryPreloadEarlierMessages\(\)/
+  );
+  assert.match(
+    historyLoadSource,
+    /userScrollDrained[\s\S]*waitForMessageListScrollEventsToDrain[\s\S]*historyStartScrollCommandGeneration !== messageScrollCommandGeneration[\s\S]*metricsBefore/
+  );
+  assert.match(
+    pageSource,
+    /beginMessageListLatestPositioning[\s\S]*finishMessageListLatestPositioning[\s\S]*resetMessageListLatestPositioning/
+  );
   assert.match(pageSource, /consumeGesture[\s\S]*loadEarlierMessages/);
   assert.match(pageSource, /panelGeneration !== panelInteractionGeneration/);
   assert.match(sendImageSource, /appendLocallySentMessage/);
