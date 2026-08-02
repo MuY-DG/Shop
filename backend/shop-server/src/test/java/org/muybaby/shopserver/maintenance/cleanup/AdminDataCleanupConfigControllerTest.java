@@ -59,7 +59,7 @@ class AdminDataCleanupConfigControllerTest {
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.revision").value(0))
-                .andExpect(jsonPath("$.data.tasks.length()").value(5));
+                .andExpect(jsonPath("$.data.tasks.length()").value(6));
 
         DataCleanupConfigResponse current = configService.current();
         String body = objectMapper.writeValueAsString(new DataCleanupConfigUpdateRequest(
@@ -72,7 +72,8 @@ class AdminDataCleanupConfigControllerTest {
                                 task.batchSize(),
                                 task.cronExpression(),
                                 task.batchIntervalSeconds(),
-                                task.uploadPendingGraceMinutes()
+                                task.uploadPendingGraceMinutes(),
+                                task.retainReviews()
                         ))
                         .toList()
         ));
@@ -88,7 +89,7 @@ class AdminDataCleanupConfigControllerTest {
                         .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.revision").value(1))
-                .andExpect(jsonPath("$.data.tasks.length()").value(5));
+                .andExpect(jsonPath("$.data.tasks.length()").value(6));
     }
 
     @Test
@@ -112,7 +113,8 @@ class AdminDataCleanupConfigControllerTest {
                                 task.batchSize(),
                                 task.cronExpression(),
                                 task.batchIntervalSeconds(),
-                                task.uploadPendingGraceMinutes()
+                                task.uploadPendingGraceMinutes(),
+                                task.retainReviews()
                         ))
                         .toList()
         );

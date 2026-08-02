@@ -108,6 +108,7 @@ public class DataCleanupConfigService {
                                 zone_id = :zoneId,
                                 batch_interval_seconds = :batchIntervalSeconds,
                                 upload_pending_grace_minutes = :uploadPendingGraceMinutes,
+                                retain_reviews = :retainReviews,
                                 config_revision = :configRevision,
                                 next_run_at = :nextRunAt,
                                 updated_at = current_timestamp
@@ -120,6 +121,7 @@ public class DataCleanupConfigService {
                     .param("zoneId", update.zoneId())
                     .param("batchIntervalSeconds", update.batchIntervalSeconds())
                     .param("uploadPendingGraceMinutes", update.uploadPendingGraceMinutes())
+                    .param("retainReviews", update.retainReviews())
                     .param("configRevision", request.revision() + 1)
                     .param("nextRunAt", nextRunAt)
                     .param("taskCode", taskCode.name())
@@ -390,6 +392,14 @@ public class DataCleanupConfigService {
         } else if (uploadGrace != null) {
             throw validationFailure();
         }
+        Boolean retainReviews = request.retainReviews();
+        if (taskCode.retainReviewsSupported()) {
+            if (retainReviews == null) {
+                throw validationFailure();
+            }
+        } else if (retainReviews != null) {
+            throw validationFailure();
+        }
         String cron = normalizeCron(request.cronExpression(), persisted.zoneId());
         return new NormalizedUpdate(
                 request.enabled(),
@@ -399,6 +409,7 @@ public class DataCleanupConfigService {
                 persisted.zoneId(),
                 request.batchIntervalSeconds(),
                 uploadGrace,
+                retainReviews,
                 persisted
         );
     }
@@ -415,7 +426,8 @@ public class DataCleanupConfigService {
                 || update.batchIntervalSeconds() != persisted.batchIntervalSeconds()
                 || !Objects.equals(
                         update.uploadPendingGraceMinutes(),
-                        persisted.uploadPendingGraceMinutes());
+                        persisted.uploadPendingGraceMinutes())
+                || !Objects.equals(update.retainReviews(), persisted.retainReviews());
     }
 
     private LocalDateTime nextRunAtAfterUpdate(
@@ -468,7 +480,8 @@ public class DataCleanupConfigService {
         return """
                 select task_code, enabled, retention_days, batch_size,
                        cron_expression, zone_id, batch_interval_seconds,
-                       upload_pending_grace_minutes, config_revision, next_run_at,
+                       upload_pending_grace_minutes, retain_reviews,
+                       config_revision, next_run_at,
                        run_sequence,
                        last_started_at, last_completed_at, last_status,
                        last_processed_count, last_error, updated_at
@@ -486,6 +499,7 @@ public class DataCleanupConfigService {
                 rs.getString("zone_id"),
                 rs.getInt("batch_interval_seconds"),
                 rs.getObject("upload_pending_grace_minutes", Integer.class),
+                rs.getObject("retain_reviews", Boolean.class),
                 rs.getLong("config_revision"),
                 rs.getLong("run_sequence"),
                 rs.getObject("next_run_at", LocalDateTime.class),
@@ -514,6 +528,7 @@ public class DataCleanupConfigService {
                 setting.zoneId(),
                 setting.batchIntervalSeconds(),
                 setting.uploadPendingGraceMinutes(),
+                setting.retainReviews(),
                 setting.nextRunAt(),
                 setting.lastStartedAt(),
                 setting.lastCompletedAt(),
@@ -587,6 +602,7 @@ public class DataCleanupConfigService {
             String zoneId,
             int batchIntervalSeconds,
             Integer uploadPendingGraceMinutes,
+            Boolean retainReviews,
             DataCleanupTaskSetting persisted
     ) {
 
@@ -599,6 +615,7 @@ public class DataCleanupConfigService {
                     zoneId,
                     batchIntervalSeconds,
                     uploadPendingGraceMinutes,
+                    retainReviews,
                     current
             );
         }

@@ -174,6 +174,7 @@ public class OrderCloseService {
                 throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
             }
             insertStockLog(
+                    orderId,
                     lockedStock.skuId(),
                     StockChangeType.ORDER_RELEASE.name(),
                     quantityBefore,
@@ -235,6 +236,7 @@ public class OrderCloseService {
     }
 
     private void insertStockLog(
+            Long orderId,
             Long skuId,
             String changeType,
             Integer quantityBefore,
@@ -246,12 +248,15 @@ public class OrderCloseService {
     ) {
         jdbcClient.sql("""
                         insert into stock_log (
-                            sku_id, change_type, quantity_before, quantity_delta, quantity_after, reason, operator_type, operator_id
+                            order_id, sku_id, change_type, quantity_before, quantity_delta,
+                            quantity_after, reason, operator_type, operator_id
                         )
                         values (
-                            :skuId, :changeType, :quantityBefore, :quantityDelta, :quantityAfter, :reason, :operatorType, :operatorId
+                            :orderId, :skuId, :changeType, :quantityBefore, :quantityDelta,
+                            :quantityAfter, :reason, :operatorType, :operatorId
                         )
                         """)
+                .param("orderId", orderId)
                 .param("skuId", skuId)
                 .param("changeType", changeType)
                 .param("quantityBefore", quantityBefore)

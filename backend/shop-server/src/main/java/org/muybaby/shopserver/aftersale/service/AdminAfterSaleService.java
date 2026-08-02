@@ -558,7 +558,8 @@ public class AdminAfterSaleService {
         Long adminUserId = requireAdminUser(principal);
         String note = requireRefundOperationNote(request);
         RefundOperationTarget target = transactionTemplate.execute(status -> {
-            RefundOperationTarget current = findRefundOperationTarget(afterSaleId, refundOrderId);
+            RefundOperationTarget current = findRefundOperationTargetForUpdate(
+                    afterSaleId, refundOrderId);
             if (!RefundOrderStatus.PROCESSING.name().equals(current.refundStatus())
                     && !RefundOrderStatus.FAILED.name().equals(current.refundStatus())
                     && !RefundOrderStatus.SUCCESS.name().equals(current.refundStatus())) {
@@ -1311,17 +1312,10 @@ public class AdminAfterSaleService {
             String description
     ) {
         transactionTemplate.executeWithoutResult(status -> {
-            String currentOrderStatus = jdbcClient.sql("""
-                            select status
-                            from shop_order
-                            where id = :orderId
-                            """)
-                    .param("orderId", target.orderId())
-                    .query(String.class)
-                    .optional()
-                    .orElse(target.orderStatus());
+            RefundOperationTarget current = findRefundOperationTargetForUpdate(
+                    target.afterSaleId(), target.refundOrderId());
             orderStatusLogService.record(
-                    target.orderId(), target.afterSaleId(), target.orderStatus(), currentOrderStatus,
+                    current.orderId(), current.afterSaleId(), target.orderStatus(), current.orderStatus(),
                     eventType, "ADMIN", adminUserId, description, LocalDateTime.now(java.time.ZoneOffset.UTC)
             );
         });

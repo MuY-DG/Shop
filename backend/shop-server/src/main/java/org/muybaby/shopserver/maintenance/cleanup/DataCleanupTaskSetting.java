@@ -11,6 +11,7 @@ public record DataCleanupTaskSetting(
         String zoneId,
         int batchIntervalSeconds,
         Integer uploadPendingGraceMinutes,
+        Boolean retainReviews,
         long configRevision,
         long runSequence,
         LocalDateTime nextRunAt,

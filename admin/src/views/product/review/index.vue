@@ -41,6 +41,7 @@
           <div class="reviewer-cell">
             <span>{{ row.reviewerName }}</span>
             <div class="reviewer-tags">
+              <ElTag v-if="row.verifiedPurchase" type="success" size="small">已购</ElTag>
               <ElTag v-if="row.anonymous" type="info" size="small">匿名发布</ElTag>
               <span class="secondary-text">用户 {{ row.userId }}</span>
             </div>
@@ -61,6 +62,11 @@
               {{ row.content || '仅评分' }}
             </span>
           </ElTooltip>
+        </template>
+
+        <template #orderNo="{ row }">
+          <ElTag v-if="row.orderDataCleaned" type="info" size="small">订单已清理</ElTag>
+          <span v-else>{{ row.orderNo || '-' }}</span>
         </template>
 
         <template #status="{ row }">
@@ -103,6 +109,14 @@
           <ElDescriptionsItem label="评论 ID">{{ currentReview.id }}</ElDescriptionsItem>
           <ElDescriptionsItem label="评价用户">
             {{ currentReview.reviewerName }}（用户 {{ currentReview.userId }}）
+            <ElTag
+              v-if="currentReview.verifiedPurchase"
+              class="detail-tag"
+              type="success"
+              size="small"
+            >
+              已购
+            </ElTag>
             <ElTag v-if="currentReview.anonymous" class="detail-tag" type="info" size="small">
               匿名发布
             </ElTag>
@@ -119,7 +133,13 @@
             {{ currentReview.specText || '-' }}
           </ElDescriptionsItem>
           <ElDescriptionsItem label="关联订单">
-            {{ currentReview.orderNo }}（订单 {{ currentReview.orderId }}）
+            <ElTag v-if="currentReview.orderDataCleaned" type="info" size="small">
+              订单已清理
+            </ElTag>
+            <template v-else>
+              {{ currentReview.orderNo || '-' }}
+              <template v-if="currentReview.orderId">（订单 {{ currentReview.orderId }}）</template>
+            </template>
           </ElDescriptionsItem>
           <ElDescriptionsItem label="评论时间">
             {{ formatDateTime(currentReview.createdAt) }}
@@ -236,7 +256,7 @@
         { prop: 'rating', label: '评分', width: 150, useSlot: true },
         { prop: 'content', label: '评论内容', minWidth: 240, useSlot: true },
         { prop: 'specText', label: '购买规格', minWidth: 120 },
-        { prop: 'orderNo', label: '订单号', minWidth: 180 },
+        { prop: 'orderNo', label: '订单号', minWidth: 180, useSlot: true },
         {
           prop: 'createdAt',
           label: '评论时间',
@@ -378,7 +398,7 @@
 
   .detail-content {
     line-height: 22px;
-    white-space: pre-wrap;
     word-break: break-word;
+    white-space: pre-wrap;
   }
 </style>

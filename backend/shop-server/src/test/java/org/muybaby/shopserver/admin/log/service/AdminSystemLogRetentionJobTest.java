@@ -54,6 +54,7 @@ class AdminSystemLogRetentionJobTest {
                 "Asia/Shanghai",
                 60,
                 null,
+                null,
                 0L,
                 0L,
                 null,

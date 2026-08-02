@@ -47,14 +47,15 @@ public class AppProductReviewService {
         long offset = (current - 1) * size;
         long total = reviewCount(spuId);
         List<PublicProductReviewResponse> records = jdbcClient.sql("""
-                        SELECT r.id, oi.spec_text, r.rating, r.content, r.anonymous,
+                        SELECT r.id, r.spec_text_snapshot AS spec_text,
+                               r.rating, r.content, r.anonymous,
                                CASE WHEN r.anonymous = TRUE THEN '匿名用户'
                                     WHEN u.nickname <> '' THEN u.nickname
                                     ELSE CONCAT('用户', RIGHT(CONCAT('', u.id), 6)) END AS reviewer_name,
+                               r.verified_purchase,
                                r.created_at, r.updated_at
                         FROM product_review r
                         JOIN app_user u ON u.id = r.user_id
-                        JOIN order_item oi ON oi.id = r.order_item_id
                         WHERE r.spu_id = :spuId
                           AND r.status = :status
                         ORDER BY r.created_at DESC, r.id DESC
@@ -90,16 +91,17 @@ public class AppProductReviewService {
                 .query(Long.class)
                 .single();
         List<ProductReviewResponse> records = jdbcClient.sql("""
-                        SELECT r.id, r.spu_id, p.title AS product_title, r.order_item_id,
-                               oi.spec_text, r.rating, r.content, r.anonymous,
+                        SELECT r.id, r.spu_id, r.product_title_snapshot AS product_title,
+                               r.source_order_item_id AS order_item_id,
+                               r.spec_text_snapshot AS spec_text,
+                               r.rating, r.content, r.anonymous,
                                CASE WHEN r.anonymous = TRUE THEN '匿名用户'
                                     WHEN u.nickname <> '' THEN u.nickname
                                     ELSE CONCAT('用户', RIGHT(CONCAT('', u.id), 6)) END AS reviewer_name,
+                               r.verified_purchase,
                                r.created_at, r.updated_at
                         FROM product_review r
                         JOIN app_user u ON u.id = r.user_id
-                        JOIN product_spu p ON p.id = r.spu_id
-                        JOIN order_item oi ON oi.id = r.order_item_id
                         WHERE r.user_id = :userId
                           AND r.status = :status
                         ORDER BY r.created_at DESC, r.id DESC
@@ -125,7 +127,7 @@ public class AppProductReviewService {
                                oi.sku_id, oi.spec_text, o.completed_at
                         FROM order_item oi
                         JOIN shop_order o ON o.id = oi.order_id
-                        LEFT JOIN product_review r ON r.order_item_id = oi.id
+                        LEFT JOIN product_review r ON r.source_order_item_id = oi.id
                         WHERE o.user_id = :userId
                           AND oi.spu_id = :spuId
                           AND o.status = :completedStatus
@@ -157,39 +159,69 @@ public class AppProductReviewService {
     ) {
         long userId = requireAppUser(principal);
         requireExistingProduct(spuId);
-        boolean eligible = jdbcClient.sql("""
-                        SELECT COUNT(*)
-                        FROM order_item oi
-                        JOIN shop_order o ON o.id = oi.order_id
-                        WHERE oi.id = :orderItemId
-                          AND oi.spu_id = :spuId
-                          AND o.user_id = :userId
-                          AND o.status = :completedStatus
-                          AND o.completed_at IS NOT NULL
+        Long orderId = jdbcClient.sql("""
+                        SELECT order_id
+                        FROM order_item
+                        WHERE id = :orderItemId AND spu_id = :spuId
                         """)
                 .param("orderItemId", request.orderItemId())
                 .param("spuId", spuId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_ELIGIBLE));
+        boolean completedOrderLocked = jdbcClient.sql("""
+                        SELECT id
+                        FROM shop_order
+                        WHERE id = :orderId
+                          AND user_id = :userId
+                          AND status = :completedStatus
+                          AND completed_at IS NOT NULL
+                        FOR UPDATE
+                        """)
+                .param("orderId", orderId)
                 .param("userId", userId)
                 .param("completedStatus", COMPLETED)
                 .query(Long.class)
-                .single() == 1L;
-        if (!eligible) {
+                .optional()
+                .isPresent();
+        if (!completedOrderLocked) {
             throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_ELIGIBLE);
         }
+        ReviewSnapshot snapshot = jdbcClient.sql("""
+                        SELECT oi.product_title, oi.spec_text
+                        FROM order_item oi
+                        WHERE oi.id = :orderItemId
+                          AND oi.order_id = :orderId
+                          AND oi.spu_id = :spuId
+                        FOR UPDATE
+                        """)
+                .param("orderItemId", request.orderItemId())
+                .param("orderId", orderId)
+                .param("spuId", spuId)
+                .query((rs, rowNum) -> new ReviewSnapshot(
+                        rs.getString("product_title"),
+                        rs.getString("spec_text")
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_ELIGIBLE));
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         try {
             jdbcClient.sql("""
                             INSERT INTO product_review (
-                                user_id, spu_id, order_item_id, rating, content,
-                                anonymous, status, created_at, updated_at
+                                user_id, spu_id, source_order_item_id, order_item_id,
+                                product_title_snapshot, spec_text_snapshot, verified_purchase,
+                                rating, content, anonymous, status, created_at, updated_at
                             ) VALUES (
-                                :userId, :spuId, :orderItemId, :rating, :content,
-                                :anonymous, :status, :now, :now
+                                :userId, :spuId, :orderItemId, :orderItemId,
+                                :productTitle, :specText, TRUE,
+                                :rating, :content, :anonymous, :status, :now, :now
                             )
                             """)
                     .param("userId", userId)
                     .param("spuId", spuId)
                     .param("orderItemId", request.orderItemId())
+                    .param("productTitle", snapshot.productTitle())
+                    .param("specText", snapshot.specText())
                     .param("rating", request.rating())
                     .param("content", normalizeContent(request.content()))
                     .param("anonymous", Boolean.TRUE.equals(request.anonymous()))
@@ -200,7 +232,7 @@ public class AppProductReviewService {
             throw new BusinessException(ErrorCode.PRODUCT_REVIEW_ALREADY_EXISTS);
         }
         Long reviewId = jdbcClient.sql("""
-                        SELECT id FROM product_review WHERE order_item_id = :orderItemId
+                        SELECT id FROM product_review WHERE source_order_item_id = :orderItemId
                         """)
                 .param("orderItemId", request.orderItemId())
                 .query(Long.class)
@@ -278,16 +310,17 @@ public class AppProductReviewService {
 
     private ProductReviewResponse ownedReview(long userId, Long reviewId) {
         return jdbcClient.sql("""
-                        SELECT r.id, r.spu_id, p.title AS product_title, r.order_item_id,
-                               oi.spec_text, r.rating, r.content, r.anonymous,
+                        SELECT r.id, r.spu_id, r.product_title_snapshot AS product_title,
+                               r.source_order_item_id AS order_item_id,
+                               r.spec_text_snapshot AS spec_text,
+                               r.rating, r.content, r.anonymous,
                                CASE WHEN r.anonymous = TRUE THEN '匿名用户'
                                     WHEN u.nickname <> '' THEN u.nickname
                                     ELSE CONCAT('用户', RIGHT(CONCAT('', u.id), 6)) END AS reviewer_name,
+                               r.verified_purchase,
                                r.created_at, r.updated_at
                         FROM product_review r
                         JOIN app_user u ON u.id = r.user_id
-                        JOIN product_spu p ON p.id = r.spu_id
-                        JOIN order_item oi ON oi.id = r.order_item_id
                         WHERE r.id = :reviewId AND r.user_id = :userId
                         """)
                 .param("reviewId", reviewId)
@@ -302,13 +335,13 @@ public class AppProductReviewService {
                 rs.getLong("id"),
                 rs.getLong("spu_id"),
                 rs.getString("product_title"),
-                rs.getLong("order_item_id"),
+                rs.getObject("order_item_id", Long.class),
                 rs.getString("spec_text"),
                 rs.getInt("rating"),
                 rs.getString("content"),
                 rs.getBoolean("anonymous"),
                 rs.getString("reviewer_name"),
-                true,
+                rs.getBoolean("verified_purchase"),
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class)
         );
@@ -322,7 +355,7 @@ public class AppProductReviewService {
                 rs.getString("content"),
                 rs.getBoolean("anonymous"),
                 rs.getString("reviewer_name"),
-                true,
+                rs.getBoolean("verified_purchase"),
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class)
         );
@@ -389,5 +422,8 @@ public class AppProductReviewService {
     }
 
     private record SummaryRow(long reviewCount, BigDecimal averageRating, long goodReviewCount) {
+    }
+
+    private record ReviewSnapshot(String productTitle, String specText) {
     }
 }

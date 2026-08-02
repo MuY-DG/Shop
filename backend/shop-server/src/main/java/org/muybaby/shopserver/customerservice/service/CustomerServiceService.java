@@ -1627,6 +1627,7 @@ public class CustomerServiceService {
             Long addedById,
             boolean updateCurrentContext
     ) {
+        lockConversation(conversation.id());
         LinkedOrderResponse order = requireOwnedOrder(conversation.appUserId(), orderId);
         boolean added = addConsultationResource(
                 conversation, "ORDER", orderId, addedByType, addedById
@@ -1780,6 +1781,7 @@ public class CustomerServiceService {
         if (!"DRAFT".equals(conversation.status())) {
             throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_STATE_CONFLICT);
         }
+        lockConversation(conversation.id());
         if ("ORDER".equals(context.type())) {
             requireOwnedOrder(appUserId, context.resourceId());
         } else if ("PRODUCT".equals(context.type())) {
@@ -2274,6 +2276,22 @@ public class CustomerServiceService {
                 .update();
     }
 
+    private void lockConversation(Long conversationId) {
+        boolean present = jdbcClient.sql("""
+                        select id
+                        from customer_service_conversation
+                        where id = :conversationId
+                        for update
+                        """)
+                .param("conversationId", conversationId)
+                .query(Long.class)
+                .optional()
+                .isPresent();
+        if (!present) {
+            throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
+        }
+    }
+
     private LinkedProductResponse requireProduct(Long productId) {
         if (productId == null || productId <= 0) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
@@ -2293,6 +2311,7 @@ public class CustomerServiceService {
         return jdbcClient.sql(orderSelect() + """
                         from shop_order o
                         where o.id = :orderId and o.user_id = :appUserId
+                        for update
                         """)
                 .param("orderId", orderId)
                 .param("appUserId", appUserId)

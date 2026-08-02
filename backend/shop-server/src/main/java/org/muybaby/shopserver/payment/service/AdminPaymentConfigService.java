@@ -346,8 +346,19 @@ public class AdminPaymentConfigService {
     private void rejectReferencedConfigMutation(Long configId) {
         boolean referenced = jdbcClient.sql("""
                         select count(*)
-                        from payment_order
-                        where payment_config_id = :configId
+                        from (
+                            select id
+                            from payment_order
+                            where payment_config_id = :configId
+                            union all
+                            select id
+                            from purged_payment_identity
+                            where payment_config_id = :configId
+                            union all
+                            select id
+                            from purged_refund_identity
+                            where payment_config_id = :configId
+                        ) referenced_payment_config
                         """)
                 .param("configId", configId)
                 .query(Long.class)

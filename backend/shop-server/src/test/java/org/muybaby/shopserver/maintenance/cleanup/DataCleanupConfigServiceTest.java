@@ -44,6 +44,7 @@ class DataCleanupConfigServiceTest {
                 37,
                 "  0   5  2  * * *  ",
                 120,
+                null,
                 null
         ));
 
@@ -79,6 +80,7 @@ class DataCleanupConfigServiceTest {
                 10_001,
                 customerService.cronExpression(),
                 customerService.batchIntervalSeconds(),
+                null,
                 null
         ));
 
@@ -91,6 +93,52 @@ class DataCleanupConfigServiceTest {
         assertThat(configService.current().revision()).isEqualTo(current.revision());
         assertThat(task(configService.current(), DataCleanupTaskCode.CUSTOMER_SERVICE_MESSAGE)
                 .batchSize()).isEqualTo(1_000);
+    }
+
+    @Test
+    void updatesOrderReviewRetentionAndRejectsItForOtherTasks() {
+        DataCleanupConfigResponse current = configService.current();
+        List<DataCleanupTaskUpdateRequest> updates = updatesFrom(current);
+        int orderIndex = indexOf(updates, DataCleanupTaskCode.ORDER_AGGREGATE);
+        DataCleanupTaskUpdateRequest order = updates.get(orderIndex);
+        updates.set(orderIndex, new DataCleanupTaskUpdateRequest(
+                order.taskCode(),
+                order.enabled(),
+                order.retentionDays(),
+                order.batchSize(),
+                order.cronExpression(),
+                order.batchIntervalSeconds(),
+                null,
+                false
+        ));
+
+        DataCleanupConfigResponse updated = configService.update(
+                new DataCleanupConfigUpdateRequest(current.revision(), updates),
+                42L
+        );
+
+        assertThat(task(updated, DataCleanupTaskCode.ORDER_AGGREGATE).retainReviews())
+                .isFalse();
+
+        List<DataCleanupTaskUpdateRequest> invalid = updatesFrom(updated);
+        int analyticsIndex = indexOf(invalid, DataCleanupTaskCode.ANALYTICS_EVENT);
+        DataCleanupTaskUpdateRequest analytics = invalid.get(analyticsIndex);
+        invalid.set(analyticsIndex, new DataCleanupTaskUpdateRequest(
+                analytics.taskCode(),
+                analytics.enabled(),
+                analytics.retentionDays(),
+                analytics.batchSize(),
+                analytics.cronExpression(),
+                analytics.batchIntervalSeconds(),
+                analytics.uploadPendingGraceMinutes(),
+                true
+        ));
+
+        assertThatThrownBy(() -> configService.update(
+                new DataCleanupConfigUpdateRequest(updated.revision(), invalid),
+                42L
+        )).isInstanceOfSatisfying(BusinessException.class, failure ->
+                assertThat(failure.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
     }
 
     @Test
@@ -180,6 +228,7 @@ class DataCleanupConfigServiceTest {
                 analytics.batchSize(),
                 "0 0 6 * * *",
                 analytics.batchIntervalSeconds(),
+                null,
                 null
         ));
         configService.update(
@@ -286,7 +335,8 @@ class DataCleanupConfigServiceTest {
                         task.batchSize(),
                         task.cronExpression(),
                         task.batchIntervalSeconds(),
-                        task.uploadPendingGraceMinutes()
+                        task.uploadPendingGraceMinutes(),
+                        task.retainReviews()
                 ))
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
     }

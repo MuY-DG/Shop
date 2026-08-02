@@ -4,6 +4,7 @@ declare namespace Api {
       | 'ANALYTICS_EVENT'
       | 'ADMIN_SYSTEM_LOG'
       | 'CUSTOMER_SERVICE_MESSAGE'
+      | 'ORDER_AGGREGATE'
       | 'STORAGE_ASSET'
       | 'DIRECT_UPLOAD_SESSION'
 
@@ -23,6 +24,7 @@ declare namespace Api {
       zoneId?: string
       batchIntervalSeconds: number
       uploadPendingGraceMinutes?: number | null
+      retainReviews: boolean | null
       nextRunAt?: string | null
       lastStartedAt?: string | null
       lastCompletedAt?: string | null
@@ -45,6 +47,7 @@ declare namespace Api {
       cronExpression: string
       batchIntervalSeconds: number
       uploadPendingGraceMinutes: number | null
+      retainReviews: boolean | null
     }
 
     interface ConfigForm {

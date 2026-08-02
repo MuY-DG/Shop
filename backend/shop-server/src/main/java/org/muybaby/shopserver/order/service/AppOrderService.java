@@ -22,6 +22,7 @@ import org.muybaby.shopserver.order.CheckoutSource;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.OrderStatusGroup;
 import org.muybaby.shopserver.order.StockLockStatus;
+import org.muybaby.shopserver.order.cleanup.PurgedOrderIdentityDigests;
 import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
 import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
@@ -682,11 +683,26 @@ public class AppOrderService {
                         where user_id = :userId
                           and idempotency_key = :idempotencyKey
                         """ + (forUpdate ? " for update" : "");
-        return jdbcClient.sql(sql)
+        Optional<ExistingOrder> existing = jdbcClient.sql(sql)
                 .param("userId", userId)
                 .param("idempotencyKey", idempotencyKey)
                 .query(this::mapExistingOrder)
                 .optional();
+        if (existing.isEmpty() && wasPurged(userId, idempotencyKey)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return existing;
+    }
+
+    private boolean wasPurged(Long userId, String idempotencyKey) {
+        return jdbcClient.sql("""
+                        select count(*)
+                        from purged_order_identity
+                        where user_idempotency_digest = :digest
+                        """)
+                .param("digest", PurgedOrderIdentityDigests.userIdempotency(userId, idempotencyKey))
+                .query(Long.class)
+                .single() > 0L;
     }
 
     private OrderSubmitResponse replayExisting(ExistingOrder existing, CheckoutRequest request) {
@@ -932,6 +948,7 @@ public class AppOrderService {
                     .param("updatedAt", now)
                     .update();
             insertStockLog(
+                    orderId,
                     item.skuId(),
                     StockChangeType.ORDER_LOCK.name(),
                     quantityBefore,
@@ -1057,6 +1074,7 @@ public class AppOrderService {
     }
 
     private void insertStockLog(
+            Long orderId,
             Long skuId,
             String changeType,
             Integer quantityBefore,
@@ -1068,12 +1086,15 @@ public class AppOrderService {
     ) {
         jdbcClient.sql("""
                         insert into stock_log (
-                            sku_id, change_type, quantity_before, quantity_delta, quantity_after, reason, operator_type, operator_id
+                            order_id, sku_id, change_type, quantity_before, quantity_delta,
+                            quantity_after, reason, operator_type, operator_id
                         )
                         values (
-                            :skuId, :changeType, :quantityBefore, :quantityDelta, :quantityAfter, :reason, :operatorType, :operatorId
+                            :orderId, :skuId, :changeType, :quantityBefore, :quantityDelta,
+                            :quantityAfter, :reason, :operatorType, :operatorId
                         )
                         """)
+                .param("orderId", orderId)
                 .param("skuId", skuId)
                 .param("changeType", changeType)
                 .param("quantityBefore", quantityBefore)

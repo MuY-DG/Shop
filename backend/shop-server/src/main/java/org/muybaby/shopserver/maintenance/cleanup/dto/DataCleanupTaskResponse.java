@@ -18,6 +18,7 @@ public record DataCleanupTaskResponse(
         String zoneId,
         int batchIntervalSeconds,
         Integer uploadPendingGraceMinutes,
+        Boolean retainReviews,
         LocalDateTime nextRunAt,
         LocalDateTime lastStartedAt,
         LocalDateTime lastCompletedAt,

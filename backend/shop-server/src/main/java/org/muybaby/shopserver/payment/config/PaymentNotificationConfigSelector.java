@@ -2,6 +2,7 @@ package org.muybaby.shopserver.payment.config;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.order.cleanup.PurgedOrderIdentityDigests;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
@@ -119,19 +120,22 @@ public class PaymentNotificationConfigSelector {
         }
         RoutedPaymentIdentity routedIdentity = findRoutedPaymentIdentity(
                 normalizedToken, notificationKind);
-        if (!constantTimeEquals(normalizedToken, routedIdentity.routeToken())) {
+        String presentedRouteIdentity = routedIdentity.callbackIdentity().purged()
+                ? PurgedOrderIdentityDigests.value(normalizedToken)
+                : normalizedToken;
+        if (!constantTimeEquals(presentedRouteIdentity, routedIdentity.routeTokenIdentity())) {
             throw new PaymentNotificationRouteRejectedException();
         }
         ResolvedPaymentConfig exactConfig = paymentConfigResolver.resolveForPayment(
                 routedIdentity.configId(), routedIdentity.fingerprint());
         T notification = parser.apply(exactConfig);
         NotificationRoute actualRoute = requireRoute(routeExtractor.apply(notification));
-        if (!routedIdentity.expectedRoute().equals(actualRoute)) {
+        if (!matchesExpectedRoute(routedIdentity, actualRoute)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         paymentConfigIdentityValidator.validate(
                 routedIdentity.configId(), routedIdentity.fingerprint(), exactConfig);
-        return new ParsedNotification<>(exactConfig, notification);
+        return new ParsedNotification<>(exactConfig, notification, routedIdentity.callbackIdentity());
     }
 
     private <T> ParsedNotification<T> parseAndBindToStoredIdentity(
@@ -146,7 +150,8 @@ public class PaymentNotificationConfigSelector {
         try {
             paymentConfigIdentityValidator.validate(
                     storedIdentity.configId(), storedIdentity.fingerprint(), bootstrapConfig);
-            return new ParsedNotification<>(bootstrapConfig, bootstrapNotification);
+            return new ParsedNotification<>(
+                    bootstrapConfig, bootstrapNotification, storedIdentity.callbackIdentity());
         } catch (BusinessException identityMismatch) {
             String exactIdentityKey = identityKey(
                     storedIdentity.configId(), storedIdentity.fingerprint());
@@ -168,7 +173,8 @@ public class PaymentNotificationConfigSelector {
                 }
                 paymentConfigIdentityValidator.validate(
                         exactStoredIdentity.configId(), exactStoredIdentity.fingerprint(), exactConfig);
-                return new ParsedNotification<>(exactConfig, exactNotification);
+                return new ParsedNotification<>(
+                        exactConfig, exactNotification, exactStoredIdentity.callbackIdentity());
             } catch (BusinessException exactFailure) {
                 throw identityMismatch;
             }
@@ -177,8 +183,9 @@ public class PaymentNotificationConfigSelector {
 
     private StoredPaymentIdentity findStoredPaymentIdentity(NotificationRoute route) {
         if (route.refund()) {
-            return jdbcClient.sql("""
-                            select po.payment_config_id, po.payment_config_fingerprint
+            StoredPaymentIdentity liveIdentity = jdbcClient.sql("""
+                            select po.payment_config_id, po.payment_config_fingerprint,
+                                   ro.order_id, ro.after_sale_id
                             from refund_order ro
                             join payment_order po on po.id = ro.payment_order_id
                             where ro.out_refund_no = :outRefundNo
@@ -189,13 +196,41 @@ public class PaymentNotificationConfigSelector {
                     .param("outTradeNo", route.outTradeNo())
                     .query((rs, rowNum) -> new StoredPaymentIdentity(
                             rs.getObject("payment_config_id", Long.class),
-                            rs.getString("payment_config_fingerprint")
+                            rs.getString("payment_config_fingerprint"),
+                            CallbackIdentity.liveRefund(
+                                    rs.getObject("order_id", Long.class),
+                                    rs.getObject("after_sale_id", Long.class))
+                    ))
+                    .optional()
+                    .orElse(null);
+            if (liveIdentity != null) {
+                return liveIdentity;
+            }
+            return jdbcClient.sql("""
+                            select payment_config_id, payment_config_fingerprint,
+                                   final_status, final_callback_status,
+                                   refund_id_digest, refund_amount_cent
+                            from purged_refund_identity
+                            where out_refund_no_digest = :outRefundNoDigest
+                              and out_trade_no_digest = :outTradeNoDigest
+                              and notification_route_digest is null
+                            """)
+                    .param("outRefundNoDigest", PurgedOrderIdentityDigests.value(route.outRefundNo()))
+                    .param("outTradeNoDigest", PurgedOrderIdentityDigests.value(route.outTradeNo()))
+                    .query((rs, rowNum) -> new StoredPaymentIdentity(
+                            rs.getObject("payment_config_id", Long.class),
+                            rs.getString("payment_config_fingerprint"),
+                            CallbackIdentity.purgedRefund(
+                                    rs.getString("final_status"),
+                                    rs.getString("final_callback_status"),
+                                    rs.getString("refund_id_digest"),
+                                    rs.getLong("refund_amount_cent"))
                     ))
                     .optional()
                     .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
         }
-        return jdbcClient.sql("""
-                        select payment_config_id, payment_config_fingerprint
+        StoredPaymentIdentity liveIdentity = jdbcClient.sql("""
+                        select payment_config_id, payment_config_fingerprint, order_id
                         from payment_order
                         where out_trade_no = :outTradeNo
                           and notification_route_token is null
@@ -203,7 +238,30 @@ public class PaymentNotificationConfigSelector {
                 .param("outTradeNo", route.outTradeNo())
                 .query((rs, rowNum) -> new StoredPaymentIdentity(
                         rs.getObject("payment_config_id", Long.class),
-                        rs.getString("payment_config_fingerprint")
+                        rs.getString("payment_config_fingerprint"),
+                        CallbackIdentity.livePayment(rs.getObject("order_id", Long.class))
+                ))
+                .optional()
+                .orElse(null);
+        if (liveIdentity != null) {
+            return liveIdentity;
+        }
+        return jdbcClient.sql("""
+                        select payment_config_id, payment_config_fingerprint,
+                               final_status, transaction_id_digest, amount_cent, currency
+                        from purged_payment_identity
+                        where out_trade_no_digest = :outTradeNoDigest
+                          and notification_route_digest is null
+                        """)
+                .param("outTradeNoDigest", PurgedOrderIdentityDigests.value(route.outTradeNo()))
+                .query((rs, rowNum) -> new StoredPaymentIdentity(
+                        rs.getObject("payment_config_id", Long.class),
+                        rs.getString("payment_config_fingerprint"),
+                        CallbackIdentity.purgedPayment(
+                                rs.getString("final_status"),
+                                rs.getString("transaction_id_digest"),
+                                rs.getLong("amount_cent"),
+                                rs.getString("currency"))
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
@@ -214,12 +272,14 @@ public class PaymentNotificationConfigSelector {
             NotificationKind notificationKind
     ) {
         if (notificationKind == NotificationKind.REFUND) {
-            return jdbcClient.sql("""
+            RoutedPaymentIdentity liveIdentity = jdbcClient.sql("""
                             select po.payment_config_id,
                                    po.payment_config_fingerprint,
                                    po.out_trade_no,
                                    ro.out_refund_no,
-                                   ro.notification_route_token
+                                   ro.notification_route_token,
+                                   ro.order_id,
+                                   ro.after_sale_id
                             from refund_order ro
                             join payment_order po on po.id = ro.payment_order_id
                             where ro.notification_route_token = :routeToken
@@ -231,7 +291,40 @@ public class PaymentNotificationConfigSelector {
                             NotificationRoute.refund(
                                     rs.getString("out_trade_no"),
                                     rs.getString("out_refund_no")),
-                            rs.getString("notification_route_token")
+                            rs.getString("notification_route_token"),
+                            null,
+                            null,
+                            CallbackIdentity.liveRefund(
+                                    rs.getObject("order_id", Long.class),
+                                    rs.getObject("after_sale_id", Long.class))
+                    ))
+                    .optional()
+                    .orElse(null);
+            if (liveIdentity != null) {
+                return liveIdentity;
+            }
+            return jdbcClient.sql("""
+                            select payment_config_id, payment_config_fingerprint,
+                                   out_trade_no_digest, out_refund_no_digest,
+                                   notification_route_digest, final_status,
+                                   final_callback_status, refund_id_digest,
+                                   refund_amount_cent
+                            from purged_refund_identity
+                            where notification_route_digest = :routeDigest
+                            """)
+                    .param("routeDigest", PurgedOrderIdentityDigests.value(routeToken))
+                    .query((rs, rowNum) -> new RoutedPaymentIdentity(
+                            rs.getObject("payment_config_id", Long.class),
+                            rs.getString("payment_config_fingerprint"),
+                            null,
+                            rs.getString("notification_route_digest"),
+                            rs.getString("out_trade_no_digest"),
+                            rs.getString("out_refund_no_digest"),
+                            CallbackIdentity.purgedRefund(
+                                    rs.getString("final_status"),
+                                    rs.getString("final_callback_status"),
+                                    rs.getString("refund_id_digest"),
+                                    rs.getLong("refund_amount_cent"))
                     ))
                     .optional()
                     .orElseThrow(PaymentNotificationRouteRejectedException::new);
@@ -239,11 +332,12 @@ public class PaymentNotificationConfigSelector {
         if (notificationKind != NotificationKind.PAY) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        return jdbcClient.sql("""
+        RoutedPaymentIdentity liveIdentity = jdbcClient.sql("""
                         select payment_config_id,
                                payment_config_fingerprint,
                                out_trade_no,
-                               notification_route_token
+                               notification_route_token,
+                               order_id
                         from payment_order
                         where notification_route_token = :routeToken
                         """)
@@ -252,10 +346,55 @@ public class PaymentNotificationConfigSelector {
                         rs.getObject("payment_config_id", Long.class),
                         rs.getString("payment_config_fingerprint"),
                         NotificationRoute.payment(rs.getString("out_trade_no")),
-                        rs.getString("notification_route_token")
+                        rs.getString("notification_route_token"),
+                        null,
+                        null,
+                        CallbackIdentity.livePayment(rs.getObject("order_id", Long.class))
+                ))
+                .optional()
+                .orElse(null);
+        if (liveIdentity != null) {
+            return liveIdentity;
+        }
+        return jdbcClient.sql("""
+                        select payment_config_id, payment_config_fingerprint,
+                               out_trade_no_digest, notification_route_digest,
+                               final_status, transaction_id_digest, amount_cent, currency
+                        from purged_payment_identity
+                        where notification_route_digest = :routeDigest
+                        """)
+                .param("routeDigest", PurgedOrderIdentityDigests.value(routeToken))
+                .query((rs, rowNum) -> new RoutedPaymentIdentity(
+                        rs.getObject("payment_config_id", Long.class),
+                        rs.getString("payment_config_fingerprint"),
+                        null,
+                        rs.getString("notification_route_digest"),
+                        rs.getString("out_trade_no_digest"),
+                        null,
+                        CallbackIdentity.purgedPayment(
+                                rs.getString("final_status"),
+                                rs.getString("transaction_id_digest"),
+                                rs.getLong("amount_cent"),
+                                rs.getString("currency"))
                 ))
                 .optional()
                 .orElseThrow(PaymentNotificationRouteRejectedException::new);
+    }
+
+    private boolean matchesExpectedRoute(RoutedPaymentIdentity identity, NotificationRoute actualRoute) {
+        if (!identity.callbackIdentity().purged()) {
+            return identity.expectedRoute().equals(actualRoute);
+        }
+        boolean tradeMatches = constantTimeEquals(
+                identity.outTradeNoDigest(),
+                PurgedOrderIdentityDigests.value(actualRoute.outTradeNo()));
+        if (!tradeMatches) {
+            return false;
+        }
+        return identity.outRefundNoDigest() == null
+                || constantTimeEquals(
+                        identity.outRefundNoDigest(),
+                        PurgedOrderIdentityDigests.value(actualRoute.outRefundNo()));
     }
 
     private NotificationRoute requireRoute(NotificationRoute route) {
@@ -272,17 +411,28 @@ public class PaymentNotificationConfigSelector {
     private List<HistoricalConfigIdentity> historicalConfigIdentities(NotificationKind notificationKind) {
         if (notificationKind == NotificationKind.REFUND) {
             return jdbcClient.sql("""
-                            select po.payment_config_id,
-                                   po.payment_config_fingerprint,
-                                   max(ro.updated_at) as last_used_at
-                            from refund_order ro
-                            join payment_order po on po.id = ro.payment_order_id
-                            where ro.notification_route_token is null
-                              and (po.payment_config_id is not null
-                                   or po.payment_config_fingerprint <> '')
-                            group by po.payment_config_id, po.payment_config_fingerprint
-                            order by last_used_at desc, po.payment_config_id desc,
-                                     po.payment_config_fingerprint desc
+                            select history.payment_config_id,
+                                   history.payment_config_fingerprint,
+                                   max(history.last_used_at) as last_used_at
+                            from (
+                                select po.payment_config_id,
+                                       po.payment_config_fingerprint,
+                                       ro.updated_at as last_used_at
+                                from refund_order ro
+                                join payment_order po on po.id = ro.payment_order_id
+                                where ro.notification_route_token is null
+                                union all
+                                select payment_config_id,
+                                       payment_config_fingerprint,
+                                       purged_at as last_used_at
+                                from purged_refund_identity
+                                where notification_route_digest is null
+                            ) history
+                            where history.payment_config_id is not null
+                               or history.payment_config_fingerprint <> ''
+                            group by history.payment_config_id, history.payment_config_fingerprint
+                            order by last_used_at desc, history.payment_config_id desc,
+                                     history.payment_config_fingerprint desc
                             limit :limit
                             """)
                     .param("limit", MAX_HISTORICAL_CONFIG_CANDIDATES)
@@ -293,16 +443,27 @@ public class PaymentNotificationConfigSelector {
                     .list();
         }
         return jdbcClient.sql("""
-                        select payment_config_id,
-                               payment_config_fingerprint,
-                               max(updated_at) as last_used_at
-                        from payment_order
-                        where notification_route_token is null
-                          and (payment_config_id is not null
-                               or payment_config_fingerprint <> '')
-                        group by payment_config_id, payment_config_fingerprint
-                        order by last_used_at desc, payment_config_id desc,
-                                 payment_config_fingerprint desc
+                        select history.payment_config_id,
+                               history.payment_config_fingerprint,
+                               max(history.last_used_at) as last_used_at
+                        from (
+                            select payment_config_id,
+                                   payment_config_fingerprint,
+                                   updated_at as last_used_at
+                            from payment_order
+                            where notification_route_token is null
+                            union all
+                            select payment_config_id,
+                                   payment_config_fingerprint,
+                                   purged_at as last_used_at
+                            from purged_payment_identity
+                            where notification_route_digest is null
+                        ) history
+                        where history.payment_config_id is not null
+                           or history.payment_config_fingerprint <> ''
+                        group by history.payment_config_id, history.payment_config_fingerprint
+                        order by last_used_at desc, history.payment_config_id desc,
+                                 history.payment_config_fingerprint desc
                         limit :limit
                         """)
                 .param("limit", MAX_HISTORICAL_CONFIG_CANDIDATES)
@@ -328,14 +489,21 @@ public class PaymentNotificationConfigSelector {
     private record HistoricalConfigIdentity(Long configId, String fingerprint) {
     }
 
-    private record StoredPaymentIdentity(Long configId, String fingerprint) {
+    private record StoredPaymentIdentity(
+            Long configId,
+            String fingerprint,
+            CallbackIdentity callbackIdentity
+    ) {
     }
 
     private record RoutedPaymentIdentity(
             Long configId,
             String fingerprint,
             NotificationRoute expectedRoute,
-            String routeToken
+            String routeTokenIdentity,
+            String outTradeNoDigest,
+            String outRefundNoDigest,
+            CallbackIdentity callbackIdentity
     ) {
     }
 
@@ -360,6 +528,66 @@ public class PaymentNotificationConfigSelector {
         }
     }
 
-    public record ParsedNotification<T>(ResolvedPaymentConfig config, T notification) {
+    public record CallbackIdentity(
+            NotificationKind kind,
+            boolean purged,
+            Long orderId,
+            Long afterSaleId,
+            String finalStatus,
+            String finalCallbackStatus,
+            String transactionIdDigest,
+            String refundIdDigest,
+            long amountCent,
+            String currency
+    ) {
+        private static CallbackIdentity livePayment(Long orderId) {
+            return new CallbackIdentity(
+                    NotificationKind.PAY, false, orderId, null,
+                    "", "", "", "", 0L, "");
+        }
+
+        private static CallbackIdentity liveRefund(Long orderId, Long afterSaleId) {
+            return new CallbackIdentity(
+                    NotificationKind.REFUND, false, orderId, afterSaleId,
+                    "", "", "", "", 0L, "");
+        }
+
+        private static CallbackIdentity purgedPayment(
+                String finalStatus,
+                String transactionIdDigest,
+                long amountCent,
+                String currency
+        ) {
+            return new CallbackIdentity(
+                    NotificationKind.PAY, true, null, null,
+                    finalStatus, "", transactionIdDigest, "", amountCent, currency);
+        }
+
+        private static CallbackIdentity purgedRefund(
+                String finalStatus,
+                String finalCallbackStatus,
+                String refundIdDigest,
+                long amountCent
+        ) {
+            return new CallbackIdentity(
+                    NotificationKind.REFUND, true, null, null,
+                    finalStatus, finalCallbackStatus, "", refundIdDigest, amountCent, "");
+        }
+    }
+
+    public record ParsedNotification<T>(
+            ResolvedPaymentConfig config,
+            T notification,
+            CallbackIdentity callbackIdentity
+    ) {
+        public ParsedNotification(ResolvedPaymentConfig config, T notification) {
+            this(config, notification, new CallbackIdentity(
+                    NotificationKind.LEGACY, false, null, null,
+                    "", "", "", "", 0L, ""));
+        }
+
+        public boolean purged() {
+            return callbackIdentity != null && callbackIdentity.purged();
+        }
     }
 }

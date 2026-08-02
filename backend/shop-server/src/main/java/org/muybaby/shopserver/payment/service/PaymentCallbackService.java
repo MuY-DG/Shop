@@ -2,6 +2,7 @@ package org.muybaby.shopserver.payment.service;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.order.cleanup.PurgedOrderIdentityDigests;
 import org.muybaby.shopserver.payment.config.PaymentNotificationConfigSelector;
 import org.muybaby.shopserver.payment.config.PaymentNotificationTimestampValidator;
 import org.muybaby.shopserver.payment.provider.WechatPayNotification;
@@ -10,6 +11,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -27,19 +29,22 @@ public class PaymentCallbackService {
     private final PaymentNotificationConfigSelector paymentNotificationConfigSelector;
     private final WechatPayProvider wechatPayProvider;
     private final PaymentFinalizationService paymentFinalizationService;
+    private final TransactionTemplate transactionTemplate;
 
     public PaymentCallbackService(
             JdbcClient jdbcClient,
             PaymentNotificationTimestampValidator timestampValidator,
             PaymentNotificationConfigSelector paymentNotificationConfigSelector,
             WechatPayProvider wechatPayProvider,
-            PaymentFinalizationService paymentFinalizationService
+            PaymentFinalizationService paymentFinalizationService,
+            TransactionTemplate transactionTemplate
     ) {
         this.jdbcClient = jdbcClient;
         this.timestampValidator = timestampValidator;
         this.paymentNotificationConfigSelector = paymentNotificationConfigSelector;
         this.wechatPayProvider = wechatPayProvider;
         this.paymentFinalizationService = paymentFinalizationService;
+        this.transactionTemplate = transactionTemplate;
     }
 
     public void handlePayNotification(
@@ -72,19 +77,15 @@ public class PaymentCallbackService {
                                 notification.outTradeNo())
                 );
         WechatPayNotification notification = parsed.notification();
+        if (parsed.purged()) {
+            requireMatchingPurgedPayment(parsed.callbackIdentity(), notification);
+            return;
+        }
 
-        Long logId = insertCallbackLog(
-                notification.notifyId(),
-                notification.outTradeNo(),
-                notification.transactionId(),
-                notification.eventType(),
-                notification.resourceDigest(),
-                rawBodySha256,
-                routeToken,
-                "PROCESSING",
-                "",
-                ""
-        );
+        Long logId = reserveLiveCallbackLog(parsed.callbackIdentity(), notification, rawBodySha256, routeToken);
+        if (logId == null) {
+            return;
+        }
         try {
             if (!isSuccessfulPayNotification(notification)) {
                 throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
@@ -99,12 +100,69 @@ public class PaymentCallbackService {
             );
             updateCallbackLog(logId, result.duplicate() ? "DUPLICATE" : "SUCCESS", "", "");
         } catch (BusinessException ex) {
+            if (ex.errorCode() == ErrorCode.ORDER_STATE_CONFLICT
+                    && matchesPurgedPayment(notification)) {
+                deleteCallbackLog(logId);
+                return;
+            }
             updateCallbackLog(logId, "FAILED", ex.errorCode().name(), ex.errorCode().message());
             throw ex;
         } catch (RuntimeException ex) {
             updateCallbackLog(logId, "FAILED", "CALLBACK_FAILED", "payment callback failed");
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+    }
+
+    private Long reserveLiveCallbackLog(
+            PaymentNotificationConfigSelector.CallbackIdentity callbackIdentity,
+            WechatPayNotification notification,
+            String rawBodySha256,
+            String routeToken
+    ) {
+        return transactionTemplate.execute(status -> {
+            if (callbackIdentity == null
+                    || callbackIdentity.kind() != PaymentNotificationConfigSelector.NotificationKind.PAY
+                    || callbackIdentity.orderId() == null) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            Long lockedOrderId = jdbcClient.sql("""
+                            select id from shop_order
+                            where id = :orderId
+                            for update
+                            """)
+                    .param("orderId", callbackIdentity.orderId())
+                    .query(Long.class)
+                    .optional()
+                    .orElse(null);
+            if (lockedOrderId == null) {
+                requireMatchingPurgedPayment(notification);
+                return null;
+            }
+            Long paymentOrderId = jdbcClient.sql("""
+                            select order_id from payment_order
+                            where out_trade_no = :outTradeNo
+                            for update
+                            """)
+                    .param("outTradeNo", notification.outTradeNo())
+                    .query(Long.class)
+                    .optional()
+                    .orElse(null);
+            if (!lockedOrderId.equals(paymentOrderId)) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            return insertCallbackLog(
+                    notification.notifyId(),
+                    notification.outTradeNo(),
+                    notification.transactionId(),
+                    notification.eventType(),
+                    notification.resourceDigest(),
+                    rawBodySha256,
+                    routeToken,
+                    "PROCESSING",
+                    "",
+                    ""
+            );
+        });
     }
 
     private Long insertCallbackLog(
@@ -174,6 +232,80 @@ public class PaymentCallbackService {
                 .update();
     }
 
+    private void requireMatchingPurgedPayment(WechatPayNotification notification) {
+        PurgedPaymentIdentity identity = findPurgedPayment(notification.outTradeNo());
+        if (!matchingPurgedPayment(identity, notification)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
+    private void requireMatchingPurgedPayment(
+            PaymentNotificationConfigSelector.CallbackIdentity identity,
+            WechatPayNotification notification
+    ) {
+        if (identity == null
+                || !identity.purged()
+                || identity.kind() != PaymentNotificationConfigSelector.NotificationKind.PAY
+                || !matchingPurgedPayment(
+                        new PurgedPaymentIdentity(
+                                identity.finalStatus(),
+                                identity.transactionIdDigest(),
+                                identity.amountCent(),
+                                identity.currency()),
+                        notification)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
+    private boolean matchesPurgedPayment(WechatPayNotification notification) {
+        PurgedPaymentIdentity identity = findPurgedPaymentOrNull(notification.outTradeNo());
+        return identity != null && matchingPurgedPayment(identity, notification);
+    }
+
+    private boolean matchingPurgedPayment(
+            PurgedPaymentIdentity identity,
+            WechatPayNotification notification
+    ) {
+        return "PAID".equals(identity.finalStatus())
+                && isSuccessfulPayNotification(notification)
+                && identity.amountCent() == notification.amountCent()
+                && constantTimeEquals(identity.currency(), notification.currency())
+                && constantTimeEquals(
+                        identity.transactionIdDigest(),
+                        PurgedOrderIdentityDigests.value(notification.transactionId()));
+    }
+
+    private PurgedPaymentIdentity findPurgedPayment(String outTradeNo) {
+        PurgedPaymentIdentity identity = findPurgedPaymentOrNull(outTradeNo);
+        if (identity == null) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return identity;
+    }
+
+    private PurgedPaymentIdentity findPurgedPaymentOrNull(String outTradeNo) {
+        return jdbcClient.sql("""
+                        select final_status, transaction_id_digest, amount_cent, currency
+                        from purged_payment_identity
+                        where out_trade_no_digest = :digest
+                        for update
+                        """)
+                .param("digest", PurgedOrderIdentityDigests.value(outTradeNo))
+                .query((rs, rowNum) -> new PurgedPaymentIdentity(
+                        rs.getString("final_status"),
+                        rs.getString("transaction_id_digest"),
+                        rs.getLong("amount_cent"),
+                        rs.getString("currency")))
+                .optional()
+                .orElse(null);
+    }
+
+    private void deleteCallbackLog(Long logId) {
+        jdbcClient.sql("delete from payment_callback_log where id = :logId")
+                .param("logId", logId)
+                .update();
+    }
+
     private String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -192,5 +324,19 @@ public class PaymentCallbackService {
                 && "SUCCESS".equals(notification.tradeState())
                 && StringUtils.hasText(notification.transactionId())
                 && "CNY".equals(notification.currency());
+    }
+
+    private boolean constantTimeEquals(String left, String right) {
+        return MessageDigest.isEqual(
+                nullToEmpty(left).getBytes(StandardCharsets.US_ASCII),
+                nullToEmpty(right).getBytes(StandardCharsets.US_ASCII));
+    }
+
+    private record PurgedPaymentIdentity(
+            String finalStatus,
+            String transactionIdDigest,
+            long amountCent,
+            String currency
+    ) {
     }
 }

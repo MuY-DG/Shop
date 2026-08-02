@@ -14,6 +14,7 @@ public record DataCleanupTaskUpdateRequest(
         @NotNull @Min(1) @Max(50_000) Integer batchSize,
         @NotBlank @Size(max = 80) String cronExpression,
         @NotNull @Min(60) @Max(86_400) Integer batchIntervalSeconds,
-        Integer uploadPendingGraceMinutes
+        Integer uploadPendingGraceMinutes,
+        Boolean retainReviews
 ) {
 }

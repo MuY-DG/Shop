@@ -7,6 +7,7 @@ public enum DataCleanupTaskCode {
             367,
             3_650,
             50_000,
+            false,
             false
     ),
     ADMIN_SYSTEM_LOG(
@@ -15,6 +16,7 @@ public enum DataCleanupTaskCode {
             1,
             3_650,
             50_000,
+            false,
             false
     ),
     CUSTOMER_SERVICE_MESSAGE(
@@ -23,7 +25,17 @@ public enum DataCleanupTaskCode {
             1,
             3_650,
             10_000,
+            false,
             false
+    ),
+    ORDER_AGGREGATE(
+            "订单及关联数据",
+            "归档后删除超过保留期的订单、商品快照、支付退款、售后物流、日志及关联附件。",
+            1_095,
+            3_650,
+            100,
+            false,
+            true
     ),
     STORAGE_ASSET(
             "过期素材",
@@ -31,7 +43,8 @@ public enum DataCleanupTaskCode {
             null,
             null,
             1_000,
-            true
+            true,
+            false
     ),
     DIRECT_UPLOAD_SESSION(
             "直传会话",
@@ -39,6 +52,7 @@ public enum DataCleanupTaskCode {
             1,
             365,
             1_000,
+            false,
             false
     );
 
@@ -48,6 +62,7 @@ public enum DataCleanupTaskCode {
     private final Integer maxRetentionDays;
     private final int maxBatchSize;
     private final boolean uploadPendingGraceSupported;
+    private final boolean retainReviewsSupported;
 
     DataCleanupTaskCode(
             String title,
@@ -55,7 +70,8 @@ public enum DataCleanupTaskCode {
             Integer minRetentionDays,
             Integer maxRetentionDays,
             int maxBatchSize,
-            boolean uploadPendingGraceSupported
+            boolean uploadPendingGraceSupported,
+            boolean retainReviewsSupported
     ) {
         this.title = title;
         this.description = description;
@@ -63,6 +79,7 @@ public enum DataCleanupTaskCode {
         this.maxRetentionDays = maxRetentionDays;
         this.maxBatchSize = maxBatchSize;
         this.uploadPendingGraceSupported = uploadPendingGraceSupported;
+        this.retainReviewsSupported = retainReviewsSupported;
     }
 
     public String title() {
@@ -91,5 +108,9 @@ public enum DataCleanupTaskCode {
 
     public boolean uploadPendingGraceSupported() {
         return uploadPendingGraceSupported;
+    }
+
+    public boolean retainReviewsSupported() {
+        return retainReviewsSupported;
     }
 }

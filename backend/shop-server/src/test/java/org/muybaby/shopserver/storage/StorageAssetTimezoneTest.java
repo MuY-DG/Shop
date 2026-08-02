@@ -201,7 +201,8 @@ class StorageAssetTimezoneTest {
                         task.batchSize(),
                         task.cronExpression(),
                         task.batchIntervalSeconds(),
-                        task.uploadPendingGraceMinutes()
+                        task.uploadPendingGraceMinutes(),
+                        task.retainReviews()
                 ))
                 .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         int analyticsIndex = java.util.stream.IntStream.range(0, updates.size())
@@ -217,7 +218,8 @@ class StorageAssetTimezoneTest {
                 analytics.batchSize() + 1,
                 analytics.cronExpression(),
                 analytics.batchIntervalSeconds(),
-                analytics.uploadPendingGraceMinutes()
+                analytics.uploadPendingGraceMinutes(),
+                analytics.retainReviews()
         ));
 
         var updated = dataCleanupConfigService.update(

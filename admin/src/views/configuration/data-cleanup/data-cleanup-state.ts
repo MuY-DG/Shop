@@ -2,6 +2,7 @@ export const DATA_CLEANUP_TASK_ORDER: Api.DataCleanup.TaskCode[] = [
   'ANALYTICS_EVENT',
   'ADMIN_SYSTEM_LOG',
   'CUSTOMER_SERVICE_MESSAGE',
+  'ORDER_AGGREGATE',
   'STORAGE_ASSET',
   'DIRECT_UPLOAD_SESSION'
 ]
@@ -36,6 +37,15 @@ export const DATA_CLEANUP_TASK_PRESENTATION: Record<
     retentionLabel: '消息保留天数',
     batchLabel: '单批消息上限',
     complianceWarning: '启用前请确认消息保留期限符合适用法规、售后及争议处理政策。'
+  },
+  ORDER_AGGREGATE: {
+    title: '订单及关联数据',
+    description:
+      '清理超过保留期限的订单、订单项及商品快照、支付与回调、退款、售后与附件、物流、状态日志和客服关联。',
+    retentionLabel: '订单保留天数',
+    batchLabel: '单批订单上限',
+    complianceWarning:
+      '订单及关联数据会先写入私有归档，再从热库删除；请确认保留期限符合财税、售后和争议处理要求。'
   },
   STORAGE_ASSET: {
     title: '素材文件',
@@ -73,7 +83,8 @@ export function createDataCleanupConfigForm(
         batchSize: task.batchSize,
         cronExpression: task.cronExpression,
         batchIntervalSeconds: task.batchIntervalSeconds,
-        uploadPendingGraceMinutes: task.uploadPendingGraceMinutes ?? null
+        uploadPendingGraceMinutes: task.uploadPendingGraceMinutes ?? null,
+        retainReviews: task.taskCode === 'ORDER_AGGREGATE' ? (task.retainReviews ?? true) : null
       }))
   }
 }
@@ -90,7 +101,8 @@ export function toDataCleanupConfigPayload(
       batchSize: task.batchSize,
       cronExpression: task.cronExpression.trim(),
       batchIntervalSeconds: task.batchIntervalSeconds,
-      uploadPendingGraceMinutes: task.uploadPendingGraceMinutes
+      uploadPendingGraceMinutes: task.uploadPendingGraceMinutes,
+      retainReviews: task.taskCode === 'ORDER_AGGREGATE' ? task.retainReviews !== false : null
     }))
   }
 }

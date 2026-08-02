@@ -76,6 +76,7 @@ class DataCleanupStorageExecutorTest {
                 "Asia/Shanghai",
                 60,
                 uploadGraceMinutes,
+                null,
                 0L,
                 runSequence,
                 null,

@@ -9,6 +9,6 @@ import java.util.List;
 
 public record DataCleanupConfigUpdateRequest(
         @NotNull @Min(0) Long revision,
-        @NotNull @Size(min = 5, max = 5) List<@Valid DataCleanupTaskUpdateRequest> tasks
+        @NotNull @Size(min = 6, max = 6) List<@Valid DataCleanupTaskUpdateRequest> tasks
 ) {
 }

@@ -23,9 +23,9 @@ public class AdminProductReviewService {
     private static final String REVIEW_FROM = """
             FROM product_review r
             JOIN app_user u ON u.id = r.user_id
-            JOIN product_spu p ON p.id = r.spu_id
-            JOIN order_item oi ON oi.id = r.order_item_id
-            JOIN shop_order o ON o.id = oi.order_id
+            LEFT JOIN product_spu p ON p.id = r.spu_id
+            LEFT JOIN order_item oi ON oi.id = r.order_item_id
+            LEFT JOIN shop_order o ON o.id = oi.order_id
             """;
 
     private final JdbcClient jdbcClient;
@@ -52,11 +52,17 @@ public class AdminProductReviewService {
         parameters.put("limit", size);
         parameters.put("offset", offset);
         List<AdminProductReviewResponse> records = jdbcClient.sql("""
-                        SELECT r.id, r.spu_id, p.title AS product_title, p.main_image AS product_image,
+                        SELECT r.id, r.spu_id,
+                               r.product_title_snapshot AS product_title,
+                               p.main_image AS product_image,
                                r.user_id,
                                CASE WHEN u.nickname <> '' THEN u.nickname
                                     ELSE CONCAT('用户', RIGHT(CONCAT('', u.id), 6)) END AS reviewer_name,
-                               o.id AS order_id, o.order_no, r.order_item_id, oi.spec_text,
+                               o.id AS order_id, o.order_no, r.order_item_id,
+                               r.spec_text_snapshot AS spec_text,
+                               CASE WHEN r.order_item_id IS NULL OR o.id IS NULL
+                                    THEN TRUE ELSE FALSE END AS order_data_cleaned,
+                               r.verified_purchase,
                                r.rating, r.content, r.anonymous, r.status,
                                r.created_at, r.updated_at,
                                r.moderated_by_admin_user_id, r.moderated_at
@@ -97,7 +103,7 @@ public class AdminProductReviewService {
             parameters.put("spuId", query.spuId());
         }
         if (!query.normalizedProductTitle().isEmpty()) {
-            where.append(" AND p.title LIKE CONCAT('%', :productTitle, '%')");
+            where.append(" AND r.product_title_snapshot LIKE CONCAT('%', :productTitle, '%')");
             parameters.put("productTitle", query.normalizedProductTitle());
         }
         if (query.rating() != null) {
@@ -123,10 +129,12 @@ public class AdminProductReviewService {
                 rs.getString("product_image"),
                 rs.getLong("user_id"),
                 rs.getString("reviewer_name"),
-                rs.getLong("order_id"),
+                rs.getObject("order_id", Long.class),
                 rs.getString("order_no"),
-                rs.getLong("order_item_id"),
+                rs.getObject("order_item_id", Long.class),
+                rs.getBoolean("order_data_cleaned"),
                 rs.getString("spec_text"),
+                rs.getBoolean("verified_purchase"),
                 rs.getInt("rating"),
                 rs.getString("content"),
                 rs.getBoolean("anonymous"),

@@ -27,7 +27,7 @@ class DataCleanupSchemaTest {
         jdbcClient.sql("""
                         select task_code, enabled, retention_days, batch_size,
                                cron_expression, zone_id, batch_interval_seconds,
-                               upload_pending_grace_minutes, config_revision,
+                               upload_pending_grace_minutes, retain_reviews, config_revision,
                                run_sequence, next_run_at, last_status,
                                last_processed_count
                         from data_cleanup_task_setting
@@ -41,6 +41,7 @@ class DataCleanupSchemaTest {
                         rs.getString("zone_id"),
                         rs.getInt("batch_interval_seconds"),
                         rs.getObject("upload_pending_grace_minutes", Integer.class),
+                        rs.getObject("retain_reviews", Boolean.class),
                         rs.getLong("config_revision"),
                         rs.getLong("run_sequence"),
                         rs.getObject("next_run_at", java.time.LocalDateTime.class),
@@ -51,7 +52,7 @@ class DataCleanupSchemaTest {
                 .forEach(task -> tasks.put(task.taskCode(), task));
 
         assertThat(revision).isZero();
-        assertThat(tasks).hasSize(5);
+        assertThat(tasks).hasSize(6);
         assertThat(tasks.get(DataCleanupTaskCode.ANALYTICS_EVENT))
                 .isEqualTo(seed(DataCleanupTaskCode.ANALYTICS_EVENT, true, 400, 5_000,
                         "0 15 3 * * *", null));
@@ -61,6 +62,23 @@ class DataCleanupSchemaTest {
         assertThat(tasks.get(DataCleanupTaskCode.CUSTOMER_SERVICE_MESSAGE))
                 .isEqualTo(seed(DataCleanupTaskCode.CUSTOMER_SERVICE_MESSAGE, false, 365, 1_000,
                         "0 15 4 * * *", null));
+        assertThat(tasks.get(DataCleanupTaskCode.ORDER_AGGREGATE))
+                .isEqualTo(new SeededTask(
+                        DataCleanupTaskCode.ORDER_AGGREGATE,
+                        true,
+                        1_095,
+                        20,
+                        "0 45 4 * * *",
+                        "Asia/Shanghai",
+                        300,
+                        null,
+                        true,
+                        0L,
+                        0L,
+                        null,
+                        "NEVER",
+                        0
+                ));
         assertThat(tasks.get(DataCleanupTaskCode.STORAGE_ASSET))
                 .isEqualTo(seed(DataCleanupTaskCode.STORAGE_ASSET, true, null, 100,
                         "0 */10 * * * *", 30));
@@ -136,6 +154,89 @@ class DataCleanupSchemaTest {
         assertThat(indexCount).isEqualTo(2);
     }
 
+    @Test
+    void migrationAddsOrderArchiveTombstonesAndReviewSnapshots() {
+        Integer archiveTableCount = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.tables
+                        where lower(table_name) in (
+                            'order_archive_manifest',
+                            'purged_order_identity',
+                            'purged_payment_identity',
+                            'purged_refund_identity'
+                        )
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer archiveLocationColumnCount = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where lower(table_name) = 'order_archive_manifest'
+                          and lower(column_name) in (
+                              'provider',
+                              'storage_container',
+                              'storage_region'
+                          )
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer failureTableCount = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.tables
+                        where lower(table_name) = 'order_cleanup_failure'
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer reviewColumnCount = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where lower(table_name) = 'product_review'
+                          and lower(column_name) in (
+                              'source_order_item_id',
+                              'product_title_snapshot',
+                              'spec_text_snapshot',
+                              'verified_purchase'
+                          )
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer callbackTombstoneColumnCount = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where (lower(table_name) = 'purged_payment_identity'
+                               and lower(column_name) in ('amount_cent', 'currency'))
+                           or (lower(table_name) = 'purged_refund_identity'
+                               and lower(column_name) in (
+                                   'final_callback_status', 'refund_amount_cent'
+                               ))
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer supportingIndexCount = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.indexes
+                        where lower(index_name) in (
+                            'idx_shop_order_cleanup_candidate',
+                            'idx_stock_log_order',
+                            'idx_refund_order_order',
+                            'idx_payment_callback_trade',
+                            'idx_payment_callback_refund',
+                            'idx_order_cleanup_failure_retry',
+                            'idx_customer_service_message_order_resource',
+                            'idx_customer_service_conversation_context'
+                        )
+                        """)
+                .query(Integer.class)
+                .single();
+
+        assertThat(archiveTableCount).isEqualTo(4);
+        assertThat(archiveLocationColumnCount).isEqualTo(3);
+        assertThat(failureTableCount).isOne();
+        assertThat(reviewColumnCount).isEqualTo(4);
+        assertThat(callbackTombstoneColumnCount).isEqualTo(4);
+        assertThat(supportingIndexCount).isEqualTo(8);
+    }
+
     private SeededTask seed(
             DataCleanupTaskCode taskCode,
             boolean enabled,
@@ -153,6 +254,7 @@ class DataCleanupSchemaTest {
                 "Asia/Shanghai",
                 60,
                 uploadGrace,
+                null,
                 0L,
                 0L,
                 null,
@@ -170,6 +272,7 @@ class DataCleanupSchemaTest {
             String zoneId,
             int batchIntervalSeconds,
             Integer uploadPendingGraceMinutes,
+            Boolean retainReviews,
             long configRevision,
             long runSequence,
             java.time.LocalDateTime nextRunAt,

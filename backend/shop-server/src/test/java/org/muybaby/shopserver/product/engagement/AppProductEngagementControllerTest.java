@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -211,6 +212,94 @@ class AppProductEngagementControllerTest {
     }
 
     @Test
+    void reviewsKeepTheirSnapshotsAfterOrderDataIsCleaned() throws Exception {
+        AppLogin owner = login("engagement-review-cleaned-order");
+        ProductIds product = createPublishedProduct("REVIEW-CLEANED-ORDER");
+        long orderItemId = insertCompletedOrder(owner.userId(), product);
+        Long orderId = jdbcClient.sql("SELECT order_id FROM order_item WHERE id = :orderItemId")
+                .param("orderItemId", orderItemId)
+                .query(Long.class)
+                .single();
+
+        MvcResult created = mockMvc.perform(post("/app/product/spus/" + product.spuId() + "/reviews")
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reviewBody(orderItemId, 5, false)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.orderItemId").value(orderItemId))
+                .andExpect(jsonPath("$.data.productTitle").value("互动商品"))
+                .andExpect(jsonPath("$.data.skuSpecText").value("默认规格"))
+                .andExpect(jsonPath("$.data.verifiedPurchase").value(true))
+                .andReturn();
+        long reviewId = read(created).path("data").path("id").asLong();
+
+        jdbcClient.sql("""
+                        UPDATE product_review
+                        SET order_item_id = NULL
+                        WHERE id = :reviewId
+                        """)
+                .param("reviewId", reviewId)
+                .update();
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/review-eligibility")
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.orderItems.length()").value(0));
+        mockMvc.perform(post("/app/product/spus/" + product.spuId() + "/reviews")
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reviewBody(orderItemId, 4, false)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200202));
+        jdbcClient.sql("DELETE FROM order_item WHERE id = :orderItemId")
+                .param("orderItemId", orderItemId)
+                .update();
+        jdbcClient.sql("DELETE FROM shop_order WHERE id = :orderId")
+                .param("orderId", orderId)
+                .update();
+
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page.total").value(1))
+                .andExpect(jsonPath("$.data.page.records[0].skuSpecText").value("默认规格"))
+                .andExpect(jsonPath("$.data.page.records[0].verifiedPurchase").value(true));
+        mockMvc.perform(get("/app/product/reviews/mine")
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].productTitle").value("互动商品"))
+                .andExpect(jsonPath("$.data.records[0].skuSpecText").value("默认规格"))
+                .andExpect(jsonPath("$.data.records[0].orderItemId").value(orderItemId))
+                .andExpect(jsonPath("$.data.records[0].verifiedPurchase").value(true));
+        mockMvc.perform(put("/app/product/reviews/" + reviewId)
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rating\":4,\"content\":\"订单清理后追评\",\"anonymous\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").value("订单清理后追评"))
+                .andExpect(jsonPath("$.data.productTitle").value("互动商品"))
+                .andExpect(jsonPath("$.data.skuSpecText").value("默认规格"))
+                .andExpect(jsonPath("$.data.orderItemId").value(orderItemId));
+
+        PersistedReviewSnapshot persistedSnapshot = jdbcClient.sql("""
+                        SELECT source_order_item_id, product_title_snapshot,
+                               spec_text_snapshot, verified_purchase
+                        FROM product_review
+                        WHERE id = :reviewId
+                        """)
+                .param("reviewId", reviewId)
+                .query((rs, rowNum) -> new PersistedReviewSnapshot(
+                        rs.getLong("source_order_item_id"),
+                        rs.getString("product_title_snapshot"),
+                        rs.getString("spec_text_snapshot"),
+                        rs.getBoolean("verified_purchase")
+                ))
+                .single();
+        assertThat(persistedSnapshot).isEqualTo(new PersistedReviewSnapshot(
+                orderItemId, "互动商品", "默认规格", true
+        ));
+    }
+
+    @Test
     void reviewsValidateAuthenticationRatingAndCompletedOrder() throws Exception {
         AppLogin owner = login("engagement-review-validation");
         ProductIds product = createPublishedProduct("VALIDATION");
@@ -335,5 +424,13 @@ class AppProductEngagementControllerTest {
     }
 
     private record ProductIds(long spuId, long skuId) {
+    }
+
+    private record PersistedReviewSnapshot(
+            long sourceOrderItemId,
+            String productTitle,
+            String specText,
+            boolean verifiedPurchase
+    ) {
     }
 }

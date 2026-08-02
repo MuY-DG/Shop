@@ -151,6 +151,21 @@
                 <div class="field-tip">上传待完成素材超过此时间后，才允许进入清理候选。</div>
               </ElFormItem>
 
+              <ElFormItem v-if="task.taskCode === 'ORDER_AGGREGATE'" label="保留商品评论（推荐）">
+                <ElSwitch
+                  :model-value="task.retainReviews === true"
+                  :disabled="interactionDisabled"
+                  inline-prompt
+                  active-text="保留"
+                  inactive-text="删除"
+                  aria-label="订单清理时保留商品评论"
+                  @update:model-value="task.retainReviews = Boolean($event)"
+                />
+                <div class="field-tip">
+                  开启后保留评分、评论内容、购买规格和已购买标识，并解除评论与订单明细的关联；订单号、收货、支付及售后信息仍会删除。此开关只影响之后清理的订单，已脱离订单的历史评论不会追溯删除。
+                </div>
+              </ElFormItem>
+
               <ElFormItem
                 label="执行计划（Cron）"
                 :prop="`tasks.${index}.cronExpression`"

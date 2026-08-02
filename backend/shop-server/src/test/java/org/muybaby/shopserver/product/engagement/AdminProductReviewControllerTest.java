@@ -66,6 +66,8 @@ class AdminProductReviewControllerTest {
                 .andExpect(jsonPath("$.data.records[0].reviewerName").value(fixture.nickname()))
                 .andExpect(jsonPath("$.data.records[0].anonymous").value(true))
                 .andExpect(jsonPath("$.data.records[0].orderNo").value(fixture.orderNo()))
+                .andExpect(jsonPath("$.data.records[0].orderDataCleaned").value(false))
+                .andExpect(jsonPath("$.data.records[0].verifiedPurchase").value(true))
                 .andExpect(jsonPath("$.data.records[0].rating").value(5))
                 .andExpect(jsonPath("$.data.records[0].content").value("筛选命中的评价"));
 
@@ -146,6 +148,39 @@ class AdminProductReviewControllerTest {
                 .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
     }
 
+    @Test
+    void adminReviewKeepsSnapshotAndMarksCleanedOrderContext() throws Exception {
+        ReviewFixture fixture = insertReview(5, false, "订单清理后仍保留的评价");
+        String token = issueAdminToken(
+                jdbcClient,
+                opaqueTokenService,
+                List.of("product:review:read")
+        );
+        jdbcClient.sql("UPDATE product_review SET order_item_id = NULL WHERE id = :reviewId")
+                .param("reviewId", fixture.reviewId())
+                .update();
+        jdbcClient.sql("DELETE FROM order_item WHERE id = :orderItemId")
+                .param("orderItemId", fixture.orderItemId())
+                .update();
+        jdbcClient.sql("DELETE FROM shop_order WHERE id = :orderId")
+                .param("orderId", fixture.orderId())
+                .update();
+
+        mockMvc.perform(get("/admin/product/reviews")
+                        .header("Authorization", bearer(token))
+                        .param("productTitle", fixture.productTitle()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].id").value(fixture.reviewId()))
+                .andExpect(jsonPath("$.data.records[0].productTitle").value(fixture.productTitle()))
+                .andExpect(jsonPath("$.data.records[0].specText").value("默认规格"))
+                .andExpect(jsonPath("$.data.records[0].verifiedPurchase").value(true))
+                .andExpect(jsonPath("$.data.records[0].orderDataCleaned").value(true))
+                .andExpect(jsonPath("$.data.records[0].orderId").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].orderNo").doesNotExist())
+                .andExpect(jsonPath("$.data.records[0].orderItemId").doesNotExist());
+    }
+
     private ReviewFixture insertReview(int rating, boolean anonymous, String content) {
         long base = FIXTURE_SEQUENCE.decrementAndGet() * 10;
         long userId = base - 1;
@@ -221,20 +256,26 @@ class AdminProductReviewControllerTest {
                 .update();
         jdbcClient.sql("""
                         INSERT INTO product_review (
-                            id, user_id, spu_id, order_item_id, rating, content, anonymous, status
-                        ) VALUES (:id, :userId, :spuId, :orderItemId, :rating, :content,
+                            id, user_id, spu_id, source_order_item_id, order_item_id,
+                            product_title_snapshot, spec_text_snapshot, verified_purchase,
+                            rating, content, anonymous, status
+                        ) VALUES (:id, :userId, :spuId, :orderItemId, :orderItemId,
+                                  :productTitle, '默认规格', TRUE, :rating, :content,
                                   :anonymous, 'PUBLISHED')
                         """)
                 .param("id", reviewId)
                 .param("userId", userId)
                 .param("spuId", spuId)
                 .param("orderItemId", orderItemId)
+                .param("productTitle", productTitle)
                 .param("rating", rating)
                 .param("content", content)
                 .param("anonymous", anonymous)
                 .update();
 
-        return new ReviewFixture(reviewId, spuId, productTitle, nickname, orderNo);
+        return new ReviewFixture(
+                reviewId, spuId, productTitle, nickname, orderId, orderNo, orderItemId
+        );
     }
 
     private String bearer(String token) {
@@ -246,7 +287,9 @@ class AdminProductReviewControllerTest {
             long spuId,
             String productTitle,
             String nickname,
-            String orderNo
+            long orderId,
+            String orderNo,
+            long orderItemId
     ) {
     }
 }

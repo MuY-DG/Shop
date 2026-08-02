@@ -172,6 +172,7 @@ public class AppAfterSaleService {
         long requestedAmountCent = requirePositiveAmount(request == null ? null : request.requestedAmountCent());
         List<Long> evidenceFileIds = normalizeEvidenceFileIds(request == null ? null : request.evidenceFileIds());
 
+        lockAfterSaleRange(orderId);
         OrderRow order = findOwnedOrderForUpdate(orderId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
         if (!ALLOWED_ORDER_STATUSES.contains(order.status())) {
@@ -370,6 +371,22 @@ public class AppAfterSaleService {
                 .param("userId", userId)
                 .query(this::mapOrder)
                 .optional();
+    }
+
+    private void lockAfterSaleRange(Long orderId) {
+        if (orderId == null || orderId <= 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        jdbcClient.sql("""
+                        select id
+                        from after_sale_request
+                        where order_id = :orderId
+                        order by id
+                        for update
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
     }
 
     private java.util.Optional<OrderRow> findOwnedOrder(Long orderId, Long userId) {

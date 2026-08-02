@@ -569,9 +569,11 @@ declare namespace Api {
       productImage: string
       userId: number
       reviewerName: string
-      orderId: number
-      orderNo: string
-      orderItemId: number
+      orderId: number | null
+      orderNo: string | null
+      orderItemId: number | null
+      orderDataCleaned: boolean
+      verifiedPurchase: boolean
       specText: string
       rating: number
       content: string

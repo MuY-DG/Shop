@@ -77,8 +77,11 @@ class ProductEngagementSchemaTest {
 
         jdbcClient.sql("""
                         INSERT INTO product_review (
-                            user_id, spu_id, order_item_id, rating, content, anonymous
-                        ) VALUES (:userId, :spuId, :orderItemId, 5, '很好', FALSE)
+                            user_id, spu_id, source_order_item_id, order_item_id,
+                            product_title_snapshot, spec_text_snapshot, verified_purchase,
+                            rating, content, anonymous
+                        ) VALUES (:userId, :spuId, :orderItemId, :orderItemId,
+                                  '互动结构商品', '默认', TRUE, 5, '很好', FALSE)
                         """)
                 .param("userId", userId)
                 .param("spuId", spuId)
