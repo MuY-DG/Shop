@@ -21,6 +21,7 @@ import org.muybaby.shopserver.storage.service.DirectUploadService;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.muybaby.shopserver.user.AppUserController;
 import org.muybaby.shopserver.user.service.AppUserAvatarService;
+import org.muybaby.shopserver.user.service.AppUserOverviewService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -88,6 +89,9 @@ class DirectUploadCancellationControllerTest {
 
     @MockitoBean
     private AppUserAvatarService appUserAvatarService;
+
+    @MockitoBean
+    private AppUserOverviewService appUserOverviewService;
 
     @MockitoBean
     private AppAfterSaleService appAfterSaleService;

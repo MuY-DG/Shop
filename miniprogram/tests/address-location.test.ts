@@ -51,6 +51,7 @@ test("收货地址使用微信原生地图选址", () => {
   assert.doesNotMatch(editLogic, /addressSelected/);
   assert.doesNotMatch(editLogic, /composeAddressDetail/);
   assert.match(editTemplate, /请选择收货地址/);
+  assert.match(editTemplate, /show-divider="\{\{false\}\}"/);
   assert.match(editTemplate, /正在打开微信地图/);
   assert.match(editTemplate, /mode="region"/);
   assert.match(editTemplate, /locationNameDisplay/);
@@ -100,8 +101,14 @@ test("收货地址使用微信原生地图选址", () => {
   assert.match(editStyle, /\.wechat-import[\s\S]*background: transparent/);
   assert.match(editStyle, /\.wechat-import[\s\S]*position: absolute/);
   assert.match(editStyle, /\.wechat-import[\s\S]*right: 0/);
+  assert.match(editStyle, /\.address-form\s*\{[\s\S]*background: #ffffff/);
+  assert.match(editStyle, /button\.save-button\s*\{[\s\S]*background: #ff172b/);
   assert.match(addressListTemplate, /background="#F3F3F7"/);
+  assert.match(addressListTemplate, /show-divider="\{\{false\}\}"/);
+  assert.match(addressListTemplate, /edit-square-outline-mdi-iconify\.svg/);
+  assert.doesNotMatch(addressListTemplate, /address-edit\.svg/);
   assert.match(addressListStyle, /\.address-page[\s\S]*background: @color-page/);
+  assert.match(addressListStyle, /\.address-row__name,[\s\S]*\.address-row__phone\s*\{[\s\S]*color: #000000/);
   assert.match(addressListStyle, /\.address-state[\s\S]*background: transparent/);
   assert.match(addressListLogic, /composeAddressListTitle/);
   assert.match(addressListLogic, /address\.locationName/);

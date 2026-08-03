@@ -38,7 +38,9 @@
 - `member-crown.svg`：[Iconify Material Symbols `material-symbols:crown-rounded`](https://icon-sets.iconify.design/material-symbols/crown-rounded/)，Apache 2.0，用于昵称右侧的金牌会员标签。
 - `member-v-diamond.svg`：用户提供的钻石 V 会员 SVG，用于头像右下角的会员身份标识。
 - `navigation-back.svg`、`address-search.svg`：用户提供的全局导航与搜索 SVG。
-- `address-edit.svg`：[Material Symbols](https://fonts.google.com/icons)，Apache 2.0，用于编辑地址。
+- `edit-square-outline-mdi-iconify.svg`：[Iconify Material Design Icons `mdi:square-edit-outline`](https://icon-sets.iconify.design/mdi/square-edit-outline/)，Apache 2.0，用于编辑收货地址。
+- `check-rounded-material-symbols-iconify.svg`：[Iconify Material Symbols `material-symbols:check-rounded`](https://icon-sets.iconify.design/material-symbols/check-rounded/)，Apache 2.0，用于购物车商品选中状态。
+- `address-edit.svg`：[Material Symbols](https://fonts.google.com/icons)，Apache 2.0，旧版地址编辑图标（当前未使用）。
 - `wechat.svg`：[Simple Icons WeChat](https://simpleicons.org/?q=wechat)，CC0 1.0，用于从微信导入收货地址。
 - `empty-products.svg`、`empty-cart.svg`、`empty-orders.svg`、`empty-favorites.svg`、`empty-history.svg`、`empty-coupons.svg`、`empty-addresses.svg`、`empty-after-sale.svg`、`empty-search.svg`：[Iconify Material Symbols](https://icon-sets.iconify.design/material-symbols/)，Apache 2.0；分别使用 `inventory-2-outline-rounded`、`remove-shopping-cart-outline-rounded`、`receipt-long-outline-rounded`、`favorite-outline-rounded`、`history-rounded`、`confirmation-number-outline-rounded`、`location-off-outline-rounded`、`assignment-return-outline-rounded`、`search-off-rounded`，统一为页面空状态的暖灰色线性图标。
 - `chat-add.svg`、`chat-send.svg`、`chat-photo.svg`、`chat-camera.svg`、`chat-order.svg`、`chat-product.svg`、`chat-history.svg`、`chat-favorite.svg`、`chat-cart.svg`、`chat-back.svg`、`chat-error.svg`：[Iconify Material Symbols](https://icon-sets.iconify.design/material-symbols/)，Apache 2.0；分别使用 `add-circle-outline-rounded`、`send-rounded`、`photo-library-outline-rounded`、`photo-camera-outline-rounded`、`receipt-long-outline-rounded`、`inventory-2-outline-rounded`、`history-rounded`、`favorite-outline-rounded`、`shopping-cart-outline-rounded`、`arrow-back-rounded`、`error-outline-rounded`，用于客服输入栏、附件面板及逐条发送状态。

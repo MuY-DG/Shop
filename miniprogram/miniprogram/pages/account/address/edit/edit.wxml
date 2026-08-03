@@ -4,6 +4,7 @@
     back="{{true}}"
     background="#F3F3F7"
     color="#2E1D16"
+    show-divider="{{false}}"
     loading="{{loading || saving || importing || deleting}}"
   />
 

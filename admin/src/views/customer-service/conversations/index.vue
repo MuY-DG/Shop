@@ -1956,7 +1956,18 @@
     })
     actionLoading.value = true
     try {
-      currentDetail.value = await closeCustomerServiceConversation(selectedConversationId.value)
+      const closedConversationId = selectedConversationId.value
+      await closeCustomerServiceConversation(closedConversationId)
+      detailRequestSequence += 1
+      detailCache.delete(closedConversationId)
+      detachCurrentImageUrls()
+      selectedConversationId.value = null
+      currentDetail.value = null
+      detailLoading.value = false
+      hasEarlierMessages.value = false
+      historyAutoLoadArmed = true
+      messageDraft.value = ''
+      quickReplyVisible.value = false
       await Promise.all([loadConversations(), loadAgentState()])
       ElMessage.success('会话已结束')
     } finally {

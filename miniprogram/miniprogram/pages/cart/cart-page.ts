@@ -71,7 +71,8 @@ export function registerCartPage(config: CartPageConfig): void {
       pricingLoading: false,
       updatingId: 0,
       deletingId: 0,
-      deletingBatch: false
+      deletingBatch: false,
+      contentRefreshing: false
     },
 
     onShow() {
@@ -105,6 +106,20 @@ export function registerCartPage(config: CartPageConfig): void {
         await this.loadCart();
       }
       wx.stopPullDownRefresh();
+    },
+
+    async onContentRefresh() {
+      if (this.data.contentRefreshing) {
+        return;
+      }
+      this.setData({ contentRefreshing: true });
+      try {
+        if (!this.data.loginRequired) {
+          await this.loadCart();
+        }
+      } finally {
+        this.setData({ contentRefreshing: false });
+      }
     },
 
     async loadCart() {

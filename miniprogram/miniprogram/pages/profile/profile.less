@@ -94,25 +94,39 @@
   position: relative;
   z-index: 1;
   display: flex;
-  width: 154rpx;
-  height: 154rpx;
+  width: 174rpx;
+  height: 164rpx;
   padding: 0;
-  border: 5rpx solid #d6a04a;
-  border-radius: 50%;
+  // 旧版 CSS 金色圆边框暂时停用，由 WebP 头像框接管。
+  // border: 5rpx solid #d6a04a;
+  // border-radius: 50%;
   flex: none;
   align-items: center;
   justify-content: center;
   background: transparent;
-  box-shadow: 12rpx 12rpx 28rpx rgba(82, 40, 16, 0.2);
+  // box-shadow: 12rpx 12rpx 28rpx rgba(82, 40, 16, 0.2);
 }
 
 .member-card__avatar {
-  width: 100%;
-  height: 100%;
+  position: relative;
+  z-index: 1;
+  width: 138rpx;
+  height: 138rpx;
   border-radius: 50%;
   overflow: hidden;
 }
 
+.member-card__avatar-frame {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  width: 228rpx;
+  height: 228rpx;
+  transform: translate(-50%, -46%);
+}
+
+// 与上方 WXML 中注释掉的旧版独立钻石图标配套，暂时保留。
 .member-card__vip-mark {
   position: absolute;
   right: -10rpx;
@@ -198,12 +212,12 @@
 
 .account-metric {
   position: relative;
-  display: grid;
+  display: flex;
   min-width: 0;
   padding: 6rpx 20rpx;
-  grid-template-columns: 64rpx minmax(24rpx, 1fr);
-  column-gap: 14rpx;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
   transition: opacity @duration-fast @ease-standard;
 }
 
@@ -217,12 +231,20 @@
   content: "";
 }
 
+.account-metric__content {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: center;
+}
+
 .account-metric__identity {
   display: flex;
-  min-width: 0;
+  width: 70rpx;
+  flex: none;
   flex-direction: column;
   align-items: center;
-  gap: 8rpx;
 }
 
 .account-metric__icon {
@@ -232,17 +254,22 @@
 }
 
 .account-metric__value {
-  min-width: 0;
-  color: @color-brand;
+  display: flex;
+  height: 52rpx;
+  margin-left: 4rpx;
+  flex: none;
+  align-items: center;
+  color: #000000;
   font-family: @font-family-price;
-  font-size: 36rpx;
-  font-weight: 650;
+  font-size: 28rpx;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  justify-self: end;
   line-height: 1;
+  white-space: nowrap;
 }
 
 .account-metric__label {
+  margin-top: 10rpx;
   color: @color-text-primary;
   font-size: 22rpx;
   line-height: 1.4;
@@ -324,18 +351,23 @@
 
 .order-shortcut__badge {
   position: absolute;
-  top: -9rpx;
+  top: -7rpx;
   right: -13rpx;
-  min-width: 29rpx;
-  height: 29rpx;
-  padding: 0 6rpx;
-  border: 3rpx solid rgba(255, 253, 250, 0.94);
+  display: flex;
+  min-width: 27rpx;
+  height: 27rpx;
+  padding: 0 7rpx;
+  border: 3rpx solid #ffffff;
   border-radius: @radius-pill;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
   color: @color-text-inverse;
-  font-size: 18rpx;
-  line-height: 29rpx;
-  text-align: center;
-  background: @color-danger;
+  font-family: Arial, sans-serif;
+  font-size: 16rpx;
+  font-weight: 700;
+  line-height: 24rpx;
+  background: #ff172b;
 }
 
 .order-shortcut__label {
@@ -385,6 +417,105 @@
   flex: none;
 }
 
+.service-item__visual {
+  position: relative;
+  width: 62rpx;
+  height: 62rpx;
+  flex: none;
+}
+
+.service-presence {
+  position: absolute;
+  right: -12rpx;
+  bottom: -7rpx;
+  display: flex;
+  width: 30rpx;
+  height: 30rpx;
+  align-items: center;
+  justify-content: center;
+}
+
+.service-presence__halo,
+.service-presence__dot {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.service-presence__halo {
+  width: 24rpx;
+  height: 24rpx;
+}
+
+.service-presence__dot {
+  width: 15rpx;
+  height: 15rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.94);
+}
+
+.service-presence--online .service-presence__halo {
+  border: 2rpx solid rgba(21, 184, 104, 0.28);
+  background: rgba(21, 184, 104, 0.2);
+  animation: service-presence-breathe 1.8s ease-in-out infinite;
+}
+
+.service-presence--online .service-presence__dot {
+  background: #15b868;
+  animation: service-presence-dot-breathe 1.8s ease-in-out infinite;
+}
+
+.service-presence--offline .service-presence__halo {
+  background: rgba(156, 155, 156, 0.2);
+}
+
+.service-presence--offline .service-presence__dot {
+  background: #9c9b9c;
+}
+
+.service-item__badge {
+  position: absolute;
+  top: -10rpx;
+  right: -20rpx;
+  display: flex;
+  min-width: 29rpx;
+  height: 29rpx;
+  padding: 0 6rpx;
+  border: 3rpx solid rgba(255, 253, 250, 0.94);
+  border-radius: @radius-pill;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: #ff172b;
+  font-size: 18rpx;
+  font-weight: 650;
+  line-height: 26rpx;
+}
+
+@keyframes service-presence-breathe {
+  0% {
+    opacity: 0.32;
+    transform: scale(0.76);
+  }
+  50% {
+    opacity: 0.92;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 0.32;
+    transform: scale(0.76);
+  }
+}
+
+@keyframes service-presence-dot-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 3rpx rgba(21, 184, 104, 0.38);
+  }
+  50% {
+    box-shadow: 0 0 12rpx 3rpx rgba(21, 184, 104, 0.58);
+  }
+}
+
 .service-item__label {
   max-width: 100%;
   margin-top: 14rpx;
@@ -408,8 +539,6 @@
   .account-metric {
     padding-right: 12rpx;
     padding-left: 12rpx;
-    grid-template-columns: 60rpx minmax(22rpx, 1fr);
-    column-gap: 8rpx;
   }
 
 }

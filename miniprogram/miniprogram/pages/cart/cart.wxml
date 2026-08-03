@@ -18,7 +18,16 @@
     >{{managing ? '完成' : '管理'}}</button>
   </navigation-bar>
 
-  <view class="cart-content">
+  <scroll-view
+    class="cart-content"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    show-scrollbar="{{false}}"
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{contentRefreshing}}"
+    refresher-background="#F3F3F7"
+    bindrefresherrefresh="onContentRefresh"
+  >
     <view wx:if="{{loginRequired}}" class="cart-login-state">
       <image
         class="cart-login-state__emblem"
@@ -77,7 +86,13 @@
             aria-checked="{{item.selected}}"
             aria-label="{{item.selected ? '取消选择' : '选择'}}{{item.productTitle}}"
           >
-            <text wx:if="{{item.selected}}">✓</text>
+            <image
+              wx:if="{{item.selected}}"
+              class="selection__check"
+              src="/assets/icons/check-rounded-material-symbols-iconify.svg"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
           </view>
 
           <view
@@ -149,7 +164,7 @@
       </view>
     </block>
     </block>
-  </view>
+  </scroll-view>
 
   <view wx:if="{{!loginRequired && loaded && rawItems.length}}" class="settlement-bar {{managing ? 'settlement-bar--managing' : ''}}">
     <view
@@ -159,7 +174,13 @@
       aria-checked="{{allAvailableSelected}}"
     >
       <view class="selection selection--compact {{allAvailableSelected ? 'selection--checked' : ''}}">
-        <text wx:if="{{allAvailableSelected}}">✓</text>
+        <image
+          wx:if="{{allAvailableSelected}}"
+          class="selection__check"
+          src="/assets/icons/check-rounded-material-symbols-iconify.svg"
+          mode="aspectFit"
+          aria-hidden="true"
+        />
       </view>
       <text>全选</text>
     </view>

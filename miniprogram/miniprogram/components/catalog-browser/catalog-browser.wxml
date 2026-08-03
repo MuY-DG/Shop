@@ -1,5 +1,4 @@
 <view class="catalog-browser {{tabPage || scrollPage ? 'catalog-browser--fixed' : ''}} {{tabPage ? 'catalog-browser--tab' : ''}}">
-  <view wx:if="{{tabPage}}" class="catalog-tab-wash" aria-hidden="true"></view>
   <view class="catalog-tools">
     <view class="sort-bar">
       <view
@@ -143,13 +142,13 @@
         class="catalog-footer catalog-footer--done"
       >已经到底了</view>
     </block>
-  </scroll-view>
 
-  <view
-    wx:if="{{tabPage}}"
-    class="catalog-tab-wash"
-    aria-hidden="true"
-  ></view>
+    <view
+      wx:if="{{tabPage}}"
+      class="catalog-tab-spacer"
+      aria-hidden="true"
+    ></view>
+  </scroll-view>
 
   <view
     wx:if="{{filterVisible}}"

@@ -8,8 +8,10 @@ import org.muybaby.shopserver.auth.dto.UpdateAppUserProfileRequest;
 import org.muybaby.shopserver.auth.service.AppAuthService;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.user.dto.AppUserOverviewResponse;
 import org.muybaby.shopserver.user.service.AppUserAvatarService;
 import org.muybaby.shopserver.user.service.AppUserAvatarRateLimiter;
+import org.muybaby.shopserver.user.service.AppUserOverviewService;
 import org.muybaby.shopserver.storage.dto.DirectUploadSessionRequest;
 import org.muybaby.shopserver.storage.dto.DirectUploadSessionResponse;
 import org.springframework.http.ResponseEntity;
@@ -30,15 +32,28 @@ public class AppUserController {
 
     private final AppAuthService appAuthService;
     private final AppUserAvatarService appUserAvatarService;
+    private final AppUserOverviewService appUserOverviewService;
 
-    public AppUserController(AppAuthService appAuthService, AppUserAvatarService appUserAvatarService) {
+    public AppUserController(
+            AppAuthService appAuthService,
+            AppUserAvatarService appUserAvatarService,
+            AppUserOverviewService appUserOverviewService
+    ) {
         this.appAuthService = appAuthService;
         this.appUserAvatarService = appUserAvatarService;
+        this.appUserOverviewService = appUserOverviewService;
     }
 
     @GetMapping("/me")
     public ApiResponse<AppUserProfile> me(@AuthenticationPrincipal AuthenticatedPrincipal principal) {
         return ApiResponse.success(appAuthService.me(principal));
+    }
+
+    @GetMapping("/me/overview")
+    public ApiResponse<AppUserOverviewResponse> overview(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal
+    ) {
+        return ApiResponse.success(appUserOverviewService.overview(principal));
     }
 
     @PutMapping("/me")

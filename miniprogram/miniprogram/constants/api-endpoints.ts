@@ -7,6 +7,7 @@ export const API_ENDPOINTS = Object.freeze({
   },
   user: {
     me: "/app/users/me",
+    overview: "/app/users/me/overview",
     avatar: "/app/users/me/avatar",
     avatarUploads: "/app/users/me/avatar/upload-sessions"
   },

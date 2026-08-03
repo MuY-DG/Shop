@@ -28,11 +28,20 @@
         />
         <image
           wx:if="{{loggedIn}}"
+          class="member-card__avatar-frame"
+          src="/assets/images/member-avatar-frame-v.png"
+          mode="aspectFit"
+          aria-label="V 会员头像框"
+        />
+        <!-- 旧版独立钻石会员图标暂时停用，保留以便快速恢复。
+        <image
+          wx:if="{{loggedIn}}"
           class="member-card__vip-mark"
           src="/assets/icons/member-v-diamond.svg"
           mode="aspectFit"
           aria-label="钻石 V 会员"
         />
+        -->
       </view>
       <view class="member-card__body">
         <view class="member-card__identity">
@@ -62,16 +71,18 @@
         aria-role="button"
         aria-label="{{item.ariaLabel}} {{item.value}}"
       >
-        <view class="account-metric__identity">
-          <image
-            class="account-metric__icon"
-            src="{{item.iconPath}}"
-            mode="aspectFit"
-            aria-hidden="true"
-          />
-          <text class="account-metric__label">{{item.label}}</text>
+        <view class="account-metric__content">
+          <view class="account-metric__identity">
+            <image
+              class="account-metric__icon"
+              src="{{item.iconPath}}"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
+            <text class="account-metric__label">{{item.label}}</text>
+          </view>
+          <text class="account-metric__value">{{item.value}}</text>
         </view>
-        <text class="account-metric__value">{{item.value}}</text>
       </view>
     </view>
 
@@ -131,14 +142,25 @@
           bindtap="onServiceItemTap"
           hover-class="service-item--pressed"
           aria-role="button"
-          aria-label="{{item.label}}"
+          aria-label="{{item.ariaLabel || item.label}}"
         >
-          <image
-            class="service-item__icon"
-            src="{{item.iconPath}}"
-            mode="aspectFit"
-            aria-hidden="true"
-          />
+          <view class="service-item__visual">
+            <image
+              class="service-item__icon"
+              src="{{item.iconPath}}"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
+            <view
+              wx:if="{{item.showPresence}}"
+              class="service-presence {{item.online ? 'service-presence--online' : 'service-presence--offline'}}"
+              aria-hidden="true"
+            >
+              <view class="service-presence__halo"></view>
+              <view class="service-presence__dot"></view>
+            </view>
+            <text wx:if="{{item.badge}}" class="service-item__badge">{{item.badge}}</text>
+          </view>
           <text class="service-item__label">{{item.label}}</text>
         </view>
       </view>

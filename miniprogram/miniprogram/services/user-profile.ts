@@ -5,6 +5,7 @@ import type {
   UpdateAppUserAvatarRequest,
   UpdateAppUserProfileRequest
 } from "../types/auth";
+import type { AppUserOverview } from "../types/profile-overview";
 import { request } from "../utils/request";
 import { uploadFileDirect } from "../utils/direct-upload";
 import { uploadFile } from "../utils/upload";
@@ -21,6 +22,13 @@ export async function getMyProfile(): Promise<AppUserProfile> {
     method: "GET"
   });
   return updateSessionUser(profile);
+}
+
+export function getMyOverview(): Promise<AppUserOverview> {
+  return request<AppUserOverview>({
+    url: API_ENDPOINTS.user.overview,
+    method: "GET"
+  });
 }
 
 export async function updateMyProfile(

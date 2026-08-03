@@ -172,23 +172,11 @@
 }
 
 .catalog-browser--tab .catalog-content {
-  padding-bottom: calc(@tab-bar-height + env(safe-area-inset-bottom));
+  padding-bottom: 0;
 }
 
-.catalog-tab-wash {
-  position: fixed;
-  z-index: 2;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: calc(@tab-bar-height + 80rpx + env(safe-area-inset-bottom));
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(214, 193, 170, 0.18) 50%,
-    rgba(200, 170, 138, 0.25) 100%
-  );
-  pointer-events: none;
+.catalog-tab-spacer {
+  height: calc(@tab-bar-height + env(safe-area-inset-bottom));
 }
 
 .catalog-state {

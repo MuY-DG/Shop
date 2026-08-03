@@ -152,10 +152,13 @@ test("分类页固定工具区并统一搜索、排序和分类视觉", () => {
   assert.match(categoryTemplate, /class="category-catalog"/);
   assert.match(categoryStyle, /\.category-page\s*\{[\s\S]*height: 100vh;[\s\S]*overflow: hidden/);
   assert.match(categoryStyle, /\.category-search\s*\{[\s\S]*width: calc\(100% - 40rpx\);[\s\S]*border-radius: 18rpx;[\s\S]*background: #ffffff/);
-  assert.match(catalogTemplate, /class="catalog-content"[\s\S]*scroll-y="\{\{tabPage \|\| scrollPage\}\}"[\s\S]*refresher-enabled="\{\{tabPage \|\| scrollPage\}\}"/);
-  assert.match(catalogTemplate, /wx:if="\{\{tabPage\}\}"[\s\S]*class="catalog-tab-wash"/);
+  assert.match(catalogTemplate, /class="catalog-content"[\s\S]*scroll-y="\{\{tabPage \|\| scrollPage\}\}"[\s\S]*enhanced="\{\{tabPage \|\| scrollPage\}\}"[\s\S]*refresher-enabled="\{\{tabPage \|\| scrollPage\}\}"/);
+  assert.match(catalogTemplate, /wx:if="\{\{tabPage\}\}"[\s\S]*class="catalog-tab-spacer"[\s\S]*<\/scroll-view>/);
+  assert.doesNotMatch(catalogTemplate, /catalog-tab-wash/);
   assert.match(catalogStyle, /\.catalog-browser--fixed\s*\{[\s\S]*display: flex;[\s\S]*overflow: hidden/);
-  assert.match(catalogStyle, /\.catalog-tab-wash\s*\{[\s\S]*position: fixed;[\s\S]*pointer-events: none/);
+  assert.match(catalogStyle, /\.catalog-browser--tab \.catalog-content\s*\{[\s\S]*padding-bottom: 0/);
+  assert.match(catalogStyle, /\.catalog-tab-spacer\s*\{[\s\S]*height: calc\(@tab-bar-height \+ env\(safe-area-inset-bottom\)\)/);
+  assert.doesNotMatch(catalogStyle, /\.catalog-tab-wash/);
   assert.match(catalogStyle, /\.sort-bar\s*\{[\s\S]*background: transparent/);
   assert.match(catalogStyle, /\.sort-item\s*\{[\s\S]*color: #000000/);
   assert.match(catalogStyle, /\.sort-item--active\s*\{[\s\S]*color: #ff172b/);
@@ -232,24 +235,41 @@ test("购物车提供管理批量删除并使用后端权威计价", () => {
     resolve(sourceRoot, "services/cart.ts"),
     "utf8"
   );
+  const cartConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "pages/cart/cart.json"), "utf8")
+  ) as DetailPageConfig;
+  const standaloneConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "pages/cart/standalone/standalone.json"), "utf8")
+  ) as DetailPageConfig;
 
+  assert.equal(cartConfig.disableScroll, true);
+  assert.equal(cartConfig.enablePullDownRefresh, false);
+  assert.equal(standaloneConfig.disableScroll, true);
+  assert.equal(standaloneConfig.enablePullDownRefresh, false);
   assert.match(template, /购物车（\{\{cartTotalQuantity\}\}）/);
   assert.match(template, /\{\{managing \? '完成' : '管理'\}\}/);
   assert.match(template, /trash-can-outline-iconify\.svg/);
+  assert.match(template, /check-rounded-material-symbols-iconify\.svg/);
+  assert.doesNotMatch(template, />✓<\/text>/);
+  assert.match(template, /class="cart-content"[\s\S]*scroll-y="\{\{true\}\}"[\s\S]*bindrefresherrefresh="onContentRefresh"/);
   assert.match(template, /class="batch-delete-action"/);
   assert.doesNotMatch(template, /这一锅，慢慢挑|>清空<|>移除<|小计|优惠将在结算页计算|已选 \{\{/);
   assert.match(logic, /确认要删除这\$\{normalizedIds\.length\}种商品吗/);
   assert.match(logic, /您还没有选择商品/);
   assert.match(logic, /previewOrder\(\{[\s\S]*source: "CART"/);
+  assert.match(logic, /async onContentRefresh\(\)[\s\S]*await this\.loadCart\(\)/);
   assert.match(service, /API_ENDPOINTS\.cart\.batchDelete/);
-  assert.match(styles, /\.cart-page\s*\{[\s\S]*background: #f3f3f7/);
+  assert.match(styles, /\.cart-page\s*\{[\s\S]*height: 100vh;[\s\S]*display: flex;[\s\S]*overflow: hidden;[\s\S]*background: #f3f3f7/);
+  assert.match(styles, /\.cart-content\s*\{[\s\S]*height: 0;[\s\S]*flex: 1/);
   assert.match(styles, /\.cart-login-state\s*\{[\s\S]*border: 0;[\s\S]*background: transparent;[\s\S]*box-shadow: none/);
   assert.doesNotMatch(styles, /\.cart-login-state\s*\{[^}]*\.card-surface\(\)/);
   assert.match(styles, /\.cart-card\s*\{[\s\S]*background: #ffffff/);
   assert.match(styles, /\.cart-card__image-shell\s*\{[\s\S]*width: 166rpx;[\s\S]*height: 166rpx/);
   assert.match(styles, /\.cart-card__footer\s*\{[\s\S]*width: 162rpx;[\s\S]*justify-content: center/);
-  assert.match(styles, /\.settlement-bar\s*\{[\s\S]*background-color: #ffffff/);
+  assert.match(styles, /\.settlement-bar\s*\{[\s\S]*border-top: 0;[\s\S]*background: #ffffff;[\s\S]*box-shadow: none/);
   assert.match(styles, /\.quantity-stepper__value\s*\{[\s\S]*background: #f6f6f6/);
+  assert.match(styles, /\.selection--checked\s*\{[\s\S]*border-color: #ff172b;[\s\S]*background: #ff172b/);
+  assert.match(styles, /\.selection__check\s*\{[\s\S]*width: 26rpx;[\s\S]*height: 26rpx/);
   assert.match(styles, /button\.checkout-action\s*\{[\s\S]*background: #ff172b/);
 });
 
@@ -367,13 +387,18 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   assert.match(profileLogic, /accountNavigationPath/);
   assert.match(profileLogic, /profile-default-avatar\.png/);
   assert.match(profileTemplate, /profile-watercolor-background\.png/);
-  assert.doesNotMatch(`${profileLogic}\n${profileTemplate}`, /\.webp/);
+  assert.match(profileTemplate, /class="member-card__avatar-frame"/);
+  assert.match(profileTemplate, /src="\/assets\/images\/member-avatar-frame-v\.png"/);
   assert.equal(
     existsSync(resolve(sourceRoot, "assets/images/profile-default-avatar.png")),
     true
   );
   assert.equal(
     existsSync(resolve(sourceRoot, "assets/images/profile-watercolor-background.png")),
+    true
+  );
+  assert.equal(
+    existsSync(resolve(sourceRoot, "assets/images/member-avatar-frame-v.webp")),
     true
   );
 });
