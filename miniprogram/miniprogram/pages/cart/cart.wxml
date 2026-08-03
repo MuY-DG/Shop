@@ -18,7 +18,26 @@
     >{{managing ? '完成' : '管理'}}</button>
   </navigation-bar>
 
+  <view wx:if="{{loginRequired}}" class="cart-login-state">
+    <view class="cart-login-state__emblem">
+      <image
+        class="cart-login-state__emblem-image"
+        src="{{brandLogo.src}}"
+        style="{{brandLogo.style}}"
+        mode="scaleToFill"
+        aria-label="MuYbaby 品牌标志"
+      />
+    </view>
+    <view class="cart-login-state__title">登录后查看购物车</view>
+    <button
+      class="cart-login-state__action"
+      bindtap="onLoginTap"
+      hover-class="cart-login-state__action--pressed"
+    >去登录</button>
+  </view>
+
   <scroll-view
+    wx:else
     class="cart-content"
     scroll-y="{{true}}"
     enhanced="{{true}}"
@@ -28,26 +47,6 @@
     refresher-background="#F3F3F7"
     bindrefresherrefresh="onContentRefresh"
   >
-    <view wx:if="{{loginRequired}}" class="cart-login-state">
-      <view class="cart-login-state__emblem">
-        <image
-          class="cart-login-state__emblem-image"
-          src="{{brandLogo.src}}"
-          style="{{brandLogo.style}}"
-          mode="scaleToFill"
-          aria-label="MuYbaby 品牌标志"
-        />
-      </view>
-      <view class="cart-login-state__title">登录后查看购物车</view>
-      <view class="cart-login-state__description">商品清单与结算信息会安全地保存在你的账户中</view>
-      <button
-        class="cart-login-state__action"
-        bindtap="onLoginTap"
-        hover-class="cart-login-state__action--pressed"
-      >去登录</button>
-    </view>
-
-    <block wx:else>
     <view wx:if="{{!loaded && loading}}" class="cart-state">
       <ui-state type="loading" title="正在准备购物车" description="好味道马上就来" />
     </view>
@@ -166,7 +165,6 @@
           </view>
         </view>
       </view>
-    </block>
     </block>
   </scroll-view>
 

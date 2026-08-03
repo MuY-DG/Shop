@@ -68,10 +68,11 @@ button.manage-action[disabled] {
 
 .cart-login-state {
   display: flex;
-  min-height: 620rpx;
-  padding: @space-16 @space-8;
+  min-height: 0;
+  padding: 0 @space-8 calc(@tab-bar-height + env(safe-area-inset-bottom));
   border: 0;
   border-radius: 0;
+  flex: 1;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -98,14 +99,6 @@ button.manage-action[disabled] {
   font-weight: 700;
 }
 
-.cart-login-state__description {
-  max-width: 480rpx;
-  margin-top: @space-3;
-  color: @color-text-muted;
-  font-size: @font-size-sm;
-  line-height: 1.6;
-}
-
 button.cart-login-state__action {
   width: 280rpx;
   height: 80rpx;
@@ -113,7 +106,7 @@ button.cart-login-state__action {
   padding: 0;
   border-radius: @radius-pill;
   color: @color-text-inverse;
-  background: @color-brand;
+  background: @color-login-action;
   box-shadow: @shadow-action;
   font-size: @font-size-base;
   font-weight: 700;

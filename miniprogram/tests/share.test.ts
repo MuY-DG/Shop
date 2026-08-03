@@ -44,6 +44,21 @@ test("登录页保持单一界面且仅新用户由手机号能力触发官方�
     resolve(sourceRoot, "pages/auth/login/login.wxml"),
     "utf8"
   );
+  const loginStyles = readFileSync(
+    resolve(sourceRoot, "pages/auth/login/login.less"),
+    "utf8"
+  );
+  const loginConfig = JSON.parse(readFileSync(
+    resolve(sourceRoot, "pages/auth/login/login.json"),
+    "utf8"
+  )) as { disableScroll?: boolean };
+  assert.equal(loginConfig.disableScroll, true);
+  assert.match(loginTemplate, /<scroll-view[\s\S]*class="login-content"[\s\S]*scroll-y="\{\{true\}\}"[\s\S]*>暂不登录<\/button>[\s\S]*<\/scroll-view>/);
+  assert.match(loginStyles, /\.login-page\s*\{[\s\S]*height: 100vh;[\s\S]*overflow: hidden;[\s\S]*flex-direction: column/);
+  assert.match(loginStyles, /\.login-main\s*\{[\s\S]*min-height: 0;[\s\S]*flex: 1;[\s\S]*overflow: hidden/);
+  assert.match(loginStyles, /\.login-content\s*\{[\s\S]*width: 100%;[\s\S]*height: 100%/);
+  assert.match(loginStyles, /\.login-content__inner\s*\{[\s\S]*min-height: 100%/);
+  assert.doesNotMatch(loginTemplate, /class="login-footer"/);
   assert.doesNotMatch(loginTemplate, /绑定手机号，开启会员服务/);
   assert.doesNotMatch(loginTemplate, /授权手机号并登录/);
   assert.doesNotMatch(loginTemplate, /agreePrivacyAuthorization/);

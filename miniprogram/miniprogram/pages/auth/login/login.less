@@ -2,9 +2,20 @@
 
 page,
 .login-page {
-  min-height: 100vh;
   color: @color-text-primary;
   background: #ffffff;
+}
+
+page {
+  height: 100%;
+  overflow: hidden;
+}
+
+.login-page {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  flex-direction: column;
 }
 
 .login-loading-layer {
@@ -34,10 +45,21 @@ page,
   }
 }
 
+.login-main {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
 .login-content {
+  width: 100%;
+  height: 100%;
+}
+
+.login-content__inner {
   box-sizing: border-box;
   display: flex;
-  min-height: calc(100vh - 128rpx);
+  min-height: 100%;
   padding: 148rpx 80rpx calc(env(safe-area-inset-bottom) + 72rpx);
   flex-direction: column;
   align-items: center;
@@ -99,7 +121,7 @@ button.primary-action {
   padding: 0;
   border-radius: @radius-md;
   color: @color-text-inverse;
-  background: #e60012;
+  background: @color-login-action;
   box-shadow: @shadow-action;
   font-size: @font-size-lg;
   font-weight: 650;
@@ -115,7 +137,7 @@ button.skip-action::after {
 
 button.primary-action[disabled] {
   color: @color-text-inverse;
-  background: #e60012;
+  background: @color-login-action;
   opacity: 0.64;
 }
 
@@ -154,7 +176,7 @@ button.primary-action[disabled] {
 
 button.skip-action {
   min-width: 220rpx;
-  margin: auto 0 @space-6;
+  margin: auto 0 0;
   padding: @space-4 @space-6;
   color: @color-text-placeholder;
   background: transparent;
@@ -163,15 +185,11 @@ button.skip-action {
 }
 
 @media (max-height: 700px) {
-  .login-content {
+  .login-content__inner {
     padding-top: 84rpx;
   }
 
   .login-copy {
-    margin-top: 72rpx;
-  }
-
-  button.skip-action {
     margin-top: 72rpx;
   }
 }

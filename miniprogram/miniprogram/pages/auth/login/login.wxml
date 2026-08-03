@@ -7,84 +7,93 @@
     color="#2E1D16"
   />
 
-  <view class="login-content">
-    <view class="brand-block">
-      <view class="brand-block__emblem">
-        <image
-          class="brand-block__emblem-image"
-          src="{{brandLogo.src}}"
-          style="{{brandLogo.style}}"
-          mode="scaleToFill"
-          aria-label="MuYbaby 品牌标志"
-        />
-      </view>
-      <view class="brand-block__name">MuYbaby</view>
-    </view>
-
-    <view class="login-copy">
-      <view class="login-copy__title">成为会员，享受更多专属好物</view>
-    </view>
-
-    <view class="login-actions">
-      <button
-        wx:if="{{initializing}}"
-        class="primary-action"
-        disabled="{{true}}"
-      >微信一键登录</button>
-
-      <button
-        wx:elif="{{!agreed}}"
-        class="primary-action"
-        hover-class="primary-action--pressed"
-        bindtap="onAgreementRequired"
-      >微信一键登录</button>
-
-      <button
-        wx:elif="{{loading}}"
-        class="primary-action"
-        loading="{{loading}}"
-        disabled="{{true}}"
-      >微信一键登录</button>
-
-      <button
-        wx:elif="{{!loginPrepared}}"
-        class="primary-action"
-        hover-class="primary-action--pressed"
-        bindtap="onPrepareLoginTap"
-      >微信一键登录</button>
-
-      <button
-        wx:elif="{{needsPhoneAuthorization}}"
-        class="primary-action"
-        open-type="getPhoneNumber"
-        hover-class="primary-action--pressed"
-        bindgetphonenumber="onGetPhoneNumber"
-      >微信一键登录</button>
-
-      <button
-        wx:else
-        class="primary-action"
-        hover-class="primary-action--pressed"
-        bindtap="onLoginTap"
-      >微信一键登录</button>
-
-      <checkbox-group class="agreement" bindchange="onAgreementChange">
-        <label class="agreement__label">
-          <checkbox
-            class="agreement__checkbox"
-            value="agree"
-            checked="{{agreed}}"
-            color="#B72B22"
-          />
-          <view class="agreement__copy">
-            <text>已阅读并同意</text>
-            <text class="agreement__link" catchtap="onPrivacyTap">《MuYbaby个人信息保护政策》</text>
+  <view class="login-main">
+    <scroll-view
+      class="login-content"
+      scroll-y="{{true}}"
+      enhanced="{{true}}"
+      show-scrollbar="{{false}}"
+    >
+      <view class="login-content__inner">
+        <view class="brand-block">
+          <view class="brand-block__emblem">
+            <image
+              class="brand-block__emblem-image"
+              src="{{brandLogo.src}}"
+              style="{{brandLogo.style}}"
+              mode="scaleToFill"
+              aria-label="MuYbaby 品牌标志"
+            />
           </view>
-        </label>
-      </checkbox-group>
-    </view>
+          <view class="brand-block__name">MuYbaby</view>
+        </view>
 
-    <button class="skip-action" bindtap="onSkipTap">暂不登录</button>
+        <view class="login-copy">
+          <view class="login-copy__title">成为会员，享受更多专属好物</view>
+        </view>
+
+        <view class="login-actions">
+          <button
+            wx:if="{{initializing}}"
+            class="primary-action"
+            disabled="{{true}}"
+          >微信一键登录</button>
+
+          <button
+            wx:elif="{{!agreed}}"
+            class="primary-action"
+            hover-class="primary-action--pressed"
+            bindtap="onAgreementRequired"
+          >微信一键登录</button>
+
+          <button
+            wx:elif="{{loading}}"
+            class="primary-action"
+            loading="{{loading}}"
+            disabled="{{true}}"
+          >微信一键登录</button>
+
+          <button
+            wx:elif="{{!loginPrepared}}"
+            class="primary-action"
+            hover-class="primary-action--pressed"
+            bindtap="onPrepareLoginTap"
+          >微信一键登录</button>
+
+          <button
+            wx:elif="{{needsPhoneAuthorization}}"
+            class="primary-action"
+            open-type="getPhoneNumber"
+            hover-class="primary-action--pressed"
+            bindgetphonenumber="onGetPhoneNumber"
+          >微信一键登录</button>
+
+          <button
+            wx:else
+            class="primary-action"
+            hover-class="primary-action--pressed"
+            bindtap="onLoginTap"
+          >微信一键登录</button>
+
+          <checkbox-group class="agreement" bindchange="onAgreementChange">
+            <label class="agreement__label">
+              <checkbox
+                class="agreement__checkbox"
+                value="agree"
+                checked="{{agreed}}"
+                color="#B72B22"
+              />
+              <view class="agreement__copy">
+                <text>已阅读并同意</text>
+                <text class="agreement__link" catchtap="onPrivacyTap">《MuYbaby个人信息保护政策》</text>
+              </view>
+            </label>
+          </checkbox-group>
+        </view>
+
+        <button class="skip-action" bindtap="onSkipTap">暂不登录</button>
+      </view>
+    </scroll-view>
   </view>
 
   <view wx:if="{{initializing}}" class="login-loading-layer" aria-label="正在加载">

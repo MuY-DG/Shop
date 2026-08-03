@@ -227,6 +227,10 @@ test("购物车提供管理批量删除并使用后端权威计价", () => {
     resolve(sourceRoot, "pages/cart/cart.less"),
     "utf8"
   );
+  const loginStyles = readFileSync(
+    resolve(sourceRoot, "pages/auth/login/login.less"),
+    "utf8"
+  );
   const logic = readFileSync(
     resolve(sourceRoot, "pages/cart/cart-page.ts"),
     "utf8"
@@ -253,6 +257,7 @@ test("购物车提供管理批量删除并使用后端权威计价", () => {
   assert.doesNotMatch(template, />✓<\/text>/);
   assert.match(template, /class="cart-content"[\s\S]*scroll-y="\{\{true\}\}"[\s\S]*bindrefresherrefresh="onContentRefresh"/);
   assert.match(template, /class="batch-delete-action"/);
+  assert.doesNotMatch(template, /商品清单与结算信息/);
   assert.doesNotMatch(template, /这一锅，慢慢挑|>清空<|>移除<|小计|优惠将在结算页计算|已选 \{\{/);
   assert.match(logic, /确认要删除这\$\{normalizedIds\.length\}种商品吗/);
   assert.match(logic, /您还没有选择商品/);
@@ -262,6 +267,9 @@ test("购物车提供管理批量删除并使用后端权威计价", () => {
   assert.match(styles, /\.cart-page\s*\{[\s\S]*height: 100vh;[\s\S]*display: flex;[\s\S]*overflow: hidden;[\s\S]*background: #f3f3f7/);
   assert.match(styles, /\.cart-content\s*\{[\s\S]*height: 0;[\s\S]*flex: 1/);
   assert.match(styles, /\.cart-login-state\s*\{[\s\S]*border: 0;[\s\S]*background: transparent;[\s\S]*box-shadow: none/);
+  assert.match(styles, /\.cart-login-state\s*\{[\s\S]*flex: 1;[\s\S]*justify-content: center/);
+  assert.match(styles, /button\.cart-login-state__action\s*\{[\s\S]*background: @color-login-action/);
+  assert.match(loginStyles, /button\.primary-action\s*\{[\s\S]*background: @color-login-action/);
   assert.doesNotMatch(styles, /\.cart-login-state\s*\{[^}]*\.card-surface\(\)/);
   assert.match(styles, /\.cart-card\s*\{[\s\S]*background: #ffffff/);
   assert.match(styles, /\.cart-card__image-shell\s*\{[\s\S]*width: 166rpx;[\s\S]*height: 166rpx/);
