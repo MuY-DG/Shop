@@ -13,7 +13,7 @@ export type MiniProgramEnvVersion = "develop" | "trial" | "release";
 
 // 上线前只需要在这里切换 stage 和正式 API 域名，业务代码不读取环境常量。
 export const APP_CONFIG: Readonly<AppRuntimeConfig> = Object.freeze({
-  appName: "灶香集",
+  appName: "MuYbaby",
   stage: "development",
   apiBaseUrl: "https://pay-dev.muybaby6.icu",
   requestTimeoutMs: 12_000,

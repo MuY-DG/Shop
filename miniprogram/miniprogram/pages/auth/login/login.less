@@ -50,16 +50,20 @@ page,
 }
 
 .brand-block__emblem {
+  position: relative;
   width: 176rpx;
   height: 176rpx;
   overflow: hidden;
-  border-radius: 50%;
+}
+
+.brand-block__emblem-image {
+  position: absolute;
 }
 
 .brand-block__name {
   margin-top: @space-5;
   font-family: serif;
-  font-size: @font-size-xl;
+  font-size: @font-size-lg;
   font-weight: 650;
   letter-spacing: 4rpx;
 }
@@ -85,7 +89,7 @@ page,
 
 .login-actions {
   width: 100%;
-  margin-top: @space-6;
+  margin-top: @space-10;
 }
 
 button.primary-action {
@@ -95,7 +99,7 @@ button.primary-action {
   padding: 0;
   border-radius: @radius-md;
   color: @color-text-inverse;
-  background: @color-brand;
+  background: #e60012;
   box-shadow: @shadow-action;
   font-size: @font-size-lg;
   font-weight: 650;
@@ -111,7 +115,7 @@ button.skip-action::after {
 
 button.primary-action[disabled] {
   color: @color-text-inverse;
-  background: @color-brand;
+  background: #e60012;
   opacity: 0.64;
 }
 
@@ -150,7 +154,7 @@ button.primary-action[disabled] {
 
 button.skip-action {
   min-width: 220rpx;
-  margin: auto 0 0;
+  margin: auto 0 @space-6;
   padding: @space-4 @space-6;
   color: @color-text-placeholder;
   background: transparent;

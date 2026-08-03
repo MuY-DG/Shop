@@ -1,3 +1,4 @@
+import { createBrandLogoView } from "../../../config/brand-logo";
 import {
   isTabRoute,
   needsPhoneAuthorization,
@@ -41,6 +42,7 @@ function showAgreementRequired(): void {
 
 Page({
   data: {
+    brandLogo: createBrandLogoView(176, 156),
     agreed: false,
     initializing: true,
     loading: false,

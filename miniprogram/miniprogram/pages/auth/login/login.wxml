@@ -1,6 +1,6 @@
 <view class="login-page">
   <navigation-bar
-    title="灶香集"
+    title="MuYbaby"
     back="{{true}}"
     show-divider="{{false}}"
     background="#FFFFFF"
@@ -9,13 +9,16 @@
 
   <view class="login-content">
     <view class="brand-block">
-      <image
-        class="brand-block__emblem"
-        src="/assets/images/zaoxiangji-login-emblem.png"
-        mode="aspectFit"
-        aria-label="灶香集品牌标志"
-      />
-      <view class="brand-block__name">灶香集</view>
+      <view class="brand-block__emblem">
+        <image
+          class="brand-block__emblem-image"
+          src="{{brandLogo.src}}"
+          style="{{brandLogo.style}}"
+          mode="scaleToFill"
+          aria-label="MuYbaby 品牌标志"
+        />
+      </view>
+      <view class="brand-block__name">MuYbaby</view>
     </view>
 
     <view class="login-copy">
@@ -75,7 +78,7 @@
           />
           <view class="agreement__copy">
             <text>已阅读并同意</text>
-            <text class="agreement__link" catchtap="onPrivacyTap">《灶香集个人信息保护政策》</text>
+            <text class="agreement__link" catchtap="onPrivacyTap">《MuYbaby个人信息保护政策》</text>
           </view>
         </label>
       </checkbox-group>

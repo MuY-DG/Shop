@@ -29,11 +29,15 @@
     bindrefresherrefresh="onContentRefresh"
   >
     <view wx:if="{{loginRequired}}" class="cart-login-state">
-      <image
-        class="cart-login-state__emblem"
-        src="/assets/images/zaoxiangji-login-emblem.png"
-        mode="aspectFit"
-      />
+      <view class="cart-login-state__emblem">
+        <image
+          class="cart-login-state__emblem-image"
+          src="{{brandLogo.src}}"
+          style="{{brandLogo.style}}"
+          mode="scaleToFill"
+          aria-label="MuYbaby 品牌标志"
+        />
+      </view>
       <view class="cart-login-state__title">登录后查看购物车</view>
       <view class="cart-login-state__description">商品清单与结算信息会安全地保存在你的账户中</view>
       <button

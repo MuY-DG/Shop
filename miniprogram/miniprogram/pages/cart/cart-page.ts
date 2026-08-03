@@ -1,3 +1,4 @@
+import { createBrandLogoView } from "../../config/brand-logo";
 import {
   buildCartCheckoutUrl,
   buildCartSummary,
@@ -51,6 +52,7 @@ export function registerCartPage(config: CartPageConfig): void {
 
   Page({
     data: {
+      brandLogo: createBrandLogoView(136, 120),
       navigationBack: config.navigationBack,
       loaded: false,
       loading: false,
