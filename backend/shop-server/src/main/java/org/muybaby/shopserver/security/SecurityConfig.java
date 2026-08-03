@@ -60,7 +60,8 @@ public class SecurityConfig {
                                 "/app/product/categories", "/app/product/filter-facets",
                                 "/app/product/spus", "/app/product/spus/*",
                                 "/app/product/spus/*/reviews",
-                                "/app/home", "/app/home/banners", "/app/contact").permitAll()
+                                "/app/home", "/app/home/banners", "/app/contact",
+                                "/app/customer-service/presence").permitAll()
                         .requestMatchers("/admin/**", "/app/**").authenticated()
                         .anyRequest().denyAll())
                 .build();

@@ -9,6 +9,10 @@ export type CustomerServiceMessageType =
   | "PRODUCT_CARD"
   | "SYSTEM";
 
+export interface CustomerServicePresence {
+  online: boolean;
+}
+
 export interface CustomerServiceOpenRequest extends WechatMiniprogram.IAnyObject {
   contextType?: CustomerServiceContextType;
   contextId?: number;

@@ -65,6 +65,25 @@ class AppUserOverviewServiceTest {
     }
 
     @Test
+    void overviewOnlineStatusFollowsManualAgentSwitch() {
+        insertUser();
+        long adminUserId = insertAvailableCustomerServiceAgent();
+
+        AppUserOverviewResponse online = appUserOverviewService.overview(appPrincipal());
+        assertThat(online.customerServiceOnline()).isTrue();
+
+        jdbcClient.sql("""
+                        update customer_service_agent_state
+                        set work_status = 'OFFLINE'
+                        where admin_user_id = :adminUserId
+                        """)
+                .param("adminUserId", adminUserId)
+                .update();
+        AppUserOverviewResponse offline = appUserOverviewService.overview(appPrincipal());
+        assertThat(offline.customerServiceOnline()).isFalse();
+    }
+
+    @Test
     void overviewRequiresAnAppPrincipal() {
         assertThatThrownBy(() -> appUserOverviewService.overview(null))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
@@ -79,6 +98,39 @@ class AppUserOverviewServiceTest {
                 .param("id", USER_ID)
                 .param("openid", "overview-user-99101")
                 .update();
+    }
+
+    private long insertAvailableCustomerServiceAgent() {
+        String username = "overview-online-agent";
+        jdbcClient.sql("""
+                        insert into admin_user
+                            (username, password_hash, display_name, email, avatar,
+                             status, created_at, updated_at)
+                        values
+                            (:username, 'unused', '概览在线客服', :email, '',
+                             'ENABLED', current_timestamp, current_timestamp)
+                        """)
+                .param("username", username)
+                .param("email", username + "@shop.local")
+                .update();
+        long adminUserId = jdbcClient.sql("select id from admin_user where username = :username")
+                .param("username", username)
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into admin_user_role (user_id, role_id)
+                        select :adminUserId, id from admin_role where code = 'R_CUSTOMER_SERVICE'
+                        """)
+                .param("adminUserId", adminUserId)
+                .update();
+        jdbcClient.sql("""
+                        insert into customer_service_agent_state
+                            (admin_user_id, work_status, max_active_conversations, updated_at)
+                        values (:adminUserId, 'AVAILABLE', null, current_timestamp)
+                        """)
+                .param("adminUserId", adminUserId)
+                .update();
+        return adminUserId;
     }
 
     private void insertProducts() {

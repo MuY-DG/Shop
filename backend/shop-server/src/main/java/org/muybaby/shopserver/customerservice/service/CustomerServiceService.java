@@ -23,7 +23,6 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.PersonalSe
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.SendMessageRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequestResponse;
-import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.StorageUploadProfile;
@@ -81,7 +80,6 @@ public class CustomerServiceService {
     private final ApplicationEventPublisher eventPublisher;
     private final StorageService storageService;
     private final DirectUploadService directUploadService;
-    private final RealtimeSessionHub realtimeSessionHub;
     private final CustomerServiceReplyService replyService;
     private final TransactionTemplate requiresNewTransaction;
     private final TransactionTemplate withoutTransaction;
@@ -92,7 +90,6 @@ public class CustomerServiceService {
             ApplicationEventPublisher eventPublisher,
             StorageService storageService,
             DirectUploadService directUploadService,
-            RealtimeSessionHub realtimeSessionHub,
             CustomerServiceReplyService replyService,
             PlatformTransactionManager transactionManager
     ) {
@@ -101,7 +98,6 @@ public class CustomerServiceService {
         this.eventPublisher = eventPublisher;
         this.storageService = storageService;
         this.directUploadService = directUploadService;
-        this.realtimeSessionHub = realtimeSessionHub;
         this.replyService = replyService;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -1238,9 +1234,8 @@ public class CustomerServiceService {
                         """)
                 .query((rs, rowNum) -> {
                     long adminUserId = rs.getLong("id");
-                    boolean online = realtimeSessionHub.isAdminOnline(adminUserId);
                     String manualWorkStatus = rs.getString("manual_work_status");
-                    String effectiveWorkStatus = online ? manualWorkStatus : "OFFLINE";
+                    boolean online = "AVAILABLE".equals(manualWorkStatus);
                     int activeCount = rs.getInt("active_conversation_count");
                     Integer maxActive = rs.getObject("max_active_conversations", Integer.class);
                     boolean withinCapacity = !weighted
@@ -1251,13 +1246,29 @@ public class CustomerServiceService {
                             rs.getString("display_name"),
                             rs.getString("avatar"),
                             online,
-                            effectiveWorkStatus,
+                            manualWorkStatus,
                             activeCount,
                             maxActive,
-                            online && "AVAILABLE".equals(manualWorkStatus) && withinCapacity
+                            online && withinCapacity
                     );
                 })
                 .list();
+    }
+
+    public boolean isOnline() {
+        return jdbcClient.sql("""
+                        select count(*)
+                        from admin_user admin
+                        join admin_user_role user_role on user_role.user_id = admin.id
+                        join admin_role role_item on role_item.id = user_role.role_id
+                        join customer_service_agent_state state on state.admin_user_id = admin.id
+                        where admin.status = 'ENABLED'
+                          and role_item.enabled = true
+                          and role_item.code = 'R_CUSTOMER_SERVICE'
+                          and state.work_status = 'AVAILABLE'
+                        """)
+                .query(Long.class)
+                .single() > 0;
     }
 
     public AgentStateResponse agentState(AuthenticatedPrincipal principal) {
@@ -2033,7 +2044,6 @@ public class CustomerServiceService {
                 ))
                 .list()
                 .stream()
-                .filter(candidate -> realtimeSessionHub.isAdminOnline(candidate.adminUserId()))
                 .filter(candidate -> assignedThisDrain.getOrDefault(candidate.adminUserId(), 0)
                         < candidate.autoAcceptCount())
                 .toList();
@@ -2116,8 +2126,7 @@ public class CustomerServiceService {
                 .optional()
                 .orElse(null);
         if (state == null
-                || !"AVAILABLE".equals(state.workStatus())
-                || !realtimeSessionHub.isAdminOnline(candidate.adminUserId())) {
+                || !"AVAILABLE".equals(state.workStatus())) {
             return false;
         }
         AutoAcceptSettings settings = jdbcClient.sql("""
@@ -2669,12 +2678,6 @@ public class CustomerServiceService {
         }
     }
 
-    private void requireOnline(Long adminUserId) {
-        if (!realtimeSessionHub.isAdminOnline(adminUserId)) {
-            throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_AGENT_NOT_AVAILABLE);
-        }
-    }
-
     private void requireCanReceive(Long adminUserId) {
         jdbcClient.sql("""
                         select admin_user_id
@@ -2720,8 +2723,7 @@ public class CustomerServiceService {
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE));
-        boolean online = realtimeSessionHub.isAdminOnline(adminUserId);
-        String effectiveWorkStatus = online ? snapshot.manualWorkStatus() : "OFFLINE";
+        boolean online = "AVAILABLE".equals(snapshot.manualWorkStatus());
         boolean withinCapacity = !isWeightedAssignment()
                 || (snapshot.maxActiveConversations() != null
                         && snapshot.activeConversationCount() < snapshot.maxActiveConversations());
@@ -2731,7 +2733,7 @@ public class CustomerServiceService {
         return new AgentStateResponse(
                 snapshot.adminUserId(),
                 online,
-                effectiveWorkStatus,
+                snapshot.manualWorkStatus(),
                 snapshot.activeConversationCount(),
                 snapshot.maxActiveConversations(),
                 canReceive

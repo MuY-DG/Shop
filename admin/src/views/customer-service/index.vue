@@ -105,9 +105,7 @@
   const profileServiceName = computed(
     () => agentProfile.value?.serviceName || userStore.info.userName || '客服'
   )
-  const isAvailable = computed(
-    () => Boolean(agentState.value?.online) && agentState.value?.workStatus === 'AVAILABLE'
-  )
+  const isAvailable = computed(() => agentState.value?.workStatus === 'AVAILABLE')
   const navigation = computed(() => {
     const items = [
       {
@@ -191,7 +189,7 @@
   onMounted(() => {
     unsubscribeRealtime = realtimeClient.subscribe(() => undefined)
     void loadAgentProfile()
-    setTimeout(() => void loadAgentState(), 500)
+    void loadAgentState()
     stateTimer = setInterval(() => {
       if (!document.hidden) void loadAgentState()
     }, 15000)

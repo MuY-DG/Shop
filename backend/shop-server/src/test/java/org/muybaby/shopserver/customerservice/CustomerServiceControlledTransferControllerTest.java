@@ -4,9 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.muybaby.shopserver.auth.token.TokenKind;
-import org.muybaby.shopserver.realtime.RealtimeConnectionPrincipal;
-import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -16,15 +13,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.web.socket.WebSocketSession;
 
-import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -49,9 +42,6 @@ class CustomerServiceControlledTransferControllerTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    @Autowired
-    private RealtimeSessionHub realtimeSessionHub;
-
     @BeforeEach
     void clearState() {
         jdbcClient.sql("delete from customer_service_transfer_request").update();
@@ -64,7 +54,7 @@ class CustomerServiceControlledTransferControllerTest {
     }
 
     @Test
-    void claimRequiresOnlineAvailableAgentAndRespectsCapacity() throws Exception {
+    void claimUsesManualOnlineStatusAndRespectsCapacity() throws Exception {
         String superToken = adminLogin("Super", "123456");
         long conversationId = openWaitingConversation("controlled-claim-one");
 
@@ -79,7 +69,6 @@ class CustomerServiceControlledTransferControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(900005));
 
-        connectAdmin(1L);
         setWorkStatus(superToken, "OFFLINE")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.workStatus").value("OFFLINE"));
@@ -108,13 +97,13 @@ class CustomerServiceControlledTransferControllerTest {
     }
 
     @Test
-    void regularTransferRequiresOnlineAvailableTargetAndChangesOwnerOnlyAfterAcceptance() throws Exception {
+    void regularTransferUsesManualOnlineStatusAndChangesOwnerOnlyAfterAcceptance() throws Exception {
         String superToken = adminLogin("Super", "123456");
         long targetId = insertCustomerServiceAgent("TransferTarget", "转接客服", "agent-pass");
         String targetToken = adminLogin("TransferTarget", "agent-pass");
         long conversationId = claimAsSuper(superToken, "controlled-transfer-accept");
 
-        setWorkStatus(targetToken, "AVAILABLE").andExpect(status().isOk());
+        setWorkStatus(targetToken, "OFFLINE").andExpect(status().isOk());
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/transfer-requests", conversationId)
                         .header("Authorization", bearer(superToken))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -122,7 +111,7 @@ class CustomerServiceControlledTransferControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(900005));
 
-        connectAdmin(targetId);
+        setWorkStatus(targetToken, "AVAILABLE").andExpect(status().isOk());
         String agentsResponse = mockMvc.perform(get("/admin/customer-service/agents")
                         .header("Authorization", bearer(superToken)))
                 .andExpect(status().isOk())
@@ -186,7 +175,6 @@ class CustomerServiceControlledTransferControllerTest {
         long targetId = insertCustomerServiceAgent("RejectTarget", "拒绝客服", "agent-pass");
         String targetToken = adminLogin("RejectTarget", "agent-pass");
         long conversationId = claimAsSuper(superToken, "controlled-transfer-reject");
-        connectAdmin(targetId);
         setWorkStatus(targetToken, "AVAILABLE").andExpect(status().isOk());
 
         long firstRequestId = createTransferRequest(superToken, conversationId, targetId, "SHIFT", "交接班");
@@ -248,7 +236,6 @@ class CustomerServiceControlledTransferControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(900005));
 
-        connectAdmin(targetId);
         setWorkStatus(targetToken, "AVAILABLE").andExpect(status().isOk());
         jdbcClient.sql("update customer_service_config set assignment_strategy = 'WEIGHTED' where id = 1")
                 .update();
@@ -277,7 +264,6 @@ class CustomerServiceControlledTransferControllerTest {
     }
 
     private long claimAsSuper(String superToken, String appCode) throws Exception {
-        connectAdmin(1L);
         setWorkStatus(superToken, "AVAILABLE").andExpect(status().isOk());
         long conversationId = openWaitingConversation(appCode);
         mockMvc.perform(post("/admin/customer-service/conversations/{conversationId}/claim", conversationId)
@@ -353,19 +339,6 @@ class CustomerServiceControlledTransferControllerTest {
                 .param("appUserId", app.userId())
                 .param("targetId", targetId)
                 .update();
-    }
-
-    private WebSocketSession connectAdmin(long adminUserId) {
-        WebSocketSession session = mock(WebSocketSession.class);
-        when(session.getId()).thenReturn("test-admin-" + adminUserId + "-" + UUID.randomUUID());
-        when(session.isOpen()).thenReturn(true);
-        realtimeSessionHub.register(session, new RealtimeConnectionPrincipal(
-                TokenKind.ADMIN,
-                adminUserId,
-                "admin-" + adminUserId,
-                List.of("customer-service:conversation:read")
-        ));
-        return session;
     }
 
     private AppLogin appLogin(String code) throws Exception {

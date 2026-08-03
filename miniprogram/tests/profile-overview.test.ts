@@ -67,6 +67,7 @@ test("我的页面从聚合接口取数并统一角标颜色", () => {
   );
 
   assert.match(pageSource, /getMyOverview\(\)/);
+  assert.match(pageSource, /getCustomerServicePresence\(\)/);
   assert.match(pageSource, /profileOverviewDisplay\(overview\)/);
   assert.match(template, /service-presence--online/);
   assert.match(template, /service-item__badge/);

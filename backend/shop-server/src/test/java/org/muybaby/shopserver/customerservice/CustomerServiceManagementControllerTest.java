@@ -129,6 +129,37 @@ class CustomerServiceManagementControllerTest {
     }
 
     @Test
+    void managementAndPublicPresenceFollowManualOnlineSwitchWithoutRealtimeConnection()
+            throws Exception {
+        String token = loginAndExtractToken();
+        long adminUserId = promoteGuest(token, "manual-online-agent", "手动在线客服");
+        jdbcClient.sql("""
+                        update customer_service_agent_state
+                        set work_status = 'AVAILABLE'
+                        where admin_user_id = :adminUserId
+                        """)
+                .param("adminUserId", adminUserId)
+                .update();
+
+        mockMvc.perform(get("/admin/customer-service/management/users")
+                        .header("Authorization", bearer(token))
+                        .param("keyword", "manual-online-agent"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].online").value(true));
+        mockMvc.perform(get("/admin/customer-service/management/config")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath(
+                        "$.data.routingAgents[?(@.adminUserId == '%s')].online"
+                                .formatted(adminUserId),
+                        hasItem(true)
+                ));
+        mockMvc.perform(get("/app/customer-service/presence"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.online").value(true));
+    }
+
+    @Test
     void weightedRoutingRequiresEveryAgentCapacityAndReturnsDerivedWeights() throws Exception {
         String token = loginAndExtractToken();
         long firstAgentId = promoteGuest(token, "weighted-agent-a", "甲客服");

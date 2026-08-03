@@ -200,6 +200,36 @@ class CustomerServiceAutoAssignmentTest {
     }
 
     @Test
+    void manualOnlineSwitchAllowsAutomaticAssignmentWithoutRealtimeConnection() {
+        long adminUserId = insertAdmin("manual-online-auto-agent");
+        managementService.addUser(
+                1L,
+                adminUserId,
+                new ManagedUserCreateRequest("手动在线自动分流客服")
+        );
+        AuthenticatedPrincipal principal = new AuthenticatedPrincipal(
+                TokenKind.ADMIN,
+                adminUserId,
+                "manual-online-auto-agent",
+                List.of("R_CUSTOMER_SERVICE"),
+                List.of("customer-service:conversation:read")
+        );
+        customerServiceService.updatePersonalSettings(
+                principal,
+                new PersonalSettingsUpdateRequest("手动在线自动分流客服", true, 5, 1)
+        );
+        customerServiceService.updateAgentState(principal, "AVAILABLE");
+
+        long conversationId = createWaitingConversation(
+                880_012L,
+                "manual-online-auto-message"
+        );
+
+        assertThat(conversationStatus(conversationId)).isEqualTo("ACTIVE");
+        assertThat(assignedAdminUserId(conversationId)).isEqualTo(adminUserId);
+    }
+
+    @Test
     void enablingPersonalAutoAcceptDrainsOnlyBatchAndNeverCrossesThreshold() {
         AgentFixture agent = createAgent("batch-agent", false, 5, 1);
         try {

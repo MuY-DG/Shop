@@ -62,6 +62,7 @@ public class CustomerServiceManagementService {
                                COALESCE(NULLIF(profile.service_name_override, ''),
                                         config.default_service_name) AS service_name,
                                config.avatar AS service_avatar,
+                               COALESCE(state.work_status, 'OFFLINE') AS work_status,
                                CASE WHEN manager_role.user_id IS NULL THEN FALSE ELSE TRUE END AS is_manager,
                                COALESCE(profile.bound_at, admin.created_at) AS bound_at
                         FROM admin_user admin
@@ -74,6 +75,8 @@ public class CustomerServiceManagementService {
                          AND agent_role.enabled = TRUE
                         LEFT JOIN customer_service_agent_profile profile
                           ON profile.admin_user_id = admin.id
+                        LEFT JOIN customer_service_agent_state state
+                          ON state.admin_user_id = admin.id
                         LEFT JOIN (
                             SELECT user_role.user_id
                             FROM admin_user_role user_role
@@ -334,7 +337,7 @@ public class CustomerServiceManagementService {
                             row.adminUserId(),
                             row.username(),
                             row.serviceName(),
-                            realtimeSessionHub.isAdminOnline(row.adminUserId()),
+                            "AVAILABLE".equals(row.workStatus()),
                             row.maxActiveConversations(),
                             weight,
                             percent
@@ -494,6 +497,7 @@ public class CustomerServiceManagementService {
                         SELECT admin.id, admin.username,
                                COALESCE(NULLIF(profile.service_name_override, ''),
                                         config.default_service_name) AS service_name,
+                               COALESCE(state.work_status, 'OFFLINE') AS work_status,
                                state.max_active_conversations
                         FROM admin_user admin
                         CROSS JOIN customer_service_config config
@@ -512,6 +516,7 @@ public class CustomerServiceManagementService {
                         rs.getLong("id"),
                         rs.getString("username"),
                         rs.getString("service_name"),
+                        rs.getString("work_status"),
                         rs.getObject("max_active_conversations", Integer.class)
                 ))
                 .list();
@@ -546,7 +551,7 @@ public class CustomerServiceManagementService {
                 rs.getString("username"),
                 rs.getString("service_name"),
                 rs.getString("service_avatar"),
-                realtimeSessionHub.isAdminOnline(adminUserId),
+                "AVAILABLE".equals(rs.getString("work_status")),
                 rs.getBoolean("is_manager"),
                 rs.getTimestamp("bound_at").toLocalDateTime()
         );
@@ -695,6 +700,7 @@ public class CustomerServiceManagementService {
             Long adminUserId,
             String username,
             String serviceName,
+            String workStatus,
             Integer maxActiveConversations
     ) {
     }

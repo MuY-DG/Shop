@@ -176,6 +176,8 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
     resolve(sourceRoot, "services/customer-service.ts"),
     "utf8"
   );
+  assert.match(endpointSource, /presence: "\/app\/customer-service\/presence"/);
+  assert.match(serviceSource, /getCustomerServicePresence/);
   const pageSource = readFileSync(
     resolve(sourceRoot, "pages/customer-service/chat/chat.ts"),
     "utf8"

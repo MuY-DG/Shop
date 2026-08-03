@@ -18,7 +18,6 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.Smart
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.SmartReplyRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.SmartReplyResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceReplyDtos.WelcomeAutoReplyUpdateRequest;
-import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -52,16 +51,13 @@ public class CustomerServiceReplyService {
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
-    private final RealtimeSessionHub realtimeSessionHub;
 
     public CustomerServiceReplyService(
             JdbcClient jdbcClient,
-            NamedParameterJdbcTemplate namedParameterJdbcTemplate,
-            RealtimeSessionHub realtimeSessionHub
+            NamedParameterJdbcTemplate namedParameterJdbcTemplate
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
-        this.realtimeSessionHub = realtimeSessionHub;
     }
 
     public AutoReplyConfigResponse autoReplies(Long adminUserId) {
@@ -704,8 +700,8 @@ public class CustomerServiceReplyService {
     }
 
     private boolean allAgentsOffline() {
-        List<Long> potentiallyOnlineAgentIds = jdbcClient.sql("""
-                        select distinct admin.id
+        return jdbcClient.sql("""
+                        select count(distinct admin.id)
                         from admin_user admin
                         join admin_user_role user_role on user_role.user_id = admin.id
                         join admin_role role_item on role_item.id = user_role.role_id
@@ -714,13 +710,10 @@ public class CustomerServiceReplyService {
                         where admin.status = 'ENABLED'
                           and role_item.enabled = true
                           and role_item.code = 'R_CUSTOMER_SERVICE'
-                          and state.work_status <> 'OFFLINE'
-                        order by admin.id
+                          and state.work_status = 'AVAILABLE'
                         """)
                 .query(Long.class)
-                .list();
-        return potentiallyOnlineAgentIds.stream()
-                .noneMatch(realtimeSessionHub::isAdminOnline);
+                .single() == 0;
     }
 
     private boolean claimOfflineReply(Long appUserId) {

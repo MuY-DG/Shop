@@ -106,8 +106,7 @@ public class AppUserOverviewService {
                         rs.getLong("customer_service_unread_count")
                 ))
                 .single();
-        boolean customerServiceOnline = customerServiceService.agents().stream()
-                .anyMatch(agent -> agent.canReceive());
+        boolean customerServiceOnline = customerServiceService.isOnline();
         return new AppUserOverviewResponse(
                 counts.availableCouponCount(),
                 counts.favoriteCount(),

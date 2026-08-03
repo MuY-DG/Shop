@@ -156,6 +156,23 @@ class CustomerServiceAutoReplyRuntimeTest {
                 firstOpen.conversationId(), 1, "客服当前全部离线，请稍后再试"))
                 .isEqualTo(2);
 
+        insertAgent("manual-online-no-socket-agent");
+        jdbcClient.sql("""
+                        update customer_service_offline_reply_state
+                        set last_replied_at = :lastRepliedAt
+                        where app_user_id = :appUserId
+                        """)
+                .param("lastRepliedAt", LocalDateTime.now().minusHours(2))
+                .param("appUserId", appUserId)
+                .update();
+        customerServiceService.sendFromApp(
+                appPrincipal,
+                new SendMessageRequest("客服手动在线后不应回复离线文案", "manual-online-no-offline-reply")
+        );
+        assertThat(automationMessageCount(
+                firstOpen.conversationId(), 1, "客服当前全部离线，请稍后再试"))
+                .isEqualTo(2);
+
         ConversationDetailResponse detail = customerServiceService.currentForApp(appPrincipal);
         assertThat(detail.messages())
                 .filteredOn(message -> "BOT".equals(message.senderType()))

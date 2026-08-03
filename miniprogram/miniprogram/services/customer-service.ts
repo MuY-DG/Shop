@@ -8,6 +8,7 @@ import type {
   CustomerServiceOpenRequest,
   CustomerServiceOrder,
   CustomerServiceProduct,
+  CustomerServicePresence,
   CustomerServiceRealtimeTicket,
   CustomerServiceSendMessageRequest
 } from "../types/customer-service";
@@ -25,6 +26,13 @@ function requirePersistedMessageId(messageId: number): number {
     throw new RangeError("Customer-service image requests require a persisted message id");
   }
   return messageId;
+}
+
+export function getCustomerServicePresence(): Promise<CustomerServicePresence> {
+  return request<CustomerServicePresence>({
+    url: API_ENDPOINTS.customerService.presence,
+    method: "GET"
+  });
 }
 
 export function openCustomerServiceConversation(

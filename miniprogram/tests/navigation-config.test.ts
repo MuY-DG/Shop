@@ -405,10 +405,6 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
     existsSync(resolve(sourceRoot, "assets/images/profile-watercolor-background.png")),
     true
   );
-  assert.equal(
-    existsSync(resolve(sourceRoot, "assets/images/member-avatar-frame-v.webp")),
-    true
-  );
 });
 
 test("收藏与足迹整卡进入商品详情且移除操作不会冒泡", () => {

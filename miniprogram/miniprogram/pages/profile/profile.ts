@@ -11,6 +11,7 @@ import {
   type ProfileOverviewDisplay
 } from "../../features/profile-overview";
 import { getPublicContact } from "../../services/contact";
+import { getCustomerServicePresence } from "../../services/customer-service";
 import { getSessionState } from "../../services/session";
 import { getMyOverview } from "../../services/user-profile";
 import { openLoginPage } from "../../utils/login-navigation";
@@ -177,6 +178,23 @@ Page({
     });
     if (loggedIn) {
       void this.loadOverview(requestId);
+    } else {
+      void this.loadCustomerServicePresence(requestId);
+    }
+  },
+
+  async loadCustomerServicePresence(requestId: number) {
+    try {
+      const presence = await getCustomerServicePresence();
+      if (requestId !== latestOverviewRequest || this.data.loggedIn) {
+        return;
+      }
+      this.setData(profileOverviewState({
+        ...guestProfileOverviewDisplay(),
+        customerServiceOnline: presence.online === true
+      }));
+    } catch (_error) {
+      // Public presence is best-effort; keep the safe offline fallback on failure.
     }
   },
 

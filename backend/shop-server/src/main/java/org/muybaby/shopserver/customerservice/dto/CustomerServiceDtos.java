@@ -205,6 +205,9 @@ public final class CustomerServiceDtos {
     ) {
     }
 
+    public record PresenceResponse(boolean online) {
+    }
+
     public record AgentProfileResponse(
             Long adminUserId,
             String serviceName,
