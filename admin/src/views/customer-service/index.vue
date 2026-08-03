@@ -10,7 +10,7 @@
         <button
           type="button"
           class="profile-trigger"
-          :class="{ 'is-online': isAvailable }"
+          :class="{ 'is-online': isOnline }"
           aria-label="客服状态与退出"
         >
           <img v-if="profileAvatar" :src="profileAvatar" alt="" />
@@ -30,9 +30,9 @@
               </span>
             </li>
             <ElDropdownItem v-if="isAgent" command="toggle-status" :disabled="statusLoading">
-              <WifiOff v-if="isAvailable" :size="16" />
+              <WifiOff v-if="isAccepting" :size="16" />
               <Wifi v-else :size="16" />
-              {{ isAvailable ? '切换为离线' : '切换为在线' }}
+              {{ isAccepting ? '切换为离线' : '切换为在线' }}
             </ElDropdownItem>
             <ElDropdownItem command="logout" divided>
               <LogOut :size="16" />
@@ -58,9 +58,9 @@
       </nav>
 
       <div class="rail-spacer" />
-      <div class="rail-state" :title="isAvailable ? '在线' : '离线'">
-        <span :class="{ 'is-online': isAvailable }" />
-        {{ isAvailable ? '在线' : '离线' }}
+      <div class="rail-state" :title="isOnline ? '在线' : '离线'">
+        <span :class="{ 'is-online': isOnline }" />
+        {{ isOnline ? '在线' : '离线' }}
       </div>
     </aside>
 
@@ -94,6 +94,7 @@
   const statusLoading = ref(false)
   let stateTimer: ReturnType<typeof setInterval> | null = null
   let unsubscribeRealtime: (() => void) | null = null
+  let unsubscribeRealtimeConnectionState: (() => void) | null = null
 
   const roles = computed(() => userStore.info.roles || [])
   const isAgent = computed(() => roles.value.includes('R_CUSTOMER_SERVICE'))
@@ -105,7 +106,8 @@
   const profileServiceName = computed(
     () => agentProfile.value?.serviceName || userStore.info.userName || '客服'
   )
-  const isAvailable = computed(() => agentState.value?.workStatus === 'AVAILABLE')
+  const isAccepting = computed(() => agentState.value?.workStatus === 'AVAILABLE')
+  const isOnline = computed(() => agentState.value?.online === true)
   const navigation = computed(() => {
     const items = [
       {
@@ -157,9 +159,15 @@
     if (!isAgent.value || statusLoading.value) return
     statusLoading.value = true
     try {
-      const nextStatus = isAvailable.value ? 'OFFLINE' : 'AVAILABLE'
+      const nextStatus = isAccepting.value ? 'OFFLINE' : 'AVAILABLE'
       agentState.value = await updateCustomerServiceAgentState(nextStatus)
-      ElMessage.success(nextStatus === 'AVAILABLE' ? '已切换为在线' : '已切换为离线')
+      ElMessage.success(
+        nextStatus === 'AVAILABLE'
+          ? agentState.value.online
+            ? '已切换为在线'
+            : '已开启接待，等待实时连接恢复'
+          : '已切换为离线'
+      )
     } finally {
       statusLoading.value = false
     }
@@ -172,6 +180,10 @@
         cancelButtonText: '取消',
         type: 'warning'
       })
+      unsubscribeRealtime?.()
+      unsubscribeRealtime = null
+      unsubscribeRealtimeConnectionState?.()
+      unsubscribeRealtimeConnectionState = null
       userStore.logOut()
     } catch (error) {
       if (error !== 'cancel' && error !== 'close') throw error
@@ -187,7 +199,24 @@
   }
 
   onMounted(() => {
-    unsubscribeRealtime = realtimeClient.subscribe(() => undefined)
+    if (isAgent.value) {
+      unsubscribeRealtimeConnectionState = realtimeClient.subscribeConnectionState((state) => {
+        if (state !== 'CONNECTED' && agentState.value) {
+          agentState.value = {
+            ...agentState.value,
+            online: false,
+            canReceive: false
+          }
+        }
+      })
+    }
+    unsubscribeRealtime = isAgent.value
+      ? realtimeClient.acquireCustomerServicePresence((event) => {
+          if (event.type === 'CUSTOMER_SERVICE_PRESENCE_STARTED') {
+            void loadAgentState()
+          }
+        })
+      : realtimeClient.subscribe(() => undefined)
     void loadAgentProfile()
     void loadAgentState()
     stateTimer = setInterval(() => {
@@ -197,6 +226,7 @@
 
   onBeforeUnmount(() => {
     unsubscribeRealtime?.()
+    unsubscribeRealtimeConnectionState?.()
     if (stateTimer) clearInterval(stateTimer)
   })
 </script>

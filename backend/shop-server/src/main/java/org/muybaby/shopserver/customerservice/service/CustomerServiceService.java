@@ -23,6 +23,7 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.PersonalSe
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.SendMessageRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequest;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.TransferRequestResponse;
+import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.StorageProviderKind;
 import org.muybaby.shopserver.storage.StorageUploadProfile;
@@ -81,6 +82,7 @@ public class CustomerServiceService {
     private final StorageService storageService;
     private final DirectUploadService directUploadService;
     private final CustomerServiceReplyService replyService;
+    private final RealtimeSessionHub realtimeSessionHub;
     private final TransactionTemplate requiresNewTransaction;
     private final TransactionTemplate withoutTransaction;
 
@@ -91,6 +93,7 @@ public class CustomerServiceService {
             StorageService storageService,
             DirectUploadService directUploadService,
             CustomerServiceReplyService replyService,
+            RealtimeSessionHub realtimeSessionHub,
             PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
@@ -99,6 +102,7 @@ public class CustomerServiceService {
         this.storageService = storageService;
         this.directUploadService = directUploadService;
         this.replyService = replyService;
+        this.realtimeSessionHub = realtimeSessionHub;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.withoutTransaction = new TransactionTemplate(transactionManager);
@@ -1235,7 +1239,8 @@ public class CustomerServiceService {
                 .query((rs, rowNum) -> {
                     long adminUserId = rs.getLong("id");
                     String manualWorkStatus = rs.getString("manual_work_status");
-                    boolean online = "AVAILABLE".equals(manualWorkStatus);
+                    boolean online = "AVAILABLE".equals(manualWorkStatus)
+                            && realtimeSessionHub.isCustomerServiceAgentOnline(adminUserId);
                     int activeCount = rs.getInt("active_conversation_count");
                     Integer maxActive = rs.getObject("max_active_conversations", Integer.class);
                     boolean withinCapacity = !weighted
@@ -1257,7 +1262,7 @@ public class CustomerServiceService {
 
     public boolean isOnline() {
         return jdbcClient.sql("""
-                        select count(*)
+                        select distinct admin.id
                         from admin_user admin
                         join admin_user_role user_role on user_role.user_id = admin.id
                         join admin_role role_item on role_item.id = user_role.role_id
@@ -1268,7 +1273,9 @@ public class CustomerServiceService {
                           and state.work_status = 'AVAILABLE'
                         """)
                 .query(Long.class)
-                .single() > 0;
+                .list()
+                .stream()
+                .anyMatch(realtimeSessionHub::isCustomerServiceAgentOnline);
     }
 
     public AgentStateResponse agentState(AuthenticatedPrincipal principal) {
@@ -1418,6 +1425,14 @@ public class CustomerServiceService {
             drainWaitingQueue(adminUserId);
         }
         return agentState(adminUserId);
+    }
+
+    @Transactional
+    public void handleAgentPresenceAvailable(Long adminUserId) {
+        if (adminUserId != null
+                && realtimeSessionHub.isCustomerServiceAgentOnline(adminUserId)) {
+            drainWaitingQueue(adminUserId);
+        }
     }
 
     private PersonalSettingsResponse personalSettings(Long adminUserId) {
@@ -2044,6 +2059,8 @@ public class CustomerServiceService {
                 ))
                 .list()
                 .stream()
+                .filter(candidate -> realtimeSessionHub.isCustomerServiceAgentOnline(
+                        candidate.adminUserId()))
                 .filter(candidate -> assignedThisDrain.getOrDefault(candidate.adminUserId(), 0)
                         < candidate.autoAcceptCount())
                 .toList();
@@ -2126,7 +2143,9 @@ public class CustomerServiceService {
                 .optional()
                 .orElse(null);
         if (state == null
-                || !"AVAILABLE".equals(state.workStatus())) {
+                || !"AVAILABLE".equals(state.workStatus())
+                || !realtimeSessionHub.isCustomerServiceAgentOnline(
+                        candidate.adminUserId())) {
             return false;
         }
         AutoAcceptSettings settings = jdbcClient.sql("""
@@ -2723,7 +2742,8 @@ public class CustomerServiceService {
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.ADMIN_USER_UNAVAILABLE));
-        boolean online = "AVAILABLE".equals(snapshot.manualWorkStatus());
+        boolean online = "AVAILABLE".equals(snapshot.manualWorkStatus())
+                && realtimeSessionHub.isCustomerServiceAgentOnline(adminUserId);
         boolean withinCapacity = !isWeightedAssignment()
                 || (snapshot.maxActiveConversations() != null
                         && snapshot.activeConversationCount() < snapshot.maxActiveConversations());

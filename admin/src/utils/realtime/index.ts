@@ -17,6 +17,25 @@ class RealtimeClient {
   private reconnectAttempt = 0
   private generation = 0
   private seenEventIds = new Set<string>()
+  private customerServicePresenceConsumers = 0
+
+  acquireCustomerServicePresence(handler?: RealtimeEventHandler) {
+    this.customerServicePresenceConsumers += 1
+    const unsubscribe = this.subscribe(handler ?? (() => undefined))
+    if (this.customerServicePresenceConsumers === 1) {
+      this.sendControlMessage('CUSTOMER_SERVICE_PRESENCE_START')
+    }
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.customerServicePresenceConsumers = Math.max(0, this.customerServicePresenceConsumers - 1)
+      if (this.customerServicePresenceConsumers === 0) {
+        this.sendControlMessage('CUSTOMER_SERVICE_PRESENCE_STOP')
+      }
+      unsubscribe()
+    }
+  }
 
   subscribe(handler: RealtimeEventHandler) {
     this.subscribers.add(handler)
@@ -59,6 +78,9 @@ class RealtimeClient {
         if (generation !== this.generation) return
         this.reconnectAttempt = 0
         this.setConnectionState('CONNECTED')
+        if (this.customerServicePresenceConsumers > 0) {
+          this.sendControlMessage('CUSTOMER_SERVICE_PRESENCE_START')
+        }
         this.startHeartbeat(socket)
       }
       socket.onmessage = (message) => this.handleMessage(message)
@@ -121,6 +143,11 @@ class RealtimeClient {
       this.clearHeartbeatTimeout()
       this.heartbeatTimeoutTimer = setTimeout(() => socket.close(), 10000)
     }, 25000)
+  }
+
+  private sendControlMessage(type: string) {
+    if (this.socket?.readyState !== WebSocket.OPEN) return
+    this.socket.send(JSON.stringify({ type }))
   }
 
   private clearHeartbeat() {

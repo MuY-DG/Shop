@@ -22,3 +22,18 @@ test('workspace and conversation list share the same agent state', () => {
     /const agentState = ref<Api\.CustomerService\.AgentState \| null>/
   )
 })
+
+test('customer service workspace explicitly owns realtime presence', () => {
+  const workspaceSource = readView('index.vue')
+  const realtimeSource = readFileSync(
+    new URL('../../utils/realtime/index.ts', import.meta.url),
+    'utf8'
+  )
+
+  assert.match(workspaceSource, /realtimeClient\.acquireCustomerServicePresence/)
+  assert.match(workspaceSource, /realtimeClient\.subscribeConnectionState/)
+  assert.match(workspaceSource, /CUSTOMER_SERVICE_PRESENCE_STARTED/)
+  assert.match(realtimeSource, /CUSTOMER_SERVICE_PRESENCE_START/)
+  assert.match(realtimeSource, /CUSTOMER_SERVICE_PRESENCE_STOP/)
+  assert.match(realtimeSource, /this\.startHeartbeat\(socket\)/)
+})

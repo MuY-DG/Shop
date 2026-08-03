@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
+import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.realtime.RealtimeConnectionPrincipal;
+import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.muybaby.shopserver.support.AdminTokenTestSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -13,6 +16,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.socket.WebSocketSession;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -22,6 +26,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -46,6 +52,9 @@ class CustomerServiceManagementControllerTest {
 
     @Autowired
     private OpaqueTokenService opaqueTokenService;
+
+    @Autowired
+    private RealtimeSessionHub realtimeSessionHub;
 
     @Test
     void superAdminManagesAgentsOnlyThroughGuestPromotionEndpoints() throws Exception {
@@ -129,7 +138,7 @@ class CustomerServiceManagementControllerTest {
     }
 
     @Test
-    void managementAndPublicPresenceFollowManualOnlineSwitchWithoutRealtimeConnection()
+    void managementAndPublicPresenceRequireManualSwitchAndRealtimeWorkspace()
             throws Exception {
         String token = loginAndExtractToken();
         long adminUserId = promoteGuest(token, "manual-online-agent", "手动在线客服");
@@ -145,18 +154,42 @@ class CustomerServiceManagementControllerTest {
                         .header("Authorization", bearer(token))
                         .param("keyword", "manual-online-agent"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].online").value(true));
-        mockMvc.perform(get("/admin/customer-service/management/config")
-                        .header("Authorization", bearer(token)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath(
-                        "$.data.routingAgents[?(@.adminUserId == '%s')].online"
-                                .formatted(adminUserId),
-                        hasItem(true)
-                ));
+                .andExpect(jsonPath("$.data[0].online").value(false));
         mockMvc.perform(get("/app/customer-service/presence"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.online").value(true));
+                .andExpect(jsonPath("$.data.online").value(false));
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("management-presence-" + UUID.randomUUID());
+        when(session.isOpen()).thenReturn(true);
+        realtimeSessionHub.register(session, new RealtimeConnectionPrincipal(
+                TokenKind.ADMIN,
+                adminUserId,
+                "manual-online-agent",
+                List.of("customer-service:conversation:read")
+        ));
+        realtimeSessionHub.startCustomerServicePresence(session);
+
+        try {
+            mockMvc.perform(get("/admin/customer-service/management/users")
+                            .header("Authorization", bearer(token))
+                            .param("keyword", "manual-online-agent"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data[0].online").value(true));
+            mockMvc.perform(get("/admin/customer-service/management/config")
+                            .header("Authorization", bearer(token)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath(
+                            "$.data.routingAgents[?(@.adminUserId == '%s')].online"
+                                    .formatted(adminUserId),
+                            hasItem(true)
+                    ));
+            mockMvc.perform(get("/app/customer-service/presence"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.online").value(true));
+        } finally {
+            realtimeSessionHub.unregister(session);
+        }
     }
 
     @Test

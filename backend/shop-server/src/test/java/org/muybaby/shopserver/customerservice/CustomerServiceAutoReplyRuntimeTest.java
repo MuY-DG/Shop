@@ -167,11 +167,11 @@ class CustomerServiceAutoReplyRuntimeTest {
                 .update();
         customerServiceService.sendFromApp(
                 appPrincipal,
-                new SendMessageRequest("客服手动在线后不应回复离线文案", "manual-online-no-offline-reply")
+                new SendMessageRequest("客服只有手动在线仍应回复离线文案", "manual-online-no-offline-reply")
         );
         assertThat(automationMessageCount(
                 firstOpen.conversationId(), 1, "客服当前全部离线，请稍后再试"))
-                .isEqualTo(2);
+                .isEqualTo(3);
 
         ConversationDetailResponse detail = customerServiceService.currentForApp(appPrincipal);
         assertThat(detail.messages())
@@ -519,6 +519,7 @@ class CustomerServiceAutoReplyRuntimeTest {
                 principal.subjectName(),
                 principal.permissions()
         ));
+        realtimeSessionHub.startCustomerServicePresence(session);
         return session;
     }
 

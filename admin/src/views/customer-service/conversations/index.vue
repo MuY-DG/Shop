@@ -209,7 +209,9 @@
           >
             <div v-if="hasEarlierMessages" class="message-history-loader">
               <LoaderCircle v-if="loadingEarlierMessages" :size="14" />
-              <span>{{ loadingEarlierMessages ? '正在加载更早的消息' : '向上滚动加载更早消息' }}</span>
+              <span>{{
+                loadingEarlierMessages ? '正在加载更早的消息' : '向上滚动加载更早消息'
+              }}</span>
             </div>
             <template
               v-for="(message, messageIndex) in currentDetail.messages"
@@ -1600,11 +1602,13 @@
     }
     if (!agentState.value.canReceive) {
       const unavailableMessage =
-        agentState.value.workStatus === 'OFFLINE'
-          ? '当前为离线状态，请先切换为在线'
-          : agentState.value.workStatus === 'BUSY'
-            ? '当前为忙碌状态，请先切换为在线'
-            : '当前接待已达上限，暂时无法接入新会话'
+        !agentState.value.online && agentState.value.workStatus === 'AVAILABLE'
+          ? '客服工作台连接已断开，正在等待实时连接恢复'
+          : agentState.value.workStatus === 'OFFLINE'
+            ? '当前为离线状态，请先切换为在线'
+            : agentState.value.workStatus === 'BUSY'
+              ? '当前为忙碌状态，请先切换为在线'
+              : '当前接待已达上限，暂时无法接入新会话'
       ElMessage.warning(unavailableMessage)
       return
     }

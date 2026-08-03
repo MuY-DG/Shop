@@ -7,6 +7,7 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -70,6 +71,10 @@ class RealtimeSessionHubTest {
         hub.register(other, principal(TokenKind.ADMIN, 8L, List.of("customer-service:conversation:read")));
 
         assertThat(hub.isAdminOnline(7L)).isTrue();
+        assertThat(hub.isCustomerServiceAgentOnline(7L)).isFalse();
+        assertThat(hub.startCustomerServicePresence(first)).isEqualTo(7L);
+        assertThat(hub.startCustomerServicePresence(second)).isNull();
+        assertThat(hub.isCustomerServiceAgentOnline(7L)).isTrue();
         hub.sendToAdminUser(7L, "CUSTOMER_SERVICE_TRANSFER_REQUESTED", Map.of("requestId", 99L));
 
         assertThat(objectMapper.readTree(captureMessage(first).getPayload())
@@ -79,9 +84,32 @@ class RealtimeSessionHubTest {
         verify(other, never()).sendMessage(any());
 
         hub.unregister(first);
+        assertThat(hub.isCustomerServiceAgentOnline(7L)).isTrue();
+        hub.stopCustomerServicePresence(second);
+        assertThat(hub.isCustomerServiceAgentOnline(7L)).isFalse();
+        assertThat(hub.startCustomerServicePresence(second)).isEqualTo(7L);
+        assertThat(hub.isCustomerServiceAgentOnlineAt(
+                7L,
+                Instant.now().plus(RealtimeSessionHub.CUSTOMER_SERVICE_PRESENCE_TTL)
+                        .plusSeconds(1)
+        )).isFalse();
+        assertThat(hub.touchCustomerServicePresence(second)).isNull();
         assertThat(hub.isAdminOnline(7L)).isTrue();
         hub.unregister(second);
         assertThat(hub.isAdminOnline(7L)).isFalse();
+    }
+
+    @Test
+    void rejectsCustomerServicePresenceFromConnectionsWithoutCustomerServicePermission() {
+        RealtimeSessionHub hub = new RealtimeSessionHub(objectMapper);
+        WebSocketSession app = session("app-presence");
+        WebSocketSession admin = session("admin-without-service-permission");
+        hub.register(app, principal(TokenKind.APP, 42L, List.of()));
+        hub.register(admin, principal(TokenKind.ADMIN, 7L, List.of("order:read")));
+
+        assertThat(hub.startCustomerServicePresence(app)).isNull();
+        assertThat(hub.startCustomerServicePresence(admin)).isNull();
+        assertThat(hub.isCustomerServiceAgentOnline(7L)).isFalse();
     }
 
     private WebSocketSession session(String id) {

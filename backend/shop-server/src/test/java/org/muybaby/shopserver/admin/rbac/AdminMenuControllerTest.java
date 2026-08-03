@@ -178,7 +178,8 @@ class AdminMenuControllerTest {
                         "customer-service:order:link",
                         "customer-service:product:send",
                         "customer-service:agent:manage",
-                        "customer-service:conversation:supervise"
+                        "customer-service:conversation:supervise",
+                        "customer-service:quick-reply:read"
                 )))
                 .andExpect(jsonPath("$.data[5].meta.isFullPage").value(true))
                 .andExpect(jsonPath("$.data[5].children[*].path", contains(
@@ -232,7 +233,8 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[8].component").value("/index/index"))
                 .andExpect(jsonPath("$.data[8].children[*].path", contains(
                         "storage",
-                        "payment"
+                        "payment",
+                        "data-cleanup"
                 )))
                 .andExpect(jsonPath("$.data[8].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "storage:config:read",
@@ -242,6 +244,10 @@ class AdminMenuControllerTest {
                         "payment:config:read",
                         "payment:config:write",
                         "payment:config:enable"
+                )))
+                .andExpect(jsonPath("$.data[8].children[2].meta.authList[*].authMark", containsInAnyOrder(
+                        "data-cleanup:config:read",
+                        "data-cleanup:config:write"
                 )))
                 .andExpect(jsonPath("$.data[9].path").value("/system"))
                 .andExpect(jsonPath("$.data[9].children[*].path", contains(

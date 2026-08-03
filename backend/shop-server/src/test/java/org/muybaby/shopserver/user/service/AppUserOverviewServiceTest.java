@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.realtime.RealtimeConnectionPrincipal;
+import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.user.dto.AppUserOverviewResponse;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,12 +13,15 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.web.socket.WebSocketSession;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -30,6 +35,9 @@ class AppUserOverviewServiceTest {
 
     @Autowired
     private JdbcClient jdbcClient;
+
+    @Autowired
+    private RealtimeSessionHub realtimeSessionHub;
 
     @Test
     void overviewAggregatesCurrentUserDataWithoutClearingCustomerServiceUnreadCount() {
@@ -65,12 +73,24 @@ class AppUserOverviewServiceTest {
     }
 
     @Test
-    void overviewOnlineStatusFollowsManualAgentSwitch() {
+    void overviewOnlineStatusRequiresManualAvailabilityAndLiveWorkspace() {
         insertUser();
         long adminUserId = insertAvailableCustomerServiceAgent();
 
-        AppUserOverviewResponse online = appUserOverviewService.overview(appPrincipal());
-        assertThat(online.customerServiceOnline()).isTrue();
+        AppUserOverviewResponse disconnected = appUserOverviewService.overview(appPrincipal());
+        assertThat(disconnected.customerServiceOnline()).isFalse();
+
+        WebSocketSession session = customerServiceWorkspaceSession(adminUserId);
+        realtimeSessionHub.register(session, new RealtimeConnectionPrincipal(
+                TokenKind.ADMIN,
+                adminUserId,
+                "overview-online-agent",
+                List.of("customer-service:conversation:read")
+        ));
+        realtimeSessionHub.startCustomerServicePresence(session);
+
+        AppUserOverviewResponse connected = appUserOverviewService.overview(appPrincipal());
+        assertThat(connected.customerServiceOnline()).isTrue();
 
         jdbcClient.sql("""
                         update customer_service_agent_state
@@ -81,6 +101,8 @@ class AppUserOverviewServiceTest {
                 .update();
         AppUserOverviewResponse offline = appUserOverviewService.overview(appPrincipal());
         assertThat(offline.customerServiceOnline()).isFalse();
+
+        realtimeSessionHub.unregister(session);
     }
 
     @Test
@@ -131,6 +153,13 @@ class AppUserOverviewServiceTest {
                 .param("adminUserId", adminUserId)
                 .update();
         return adminUserId;
+    }
+
+    private WebSocketSession customerServiceWorkspaceSession(long adminUserId) {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("overview-customer-service-" + adminUserId);
+        when(session.isOpen()).thenReturn(true);
+        return session;
     }
 
     private void insertProducts() {

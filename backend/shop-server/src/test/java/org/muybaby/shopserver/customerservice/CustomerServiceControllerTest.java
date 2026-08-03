@@ -765,6 +765,7 @@ class CustomerServiceControllerTest {
                 "admin-" + adminUserId,
                 List.of("customer-service:conversation:read")
         ));
+        realtimeSessionHub.startCustomerServicePresence(session);
         mockMvc.perform(put("/admin/customer-service/agent-state")
                         .header("Authorization", bearer(token))
                         .contentType(MediaType.APPLICATION_JSON)

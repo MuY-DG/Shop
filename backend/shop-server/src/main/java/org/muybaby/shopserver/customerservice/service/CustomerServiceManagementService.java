@@ -337,7 +337,9 @@ public class CustomerServiceManagementService {
                             row.adminUserId(),
                             row.username(),
                             row.serviceName(),
-                            "AVAILABLE".equals(row.workStatus()),
+                            "AVAILABLE".equals(row.workStatus())
+                                    && realtimeSessionHub.isCustomerServiceAgentOnline(
+                                            row.adminUserId()),
                             row.maxActiveConversations(),
                             weight,
                             percent
@@ -551,7 +553,8 @@ public class CustomerServiceManagementService {
                 rs.getString("username"),
                 rs.getString("service_name"),
                 rs.getString("service_avatar"),
-                "AVAILABLE".equals(rs.getString("work_status")),
+                "AVAILABLE".equals(rs.getString("work_status"))
+                        && realtimeSessionHub.isCustomerServiceAgentOnline(adminUserId),
                 rs.getBoolean("is_manager"),
                 rs.getTimestamp("bound_at").toLocalDateTime()
         );

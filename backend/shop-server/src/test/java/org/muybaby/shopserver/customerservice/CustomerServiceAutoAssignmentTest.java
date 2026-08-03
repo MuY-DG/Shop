@@ -77,6 +77,7 @@ class CustomerServiceAutoAssignmentTest {
                 "service-agent",
                 adminPrincipal.permissions()
         ));
+        realtimeSessionHub.startCustomerServicePresence(session);
 
         try {
             customerServiceService.updatePersonalSettings(
@@ -122,16 +123,16 @@ class CustomerServiceAutoAssignmentTest {
                     .query(Long.class)
                     .single();
             assertThat(jdbcClient.sql("""
-                            select count(*)
+                            select content
                             from customer_service_message
                             where conversation_id = :conversationId
-                              and sender_type = 'BOT'
+                              and sender_type = 'ADMIN'
                               and message_type = 'AUTO_REPLY'
-                              and content = '您好，我是自动接入的小满客服'
+                            order by id
                             """)
                     .param("conversationId", conversationId)
-                    .query(Integer.class)
-                    .single()).isEqualTo(1);
+                    .query(String.class)
+                    .list()).contains("您好，我是自动接入的小满客服");
             var reply = customerServiceService.sendFromAdmin(
                     adminPrincipal,
                     conversationId,
@@ -200,7 +201,7 @@ class CustomerServiceAutoAssignmentTest {
     }
 
     @Test
-    void manualOnlineSwitchAllowsAutomaticAssignmentWithoutRealtimeConnection() {
+    void manualOnlineSwitchWithoutRealtimeConnectionLeavesConversationWaiting() {
         long adminUserId = insertAdmin("manual-online-auto-agent");
         managementService.addUser(
                 1L,
@@ -225,8 +226,26 @@ class CustomerServiceAutoAssignmentTest {
                 "manual-online-auto-message"
         );
 
-        assertThat(conversationStatus(conversationId)).isEqualTo("ACTIVE");
-        assertThat(assignedAdminUserId(conversationId)).isEqualTo(adminUserId);
+        assertThat(conversationStatus(conversationId)).isEqualTo("WAITING");
+        assertThat(assignedAdminUserId(conversationId)).isNull();
+
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("manual-online-reconnected-" + UUID.randomUUID());
+        when(session.isOpen()).thenReturn(true);
+        realtimeSessionHub.register(session, new RealtimeConnectionPrincipal(
+                TokenKind.ADMIN,
+                adminUserId,
+                "manual-online-auto-agent",
+                principal.permissions()
+        ));
+        realtimeSessionHub.startCustomerServicePresence(session);
+        try {
+            customerServiceService.handleAgentPresenceAvailable(adminUserId);
+            assertThat(conversationStatus(conversationId)).isEqualTo("ACTIVE");
+            assertThat(assignedAdminUserId(conversationId)).isEqualTo(adminUserId);
+        } finally {
+            realtimeSessionHub.unregister(session);
+        }
     }
 
     @Test
@@ -446,6 +465,7 @@ class CustomerServiceAutoAssignmentTest {
                 username,
                 principal.permissions()
         ));
+        realtimeSessionHub.startCustomerServicePresence(session);
         customerServiceService.updatePersonalSettings(
                 principal,
                 new PersonalSettingsUpdateRequest(

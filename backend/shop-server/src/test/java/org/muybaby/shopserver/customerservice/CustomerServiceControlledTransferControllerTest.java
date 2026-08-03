@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.auth.token.TokenKind;
+import org.muybaby.shopserver.realtime.RealtimeConnectionPrincipal;
+import org.muybaby.shopserver.realtime.RealtimeSessionHub;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,11 +16,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.socket.WebSocketSession;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -42,6 +49,9 @@ class CustomerServiceControlledTransferControllerTest {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private RealtimeSessionHub realtimeSessionHub;
+
     @BeforeEach
     void clearState() {
         jdbcClient.sql("delete from customer_service_transfer_request").update();
@@ -56,6 +66,7 @@ class CustomerServiceControlledTransferControllerTest {
     @Test
     void claimUsesManualOnlineStatusAndRespectsCapacity() throws Exception {
         String superToken = adminLogin("Super", "123456");
+        connectAgent(1L);
         long conversationId = openWaitingConversation("controlled-claim-one");
 
         mockMvc.perform(get("/admin/customer-service/profile")
@@ -101,6 +112,8 @@ class CustomerServiceControlledTransferControllerTest {
         String superToken = adminLogin("Super", "123456");
         long targetId = insertCustomerServiceAgent("TransferTarget", "转接客服", "agent-pass");
         String targetToken = adminLogin("TransferTarget", "agent-pass");
+        connectAgent(1L);
+        connectAgent(targetId);
         long conversationId = claimAsSuper(superToken, "controlled-transfer-accept");
 
         setWorkStatus(targetToken, "OFFLINE").andExpect(status().isOk());
@@ -174,6 +187,8 @@ class CustomerServiceControlledTransferControllerTest {
         String superToken = adminLogin("Super", "123456");
         long targetId = insertCustomerServiceAgent("RejectTarget", "拒绝客服", "agent-pass");
         String targetToken = adminLogin("RejectTarget", "agent-pass");
+        connectAgent(1L);
+        connectAgent(targetId);
         long conversationId = claimAsSuper(superToken, "controlled-transfer-reject");
         setWorkStatus(targetToken, "AVAILABLE").andExpect(status().isOk());
 
@@ -226,6 +241,8 @@ class CustomerServiceControlledTransferControllerTest {
         String superToken = adminLogin("Super", "123456");
         long targetId = insertCustomerServiceAgent("ForceTarget", "强制目标客服", "agent-pass");
         String targetToken = adminLogin("ForceTarget", "agent-pass");
+        connectAgent(1L);
+        connectAgent(targetId);
         long conversationId = claimAsSuper(superToken, "controlled-force-transfer");
 
         setWorkStatus(targetToken, "BUSY").andExpect(status().isOk());
@@ -280,6 +297,19 @@ class CustomerServiceControlledTransferControllerTest {
                 .header("Authorization", bearer(token))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"workStatus\":\"%s\"}".formatted(workStatus)));
+    }
+
+    private void connectAgent(long adminUserId) {
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("controlled-transfer-" + adminUserId + "-" + UUID.randomUUID());
+        when(session.isOpen()).thenReturn(true);
+        realtimeSessionHub.register(session, new RealtimeConnectionPrincipal(
+                TokenKind.ADMIN,
+                adminUserId,
+                "agent-" + adminUserId,
+                List.of("customer-service:conversation:read")
+        ));
+        realtimeSessionHub.startCustomerServicePresence(session);
     }
 
     private long createTransferRequest(
