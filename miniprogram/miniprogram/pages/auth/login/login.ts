@@ -5,11 +5,11 @@ import {
   sanitizeLoginRedirect
 } from "../../../features/login";
 import {
-  authorizePhoneNumber,
-  clearSession,
-  getSessionState,
-  loginWithWechat,
-  logoutSession
+  authorizePreparedWechatPhoneNumber,
+  commitPreparedWechatLogin,
+  discardPreparedWechatLogin,
+  prepareWechatLogin,
+  type PreparedWechatLogin
 } from "../../../services/session";
 import { isApiError } from "../../../utils/api-error";
 
@@ -18,12 +18,9 @@ interface LoginPageOptions {
 }
 
 let redirectUrl = "";
-let loginStarted = false;
-let loginCompleted = false;
-let pendingPhoneBinding = false;
 let pageDisposed = false;
-let initialHadSession = false;
 let latestLoginPreparation = 0;
+let preparedLogin: PreparedWechatLogin | null = null;
 
 function errorMessage(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -52,11 +49,8 @@ Page({
 
   onLoad(options: LoginPageOptions) {
     redirectUrl = sanitizeLoginRedirect(options.redirect);
-    loginStarted = false;
-    loginCompleted = false;
-    pendingPhoneBinding = false;
     pageDisposed = false;
-    initialHadSession = Boolean(getSessionState().accessToken);
+    preparedLogin = null;
     latestLoginPreparation += 1;
     this.setData({ initializing: true });
     void this.prepareLogin();
@@ -65,9 +59,7 @@ Page({
   onUnload() {
     pageDisposed = true;
     latestLoginPreparation += 1;
-    if (!loginCompleted && (pendingPhoneBinding || (loginStarted && !initialHadSession))) {
-      this.discardUnfinishedLogin();
-    }
+    this.discardUnfinishedLogin();
   },
 
   onAgreementChange(event: WechatMiniprogram.CheckboxGroupChange) {
@@ -80,21 +72,18 @@ Page({
     }
 
     const preparationId = ++latestLoginPreparation;
-    loginStarted = true;
     this.setData({ loading: true });
     try {
-      const session = await loginWithWechat();
+      const pending = await prepareWechatLogin();
       if (
         pageDisposed ||
         preparationId !== latestLoginPreparation
       ) {
+        void discardPreparedWechatLogin(pending).catch(() => undefined);
         return;
       }
-      if (!session.user) {
-        throw new Error("登录响应缺少用户信息");
-      }
-      const needsPhone = needsPhoneAuthorization(session.user);
-      pendingPhoneBinding = needsPhone;
+      preparedLogin = pending;
+      const needsPhone = needsPhoneAuthorization(pending.user);
       this.setData({
         initializing: false,
         loading: false,
@@ -134,8 +123,29 @@ Page({
       return;
     }
 
-    if (!pageDisposed) {
-      this.completeLogin("登录成功");
+    const pending = preparedLogin;
+    if (!pending) {
+      this.setData({ loginPrepared: false });
+      wx.showToast({ title: "登录准备状态已失效，请重试", icon: "none" });
+      return;
+    }
+
+    try {
+      commitPreparedWechatLogin(pending);
+      preparedLogin = null;
+      if (!pageDisposed) {
+        this.completeLogin("登录成功");
+      }
+    } catch (error) {
+      const sessionInvalid = isApiError(error) && error.kind === "AUTH";
+      if (sessionInvalid) {
+        this.discardUnfinishedLogin();
+      }
+      this.setData({ loginPrepared: !sessionInvalid });
+      wx.showToast({
+        title: errorMessage(error, "登录失败，请稍后重试"),
+        icon: "none"
+      });
     }
   },
 
@@ -157,15 +167,30 @@ Page({
     }
 
     this.setData({ loading: true });
+    const pending = preparedLogin;
+    if (!pending) {
+      this.setData({ loading: false, loginPrepared: false });
+      wx.showToast({ title: "登录准备状态已失效，请重试", icon: "none" });
+      return;
+    }
     try {
-      await authorizePhoneNumber(code);
+      await authorizePreparedWechatPhoneNumber(pending, code);
+      commitPreparedWechatLogin(pending);
+      preparedLogin = null;
       if (!pageDisposed) {
-        pendingPhoneBinding = false;
         this.completeLogin("登录成功");
       }
     } catch (error) {
       if (!pageDisposed) {
-        this.setData({ loading: false });
+        const sessionInvalid = isApiError(error) && error.kind === "AUTH";
+        if (sessionInvalid) {
+          this.discardUnfinishedLogin();
+        }
+        this.setData({
+          loading: false,
+          loginPrepared: !sessionInvalid,
+          needsPhoneAuthorization: !sessionInvalid
+        });
         wx.showToast({
           title: errorMessage(error, "手机号绑定失败，请稍后重试"),
           icon: "none"
@@ -193,19 +218,14 @@ Page({
   },
 
   completeLogin(message: string) {
-    loginCompleted = true;
-    pendingPhoneBinding = false;
     this.setData({ loading: false, loginPrepared: true });
     wx.showToast({ title: message, icon: "success" });
     this.leavePage();
   },
 
   discardUnfinishedLogin() {
-    if (!pendingPhoneBinding && !(loginStarted && !initialHadSession)) {
-      return;
-    }
-    pendingPhoneBinding = false;
-    loginStarted = false;
+    const pending = preparedLogin;
+    preparedLogin = null;
     if (!pageDisposed) {
       this.setData({
         loading: false,
@@ -213,10 +233,8 @@ Page({
         needsPhoneAuthorization: false
       });
     }
-    if (getSessionState().accessToken) {
-      void logoutSession().catch(() => undefined);
-    } else {
-      clearSession();
+    if (pending) {
+      void discardPreparedWechatLogin(pending).catch(() => undefined);
     }
   },
 

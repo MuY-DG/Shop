@@ -23,11 +23,27 @@ export interface SessionState {
   user?: AppUserProfile;
 }
 
+export interface PreparedWechatLogin {
+  readonly user: AppUserProfile;
+}
+
+interface PreparedWechatLoginState {
+  accessToken: string;
+  refreshToken: string;
+  accessExpiresAt: number;
+  user: AppUserProfile;
+  startedEpoch: number;
+}
+
 let state = emptySession();
 let restored = false;
 let authEpoch = 0;
 let renewalFlight: Promise<SessionState> | null = null;
 const sessionExpiredListeners = new Set<() => void>();
+const preparedWechatLogins = new WeakMap<
+  PreparedWechatLogin,
+  PreparedWechatLoginState
+>();
 
 function emptySession(): SessionState {
   return {
@@ -291,6 +307,31 @@ async function exchangeRefresh(refreshToken: string): Promise<AppSessionResponse
   return unwrapSessionResult(result);
 }
 
+function preparedWechatLoginState(
+  prepared: PreparedWechatLogin
+): PreparedWechatLoginState {
+  const pending = preparedWechatLogins.get(prepared);
+  if (!pending) {
+    throw loginRequiredError("登录准备状态已失效，请重试");
+  }
+  return pending;
+}
+
+async function revokeAccessToken(accessToken: string): Promise<void> {
+  const result = await rawRequest<void>({
+    url: API_ENDPOINTS.auth.logout,
+    method: "POST",
+    authToken: accessToken
+  });
+  if (
+    result.statusCode < 200 ||
+    result.statusCode >= 300 ||
+    result.body?.code !== APP_CONFIG.apiSuccessCode
+  ) {
+    throw errorFromResult(result);
+  }
+}
+
 async function performRenewal(preferRefresh: boolean): Promise<SessionState> {
   let startedEpoch = authEpoch;
   if (preferRefresh) {
@@ -396,6 +437,94 @@ export function loginWithWechat(): Promise<SessionState> {
   return renewSession(false);
 }
 
+export async function prepareWechatLogin(): Promise<PreparedWechatLogin> {
+  restoreSession();
+  const startedEpoch = authEpoch;
+  const response = await exchangeLogin();
+  const prepared: PreparedWechatLogin = {
+    user: { ...response.user }
+  };
+  preparedWechatLogins.set(prepared, {
+    accessToken: response.token,
+    refreshToken: response.refreshToken,
+    accessExpiresAt: Date.now() + response.expiresIn * 1000,
+    user: { ...response.user },
+    startedEpoch
+  });
+  return prepared;
+}
+
+export function commitPreparedWechatLogin(
+  prepared: PreparedWechatLogin
+): SessionState {
+  const pending = preparedWechatLoginState(prepared);
+  if (pending.startedEpoch !== authEpoch) {
+    throw loginRequiredError("登录状态已变化，请重试");
+  }
+  if (pending.accessExpiresAt <= Date.now() + EXPIRY_SKEW_MS) {
+    throw loginRequiredError("登录准备状态已失效，请重试");
+  }
+  const next: SessionState = {
+    version: SESSION_VERSION,
+    accessToken: pending.accessToken,
+    refreshToken: pending.refreshToken,
+    accessExpiresAt: pending.accessExpiresAt,
+    user: { ...pending.user }
+  };
+  persistSession(next);
+  state = next;
+  authEpoch += 1;
+  preparedWechatLogins.delete(prepared);
+  return copySession(state);
+}
+
+export async function authorizePreparedWechatPhoneNumber(
+  prepared: PreparedWechatLogin,
+  code: string
+): Promise<AppUserProfile> {
+  const normalizedCode = code.trim();
+  if (!normalizedCode) {
+    throw new ApiError({
+      kind: "AUTH",
+      message: "未获得手机号授权，请重试"
+    });
+  }
+
+  const pending = preparedWechatLoginState(prepared);
+  if (pending.startedEpoch !== authEpoch) {
+    throw loginRequiredError("登录状态已变化，请重试");
+  }
+  if (pending.user.phoneAuthorized) {
+    return { ...pending.user };
+  }
+  const result = await rawRequest<AppUserProfile, PhoneAuthorizeRequest>({
+    url: API_ENDPOINTS.auth.phone,
+    method: "POST",
+    data: { code: normalizedCode },
+    authToken: pending.accessToken
+  });
+  const user = unwrapProfileResult(result);
+  if (
+    pending.startedEpoch !== authEpoch ||
+    preparedWechatLogins.get(prepared) !== pending
+  ) {
+    throw loginRequiredError("登录状态已变化，请重试");
+  }
+  pending.user = user;
+  return { ...user };
+}
+
+export async function discardPreparedWechatLogin(
+  prepared: PreparedWechatLogin
+): Promise<void> {
+  const pending = preparedWechatLogins.get(prepared);
+  if (!pending) {
+    return;
+  }
+  preparedWechatLogins.delete(prepared);
+  await revokeAccessToken(pending.accessToken);
+}
+
 export function refreshSession(): Promise<SessionState> {
   restoreSession();
   if (!state.refreshToken) {
@@ -475,17 +604,5 @@ export async function logoutSession(): Promise<void> {
   if (!current.accessToken) {
     return;
   }
-
-  const result = await rawRequest<void>({
-    url: API_ENDPOINTS.auth.logout,
-    method: "POST",
-    authToken: current.accessToken
-  });
-  if (
-    result.statusCode < 200 ||
-    result.statusCode >= 300 ||
-    result.body?.code !== APP_CONFIG.apiSuccessCode
-  ) {
-    throw errorFromResult(result);
-  }
+  await revokeAccessToken(current.accessToken);
 }

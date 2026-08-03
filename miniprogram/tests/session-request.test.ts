@@ -2,13 +2,17 @@ import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
 import {
+  authorizePreparedWechatPhoneNumber,
   authorizePhoneNumber,
   clearSession,
   clearSessionIfCurrent,
+  commitPreparedWechatLogin,
+  discardPreparedWechatLogin,
   getSessionState,
   loginWithWechat,
   logoutSession,
   onSessionExpired,
+  prepareWechatLogin,
   recoverAfterUnauthorized,
   refreshSession
 } from "../miniprogram/services/session";
@@ -244,6 +248,78 @@ test("并发主动登录只交换一次微信 code", async () => {
   const [firstState, secondState] = await Promise.all([first, second]);
   assert.equal(firstState.accessToken, "access-1");
   assert.equal(secondState.accessToken, "access-1");
+});
+
+test("登录预加载不会提交会话，用户确认后才持久化", async () => {
+  const preparing = prepareWechatLogin();
+  await flushTasks();
+  respond(
+    takeRequest("/app/auth/login"),
+    200,
+    { code: 200, msg: "success", data: sessionResponse("prepared") }
+  );
+  const prepared = await preparing;
+
+  assert.equal(prepared.user.userId, "prepared");
+  assert.equal(getSessionState().accessToken, "");
+  assert.equal(storage.size, 0);
+
+  const committed = commitPreparedWechatLogin(prepared);
+  assert.equal(committed.accessToken, "access-prepared");
+  assert.equal(getSessionState().accessToken, "access-prepared");
+  assert.equal(storage.size, 1);
+});
+
+test("未确认的登录可以撤销且不会改变全局会话", async () => {
+  const preparing = prepareWechatLogin();
+  await flushTasks();
+  respond(
+    takeRequest("/app/auth/login"),
+    200,
+    { code: 200, msg: "success", data: sessionResponse("discarded") }
+  );
+  const prepared = await preparing;
+
+  const discarding = discardPreparedWechatLogin(prepared);
+  const logoutCall = takeRequest("/app/auth/logout");
+  assert.equal(logoutCall.header?.Authorization, "Bearer access-discarded");
+  assert.equal(getSessionState().accessToken, "");
+  respond(logoutCall, 200, { code: 200, msg: "success" });
+  await discarding;
+
+  assert.throws(() => commitPreparedWechatLogin(prepared));
+  assert.equal(storage.size, 0);
+});
+
+test("新用户手机号授权在待确认会话中完成，授权后再提交", async () => {
+  const preparing = prepareWechatLogin();
+  await flushTasks();
+  respond(
+    takeRequest("/app/auth/login"),
+    200,
+    { code: 200, msg: "success", data: sessionResponse("phone") }
+  );
+  const prepared = await preparing;
+
+  const authorizing = authorizePreparedWechatPhoneNumber(prepared, "phone-code");
+  await flushTasks();
+  const phoneCall = takeRequest("/app/auth/phone");
+  assert.equal(phoneCall.header?.Authorization, "Bearer access-phone");
+  respond(phoneCall, 200, {
+    code: 200,
+    msg: "success",
+    data: {
+      ...sessionResponse("phone").user,
+      phoneAuthorized: true,
+      phoneNumberMasked: "138****5678"
+    }
+  });
+  await authorizing;
+
+  assert.equal(getSessionState().accessToken, "");
+  const committed = commitPreparedWechatLogin(prepared);
+  assert.equal(committed.user?.phoneAuthorized, true);
+  assert.equal(getSessionState().user?.phoneNumberMasked, "138****5678");
 });
 
 test("并发刷新只消费一次旋转 refresh token", async () => {

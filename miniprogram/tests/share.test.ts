@@ -57,6 +57,9 @@ test("登录页保持单一界面且仅新用户由手机号能力触发官方�
     /wx:if="\{\{initializing\}\}" class="login-loading-layer"[\s\S]*class="login-loading-spinner"/
   );
   assert.match(loginLogic, /onLoad[\s\S]*this\.prepareLogin\(\)/);
+  assert.match(loginLogic, /prepareWechatLogin\(\)/);
+  assert.match(loginLogic, /commitPreparedWechatLogin\(pending\)/);
+  assert.doesNotMatch(loginLogic, /loginWithWechat\(\)/);
   assert.doesNotMatch(
     loginLogic,
     /onAgreementChange[\s\S]{0,180}this\.prepareLogin\(\)/
@@ -65,5 +68,8 @@ test("登录页保持单一界面且仅新用户由手机号能力触发官方�
   assert.match(loginLogic, /initializing: false/);
   assert.match(loginLogic, /loginPrepared/);
   assert.doesNotMatch(loginLogic, /wx\.requirePrivacyAuthorize/);
-  assert.match(loginLogic, /onLoginTap[\s\S]{0,320}this\.completeLogin\("登录成功"\)/);
+  assert.match(
+    loginLogic,
+    /onLoginTap[\s\S]{0,800}commitPreparedWechatLogin\(pending\)[\s\S]{0,160}this\.completeLogin\("登录成功"\)/
+  );
 });
