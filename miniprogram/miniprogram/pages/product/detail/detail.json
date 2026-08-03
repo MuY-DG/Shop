@@ -7,6 +7,6 @@
   },
   "enablePullDownRefresh": false,
   "disableScroll": true,
-  "backgroundColor": "#FAF2E4",
+  "backgroundColor": "#F3F3F7",
   "backgroundTextStyle": "dark"
 }

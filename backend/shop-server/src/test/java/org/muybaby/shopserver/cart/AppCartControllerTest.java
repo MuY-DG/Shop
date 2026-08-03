@@ -524,6 +524,47 @@ class AppCartControllerTest {
                 .single()).isEqualTo(1);
     }
 
+    @Test
+    void batchDeleteRemovesOnlyRequestedOwnedCartItems() throws Exception {
+        String appToken = appLoginAndExtractToken("cart-batch-delete-user");
+        long firstSkuId = createPublishedSku("CART-BATCH-DELETE-1", 1990L, 2590L, 10, "ENABLED");
+        long secondSkuId = createPublishedSku("CART-BATCH-DELETE-2", 2990L, 3590L, 10, "ENABLED");
+        long retainedSkuId = createPublishedSku("CART-BATCH-RETAINED", 3990L, 4590L, 10, "ENABLED");
+
+        long firstCartItemId = addCartItem(appToken, firstSkuId);
+        long secondCartItemId = addCartItem(appToken, secondSkuId);
+        long retainedCartItemId = addCartItem(appToken, retainedSkuId);
+
+        mockMvc.perform(delete("/app/cart/items/batch")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"cartItemIds":[%d,%d]}
+                                """.formatted(firstCartItemId, secondCartItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(get("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items.length()").value(1))
+                .andExpect(jsonPath("$.data.items[0].id").value(retainedCartItemId));
+    }
+
+    private long addCartItem(String appToken, long skuId) throws Exception {
+        String response = mockMvc.perform(post("/app/cart/items")
+                        .header("Authorization", "Bearer " + appToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"skuId":%d,"quantity":1}
+                                """.formatted(skuId)))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        return objectMapper.readTree(response).path("data").path("id").asLong();
+    }
+
     private String appLoginAndExtractToken(String code) throws Exception {
         String response = mockMvc.perform(post("/app/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

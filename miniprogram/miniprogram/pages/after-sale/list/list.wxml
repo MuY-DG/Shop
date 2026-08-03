@@ -1,5 +1,5 @@
 <view class="after-sale-list-page">
-  <navigation-bar title="退款售后" back="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
+  <navigation-bar title="退款售后" back="{{true}}" background="#F3F3F7" color="#2E1D16" loading="{{loaded && loading}}" />
 
   <view class="list-content">
     <view wx:if="{{!loaded && loading}}" class="list-state">

@@ -62,6 +62,7 @@
         adding-spu-id="{{addingSpuId}}"
         bindselect="onBusinessPathSelect"
         bindadd="onProductAdd"
+        bindmore="onMoreProductsTap"
       />
 
       <home-product-section
@@ -75,6 +76,7 @@
         adding-spu-id="{{addingSpuId}}"
         bindselect="onBusinessPathSelect"
         bindadd="onProductAdd"
+        bindmore="onMoreProductsTap"
       />
 
       <view wx:if="{{!hasContent}}" class="home-empty">

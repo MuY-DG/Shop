@@ -29,7 +29,7 @@
   "window": {
     "navigationBarTextStyle": "black",
     "navigationStyle": "custom",
-    "backgroundColor": "#F6EDDF",
+    "backgroundColor": "#F3F3F7",
     "backgroundTextStyle": "dark"
   },
   "permission": {
@@ -47,7 +47,7 @@
     "custom": true,
     "color": "#785F50",
     "selectedColor": "#B72B22",
-    "backgroundColor": "#FFFBF4",
+    "backgroundColor": "#FFFFFF",
     "borderStyle": "white",
     "list": [
       {

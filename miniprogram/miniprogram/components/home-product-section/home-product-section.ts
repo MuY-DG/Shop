@@ -43,6 +43,10 @@ Component({
   },
 
   methods: {
+    onMoreTap() {
+      this.triggerEvent("more");
+    },
+
     onProductSelect(event: ProductSelectEvent) {
       this.triggerEvent("select", event.detail);
     },

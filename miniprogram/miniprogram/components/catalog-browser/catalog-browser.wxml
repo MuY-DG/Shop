@@ -1,4 +1,5 @@
-<view class="catalog-browser {{tabPage ? 'catalog-browser--tab' : ''}}">
+<view class="catalog-browser {{tabPage || scrollPage ? 'catalog-browser--fixed' : ''}} {{tabPage ? 'catalog-browser--tab' : ''}}">
+  <view wx:if="{{tabPage}}" class="catalog-tab-wash" aria-hidden="true"></view>
   <view class="catalog-tools">
     <view class="sort-bar">
       <view
@@ -82,7 +83,18 @@
     </view>
   </view>
 
-  <view class="catalog-content">
+  <scroll-view
+    class="catalog-content"
+    scroll-y="{{tabPage || scrollPage}}"
+    enhanced="{{tabPage || scrollPage}}"
+    show-scrollbar="{{false}}"
+    lower-threshold="160"
+    refresher-enabled="{{tabPage || scrollPage}}"
+    refresher-triggered="{{contentRefreshing}}"
+    refresher-background="#F3F3F7"
+    bindscrolltolower="onContentLower"
+    bindrefresherrefresh="onContentRefresh"
+  >
     <view wx:if="{{!loaded && loading}}" class="catalog-state">
       <ui-state type="loading" title="正在加载商品" description="商品马上就来" />
     </view>
@@ -111,6 +123,7 @@
           <product-card
             product="{{item}}"
             variant="{{viewMode === 'list' ? 'list' : 'compact'}}"
+            flat="{{true}}"
             adding="{{addingSpuId === item.spuId}}"
             bindselect="onProductSelect"
             bindadd="onProductAdd"
@@ -130,7 +143,13 @@
         class="catalog-footer catalog-footer--done"
       >已经到底了</view>
     </block>
-  </view>
+  </scroll-view>
+
+  <view
+    wx:if="{{tabPage}}"
+    class="catalog-tab-wash"
+    aria-hidden="true"
+  ></view>
 
   <view
     wx:if="{{filterVisible}}"
@@ -209,7 +228,7 @@
           class="filter-action filter-action--primary"
           bindtap="onFilterApply"
           aria-role="button"
-        >查看商品</view>
+        >确定</view>
       </view>
     </view>
   </view>

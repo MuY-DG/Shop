@@ -2,5 +2,5 @@
   "usingComponents": {
     "navigation-bar": "/components/navigation-bar/navigation-bar"
   },
-  "backgroundColor": "#FBF3E8"
+  "backgroundColor": "#F3F3F7"
 }

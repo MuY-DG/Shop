@@ -108,6 +108,10 @@ Component({
     tabPage: {
       type: Boolean,
       value: false
+    },
+    scrollPage: {
+      type: Boolean,
+      value: false
     }
   },
 
@@ -132,6 +136,7 @@ Component({
     total: 0,
     loading: true,
     loadingMore: false,
+    contentRefreshing: false,
     loaded: false,
     errorText: "",
     addingSpuId: 0
@@ -160,6 +165,24 @@ Component({
   },
 
   methods: {
+    onContentLower() {
+      if (this.data.tabPage || this.data.scrollPage) {
+        void this.loadMore();
+      }
+    },
+
+    async onContentRefresh() {
+      if ((!this.data.tabPage && !this.data.scrollPage) || this.data.contentRefreshing) {
+        return;
+      }
+      this.setData({ contentRefreshing: true });
+      try {
+        await this.refresh();
+      } finally {
+        this.setData({ contentRefreshing: false });
+      }
+    },
+
     async refresh() {
       await Promise.all([
         this.loadCategories(true),

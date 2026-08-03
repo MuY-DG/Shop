@@ -4,6 +4,6 @@
     "ui-state": "/components/ui-state/ui-state"
   },
   "enablePullDownRefresh": true,
-  "backgroundColor": "#F6EDDF",
+  "backgroundColor": "#F3F3F7",
   "backgroundTextStyle": "dark"
 }

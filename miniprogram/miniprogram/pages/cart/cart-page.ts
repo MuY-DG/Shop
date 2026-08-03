@@ -1,17 +1,18 @@
 import {
   buildCartCheckoutUrl,
   buildCartSummary,
+  buildOrderPreviewView,
   reconcileCartSelection,
   toggleCartSelection,
   type CartItemView,
   type CartSummaryView
 } from "../../features/checkout";
 import {
-  clearCart,
-  deleteCartItem,
+  deleteCartItems,
   getCartItems,
   updateCartItemQuantity
 } from "../../services/cart";
+import { previewOrder } from "../../services/order";
 import { getSessionState } from "../../services/session";
 import type { CartItemResponse } from "../../types/cart";
 import { isApiError } from "../../utils/api-error";
@@ -45,6 +46,8 @@ function actionError(error: unknown, fallback: string): string {
 
 export function registerCartPage(config: CartPageConfig): void {
   let latestCartRequest = 0;
+  let latestPricingRequest = 0;
+  let checkoutSelectionBeforeManage: number[] = [];
 
   Page({
     data: {
@@ -55,6 +58,7 @@ export function registerCartPage(config: CartPageConfig): void {
       errorText: "",
       rawItems: [] as CartItemResponse[],
       items: [] as CartItemView[],
+      cartTotalQuantity: 0,
       selectedIds: [] as number[],
       selectedQuantity: 0,
       selectedAmountText: "¥0.00",
@@ -63,9 +67,11 @@ export function registerCartPage(config: CartPageConfig): void {
       allAvailableSelected: false,
       checkoutDisabled: true,
       selectionInitialized: false,
+      managing: false,
+      pricingLoading: false,
       updatingId: 0,
       deletingId: 0,
-      clearing: false
+      deletingBatch: false
     },
 
     onShow() {
@@ -78,7 +84,10 @@ export function registerCartPage(config: CartPageConfig): void {
           loaded: false,
           loading: false,
           loginRequired: true,
-          errorText: ""
+          errorText: "",
+          cartTotalQuantity: 0,
+          managing: false,
+          pricingLoading: false
         });
         return;
       }
@@ -88,6 +97,7 @@ export function registerCartPage(config: CartPageConfig): void {
 
     onUnload() {
       latestCartRequest += 1;
+      latestPricingRequest += 1;
     },
 
     async onPullDownRefresh() {
@@ -99,31 +109,41 @@ export function registerCartPage(config: CartPageConfig): void {
 
     async loadCart() {
       const requestId = ++latestCartRequest;
+      latestPricingRequest += 1;
       this.setData({
         loading: !this.data.loaded,
-        errorText: ""
+        errorText: "",
+        pricingLoading: false
       });
       try {
         const response = await getCartItems();
         if (requestId !== latestCartRequest) {
           return;
         }
+        const managing = this.data.managing && response.items.length > 0;
         const selectedIds = reconcileCartSelection(
           response.items,
           this.data.selectedIds,
-          !this.data.selectionInitialized
+          !this.data.selectionInitialized,
+          managing
         );
-        const summary = buildCartSummary(response.items, selectedIds);
+        const summary = buildCartSummary(response.items, selectedIds, managing);
         this.setData({
           loaded: true,
           loading: false,
           errorText: "",
           rawItems: response.items,
+          cartTotalQuantity: response.totalQuantity,
           unavailableCount: response.unavailableCount,
           selectionInitialized: true,
-          ...summary
+          managing,
+          ...summary,
+          selectedAmountText: summary.selectedIds.length
+            ? this.data.selectedAmountText
+            : "¥0.00"
         });
         setCustomTabBarCartCount(this, response.totalQuantity);
+        this.refreshSelectedPricing(summary.selectedIds, managing);
       } catch (error) {
         if (requestId !== latestCartRequest) {
           return;
@@ -145,22 +165,51 @@ export function registerCartPage(config: CartPageConfig): void {
       openLoginPage(config.loginRedirect);
     },
 
+    onManageToggle() {
+      if (this.data.deletingBatch || this.data.updatingId) {
+        return;
+      }
+      const managing = !this.data.managing;
+      let selectedIds: number[];
+      if (managing) {
+        checkoutSelectionBeforeManage = [...this.data.selectedIds];
+        selectedIds = [];
+      } else {
+        selectedIds = reconcileCartSelection(
+          this.data.rawItems,
+          checkoutSelectionBeforeManage,
+          false
+        );
+      }
+      this.setData({ managing });
+      this.applySummary(
+        buildCartSummary(this.data.rawItems, selectedIds, managing),
+        managing
+      );
+    },
+
     onSelectionToggle(event: DatasetEvent) {
       const item = this.findItem(event);
-      if (!item?.available) {
+      if (!item || (!this.data.managing && !item.available)) {
         return;
       }
       this.applySummary(buildCartSummary(
         this.data.rawItems,
-        toggleCartSelection(this.data.selectedIds, item.id)
-      ));
+        toggleCartSelection(this.data.selectedIds, item.id),
+        this.data.managing
+      ), this.data.managing);
     },
 
     onSelectAllToggle() {
       const selectedIds = this.data.allAvailableSelected
         ? []
-        : this.data.rawItems.filter((item) => item.available).map((item) => item.id);
-      this.applySummary(buildCartSummary(this.data.rawItems, selectedIds));
+        : this.data.rawItems
+            .filter((item) => item.available || this.data.managing)
+            .map((item) => item.id);
+      this.applySummary(
+        buildCartSummary(this.data.rawItems, selectedIds, this.data.managing),
+        this.data.managing
+      );
     },
 
     onQuantityMinus(event: DatasetEvent) {
@@ -178,7 +227,7 @@ export function registerCartPage(config: CartPageConfig): void {
     },
 
     async updateQuantity(cartItemId: number, quantity: number) {
-      if (this.data.updatingId || this.data.deletingId || this.data.clearing) {
+      if (this.data.updatingId || this.data.deletingBatch || this.data.managing) {
         return;
       }
       this.setData({ updatingId: cartItemId });
@@ -195,72 +244,68 @@ export function registerCartPage(config: CartPageConfig): void {
       }
     },
 
-    onDeleteTap(event: DatasetEvent) {
+    onItemDeleteTap(event: DatasetEvent) {
       const item = this.findItem(event);
-      if (!item || this.data.deletingId || this.data.clearing) {
+      if (!item || this.data.deletingBatch) {
+        return;
+      }
+      this.confirmDelete([item.id]);
+    },
+
+    onBatchDeleteTap() {
+      if (this.data.deletingBatch) {
+        return;
+      }
+      if (!this.data.selectedIds.length) {
+        wx.showToast({ title: "请选择要删除的商品", icon: "none" });
+        return;
+      }
+      this.confirmDelete(this.data.selectedIds);
+    },
+
+    confirmDelete(cartItemIds: number[]) {
+      const normalizedIds = Array.from(new Set(cartItemIds)).filter((id) => (
+        Number.isSafeInteger(id) && id > 0
+      ));
+      if (!normalizedIds.length) {
         return;
       }
       wx.showModal({
-        title: "移除商品",
-        content: `确认移除“${item.productTitle}”吗？`,
-        confirmColor: "#B72B22",
+        title: "删除商品",
+        content: `确认要删除这${normalizedIds.length}种商品吗？`,
+        confirmColor: "#FF172B",
         success: (result) => {
           if (result.confirm) {
-            void this.deleteConfirmed(item.id);
+            void this.deleteConfirmed(normalizedIds);
           }
         }
       });
     },
 
-    async deleteConfirmed(cartItemId: number) {
-      this.setData({ deletingId: cartItemId });
+    async deleteConfirmed(cartItemIds: number[]) {
+      this.setData({
+        deletingBatch: true,
+        deletingId: cartItemIds.length === 1 ? cartItemIds[0] : 0
+      });
       try {
-        await deleteCartItem(cartItemId);
+        await deleteCartItems(cartItemIds);
+        const deletedIds = new Set(cartItemIds);
+        checkoutSelectionBeforeManage = checkoutSelectionBeforeManage.filter(
+          (id) => !deletedIds.has(id)
+        );
+        this.setData({ selectedIds: [] });
         await this.loadCart();
-        wx.showToast({ title: "已移除", icon: "success" });
+        wx.showToast({ title: "删除成功", icon: "success" });
       } catch (error) {
         wx.showToast({
-          title: actionError(error, "移除失败"),
+          title: actionError(error, "删除失败"),
           icon: "none"
         });
       } finally {
-        this.setData({ deletingId: 0 });
-      }
-    },
-
-    onClearTap() {
-      if (!this.data.rawItems.length || this.data.clearing || this.data.deletingId) {
-        return;
-      }
-      wx.showModal({
-        title: "清空购物车",
-        content: "购物车中的全部商品都会被移除，是否继续？",
-        confirmColor: "#B72B22",
-        success: (result) => {
-          if (result.confirm) {
-            void this.clearConfirmed();
-          }
-        }
-      });
-    },
-
-    async clearConfirmed() {
-      this.setData({ clearing: true });
-      try {
-        await clearCart();
         this.setData({
-          selectedIds: [],
-          selectionInitialized: false
+          deletingBatch: false,
+          deletingId: 0
         });
-        await this.loadCart();
-        wx.showToast({ title: "购物车已清空", icon: "success" });
-      } catch (error) {
-        wx.showToast({
-          title: actionError(error, "清空失败"),
-          icon: "none"
-        });
-      } finally {
-        this.setData({ clearing: false });
       }
     },
 
@@ -284,7 +329,14 @@ export function registerCartPage(config: CartPageConfig): void {
     },
 
     onCheckoutTap() {
-      if (this.data.checkoutDisabled || this.data.loading) {
+      if (this.data.loading) {
+        return;
+      }
+      if (this.data.checkoutDisabled) {
+        wx.showToast({
+          title: "您还没有选择商品",
+          icon: "none"
+        });
         return;
       }
       try {
@@ -299,8 +351,50 @@ export function registerCartPage(config: CartPageConfig): void {
       }
     },
 
-    applySummary(summary: CartSummaryView) {
-      this.setData(summary);
+    applySummary(summary: CartSummaryView, managing: boolean) {
+      this.setData({
+        ...summary,
+        selectedAmountText: summary.selectedIds.length
+          ? this.data.selectedAmountText
+          : "¥0.00"
+      });
+      this.refreshSelectedPricing(summary.selectedIds, managing);
+    },
+
+    refreshSelectedPricing(selectedIds: number[], managing: boolean) {
+      const requestId = ++latestPricingRequest;
+      if (managing || !selectedIds.length) {
+        this.setData({
+          pricingLoading: false,
+          selectedAmountText: selectedIds.length ? this.data.selectedAmountText : "¥0.00"
+        });
+        return;
+      }
+      this.setData({ pricingLoading: true });
+      void previewOrder({
+        source: "CART",
+        cartItemIds: [...selectedIds]
+      }).then((preview) => {
+        if (requestId !== latestPricingRequest) {
+          return;
+        }
+        this.setData({
+          pricingLoading: false,
+          selectedAmountText: buildOrderPreviewView(preview).payableAmountText
+        });
+      }).catch((error) => {
+        if (requestId !== latestPricingRequest) {
+          return;
+        }
+        this.setData({
+          pricingLoading: false,
+          selectedAmountText: "¥--"
+        });
+        wx.showToast({
+          title: actionError(error, "金额计算失败，请稍后重试"),
+          icon: "none"
+        });
+      });
     },
 
     findItem(event: DatasetEvent): CartItemView | undefined {

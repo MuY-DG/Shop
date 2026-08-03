@@ -2,7 +2,7 @@
   <navigation-bar
     title="收货地址"
     back="{{true}}"
-    background="#F6EDDF"
+    background="#F3F3F7"
     color="#2E1D16"
     loading="{{loaded && loading}}"
   />

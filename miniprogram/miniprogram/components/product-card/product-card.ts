@@ -93,6 +93,10 @@ Component({
         });
       }
     },
+    flat: {
+      type: Boolean,
+      value: false
+    },
     adding: {
       type: Boolean,
       value: false

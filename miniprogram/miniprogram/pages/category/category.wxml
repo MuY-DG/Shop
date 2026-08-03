@@ -1,6 +1,6 @@
 <view class="category-page">
   <navigation-bar
-    background="#FAF2E4"
+    background="#F3F3F7"
     color="#2E1D16"
     show-divider="{{false}}"
     wide-center="{{true}}"
@@ -15,7 +15,7 @@
     >
       <image
         class="category-search__icon"
-        src="/assets/icons/address-search.svg"
+        src="/assets/icons/search-material-symbols-iconify.svg"
         mode="aspectFit"
         aria-hidden="true"
       />
@@ -24,6 +24,7 @@
   </navigation-bar>
   <catalog-browser
     id="catalog"
+    class="category-catalog"
     tab-page="{{true}}"
     bindproductselect="onProductSelect"
     bindcartchange="onCartChange"

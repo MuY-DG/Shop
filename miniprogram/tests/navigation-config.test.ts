@@ -126,6 +126,133 @@ test("分类筛选打开时隐藏自定义底部导航", () => {
   assert.match(tabTemplate, /hidden="\{\{hidden\}\}"/);
 });
 
+test("分类页固定工具区并统一搜索、排序和分类视觉", () => {
+  const categoryRoot = resolve(sourceRoot, "pages/category/category");
+  const categoryConfig = JSON.parse(
+    readFileSync(`${categoryRoot}.json`, "utf8")
+  ) as DetailPageConfig;
+  const categoryTemplate = readFileSync(`${categoryRoot}.wxml`, "utf8");
+  const categoryStyle = readFileSync(`${categoryRoot}.less`, "utf8");
+  const catalogTemplate = readFileSync(
+    resolve(sourceRoot, "components/catalog-browser/catalog-browser.wxml"),
+    "utf8"
+  );
+  const catalogStyle = readFileSync(
+    resolve(sourceRoot, "components/catalog-browser/catalog-browser.less"),
+    "utf8"
+  );
+  const catalogLogic = readFileSync(
+    resolve(sourceRoot, "components/catalog-browser/catalog-browser.ts"),
+    "utf8"
+  );
+
+  assert.equal(categoryConfig.disableScroll, true);
+  assert.equal(categoryConfig.enablePullDownRefresh, false);
+  assert.match(categoryTemplate, /search-material-symbols-iconify\.svg/);
+  assert.match(categoryTemplate, /class="category-catalog"/);
+  assert.match(categoryStyle, /\.category-page\s*\{[\s\S]*height: 100vh;[\s\S]*overflow: hidden/);
+  assert.match(categoryStyle, /\.category-search\s*\{[\s\S]*width: calc\(100% - 40rpx\);[\s\S]*border-radius: 18rpx;[\s\S]*background: #ffffff/);
+  assert.match(catalogTemplate, /class="catalog-content"[\s\S]*scroll-y="\{\{tabPage \|\| scrollPage\}\}"[\s\S]*refresher-enabled="\{\{tabPage \|\| scrollPage\}\}"/);
+  assert.match(catalogTemplate, /wx:if="\{\{tabPage\}\}"[\s\S]*class="catalog-tab-wash"/);
+  assert.match(catalogStyle, /\.catalog-browser--fixed\s*\{[\s\S]*display: flex;[\s\S]*overflow: hidden/);
+  assert.match(catalogStyle, /\.catalog-tab-wash\s*\{[\s\S]*position: fixed;[\s\S]*pointer-events: none/);
+  assert.match(catalogStyle, /\.sort-bar\s*\{[\s\S]*background: transparent/);
+  assert.match(catalogStyle, /\.sort-item\s*\{[\s\S]*color: #000000/);
+  assert.match(catalogStyle, /\.sort-item--active\s*\{[\s\S]*color: #ff172b/);
+  assert.match(catalogStyle, /\.sort-item--active::after\s*\{[\s\S]*bottom: 14rpx;[\s\S]*width: 24rpx/);
+  assert.match(catalogStyle, /\.category-tab\s*\{[\s\S]*border: 0;[\s\S]*color: #000000;[\s\S]*background: #ffffff/);
+  assert.match(catalogStyle, /\.category-tab--active\s*\{[\s\S]*border: 1rpx solid #fe0000;[\s\S]*color: #fe0000;[\s\S]*background: #ffebef/);
+  assert.match(catalogStyle, /\.filter-panel\s*\{[\s\S]*background: @color-page/);
+  assert.match(catalogStyle, /\.filter-panel__header\s*\{[\s\S]*border-bottom: 0/);
+  assert.match(catalogStyle, /\.filter-option\s*\{[\s\S]*border: 0;[\s\S]*color: #000000;[\s\S]*background: #ffffff/);
+  assert.match(catalogStyle, /\.filter-option--active\s*\{[\s\S]*border: 1rpx solid #fe0000;[\s\S]*color: #fe0000;[\s\S]*background: #ffebef/);
+  assert.match(catalogStyle, /\.filter-panel__actions\s*\{[\s\S]*border-top: 0;[\s\S]*background: @color-page/);
+  assert.match(catalogStyle, /\.filter-action--secondary\s*\{[\s\S]*color: #000000/);
+  assert.match(catalogStyle, /\.filter-action--primary\s*\{[\s\S]*background: #ff172b/);
+  assert.match(catalogTemplate, />确定<\/view>/);
+  assert.doesNotMatch(catalogTemplate, />查看商品<\/view>/);
+  assert.match(catalogLogic, /async onContentRefresh\(\)[\s\S]*await this\.refresh\(\)/);
+  assert.match(catalogLogic, /onContentLower\(\)[\s\S]*this\.loadMore\(\)/);
+});
+
+test("商品搜索使用内嵌按钮和最近搜索样式", () => {
+  const searchRoot = resolve(sourceRoot, "pages/product/search/search");
+  const searchTemplate = readFileSync(`${searchRoot}.wxml`, "utf8");
+  const searchStyle = readFileSync(`${searchRoot}.less`, "utf8");
+  const searchConfig = JSON.parse(
+    readFileSync(`${searchRoot}.json`, "utf8")
+  ) as DetailPageConfig;
+  const resultRoot = resolve(sourceRoot, "pages/product/list/list");
+  const resultTemplate = readFileSync(`${resultRoot}.wxml`, "utf8");
+  const resultStyle = readFileSync(`${resultRoot}.less`, "utf8");
+  const resultConfig = JSON.parse(
+    readFileSync(`${resultRoot}.json`, "utf8")
+  ) as DetailPageConfig;
+  const catalogStyle = readFileSync(
+    resolve(sourceRoot, "components/catalog-browser/catalog-browser.less"),
+    "utf8"
+  );
+
+  assert.equal(searchConfig.disableScroll, true);
+  assert.match(searchTemplate, /placeholder="输入商品名称"/);
+  assert.doesNotMatch(searchTemplate, /search-field__icon|address-search\.svg/);
+  assert.match(searchTemplate, />最近搜索<\/text>/);
+  assert.match(searchTemplate, /trash-can-outline-muted-iconify\.svg/);
+  assert.match(searchTemplate, /class="search-history__scroll"[\s\S]*scroll-y="\{\{true\}\}"/);
+  assert.match(searchStyle, /\.search-field\s*\{[\s\S]*width: calc\(100% - 40rpx\);[\s\S]*height: 64rpx;[\s\S]*border-radius: 18rpx;[\s\S]*background: #ffffff/);
+  assert.match(searchStyle, /\.search-field__input\s*\{[\s\S]*font-size: 26rpx;[\s\S]*font-weight: 400;[\s\S]*text-align: left/);
+  assert.match(searchStyle, /\.search-field__submit\s*\{[\s\S]*height: 54rpx;[\s\S]*border-radius: 14rpx;[\s\S]*background: #e93a3d/);
+  assert.match(searchStyle, /\.search-history__item\s*\{[\s\S]*color: #b5b5b5;[\s\S]*background: #ffffff/);
+  assert.match(searchStyle, /\.search-history__clear-icon\s*\{[\s\S]*display: block/);
+  assert.equal(resultConfig.disableScroll, true);
+  assert.equal(resultConfig.enablePullDownRefresh, false);
+  assert.match(resultTemplate, /search-material-symbols-iconify\.svg/);
+  assert.doesNotMatch(resultTemplate, /address-search\.svg/);
+  assert.match(resultTemplate, /scroll-page="\{\{true\}\}"/);
+  assert.match(resultTemplate, /<input[\s\S]*value="\{\{initialKeyword\}\}"[\s\S]*placeholder="输入商品名称"/);
+  assert.match(resultStyle, /\.catalog-search\s*\{[\s\S]*width: calc\(100% - 40rpx\);[\s\S]*height: 64rpx;[\s\S]*border-radius: 18rpx;[\s\S]*background: #ffffff/);
+  assert.match(resultStyle, /\.catalog-search__text\s*\{[\s\S]*height: 64rpx;[\s\S]*font-size: 26rpx;[\s\S]*font-weight: 400;[\s\S]*line-height: 64rpx/);
+  assert.match(catalogStyle, /\.catalog-browser--fixed:not\(\.catalog-browser--tab\) \.catalog-content\s*\{[\s\S]*padding-bottom: 0/);
+});
+
+test("购物车提供管理批量删除并使用后端权威计价", () => {
+  const template = readFileSync(
+    resolve(sourceRoot, "pages/cart/cart.wxml"),
+    "utf8"
+  );
+  const styles = readFileSync(
+    resolve(sourceRoot, "pages/cart/cart.less"),
+    "utf8"
+  );
+  const logic = readFileSync(
+    resolve(sourceRoot, "pages/cart/cart-page.ts"),
+    "utf8"
+  );
+  const service = readFileSync(
+    resolve(sourceRoot, "services/cart.ts"),
+    "utf8"
+  );
+
+  assert.match(template, /购物车（\{\{cartTotalQuantity\}\}）/);
+  assert.match(template, /\{\{managing \? '完成' : '管理'\}\}/);
+  assert.match(template, /trash-can-outline-iconify\.svg/);
+  assert.match(template, /class="batch-delete-action"/);
+  assert.doesNotMatch(template, /这一锅，慢慢挑|>清空<|>移除<|小计|优惠将在结算页计算|已选 \{\{/);
+  assert.match(logic, /确认要删除这\$\{normalizedIds\.length\}种商品吗/);
+  assert.match(logic, /您还没有选择商品/);
+  assert.match(logic, /previewOrder\(\{[\s\S]*source: "CART"/);
+  assert.match(service, /API_ENDPOINTS\.cart\.batchDelete/);
+  assert.match(styles, /\.cart-page\s*\{[\s\S]*background: #f3f3f7/);
+  assert.match(styles, /\.cart-login-state\s*\{[\s\S]*border: 0;[\s\S]*background: transparent;[\s\S]*box-shadow: none/);
+  assert.doesNotMatch(styles, /\.cart-login-state\s*\{[^}]*\.card-surface\(\)/);
+  assert.match(styles, /\.cart-card\s*\{[\s\S]*background: #ffffff/);
+  assert.match(styles, /\.cart-card__image-shell\s*\{[\s\S]*width: 166rpx;[\s\S]*height: 166rpx/);
+  assert.match(styles, /\.cart-card__footer\s*\{[\s\S]*width: 162rpx;[\s\S]*justify-content: center/);
+  assert.match(styles, /\.settlement-bar\s*\{[\s\S]*background-color: #ffffff/);
+  assert.match(styles, /\.quantity-stepper__value\s*\{[\s\S]*background: #f6f6f6/);
+  assert.match(styles, /button\.checkout-action\s*\{[\s\S]*background: #ff172b/);
+});
+
 test("商品加购按钮调用真实购物车接口并同步底部角标", () => {
   const productCardTemplate = readFileSync(
     resolve(sourceRoot, "components/product-card/product-card.wxml"),
@@ -139,12 +266,34 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
     resolve(sourceRoot, "components/product-card/product-card.less"),
     "utf8"
   );
+  const homeCategoryStyle = readFileSync(
+    resolve(sourceRoot, "components/home-category-grid/home-category-grid.less"),
+    "utf8"
+  );
+  const homeProductSectionStyle = readFileSync(
+    resolve(sourceRoot, "components/home-product-section/home-product-section.less"),
+    "utf8"
+  );
+  const homeProductSectionTemplate = readFileSync(
+    resolve(sourceRoot, "components/home-product-section/home-product-section.wxml"),
+    "utf8"
+  );
+  const homeProductSectionLogic = readFileSync(
+    resolve(sourceRoot, "components/home-product-section/home-product-section.ts"),
+    "utf8"
+  );
+  const homeTemplate = readFileSync(resolve(sourceRoot, "pages/index/index.wxml"), "utf8");
   const homeLogic = readFileSync(resolve(sourceRoot, "pages/index/index.ts"), "utf8");
+  const catalogTemplate = readFileSync(
+    resolve(sourceRoot, "components/catalog-browser/catalog-browser.wxml"),
+    "utf8"
+  );
   const catalogLogic = readFileSync(
     resolve(sourceRoot, "components/catalog-browser/catalog-browser.ts"),
     "utf8"
   );
   const tabLogic = readFileSync(resolve(sourceRoot, "custom-tab-bar/index.ts"), "utf8");
+  const tabTemplate = readFileSync(resolve(sourceRoot, "custom-tab-bar/index.wxml"), "utf8");
   const tabStyle = readFileSync(resolve(sourceRoot, "custom-tab-bar/index.less"), "utf8");
 
   assert.match(productCardTemplate, /catchtap="handleCartTap"/);
@@ -152,12 +301,32 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(productCardTemplate, /catchtap="handleTitleToggle"/);
   assert.match(productCardLogic, /measureTitleOverflow/);
   assert.match(productCardStyle, /\.product-card__title[\s\S]*text-overflow: ellipsis[\s\S]*white-space: nowrap/);
+  assert.match(productCardStyle, /\.product-card\s*\{[\s\S]*background: #ffffff/);
   assert.match(productCardStyle, /\.product-card--featured\s*\{[\s\S]*box-shadow: none/);
+  assert.match(productCardStyle, /\.product-card--flat\s*\{[\s\S]*box-shadow: none/);
+  assert.match(homeCategoryStyle, /\.category-card\s*\{[\s\S]*background: #ffffff/);
+  assert.match(homeProductSectionStyle, /\.product-showcase\s*\{[\s\S]*border: 0;[\s\S]*background: transparent;[\s\S]*box-shadow: none/);
+  assert.match(homeProductSectionStyle, /\.product-showcase\s*\{[\s\S]*margin: 8rpx 12rpx 0;[\s\S]*padding: 0 0 28rpx/);
+  assert.match(homeProductSectionStyle, /\.product-showcase--separated\s*\{\s*margin-top: 4rpx/);
+  assert.match(homeProductSectionStyle, /\.product-showcase--featured\s*\{\s*padding-bottom: 0/);
+  assert.match(homeProductSectionStyle, /\.section-heading__more\s*\{[\s\S]*color: #e10203/);
+  assert.match(homeProductSectionTemplate, /catchtap="onMoreTap"[\s\S]*>查看更多<\/text>/);
+  assert.equal((homeProductSectionTemplate.match(/flat="\{\{true\}\}"/g) ?? []).length, 2);
+  assert.match(homeProductSectionLogic, /this\.triggerEvent\("more"\)/);
+  assert.equal((homeTemplate.match(/bindmore="onMoreProductsTap"/g) ?? []).length, 2);
+  assert.match(homeLogic, /wx\.switchTab\(\{[\s\S]*url: "\/pages\/category\/category"/);
   assert.match(homeLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
   assert.match(catalogLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
+  assert.match(catalogTemplate, /<product-card[\s\S]*flat="\{\{true\}\}"/);
   assert.match(tabLogic, /getCartItems\(\)/);
   assert.match(tabLogic, /cart\.totalQuantity/);
-  assert.match(tabStyle, /background: rgba\(255, 251, 244, 0\.74\)/);
+  assert.match(tabTemplate, /tab-bar__cart-handle/);
+  assert.match(tabTemplate, /tab-bar__cart-basket/);
+  assert.match(tabTemplate, /tab-bar__cart-wheel/);
+  assert.doesNotMatch(tabTemplate, /shopping-cart-outline-iconify\.svg/);
+  assert.match(tabStyle, /\.tab-bar\s*\{[\s\S]*background: transparent;[\s\S]*isolation: isolate/);
+  assert.match(tabStyle, /\.tab-bar::before\s*\{[\s\S]*rgba\(255, 255, 255, 0\.72\)[\s\S]*backdrop-filter: blur\(20rpx\) saturate\(135%\)/);
+  assert.match(tabStyle, /\.tab-bar__items\s*\{[\s\S]*position: relative;[\s\S]*z-index: 1/);
 });
 
 test("账户中心注册真实页面、移除消息中心并接入自建在线客服", () => {

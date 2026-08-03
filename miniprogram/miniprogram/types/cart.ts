@@ -40,3 +40,7 @@ export interface CartListResponse {
 export interface UpdateCartQuantityRequest {
   quantity: number;
 }
+
+export interface DeleteCartItemsRequest {
+  cartItemIds: number[];
+}

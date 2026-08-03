@@ -165,6 +165,18 @@ Page({
     this.openBusinessPath(event.detail.path);
   },
 
+  onMoreProductsTap() {
+    wx.switchTab({
+      url: "/pages/category/category",
+      fail: () => {
+        wx.showToast({
+          title: "分类页面暂时无法打开",
+          icon: "none"
+        });
+      }
+    });
+  },
+
   onProductAdd(event: ProductAddEvent) {
     const spuId = parsePositiveId(event.detail.spuId);
     if (!spuId || this.data.addingSpuId) {

@@ -1,5 +1,5 @@
 <view class="account-page favorites-page">
-  <navigation-bar title="我的收藏" back="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
+  <navigation-bar title="我的收藏" back="{{true}}" background="#F3F3F7" color="#2E1D16" loading="{{loaded && loading}}" />
 
   <view class="account-content">
     <view class="account-heading">

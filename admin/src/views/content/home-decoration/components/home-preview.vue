@@ -349,7 +349,7 @@
     overflow: hidden;
     clip-path: inset(0 round 24px);
     color: #2e1d16;
-    background: #f7eddf;
+    background: #f3f3f7;
     border-radius: 24px;
   }
 
@@ -400,10 +400,7 @@
   .phone-content {
     height: calc(100% - 54px);
     overflow: auto;
-    background:
-      radial-gradient(circle at 94% 4%, rgb(183 43 34 / 6%), transparent 29%),
-      radial-gradient(circle at 2% 54%, rgb(115 80 48 / 4.5%), transparent 27%),
-      linear-gradient(180deg, #faf2e4 0%, #f5eadb 50%, #f8f0e5 100%);
+    background: #f3f3f7;
     scrollbar-width: none;
 
     &::-webkit-scrollbar {
@@ -482,7 +479,7 @@
   .hero-fade {
     bottom: 0;
     height: 32px;
-    background: linear-gradient(180deg, rgb(246 237 223 / 0%), #f6eddf 96%);
+    background: linear-gradient(180deg, rgb(243 243 247 / 0%), #f3f3f7 96%);
   }
 
   .banner-dots {

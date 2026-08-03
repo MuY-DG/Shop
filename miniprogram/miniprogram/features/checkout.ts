@@ -103,14 +103,18 @@ function unavailableText(item: CartItemResponse): string {
   }
 }
 
-function cartItemView(item: CartItemResponse, selected: boolean): CartItemView {
+function cartItemView(
+  item: CartItemResponse,
+  selected: boolean,
+  includeUnavailableSelection = false
+): CartItemView {
   const imageUrl = (item.displayImage || item.skuImage || item.mainImage || "").trim();
   const wholesaleApplied = Boolean(item.wholesaleTierMinQuantity);
   const nextTierQuantity = item.nextWholesaleTierQuantityNeeded ?? 0;
   const nextTierPrice = item.nextWholesaleTierPriceCent;
   return {
     ...item,
-    selected: selected && item.available,
+    selected: selected && (item.available || includeUnavailableSelection),
     hasImage: Boolean(imageUrl),
     imageUrl,
     priceText: money(item.priceCent),
@@ -130,10 +134,11 @@ function cartItemView(item: CartItemResponse, selected: boolean): CartItemView {
 export function reconcileCartSelection(
   items: CartItemResponse[],
   selectedIds: number[],
-  selectAllAvailable: boolean
+  selectAllAvailable: boolean,
+  includeUnavailable = false
 ): number[] {
   const availableIds = items
-    .filter((item) => item.available)
+    .filter((item) => item.available || includeUnavailable)
     .map((item) => item.id);
   if (selectAllAvailable) {
     return availableIds;
@@ -144,12 +149,21 @@ export function reconcileCartSelection(
 
 export function buildCartSummary(
   items: CartItemResponse[],
-  selectedIds: number[]
+  selectedIds: number[],
+  includeUnavailableSelection = false
 ): CartSummaryView {
   const selectedSet = new Set(selectedIds);
-  const views = items.map((item) => cartItemView(item, selectedSet.has(item.id)));
-  const selectedItems = views.filter((item) => item.available && item.selected);
-  const availableCount = views.filter((item) => item.available).length;
+  const views = items.map((item) => cartItemView(
+    item,
+    selectedSet.has(item.id),
+    includeUnavailableSelection
+  ));
+  const selectedItems = views.filter((item) => (
+    item.selected && (item.available || includeUnavailableSelection)
+  ));
+  const availableCount = views.filter((item) => (
+    item.available || includeUnavailableSelection
+  )).length;
   const normalizedSelectedIds = selectedItems.map((item) => item.id);
   const selectedQuantity = selectedItems.reduce((total, item) => total + item.quantity, 0);
   const selectedAmountCent = selectedItems.reduce(

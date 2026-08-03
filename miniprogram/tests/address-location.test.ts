@@ -100,7 +100,7 @@ test("收货地址使用微信原生地图选址", () => {
   assert.match(editStyle, /\.wechat-import[\s\S]*background: transparent/);
   assert.match(editStyle, /\.wechat-import[\s\S]*position: absolute/);
   assert.match(editStyle, /\.wechat-import[\s\S]*right: 0/);
-  assert.match(addressListTemplate, /background="#F6EDDF"/);
+  assert.match(addressListTemplate, /background="#F3F3F7"/);
   assert.match(addressListStyle, /\.address-page[\s\S]*background: @color-page/);
   assert.match(addressListStyle, /\.address-state[\s\S]*background: transparent/);
   assert.match(addressListLogic, /composeAddressListTitle/);

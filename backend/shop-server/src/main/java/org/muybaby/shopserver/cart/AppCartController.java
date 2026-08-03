@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.muybaby.shopserver.cart.dto.AddCartItemRequest;
 import org.muybaby.shopserver.cart.dto.CartItemResponse;
 import org.muybaby.shopserver.cart.dto.CartListResponse;
+import org.muybaby.shopserver.cart.dto.DeleteCartItemsRequest;
 import org.muybaby.shopserver.cart.dto.UpdateCartQuantityRequest;
 import org.muybaby.shopserver.cart.service.AppCartService;
 import org.muybaby.shopserver.common.api.ApiResponse;
@@ -56,6 +57,15 @@ public class AppCartController {
             @PathVariable Long cartItemId
     ) {
         appCartService.delete(principal, cartItemId);
+        return ApiResponse.success();
+    }
+
+    @DeleteMapping("/items/batch")
+    public ApiResponse<Void> deleteBatch(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @Valid @RequestBody DeleteCartItemsRequest request
+    ) {
+        appCartService.deleteBatch(principal, request);
         return ApiResponse.success();
     }
 

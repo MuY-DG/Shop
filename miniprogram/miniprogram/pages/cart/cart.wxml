@@ -1,11 +1,22 @@
 <view class="cart-page">
   <navigation-bar
-    title="购物车"
+    title=""
     back="{{navigationBack}}"
-    background="#FAF2E4"
+    wide-center="{{true}}"
+    show-divider="{{false}}"
+    background="#F3F3F7"
     color="#2E1D16"
     loading="{{loaded && loading}}"
-  />
+  >
+    <view slot="center" class="cart-navigation-title">购物车（{{cartTotalQuantity}}）</view>
+    <button
+      wx:if="{{!loginRequired && loaded && rawItems.length}}"
+      slot="right"
+      class="manage-action"
+      disabled="{{deletingBatch || updatingId}}"
+      bindtap="onManageToggle"
+    >{{managing ? '完成' : '管理'}}</button>
+  </navigation-bar>
 
   <view class="cart-content">
     <view wx:if="{{loginRequired}}" class="cart-login-state">
@@ -24,21 +35,6 @@
     </view>
 
     <block wx:else>
-    <view wx:if="{{loaded && rawItems.length}}" class="cart-heading">
-      <view>
-        <view class="cart-heading__title">这一锅，慢慢挑</view>
-        <view class="cart-heading__meta">
-          {{rawItems.length}} 种商品<text wx:if="{{unavailableCount}}"> · {{unavailableCount}} 件失效</text>
-        </view>
-      </view>
-      <button
-        class="text-action"
-        loading="{{clearing}}"
-        disabled="{{clearing || deletingId}}"
-        bindtap="onClearTap"
-      >清空</button>
-    </view>
-
     <view wx:if="{{!loaded && loading}}" class="cart-state">
       <ui-state type="loading" title="正在准备购物车" description="好味道马上就来" />
     </view>
@@ -74,7 +70,7 @@
           class="cart-card {{item.available ? '' : 'cart-card--unavailable'}}"
         >
           <view
-            class="selection {{item.selected ? 'selection--checked' : ''}} {{item.available ? '' : 'selection--disabled'}}"
+            class="selection {{item.selected ? 'selection--checked' : ''}} {{item.available || managing ? '' : 'selection--disabled'}}"
             data-id="{{item.id}}"
             catchtap="onSelectionToggle"
             aria-role="checkbox"
@@ -110,43 +106,44 @@
             <view wx:if="{{!item.available}}" class="unavailable-tag">{{item.unavailableText}}</view>
 
             <view class="price-row">
-              <text class="price-row__current">{{item.priceText}}</text>
-              <text wx:if="{{item.hasRetailPrice}}" class="price-row__retail">{{item.retailPriceText}}</text>
+              <view class="price-row__prices">
+                <text class="price-row__current">{{item.priceText}}</text>
+                <text wx:if="{{item.hasRetailPrice}}" class="price-row__retail">{{item.retailPriceText}}</text>
+              </view>
+              <view class="cart-card__footer">
+                <view wx:if="{{!managing}}" class="quantity-stepper">
+                  <button
+                    class="quantity-stepper__button"
+                    data-id="{{item.id}}"
+                    disabled="{{!item.available || item.quantity <= 1 || updatingId || deletingBatch}}"
+                    catchtap="onQuantityMinus"
+                  >−</button>
+                  <view class="quantity-stepper__value">
+                    <view wx:if="{{updatingId === item.id}}" class="mini-spinner"></view>
+                    <text wx:else>{{item.quantity}}</text>
+                  </view>
+                  <button
+                    class="quantity-stepper__button"
+                    data-id="{{item.id}}"
+                    disabled="{{!item.available || item.quantity >= 999 || updatingId || deletingBatch}}"
+                    catchtap="onQuantityPlus"
+                  >+</button>
+                </view>
+                <button
+                  wx:else
+                  class="delete-icon-action"
+                  data-id="{{item.id}}"
+                  disabled="{{deletingBatch}}"
+                  catchtap="onItemDeleteTap"
+                  aria-label="删除{{item.productTitle}}"
+                >
+                  <view wx:if="{{deletingId === item.id}}" class="mini-spinner"></view>
+                  <image wx:else src="/assets/icons/trash-can-outline-iconify.svg" mode="aspectFit" />
+                </button>
+              </view>
             </view>
             <view wx:if="{{item.wholesaleText}}" class="wholesale-copy">{{item.wholesaleText}}</view>
             <view wx:if="{{item.nextWholesaleText}}" class="next-tier-copy">{{item.nextWholesaleText}}</view>
-
-            <view class="cart-card__footer">
-              <view>
-                <view class="line-amount">小计 {{item.lineAmountText}}</view>
-              </view>
-              <view class="quantity-stepper">
-                <button
-                  class="quantity-stepper__button"
-                  data-id="{{item.id}}"
-                  disabled="{{!item.available || item.quantity <= 1 || updatingId || deletingId || clearing}}"
-                  catchtap="onQuantityMinus"
-                >−</button>
-                <view class="quantity-stepper__value">
-                  <view wx:if="{{updatingId === item.id}}" class="mini-spinner"></view>
-                  <text wx:else>{{item.quantity}}</text>
-                </view>
-                <button
-                  class="quantity-stepper__button"
-                  data-id="{{item.id}}"
-                  disabled="{{!item.available || item.quantity >= 999 || updatingId || deletingId || clearing}}"
-                  catchtap="onQuantityPlus"
-                >+</button>
-              </view>
-            </view>
-
-            <button
-              class="remove-action"
-              data-id="{{item.id}}"
-              loading="{{deletingId === item.id}}"
-              disabled="{{deletingId || clearing}}"
-              catchtap="onDeleteTap"
-            >移除</button>
           </view>
         </view>
       </view>
@@ -154,7 +151,7 @@
     </block>
   </view>
 
-  <view wx:if="{{!loginRequired && loaded && rawItems.length}}" class="settlement-bar">
+  <view wx:if="{{!loginRequired && loaded && rawItems.length}}" class="settlement-bar {{managing ? 'settlement-bar--managing' : ''}}">
     <view
       class="select-all"
       bindtap="onSelectAllToggle"
@@ -166,14 +163,21 @@
       </view>
       <text>全选</text>
     </view>
-    <view class="settlement-total">
-      <view><text class="settlement-total__label">合计</text><text class="settlement-total__amount">{{selectedAmountText}}</text></view>
-      <view class="settlement-total__hint">已选 {{selectedQuantity}} 件，优惠将在结算页计算</view>
+    <view wx:if="{{!managing}}" class="settlement-total">
+      <view><text class="settlement-total__label">合计</text><text class="settlement-total__amount">{{pricingLoading ? '计算中' : selectedAmountText}}</text></view>
     </view>
+    <view wx:else class="settlement-spacer"></view>
     <button
+      wx:if="{{!managing}}"
       class="checkout-action"
-      disabled="{{checkoutDisabled || loading}}"
       bindtap="onCheckoutTap"
     >去结算</button>
+    <button
+      wx:else
+      class="batch-delete-action"
+      loading="{{deletingBatch}}"
+      disabled="{{!selectedIds.length || deletingBatch}}"
+      bindtap="onBatchDeleteTap"
+    >删除</button>
   </view>
 </view>

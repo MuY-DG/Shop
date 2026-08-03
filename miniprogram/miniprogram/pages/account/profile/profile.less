@@ -1,7 +1,7 @@
 @import "../../../styles/tokens.less";
 @import "../../../styles/mixins.less";
 
-@profile-page: #fff4e3;
+@profile-page: @color-page;
 @profile-surface: rgba(255, 255, 255, 0.94);
 @profile-save: #e60012;
 @profile-logout: #b3b3b3;
@@ -12,18 +12,6 @@
   overflow: hidden;
   color: #333333;
   background: @profile-page;
-}
-
-.profile-page-background {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 0;
-  width: 100%;
-  height: 100vh;
-  pointer-events: none;
 }
 
 .user-profile-content {

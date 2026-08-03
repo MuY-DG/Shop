@@ -54,6 +54,7 @@ export const API_ENDPOINTS = Object.freeze({
   },
   cart: {
     items: "/app/cart/items",
+    batchDelete: "/app/cart/items/batch",
     quantity: (cartItemId: number): string => `/app/cart/items/${cartItemId}/quantity`,
     item: (cartItemId: number): string => `/app/cart/items/${cartItemId}`
   },

@@ -3,6 +3,7 @@ import type {
   AddCartItemRequest,
   CartItemResponse,
   CartListResponse,
+  DeleteCartItemsRequest,
   UpdateCartQuantityRequest
 } from "../types/cart";
 import { request } from "../utils/request";
@@ -37,6 +38,15 @@ export function deleteCartItem(cartItemId: number): Promise<void> {
   return request<void>({
     url: API_ENDPOINTS.cart.item(cartItemId),
     method: "DELETE",
+    expectData: false
+  });
+}
+
+export function deleteCartItems(cartItemIds: number[]): Promise<void> {
+  return request<void, DeleteCartItemsRequest>({
+    url: API_ENDPOINTS.cart.batchDelete,
+    method: "DELETE",
+    data: { cartItemIds },
     expectData: false
   });
 }

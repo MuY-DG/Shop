@@ -44,7 +44,7 @@ test("个人资料页接受原生头像选择结果并直接保存", () => {
   assert.match(template, /open-type="chooseAvatar"/);
   assert.match(template, /bindchooseavatar="onAvatarChoose"/);
   assert.match(template, /aria-label="更换头像"/);
-  assert.match(template, /user-profile-background\.png/);
+  assert.doesNotMatch(template, /user-profile-background\.png/);
   assert.match(template, /round-back="\{\{true\}\}"/);
   assert.match(template, /class="avatar-button__image"[\s\S]*mode="aspectFill"/);
   assert.match(template, /type="nickname"/);

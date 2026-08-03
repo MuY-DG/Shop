@@ -1,9 +1,4 @@
 <view class="user-profile-page">
-  <image
-    class="profile-page-background"
-    src="/assets/images/user-profile-background.png"
-    mode="aspectFill"
-  />
   <navigation-bar
     title="个人资料"
     back="{{true}}"

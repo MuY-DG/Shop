@@ -1,5 +1,5 @@
 <view
-  class="product-card product-card--{{variant}} {{product.soldOut ? 'product-card--sold-out' : ''}}"
+  class="product-card product-card--{{variant}} {{flat ? 'product-card--flat' : ''}} {{product.soldOut ? 'product-card--sold-out' : ''}}"
   hover-class="product-card--pressed"
   hover-stay-time="80"
   bindtap="handleTap"

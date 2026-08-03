@@ -3,8 +3,9 @@
     "navigation-bar": "/components/navigation-bar/navigation-bar",
     "catalog-browser": "/components/catalog-browser/catalog-browser"
   },
-  "enablePullDownRefresh": true,
-  "backgroundColor": "#FAF2E4",
+  "disableScroll": true,
+  "enablePullDownRefresh": false,
+  "backgroundColor": "#F3F3F7",
   "backgroundTextStyle": "dark",
   "onReachBottomDistance": 160
 }

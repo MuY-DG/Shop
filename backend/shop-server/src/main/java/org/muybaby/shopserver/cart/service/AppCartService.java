@@ -5,6 +5,7 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.cart.dto.AddCartItemRequest;
 import org.muybaby.shopserver.cart.dto.CartItemResponse;
 import org.muybaby.shopserver.cart.dto.CartListResponse;
+import org.muybaby.shopserver.cart.dto.DeleteCartItemsRequest;
 import org.muybaby.shopserver.cart.dto.UpdateCartQuantityRequest;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
@@ -29,6 +30,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 
@@ -155,6 +157,23 @@ public class AppCartService {
                 .param("userId", userId)
                 .update();
         if (deletedRows != 1) {
+            throw new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND);
+        }
+    }
+
+    @Transactional
+    public void deleteBatch(AuthenticatedPrincipal principal, DeleteCartItemsRequest request) {
+        Long userId = requireAppUser(principal);
+        LinkedHashSet<Long> cartItemIds = new LinkedHashSet<>(request.cartItemIds());
+        int deletedRows = namedParameterJdbcTemplate.update("""
+                        DELETE FROM cart_item
+                        WHERE user_id = :userId
+                          AND id IN (:cartItemIds)
+                        """,
+                new MapSqlParameterSource()
+                        .addValue("userId", userId)
+                        .addValue("cartItemIds", cartItemIds));
+        if (deletedRows != cartItemIds.size()) {
             throw new BusinessException(ErrorCode.CART_ITEM_NOT_FOUND);
         }
     }

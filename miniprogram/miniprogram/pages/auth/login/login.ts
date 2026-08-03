@@ -34,7 +34,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function showAgreementRequired(): void {
   wx.showToast({
-    title: "请先阅读并同意用户服务协议",
+    title: "请先阅读并同意个人信息保护政策",
     icon: "none"
   });
 }
@@ -182,15 +182,6 @@ Page({
           confirmColor: "#B72B22"
         });
       }
-    });
-  },
-
-  onTermsTap() {
-    wx.showModal({
-      title: "用户服务协议",
-      content: "登录即表示您同意遵守灶香集的账户、下单、配送与售后服务规则。正式发布前请替换为经审核的完整协议正文。",
-      showCancel: false,
-      confirmColor: "#B72B22"
     });
   },
 

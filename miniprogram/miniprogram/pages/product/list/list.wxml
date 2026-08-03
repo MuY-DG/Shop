@@ -1,7 +1,7 @@
 <view class="catalog-page">
   <navigation-bar
     back="{{true}}"
-    background="#FAF2E4"
+    background="#F3F3F7"
     color="#2E1D16"
     show-divider="{{false}}"
     wide-center="{{true}}"
@@ -16,18 +16,25 @@
     >
       <image
         class="catalog-search__icon"
-        src="/assets/icons/address-search.svg"
+        src="/assets/icons/search-material-symbols-iconify.svg"
         mode="aspectFit"
         aria-hidden="true"
       />
-      <text class="catalog-search__text {{initialKeyword ? '' : 'catalog-search__text--placeholder'}}">
-        {{initialKeyword || '搜索商品名称'}}
-      </text>
+      <input
+        class="catalog-search__text"
+        value="{{initialKeyword}}"
+        disabled="{{true}}"
+        placeholder="输入商品名称"
+        placeholder-style="color: #b9b9b9;"
+        aria-hidden="true"
+      />
     </view>
   </navigation-bar>
   <catalog-browser
     wx:if="{{ready}}"
     id="catalog"
+    class="catalog-results"
+    scroll-page="{{true}}"
     initial-category-id="{{initialCategoryId}}"
     initial-keyword="{{initialKeyword}}"
     bindproductselect="onProductSelect"

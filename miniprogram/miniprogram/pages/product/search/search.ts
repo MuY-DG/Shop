@@ -73,8 +73,8 @@ Page({
 
   onClearHistory() {
     wx.showModal({
-      title: "清空搜索历史",
-      content: "确认清空全部搜索记录吗？",
+      title: "清空最近搜索",
+      content: "确认清空全部最近搜索吗？",
       confirmColor: "#B72B22",
       success: (result) => {
         if (!result.confirm) {

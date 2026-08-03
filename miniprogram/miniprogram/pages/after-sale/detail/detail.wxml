@@ -1,5 +1,5 @@
 <view class="after-sale-detail-page">
-  <navigation-bar title="售后详情" back="{{true}}" background="#FAF2E4" color="#2E1D16" loading="{{loaded && loading}}" />
+  <navigation-bar title="售后详情" back="{{true}}" background="#F3F3F7" color="#2E1D16" loading="{{loaded && loading}}" />
 
   <view class="detail-content">
     <view wx:if="{{!loaded && loading}}" class="detail-state">

@@ -3,7 +3,7 @@
     title="灶香集"
     back="{{true}}"
     show-divider="{{false}}"
-    background="#FAF2E4"
+    background="#FFFFFF"
     color="#2E1D16"
   />
 
@@ -76,7 +76,6 @@
           <view class="agreement__copy">
             <text>已阅读并同意</text>
             <text class="agreement__link" catchtap="onPrivacyTap">《灶香集个人信息保护政策》</text>
-            <text class="agreement__link" catchtap="onTermsTap">《灶香集用户服务协议》</text>
           </view>
         </label>
       </checkbox-group>

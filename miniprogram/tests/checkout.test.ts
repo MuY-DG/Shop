@@ -96,6 +96,11 @@ test("购物车选择只保留可购买商品并计算选中金额", () => {
   assert.equal(summary.items[0]?.wholesaleText, "已享 3 件起批发价");
   assert.equal(summary.items[2]?.unavailableText, "库存不足，请调整数量");
 
+  assert.deepEqual(reconcileCartSelection(items, [13], false, true), [13]);
+  const managementSummary = buildCartSummary(items, [13], true);
+  assert.deepEqual(managementSummary.selectedIds, [13]);
+  assert.equal(managementSummary.items[2]?.selected, true);
+
   const soldOutSummary = buildCartSummary([
     cartItem({ available: false, unavailableReason: "SOLD_OUT" })
   ], []);

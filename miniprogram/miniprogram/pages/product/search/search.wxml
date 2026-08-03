@@ -1,25 +1,20 @@
 <view class="search-page">
   <navigation-bar
     back="{{true}}"
-    background="#FAF2E4"
+    background="#F3F3F7"
     color="#2E1D16"
     show-divider="{{false}}"
     wide-center="{{true}}"
   >
     <view slot="center" class="search-field">
-      <image
-        class="search-field__icon"
-        src="/assets/icons/address-search.svg"
-        mode="aspectFit"
-        aria-hidden="true"
-      />
       <input
         class="search-field__input"
         value="{{keyword}}"
         maxlength="80"
         focus="{{true}}"
         confirm-type="search"
-        placeholder="搜索商品"
+        placeholder="输入商品名称"
+        placeholder-style="color: #b9b9b9;"
         bindinput="onInput"
         bindconfirm="onConfirm"
       />
@@ -44,24 +39,39 @@
   <view class="search-content">
     <block wx:if="{{history.length}}">
       <view class="search-history__header">
-        <text class="search-history__title">搜索历史</text>
+        <text class="search-history__title">最近搜索</text>
         <view
           class="search-history__clear"
           bindtap="onClearHistory"
           aria-role="button"
-        >清空</view>
+          aria-label="清空最近搜索"
+        >
+          <image
+            class="search-history__clear-icon"
+            src="/assets/icons/trash-can-outline-muted-iconify.svg"
+            mode="aspectFit"
+            aria-hidden="true"
+          />
+        </view>
       </view>
-      <view class="search-history__list">
-        <view
-          wx:for="{{history}}"
-          wx:key="*this"
-          class="search-history__item"
-          data-keyword="{{item}}"
-          bindtap="onHistoryTap"
-          hover-class="search-history__item--pressed"
-          aria-role="button"
-        >{{item}}</view>
-      </view>
+      <scroll-view
+        class="search-history__scroll"
+        scroll-y="{{true}}"
+        enhanced="{{true}}"
+        show-scrollbar="{{false}}"
+      >
+        <view class="search-history__list">
+          <view
+            wx:for="{{history}}"
+            wx:key="*this"
+            class="search-history__item"
+            data-keyword="{{item}}"
+            bindtap="onHistoryTap"
+            hover-class="search-history__item--pressed"
+            aria-role="button"
+          >{{item}}</view>
+        </view>
+      </scroll-view>
     </block>
 
     <view wx:else class="search-empty">
