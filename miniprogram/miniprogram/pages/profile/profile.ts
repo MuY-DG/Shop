@@ -7,9 +7,9 @@ import { buildOrderListUrl, parseOrderStatusGroup } from "../../features/order-c
 import {
   guestProfileOverviewDisplay,
   loadingProfileOverviewDisplay,
-  profileOverviewDisplay,
-  type ProfileOverviewDisplay
+  profileOverviewDisplay
 } from "../../features/profile-overview";
+import type { ProfileOverviewDisplay } from "../../features/profile-overview";
 import { getPublicContact } from "../../services/contact";
 import { getCustomerServicePresence } from "../../services/customer-service";
 import { getSessionState } from "../../services/session";
