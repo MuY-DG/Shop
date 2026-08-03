@@ -337,6 +337,10 @@ declare namespace Api {
       appUserId: string
       changeType: string
       messageId: number | null
+      senderType?: Api.CustomerService.SenderType | null
+      senderName?: string | null
+      messageType?: Api.CustomerService.Message['messageType'] | null
+      messageContent?: string | null
     }
   }
 }

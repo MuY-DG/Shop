@@ -735,6 +735,7 @@
     preserveCustomerServiceMessageTimeVisibility,
     shouldShowCustomerServiceMessageTime
   } from '@/utils/customer-service-message'
+  import { createCustomerServiceNotifier } from '@/utils/customer-service-notification'
   import { preserveCustomerServicePrependScrollTop } from '@/utils/customer-service-scroll'
   import { formatLocalDateTime } from '@/utils/date-time'
 
@@ -834,6 +835,7 @@
   const pendingRealtimeMessages = new Map<number, Set<number>>()
   const pendingRealtimeFullRefresh = new Set<number>()
   const locallyHandledMessageIds = new Map<number, number>()
+  const notifiedMessageIds = new Set<number>()
   const localMutationCounts = new Map<number, number>()
   const displayNow = ref(Date.now())
   const HISTORY_AUTO_LOAD_THRESHOLD_PX = 48
@@ -2163,6 +2165,43 @@
     if (!document.hidden && initialLoadComplete) void refreshAll()
   }
 
+  const incomingMessageNotifier = createCustomerServiceNotifier((conversationId) => {
+    if (!pageMounted) return
+    void selectConversation(conversationId)
+  })
+
+  const notifyIncomingCustomerMessage = (event: RealtimeEvent) => {
+    if (event.data.changeType !== 'MESSAGE_CREATED' || event.data.senderType !== 'APP_USER') return
+    const conversationId = Number(event.data.conversationId || 0)
+    const messageId = Number(event.data.messageId || 0)
+    if (
+      !Number.isSafeInteger(conversationId) ||
+      conversationId <= 0 ||
+      !Number.isSafeInteger(messageId) ||
+      messageId <= 0 ||
+      notifiedMessageIds.has(messageId)
+    )
+      return
+
+    notifiedMessageIds.add(messageId)
+    if (notifiedMessageIds.size > 500) {
+      const oldestMessageId = notifiedMessageIds.values().next().value
+      if (oldestMessageId) notifiedMessageIds.delete(oldestMessageId)
+    }
+    const conversation = conversationPage.value.records.find(
+      (record) => record.conversationId === conversationId
+    )
+    incomingMessageNotifier.notify({
+      conversationId,
+      senderName:
+        typeof event.data.senderName === 'string'
+          ? event.data.senderName
+          : conversation?.userNickname,
+      messageType: typeof event.data.messageType === 'string' ? event.data.messageType : null,
+      content: typeof event.data.messageContent === 'string' ? event.data.messageContent : null
+    })
+  }
+
   const handleRealtimeEvent = (event: RealtimeEvent) => {
     if (event.type === 'CUSTOMER_SERVICE_QUEUE_UPDATED') {
       void loadConversations()
@@ -2206,6 +2245,7 @@
       }
     }
     if (event.type !== 'CUSTOMER_SERVICE_CONVERSATION_UPDATED') return
+    notifyIncomingCustomerMessage(event)
     const conversationId = Number(event.data.conversationId || 0)
     if (Number.isSafeInteger(conversationId) && conversationId > 0) {
       const messageId = Number(event.data.messageId || 0)
@@ -2256,6 +2296,7 @@
 
   onMounted(async () => {
     pageMounted = true
+    incomingMessageNotifier.start()
     displayClockTimer = setInterval(() => {
       displayNow.value = Date.now()
     }, 30 * 1000)
@@ -2281,7 +2322,9 @@
     pendingRealtimeMessages.clear()
     pendingRealtimeFullRefresh.clear()
     locallyHandledMessageIds.clear()
+    notifiedMessageIds.clear()
     localMutationCounts.clear()
+    incomingMessageNotifier.stop()
     imageUploadAbortController?.abort()
     imageUploadAbortController = null
     pendingImageUploads.forEach((pending) => URL.revokeObjectURL(pending.previewUrl))

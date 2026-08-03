@@ -31,6 +31,38 @@ public class CustomerServiceRealtimeListener {
         data.put("appUserId", event.appUserId().toString());
         data.put("changeType", event.changeType());
         data.put("messageId", event.messageId());
+        if (event.messageId() != null) {
+            jdbcClient.sql("""
+                            select message.sender_type,
+                                   case
+                                     when message.sender_type = 'APP_USER'
+                                       then coalesce(app.nickname, '用户')
+                                     else null
+                                   end as sender_name,
+                                   message.message_type,
+                                   message.content
+                            from customer_service_message message
+                            left join app_user app
+                              on message.sender_type = 'APP_USER' and app.id = message.sender_id
+                            where message.id = :messageId
+                              and message.conversation_id = :conversationId
+                            """)
+                    .param("messageId", event.messageId())
+                    .param("conversationId", event.conversationId())
+                    .query((rs, rowNum) -> new RealtimeMessage(
+                            rs.getString("sender_type"),
+                            rs.getString("sender_name"),
+                            rs.getString("message_type"),
+                            rs.getString("content")
+                    ))
+                    .optional()
+                    .ifPresent(message -> {
+                        data.put("senderType", message.senderType());
+                        data.put("senderName", message.senderName());
+                        data.put("messageType", message.messageType());
+                        data.put("messageContent", message.content());
+                    });
+        }
         realtimeSessionHub.sendToAppUser(
                 event.appUserId(), "CUSTOMER_SERVICE_CONVERSATION_UPDATED", data
         );
@@ -85,5 +117,13 @@ public class CustomerServiceRealtimeListener {
     }
 
     private record ConversationAudience(String status, Long assignedAdminUserId) {
+    }
+
+    private record RealtimeMessage(
+            String senderType,
+            String senderName,
+            String messageType,
+            String content
+    ) {
     }
 }
