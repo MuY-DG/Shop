@@ -106,7 +106,9 @@ class CommerceFulfillmentSchemaTest {
                 OrderStatusGroup.UNPAID,
                 OrderStatusGroup.TO_SHIP,
                 OrderStatusGroup.TO_RECEIVE,
-                OrderStatusGroup.COMPLETED
+                OrderStatusGroup.TO_REVIEW,
+                OrderStatusGroup.COMPLETED,
+                OrderStatusGroup.CANCELLED
         );
         assertThat(WechatProviderMode.values()).containsExactly(
                 WechatProviderMode.REAL,

@@ -12,7 +12,7 @@ This phase adds:
 
 - Durable mini program app sessions and a consistent app-user profile.
 - A direct-buy checkout source that shares the existing order calculation and locking path without touching the cart.
-- A minimal address book and immutable order receiver snapshots.
+- A minimal address book and order receiver snapshots: captured at creation, replaceable only while the order is CREATED or PAYING, and immutable after payment.
 - A reachable, paged mini program order center with receipt confirmation and after-sale navigation.
 - All four WeChat logistics types under unified delivery.
 - Shipping capability discovery, official carrier-code selection, safe retry, and explicit unfiled/unavailable behavior.
@@ -536,6 +536,7 @@ Profile adds:
 - 待付款.
 - 待发货.
 - 待收货.
+- 待评价.
 - 我的售后.
 - 收货地址.
 
@@ -553,7 +554,9 @@ statusGroup values:
     UNPAID
     TO_SHIP
     TO_RECEIVE
+    TO_REVIEW
     COMPLETED
+    CANCELLED
 
 Mapping:
 
@@ -561,9 +564,16 @@ Mapping:
 - UNPAID: CREATED or PAYING.
 - TO_SHIP: PAID.
 - TO_RECEIVE: SHIPPED.
-- COMPLETED: COMPLETED.
+- TO_REVIEW: COMPLETED、`completed_at` 非空，且至少一个未评价订单项关联的商品尚未永久清理、当前仍可评价。
+- COMPLETED: 所有 COMPLETED 订单；“已完成”始终表示已收货，与是否评价无关。
+- CANCELLED: CLOSED.
 
 The existing exact status query remains supported for compatibility.
+
+Each order summary includes its persisted order-item snapshots (title, specification,
+display/SKU/main images, unit price, quantity, and review state) plus the pending-review
+item count. The list never joins current catalog presentation data, so historical orders
+remain stable after a product is edited or taken off sale.
 
 The page provides:
 
@@ -599,6 +609,18 @@ An after-sale failure cannot clear a successfully loaded order.
 onShow always refreshes. The page JSON enables pull-to-refresh, and onPullDownRefresh always stops the indicator in finally.
 
 ### 9.4 Receipt Confirmation
+
+Before receipt confirmation, unpaid orders may replace their receiver snapshot:
+
+    PUT /app/orders/{orderId}/receiver
+
+Rules:
+
+- APP token required.
+- Order must belong to the current user.
+- Request selects an address owned by the current user.
+- Only CREATED or PAYING orders may replace the receiver snapshot; paid and later states remain immutable.
+- The operation changes only receiver fields and does not recalculate items, stock, discounts, freight, or payable amount.
 
     POST /app/orders/{orderId}/confirm-receipt
 
@@ -1059,7 +1081,7 @@ This phase is accepted when:
 - Phone collection occurs only after a user getPhoneNumber click.
 - Direct buy uses the selected SKU/quantity and leaves cart rows unchanged.
 - CART and DIRECT both use the same pricing, coupon, inventory, and snapshot path.
-- Submit requires an owned address and stores immutable receiver snapshots.
+- Submit requires an owned address and stores a receiver snapshot; only CREATED/PAYING may replace it, and payment makes it immutable.
 - Profile reaches order list, status groups, after-sales, and addresses.
 - List paging, loading, empty, error, retry, and pull-to-refresh work.
 - Detail remains visible if after-sale loading fails.

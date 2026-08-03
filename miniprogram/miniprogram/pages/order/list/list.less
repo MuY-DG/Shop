@@ -87,11 +87,15 @@
 
 .order-card {
   .card-surface();
+  position: relative;
   overflow: hidden;
+  background: @color-surface;
 }
 
 .order-card__detail {
   .press-feedback();
+  position: relative;
+  padding: 68rpx @space-5 @space-4;
 }
 
 .order-card--pressed {
@@ -103,131 +107,135 @@
   margin-top: @space-4;
 }
 
-.order-card__heading,
-.order-card__merchant,
-.order-card__meta,
-.order-card__product,
+.order-product,
 .order-card__actions {
   display: flex;
   align-items: center;
 }
 
-.order-card__heading {
-  padding: @space-5 @space-5 @space-3;
-  justify-content: space-between;
-  gap: @space-5;
-}
-
-.order-card__merchant {
-  min-width: 0;
-  gap: @space-2;
-}
-
-.order-card__merchant-name {
-  color: @color-text-primary;
-  font-size: @font-size-base;
-  font-weight: 700;
-}
-
-.order-card__chevron {
-  width: 28rpx;
-  height: 28rpx;
-  opacity: 0.58;
-}
-
-.order-card__meta {
-  min-width: 0;
-  padding: 0 @space-5 @space-5;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: @space-1 @space-4;
-}
-
-.order-card__no {
-  overflow: hidden;
-  min-width: 0;
-  flex: 1;
-  color: @color-text-muted;
-  font-size: @font-size-xs;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.order-card__time,
-.order-card__count,
-.order-card__amount text {
-  color: @color-text-muted;
-  font-size: @font-size-xs;
-}
-
-.order-card__time {
-  flex: none;
-}
-
 .order-status {
+  position: absolute;
+  z-index: 1;
+  top: @space-4;
+  right: @space-5;
   flex: none;
-  padding: 4rpx @space-3;
-  border-radius: @radius-pill;
-  font-size: @font-size-xs;
+  font-size: @font-size-sm;
+  font-weight: 600;
+  line-height: @line-height-base;
 }
 
 .order-status--warning {
   color: @color-warning-text;
-  background: @color-warning-soft;
 }
 
 .order-status--brand {
   color: @color-brand;
-  background: @color-brand-soft;
 }
 
 .order-status--success {
   color: @color-success-text;
-  background: @color-success-soft;
 }
 
 .order-status--muted {
   color: @color-text-muted;
-  background: @color-surface-muted;
 }
 
-.order-card__product {
-  padding: @space-5;
-  border-top: 1rpx solid @color-divider;
-  background: @color-surface-muted;
-  align-items: flex-start;
-  gap: @space-6;
-}
-
-.order-card__product-body {
+.order-card__items {
   min-width: 0;
+}
+
+.order-product {
+  min-width: 0;
+  min-height: 164rpx;
+  gap: @space-4;
+}
+
+.order-product--divided {
+  margin-top: @space-4;
+  padding-top: @space-4;
+  border-top: 1rpx solid @color-divider;
+}
+
+.order-product__image-shell {
+  display: flex;
+  overflow: hidden;
+  width: 164rpx;
+  height: 164rpx;
+  flex: none;
+  border-radius: @radius-sm;
+  align-items: center;
+  justify-content: center;
+  background: @color-surface-muted;
+}
+
+.order-product__image {
+  width: 100%;
+  height: 100%;
+}
+
+.order-product__fallback-icon {
+  width: 54rpx;
+  height: 54rpx;
+  opacity: 0.72;
+}
+
+.order-product__body {
+  min-width: 0;
+  align-self: center;
   flex: 1;
 }
 
-.order-card__title {
+.order-product__title {
   .text-ellipsis(2);
   color: @color-text-primary;
   font-size: @font-size-base;
-  font-weight: 650;
+  font-weight: 600;
   line-height: @line-height-base;
 }
 
-.order-card__count {
+.order-product__spec {
+  .text-ellipsis(2);
   margin-top: @space-2;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  line-height: @line-height-base;
 }
 
-.order-card__amount {
+.order-product__commerce {
+  display: flex;
+  min-width: 126rpx;
+  max-width: 176rpx;
+  align-self: center;
   flex: none;
+  flex-direction: column;
+  align-items: flex-end;
   text-align: right;
 }
 
-.order-card__amount view {
-  margin-top: @space-2;
+.order-product__price {
+  overflow: hidden;
+  max-width: 100%;
   color: @color-price;
   font-family: @font-family-price;
-  font-size: @font-size-lg;
+  font-size: 30rpx;
   font-weight: 700;
   line-height: @line-height-tight;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-product__quantity {
+  margin-top: @space-2;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.order-card__empty-product {
+  min-height: 120rpx;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  line-height: 120rpx;
+  text-align: center;
 }
 
 .order-card__actions {
@@ -245,7 +253,7 @@ button.order-action {
   height: 88rpx;
   min-height: 88rpx;
   margin: 0;
-  padding: 0 @space-5;
+  padding: 0 @space-4;
   border-radius: @radius-pill;
   font-size: @font-size-sm;
   line-height: 88rpx;
@@ -259,8 +267,7 @@ button.order-action--secondary {
 
 button.order-action--primary {
   color: @color-text-inverse;
-  background: linear-gradient(135deg, @color-brand 0, @color-brand-dark 100%);
-  box-shadow: @shadow-action;
+  background: @color-brand;
 }
 
 button.order-action--pressed {

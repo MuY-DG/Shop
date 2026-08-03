@@ -15,6 +15,7 @@ import org.muybaby.shopserver.order.CheckoutSource;
 import org.muybaby.shopserver.order.OrderStatusGroup;
 import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
+import org.muybaby.shopserver.order.dto.AppOrderReceiverUpdateRequest;
 import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
 import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
 import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
@@ -53,6 +54,8 @@ class AppOrderServiceTest {
 
     @BeforeEach
     void clearOrderState() {
+        jdbcClient.sql("delete from product_review").update();
+        jdbcClient.sql("delete from order_status_log").update();
         jdbcClient.sql("delete from refund_order").update();
         jdbcClient.sql("delete from after_sale_evidence").update();
         jdbcClient.sql("delete from after_sale_request").update();
@@ -79,7 +82,8 @@ class AppOrderServiceTest {
             "UNPAID,CREATED;PAYING",
             "TO_SHIP,PAID",
             "TO_RECEIVE,SHIPPED",
-            "COMPLETED,COMPLETED"
+            "COMPLETED,COMPLETED",
+            "CANCELLED,CLOSED"
     })
     void statusGroupReturnsOnlyMappedStatuses(OrderStatusGroup group, String allowedCsv) {
         long userId = insertUser("status-group-" + group);
@@ -98,6 +102,144 @@ class AppOrderServiceTest {
         assertThat(page.records()).isNotEmpty().allMatch(item -> allowed.contains(item.status()));
         assertThat(page.records()).extracting(OrderSummaryResponse::status).containsExactlyInAnyOrderElementsOf(allowed);
         assertThat(page.total()).isEqualTo(allowed.size());
+    }
+
+    @Test
+    void listReturnsLightweightItemsAndKeepsPendingReviewAsACompletedSubset() {
+        long userId = insertUser("order-review-groups");
+        LocalDateTime completedAt = LocalDateTime.of(2026, 7, 10, 12, 0);
+        long partiallyReviewedOrder = insertReadOrder(userId, "COMPLETED", completedAt.minusHours(2));
+        long fullyReviewedOrder = insertReadOrder(userId, "COMPLETED", completedAt.minusHours(1));
+        long cancelledOrder = insertReadOrder(userId, "CLOSED", completedAt);
+        completeOrder(partiallyReviewedOrder, completedAt);
+        completeOrder(fullyReviewedOrder, completedAt.plusMinutes(1));
+
+        long reviewedItem = insertReadOrderItem(partiallyReviewedOrder, "已评价商品", 2, 2590L);
+        long pendingItem = insertReadOrderItem(partiallyReviewedOrder, "待评价商品", 1, 1290L);
+        long fullyReviewedItem = insertReadOrderItem(fullyReviewedOrder, "全部评价商品", 3, 990L);
+        insertReview(userId, reviewedItem);
+        insertReview(userId, fullyReviewedItem);
+
+        PageResult<OrderSummaryResponse> completed = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.COMPLETED);
+        PageResult<OrderSummaryResponse> toReview = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.TO_REVIEW);
+        PageResult<OrderSummaryResponse> cancelled = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.CANCELLED);
+
+        assertThat(completed.records()).extracting(OrderSummaryResponse::orderId)
+                .containsExactly(fullyReviewedOrder, partiallyReviewedOrder);
+        assertThat(toReview.records()).extracting(OrderSummaryResponse::orderId)
+                .containsExactly(partiallyReviewedOrder);
+        assertThat(cancelled.records()).extracting(OrderSummaryResponse::orderId)
+                .containsExactly(cancelledOrder);
+
+        OrderSummaryResponse summary = toReview.records().getFirst();
+        assertThat(summary.itemCount()).isEqualTo(3);
+        assertThat(summary.pendingReviewCount()).isEqualTo(1);
+        assertThat(summary.items()).hasSize(2);
+        assertThat(summary.items().getFirst().productTitle()).isEqualTo("已评价商品");
+        assertThat(summary.items().getFirst().displayImage()).contains("/display/");
+        assertThat(summary.items().getFirst().specText()).isEqualTo("规格 500g");
+        assertThat(summary.items().getFirst().unitPriceCent()).isEqualTo(2590L);
+        assertThat(summary.items().getFirst().quantity()).isEqualTo(2);
+        assertThat(summary.items().getFirst().reviewed()).isTrue();
+        assertThat(summary.items().getFirst().reviewable()).isFalse();
+        assertThat(summary.items().get(1).orderItemId()).isEqualTo(pendingItem);
+        assertThat(summary.items().get(1).reviewed()).isFalse();
+        assertThat(summary.items().get(1).reviewable()).isTrue();
+
+        AppOrderDetailResponse detail = appOrderService.detail(appPrincipal(userId), partiallyReviewedOrder);
+        assertThat(detail.items()).extracting(item -> item.reviewed()).containsExactly(true, false);
+        assertThat(detail.items()).extracting(item -> item.reviewable()).containsExactly(false, true);
+    }
+
+    @Test
+    void pendingReviewRequiresCompletedAtAndVisibleOrder() {
+        long userId = insertUser("order-review-visibility");
+        LocalDateTime now = LocalDateTime.of(2026, 7, 10, 13, 0);
+        long missingCompletedAt = insertReadOrder(userId, "COMPLETED", now);
+        long deletedOrder = insertReadOrder(userId, "COMPLETED", now.plusMinutes(1));
+        insertReadOrderItem(missingCompletedAt, "缺少收货时间", 1, 1000L);
+        insertReadOrderItem(deletedOrder, "已删除订单", 1, 1000L);
+        completeOrder(deletedOrder, now.plusMinutes(2));
+        jdbcClient.sql("update shop_order set app_deleted_at = :deletedAt where id = :orderId")
+                .param("deletedAt", now.plusMinutes(3))
+                .param("orderId", deletedOrder)
+                .update();
+
+        PageResult<OrderSummaryResponse> page = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.TO_REVIEW);
+
+        assertThat(page.records()).isEmpty();
+        assertThat(page.total()).isZero();
+    }
+
+    @Test
+    void purgedProductIsNotReviewableAndDoesNotKeepOrderInPendingReview() {
+        long userId = insertUser("order-review-purged-product");
+        LocalDateTime completedAt = LocalDateTime.of(2026, 7, 10, 13, 30);
+        long orderId = insertReadOrder(userId, "COMPLETED", completedAt.minusHours(1));
+        completeOrder(orderId, completedAt);
+        long orderItemId = insertReadOrderItem(orderId, "已永久清理商品", 1, 1890L);
+        long spuId = jdbcClient.sql("select spu_id from order_item where id = :orderItemId")
+                .param("orderItemId", orderItemId)
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("update product_spu set purged_at = :purgedAt where id = :spuId")
+                .param("purgedAt", completedAt.plusMinutes(1))
+                .param("spuId", spuId)
+                .update();
+
+        PageResult<OrderSummaryResponse> toReview = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.TO_REVIEW);
+        PageResult<OrderSummaryResponse> completed = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.COMPLETED);
+
+        assertThat(toReview.records()).isEmpty();
+        assertThat(toReview.total()).isZero();
+        assertThat(completed.records()).hasSize(1);
+        assertThat(completed.records().getFirst().pendingReviewCount()).isZero();
+        assertThat(completed.records().getFirst().items().getFirst().reviewed()).isFalse();
+        assertThat(completed.records().getFirst().items().getFirst().reviewable()).isFalse();
+
+        AppOrderDetailResponse detail = appOrderService.detail(appPrincipal(userId), orderId);
+        assertThat(detail.items().getFirst().reviewed()).isFalse();
+        assertThat(detail.items().getFirst().reviewable()).isFalse();
+    }
+
+    @Test
+    void receiverUpdateUsesOwnedAddressAndOnlyAllowsUnpaidStates() {
+        long userId = insertUser("receiver-update-owner");
+        long otherUserId = insertUser("receiver-update-other");
+        long ownedAddressId = insertAddress(
+                userId, "新收货人", "13900139000", "四川省", "成都市", "武侯区", "火锅路 88 号");
+        long otherAddressId = insertAddress(
+                otherUserId, "其他人", "13700137000", "广东省", "深圳市", "南山区", "无关地址");
+        LocalDateTime now = LocalDateTime.of(2026, 7, 10, 14, 0);
+        long createdOrder = insertReadOrder(userId, "CREATED", now);
+        long payingOrder = insertReadOrder(userId, "PAYING", now.plusMinutes(1));
+        long paidOrder = insertReadOrder(userId, "PAID", now.plusMinutes(2));
+
+        var created = appOrderService.updateReceiver(
+                appPrincipal(userId), createdOrder, new AppOrderReceiverUpdateRequest(ownedAddressId));
+        var paying = appOrderService.updateReceiver(
+                appPrincipal(userId), payingOrder, new AppOrderReceiverUpdateRequest(ownedAddressId));
+
+        assertThat(created.status()).isEqualTo("CREATED");
+        assertThat(paying.status()).isEqualTo("PAYING");
+        assertThat(created.receiverName()).isEqualTo("新收货人");
+        assertThat(created.receiverAddress()).isEqualTo("四川省成都市武侯区火锅路 88 号");
+        assertReceiverSnapshot(createdOrder, "新收货人", "13900139000", "四川省成都市武侯区火锅路 88 号");
+        assertReceiverSnapshot(payingOrder, "新收货人", "13900139000", "四川省成都市武侯区火锅路 88 号");
+        assertBusiness(ErrorCode.VALIDATION_FAILED, () -> appOrderService.updateReceiver(
+                appPrincipal(userId), createdOrder, new AppOrderReceiverUpdateRequest(otherAddressId)));
+        assertBusiness(ErrorCode.ORDER_STATE_CONFLICT, () -> appOrderService.updateReceiver(
+                appPrincipal(userId), paidOrder, new AppOrderReceiverUpdateRequest(ownedAddressId)));
+        assertReceiverUpdateEvent(createdOrder, "CREATED", userId);
+        assertReceiverUpdateEvent(payingOrder, "PAYING", userId);
+        assertThat(jdbcClient.sql("select count(*) from order_status_log where order_id = :orderId")
+                .param("orderId", paidOrder).query(Long.class).single()).isZero();
     }
 
     @Test
@@ -678,6 +820,92 @@ class AppOrderServiceTest {
         return orderId;
     }
 
+    private void completeOrder(long orderId, LocalDateTime completedAt) {
+        jdbcClient.sql("update shop_order set completed_at = :completedAt where id = :orderId")
+                .param("completedAt", completedAt)
+                .param("orderId", orderId)
+                .update();
+    }
+
+    private long insertReadOrderItem(long orderId, String productTitle, int quantity, long unitPriceCent) {
+        long orderItemId = SEQUENCE.incrementAndGet();
+        long skuId = SEQUENCE.incrementAndGet();
+        long spuId = SEQUENCE.incrementAndGet();
+        jdbcClient.sql("""
+                        insert into product_category (parent_id, name, icon, sort_order, status)
+                        values (0, :name, '', 1, 'ENABLED')
+                        """)
+                .param("name", "Read Order Category " + spuId)
+                .update();
+        long categoryId = jdbcClient.sql("select max(id) from product_category")
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into product_spu
+                            (id, category_id, title, subtitle, main_image,
+                             selling_points, detail_html, sort_order, status)
+                        values
+                            (:spuId, :categoryId, :title, '商品副标题', :mainImage,
+                             '', '', 1, 'ON_SALE')
+                        """)
+                .param("spuId", spuId)
+                .param("categoryId", categoryId)
+                .param("title", productTitle)
+                .param("mainImage", "https://example.test/main/" + orderItemId + ".jpg")
+                .update();
+        jdbcClient.sql("""
+                        insert into order_item
+                            (id, order_id, sku_id, spu_id, product_title, product_subtitle,
+                             main_image, sku_image, display_image, sku_code, spec_text,
+                             original_price_cent, unit_price_cent, retail_unit_price_cent, quantity,
+                             line_original_amount_cent, line_amount_cent)
+                        values
+                            (:orderItemId, :orderId, :skuId, :spuId, :productTitle, '商品副标题',
+                             :mainImage, :skuImage, :displayImage, :skuCode, '规格 500g',
+                             :unitPriceCent, :unitPriceCent, :unitPriceCent, :quantity,
+                             :lineAmountCent, :lineAmountCent)
+                        """)
+                .param("orderItemId", orderItemId)
+                .param("orderId", orderId)
+                .param("skuId", skuId)
+                .param("spuId", spuId)
+                .param("productTitle", productTitle)
+                .param("mainImage", "https://example.test/main/" + orderItemId + ".jpg")
+                .param("skuImage", "https://example.test/sku/" + orderItemId + ".jpg")
+                .param("displayImage", "https://example.test/display/" + orderItemId + ".jpg")
+                .param("skuCode", "READ-SKU-" + skuId)
+                .param("unitPriceCent", unitPriceCent)
+                .param("quantity", quantity)
+                .param("lineAmountCent", Math.multiplyExact(unitPriceCent, quantity))
+                .update();
+        return orderItemId;
+    }
+
+    private void insertReview(long userId, long orderItemId) {
+        Map.Entry<Long, String> item = jdbcClient.sql("""
+                        select spu_id, product_title
+                        from order_item
+                        where id = :orderItemId
+                        """)
+                .param("orderItemId", orderItemId)
+                .query((rs, rowNum) -> Map.entry(rs.getLong("spu_id"), rs.getString("product_title")))
+                .single();
+        jdbcClient.sql("""
+                        insert into product_review
+                            (user_id, spu_id, order_item_id, source_order_item_id,
+                             product_title_snapshot, spec_text_snapshot, verified_purchase,
+                             rating, content, anonymous, status)
+                        values
+                            (:userId, :spuId, :orderItemId, :orderItemId,
+                             :productTitle, '规格 500g', true, 5, '很好', false, 'PUBLISHED')
+                        """)
+                .param("userId", userId)
+                .param("spuId", item.getKey())
+                .param("orderItemId", orderItemId)
+                .param("productTitle", item.getValue())
+                .update();
+    }
+
     private long insertDetailedOrder(
             long userId,
             String status,
@@ -819,6 +1047,32 @@ class AppOrderServiceTest {
                         "address", rs.getString("receiver_address")))
                 .single();
         assertThat(snapshot).containsEntry("name", name).containsEntry("phone", phone).containsEntry("address", address);
+    }
+
+    private void assertReceiverUpdateEvent(long orderId, String status, long userId) {
+        Map<String, Object> event = jdbcClient.sql("""
+                        select from_status, to_status, event_type, operator_type, operator_id, description
+                        from order_status_log
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> Map.<String, Object>of(
+                        "fromStatus", rs.getString("from_status"),
+                        "toStatus", rs.getString("to_status"),
+                        "eventType", rs.getString("event_type"),
+                        "operatorType", rs.getString("operator_type"),
+                        "operatorId", rs.getLong("operator_id"),
+                        "description", rs.getString("description")))
+                .single();
+        assertThat(event)
+                .containsEntry("fromStatus", status)
+                .containsEntry("toStatus", status)
+                .containsEntry("eventType", "ORDER_RECEIVER_UPDATED")
+                .containsEntry("operatorType", "APP")
+                .containsEntry("operatorId", userId)
+                .containsEntry("description", "用户修改订单收货信息");
+        assertThat(event.get("description").toString())
+                .doesNotContain("新收货人", "13900139000", "火锅路");
     }
 
     private long count(String table, long orderId) {

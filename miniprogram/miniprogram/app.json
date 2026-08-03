@@ -20,6 +20,8 @@
     "pages/order/created/created",
     "pages/order/list/list",
     "pages/order/detail/detail",
+    "pages/order/review/review",
+    "pages/order/modify/modify",
     "pages/after-sale/apply/apply",
     "pages/after-sale/list/list",
     "pages/after-sale/detail/detail"

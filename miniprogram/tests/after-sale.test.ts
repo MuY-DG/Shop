@@ -90,7 +90,9 @@ function order(status: OrderStatus, latestAfterSale?: AfterSaleResponse): AppOrd
       retailUnitPriceCent: 6980,
       quantity: 1,
       lineOriginalAmountCent: 7980,
-      lineAmountCent: 6980
+      lineAmountCent: 6980,
+      reviewed: false,
+      reviewable: true
     }]
   };
 }

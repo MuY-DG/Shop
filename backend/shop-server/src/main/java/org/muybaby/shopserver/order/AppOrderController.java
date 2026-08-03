@@ -6,8 +6,10 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
 import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
 import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
+import org.muybaby.shopserver.order.dto.AppOrderReceiverUpdateRequest;
 import org.muybaby.shopserver.order.dto.OrderPreviewResponse;
 import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
+import org.muybaby.shopserver.order.dto.OrderReceiverUpdateResponse;
 import org.muybaby.shopserver.order.dto.OrderSubmitResponse;
 import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
 import org.muybaby.shopserver.order.service.AppOrderService;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PutMapping;
 
 @RestController
 @RequestMapping("/app/orders")
@@ -71,8 +74,17 @@ public class AppOrderController {
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long orderId
     ) {
-        appOrderService.deleteClosed(principal, orderId);
+        appOrderService.deleteFinished(principal, orderId);
         return ApiResponse.success();
+    }
+
+    @PutMapping("/{orderId}/receiver")
+    public ApiResponse<OrderReceiverUpdateResponse> updateReceiver(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @Valid @RequestBody AppOrderReceiverUpdateRequest request
+    ) {
+        return ApiResponse.success(appOrderService.updateReceiver(principal, orderId, request));
     }
 
     @PostMapping("/{orderId}/confirm-receipt")

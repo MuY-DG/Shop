@@ -10,12 +10,26 @@ import type {
   AppOrderDetailResponse,
   OrderListQuery,
   OrderReceiptResponse,
+  OrderStatus,
   OrderSummaryResponse,
   PaymentCancelResponse,
   PaymentSyncResponse,
   WechatPaymentParamsResponse
 } from "../types/order";
 import { request } from "../utils/request";
+
+export interface OrderReceiverUpdateRequest extends WechatMiniprogram.IAnyObject {
+  addressId: string;
+}
+
+export interface OrderReceiverUpdateResponse {
+  orderId: number;
+  status: OrderStatus;
+  receiverName: string;
+  receiverPhone: string;
+  receiverAddress: string;
+  updatedAt: string;
+}
 
 export function previewOrder(data: OrderPreviewRequest): Promise<OrderPreviewResponse> {
   return request<OrderPreviewResponse, OrderPreviewRequest>({
@@ -49,6 +63,17 @@ export function getOrderDetail(orderId: number): Promise<AppOrderDetailResponse>
   return request<AppOrderDetailResponse>({
     url: API_ENDPOINTS.orders.detail(orderId),
     method: "GET"
+  });
+}
+
+export function updateOrderReceiver(
+  orderId: number,
+  addressId: string
+): Promise<OrderReceiverUpdateResponse> {
+  return request<OrderReceiverUpdateResponse, OrderReceiverUpdateRequest>({
+    url: API_ENDPOINTS.orders.receiver(orderId),
+    method: "PUT",
+    data: { addressId }
   });
 }
 

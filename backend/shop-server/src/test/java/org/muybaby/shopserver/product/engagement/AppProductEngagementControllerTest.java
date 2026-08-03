@@ -323,6 +323,32 @@ class AppProductEngagementControllerTest {
                 .andExpect(jsonPath("$.code").value(200201));
     }
 
+    @Test
+    void appDeletedCompletedOrderIsNotReviewEligible() throws Exception {
+        AppLogin owner = login("engagement-review-deleted-order");
+        ProductIds product = createPublishedProduct("DELETED-ORDER");
+        long orderItemId = insertCompletedOrder(owner.userId(), product);
+        jdbcClient.sql("""
+                        UPDATE shop_order
+                        SET app_deleted_at = CURRENT_TIMESTAMP
+                        WHERE id = (SELECT order_id FROM order_item WHERE id = :orderItemId)
+                        """)
+                .param("orderItemId", orderItemId)
+                .update();
+
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/review-eligibility")
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.orderItems.length()").value(0));
+
+        mockMvc.perform(post("/app/product/spus/" + product.spuId() + "/reviews")
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reviewBody(orderItemId, 5, false)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200201));
+    }
+
     private AppLogin login(String code) throws Exception {
         MvcResult result = mockMvc.perform(post("/app/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -1,19 +1,20 @@
 import {
   buildOrderDetailUrl,
+  buildOrderModifyUrl,
+  buildOrderReviewUrl,
   buildOrderSummaryView,
+  createPageOperationGuard,
   ORDER_STATUS_TABS,
   parseOrderStatusGroup,
   positiveOrderId,
   type OrderSummaryView
 } from "../../../features/order-center";
-import {
-  executeOrderPayment,
-  recoverOrderPayment
-} from "../../../features/order-payment";
-import { openWechatReceiptConfirmation } from "../../../features/wechat-order-receipt";
+import { buildCartCheckoutUrl } from "../../../features/checkout";
+import { executeOrderPayment } from "../../../features/order-payment";
+import { addCartItem } from "../../../services/cart";
 import {
   cancelOrder,
-  confirmOrderReceipt,
+  deleteOrder,
   getOrderDetail,
   getOrders
 } from "../../../services/order";
@@ -25,12 +26,14 @@ interface DatasetEvent {
     dataset: {
       group?: string;
       id?: number | string;
+      itemId?: number | string;
     };
   };
 }
 
 const PAGE_SIZE = 10;
 let latestListRequest = 0;
+const rebuyOperationGuard = createPageOperationGuard();
 
 function actionError(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -55,6 +58,7 @@ function confirmAction(title: string, content: string, confirmText: string): Pro
 
 Page({
   data: {
+    lifecycleToken: 0,
     tabs: ORDER_STATUS_TABS,
     activeGroup: "ALL" as OrderStatusGroup,
     orders: [] as OrderSummaryView[],
@@ -65,11 +69,15 @@ Page({
     loaded: false,
     loadingMore: false,
     errorText: "",
-    actionOrderId: 0
+    actionOrderId: 0,
+    actionType: ""
   },
 
   onLoad(query: Record<string, string | undefined>) {
-    this.setData({ activeGroup: parseOrderStatusGroup(query.group) });
+    this.setData({
+      lifecycleToken: rebuyOperationGuard.mount(),
+      activeGroup: parseOrderStatusGroup(query.group)
+    });
     void this.refreshOrders();
   },
 
@@ -80,6 +88,7 @@ Page({
   },
 
   onUnload() {
+    rebuyOperationGuard.unmount(this.data.lifecycleToken);
     latestListRequest += 1;
   },
 
@@ -98,7 +107,12 @@ Page({
 
   onTabTap(event: DatasetEvent) {
     const group = parseOrderStatusGroup(event.currentTarget.dataset.group);
-    if (group === this.data.activeGroup || this.data.loading || this.data.actionOrderId) {
+    if (
+      group === this.data.activeGroup ||
+      this.data.loading ||
+      this.data.loadingMore ||
+      this.data.actionOrderId
+    ) {
       return;
     }
     this.setData({ activeGroup: group, orders: [], loaded: false });
@@ -107,7 +121,7 @@ Page({
 
   async refreshOrders() {
     const requestId = ++latestListRequest;
-    this.setData({ loading: true, errorText: "" });
+    this.setData({ loading: true, loadingMore: false, errorText: "" });
     try {
       const response = await getOrders({
         current: 1,
@@ -123,6 +137,7 @@ Page({
         total: response.total,
         hasMore: response.current * response.size < response.total,
         loading: false,
+        loadingMore: false,
         loaded: true,
         errorText: ""
       });
@@ -130,6 +145,7 @@ Page({
       if (requestId === latestListRequest) {
         this.setData({
           loading: false,
+          loadingMore: false,
           loaded: this.data.orders.length > 0,
           errorText: actionError(error, "订单加载失败，请稍后重试")
         });
@@ -179,6 +195,24 @@ Page({
     wx.navigateTo({ url: buildOrderDetailUrl(orderId) });
   },
 
+  onItemImageError(event: DatasetEvent) {
+    const orderId = positiveOrderId(event.currentTarget.dataset.id);
+    const orderItemId = positiveOrderId(event.currentTarget.dataset.itemId);
+    if (!orderId || !orderItemId) {
+      return;
+    }
+    this.setData({
+      orders: this.data.orders.map((order) => order.orderId === orderId
+        ? {
+          ...order,
+          items: order.items.map((item) => item.orderItemId === orderItemId
+            ? { ...item, imageUrl: "", hasImage: false }
+            : item)
+        }
+        : order)
+    });
+  },
+
   onPayTap(event: DatasetEvent) {
     const orderId = positiveOrderId(event.currentTarget.dataset.id);
     if (orderId) {
@@ -190,7 +224,7 @@ Page({
     if (this.data.actionOrderId) {
       return;
     }
-    this.setData({ actionOrderId: orderId });
+    this.setData({ actionOrderId: orderId, actionType: "pay" });
     try {
       const outcome = await executeOrderPayment(orderId);
       if (outcome === "PAID") {
@@ -206,36 +240,7 @@ Page({
         icon: "none"
       });
     } finally {
-      this.setData({ actionOrderId: 0 });
-      await this.refreshOrders();
-    }
-  },
-
-  onSyncTap(event: DatasetEvent) {
-    const orderId = positiveOrderId(event.currentTarget.dataset.id);
-    if (orderId) {
-      void this.syncPayment(orderId);
-    }
-  },
-
-  async syncPayment(orderId: number) {
-    if (this.data.actionOrderId) {
-      return;
-    }
-    this.setData({ actionOrderId: orderId });
-    try {
-      const response = await recoverOrderPayment(orderId);
-      wx.showToast({
-        title: response.status === "PAID" ? "支付成功" : "暂未查询到支付结果",
-        icon: response.status === "PAID" ? "success" : "none"
-      });
-    } catch (error) {
-      wx.showToast({
-        title: actionError(error, "支付结果同步失败"),
-        icon: "none"
-      });
-    } finally {
-      this.setData({ actionOrderId: 0 });
+      this.setData({ actionOrderId: 0, actionType: "" });
       await this.refreshOrders();
     }
   },
@@ -254,7 +259,7 @@ Page({
     ) {
       return;
     }
-    this.setData({ actionOrderId: orderId });
+    this.setData({ actionOrderId: orderId, actionType: "cancel" });
     try {
       await cancelOrder(orderId);
       wx.showToast({ title: "订单已取消", icon: "success" });
@@ -264,47 +269,131 @@ Page({
         icon: "none"
       });
     } finally {
-      this.setData({ actionOrderId: 0 });
+      this.setData({ actionOrderId: 0, actionType: "" });
       await this.refreshOrders();
     }
   },
 
-  onConfirmTap(event: DatasetEvent) {
+  onDeleteTap(event: DatasetEvent) {
     const orderId = positiveOrderId(event.currentTarget.dataset.id);
     if (orderId) {
-      void this.confirmSelectedOrder(orderId);
+      void this.deleteSelectedOrder(orderId);
     }
   },
 
-  async confirmSelectedOrder(orderId: number) {
+  async deleteSelectedOrder(orderId: number) {
+    if (
+      this.data.actionOrderId ||
+      !await confirmAction("删除订单", "删除后将不再在订单列表中显示。", "确认删除")
+    ) {
+      return;
+    }
+    this.setData({ actionOrderId: orderId, actionType: "delete" });
+    try {
+      await deleteOrder(orderId);
+      wx.showToast({ title: "订单已删除", icon: "success" });
+    } catch (error) {
+      wx.showToast({
+        title: actionError(error, "订单删除失败"),
+        icon: "none"
+      });
+    } finally {
+      this.setData({ actionOrderId: 0, actionType: "" });
+      await this.refreshOrders();
+    }
+  },
+
+  onRebuyTap(event: DatasetEvent) {
+    const orderId = positiveOrderId(event.currentTarget.dataset.id);
+    if (orderId) {
+      void this.rebuySelectedOrder(orderId);
+    }
+  },
+
+  async rebuySelectedOrder(orderId: number) {
     if (this.data.actionOrderId) {
       return;
     }
-    this.setData({ actionOrderId: orderId });
+    const lifecycleToken = this.data.lifecycleToken;
+    const operationToken = rebuyOperationGuard.begin(lifecycleToken);
+    if (!operationToken) {
+      return;
+    }
+    this.setData({ actionOrderId: orderId, actionType: "rebuy" });
+    const cartItemIds: number[] = [];
+    let firstError: unknown = null;
     try {
       const detail = await getOrderDetail(orderId);
-      const transactionId = detail.transactionId || detail.paymentTransactionId || "";
-      const componentResult = await openWechatReceiptConfirmation(transactionId);
-      if (componentResult.outcome === "CANCELLED") {
+      if (!rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
         return;
       }
-      if (componentResult.outcome === "FAILED") {
+      for (const item of detail.items) {
+        if (!rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
+          return;
+        }
+        try {
+          const cartItem = await addCartItem({
+            skuId: item.skuId,
+            quantity: item.quantity
+          });
+          if (!rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
+            return;
+          }
+          cartItemIds.push(cartItem.id);
+        } catch (error) {
+          if (!rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
+            return;
+          }
+          firstError ??= error;
+        }
+      }
+      if (!rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
+        return;
+      }
+      if (!cartItemIds.length) {
         wx.showToast({
-          title: componentResult.message || "微信确认收货失败",
+          title: actionError(firstError, "商品暂时无法再次购买"),
           icon: "none"
         });
         return;
       }
-      await confirmOrderReceipt(orderId);
-      wx.showToast({ title: "已确认收货", icon: "success" });
+      if (cartItemIds.length < detail.items.length) {
+        wx.showToast({ title: "部分商品暂不可购买", icon: "none" });
+      }
+      wx.redirectTo({
+        url: buildCartCheckoutUrl(cartItemIds),
+        fail: () => {
+          if (rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
+            wx.switchTab({ url: "/pages/cart/cart" });
+          }
+        }
+      });
     } catch (error) {
+      if (!rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
+        return;
+      }
       wx.showToast({
-        title: actionError(error, "确认收货失败"),
+        title: actionError(error, "商品暂时无法再次购买"),
         icon: "none"
       });
     } finally {
-      this.setData({ actionOrderId: 0 });
-      await this.refreshOrders();
+      if (rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
+        this.setData({ actionOrderId: 0, actionType: "" });
+      }
+    }
+  },
+
+  onModifyTap(event: DatasetEvent) {
+    const orderId = positiveOrderId(event.currentTarget.dataset.id);
+    if (orderId && !this.data.actionOrderId) {
+      wx.navigateTo({ url: buildOrderModifyUrl(orderId) });
+    }
+  },
+
+  onReviewTap(event: DatasetEvent) {
+    const orderId = positiveOrderId(event.currentTarget.dataset.id);
+    if (orderId && !this.data.actionOrderId) {
+      wx.navigateTo({ url: buildOrderReviewUrl(orderId) });
     }
   }
 });

@@ -1,0 +1,105 @@
+<view class="modify-page">
+  <navigation-bar
+    title="修改订单"
+    back="{{true}}"
+    background="#FAF2E4"
+    color="#2E1D16"
+    loading="{{loaded && loading}}"
+  />
+
+  <view class="modify-notice">
+    仅支持修改收货地址。订单商品、数量和价格不会变化。
+  </view>
+
+  <view class="modify-content">
+    <view wx:if="{{!loaded && loading}}" class="modify-state">
+      <ui-state type="loading" title="正在加载订单和地址" />
+    </view>
+    <view wx:elif="{{!loaded && errorText}}" class="modify-state">
+      <ui-state
+        type="error"
+        title="页面加载失败"
+        description="{{errorText}}"
+        action-text="重新加载"
+        bindaction="onRetry"
+      />
+    </view>
+    <view wx:elif="{{blockingText}}" class="modify-state">
+      <ui-state
+        type="error"
+        title="当前订单不能修改"
+        description="{{blockingText}}"
+        action-text="返回订单"
+        bindaction="onBackToOrder"
+      />
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{errorText}}" class="inline-error">
+        <text>{{errorText}}</text>
+        <button bindtap="onRetry">重试</button>
+      </view>
+
+      <view wx:if="{{currentReceiver}}" class="info-card current-card">
+        <view class="section-heading">
+          <text class="section-heading__title">当前收货信息</text>
+          <text class="section-heading__meta">订单 {{detail.orderNo}}</text>
+        </view>
+        <view class="receiver-identity">
+          <text>{{currentReceiver.receiverName}}</text>
+          <text>{{currentReceiver.receiverPhoneDisplay}}</text>
+        </view>
+        <view class="receiver-address">{{currentReceiver.receiverAddress}}</view>
+      </view>
+
+      <view class="address-section">
+        <view class="section-heading section-heading--addresses">
+          <view>
+            <text class="section-heading__title">选择新的收货地址</text>
+            <text class="section-heading__description">仅可选择你已保存的地址</text>
+          </view>
+          <button class="add-address" bindtap="onAddAddress">新增地址</button>
+        </view>
+
+        <view wx:if="{{!addressOptions.length}}" class="address-empty">
+          <image src="/assets/icons/location-on-outline-rounded.svg" mode="aspectFit" />
+          <text>还没有可选的收货地址</text>
+          <button bindtap="onAddAddress">新增收货地址</button>
+        </view>
+
+        <radio-group wx:else class="address-options" bindchange="onAddressChange">
+          <label
+            wx:for="{{addressOptions}}"
+            wx:key="id"
+            class="address-option {{item.selected ? 'address-option--selected' : ''}}"
+            aria-label="选择 {{item.receiverName}} 的收货地址"
+          >
+            <radio
+              class="address-option__radio"
+              value="{{item.id}}"
+              checked="{{item.selected}}"
+              color="#B72B22"
+            />
+            <view class="address-option__body">
+              <view class="address-option__identity">
+                <text class="address-option__name">{{item.receiverName}}</text>
+                <text>{{item.phoneDisplay}}</text>
+                <text wx:if="{{item.isDefault}}" class="default-tag">默认</text>
+              </view>
+              <text class="address-option__detail">{{item.detailDisplay}}</text>
+            </view>
+          </label>
+        </radio-group>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{loaded && !blockingText}}" class="modify-footer">
+    <button
+      class="modify-submit"
+      loading="{{saving}}"
+      disabled="{{saving || !selectedAddressId}}"
+      bindtap="onConfirmTap"
+    >确认修改</button>
+  </view>
+</view>

@@ -5,5 +5,7 @@ public enum OrderStatusGroup {
     UNPAID,
     TO_SHIP,
     TO_RECEIVE,
-    COMPLETED
+    TO_REVIEW,
+    COMPLETED,
+    CANCELLED
 }

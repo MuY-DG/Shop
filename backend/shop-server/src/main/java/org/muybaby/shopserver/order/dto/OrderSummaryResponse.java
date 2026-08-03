@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.order.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record OrderSummaryResponse(
         Long orderId,
@@ -13,6 +14,12 @@ public record OrderSummaryResponse(
         Long paidAmountCent,
         String productTitle,
         Integer itemCount,
+        List<OrderSummaryItemResponse> items,
+        Integer pendingReviewCount,
         LocalDateTime createdAt
 ) {
+    public OrderSummaryResponse {
+        items = items == null ? List.of() : List.copyOf(items);
+        pendingReviewCount = pendingReviewCount == null ? 0 : pendingReviewCount;
+    }
 }

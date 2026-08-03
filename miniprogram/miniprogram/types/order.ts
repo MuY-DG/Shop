@@ -15,7 +15,9 @@ export type OrderStatusGroup =
   | "UNPAID"
   | "TO_SHIP"
   | "TO_RECEIVE"
-  | "COMPLETED";
+  | "TO_REVIEW"
+  | "COMPLETED"
+  | "CANCELLED";
 
 export interface OrderListQuery {
   current: number;
@@ -34,7 +36,26 @@ export interface OrderSummaryResponse {
   paidAmountCent: number;
   productTitle: string;
   itemCount: number;
+  items: OrderSummaryItemResponse[];
+  pendingReviewCount: number;
   createdAt: string;
+}
+
+export interface OrderSummaryItemResponse {
+  orderItemId: number;
+  skuId: number;
+  spuId: number;
+  productTitle: string;
+  productSubtitle?: string;
+  mainImage?: string;
+  skuImage?: string;
+  displayImage?: string;
+  skuCode: string;
+  specText?: string;
+  unitPriceCent: number;
+  quantity: number;
+  reviewed: boolean;
+  reviewable: boolean;
 }
 
 export interface OrderItemResponse {
@@ -55,6 +76,8 @@ export interface OrderItemResponse {
   quantity: number;
   lineOriginalAmountCent: number;
   lineAmountCent: number;
+  reviewed: boolean;
+  reviewable: boolean;
 }
 
 export interface AppOrderDetailResponse {

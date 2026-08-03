@@ -55,6 +55,7 @@ import static org.muybaby.shopserver.support.TestHashSupport.sha256;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -85,6 +86,8 @@ class AppOrderControllerTest {
 
     @BeforeEach
     void clearOrderState() {
+        jdbcClient.sql("delete from product_review").update();
+        jdbcClient.sql("delete from order_status_log").update();
         jdbcClient.sql("delete from refund_order").update();
         jdbcClient.sql("delete from after_sale_evidence").update();
         jdbcClient.sql("delete from after_sale_request").update();
@@ -811,6 +814,18 @@ class AppOrderControllerTest {
                 .andExpect(jsonPath("$.data.records[0].orderId").value(9101))
                 .andExpect(jsonPath("$.data.records[0].orderNo").value("ORD-LIST-USER"))
                 .andExpect(jsonPath("$.data.records[0].productTitle").value("List User Item"))
+                .andExpect(jsonPath("$.data.records[0].itemCount").value(2))
+                .andExpect(jsonPath("$.data.records[0].pendingReviewCount").value(0))
+                .andExpect(jsonPath("$.data.records[0].items.length()").value(1))
+                .andExpect(jsonPath("$.data.records[0].items[0].orderItemId").value(9901L))
+                .andExpect(jsonPath("$.data.records[0].items[0].productTitle").value("List User Item"))
+                .andExpect(jsonPath("$.data.records[0].items[0].displayImage")
+                        .value("https://example.test/order-sku.jpg"))
+                .andExpect(jsonPath("$.data.records[0].items[0].specText").value("300g"))
+                .andExpect(jsonPath("$.data.records[0].items[0].unitPriceCent").value(3990L))
+                .andExpect(jsonPath("$.data.records[0].items[0].quantity").value(2))
+                .andExpect(jsonPath("$.data.records[0].items[0].reviewed").value(false))
+                .andExpect(jsonPath("$.data.records[0].items[0].reviewable").value(false))
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.current").value(1))
                 .andExpect(jsonPath("$.data.size").value(10));
@@ -823,7 +838,9 @@ class AppOrderControllerTest {
                 .andExpect(jsonPath("$.data.receiverAddress").value(receiverAddress))
                 .andExpect(jsonPath("$.data.items.length()").value(1))
                 .andExpect(jsonPath("$.data.items[0].skuId").value(skuId))
-                .andExpect(jsonPath("$.data.items[0].productTitle").value("List User Item"));
+                .andExpect(jsonPath("$.data.items[0].productTitle").value("List User Item"))
+                .andExpect(jsonPath("$.data.items[0].reviewed").value(false))
+                .andExpect(jsonPath("$.data.items[0].reviewable").value(false));
     }
 
     @Test
@@ -834,12 +851,14 @@ class AppOrderControllerTest {
         insertOrderSnapshot(9201L, "ORD-CENTER-CREATED", owner.userId(), skuId, 9921L, "Created Item");
         insertOrderSnapshot(9202L, "ORD-CENTER-PAYING", owner.userId(), skuId, 9922L, "Paying Item");
         insertOrderSnapshot(9203L, "ORD-CENTER-SHIPPED", owner.userId(), skuId, 9923L, "Shipped Item");
+        insertOrderSnapshot(9204L, "ORD-CENTER-CLOSED", owner.userId(), skuId, 9924L, "Closed Item");
         jdbcClient.sql("update shop_order set status = 'PAYING' where id = 9202").update();
         jdbcClient.sql("""
                         update shop_order
                         set status = 'SHIPPED', shipped_at = timestamp '2026-07-08 14:00:00'
                         where id = 9203
                         """).update();
+        jdbcClient.sql("update shop_order set status = 'CLOSED' where id = 9204").update();
 
         mockMvc.perform(get("/app/orders")
                         .param("current", "1")
@@ -849,6 +868,13 @@ class AppOrderControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.records.length()").value(2))
                 .andExpect(jsonPath("$.data.total").value(2));
+
+        mockMvc.perform(get("/app/orders")
+                        .param("statusGroup", "CANCELLED")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(1))
+                .andExpect(jsonPath("$.data.records[0].orderId").value(9204L));
 
         mockMvc.perform(get("/app/orders")
                         .param("status", "SHIPPED")
@@ -871,6 +897,16 @@ class AppOrderControllerTest {
                 .andReturn().getResponse().getContentAsString();
         String firstCompletedAt = objectMapper.readTree(first).path("data").path("completedAt").asText();
 
+        mockMvc.perform(get("/app/orders")
+                        .param("statusGroup", "TO_REVIEW")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(1))
+                .andExpect(jsonPath("$.data.records[0].orderId").value(9203L))
+                .andExpect(jsonPath("$.data.records[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.records[0].pendingReviewCount").value(1))
+                .andExpect(jsonPath("$.data.records[0].items[0].reviewable").value(true));
+
         mockMvc.perform(post("/app/orders/{orderId}/confirm-receipt", 9203L)
                         .header("Authorization", "Bearer " + owner.token()))
                 .andExpect(status().isOk())
@@ -888,13 +924,19 @@ class AppOrderControllerTest {
     }
 
     @Test
-    void userCanSoftDeleteOnlyOwnedClosedOrders() throws Exception {
+    void userCanSoftDeleteOnlyOwnedClosedOrCompletedOrders() throws Exception {
         AppLoginSession owner = appLogin("order-delete-owner");
         AppLoginSession other = appLogin("order-delete-other");
         long skuId = createPublishedSku("ORDER-DELETE-SKU", 3990L, 4990L, 10, "ENABLED");
         insertOrderSnapshot(9301L, "ORD-DELETE-CLOSED", owner.userId(), skuId, 9931L, "Closed Item");
         insertOrderSnapshot(9302L, "ORD-DELETE-CREATED", owner.userId(), skuId, 9932L, "Created Item");
+        insertOrderSnapshot(9303L, "ORD-DELETE-COMPLETED", owner.userId(), skuId, 9933L, "Completed Item");
         jdbcClient.sql("update shop_order set status = 'CLOSED' where id = 9301").update();
+        jdbcClient.sql("""
+                        update shop_order
+                        set status = 'COMPLETED', completed_at = timestamp '2026-07-08 12:00:00'
+                        where id = 9303
+                        """).update();
 
         mockMvc.perform(delete("/app/orders/{orderId}", 9301L)
                         .header("Authorization", "Bearer " + other.token()))
@@ -915,6 +957,11 @@ class AppOrderControllerTest {
                         .header("Authorization", "Bearer " + owner.token()))
                 .andExpect(status().isOk());
 
+        mockMvc.perform(delete("/app/orders/{orderId}", 9303L)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
         mockMvc.perform(get("/app/orders/{orderId}", 9301L)
                         .header("Authorization", "Bearer " + owner.token()))
                 .andExpect(status().isBadRequest())
@@ -925,6 +972,60 @@ class AppOrderControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.records.length()").value(1))
                 .andExpect(jsonPath("$.data.records[0].orderId").value(9302L));
+    }
+
+    @Test
+    void userCanUpdateReceiverSnapshotForOwnedUnpaidOrders() throws Exception {
+        AppLoginSession owner = appLogin("order-receiver-owner");
+        AppLoginSession other = appLogin("order-receiver-other");
+        long skuId = createPublishedSku("ORDER-RECEIVER-SKU", 3990L, 4990L, 10, "ENABLED");
+        long ownerAddressId = insertAddress(owner.userId(), "receiver-new");
+        long otherAddressId = insertAddress(other.userId(), "receiver-other");
+        insertOrderSnapshot(9401L, "ORD-RECEIVER-CREATED", owner.userId(), skuId, 9941L, "Created Item");
+        insertOrderSnapshot(9402L, "ORD-RECEIVER-PAYING", owner.userId(), skuId, 9942L, "Paying Item");
+        insertOrderSnapshot(9403L, "ORD-RECEIVER-PAID", owner.userId(), skuId, 9943L, "Paid Item");
+        jdbcClient.sql("update shop_order set status = 'PAYING' where id = 9402").update();
+        jdbcClient.sql("update shop_order set status = 'PAID' where id = 9403").update();
+
+        mockMvc.perform(put("/app/orders/{orderId}/receiver", 9401L)
+                        .header("Authorization", "Bearer " + owner.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"addressId\":" + ownerAddressId + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.orderId").value(9401L))
+                .andExpect(jsonPath("$.data.status").value("CREATED"))
+                .andExpect(jsonPath("$.data.receiverName").value("收货人-receiver-new"))
+                .andExpect(jsonPath("$.data.receiverPhone").value("13800138000"))
+                .andExpect(jsonPath("$.data.receiverAddress")
+                        .value("北京市朝阳区火锅路-receiver-new号"))
+                .andExpect(jsonPath("$.data.updatedAt").isNotEmpty());
+
+        mockMvc.perform(put("/app/orders/{orderId}/receiver", 9402L)
+                        .header("Authorization", "Bearer " + owner.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"addressId\":" + ownerAddressId + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PAYING"));
+
+        mockMvc.perform(put("/app/orders/{orderId}/receiver", 9401L)
+                        .header("Authorization", "Bearer " + owner.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"addressId\":" + otherAddressId + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+
+        mockMvc.perform(put("/app/orders/{orderId}/receiver", 9403L)
+                        .header("Authorization", "Bearer " + owner.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"addressId\":" + ownerAddressId + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        mockMvc.perform(put("/app/orders/{orderId}/receiver", 9401L)
+                        .header("Authorization", "Bearer " + owner.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
     }
 
     private String longestValidReceiverAddress() {

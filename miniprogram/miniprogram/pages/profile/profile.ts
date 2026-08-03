@@ -72,7 +72,7 @@ Page({
         badge: ""
       },
       {
-        group: "COMPLETED",
+        group: "TO_REVIEW",
         label: "待评价",
         iconPath: "/assets/icons/order-review.svg",
         badge: ""

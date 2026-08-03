@@ -25,12 +25,15 @@ import org.muybaby.shopserver.order.StockLockStatus;
 import org.muybaby.shopserver.order.cleanup.PurgedOrderIdentityDigests;
 import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
+import org.muybaby.shopserver.order.dto.AppOrderReceiverUpdateRequest;
 import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
 import org.muybaby.shopserver.order.dto.OrderItemResponse;
 import org.muybaby.shopserver.order.dto.OrderPreviewItemResponse;
 import org.muybaby.shopserver.order.dto.OrderPreviewResponse;
 import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
+import org.muybaby.shopserver.order.dto.OrderReceiverUpdateResponse;
 import org.muybaby.shopserver.order.dto.OrderSubmitResponse;
+import org.muybaby.shopserver.order.dto.OrderSummaryItemResponse;
 import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
 import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.promotion.CheckoutContext;
@@ -65,8 +68,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -216,6 +221,7 @@ public class AppOrderService {
         );
     }
 
+    @Transactional(readOnly = true)
     public PageResult<OrderSummaryResponse> list(
             AuthenticatedPrincipal principal,
             Long current,
@@ -225,6 +231,7 @@ public class AppOrderService {
         return list(principal, current, size, status, OrderStatusGroup.ALL);
     }
 
+    @Transactional(readOnly = true)
     public PageResult<OrderSummaryResponse> list(
             AuthenticatedPrincipal principal,
             Long current,
@@ -241,6 +248,7 @@ public class AppOrderService {
         if (normalizedStatus != null && normalizedStatusGroup != OrderStatusGroup.ALL) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
+        boolean pendingReviewsOnly = normalizedStatusGroup == OrderStatusGroup.TO_REVIEW;
         boolean allStatuses = normalizedStatusGroup == OrderStatusGroup.ALL;
         List<String> groupedStatuses = allStatuses
                 ? List.of("__ALL_STATUS_GROUP__")
@@ -253,15 +261,36 @@ public class AppOrderService {
                           and app_deleted_at is null
                           and (:status is null or status = :status)
                           and (:allStatuses = true or status in (:groupedStatuses))
+                          and (:pendingReviewsOnly = false or (
+                              status = 'COMPLETED'
+                              and completed_at is not null
+                              and exists (
+                                  select 1
+                                  from order_item pending_item
+                                  where pending_item.order_id = shop_order.id
+                                    and not exists (
+                                        select 1
+                                        from product_review review
+                                        where review.source_order_item_id = pending_item.id
+                                    )
+                                    and exists (
+                                        select 1
+                                        from product_spu pending_product
+                                        where pending_product.id = pending_item.spu_id
+                                          and pending_product.purged_at is null
+                                    )
+                              )
+                          ))
                         """)
                 .param("userId", userId)
                 .param("status", normalizedStatus)
                 .param("allStatuses", allStatuses)
                 .param("groupedStatuses", groupedStatuses)
+                .param("pendingReviewsOnly", pendingReviewsOnly)
                 .query(Long.class)
                 .single();
 
-        List<OrderSummaryResponse> records = jdbcClient.sql("""
+        List<OrderSummaryHeader> headers = jdbcClient.sql("""
                         select o.id as order_id,
                                o.order_no,
                                o.status,
@@ -270,24 +299,33 @@ public class AppOrderService {
                                o.freight_cent,
                                o.payable_amount_cent,
                                o.paid_amount_cent,
-                               coalesce((
-                                   select oi.product_title
-                                   from order_item oi
-                                   where oi.order_id = o.id
-                                   order by oi.id asc
-                                   limit 1
-                               ), '') as product_title,
-                               coalesce((
-                                   select sum(oi.quantity)
-                                   from order_item oi
-                                   where oi.order_id = o.id
-                               ), 0) as item_count,
-                               o.created_at
+                               o.created_at,
+                               o.completed_at
                         from shop_order o
                         where o.user_id = :userId
                           and o.app_deleted_at is null
                           and (:status is null or o.status = :status)
                           and (:allStatuses = true or o.status in (:groupedStatuses))
+                          and (:pendingReviewsOnly = false or (
+                              o.status = 'COMPLETED'
+                              and o.completed_at is not null
+                              and exists (
+                                  select 1
+                                  from order_item pending_item
+                                  where pending_item.order_id = o.id
+                                    and not exists (
+                                        select 1
+                                        from product_review review
+                                        where review.source_order_item_id = pending_item.id
+                                    )
+                                    and exists (
+                                        select 1
+                                        from product_spu pending_product
+                                        where pending_product.id = pending_item.spu_id
+                                          and pending_product.purged_at is null
+                                    )
+                              )
+                          ))
                         order by o.created_at desc, o.id desc
                         limit :limit offset :offset
                         """)
@@ -295,11 +333,70 @@ public class AppOrderService {
                 .param("status", normalizedStatus)
                 .param("allStatuses", allStatuses)
                 .param("groupedStatuses", groupedStatuses)
+                .param("pendingReviewsOnly", pendingReviewsOnly)
                 .param("limit", pageSize)
                 .param("offset", offset)
-                .query(this::mapOrderSummary)
+                .query(this::mapOrderSummaryHeader)
                 .list();
 
+        if (headers.isEmpty()) {
+            return PageResult.of(List.of(), total == null ? 0L : total, pageCurrent, pageSize);
+        }
+
+        List<Long> orderIds = headers.stream().map(OrderSummaryHeader::orderId).toList();
+        List<OrderSummaryItemRow> itemRows = jdbcClient.sql("""
+                        select oi.order_id,
+                               oi.id as order_item_id,
+                               oi.sku_id,
+                               oi.spu_id,
+                               oi.product_title,
+                               oi.product_subtitle,
+                               oi.main_image,
+                               oi.sku_image,
+                               oi.display_image,
+                               oi.sku_code,
+                               oi.spec_text,
+                               oi.unit_price_cent,
+                               oi.quantity,
+                               exists (
+                                   select 1
+                                   from product_review review
+                                   where review.source_order_item_id = oi.id
+                               ) as reviewed,
+                               (
+                                   item_order.status = 'COMPLETED'
+                                   and item_order.completed_at is not null
+                                   and item_order.app_deleted_at is null
+                                   and not exists (
+                                       select 1
+                                       from product_review review
+                                       where review.source_order_item_id = oi.id
+                                   )
+                                   and exists (
+                                       select 1
+                                       from product_spu review_product
+                                       where review_product.id = oi.spu_id
+                                         and review_product.purged_at is null
+                                   )
+                               ) as reviewable
+                        from order_item oi
+                        join shop_order item_order on item_order.id = oi.order_id
+                        where oi.order_id in (:orderIds)
+                        order by oi.order_id, oi.id
+                        """)
+                .param("orderIds", orderIds)
+                .query(this::mapOrderSummaryItemRow)
+                .list();
+        Map<Long, List<OrderSummaryItemResponse>> itemsByOrderId = new HashMap<>();
+        for (OrderSummaryItemRow itemRow : itemRows) {
+            itemsByOrderId.computeIfAbsent(itemRow.orderId(), ignored -> new ArrayList<>())
+                    .add(itemRow.item());
+        }
+
+        List<OrderSummaryResponse> records = headers.stream()
+                .map(header -> toOrderSummary(header,
+                        itemsByOrderId.getOrDefault(header.orderId(), List.of())))
+                .toList();
         return PageResult.of(records, total == null ? 0L : total, pageCurrent, pageSize);
     }
 
@@ -363,7 +460,33 @@ public class AppOrderService {
                                wholesale_tier_min_quantity,
                                quantity,
                                line_original_amount_cent,
-                               line_amount_cent
+                               line_amount_cent,
+                               exists (
+                                   select 1
+                                   from product_review review
+                                   where review.source_order_item_id = order_item.id
+                               ) as reviewed,
+                               (
+                                   not exists (
+                                       select 1
+                                       from product_review review
+                                       where review.source_order_item_id = order_item.id
+                                   )
+                                   and exists (
+                                       select 1
+                                       from product_spu review_product
+                                       where review_product.id = order_item.spu_id
+                                         and review_product.purged_at is null
+                                   )
+                                   and exists (
+                                       select 1
+                                       from shop_order review_order
+                                       where review_order.id = order_item.order_id
+                                         and review_order.status = 'COMPLETED'
+                                         and review_order.completed_at is not null
+                                         and review_order.app_deleted_at is null
+                                   )
+                               ) as reviewable
                         from order_item
                         where order_id = :orderId
                         order by id asc
@@ -432,7 +555,7 @@ public class AppOrderService {
     }
 
     @Transactional
-    public void deleteClosed(AuthenticatedPrincipal principal, Long orderId) {
+    public void deleteFinished(AuthenticatedPrincipal principal, Long orderId) {
         Long userId = requireAppUser(principal);
         DeletableOrder order = jdbcClient.sql("""
                         select id as order_id,
@@ -452,7 +575,7 @@ public class AppOrderService {
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-        if (!OrderStatus.CLOSED.name().equals(order.status())) {
+        if (!isAppDeletableStatus(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         if (order.appDeletedAt() != null) {
@@ -464,7 +587,7 @@ public class AppOrderService {
                             updated_at = :deletedAt
                         where id = :orderId
                           and user_id = :userId
-                          and status = 'CLOSED'
+                          and status in ('CLOSED', 'COMPLETED')
                           and app_deleted_at is null
                         """)
                 .param("deletedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
@@ -474,6 +597,76 @@ public class AppOrderService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+    }
+
+    @Transactional
+    public OrderReceiverUpdateResponse updateReceiver(
+            AuthenticatedPrincipal principal,
+            Long orderId,
+            AppOrderReceiverUpdateRequest request
+    ) {
+        Long userId = requireAppUser(principal);
+        if (request == null || request.addressId() == null || request.addressId() < 1) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        ReceiverEditableOrder order = jdbcClient.sql("""
+                        select id as order_id,
+                               status
+                        from shop_order
+                        where id = :orderId
+                          and user_id = :userId
+                          and app_deleted_at is null
+                        for update
+                        """)
+                .param("orderId", orderId)
+                .param("userId", userId)
+                .query((rs, rowNum) -> new ReceiverEditableOrder(
+                        rs.getLong("order_id"),
+                        rs.getString("status")
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        if (!OrderStatus.CREATED.name().equals(order.status())
+                && !OrderStatus.PAYING.name().equals(order.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+
+        OwnedAddress receiver = appAddressService.requireOwnedForUpdate(userId, request.addressId());
+        LocalDateTime updatedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        int updatedRows = jdbcClient.sql("""
+                        update shop_order
+                        set receiver_name = :receiverName,
+                            receiver_phone = :receiverPhone,
+                            receiver_address = :receiverAddress,
+                            updated_at = :updatedAt
+                        where id = :orderId
+                          and user_id = :userId
+                          and status = :status
+                          and app_deleted_at is null
+                        """)
+                .param("receiverName", receiver.receiverName())
+                .param("receiverPhone", receiver.receiverPhone())
+                .param("receiverAddress", receiver.formattedAddress())
+                .param("updatedAt", updatedAt)
+                .param("orderId", order.orderId())
+                .param("userId", userId)
+                .param("status", order.status())
+                .update();
+        if (updatedRows != 1) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        orderStatusLogService.record(
+                order.orderId(), order.status(), order.status(), "ORDER_RECEIVER_UPDATED",
+                OPERATOR_TYPE_APP, userId, "用户修改订单收货信息", updatedAt
+        );
+        return new OrderReceiverUpdateResponse(
+                order.orderId(),
+                order.status(),
+                receiver.receiverName(),
+                receiver.receiverPhone(),
+                receiver.formattedAddress(),
+                updatedAt
+        );
     }
 
     public OrderReceiptResponse confirmReceipt(AuthenticatedPrincipal principal, Long orderId) {
@@ -1117,8 +1310,8 @@ public class AppOrderService {
         ), rs.getString("checkout_request_digest"), rs.getLong("freight_cent"));
     }
 
-    private OrderSummaryResponse mapOrderSummary(ResultSet rs, int rowNum) throws SQLException {
-        return new OrderSummaryResponse(
+    private OrderSummaryHeader mapOrderSummaryHeader(ResultSet rs, int rowNum) throws SQLException {
+        return new OrderSummaryHeader(
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getString("status"),
@@ -1127,9 +1320,56 @@ public class AppOrderService {
                 rs.getLong("freight_cent"),
                 rs.getLong("payable_amount_cent"),
                 rs.getLong("paid_amount_cent"),
-                rs.getString("product_title"),
-                rs.getInt("item_count"),
-                rs.getObject("created_at", LocalDateTime.class)
+                rs.getObject("created_at", LocalDateTime.class),
+                rs.getObject("completed_at", LocalDateTime.class)
+        );
+    }
+
+    private OrderSummaryItemRow mapOrderSummaryItemRow(ResultSet rs, int rowNum) throws SQLException {
+        return new OrderSummaryItemRow(
+                rs.getLong("order_id"),
+                new OrderSummaryItemResponse(
+                        rs.getLong("order_item_id"),
+                        rs.getLong("sku_id"),
+                        rs.getLong("spu_id"),
+                        rs.getString("product_title"),
+                        rs.getString("product_subtitle"),
+                        rs.getString("main_image"),
+                        rs.getString("sku_image"),
+                        rs.getString("display_image"),
+                        rs.getString("sku_code"),
+                        rs.getString("spec_text"),
+                        rs.getLong("unit_price_cent"),
+                        rs.getInt("quantity"),
+                        rs.getBoolean("reviewed"),
+                        rs.getBoolean("reviewable")
+                )
+        );
+    }
+
+    private OrderSummaryResponse toOrderSummary(
+            OrderSummaryHeader header,
+            List<OrderSummaryItemResponse> items
+    ) {
+        int itemCount = items.stream().mapToInt(OrderSummaryItemResponse::quantity).sum();
+        int pendingReviewCount = (int) items.stream()
+                .filter(OrderSummaryItemResponse::reviewable)
+                .count();
+        String productTitle = items.isEmpty() ? "" : items.getFirst().productTitle();
+        return new OrderSummaryResponse(
+                header.orderId(),
+                header.orderNo(),
+                header.status(),
+                header.productAmountCent(),
+                header.couponDiscountCent(),
+                header.freightCent(),
+                header.payableAmountCent(),
+                header.paidAmountCent(),
+                productTitle,
+                itemCount,
+                items,
+                pendingReviewCount,
+                header.createdAt()
         );
     }
 
@@ -1184,7 +1424,9 @@ public class AppOrderService {
                 rs.getObject("wholesale_tier_min_quantity", Integer.class),
                 rs.getInt("quantity"),
                 rs.getLong("line_original_amount_cent"),
-                rs.getLong("line_amount_cent")
+                rs.getLong("line_amount_cent"),
+                rs.getBoolean("reviewed"),
+                rs.getBoolean("reviewable")
         );
     }
 
@@ -1355,9 +1597,15 @@ public class AppOrderService {
             case UNPAID -> List.of(OrderStatus.CREATED.name(), OrderStatus.PAYING.name());
             case TO_SHIP -> List.of(OrderStatus.PAID.name());
             case TO_RECEIVE -> List.of(OrderStatus.SHIPPED.name());
-            case COMPLETED -> List.of(OrderStatus.COMPLETED.name());
+            case TO_REVIEW, COMPLETED -> List.of(OrderStatus.COMPLETED.name());
+            case CANCELLED -> List.of(OrderStatus.CLOSED.name());
             case ALL -> List.of("__ALL_STATUS_GROUP__");
         };
+    }
+
+    private boolean isAppDeletableStatus(String status) {
+        return OrderStatus.CLOSED.name().equals(status)
+                || OrderStatus.COMPLETED.name().equals(status);
     }
 
     static String nextOrderNo(LocalDateTime now) {
@@ -1413,6 +1661,23 @@ public class AppOrderService {
         }
     }
 
+    private record OrderSummaryHeader(
+            Long orderId,
+            String orderNo,
+            String status,
+            Long productAmountCent,
+            Long couponDiscountCent,
+            Long freightCent,
+            Long payableAmountCent,
+            Long paidAmountCent,
+            LocalDateTime createdAt,
+            LocalDateTime completedAt
+    ) {
+    }
+
+    private record OrderSummaryItemRow(Long orderId, OrderSummaryItemResponse item) {
+    }
+
     private record OrderDetailHeader(
             Long orderId,
             String orderNo,
@@ -1452,6 +1717,9 @@ public class AppOrderService {
     }
 
     private record DeletableOrder(Long orderId, String status, LocalDateTime appDeletedAt) {
+    }
+
+    private record ReceiverEditableOrder(Long orderId, String status) {
     }
 
     private record ReceiptOrder(

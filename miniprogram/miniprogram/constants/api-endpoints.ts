@@ -73,6 +73,7 @@ export const API_ENDPOINTS = Object.freeze({
     preview: "/app/orders/preview",
     submit: "/app/orders",
     detail: (orderId: number): string => `/app/orders/${orderId}`,
+    receiver: (orderId: number): string => `/app/orders/${orderId}/receiver`,
     delete: (orderId: number): string => `/app/orders/${orderId}`,
     pay: (orderId: number): string => `/app/orders/${orderId}/pay`,
     cancel: (orderId: number): string => `/app/orders/${orderId}/cancel`,

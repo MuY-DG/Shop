@@ -5,8 +5,11 @@ import {
   buildOrderDetailUrl,
   buildOrderDetailView,
   buildOrderListUrl,
+  buildOrderModifyUrl,
+  buildOrderReviewUrl,
   buildOrderSummaryView,
   formatPaymentCountdown,
+  ORDER_STATUS_TABS,
   orderStatusText,
   parseOrderStatusGroup,
   positiveOrderId
@@ -18,7 +21,7 @@ import type {
   OrderSummaryResponse
 } from "../miniprogram/types/order";
 
-function summary(status: OrderStatus): OrderSummaryResponse {
+function summary(status: OrderStatus, pendingReviewCount = 0): OrderSummaryResponse {
   return {
     orderId: 101,
     orderNo: "ORD-101",
@@ -32,6 +35,23 @@ function summary(status: OrderStatus): OrderSummaryResponse {
       : 0,
     productTitle: "牛油火锅底料",
     itemCount: 3,
+    items: [{
+      orderItemId: 901,
+      skuId: 21,
+      spuId: 31,
+      productTitle: "牛油火锅底料",
+      productSubtitle: "经典风味",
+      mainImage: "https://example.com/main.png",
+      skuImage: "https://example.com/sku.png",
+      displayImage: "https://example.com/display.png",
+      skuCode: "SKU-21",
+      specText: "500g 袋装",
+      unitPriceCent: 1680,
+      quantity: 3,
+      reviewed: pendingReviewCount === 0,
+      reviewable: pendingReviewCount > 0
+    }],
+    pendingReviewCount,
     createdAt: "2026-07-20T12:30:00Z"
   };
 }
@@ -70,38 +90,75 @@ function detail(status: OrderStatus = "PAYING"): AppOrderDetailResponse {
       wholesaleTierMinQuantity: 3,
       quantity: 3,
       lineOriginalAmountCent: 6000,
-      lineAmountCent: 5040
+      lineAmountCent: 5040,
+      reviewed: false,
+      reviewable: true
     }]
   };
 }
 
 test("订单状态映射稳定并只开放合法操作", () => {
   const created = buildOrderSummaryView(summary("CREATED"));
-  assert.equal(created.statusText, "等待支付");
+  assert.equal(created.statusText, "待付款");
   assert.equal(created.canPay, true);
   assert.equal(created.canCancel, true);
-  assert.equal(created.canSyncPayment, false);
-  assert.equal(created.paymentActionText, "立即支付");
+  assert.equal(created.canModify, true);
+  assert.equal(created.canRebuy, false);
+  assert.equal(created.paymentActionText, "去支付");
 
   const paying = buildOrderSummaryView(summary("PAYING"));
   assert.equal(paying.canPay, true);
-  assert.equal(paying.canSyncPayment, true);
-  assert.equal(paying.paymentActionText, "继续支付");
+  assert.equal(paying.canModify, true);
+  assert.equal(paying.paymentActionText, "去支付");
+
+  const paid = buildOrderSummaryView(summary("PAID"));
+  assert.equal(paid.hasActions, false);
+  assert.equal(paid.canRebuy, false);
 
   const shipped = buildOrderSummaryView(summary("SHIPPED"));
   assert.equal(shipped.canPay, false);
-  assert.equal(shipped.canConfirmReceipt, true);
+  assert.equal(shipped.canRebuy, true);
+  assert.equal(shipped.canDelete, false);
   assert.equal(shipped.amountText, "¥45.40");
 
-  const completed = buildOrderSummaryView(summary("COMPLETED"));
+  const pendingReview = buildOrderSummaryView(summary("COMPLETED", 1));
+  assert.equal(pendingReview.statusText, "待评价");
+  assert.equal(pendingReview.canReview, true);
+  assert.equal(pendingReview.canDelete, true);
+  assert.equal(pendingReview.canRebuy, true);
+
+  const completed = buildOrderSummaryView(summary("COMPLETED", 0));
   assert.equal(completed.statusText, "已完成");
-  assert.equal(completed.canConfirmReceipt, false);
+  assert.equal(completed.canReview, false);
+  assert.equal(completed.canDelete, true);
+  assert.equal(completed.canRebuy, true);
   assert.equal(orderStatusText("REFUNDED"), "已退款");
 
   const closed = buildOrderSummaryView(summary("CLOSED"));
   assert.equal(closed.statusText, "已取消");
   assert.equal(closed.canDelete, true);
   assert.equal(closed.canRebuy, true);
+});
+
+test("订单列表项只格式化后端真实图片、规格、单价与数量", () => {
+  const view = buildOrderSummaryView(summary("COMPLETED", 1));
+  assert.equal(view.items[0]?.imageUrl, "https://example.com/display.png");
+  assert.equal(view.items[0]?.hasImage, true);
+  assert.equal(view.items[0]?.titleText, "牛油火锅底料");
+  assert.equal(view.items[0]?.specificationText, "500g 袋装");
+  assert.equal(view.items[0]?.unitPriceText, "¥16.80");
+  assert.equal(view.items[0]?.quantityText, "共3件");
+
+  const withoutSpec = summary("CLOSED");
+  withoutSpec.items[0] = {
+    ...withoutSpec.items[0]!,
+    displayImage: "",
+    skuImage: "",
+    specText: ""
+  };
+  const fallback = buildOrderSummaryView(withoutSpec).items[0];
+  assert.equal(fallback?.imageUrl, "https://example.com/main.png");
+  assert.equal(fallback?.specificationText, "");
 });
 
 test("订单详情使用零售金额与真实批发成交价生成可核对明细", () => {
@@ -127,11 +184,26 @@ test("支付倒计时稳定显示时分秒并收敛非法输入", () => {
 test("订单中心路由和查询参数拒绝非法订单 ID 与状态组", () => {
   assert.equal(buildOrderListUrl("UNPAID"), "/pages/order/list/list?group=UNPAID");
   assert.equal(buildOrderDetailUrl(101), "/pages/order/detail/detail?order_id=101");
+  assert.equal(buildOrderReviewUrl(101), "/pages/order/review/review?order_id=101");
+  assert.equal(buildOrderModifyUrl(101), "/pages/order/modify/modify?order_id=101");
   assert.equal(parseOrderStatusGroup("to_receive"), "TO_RECEIVE");
+  assert.equal(parseOrderStatusGroup("to_review"), "TO_REVIEW");
+  assert.equal(parseOrderStatusGroup("cancelled"), "CANCELLED");
   assert.equal(parseOrderStatusGroup("unknown"), "ALL");
+  assert.deepEqual(ORDER_STATUS_TABS.map((tab) => tab.value), [
+    "ALL",
+    "UNPAID",
+    "TO_SHIP",
+    "TO_RECEIVE",
+    "TO_REVIEW",
+    "COMPLETED",
+    "CANCELLED"
+  ]);
   assert.equal(positiveOrderId("101"), 101);
   assert.equal(positiveOrderId("1e2"), 0);
   assert.throws(() => buildOrderDetailUrl(0), /无效/);
+  assert.throws(() => buildOrderReviewUrl(0), /无效/);
+  assert.throws(() => buildOrderModifyUrl(0), /无效/);
 });
 
 test("微信支付取消只识别用户主动取消错误", () => {

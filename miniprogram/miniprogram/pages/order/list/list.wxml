@@ -49,36 +49,50 @@
           hover-class="order-card--pressed"
           hover-stay-time="80"
           aria-role="button"
-          aria-label="查看订单 {{item.orderNo}}，{{item.statusText}}，{{item.productTitle || '订单商品'}}，{{item.itemCountText}}，金额 {{item.amountText}}"
+          aria-label="查看订单 {{item.orderNo}}，{{item.statusText}}，{{item.itemCountText}}"
         >
-          <view class="order-card__heading">
-            <view class="order-card__merchant">
-              <text class="order-card__merchant-name">灶香集</text>
-              <image
-                class="order-card__chevron"
-                src="/assets/icons/chevron-right-light.svg"
-                mode="aspectFit"
-                aria-hidden="true"
-              />
+          <text class="order-status order-status--{{item.statusTone}}">{{item.statusText}}</text>
+          <view wx:if="{{item.items.length}}" class="order-card__items">
+            <view
+              wx:for="{{item.items}}"
+              wx:for-item="product"
+              wx:for-index="productIndex"
+              wx:key="orderItemId"
+              class="order-product {{productIndex ? 'order-product--divided' : ''}}"
+            >
+              <view class="order-product__image-shell">
+                <image
+                  wx:if="{{product.hasImage}}"
+                  class="order-product__image"
+                  src="{{product.imageUrl}}"
+                  mode="aspectFill"
+                  data-id="{{item.orderId}}"
+                  data-item-id="{{product.orderItemId}}"
+                  binderror="onItemImageError"
+                />
+                <image
+                  wx:else
+                  class="order-product__fallback-icon"
+                  src="/assets/icons/empty-products.svg"
+                  mode="aspectFit"
+                  aria-hidden="true"
+                />
+              </view>
+              <view class="order-product__body">
+                <view class="order-product__title">{{product.titleText}}</view>
+                <view wx:if="{{product.specificationText}}" class="order-product__spec">{{product.specificationText}}</view>
+              </view>
+              <view class="order-product__commerce">
+                <text class="order-product__price">{{product.unitPriceText}}</text>
+                <text class="order-product__quantity">{{product.quantityText}}</text>
+              </view>
             </view>
-            <text class="order-status order-status--{{item.statusTone}}">{{item.statusText}}</text>
           </view>
-          <view class="order-card__meta">
-            <text class="order-card__no">订单号 {{item.orderNo}}</text>
-            <text class="order-card__time">{{item.createdAtText}}</text>
-          </view>
-          <view class="order-card__product">
-            <view class="order-card__product-body">
-              <view class="order-card__title">{{item.productTitle || '订单商品'}}</view>
-              <view class="order-card__count">{{item.itemCountText}}</view>
-            </view>
-            <view class="order-card__amount">
-              <text>{{item.status === 'PAID' || item.paidAmountCent > 0 ? '实付' : '应付'}}</text>
-              <view>{{item.amountText}}</view>
-            </view>
+          <view wx:else class="order-card__empty-product">
+            商品信息暂不可用
           </view>
         </view>
-        <view wx:if="{{item.canPay || item.canConfirmReceipt}}" class="order-card__actions">
+        <view wx:if="{{item.hasActions}}" class="order-card__actions">
           <button
             wx:if="{{item.canCancel}}"
             class="order-action order-action--secondary"
@@ -89,34 +103,53 @@
             aria-label="取消订单 {{item.orderNo}}"
           >取消订单</button>
           <button
-            wx:if="{{item.canSyncPayment}}"
+            wx:if="{{item.canModify}}"
             class="order-action order-action--secondary"
             data-id="{{item.orderId}}"
             disabled="{{actionOrderId}}"
-            catchtap="onSyncTap"
+            catchtap="onModifyTap"
             hover-class="order-action--pressed"
-            aria-label="同步订单 {{item.orderNo}} 的支付结果"
-          >同步结果</button>
+            aria-label="修改订单 {{item.orderNo}}"
+          >修改订单</button>
+          <button
+            wx:if="{{item.canDelete}}"
+            class="order-action order-action--secondary"
+            data-id="{{item.orderId}}"
+            loading="{{actionOrderId === item.orderId && actionType === 'delete'}}"
+            disabled="{{actionOrderId}}"
+            catchtap="onDeleteTap"
+            hover-class="order-action--pressed"
+            aria-label="删除订单 {{item.orderNo}}"
+          >删除订单</button>
+          <button
+            wx:if="{{item.canRebuy}}"
+            class="order-action order-action--secondary"
+            data-id="{{item.orderId}}"
+            loading="{{actionOrderId === item.orderId && actionType === 'rebuy'}}"
+            disabled="{{actionOrderId}}"
+            catchtap="onRebuyTap"
+            hover-class="order-action--pressed"
+            aria-label="再次购买订单 {{item.orderNo}} 的商品"
+          >再次购买</button>
+          <button
+            wx:if="{{item.canReview}}"
+            class="order-action order-action--primary"
+            data-id="{{item.orderId}}"
+            disabled="{{actionOrderId}}"
+            catchtap="onReviewTap"
+            hover-class="order-action--pressed"
+            aria-label="评价订单 {{item.orderNo}} 的商品"
+          >评价</button>
           <button
             wx:if="{{item.canPay}}"
             class="order-action order-action--primary"
             data-id="{{item.orderId}}"
-            loading="{{actionOrderId === item.orderId}}"
+            loading="{{actionOrderId === item.orderId && actionType === 'pay'}}"
             disabled="{{actionOrderId}}"
             catchtap="onPayTap"
             hover-class="order-action--pressed"
             aria-label="{{item.paymentActionText}}，订单 {{item.orderNo}}"
           >{{item.paymentActionText}}</button>
-          <button
-            wx:if="{{item.canConfirmReceipt}}"
-            class="order-action order-action--primary"
-            data-id="{{item.orderId}}"
-            loading="{{actionOrderId === item.orderId}}"
-            disabled="{{actionOrderId}}"
-            catchtap="onConfirmTap"
-            hover-class="order-action--pressed"
-            aria-label="确认订单 {{item.orderNo}} 已收货"
-          >确认收货</button>
         </view>
       </view>
       <view wx:if="{{loadingMore}}" class="list-footer">正在加载更多…</view>

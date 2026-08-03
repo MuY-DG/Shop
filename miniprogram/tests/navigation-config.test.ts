@@ -230,6 +230,14 @@ test("收藏与足迹整卡进入商品详情且移除操作不会冒泡", () =>
     resolve(sourceRoot, "pages/order/list/list.wxml"),
     "utf8"
   );
+  const orderLogic = readFileSync(
+    resolve(sourceRoot, "pages/order/list/list.ts"),
+    "utf8"
+  );
+  const profileLogic = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.ts"),
+    "utf8"
+  );
 
   [favoriteTemplate, historyTemplate].forEach((template) => {
     assert.match(template, /data-id="\{\{item\.spuId\}\}"[\s\S]*bindtap="onProductTap"/);
@@ -248,6 +256,18 @@ test("收藏与足迹整卡进入商品详情且移除操作不会冒泡", () =>
   assert.match(favoriteLogic, /current: 1,[\s\S]*hasMore: false/);
   assert.match(historyLogic, /current: 1,[\s\S]*hasMore: false/);
   assert.match(orderTemplate, /class="order-card"[\s\S]*aria-role="group"[\s\S]*class="order-card__detail"[\s\S]*aria-role="button"/);
+  assert.match(orderTemplate, /wx:for="\{\{item\.items\}\}"[\s\S]*class="order-product/);
+  assert.match(orderTemplate, /binderror="onItemImageError"/);
+  ["onCancelTap", "onModifyTap", "onDeleteTap", "onRebuyTap", "onReviewTap", "onPayTap"]
+    .forEach((handler) => assert.match(orderTemplate, new RegExp(`catchtap="${handler}"`)));
+  assert.doesNotMatch(orderTemplate, /灶香集|order-card__merchant|onSyncTap|onConfirmTap|评价晒单/);
+  assert.match(orderLogic, /await deleteOrder\(orderId\)/);
+  assert.match(orderLogic, /const detail = await getOrderDetail\(orderId\)[\s\S]*await addCartItem/);
+  assert.match(orderLogic, /buildOrderReviewUrl\(orderId\)/);
+  assert.match(orderLogic, /buildOrderModifyUrl\(orderId\)/);
+  assert.match(orderLogic, /this\.data\.loadingMore/);
+  assert.match(orderLogic, /loading: true, loadingMore: false/);
+  assert.match(profileLogic, /group: "TO_REVIEW",[\s\S]{0,80}label: "待评价"/);
 });
 
 test("全局导航统一返回图标且不再显示首页按钮", () => {

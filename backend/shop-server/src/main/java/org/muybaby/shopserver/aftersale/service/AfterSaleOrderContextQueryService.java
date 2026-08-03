@@ -65,10 +65,36 @@ public class AfterSaleOrderContextQueryService {
                                wholesale_tier_min_quantity,
                                quantity,
                                line_original_amount_cent,
-                               line_amount_cent
-                        from order_item
-                        where order_id = :orderId
-                        order by id asc
+                               line_amount_cent,
+                               exists (
+                                   select 1
+                                   from product_review review
+                                   where review.source_order_item_id = oi.id
+                               ) as reviewed,
+                               (
+                                   not exists (
+                                       select 1
+                                       from product_review review
+                                       where review.source_order_item_id = oi.id
+                                   )
+                                   and exists (
+                                       select 1
+                                       from product_spu review_product
+                                       where review_product.id = oi.spu_id
+                                         and review_product.purged_at is null
+                                   )
+                                   and exists (
+                                       select 1
+                                       from shop_order review_order
+                                       where review_order.id = oi.order_id
+                                         and review_order.status = 'COMPLETED'
+                                         and review_order.completed_at is not null
+                                         and review_order.app_deleted_at is null
+                                   )
+                               ) as reviewable
+                        from order_item oi
+                        where oi.order_id = :orderId
+                        order by oi.id asc
                         """)
                 .param("orderId", orderId)
                 .query(this::mapOrderItem)
@@ -108,7 +134,9 @@ public class AfterSaleOrderContextQueryService {
                 rs.getObject("wholesale_tier_min_quantity", Integer.class),
                 rs.getInt("quantity"),
                 rs.getLong("line_original_amount_cent"),
-                rs.getLong("line_amount_cent")
+                rs.getLong("line_amount_cent"),
+                rs.getBoolean("reviewed"),
+                rs.getBoolean("reviewable")
         );
     }
 

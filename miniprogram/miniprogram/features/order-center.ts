@@ -5,6 +5,7 @@ import type {
   OrderItemResponse,
   OrderStatus,
   OrderStatusGroup,
+  OrderSummaryItemResponse,
   OrderSummaryResponse
 } from "../types/order";
 import {
@@ -13,6 +14,49 @@ import {
   isActiveAfterSale,
   type AfterSaleView
 } from "./after-sale";
+
+export interface PageOperationGuard {
+  mount(): number;
+  unmount(pageToken: number): void;
+  begin(pageToken: number): number;
+  isCurrent(pageToken: number, operationToken: number): boolean;
+}
+
+export function createPageOperationGuard(): PageOperationGuard {
+  let nextPageToken = 0;
+  let nextOperationToken = 0;
+  const activePages = new Set<number>();
+  const currentOperations = new Map<number, number>();
+
+  return {
+    mount(): number {
+      const pageToken = ++nextPageToken;
+      activePages.add(pageToken);
+      return pageToken;
+    },
+
+    unmount(pageToken: number): void {
+      activePages.delete(pageToken);
+      currentOperations.delete(pageToken);
+    },
+
+    begin(pageToken: number): number {
+      if (!activePages.has(pageToken)) {
+        return 0;
+      }
+      const operationToken = ++nextOperationToken;
+      currentOperations.set(pageToken, operationToken);
+      return operationToken;
+    },
+
+    isCurrent(pageToken: number, operationToken: number): boolean {
+      return pageToken > 0
+        && operationToken > 0
+        && activePages.has(pageToken)
+        && currentOperations.get(pageToken) === operationToken;
+    }
+  };
+}
 
 export interface OrderStatusTab {
   value: OrderStatusGroup;
@@ -24,7 +68,9 @@ export const ORDER_STATUS_TABS: readonly OrderStatusTab[] = Object.freeze([
   { value: "UNPAID", label: "待付款" },
   { value: "TO_SHIP", label: "待发货" },
   { value: "TO_RECEIVE", label: "待收货" },
-  { value: "COMPLETED", label: "已完成" }
+  { value: "TO_REVIEW", label: "待评价" },
+  { value: "COMPLETED", label: "已完成" },
+  { value: "CANCELLED", label: "已取消" }
 ]);
 
 interface OrderActions {
@@ -37,7 +83,28 @@ interface OrderActions {
   paymentActionText: string;
 }
 
-export interface OrderSummaryView extends OrderSummaryResponse, OrderActions {
+interface OrderSummaryActions {
+  canPay: boolean;
+  canCancel: boolean;
+  canModify: boolean;
+  canDelete: boolean;
+  canRebuy: boolean;
+  canReview: boolean;
+  hasActions: boolean;
+  paymentActionText: string;
+}
+
+export interface OrderSummaryItemView extends OrderSummaryItemResponse {
+  titleText: string;
+  specificationText: string;
+  imageUrl: string;
+  hasImage: boolean;
+  unitPriceText: string;
+  quantityText: string;
+}
+
+export interface OrderSummaryView extends Omit<OrderSummaryResponse, "items">, OrderSummaryActions {
+  items: OrderSummaryItemView[];
   statusText: string;
   statusTone: string;
   amountText: string;
@@ -85,7 +152,7 @@ export function orderStatusText(status: OrderStatus): string {
   switch (status) {
     case "CREATED":
     case "PAYING":
-      return "等待支付";
+      return "待付款";
     case "PAID":
       return "待发货";
     case "SHIPPED":
@@ -149,6 +216,26 @@ function actions(status: OrderStatus): OrderActions {
   };
 }
 
+function summaryActions(
+  status: OrderStatus,
+  pendingReviewCount: number
+): OrderSummaryActions {
+  const canPay = status === "CREATED" || status === "PAYING";
+  const canReview = status === "COMPLETED" && pendingReviewCount > 0;
+  const canDelete = status === "COMPLETED" || status === "CLOSED";
+  const canRebuy = status === "SHIPPED" || canDelete;
+  return {
+    canPay,
+    canCancel: canPay,
+    canModify: canPay,
+    canDelete,
+    canRebuy,
+    canReview,
+    hasActions: canPay || canDelete || canRebuy || canReview,
+    paymentActionText: "去支付"
+  };
+}
+
 export function formatPaymentCountdown(value: unknown): string {
   const parsed = Number(value);
   const totalSeconds = Number.isFinite(parsed)
@@ -162,16 +249,47 @@ export function formatPaymentCountdown(value: unknown): string {
 }
 
 export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummaryView {
+  const pendingReviewCount = Number.isSafeInteger(order.pendingReviewCount)
+    ? Math.max(0, order.pendingReviewCount)
+    : 0;
+  const orderActions = summaryActions(order.status, pendingReviewCount);
   return {
     ...order,
-    ...actions(order.status),
-    statusText: orderStatusText(order.status),
-    statusTone: orderStatusTone(order.status),
+    ...orderActions,
+    pendingReviewCount,
+    items: (Array.isArray(order.items) ? order.items : []).map(buildOrderSummaryItemView),
+    statusText: orderActions.canReview ? "待评价" : orderStatusText(order.status),
+    statusTone: orderActions.canReview ? "brand" : orderStatusTone(order.status),
     amountText: money(order.status === "PAID" || order.paidAmountCent > 0
       ? order.paidAmountCent
       : order.payableAmountCent),
     createdAtText: formatLocalDateTime(order.createdAt),
     itemCountText: `共 ${Math.max(0, order.itemCount)} 件商品`
+  };
+}
+
+function buildOrderSummaryItemView(
+  item: OrderSummaryItemResponse
+): OrderSummaryItemView {
+  const imageUrl = (item.displayImage || item.skuImage || item.mainImage || "").trim();
+  const titleText = typeof item.productTitle === "string"
+    ? item.productTitle.trim()
+    : "";
+  const specificationText = typeof item.specText === "string"
+    ? item.specText.trim()
+    : "";
+  const quantity = Number.isSafeInteger(item.quantity)
+    ? Math.max(0, item.quantity)
+    : 0;
+  return {
+    ...item,
+    titleText: titleText || "订单商品",
+    specificationText,
+    imageUrl,
+    hasImage: Boolean(imageUrl),
+    unitPriceText: money(item.unitPriceCent),
+    quantity,
+    quantityText: `共${quantity}件`
   };
 }
 
@@ -259,4 +377,20 @@ export function buildOrderDetailUrl(orderId: number): string {
     throw new Error("订单参数无效");
   }
   return `/pages/order/detail/detail?order_id=${normalized}`;
+}
+
+export function buildOrderReviewUrl(orderId: number): string {
+  const normalized = positiveOrderId(orderId);
+  if (!normalized) {
+    throw new Error("订单参数无效");
+  }
+  return `/pages/order/review/review?order_id=${normalized}`;
+}
+
+export function buildOrderModifyUrl(orderId: number): string {
+  const normalized = positiveOrderId(orderId);
+  if (!normalized) {
+    throw new Error("订单参数无效");
+  }
+  return `/pages/order/modify/modify?order_id=${normalized}`;
 }

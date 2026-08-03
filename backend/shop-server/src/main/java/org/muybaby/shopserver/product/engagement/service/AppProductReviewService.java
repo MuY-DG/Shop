@@ -132,6 +132,7 @@ public class AppProductReviewService {
                           AND oi.spu_id = :spuId
                           AND o.status = :completedStatus
                           AND o.completed_at IS NOT NULL
+                          AND o.app_deleted_at IS NULL
                           AND r.id IS NULL
                         ORDER BY o.completed_at DESC, oi.id DESC
                         LIMIT 50
@@ -176,6 +177,7 @@ public class AppProductReviewService {
                           AND user_id = :userId
                           AND status = :completedStatus
                           AND completed_at IS NOT NULL
+                          AND app_deleted_at IS NULL
                         FOR UPDATE
                         """)
                 .param("orderId", orderId)

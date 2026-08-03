@@ -1,0 +1,164 @@
+<view class="review-page">
+  <navigation-bar
+    title="评价订单"
+    back="{{true}}"
+    background="#FAF2E4"
+    color="#2E1D16"
+    loading="{{loaded && loading}}"
+  />
+
+  <view class="review-content">
+    <view wx:if="{{!loaded && loading}}" class="review-state">
+      <ui-state type="loading" title="正在加载待评价商品" />
+    </view>
+    <view wx:elif="{{!loaded && errorText}}" class="review-state">
+      <ui-state
+        type="error"
+        title="订单加载失败"
+        description="{{errorText}}"
+        action-text="重新加载"
+        bindaction="onRetry"
+      />
+    </view>
+    <view wx:elif="{{blockingText}}" class="review-state">
+      <ui-state
+        type="error"
+        title="暂时不能评价"
+        description="{{blockingText}}"
+        action-text="返回订单"
+        bindaction="onBackToOrders"
+      />
+    </view>
+    <view wx:elif="{{completed}}" class="review-state review-state--complete">
+      <ui-state
+        type="empty"
+        icon="/assets/icons/order-review.svg"
+        description="这个订单已经没有待评价商品"
+        action-text="返回订单"
+        bindaction="onBackToOrders"
+      />
+    </view>
+
+    <block wx:else>
+      <view wx:if="{{errorText}}" class="inline-error">
+        <text>{{errorText}}</text>
+        <button bindtap="onRetry">重试</button>
+      </view>
+
+      <view class="review-summary">
+        <view>
+          <text class="review-summary__title">真实评价</text>
+          <text class="review-summary__description">分享商品体验，帮助更多顾客选择</text>
+        </view>
+        <text class="review-summary__progress">{{progressText}}</text>
+      </view>
+
+      <scroll-view
+        wx:if="{{pendingItems.length > 1}}"
+        class="product-selector"
+        scroll-x="{{true}}"
+        enhanced="{{true}}"
+        show-scrollbar="{{false}}"
+      >
+        <view class="product-selector__track">
+          <view
+            wx:for="{{pendingItems}}"
+            wx:key="orderItemId"
+            class="product-option {{selectedOrderItemId === item.orderItemId ? 'product-option--selected' : ''}}"
+            data-order-item-id="{{item.orderItemId}}"
+            bindtap="onProductSelect"
+            aria-role="button"
+            aria-label="评价商品 {{item.productTitle}}"
+          >
+            <image
+              class="product-option__image"
+              src="{{item.hasImage ? item.imageUrl : '/assets/icons/order-review.svg'}}"
+              mode="aspectFill"
+            />
+            <text class="product-option__title">{{item.productTitle}}</text>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view wx:if="{{selectedItem}}" class="review-form-card">
+        <view class="review-product">
+          <view class="review-product__image-shell">
+            <image
+              class="review-product__image {{selectedItem.hasImage ? '' : 'review-product__image--fallback'}}"
+              src="{{selectedItem.hasImage ? selectedItem.imageUrl : '/assets/icons/order-review.svg'}}"
+              mode="{{selectedItem.hasImage ? 'aspectFill' : 'aspectFit'}}"
+              binderror="onProductImageError"
+            />
+          </view>
+          <view class="review-product__body">
+            <text class="review-product__title">{{selectedItem.productTitle}}</text>
+            <text wx:if="{{selectedItem.specTextDisplay}}" class="review-product__spec">{{selectedItem.specTextDisplay}}</text>
+            <text class="review-product__quantity">数量 ×{{selectedItem.quantity}}</text>
+          </view>
+        </view>
+
+        <view class="form-section form-section--rating">
+          <view class="form-heading">
+            <text class="form-label">商品评分</text>
+            <text class="rating-copy">{{selectedItem.rating}} 星</text>
+          </view>
+          <view class="rating-stars" aria-label="当前评分 {{selectedItem.rating}} 星">
+            <button
+              wx:for="{{selectedItem.stars}}"
+              wx:for-item="star"
+              wx:key="value"
+              class="rating-star {{star.filled ? 'rating-star--filled' : ''}}"
+              data-rating="{{star.value}}"
+              bindtap="onRatingSelect"
+              aria-label="评分 {{star.value}} 星"
+            >
+              <image
+                class="rating-star__icon"
+                src="{{star.filled ? '/assets/icons/favorite-clarity-solid.svg' : '/assets/icons/favorite-clarity-line.svg'}}"
+                mode="aspectFit"
+                aria-hidden="true"
+              />
+            </button>
+          </view>
+        </view>
+
+        <view class="form-section">
+          <view class="form-heading">
+            <text class="form-label">评价内容</text>
+            <text class="content-count">{{selectedItem.content.length}} / 1000</text>
+          </view>
+          <textarea
+            class="review-textarea"
+            value="{{selectedItem.content}}"
+            maxlength="1000"
+            auto-height="{{false}}"
+            cursor-spacing="32"
+            placeholder="说说口味、分量、包装或配送体验（选填）"
+            bindinput="onContentInput"
+          />
+        </view>
+
+        <view class="anonymous-row">
+          <view>
+            <text class="form-label">匿名评价</text>
+            <text class="anonymous-row__hint">开启后其他用户看不到你的昵称</text>
+          </view>
+          <switch
+            checked="{{selectedItem.anonymous}}"
+            color="#B72B22"
+            bindchange="onAnonymousChange"
+          />
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{selectedItem && !blockingText}}" class="review-footer">
+    <button
+      class="review-submit"
+      loading="{{submittingOrderItemId === selectedItem.orderItemId}}"
+      disabled="{{submittingOrderItemId}}"
+      bindtap="onSubmitTap"
+    >发布评价</button>
+  </view>
+</view>
