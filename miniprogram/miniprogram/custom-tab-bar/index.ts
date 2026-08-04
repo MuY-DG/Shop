@@ -50,6 +50,38 @@ const TAB_ITEMS: TabItem[] = [
 
 let latestCartCountRequest = 0;
 
+interface TabBarPlatformView {
+  isAndroid: boolean;
+  itemOffsetRpx: number;
+}
+
+function resolveTabBarPlatformView(): TabBarPlatformView {
+  try {
+    const systemInfo = wx.getSystemInfoSync();
+    const isAndroid = systemInfo.platform === "android";
+    if (isAndroid) {
+      return { isAndroid: true, itemOffsetRpx: 34 };
+    }
+    const windowWidth = Number(systemInfo.windowWidth);
+    const screenHeight = Number(systemInfo.screenHeight);
+    const safeAreaBottom = Number(systemInfo.safeArea?.bottom);
+    const bottomInsetPx = Number.isFinite(screenHeight) && Number.isFinite(safeAreaBottom)
+      ? Math.max(0, screenHeight - safeAreaBottom)
+      : 0;
+    const bottomInsetRpx = Number.isFinite(windowWidth) && windowWidth > 0
+      ? bottomInsetPx * 750 / windowWidth
+      : 0;
+    return {
+      isAndroid: false,
+      itemOffsetRpx: Math.min(44, Math.round(bottomInsetRpx / 2))
+    };
+  } catch {
+    return { isAndroid: false, itemOffsetRpx: 0 };
+  }
+}
+
+const TAB_BAR_PLATFORM_VIEW = resolveTabBarPlatformView();
+
 Component({
   options: {
     styleIsolation: "isolated"
@@ -58,6 +90,7 @@ Component({
   data: {
     selected: -1,
     hidden: true,
+    ...TAB_BAR_PLATFORM_VIEW,
     list: TAB_ITEMS
   },
 

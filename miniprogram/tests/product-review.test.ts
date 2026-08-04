@@ -20,6 +20,7 @@ test("评价摘要规范评分、数量和好评率", () => {
   }), {
     reviewCount: 8,
     reviewCountText: "8 条评价",
+    reviewCountPlusText: "8+",
     averageRating: 4.56,
     averageRatingText: "4.6",
     goodRateText: "好评率88%",
@@ -28,6 +29,7 @@ test("评价摘要规范评分、数量和好评率", () => {
   assert.deepEqual(buildProductReviewSummaryView(), {
     reviewCount: 0,
     reviewCountText: "暂无评价",
+    reviewCountPlusText: "0",
     averageRating: 0,
     averageRatingText: "0.0",
     goodRateText: "期待首条评价",
@@ -85,6 +87,8 @@ test("公开评价过滤无效记录并生成匿名、日期和规格展示", ()
   assert.equal(views[0]?.skuSpecText, "500g 袋装");
   assert.deepEqual(views[0]?.images.map((image) => image.fileId), [11, 12]);
   assert.equal(views[0]?.hasImages, true);
+  assert.equal(views[0]?.previewImageUrl, "https://img.example/first.webp");
+  assert.equal(views[0]?.imageCount, 2);
 });
 
 test("可评价订单和文字输入生成提交前的安全值", () => {

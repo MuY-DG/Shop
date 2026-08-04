@@ -133,6 +133,12 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
     tabStyle,
     /\.tab-bar__icon-image\s*\{[\s\S]*position: absolute;[\s\S]*opacity: 0;[\s\S]*\.tab-bar__icon-image--visible\s*\{[\s\S]*opacity: 1;/
   );
+  assert.match(tabLogic, /systemInfo\.platform === "android"/);
+  assert.match(tabLogic, /return \{ isAndroid: true, itemOffsetRpx: 34 \}/);
+  assert.match(tabLogic, /Math\.round\(bottomInsetRpx \/ 2\)/);
+  assert.match(tabTemplate, /class="tab-bar \{\{isAndroid \? 'tab-bar--android' : ''\}\}"/);
+  assert.match(tabTemplate, /style="transform: translateY\(\{\{itemOffsetRpx\}\}rpx\);"/);
+  assert.match(tabStyle, /\.tab-bar--android\s*\{\s*padding-bottom: @tab-bar-bottom-inset;/);
 
   assert.doesNotThrow(() => syncCustomTabBar({}, 0));
 });
@@ -223,7 +229,7 @@ test("分类页固定工具区并统一搜索、排序和分类视觉", () => {
   assert.doesNotMatch(catalogTemplate, /catalog-tab-wash/);
   assert.match(catalogStyle, /\.catalog-browser--fixed\s*\{[\s\S]*display: flex;[\s\S]*overflow: hidden/);
   assert.match(catalogStyle, /\.catalog-browser--tab \.catalog-content\s*\{[\s\S]*padding-bottom: 0/);
-  assert.match(catalogStyle, /\.catalog-tab-spacer\s*\{[\s\S]*height: calc\(@tab-bar-height \+ env\(safe-area-inset-bottom\)\)/);
+  assert.match(catalogStyle, /\.catalog-tab-spacer\s*\{[\s\S]*height: calc\(@tab-bar-height \+ @tab-bar-bottom-inset\)/);
   assert.doesNotMatch(catalogStyle, /\.catalog-tab-wash/);
   assert.match(catalogStyle, /\.sort-bar\s*\{[\s\S]*background: transparent/);
   assert.match(catalogStyle, /\.sort-item\s*\{[\s\S]*color: #000000/);
@@ -562,6 +568,15 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   const detailTemplate = readFileSync(`${detailPageRoot}.wxml`, "utf8");
   const detailLogic = readFileSync(`${detailPageRoot}.ts`, "utf8");
   const detailStyle = readFileSync(`${detailPageRoot}.less`, "utf8");
+  const detailChevronIcon = readFileSync(
+    resolve(sourceRoot, "assets/icons/chevron-right-detail.svg"),
+    "utf8"
+  );
+  const detailInformationIcons = [
+    "location-on-outline-rounded.svg",
+    "verified-user-outline-rounded.svg",
+    "local-shipping-outline-rounded.svg"
+  ].map((iconName) => readFileSync(resolve(sourceRoot, "assets/icons", iconName), "utf8"));
   const productSummaryStyle = readFileSync(
     resolve(sourceRoot, "components/product-summary/product-summary.less"),
     "utf8"
@@ -577,12 +592,14 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailTemplate, /data-mode="BUY"/);
   assert.match(detailTemplate, /activeSheet === 'purchase'/);
   assert.match(detailTemplate, />买家评价</);
+  assert.match(detailTemplate, /\{\{reviewSummary\.reviewCountPlusText\}\}/);
   assert.match(detailTemplate, /reviewSummary\.hasReviews \? reviewSummary\.goodRateText : '暂无评价'/);
   assert.doesNotMatch(detailTemplate, /class="review-score"/);
   const reviewPreviewTemplate = detailTemplate.match(
     /<view wx:elif="\{\{reviewPreview\.length\}\}"[\s\S]*?<view wx:else class="review-empty-preview">/
   )?.[0] ?? "";
   assert.match(reviewPreviewTemplate, /src="\/assets\/images\/profile-default-avatar\.png"/);
+  assert.match(reviewPreviewTemplate, /src="\/assets\/images\/member-avatar-frame-v\.png"/);
   assert.doesNotMatch(
     reviewPreviewTemplate,
     /reviewerInitial|review-stars|review-item__date|review-item__meta|verifiedPurchase|skuSpecText/
@@ -591,19 +608,54 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
     reviewPreviewTemplate,
     /review-item__content--empty'\}\}">\{\{review\.hasContent \? review\.content/
   );
+  assert.match(reviewPreviewTemplate, /class="review-preview-media"/);
+  assert.match(reviewPreviewTemplate, /src="\{\{review\.previewImageUrl\}\}"/);
+  assert.match(reviewPreviewTemplate, /class="review-preview-media__count">\{\{review\.imageCount\}\}/);
+  assert.doesNotMatch(reviewPreviewTemplate, /wx:for="\{\{review\.images\}\}"/);
   assert.match(detailLogic, /const REVIEW_PREVIEW_SIZE = 2;/);
   assert.match(detailStyle, /\.review-card\s*\{[\s\S]*?background: @color-surface-white;/);
-  assert.match(detailStyle, /\.commerce-row--address\s*\{ border: 0; background: @color-surface-white; \}/);
   assert.match(
     detailTemplate,
-    /class="commerce-row commerce-row--address commerce-row--interactive"[\s\S]{0,100}bindtap="onAddressTap"/
+    /class="commerce-info-group"[\s\S]{0,520}location-on-outline-rounded\.svg[\s\S]*?data-sheet="guarantee"[\s\S]*?data-sheet="freight"/
   );
+  assert.match(detailStyle, /\.commerce-info-group\s*\{[\s\S]*?background: @color-surface-white;[\s\S]*?box-shadow: @shadow-card;/);
+  assert.match(detailStyle, /\.commerce-info-group \.commerce-row\s*\{[\s\S]*?min-height: 76rpx;[\s\S]*?gap: 14rpx;/);
+  assert.match(detailStyle, /\.commerce-row--detail-info\s*\{[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/);
+  assert.equal((detailTemplate.match(/chevron-right-detail\.svg/g) ?? []).length, 3);
+  assert.match(detailChevronIcon, /#a8abb3/i);
+  detailInformationIcons.forEach((icon) => assert.match(icon, /#a8abb3/i));
+  assert.match(detailTemplate, /data-sheet="guarantee"[\s\S]{0,260}verified-user-outline-rounded\.svg/);
+  assert.match(detailTemplate, /data-sheet="freight"[\s\S]{0,260}local-shipping-outline-rounded\.svg/);
+  assert.match(detailLogic, /\.join\("｜"\)/);
+  assert.match(detailLogic, /summary: `\$\{cleanText\(template\.name\)\}｜\$\{chargeText\}`/);
+  assert.match(
+    detailTemplate,
+    /class="commerce-row commerce-row--detail-info commerce-row--address commerce-row--interactive"[\s\S]{0,100}bindtap="onAddressTap"/
+  );
+  assert.match(
+    detailTemplate,
+    /commerce-address-copy[\s\S]{0,220}commerce-value__text--address">\{\{selectedAddress \? selectedAddress\.formattedAddress[\s\S]{0,180}commerce-default-tag">默认/
+  );
+  assert.match(detailStyle, /\.commerce-value__text--address\s*\{\s*flex: 0 1 auto;/);
+  assert.match(detailTemplate, /activeSheet === 'guarantee' \? 'sheet-panel--guarantee'/);
+  assert.match(detailTemplate, /activeSheet === 'freight' \? 'sheet-panel--freight'/);
+  assert.doesNotMatch(detailTemplate, /sheet-mask--above-purchase/);
+  assert.doesNotMatch(detailStyle, /\.sheet-mask--above-purchase/);
+  assert.match(detailStyle, /\.sheet-panel--guarantee,\s*\.sheet-panel--freight\s*\{ background: @color-surface-white; \}/);
+  assert.match(detailStyle, /@keyframes sheet-rise\s*\{\s*from \{ transform: translateY\(100%\); \}\s*to \{ transform: translateY\(0\); \}/);
+  assert.match(detailStyle, /\.sheet-panel--address\s*\{[\s\S]*?padding-bottom: 0;[\s\S]*?background: @color-surface-white;/);
+  assert.match(detailTemplate, /class="address-option__check"[\s\S]{0,260}check-rounded-material-symbols-iconify\.svg/);
+  assert.match(detailStyle, /\.address-option--selected \.address-option__check\s*\{[\s\S]*?background: #ff172b;/);
+  assert.match(detailStyle, /\.add-address-action\s*\{[\s\S]*?height: 96rpx;[\s\S]*?background: #ff172b;/);
   assert.match(detailStyle, /\.review-card\s*\{[\s\S]*?border: 0;/);
   assert.doesNotMatch(detailStyle, /\.review-item\s*\{[^}]*border-bottom:/);
-  assert.match(detailStyle, /\.review-preview-list \.review-item\s*\{\s*padding: 10rpx 0;/);
+  assert.match(detailStyle, /\.review-preview-list \.review-item\s*\{[\s\S]*?padding: 10rpx 0;/);
   assert.match(detailStyle, /\.review-preview-list \.review-user\s*\{\s*align-items: center;/);
   assert.match(detailStyle, /\.review-preview-list \.review-user__avatar\s*\{[\s\S]*?width: 42rpx;[\s\S]*?border: 0;/);
-  assert.match(detailStyle, /\.review-preview-list \.review-item__content\s*\{[\s\S]*?margin-top: 1rpx;[\s\S]*?padding-left: 52rpx;/);
+  assert.match(detailStyle, /\.review-card__count\s*\{[\s\S]*?color: @color-text-primary;[\s\S]*?font-size: @font-size-md;/);
+  assert.match(detailStyle, /\.review-preview-list \.review-user__name\s*\{[\s\S]*?font-family: -apple-system,[\s\S]*?font-size: 26rpx;[\s\S]*?font-weight: 400;/);
+  assert.match(detailStyle, /\.review-preview-list \.review-item__content\s*\{[\s\S]*?padding-left: 60rpx;[\s\S]*?line-height: 36rpx;[\s\S]*?-webkit-line-clamp: 3;/);
+  assert.match(detailStyle, /\.review-preview-media\s*\{[\s\S]*?width: 158rpx;[\s\S]*?height: 158rpx;/);
   assert.match(detailStyle, /padding: 0 16rpx calc\(154rpx \+ env\(safe-area-inset-bottom\)\);/);
   assert.match(detailStyle, /\.purchase-bar\s*\{[\s\S]*?background: @color-surface-white;/);
   assert.match(detailTemplate, />暂时售空</);

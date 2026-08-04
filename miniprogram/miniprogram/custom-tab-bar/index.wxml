@@ -1,10 +1,10 @@
 <view
-  class="tab-bar"
+  class="tab-bar {{isAndroid ? 'tab-bar--android' : ''}}"
   hidden="{{hidden}}"
   aria-role="tablist"
   aria-label="主导航"
 >
-  <view class="tab-bar__items">
+  <view class="tab-bar__items" style="transform: translateY({{itemOffsetRpx}}rpx);">
     <view
       wx:for="{{list}}"
       wx:key="pagePath"

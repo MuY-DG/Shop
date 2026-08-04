@@ -207,9 +207,16 @@ function freightCopy(template: ProductFreightTemplate | undefined): {
     ? "免运费"
     : `固定运费 ¥${formatMoney(template.fixedAmountCent) || "0.00"}`;
   return {
-    summary: `${cleanText(template.name)} · ${chargeText}`,
+    summary: `${cleanText(template.name)}｜${chargeText}`,
     chargeText
   };
+}
+
+function guaranteeSummary(detail: ProductDetail): string {
+  return detail.guaranteeServices
+    .map((service) => cleanText(service.termsName))
+    .filter(Boolean)
+    .join("｜");
 }
 
 function parameterViewGroups(parameters: ProductParameterView[]): ParameterViewGroups {
@@ -224,29 +231,8 @@ function parameterViewGroups(parameters: ProductParameterView[]): ParameterViewG
   };
 }
 
-function buildBenefitItems(
-  detail: ProductDetail,
-  freightSummary: string
-): BenefitItemView[] {
-  const guaranteeItems = detail.guaranteeServices
-    .map((service) => ({
-      key: `guarantee-${service.id}`,
-      text: cleanText(service.termsName),
-      iconUrl: cleanText(service.icon),
-      sheet: "guarantee" as const,
-      interactive: true
-    }))
-    .filter((item) => item.text);
-  const freightItems: BenefitItemView[] = freightSummary
-    ? [{
-      key: "freight",
-      text: freightSummary,
-      iconUrl: "/assets/icons/local-shipping-outline-rounded.svg",
-      sheet: "freight",
-      interactive: true
-    }]
-    : [];
-  const sellingPointItems: BenefitItemView[] = detail.sellingPoints
+function buildBenefitItems(detail: ProductDetail): BenefitItemView[] {
+  return detail.sellingPoints
     .map((point, index) => ({
       key: `selling-point-${index}`,
       text: cleanText(point),
@@ -255,7 +241,6 @@ function buildBenefitItems(
       interactive: false
     }))
     .filter((item) => item.text);
-  return [...guaranteeItems, ...freightItems, ...sellingPointItems];
 }
 
 function wholesaleSummary(tiers: WholesaleTierView[]): string {
@@ -309,6 +294,7 @@ Page({
     ...EMPTY_SELECTION,
     selectedSkuName: "",
     purchaseImageUrl: "",
+    guaranteeSummary: "",
     freightSummary: "",
     freightChargeText: "",
     wholesaleSummary: "",
@@ -449,7 +435,7 @@ Page({
         galleryImages: buildGalleryImages(normalizedDetail),
         parameterViews,
         ...parameterGroups,
-        benefitItems: buildBenefitItems(normalizedDetail, freight.summary),
+        benefitItems: buildBenefitItems(normalizedDetail),
         specificationGroups: buildSkuSpecificationGroups(
           normalizedDetail.skus,
           selection.selectedSkuId
@@ -458,6 +444,7 @@ Page({
         ...selection,
         selectedSkuName: cleanText(selectedSku?.specText) || "默认规格",
         purchaseImageUrl: cleanText(selectedSku?.image) || cleanText(normalizedDetail.mainImage),
+        guaranteeSummary: guaranteeSummary(normalizedDetail),
         freightSummary: freight.summary,
         freightChargeText: freight.chargeText,
         wholesaleSummary: wholesaleSummary(selection.wholesaleTiers),
@@ -486,6 +473,10 @@ Page({
         specificationGroups: [],
         specificationImageMode: "list",
         ...EMPTY_SELECTION,
+        guaranteeSummary: "",
+        freightSummary: "",
+        freightChargeText: "",
+        wholesaleSummary: "",
         reviewSummary: EMPTY_REVIEW_SUMMARY,
         reviewPreview: [],
         reviewPreviewLoading: false,

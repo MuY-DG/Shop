@@ -16,7 +16,7 @@
   right: 0;
   bottom: 0;
   left: 0;
-  height: calc(@tab-bar-height + 80rpx + env(safe-area-inset-bottom));
+  height: calc(@tab-bar-height + 80rpx + @tab-bar-bottom-inset);
   background: linear-gradient(
     180deg,
     transparent 0%,
@@ -69,7 +69,7 @@ button.manage-action[disabled] {
 .cart-login-state {
   display: flex;
   min-height: 0;
-  padding: 0 @space-8 calc(@tab-bar-height + env(safe-area-inset-bottom));
+  padding: 0 @space-8 calc(@tab-bar-height + @tab-bar-bottom-inset);
   border: 0;
   border-radius: 0;
   flex: 1;
@@ -417,7 +417,7 @@ button.delete-icon-action[disabled] {
   position: fixed;
   z-index: 20;
   right: 0;
-  bottom: calc(@tab-bar-height + env(safe-area-inset-bottom));
+  bottom: calc(@tab-bar-height + @tab-bar-bottom-inset);
   left: 0;
   display: grid;
   min-height: 118rpx;

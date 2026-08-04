@@ -15,6 +15,7 @@ export interface RatingStarView {
 export interface ProductReviewSummaryView {
   reviewCount: number;
   reviewCountText: string;
+  reviewCountPlusText: string;
   averageRating: number;
   averageRatingText: string;
   goodRateText: string;
@@ -34,6 +35,8 @@ export interface PublicProductReviewView {
   createdAtText: string;
   images: ProductReviewImage[];
   hasImages: boolean;
+  previewImageUrl: string;
+  imageCount: number;
 }
 
 export interface MyProductReviewView extends PublicProductReviewView {
@@ -114,6 +117,7 @@ export function buildProductReviewSummaryView(
   return {
     reviewCount,
     reviewCountText: reviewCount ? `${reviewCount} 条评价` : "暂无评价",
+    reviewCountPlusText: reviewCount ? `${reviewCount}+` : "0",
     averageRating,
     averageRatingText: averageRating.toFixed(1),
     goodRateText: reviewCount
@@ -145,7 +149,9 @@ export function buildPublicProductReviewViews(
         verifiedPurchase: review.verifiedPurchase === true,
         createdAtText: formatReviewDate(review.createdAt),
         images,
-        hasImages: images.length > 0
+        hasImages: images.length > 0,
+        previewImageUrl: images[0]?.url ?? "",
+        imageCount: images.length
       };
     });
 }

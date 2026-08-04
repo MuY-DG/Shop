@@ -120,18 +120,50 @@
           </view>
           <image class="commerce-action-icon" src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
         </view>
-        <view
-          class="commerce-row commerce-row--address commerce-row--interactive"
-          bindtap="onAddressTap"
-          aria-role="button"
-          aria-label="选择收货地址"
-        >
-          <image class="commerce-icon" src="/assets/icons/location-on-outline-rounded.svg" mode="aspectFit" />
-          <view class="commerce-value {{selectedAddress ? '' : 'commerce-value--empty'}}">
-            <text wx:if="{{selectedAddress && selectedAddress.isDefault}}" class="commerce-default-tag">默认</text>
-            <text class="commerce-value__text">{{selectedAddress ? selectedAddress.formattedAddress : '请选择收货地址'}}</text>
+        <view class="commerce-info-group">
+          <view
+            class="commerce-row commerce-row--detail-info commerce-row--address commerce-row--interactive"
+            bindtap="onAddressTap"
+            aria-role="button"
+            aria-label="选择收货地址"
+          >
+            <image class="commerce-icon" src="/assets/icons/location-on-outline-rounded.svg" mode="aspectFit" />
+            <view class="commerce-value {{selectedAddress ? '' : 'commerce-value--empty'}}">
+              <view class="commerce-address-copy">
+                <text class="commerce-value__text commerce-value__text--address">{{selectedAddress ? selectedAddress.formattedAddress : '请选择收货地址'}}</text>
+                <text wx:if="{{selectedAddress && selectedAddress.isDefault}}" class="commerce-default-tag">默认</text>
+              </view>
+            </view>
+            <image class="commerce-action-icon" src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" />
           </view>
-          <image class="commerce-action-icon" src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
+          <view
+            wx:if="{{guaranteeSummary}}"
+            class="commerce-row commerce-row--detail-info commerce-row--interactive"
+            data-sheet="guarantee"
+            bindtap="onInfoSheetOpen"
+            aria-role="button"
+            aria-label="查看服务保障"
+          >
+            <image class="commerce-icon" src="/assets/icons/verified-user-outline-rounded.svg" mode="aspectFit" />
+            <view class="commerce-value">
+              <text class="commerce-value__text">{{guaranteeSummary}}</text>
+            </view>
+            <image class="commerce-action-icon" src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" />
+          </view>
+          <view
+            wx:if="{{freightSummary}}"
+            class="commerce-row commerce-row--detail-info commerce-row--interactive"
+            data-sheet="freight"
+            bindtap="onInfoSheetOpen"
+            aria-role="button"
+            aria-label="查看运费说明"
+          >
+            <image class="commerce-icon" src="/assets/icons/local-shipping-outline-rounded.svg" mode="aspectFit" />
+            <view class="commerce-value">
+              <text class="commerce-value__text">{{freightSummary}}</text>
+            </view>
+            <image class="commerce-action-icon" src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" />
+          </view>
         </view>
       </view>
 
@@ -139,7 +171,7 @@
         <view class="review-card__header">
           <view>
             <text class="section-heading__title">买家评价</text>
-            <text class="review-card__count">{{reviewSummary.reviewCountText}}</text>
+            <text class="review-card__count">{{reviewSummary.reviewCountPlusText}}</text>
           </view>
           <button
             class="review-card__all"
@@ -165,32 +197,45 @@
             wx:key="id"
             class="review-item"
           >
-            <view class="review-item__header">
-              <view class="review-user">
-                <image
-                  class="review-user__avatar review-user__avatar--image"
-                  src="/assets/images/profile-default-avatar.png"
-                  mode="aspectFill"
-                  aria-label="买家头像"
-                />
-                <view class="review-user__copy">
-                  <text class="review-user__name">{{review.reviewerName}}</text>
+            <view class="review-item__main">
+              <view class="review-item__header">
+                <view class="review-user">
+                  <view class="review-user__avatar-shell">
+                    <image
+                      class="review-user__avatar review-user__avatar--image"
+                      src="/assets/images/profile-default-avatar.png"
+                      mode="aspectFill"
+                      aria-label="买家头像"
+                    />
+                    <image
+                      class="review-user__avatar-frame"
+                      src="/assets/images/member-avatar-frame-v.png"
+                      mode="aspectFit"
+                      aria-hidden="true"
+                    />
+                  </view>
+                  <view class="review-user__copy">
+                    <text class="review-user__name">{{review.reviewerName}}</text>
+                  </view>
                 </view>
               </view>
+              <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">{{review.hasContent ? review.content : '此用户没有填写文字评价'}}</text>
             </view>
-            <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">{{review.hasContent ? review.content : '此用户没有填写文字评价'}}</text>
-            <view wx:if="{{review.hasImages}}" class="review-image-gallery review-image-gallery--preview">
+            <view
+              wx:if="{{review.hasImages}}"
+              class="review-preview-media"
+              data-review-id="{{review.id}}"
+              data-image-url="{{review.previewImageUrl}}"
+              bindtap="onReviewImagePreview"
+              aria-role="button"
+              aria-label="查看买家上传的 {{review.imageCount}} 张图片"
+            >
               <image
-                wx:for="{{review.images}}"
-                wx:for-item="reviewImage"
-                wx:key="fileId"
-                class="review-image-gallery__image"
-                src="{{reviewImage.url}}"
+                class="review-preview-media__image"
+                src="{{review.previewImageUrl}}"
                 mode="aspectFill"
-                data-review-id="{{review.id}}"
-                data-image-url="{{reviewImage.url}}"
-                bindtap="onReviewImagePreview"
               />
+              <text class="review-preview-media__count">{{review.imageCount}}</text>
             </view>
           </view>
         </view>
@@ -257,7 +302,7 @@
     catchtap="onCloseSheet"
     catchtouchmove="onPreventMove"
   >
-    <view class="sheet-panel {{sheetClosing ? 'sheet-panel--closing' : ''}} {{activeSheet === 'purchase' ? 'sheet-panel--purchase' : ''}} {{activeSheet === 'address' ? 'sheet-panel--address' : ''}} {{activeSheet === 'reviews' ? 'sheet-panel--reviews' : ''}}" catchtap="onPreventMove">
+    <view class="sheet-panel {{sheetClosing ? 'sheet-panel--closing' : ''}} {{activeSheet === 'purchase' ? 'sheet-panel--purchase' : ''}} {{activeSheet === 'address' ? 'sheet-panel--address' : ''}} {{activeSheet === 'guarantee' ? 'sheet-panel--guarantee' : ''}} {{activeSheet === 'freight' ? 'sheet-panel--freight' : ''}} {{activeSheet === 'reviews' ? 'sheet-panel--reviews' : ''}}" catchtap="onPreventMove">
       <block wx:if="{{activeSheet === 'purchase'}}">
         <view class="purchase-sheet-header">
           <view wx:if="{{purchaseImageUrl}}" class="purchase-image-wrap">
@@ -453,14 +498,22 @@
               aria-role="button"
               aria-label="选择{{item.receiverName}}的收货地址"
             >
-              <view class="address-option__check">{{selectedAddress && selectedAddress.id === item.id ? '✓' : ''}}</view>
+              <view class="address-option__check">
+                <image
+                  wx:if="{{selectedAddress && selectedAddress.id === item.id}}"
+                  class="address-option__check-icon"
+                  src="/assets/icons/check-rounded-material-symbols-iconify.svg"
+                  mode="aspectFit"
+                  aria-hidden="true"
+                />
+              </view>
               <view class="address-option__body">
+                <text class="address-option__detail">{{item.formattedAddress}}</text>
                 <view class="address-option__receiver">
+                  <text wx:if="{{item.isDefault}}" class="address-default-tag">默认</text>
                   <text>{{item.receiverName}}</text>
                   <text>{{item.receiverPhone}}</text>
-                  <text wx:if="{{item.isDefault}}" class="address-default-tag">默认</text>
                 </view>
-                <text class="address-option__detail">{{item.formattedAddress}}</text>
               </view>
             </view>
           </view>
