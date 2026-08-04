@@ -125,12 +125,7 @@ Component({
       if (!item) {
         return;
       }
-      const previousSelected = this.data.selected;
-      this.setData({ selected: index });
-      wx.switchTab({
-        url: item.pagePath,
-        fail: () => this.setData({ selected: previousSelected })
-      });
+      wx.switchTab({ url: item.pagePath });
     }
   }
 });

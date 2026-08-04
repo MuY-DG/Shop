@@ -90,9 +90,19 @@
 }
 
 .tab-bar__icon-image {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: block;
   width: 44rpx;
   height: 44rpx;
+  opacity: 0;
+}
+
+.tab-bar__icon-image--visible {
+  opacity: 1;
 }
 
 .tab-bar__category-square {

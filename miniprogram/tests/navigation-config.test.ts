@@ -111,11 +111,28 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
   );
   const profileLogic = readFileSync(resolve(sourceRoot, "pages/profile/profile.ts"), "utf8");
   const tabLogic = readFileSync(resolve(sourceRoot, "custom-tab-bar/index.ts"), "utf8");
+  const tabTemplate = readFileSync(
+    resolve(sourceRoot, "custom-tab-bar/index.wxml"),
+    "utf8"
+  );
+  const tabStyle = readFileSync(
+    resolve(sourceRoot, "custom-tab-bar/index.less"),
+    "utf8"
+  );
   assert.match(cartLogic, /syncTabBar: true/);
   assert.match(cartPageLogic, /syncCustomTabBar\(this, 2\)/);
   assert.match(profileLogic, /syncCustomTabBar\(this, 3\)/);
   assert.match(tabLogic, /selected: -1,[\s\S]*hidden: true/);
   assert.match(tabLogic, /syncSelection\(selected: number\)[\s\S]*this\.setData\(\{ selected, hidden: false \}\)/);
+  assert.doesNotMatch(tabLogic, /this\.setData\(\{ selected: index \}\)/);
+  assert.match(tabLogic, /wx\.switchTab\(\{ url: item\.pagePath \}\)/);
+  assert.match(tabTemplate, /src="\/assets\/icons\/tab-home\.svg"/);
+  assert.match(tabTemplate, /src="\/assets\/icons\/tab-home-active\.svg"/);
+  assert.doesNotMatch(tabTemplate, /src="\{\{selected === index/);
+  assert.match(
+    tabStyle,
+    /\.tab-bar__icon-image\s*\{[\s\S]*position: absolute;[\s\S]*opacity: 0;[\s\S]*\.tab-bar__icon-image--visible\s*\{[\s\S]*opacity: 1;/
+  );
 
   assert.doesNotThrow(() => syncCustomTabBar({}, 0));
 });

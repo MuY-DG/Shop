@@ -20,8 +20,14 @@
         <view class="tab-bar__icon tab-bar__icon--{{item.icon}}">
           <image
             wx:if="{{item.icon === 'home'}}"
-            class="tab-bar__icon-image"
-            src="{{selected === index ? '/assets/icons/tab-home-active.svg' : '/assets/icons/tab-home.svg'}}"
+            class="tab-bar__icon-image {{selected === index ? '' : 'tab-bar__icon-image--visible'}}"
+            src="/assets/icons/tab-home.svg"
+            mode="aspectFit"
+          />
+          <image
+            wx:if="{{item.icon === 'home'}}"
+            class="tab-bar__icon-image {{selected === index ? 'tab-bar__icon-image--visible' : ''}}"
+            src="/assets/icons/tab-home-active.svg"
             mode="aspectFit"
           />
           <block wx:elif="{{item.icon === 'category'}}">
