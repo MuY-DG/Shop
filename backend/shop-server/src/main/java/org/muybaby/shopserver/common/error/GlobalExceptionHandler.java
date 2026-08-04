@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.common.error;
 
+import com.wechat.pay.java.core.exception.ServiceException;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.web.RequestLogContext;
 import org.slf4j.Logger;
@@ -124,12 +125,46 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleUnexpectedException(Exception ex) {
-        log.error("Unhandled request failure", ex);
+        logUnexpectedException(ex);
         ErrorCode errorCode = ErrorCode.INTERNAL_ERROR;
         RequestLogContext.markError(errorCode);
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(ApiResponse.fail(errorCode.code(), errorCode.message()));
+    }
+
+    private void logUnexpectedException(Exception ex) {
+        ServiceException serviceException = findWechatPayServiceException(ex);
+        if (serviceException != null) {
+            // ServiceException embeds the complete HTTP request in its message, including the
+            // Authorization header and payer identifiers. Log only stable, non-sensitive fields.
+            log.error("Unhandled request failure: provider=WECHAT_PAY, exceptionType={}, errorCode={}",
+                    ex.getClass().getSimpleName(), safeProviderErrorCode(serviceException.getErrorCode()));
+            return;
+        }
+        log.error("Unhandled request failure", ex);
+    }
+
+    private ServiceException findWechatPayServiceException(Throwable failure) {
+        Throwable current = failure;
+        for (int depth = 0; current != null && depth < 16; depth++) {
+            if (current instanceof ServiceException serviceException) {
+                return serviceException;
+            }
+            if (current.getCause() == current) {
+                break;
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    private String safeProviderErrorCode(String value) {
+        if (value == null || value.isBlank()) {
+            return "UNKNOWN";
+        }
+        String sanitized = value.replaceAll("[^A-Za-z0-9_-]", "_");
+        return sanitized.substring(0, Math.min(sanitized.length(), 64));
     }
 
     private HttpStatus statusFor(ErrorCode errorCode) {

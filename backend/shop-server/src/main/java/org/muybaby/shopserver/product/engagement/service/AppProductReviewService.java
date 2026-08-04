@@ -504,8 +504,8 @@ public class AppProductReviewService {
                           AND asset.public_url <> ''
                           AND asset.expires_at > CURRENT_TIMESTAMP
                           AND NOT EXISTS (
-                              SELECT 1 FROM storage_asset_usage usage
-                              WHERE usage.asset_id = asset.id AND usage.status = 'ACTIVE'
+                              SELECT 1 FROM storage_asset_usage usage_ref
+                              WHERE usage_ref.asset_id = asset.id AND usage_ref.status = 'ACTIVE'
                           )
                         ORDER BY asset.id
                         FOR UPDATE
@@ -616,9 +616,9 @@ public class AppProductReviewService {
                           AND uploaded_by_id = :userId
                           AND upload_context_type = :contextType
                           AND NOT EXISTS (
-                              SELECT 1 FROM storage_asset_usage usage
-                              WHERE usage.asset_id = storage_asset.id
-                                AND usage.status = 'ACTIVE'
+                              SELECT 1 FROM storage_asset_usage usage_ref
+                              WHERE usage_ref.asset_id = storage_asset.id
+                                AND usage_ref.status = 'ACTIVE'
                           )
                         """)
                 .param("fileIds", fileIds)

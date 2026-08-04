@@ -1,13 +1,20 @@
 package org.muybaby.shopserver.common.error;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.wechat.pay.java.core.exception.ServiceException;
+import com.wechat.pay.java.core.http.HttpRequest;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class GlobalExceptionHandlerTest {
 
@@ -154,5 +161,32 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().msg()).isEqualTo("Internal server error");
         assertThat(response.getBody().msg()).doesNotContain("database-password-must-not-leak");
         assertThat(response.getBody().data()).isNull();
+    }
+
+    @Test
+    void wechatServiceExceptionLogOmitsRequestAndResponseSecrets() {
+        String secret = "openid-and-authorization-must-not-leak";
+        ServiceException exception = new ServiceException(
+                mock(HttpRequest.class),
+                400,
+                "{\"code\":\"PARAM_ERROR\",\"message\":\"" + secret + "\"}"
+        );
+        Logger logger = (Logger) LoggerFactory.getLogger(GlobalExceptionHandler.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            new GlobalExceptionHandler().handleUnexpectedException(exception);
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        assertThat(appender.list).hasSize(1);
+        ILoggingEvent event = appender.list.getFirst();
+        assertThat(event.getFormattedMessage())
+                .contains("provider=WECHAT_PAY", "errorCode=PARAM_ERROR")
+                .doesNotContain(secret, "Authorization", "openid");
+        assertThat(event.getThrowableProxy()).isNull();
     }
 }

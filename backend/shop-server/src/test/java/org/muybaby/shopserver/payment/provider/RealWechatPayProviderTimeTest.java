@@ -26,6 +26,16 @@ import static org.mockito.Mockito.when;
 class RealWechatPayProviderTimeTest {
 
     @Test
+    void formatsPaymentExpiryWithSecondsAndUtcOffset() {
+        assertThat(RealWechatPayProvider.formatTimeExpire(
+                LocalDateTime.of(2026, 8, 5, 6, 16, 0)))
+                .isEqualTo("2026-08-05T06:16:00+00:00");
+        assertThat(RealWechatPayProvider.formatTimeExpire(
+                LocalDateTime.of(2026, 8, 5, 6, 16, 37)))
+                .isEqualTo("2026-08-05T06:16:37+00:00");
+    }
+
+    @Test
     void convertsProviderOffsetTimeToTheApplicationClockZoneAtTheSameInstant() {
         ZoneId applicationZone = ZoneId.of("America/Los_Angeles");
         RealWechatPayProvider provider = new RealWechatPayProvider(

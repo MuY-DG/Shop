@@ -335,16 +335,16 @@ public class OrderAggregateCleanupService {
                 order by callback_log.id
                 """, orderId);
         List<Map<String, Object>> assetUsages = rows("""
-                select usage.*
-                from storage_asset_usage usage
-                where (usage.owner_type = 'ORDER_ITEM' and exists (
+                select usage_ref.*
+                from storage_asset_usage usage_ref
+                where (usage_ref.owner_type = 'ORDER_ITEM' and exists (
                     select 1 from order_item item
-                    where item.order_id = :orderId and item.id = usage.owner_id
-                )) or (usage.owner_type = 'AFTER_SALE' and exists (
+                    where item.order_id = :orderId and item.id = usage_ref.owner_id
+                )) or (usage_ref.owner_type = 'AFTER_SALE' and exists (
                     select 1 from after_sale_request request
-                    where request.order_id = :orderId and request.id = usage.owner_id
+                    where request.order_id = :orderId and request.id = usage_ref.owner_id
                 ))
-                order by usage.id
+                order by usage_ref.id
                 """, orderId);
         List<Map<String, Object>> assets = rows("""
                 select distinct asset.*
@@ -356,18 +356,18 @@ public class OrderAggregateCleanupService {
                     where request.order_id = :orderId and evidence.file_id = asset.id
                 ) or exists (
                     select 1
-                    from storage_asset_usage usage
-                    join after_sale_request request on request.id = usage.owner_id
+                    from storage_asset_usage usage_ref
+                    join after_sale_request request on request.id = usage_ref.owner_id
                     where request.order_id = :orderId
-                      and usage.owner_type = 'AFTER_SALE'
-                      and usage.asset_id = asset.id
+                      and usage_ref.owner_type = 'AFTER_SALE'
+                      and usage_ref.asset_id = asset.id
                 ) or exists (
                     select 1
-                    from storage_asset_usage usage
-                    join order_item item on item.id = usage.owner_id
+                    from storage_asset_usage usage_ref
+                    join order_item item on item.id = usage_ref.owner_id
                     where item.order_id = :orderId
-                      and usage.owner_type = 'ORDER_ITEM'
-                      and usage.asset_id = asset.id
+                      and usage_ref.owner_type = 'ORDER_ITEM'
+                      and usage_ref.asset_id = asset.id
                 )
                 order by asset.id
                 """, orderId);
@@ -931,8 +931,8 @@ public class OrderAggregateCleanupService {
                             where asset.id in (:assetIds)
                               and asset.status = 'ACTIVE'
                               and not exists (
-                                  select 1 from storage_asset_usage usage
-                                  where usage.asset_id = asset.id and usage.status = 'ACTIVE'
+                                  select 1 from storage_asset_usage usage_ref
+                                  where usage_ref.asset_id = asset.id and usage_ref.status = 'ACTIVE'
                               )
                             """)
                     .param("assetIds", assetIds)
@@ -942,18 +942,18 @@ public class OrderAggregateCleanupService {
 
     private void deleteAssetUsages(Long orderId) {
         List<Long> detachedAssetIds = jdbcClient.sql("""
-                        select distinct usage.asset_id
-                        from storage_asset_usage usage
-                        where usage.owner_type = 'ORDER_ITEM'
-                          and usage.owner_id in (
+                        select distinct usage_ref.asset_id
+                        from storage_asset_usage usage_ref
+                        where usage_ref.owner_type = 'ORDER_ITEM'
+                          and usage_ref.owner_id in (
                               select item.id from order_item item
                               where item.order_id = :orderId
                           )
                         union
-                        select distinct usage.asset_id
-                        from storage_asset_usage usage
-                        where usage.owner_type = 'AFTER_SALE'
-                          and usage.owner_id in (
+                        select distinct usage_ref.asset_id
+                        from storage_asset_usage usage_ref
+                        where usage_ref.owner_type = 'AFTER_SALE'
+                          and usage_ref.owner_id in (
                               select request.id from after_sale_request request
                               where request.order_id = :orderId
                           )
@@ -988,8 +988,8 @@ public class OrderAggregateCleanupService {
                             where asset.id = :assetId
                               and asset.scope = 'ATTACHMENT'
                               and not exists (
-                                  select 1 from storage_asset_usage usage
-                                  where usage.asset_id = asset.id and usage.status = 'ACTIVE'
+                                  select 1 from storage_asset_usage usage_ref
+                                  where usage_ref.asset_id = asset.id and usage_ref.status = 'ACTIVE'
                               )
                               and not exists (
                                   select 1

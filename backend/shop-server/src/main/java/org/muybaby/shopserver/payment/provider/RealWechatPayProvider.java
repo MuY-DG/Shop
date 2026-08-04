@@ -32,11 +32,15 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 
 @Component
 @ConditionalOnProperty(prefix = "shop.pay", name = "mock-enabled", havingValue = "false", matchIfMissing = true)
 public class RealWechatPayProvider implements WechatPayProvider {
+
+    private static final DateTimeFormatter WECHAT_RFC3339_DATE_TIME =
+            DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssxxx");
 
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -54,7 +58,7 @@ public class RealWechatPayProvider implements WechatPayProvider {
         prepayRequest.setDescription(request.description());
         prepayRequest.setOutTradeNo(request.outTradeNo());
         prepayRequest.setNotifyUrl(request.notifyUrl());
-        prepayRequest.setTimeExpire(request.timeExpire().atOffset(ZoneOffset.UTC).toString());
+        prepayRequest.setTimeExpire(formatTimeExpire(request.timeExpire()));
         Amount amount = new Amount();
         amount.setTotal(Math.toIntExact(request.amountCent()));
         amount.setCurrency(request.currency());
@@ -303,6 +307,10 @@ public class RealWechatPayProvider implements WechatPayProvider {
         return OffsetDateTime.parse(value)
                 .atZoneSameInstant(clock.getZone())
                 .toLocalDateTime();
+    }
+
+    static String formatTimeExpire(LocalDateTime timeExpire) {
+        return WECHAT_RFC3339_DATE_TIME.format(timeExpire.atOffset(ZoneOffset.UTC));
     }
 
     private String sha256(String value) throws Exception {
