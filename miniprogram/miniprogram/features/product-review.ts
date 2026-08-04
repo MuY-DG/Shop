@@ -2,6 +2,7 @@ import type {
   ProductReview,
   ProductReviewSummary,
   PublicProductReview,
+  ProductReviewImage,
   ReviewableOrderItem
 } from "../types/product-engagement";
 import { formatLocalDate } from "../utils/date-time";
@@ -31,6 +32,8 @@ export interface PublicProductReviewView {
   skuSpecText: string;
   verifiedPurchase: boolean;
   createdAtText: string;
+  images: ProductReviewImage[];
+  hasImages: boolean;
 }
 
 export interface MyProductReviewView extends PublicProductReviewView {
@@ -51,6 +54,26 @@ function nonNegativeInteger(value: unknown): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
     ? value
     : 0;
+}
+
+function reviewImages(value: unknown): ProductReviewImage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((image): image is ProductReviewImage => Boolean(
+      image &&
+      Number.isSafeInteger(image.fileId) &&
+      image.fileId > 0 &&
+      cleanText(image.url)
+    ))
+    .map((image) => ({
+      fileId: image.fileId,
+      url: cleanText(image.url),
+      sortOrder: nonNegativeInteger(image.sortOrder)
+    }))
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+    .slice(0, 6);
 }
 
 export function normalizeRating(value: unknown, fallback = 5): number {
@@ -109,6 +132,7 @@ export function buildPublicProductReviewViews(
       const reviewerName = cleanText(review.reviewerName) || "匿名用户";
       const content = cleanText(review.content);
       const rating = normalizeRating(review.rating);
+      const images = reviewImages(review.images);
       return {
         id: review.id,
         reviewerName,
@@ -119,7 +143,9 @@ export function buildPublicProductReviewViews(
         hasContent: Boolean(content),
         skuSpecText: cleanText(review.skuSpecText),
         verifiedPurchase: review.verifiedPurchase === true,
-        createdAtText: formatReviewDate(review.createdAt)
+        createdAtText: formatReviewDate(review.createdAt),
+        images,
+        hasImages: images.length > 0
       };
     });
 }

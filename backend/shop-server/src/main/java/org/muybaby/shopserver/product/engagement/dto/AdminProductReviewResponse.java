@@ -3,6 +3,7 @@ package org.muybaby.shopserver.product.engagement.dto;
 import org.muybaby.shopserver.product.engagement.ProductReviewStatus;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record AdminProductReviewResponse(
         Long id,
@@ -24,6 +25,7 @@ public record AdminProductReviewResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         Long moderatedByAdminUserId,
-        LocalDateTime moderatedAt
+        LocalDateTime moderatedAt,
+        List<ProductReviewImageResponse> images
 ) {
 }

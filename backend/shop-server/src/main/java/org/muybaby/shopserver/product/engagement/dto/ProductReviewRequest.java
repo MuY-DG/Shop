@@ -6,10 +6,13 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
+
 public record ProductReviewRequest(
         @NotNull @Positive Long orderItemId,
         @NotNull @Min(1) @Max(5) Integer rating,
         @Size(max = 1000) String content,
-        Boolean anonymous
+        Boolean anonymous,
+        @Size(max = 6) List<@NotNull @Positive Long> imageFileIds
 ) {
 }

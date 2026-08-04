@@ -108,8 +108,11 @@ public class StorageService {
     private static final String REFERENCE_UNREFERENCED = "UNREFERENCED";
     private static final String AFTER_SALE_ORDER_CONTEXT = "ORDER";
     private static final String CUSTOMER_SERVICE_CONVERSATION_CONTEXT = "CUSTOMER_SERVICE_CONVERSATION";
+    private static final String PRODUCT_REVIEW_ORDER_ITEM_CONTEXT = "PRODUCT_REVIEW_ORDER_ITEM";
     private static final Duration AFTER_SALE_EVIDENCE_TTL = Duration.ofHours(24);
     private static final Duration CUSTOMER_SERVICE_IMAGE_STAGING_TTL = Duration.ofHours(2);
+    private static final Duration PRODUCT_REVIEW_IMAGE_STAGING_TTL = Duration.ofHours(24);
+    private static final long PRODUCT_REVIEW_IMAGE_MAX_SIZE_BYTES = 5L * 1024 * 1024;
     private static final Duration PAYMENT_SECRET_STAGING_TTL = Duration.ofHours(2);
     private static final long IMAGE_VALIDATION_MAX_DECODED_PIXELS = 1_000_000L;
     private static final int IMAGE_VALIDATION_MAX_FRAMES = 16;
@@ -270,6 +273,33 @@ public class StorageService {
                     "APP_USER_AVATAR",
                     principal.subjectId(),
                     null,
+                    file,
+                    UploadedByType.APP
+            );
+        });
+    }
+
+    public StorageAssetResponse uploadProductReviewImage(
+            AuthenticatedPrincipal principal,
+            Long orderItemId,
+            MultipartFile file
+    ) {
+        return outsideTransaction(() -> {
+            requirePrincipal(principal, TokenKind.APP);
+            if (orderItemId == null
+                    || orderItemId <= 0
+                    || file == null
+                    || file.isEmpty()
+                    || file.getSize() > PRODUCT_REVIEW_IMAGE_MAX_SIZE_BYTES) {
+                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+            }
+            return upload(
+                    principal,
+                    StorageUploadProfile.PRODUCT_REVIEW_IMAGE,
+                    null,
+                    PRODUCT_REVIEW_ORDER_ITEM_CONTEXT,
+                    orderItemId,
+                    databaseNow().plus(PRODUCT_REVIEW_IMAGE_STAGING_TTL),
                     file,
                     UploadedByType.APP
             );

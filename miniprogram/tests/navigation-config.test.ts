@@ -601,8 +601,9 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailStyle, /\.review-card\s*\{[\s\S]*?border: 0;/);
   assert.doesNotMatch(detailStyle, /\.review-item\s*\{[^}]*border-bottom:/);
   assert.match(detailStyle, /\.review-preview-list \.review-item\s*\{\s*padding: 10rpx 0;/);
+  assert.match(detailStyle, /\.review-preview-list \.review-user\s*\{\s*align-items: center;/);
   assert.match(detailStyle, /\.review-preview-list \.review-user__avatar\s*\{[\s\S]*?width: 42rpx;[\s\S]*?border: 0;/);
-  assert.match(detailStyle, /\.review-preview-list \.review-item__content\s*\{[\s\S]*?margin-top: 1rpx;[\s\S]*?padding-left: 0;/);
+  assert.match(detailStyle, /\.review-preview-list \.review-item__content\s*\{[\s\S]*?margin-top: 1rpx;[\s\S]*?padding-left: 52rpx;/);
   assert.match(detailStyle, /padding: 0 16rpx calc\(154rpx \+ env\(safe-area-inset-bottom\)\);/);
   assert.match(detailStyle, /\.purchase-bar\s*\{[\s\S]*?background: @color-surface-white;/);
   assert.match(detailTemplate, />暂时售空</);

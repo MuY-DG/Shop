@@ -1051,6 +1051,8 @@
 .review-state-action::after,
 .review-form__cancel::after,
 .review-form-star::after,
+.review-draft-image__remove::after,
+.review-draft-image-add::after,
 .review-submit::after,
 .my-review-action::after { border: 0; }
 
@@ -1190,15 +1192,38 @@
   gap: 9rpx;
 }
 
+.review-image-gallery {
+  display: grid;
+  margin-top: 14rpx;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10rpx;
+}
+
+.review-image-gallery__image {
+  width: 100%;
+  height: 190rpx;
+  border-radius: @radius-sm;
+  background: @color-surface-muted;
+}
+
+.review-image-gallery--preview {
+  padding-left: 52rpx;
+}
+
+.review-image-gallery--preview .review-image-gallery__image {
+  height: 142rpx;
+}
+
 .review-preview-list .review-item {
   padding: 10rpx 0;
 }
 
 .review-preview-list .review-item + .review-item {
-  margin-top: 4rpx;
+  margin-top: 3rpx;
 }
 
 .review-preview-list .review-user {
+  align-items: center;
   gap: 10rpx;
 }
 
@@ -1215,7 +1240,7 @@
 
 .review-preview-list .review-item__content {
   margin-top: 1rpx;
-  padding-left: 0;
+  padding-left: 52rpx;
   color: @color-text-black;
   font-size: 23rpx;
   line-height: 32rpx;
@@ -1471,6 +1496,76 @@
   font-size: @font-size-sm;
   line-height: 36rpx;
   background: #f8f5f0;
+}
+
+.review-form__image-hint,
+.review-form__image-note {
+  display: block;
+  margin-top: 7rpx;
+  color: @color-text-muted;
+  font-size: 18rpx;
+}
+
+.review-form__image-note {
+  padding: 16rpx 18rpx;
+  border-radius: @radius-sm;
+  background: @color-surface-muted;
+}
+
+.review-draft-images {
+  display: grid;
+  margin-top: 13rpx;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10rpx;
+}
+
+.review-draft-image,
+.review-draft-image-add {
+  position: relative;
+  height: 120rpx;
+  overflow: hidden;
+  box-sizing: border-box;
+  border-radius: @radius-sm;
+}
+
+.review-draft-image__image {
+  width: 100%;
+  height: 100%;
+  background: @color-surface-muted;
+}
+
+.review-draft-image__remove {
+  position: absolute;
+  top: 5rpx;
+  right: 5rpx;
+  width: 38rpx !important;
+  height: 38rpx;
+  padding: 0;
+  margin: 0 !important;
+  border-radius: 50%;
+  color: @color-text-inverse;
+  font-size: 27rpx;
+  line-height: 35rpx;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.review-draft-image-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin: 0 !important;
+  border: 1rpx dashed @color-border;
+  flex-direction: column;
+  color: @color-text-muted;
+  font-size: 18rpx;
+  line-height: 24rpx;
+  background: @color-surface-muted;
+}
+
+.review-draft-image-add__plus {
+  font-size: 36rpx;
+  line-height: 38rpx;
 }
 
 .review-anonymous-row {

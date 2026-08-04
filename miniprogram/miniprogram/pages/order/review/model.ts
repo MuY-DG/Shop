@@ -7,6 +7,11 @@ import type { OrderItemResponse } from "../../../types/order";
 
 export type OrderReviewSourceItem = OrderItemResponse;
 
+export interface OrderReviewDraftImage {
+  fileId: number;
+  tempFilePath: string;
+}
+
 export interface OrderReviewItemView extends OrderReviewSourceItem {
   imageUrl: string;
   hasImage: boolean;
@@ -15,6 +20,7 @@ export interface OrderReviewItemView extends OrderReviewSourceItem {
   stars: RatingStarView[];
   content: string;
   anonymous: boolean;
+  reviewImages: OrderReviewDraftImage[];
 }
 
 function cleanText(value: unknown): string {
@@ -61,7 +67,8 @@ export function buildPendingOrderReviewItems(
         rating,
         stars: buildRatingStars(rating),
         content: "",
-        anonymous: false
+        anonymous: false,
+        reviewImages: []
       };
     });
 }
@@ -69,7 +76,10 @@ export function buildPendingOrderReviewItems(
 export function updateOrderReviewDraft(
   items: readonly OrderReviewItemView[],
   orderItemId: number,
-  patch: Partial<Pick<OrderReviewItemView, "rating" | "content" | "anonymous" | "hasImage">>
+  patch: Partial<Pick<
+    OrderReviewItemView,
+    "rating" | "content" | "anonymous" | "hasImage" | "reviewImages"
+  >>
 ): OrderReviewItemView[] {
   return items.map((item) => {
     if (item.orderItemId !== orderItemId) {

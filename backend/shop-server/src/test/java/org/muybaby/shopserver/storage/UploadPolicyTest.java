@@ -44,6 +44,10 @@ class UploadPolicyTest {
         assertThat(StorageUploadProfile.USER_AVATAR.mediaKind()).isEqualTo(StorageMediaKind.IMAGE);
         assertThat(StorageUploadProfile.USER_AVATAR.visibility()).isEqualTo(FileVisibility.PUBLIC);
 
+        assertThat(StorageUploadProfile.PRODUCT_REVIEW_IMAGE.scope()).isEqualTo(StorageAssetScope.LIBRARY);
+        assertThat(StorageUploadProfile.PRODUCT_REVIEW_IMAGE.mediaKind()).isEqualTo(StorageMediaKind.IMAGE);
+        assertThat(StorageUploadProfile.PRODUCT_REVIEW_IMAGE.visibility()).isEqualTo(FileVisibility.PUBLIC);
+
         assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE.scope()).isEqualTo(StorageAssetScope.ATTACHMENT);
         assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE.mediaKind()).isEqualTo(StorageMediaKind.IMAGE);
         assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE.visibility()).isEqualTo(FileVisibility.PRIVATE);

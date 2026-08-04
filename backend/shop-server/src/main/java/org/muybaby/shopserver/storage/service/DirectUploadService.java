@@ -64,6 +64,8 @@ public class DirectUploadService {
     private static final String CLIENT_ABORTED = "CLIENT_ABORTED";
     private static final Duration AFTER_SALE_ASSET_TTL = Duration.ofHours(24);
     private static final Duration CUSTOMER_SERVICE_ASSET_TTL = Duration.ofHours(2);
+    private static final Duration PRODUCT_REVIEW_ASSET_TTL = Duration.ofHours(24);
+    private static final long PRODUCT_REVIEW_MAX_SIZE_BYTES = 5L * 1024 * 1024;
     private static final Set<StorageUploadProfile> LIBRARY_PROFILES = Set.of(
             StorageUploadProfile.LIBRARY_IMAGE,
             StorageUploadProfile.LIBRARY_VIDEO
@@ -259,6 +261,7 @@ public class DirectUploadService {
                 ? TokenKind.ADMIN
                 : profile == StorageUploadProfile.AFTER_SALE_EVIDENCE
                         || profile == StorageUploadProfile.USER_AVATAR
+                        || profile == StorageUploadProfile.PRODUCT_REVIEW_IMAGE
                         ? TokenKind.APP
                         : principal == null ? null : principal.kind();
         requirePrincipal(principal, expectedKind);
@@ -273,6 +276,10 @@ public class DirectUploadService {
         }
         if (profile == StorageUploadProfile.USER_AVATAR
                 && request.sizeBytes() > 2L * 1024 * 1024) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
+        if (profile == StorageUploadProfile.PRODUCT_REVIEW_IMAGE
+                && request.sizeBytes() > PRODUCT_REVIEW_MAX_SIZE_BYTES) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
         if (profile.scope().name().equals("LIBRARY")) {
@@ -1100,6 +1107,7 @@ public class DirectUploadService {
         return switch (profile) {
             case AFTER_SALE_EVIDENCE -> new ImageProfileSettings(4096, 90);
             case CUSTOMER_SERVICE_IMAGE -> new ImageProfileSettings(1920, 82);
+            case PRODUCT_REVIEW_IMAGE -> new ImageProfileSettings(1920, 82);
             case USER_AVATAR -> new ImageProfileSettings(1024, 85);
             default -> new ImageProfileSettings(2560, 85);
         };
@@ -1135,6 +1143,7 @@ public class DirectUploadService {
         LocalDateTime assetExpiresAt = switch (session.profile()) {
             case AFTER_SALE_EVIDENCE -> databaseNow().plus(AFTER_SALE_ASSET_TTL);
             case CUSTOMER_SERVICE_IMAGE -> databaseNow().plus(CUSTOMER_SERVICE_ASSET_TTL);
+            case PRODUCT_REVIEW_IMAGE -> databaseNow().plus(PRODUCT_REVIEW_ASSET_TTL);
             default -> null;
         };
         ProcessedImage image = finalized.image();

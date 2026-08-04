@@ -46,6 +46,10 @@ export const API_ENDPOINTS = Object.freeze({
     reviewEligibility: (spuId: number): string =>
       `/app/product/spus/${spuId}/review-eligibility`,
     review: (reviewId: number): string => `/app/product/reviews/${reviewId}`,
+    reviewImage: (orderItemId: number): string =>
+      `/app/product/order-items/${orderItemId}/review-images`,
+    reviewImageUploads: (orderItemId: number): string =>
+      `/app/product/order-items/${orderItemId}/review-images/upload-sessions`,
     myReviews: "/app/product/reviews/mine"
   },
   userProduct: {

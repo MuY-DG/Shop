@@ -2,7 +2,10 @@ import {
   normalizeReviewContent
 } from "../../../features/product-review";
 import { createPageOperationGuard } from "../../../features/order-center";
-import { createProductReview } from "../../../services/product";
+import {
+  createProductReview,
+  uploadProductReviewImage
+} from "../../../services/product";
 import { getOrderDetail } from "../../../services/order";
 import type { AppOrderDetailResponse } from "../../../types/order";
 import { isApiError } from "../../../utils/api-error";
@@ -25,8 +28,14 @@ interface DatasetEvent {
     dataset: {
       orderItemId?: number | string;
       rating?: number | string;
+      index?: number | string;
     };
   };
+}
+
+interface LocalReviewImage {
+  tempFilePath: string;
+  size: number;
 }
 
 interface TextareaInputEvent {
@@ -43,6 +52,32 @@ interface SwitchChangeEvent {
 
 let latestRequest = 0;
 const reviewOperationGuard = createPageOperationGuard();
+const MAX_REVIEW_IMAGE_COUNT = 6;
+const MAX_REVIEW_IMAGE_SIZE = 5 * 1024 * 1024;
+
+function chooseReviewImages(count: number): Promise<LocalReviewImage[]> {
+  return new Promise((resolve, reject) => {
+    wx.chooseMedia({
+      count,
+      mediaType: ["image"],
+      sourceType: ["album", "camera"],
+      sizeType: ["compressed"],
+      success: (result) => resolve(result.tempFiles
+        .map((file) => ({
+          tempFilePath: file.tempFilePath,
+          size: Number(file.size) || 0
+        }))
+        .filter((file) => Boolean(file.tempFilePath))),
+      fail: (error) => {
+        if (error.errMsg.includes("cancel")) {
+          resolve([]);
+          return;
+        }
+        reject(new Error(error.errMsg || "选择图片失败"));
+      }
+    });
+  });
+}
 
 function actionError(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -75,7 +110,8 @@ Page({
     errorText: "",
     blockingText: "",
     completed: false,
-    submittingOrderItemId: 0
+    submittingOrderItemId: 0,
+    uploadingOrderItemId: 0
   },
 
   onLoad(query: Record<string, string | undefined>) {
@@ -109,7 +145,11 @@ Page({
   },
 
   async loadOrder() {
-    if (!this.data.orderId || this.data.submittingOrderItemId) {
+    if (
+      !this.data.orderId ||
+      this.data.submittingOrderItemId ||
+      this.data.uploadingOrderItemId
+    ) {
       return;
     }
     const requestId = ++latestRequest;
@@ -160,7 +200,7 @@ Page({
   },
 
   onProductSelect(event: DatasetEvent) {
-    if (this.data.submittingOrderItemId) {
+    if (this.data.submittingOrderItemId || this.data.uploadingOrderItemId) {
       return;
     }
     const orderItemId = parseReviewOrderId(event.currentTarget.dataset.orderItemId);
@@ -191,8 +231,82 @@ Page({
     this.updateSelectedDraft({ hasImage: false });
   },
 
+  async onChooseReviewImage() {
+    const item = this.data.selectedItem;
+    if (!item || this.data.submittingOrderItemId || this.data.uploadingOrderItemId) {
+      return;
+    }
+    const remaining = MAX_REVIEW_IMAGE_COUNT - item.reviewImages.length;
+    if (remaining <= 0) {
+      wx.showToast({ title: "最多上传 6 张图片", icon: "none" });
+      return;
+    }
+    try {
+      const selected = await chooseReviewImages(remaining);
+      const accepted = selected.filter((file) => (
+        file.size > 0 && file.size <= MAX_REVIEW_IMAGE_SIZE
+      ));
+      if (accepted.length < selected.length) {
+        wx.showToast({ title: "单张图片不能超过 5MB", icon: "none" });
+      }
+      if (!accepted.length) {
+        return;
+      }
+      this.setData({ uploadingOrderItemId: item.orderItemId });
+      const reviewImages = item.reviewImages.slice();
+      for (const file of accepted) {
+        const uploaded = await uploadProductReviewImage(
+          item.orderItemId,
+          file.tempFilePath
+        );
+        reviewImages.push({
+          fileId: uploaded.id,
+          tempFilePath: file.tempFilePath
+        });
+        this.updateSelectedDraft({ reviewImages });
+      }
+    } catch (error) {
+      wx.showToast({
+        title: actionError(error, "图片上传失败，请稍后重试"),
+        icon: "none"
+      });
+    } finally {
+      this.setData({ uploadingOrderItemId: 0 });
+    }
+  },
+
+  onPreviewReviewImage(event: DatasetEvent) {
+    const index = Number(event.currentTarget.dataset.index);
+    const images = this.data.selectedItem?.reviewImages ?? [];
+    const current = images[index]?.tempFilePath;
+    if (!current) {
+      return;
+    }
+    wx.previewImage({
+      current,
+      urls: images.map((image) => image.tempFilePath)
+    });
+  },
+
+  onRemoveReviewImage(event: DatasetEvent) {
+    const item = this.data.selectedItem;
+    if (!item || this.data.submittingOrderItemId || this.data.uploadingOrderItemId) {
+      return;
+    }
+    const index = Number(event.currentTarget.dataset.index);
+    if (!Number.isSafeInteger(index) || index < 0 || index >= item.reviewImages.length) {
+      return;
+    }
+    const reviewImages = item.reviewImages.slice();
+    reviewImages.splice(index, 1);
+    this.updateSelectedDraft({ reviewImages });
+  },
+
   updateSelectedDraft(
-    patch: Partial<Pick<OrderReviewItemView, "rating" | "content" | "anonymous" | "hasImage">>
+    patch: Partial<Pick<
+      OrderReviewItemView,
+      "rating" | "content" | "anonymous" | "hasImage" | "reviewImages"
+    >>
   ) {
     if (!this.data.selectedOrderItemId || this.data.submittingOrderItemId) {
       return;
@@ -228,7 +342,8 @@ Page({
         orderItemId: item.orderItemId,
         rating: item.rating,
         content: normalizeReviewContent(item.content),
-        anonymous: item.anonymous
+        anonymous: item.anonymous,
+        imageFileIds: item.reviewImages.map((image) => image.fileId)
       });
       if (!reviewOperationGuard.isCurrent(lifecycleToken, operationToken)) {
         return;

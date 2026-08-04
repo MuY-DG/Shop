@@ -82,6 +82,17 @@ class StorageAssetCleanupServiceTest {
     }
 
     @Test
+    void cleanupDeletesExpiredUnboundPublicReviewImage() {
+        InsertedAsset reviewImage = insertExpiredPublicReviewImage();
+
+        assertThat(cleanup()).isEqualTo(1);
+
+        assertThat(status(reviewImage.id())).isEqualTo("DELETED");
+        assertThatThrownBy(() -> storageProvider.open(reviewImage.objectKey()))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
     void cleanupDeletesGeneratedThumbnailTogetherWithOriginal() {
         InsertedAsset expired = insertExpiredAsset("ATTACHMENT");
         String thumbnailObjectKey = expired.objectKey().replace(".txt", ".thumb-720.webp");
@@ -381,6 +392,34 @@ class StorageAssetCleanupServiceTest {
                 .param("sizeBytes", bytes.length)
                 .param("publicUrl", publicUrl)
                 .param("createdAt", createdAt)
+                .update();
+        Long id = jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
+                .param("objectKey", objectKey)
+                .query(Long.class)
+                .single();
+        return new InsertedAsset(id, objectKey);
+    }
+
+    private InsertedAsset insertExpiredPublicReviewImage() {
+        String objectKey = "public/library/image/review/" + UUID.randomUUID() + ".webp";
+        String publicUrl = "https://cdn.example.test/" + objectKey;
+        byte[] bytes = "review-image".getBytes();
+        storageProvider.put(objectKey, "image/webp", new ByteArrayInputStream(bytes), bytes.length);
+        jdbcClient.sql("""
+                        insert into storage_asset
+                            (scope, media_kind, visibility, provider, storage_container, object_key,
+                             original_filename, content_type, extension, size_bytes, sha256, public_url,
+                             status, uploaded_by_type, uploaded_by_id, upload_context_type,
+                             upload_context_id, expires_at)
+                        values
+                            ('LIBRARY', 'IMAGE', 'PUBLIC', 'TENCENT_COS', '', :objectKey,
+                             'review.webp', 'image/webp', 'webp', :sizeBytes, '', :publicUrl,
+                             'ACTIVE', 'APP', 992, 'PRODUCT_REVIEW_ORDER_ITEM', 991, :expiresAt)
+                        """)
+                .param("objectKey", objectKey)
+                .param("sizeBytes", bytes.length)
+                .param("publicUrl", publicUrl)
+                .param("expiresAt", LocalDateTime.now().minusHours(1))
                 .update();
         Long id = jdbcClient.sql("select id from storage_asset where object_key = :objectKey")
                 .param("objectKey", objectKey)

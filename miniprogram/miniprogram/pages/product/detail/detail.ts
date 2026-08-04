@@ -42,6 +42,7 @@ import {
   getProductDetail,
   getProductReviewEligibility,
   getProductReviews,
+  uploadProductReviewImage,
   updateProductReview
 } from "../../../services/product";
 import {
@@ -111,6 +112,16 @@ interface ParameterViewGroups {
   otherParameterViews: ProductParameterView[];
 }
 
+interface ReviewDraftImage {
+  fileId: number;
+  tempFilePath: string;
+}
+
+interface LocalReviewImage {
+  tempFilePath: string;
+  size: number;
+}
+
 const EMPTY_SELECTION: PurchaseSelectionView = {
   selectedSkuId: 0,
   quantity: 1,
@@ -128,6 +139,8 @@ const EMPTY_SELECTION: PurchaseSelectionView = {
 const EMPTY_REVIEW_SUMMARY = buildProductReviewSummaryView();
 const REVIEW_PREVIEW_SIZE = 2;
 const REVIEW_PAGE_SIZE = 10;
+const MAX_REVIEW_IMAGE_COUNT = 6;
+const MAX_REVIEW_IMAGE_SIZE = 5 * 1024 * 1024;
 const SHEET_EXIT_DURATION_MS = 340;
 
 let latestDetailRequest = 0;
@@ -139,6 +152,30 @@ let sheetCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function chooseReviewImages(count: number): Promise<LocalReviewImage[]> {
+  return new Promise((resolve, reject) => {
+    wx.chooseMedia({
+      count,
+      mediaType: ["image"],
+      sourceType: ["album", "camera"],
+      sizeType: ["compressed"],
+      success: (result) => resolve(result.tempFiles
+        .map((file) => ({
+          tempFilePath: file.tempFilePath,
+          size: Number(file.size) || 0
+        }))
+        .filter((file) => Boolean(file.tempFilePath))),
+      fail: (error) => {
+        if (error.errMsg.includes("cancel")) {
+          resolve([]);
+          return;
+        }
+        reject(new Error(error.errMsg || "选择图片失败"));
+      }
+    });
+  });
 }
 
 function detailErrorMessage(error: unknown): string {
@@ -301,6 +338,8 @@ Page({
     reviewFormStars: buildRatingStars(5) as RatingStarView[],
     reviewContent: "",
     reviewAnonymous: false,
+    reviewImages: [] as ReviewDraftImage[],
+    reviewImageUploading: false,
     reviewSubmitting: false,
     reviewDeletingId: 0,
     favorited: false,
@@ -510,6 +549,7 @@ Page({
     if (
       !this.data.confirmLoading &&
       !this.data.reviewSubmitting &&
+      !this.data.reviewImageUploading &&
       !this.data.reviewDeletingId
     ) {
       this.animateSheetClose();
@@ -780,6 +820,24 @@ Page({
     void this.loadReviewPreview();
   },
 
+  onReviewImagePreview(event: DatasetEvent) {
+    const reviewId = parsePositiveId(event.currentTarget.dataset.reviewId);
+    const current = cleanText(event.currentTarget.dataset.imageUrl);
+    if (!reviewId || !current) {
+      return;
+    }
+    const review = [
+      ...this.data.reviewPreview,
+      ...this.data.reviewRecords,
+      ...this.data.myReviews
+    ].find((item) => item.id === reviewId);
+    const urls = review?.images.map((image) => image.url).filter(Boolean) ?? [];
+    wx.previewImage({
+      current,
+      urls: urls.includes(current) ? urls : [current]
+    });
+  },
+
   onReviewListOpen() {
     this.setData({ activeSheet: "reviews", sheetClosing: false });
     void this.loadReviewPage(true);
@@ -886,7 +944,9 @@ Page({
         reviewRating: 5,
         reviewFormStars: buildRatingStars(5),
         reviewContent: "",
-        reviewAnonymous: false
+        reviewAnonymous: false,
+        reviewImages: [],
+        reviewImageUploading: false
       });
     } catch (error) {
       if (requestId !== latestReviewManagementRequest || productId !== this.data.productId) {
@@ -904,6 +964,13 @@ Page({
 
   onReviewOrderSelect(event: DatasetEvent) {
     const orderItemId = parsePositiveId(event.currentTarget.dataset.orderItemId);
+    if (
+      orderItemId !== this.data.reviewSelectedOrderItemId &&
+      this.data.reviewImages.length
+    ) {
+      wx.showToast({ title: "请先移除已上传图片再切换订单", icon: "none" });
+      return;
+    }
     if (this.data.reviewOrderItems.some((item) => item.orderItemId === orderItemId)) {
       this.setData({ reviewSelectedOrderItemId: orderItemId });
     }
@@ -925,6 +992,78 @@ Page({
     this.setData({ reviewAnonymous: event.detail.value });
   },
 
+  async onReviewImageChoose() {
+    if (
+      this.data.reviewFormMode !== "create" ||
+      !this.data.reviewSelectedOrderItemId ||
+      this.data.reviewImageUploading ||
+      this.data.reviewSubmitting
+    ) {
+      return;
+    }
+    const remaining = MAX_REVIEW_IMAGE_COUNT - this.data.reviewImages.length;
+    if (remaining <= 0) {
+      wx.showToast({ title: "最多上传 6 张图片", icon: "none" });
+      return;
+    }
+    try {
+      const selected = await chooseReviewImages(remaining);
+      const accepted = selected.filter((file) => (
+        file.size > 0 && file.size <= MAX_REVIEW_IMAGE_SIZE
+      ));
+      if (accepted.length < selected.length) {
+        wx.showToast({ title: "单张图片不能超过 5MB", icon: "none" });
+      }
+      if (!accepted.length) {
+        return;
+      }
+      this.setData({ reviewImageUploading: true });
+      const reviewImages = this.data.reviewImages.slice();
+      for (const file of accepted) {
+        const uploaded = await uploadProductReviewImage(
+          this.data.reviewSelectedOrderItemId,
+          file.tempFilePath
+        );
+        reviewImages.push({
+          fileId: uploaded.id,
+          tempFilePath: file.tempFilePath
+        });
+        this.setData({ reviewImages });
+      }
+    } catch (error) {
+      wx.showToast({
+        title: this.reviewActionErrorMessage(error, "图片上传失败，请稍后重试"),
+        icon: "none"
+      });
+    } finally {
+      this.setData({ reviewImageUploading: false });
+    }
+  },
+
+  onReviewDraftImagePreview(event: DatasetEvent) {
+    const index = Number(event.currentTarget.dataset.id);
+    const current = this.data.reviewImages[index]?.tempFilePath;
+    if (current) {
+      wx.previewImage({
+        current,
+        urls: this.data.reviewImages.map((image) => image.tempFilePath)
+      });
+    }
+  },
+
+  onReviewImageRemove(event: DatasetEvent) {
+    if (this.data.reviewImageUploading || this.data.reviewSubmitting) {
+      return;
+    }
+    const index = Number(event.currentTarget.dataset.id);
+    if (!Number.isSafeInteger(index) || index < 0 || index >= this.data.reviewImages.length) {
+      return;
+    }
+    const reviewImages = this.data.reviewImages.slice();
+    reviewImages.splice(index, 1);
+    this.setData({ reviewImages });
+  },
+
   onReviewEdit(event: DatasetEvent) {
     const reviewId = parsePositiveId(event.currentTarget.dataset.reviewId);
     const review = this.data.myReviews.find((item) => item.id === reviewId);
@@ -937,7 +1076,8 @@ Page({
       reviewRating: review.rating,
       reviewFormStars: buildRatingStars(review.rating),
       reviewContent: review.content,
-      reviewAnonymous: review.anonymous
+      reviewAnonymous: review.anonymous,
+      reviewImages: []
     });
   },
 
@@ -946,7 +1086,7 @@ Page({
   },
 
   async onReviewSubmit() {
-    if (this.data.reviewSubmitting) {
+    if (this.data.reviewSubmitting || this.data.reviewImageUploading) {
       return;
     }
     const isUpdate = this.data.reviewFormMode === "update";
@@ -966,6 +1106,7 @@ Page({
       } else {
         await createProductReview(this.data.productId, {
           orderItemId: this.data.reviewSelectedOrderItemId,
+          imageFileIds: this.data.reviewImages.map((image) => image.fileId),
           ...payload
         });
       }
@@ -1029,7 +1170,8 @@ Page({
       reviewRating: 5,
       reviewFormStars: buildRatingStars(5),
       reviewContent: "",
-      reviewAnonymous: false
+      reviewAnonymous: false,
+      reviewImages: []
     });
   },
 

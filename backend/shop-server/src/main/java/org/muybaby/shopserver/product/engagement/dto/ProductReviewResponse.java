@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.product.engagement.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record ProductReviewResponse(
         Long id,
@@ -14,6 +15,7 @@ public record ProductReviewResponse(
         String reviewerName,
         boolean verifiedPurchase,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        List<ProductReviewImageResponse> images
 ) {
 }

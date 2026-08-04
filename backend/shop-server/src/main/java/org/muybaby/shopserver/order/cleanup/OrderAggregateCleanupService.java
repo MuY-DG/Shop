@@ -522,6 +522,7 @@ public class OrderAggregateCleanupService {
         if (retainReviews) {
             detachReviews(orderId);
         } else {
+            releaseReviewImages(orderId);
             delete("""
                     delete from product_review
                     where order_item_id in (select id from order_item where order_id = :orderId)
@@ -885,6 +886,58 @@ public class OrderAggregateCleanupService {
                         """)
                 .param("orderId", orderId)
                 .update();
+    }
+
+    private void releaseReviewImages(Long orderId) {
+        List<Long> reviewIds = jdbcClient.sql("""
+                        select review.id
+                        from product_review review
+                        where review.order_item_id in (
+                            select item.id from order_item item where item.order_id = :orderId
+                        )
+                        order by review.id
+                        for update
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        if (reviewIds.isEmpty()) {
+            return;
+        }
+        List<Long> assetIds = jdbcClient.sql("""
+                        select image.asset_id
+                        from product_review_image image
+                        where image.review_id in (:reviewIds)
+                        order by image.asset_id
+                        for update
+                        """)
+                .param("reviewIds", reviewIds)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("""
+                        update storage_asset_usage
+                        set status = 'REMOVED', updated_at = current_timestamp
+                        where owner_type = 'PRODUCT_REVIEW'
+                          and owner_id in (:reviewIds)
+                          and status = 'ACTIVE'
+                        """)
+                .param("reviewIds", reviewIds)
+                .update();
+        if (!assetIds.isEmpty()) {
+            jdbcClient.sql("""
+                            update storage_asset asset
+                            set expires_at = current_timestamp,
+                                updated_at = current_timestamp
+                            where asset.id in (:assetIds)
+                              and asset.status = 'ACTIVE'
+                              and not exists (
+                                  select 1 from storage_asset_usage usage
+                                  where usage.asset_id = asset.id and usage.status = 'ACTIVE'
+                              )
+                            """)
+                    .param("assetIds", assetIds)
+                    .update();
+        }
     }
 
     private void deleteAssetUsages(Long orderId) {

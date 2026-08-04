@@ -45,6 +45,7 @@ class AdminProductReviewControllerTest {
     @Test
     void readPermissionSupportsFiltersAndExposesOrderContext() throws Exception {
         ReviewFixture fixture = insertReview(5, true, "筛选命中的评价");
+        long imageId = insertReviewImage(fixture.reviewId());
         insertReview(3, false, "其他评价");
         String token = issueAdminToken(
                 jdbcClient,
@@ -69,7 +70,9 @@ class AdminProductReviewControllerTest {
                 .andExpect(jsonPath("$.data.records[0].orderDataCleaned").value(false))
                 .andExpect(jsonPath("$.data.records[0].verifiedPurchase").value(true))
                 .andExpect(jsonPath("$.data.records[0].rating").value(5))
-                .andExpect(jsonPath("$.data.records[0].content").value("筛选命中的评价"));
+                .andExpect(jsonPath("$.data.records[0].content").value("筛选命中的评价"))
+                .andExpect(jsonPath("$.data.records[0].images.length()").value(1))
+                .andExpect(jsonPath("$.data.records[0].images[0].fileId").value(imageId));
 
         mockMvc.perform(get("/admin/product/reviews")
                         .header("Authorization", bearer(token))
@@ -276,6 +279,40 @@ class AdminProductReviewControllerTest {
         return new ReviewFixture(
                 reviewId, spuId, productTitle, nickname, orderId, orderNo, orderItemId
         );
+    }
+
+    private long insertReviewImage(long reviewId) {
+        String objectKey = "public/library/image/admin-review/" + Math.abs(reviewId) + ".webp";
+        String publicUrl = "https://cdn.example.test/" + objectKey;
+        jdbcClient.sql("""
+                        INSERT INTO storage_asset (
+                            scope, media_kind, visibility, provider, storage_container,
+                            storage_region, object_key, original_filename, content_type,
+                            extension, size_bytes, sha256, public_url, status,
+                            uploaded_by_type, uploaded_by_id
+                        ) VALUES (
+                            'LIBRARY', 'IMAGE', 'PUBLIC', 'TENCENT_COS', 'review-test',
+                            'ap-test', :objectKey, 'review.webp', 'image/webp',
+                            'webp', 100, '', :publicUrl, 'ACTIVE', 'APP', 1
+                        )
+                        """)
+                .param("objectKey", objectKey)
+                .param("publicUrl", publicUrl)
+                .update();
+        Long assetId = jdbcClient.sql("SELECT id FROM storage_asset WHERE object_key = :objectKey")
+                .param("objectKey", objectKey)
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        INSERT INTO product_review_image
+                            (review_id, asset_id, image_url, sort_order)
+                        VALUES (:reviewId, :assetId, :imageUrl, 1)
+                        """)
+                .param("reviewId", reviewId)
+                .param("assetId", assetId)
+                .param("imageUrl", publicUrl)
+                .update();
+        return assetId;
     }
 
     private String bearer(String token) {

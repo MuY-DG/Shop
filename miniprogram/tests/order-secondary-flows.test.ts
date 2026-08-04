@@ -132,7 +132,7 @@ test("页面操作令牌在卸载和后续操作后立即失效", () => {
   assert.equal(guard.isCurrent(firstPage, nextOperation), false);
 });
 
-test("评价与修改订单页面注册真实端点且不暴露未支持媒体入口", () => {
+test("评价与修改订单页面注册真实端点并支持评价图片", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")
   ) as { pages: string[] };
@@ -192,10 +192,15 @@ test("评价与修改订单页面注册真实端点且不暴露未支持媒体�
     reviewLogic,
     /success: \(\) => \{[\s\S]*reviewOperationGuard\.isCurrent\(lifecycleToken, operationToken\)[\s\S]*this\.leavePage\(\)/
   );
-  assert.match(reviewTemplate, />发布评价<\/button>/);
+  assert.match(reviewTemplate, /发布评价/);
   assert.match(reviewTemplate, /maxlength="1000"/);
   assert.match(reviewTemplate, /bindchange="onAnonymousChange"/);
-  assert.doesNotMatch(reviewTemplate, /视频|上传|晒单/);
+  assert.match(reviewTemplate, /评价图片（选填）/);
+  assert.match(reviewTemplate, /bindtap="onChooseReviewImage"/);
+  assert.match(reviewLogic, /uploadProductReviewImage/);
+  assert.match(reviewLogic, /imageFileIds: item\.reviewImages\.map/);
+  assert.match(endpoints, /review-images\/upload-sessions/);
+  assert.doesNotMatch(reviewTemplate, /视频|晒单/);
   assert.doesNotMatch(reviewTemplate, /默认规格/);
   assert.match(reviewStyle, /\.rating-star \{[\s\S]*width: 88rpx/);
   assert.match(reviewStyle, /\.rating-star \{[\s\S]*height: 88rpx/);

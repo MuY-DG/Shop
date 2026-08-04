@@ -14,15 +14,18 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.List;
+import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -32,6 +35,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class AppProductEngagementControllerTest {
+
+    private static final byte[] TINY_PNG = Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4x8AAAAASUVORK5CYII="
+    );
 
     @Autowired
     private MockMvc mockMvc;
@@ -47,6 +54,7 @@ class AppProductEngagementControllerTest {
 
     @BeforeEach
     void clearEngagementTables() {
+        jdbcClient.sql("DELETE FROM storage_asset_usage WHERE owner_type = 'PRODUCT_REVIEW'").update();
         jdbcClient.sql("DELETE FROM product_review").update();
         jdbcClient.sql("DELETE FROM user_product_favorite").update();
         jdbcClient.sql("DELETE FROM user_product_browse_history").update();
@@ -129,6 +137,8 @@ class AppProductEngagementControllerTest {
         AppLogin other = login("engagement-review-other");
         ProductIds product = createPublishedProduct("REVIEW");
         long orderItemId = insertCompletedOrder(owner.userId(), product);
+        long firstImageId = insertReviewImageAsset(owner.userId(), orderItemId, "first");
+        long secondImageId = insertReviewImageAsset(owner.userId(), orderItemId, "second");
 
         mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/review-eligibility")
                         .header("Authorization", bearer(owner.token())))
@@ -146,12 +156,17 @@ class AppProductEngagementControllerTest {
         MvcResult created = mockMvc.perform(post("/app/product/spus/" + product.spuId() + "/reviews")
                         .header("Authorization", bearer(owner.token()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(reviewBody(orderItemId, 5, true)))
+                        .content(reviewBody(
+                                orderItemId, 5, true, List.of(secondImageId, firstImageId))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rating").value(5))
                 .andExpect(jsonPath("$.data.anonymous").value(true))
                 .andExpect(jsonPath("$.data.reviewerName").value("匿名用户"))
                 .andExpect(jsonPath("$.data.verifiedPurchase").value(true))
+                .andExpect(jsonPath("$.data.images.length()").value(2))
+                .andExpect(jsonPath("$.data.images[0].fileId").value(secondImageId))
+                .andExpect(jsonPath("$.data.images[0].sortOrder").value(1))
+                .andExpect(jsonPath("$.data.images[1].fileId").value(firstImageId))
                 .andReturn();
         long reviewId = read(created).path("data").path("id").asLong();
 
@@ -166,7 +181,8 @@ class AppProductEngagementControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summary.reviewCount").value(1))
                 .andExpect(jsonPath("$.data.summary.averageRating").value(5.0))
-                .andExpect(jsonPath("$.data.page.records[0].reviewerName").value("匿名用户"));
+                .andExpect(jsonPath("$.data.page.records[0].reviewerName").value("匿名用户"))
+                .andExpect(jsonPath("$.data.page.records[0].images[0].fileId").value(secondImageId));
         mockMvc.perform(get("/app/product/spus/" + product.spuId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.reviewSummary.reviewCount").value(1))
@@ -191,7 +207,25 @@ class AppProductEngagementControllerTest {
                         .header("Authorization", bearer(owner.token())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.records[0].id").value(reviewId));
+                .andExpect(jsonPath("$.data.records[0].id").value(reviewId))
+                .andExpect(jsonPath("$.data.records[0].images.length()").value(2));
+
+        assertThat(jdbcClient.sql("""
+                        SELECT COUNT(*) FROM storage_asset_usage
+                        WHERE owner_type = 'PRODUCT_REVIEW'
+                          AND owner_id = :reviewId
+                          AND status = 'ACTIVE'
+                        """)
+                .param("reviewId", reviewId)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+        assertThat(jdbcClient.sql("""
+                        SELECT COUNT(*) FROM storage_asset
+                        WHERE id IN (:fileIds) AND expires_at IS NULL
+                        """)
+                .param("fileIds", List.of(firstImageId, secondImageId))
+                .query(Integer.class)
+                .single()).isEqualTo(2);
 
         mockMvc.perform(delete("/app/product/reviews/" + reviewId)
                         .header("Authorization", bearer(other.token())))
@@ -200,6 +234,23 @@ class AppProductEngagementControllerTest {
         mockMvc.perform(delete("/app/product/reviews/" + reviewId)
                         .header("Authorization", bearer(owner.token())))
                 .andExpect(status().isOk());
+
+        assertThat(jdbcClient.sql("""
+                        SELECT COUNT(*) FROM storage_asset_usage
+                        WHERE owner_type = 'PRODUCT_REVIEW'
+                          AND owner_id = :reviewId
+                          AND status = 'ACTIVE'
+                        """)
+                .param("reviewId", reviewId)
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("""
+                        SELECT COUNT(*) FROM storage_asset
+                        WHERE id IN (:fileIds) AND status = 'DELETE_PENDING'
+                        """)
+                .param("fileIds", List.of(firstImageId, secondImageId))
+                .query(Integer.class)
+                .single()).isEqualTo(2);
 
         mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews"))
                 .andExpect(status().isOk())
@@ -324,6 +375,86 @@ class AppProductEngagementControllerTest {
     }
 
     @Test
+    void reviewImagesRejectForeignContextAndMoreThanSixFiles() throws Exception {
+        AppLogin owner = login("engagement-review-image-owner");
+        AppLogin other = login("engagement-review-image-other");
+        ProductIds product = createPublishedProduct("REVIEW-IMAGE-VALIDATION");
+        long orderItemId = insertCompletedOrder(owner.userId(), product);
+        long foreignImageId = insertReviewImageAsset(other.userId(), orderItemId, "foreign");
+
+        mockMvc.perform(post("/app/product/spus/" + product.spuId() + "/reviews")
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reviewBody(orderItemId, 5, false, List.of(foreignImageId))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(800001));
+
+        mockMvc.perform(post("/app/product/spus/" + product.spuId() + "/reviews")
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reviewBody(
+                                orderItemId,
+                                5,
+                                false,
+                                List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
+    }
+
+    @Test
+    void reviewImageUploadIsAuthenticatedAndCompletedOrderScoped() throws Exception {
+        AppLogin owner = login("engagement-review-upload-owner");
+        AppLogin other = login("engagement-review-upload-other");
+        ProductIds product = createPublishedProduct("REVIEW-UPLOAD");
+        long orderItemId = insertCompletedOrder(owner.userId(), product);
+
+        mockMvc.perform(multipart(
+                                "/app/product/order-items/{orderItemId}/review-images",
+                                orderItemId)
+                        .file(new MockMultipartFile(
+                                "file", "review.png", "image/png", TINY_PNG)))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(multipart(
+                                "/app/product/order-items/{orderItemId}/review-images",
+                                orderItemId)
+                        .file(new MockMultipartFile(
+                                "file", "review.png", "image/png", TINY_PNG))
+                        .header("Authorization", bearer(other.token())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200201));
+
+        MvcResult upload = mockMvc.perform(multipart(
+                                "/app/product/order-items/{orderItemId}/review-images",
+                                orderItemId)
+                        .file(new MockMultipartFile(
+                                "file", "review.png", "image/png", TINY_PNG))
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.scope").value("LIBRARY"))
+                .andExpect(jsonPath("$.data.mediaKind").value("IMAGE"))
+                .andExpect(jsonPath("$.data.visibility").value("PUBLIC"))
+                .andExpect(jsonPath("$.data.uploadedByType").value("APP"))
+                .andExpect(jsonPath("$.data.publicUrl").isNotEmpty())
+                .andReturn();
+        long assetId = read(upload).path("data").path("id").asLong();
+
+        assertThat(jdbcClient.sql("""
+                        SELECT COUNT(*) FROM storage_asset
+                        WHERE id = :assetId
+                          AND uploaded_by_id = :userId
+                          AND upload_context_type = 'PRODUCT_REVIEW_ORDER_ITEM'
+                          AND upload_context_id = :orderItemId
+                          AND expires_at > CURRENT_TIMESTAMP
+                        """)
+                .param("assetId", assetId)
+                .param("userId", owner.userId())
+                .param("orderItemId", orderItemId)
+                .query(Integer.class)
+                .single()).isOne();
+    }
+
+    @Test
     void appDeletedCompletedOrderIsNotReviewEligible() throws Exception {
         AppLogin owner = login("engagement-review-deleted-order");
         ProductIds product = createPublishedProduct("DELETED-ORDER");
@@ -433,9 +564,48 @@ class AppProductEngagementControllerTest {
     }
 
     private String reviewBody(long orderItemId, int rating, boolean anonymous) {
+        return reviewBody(orderItemId, rating, anonymous, List.of());
+    }
+
+    private String reviewBody(
+            long orderItemId,
+            int rating,
+            boolean anonymous,
+            List<Long> imageFileIds
+    ) {
         return """
-                {"orderItemId":%d,"rating":%d,"content":"味道很好","anonymous":%s}
-                """.formatted(orderItemId, rating, anonymous);
+                {"orderItemId":%d,"rating":%d,"content":"味道很好","anonymous":%s,"imageFileIds":%s}
+                """.formatted(orderItemId, rating, anonymous, imageFileIds);
+    }
+
+    private long insertReviewImageAsset(long userId, long orderItemId, String marker) {
+        String objectKey = "public/library/image/review/" + marker + "-" + System.nanoTime() + ".webp";
+        String publicUrl = "https://cdn.example.test/" + objectKey;
+        jdbcClient.sql("""
+                        INSERT INTO storage_asset (
+                            scope, media_kind, visibility, provider, storage_container,
+                            storage_region, object_key, original_filename, content_type,
+                            extension, size_bytes, sha256, public_url, status,
+                            uploaded_by_type, uploaded_by_id, upload_context_type,
+                            upload_context_id, expires_at
+                        ) VALUES (
+                            'LIBRARY', 'IMAGE', 'PUBLIC', 'TENCENT_COS', 'review-test',
+                            'ap-test', :objectKey, :filename, 'image/webp',
+                            'webp', 100, '', :publicUrl, 'ACTIVE',
+                            'APP', :userId, 'PRODUCT_REVIEW_ORDER_ITEM',
+                            :orderItemId, TIMESTAMPADD(HOUR, 24, CURRENT_TIMESTAMP)
+                        )
+                        """)
+                .param("objectKey", objectKey)
+                .param("filename", marker + ".webp")
+                .param("publicUrl", publicUrl)
+                .param("userId", userId)
+                .param("orderItemId", orderItemId)
+                .update();
+        return jdbcClient.sql("SELECT id FROM storage_asset WHERE object_key = :objectKey")
+                .param("objectKey", objectKey)
+                .query(Long.class)
+                .single();
     }
 
     private JsonNode read(MvcResult result) throws Exception {

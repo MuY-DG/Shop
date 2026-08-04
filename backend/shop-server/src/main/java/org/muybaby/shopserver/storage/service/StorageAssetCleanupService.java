@@ -150,7 +150,7 @@ public class StorageAssetCleanupService {
         return jdbcClient.sql("""
                         select asset.id
                         from storage_asset asset
-                        where asset.scope in ('ATTACHMENT', 'SECRET')
+                        where asset.scope in ('LIBRARY', 'ATTACHMENT', 'SECRET')
                           and asset.status = 'ACTIVE'
                           and asset.expires_at is not null
                           and asset.expires_at <= current_timestamp
@@ -344,7 +344,7 @@ public class StorageAssetCleanupService {
             return asset.withLeaseToken(leaseToken);
         }
 
-        if (!isPrivateExpirableScope(asset.scope())
+        if (!isExpirableScope(asset.scope())
                 || !"ACTIVE".equals(asset.status())
                 || asset.expiresAt() == null
                 || asset.expiresAt().isAfter(now)
@@ -536,8 +536,10 @@ public class StorageAssetCleanupService {
         RETRY
     }
 
-    private boolean isPrivateExpirableScope(String scope) {
-        return "ATTACHMENT".equals(scope) || "SECRET".equals(scope);
+    private boolean isExpirableScope(String scope) {
+        return "LIBRARY".equals(scope)
+                || "ATTACHMENT".equals(scope)
+                || "SECRET".equals(scope);
     }
 
     private Duration positiveDuration(Duration value, Duration fallback) {

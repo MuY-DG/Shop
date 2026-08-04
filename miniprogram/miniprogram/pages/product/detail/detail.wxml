@@ -175,9 +175,22 @@
                 />
                 <view class="review-user__copy">
                   <text class="review-user__name">{{review.reviewerName}}</text>
-                  <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">{{review.hasContent ? review.content : '此用户没有填写文字评价'}}</text>
                 </view>
               </view>
+            </view>
+            <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">{{review.hasContent ? review.content : '此用户没有填写文字评价'}}</text>
+            <view wx:if="{{review.hasImages}}" class="review-image-gallery review-image-gallery--preview">
+              <image
+                wx:for="{{review.images}}"
+                wx:for-item="reviewImage"
+                wx:key="fileId"
+                class="review-image-gallery__image"
+                src="{{reviewImage.url}}"
+                mode="aspectFill"
+                data-review-id="{{review.id}}"
+                data-image-url="{{reviewImage.url}}"
+                bindtap="onReviewImagePreview"
+              />
             </view>
           </view>
         </view>
@@ -585,6 +598,19 @@
               <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">
                 {{review.hasContent ? review.content : '此用户没有填写文字评价'}}
               </text>
+              <view wx:if="{{review.hasImages}}" class="review-image-gallery">
+                <image
+                  wx:for="{{review.images}}"
+                  wx:for-item="reviewImage"
+                  wx:key="fileId"
+                  class="review-image-gallery__image"
+                  src="{{reviewImage.url}}"
+                  mode="aspectFill"
+                  data-review-id="{{review.id}}"
+                  data-image-url="{{reviewImage.url}}"
+                  bindtap="onReviewImagePreview"
+                />
+              </view>
               <view class="review-item__meta">
                 <text wx:if="{{review.verifiedPurchase}}" class="review-verified">已购</text>
                 <text wx:if="{{review.skuSpecText}}">{{review.skuSpecText}}</text>
@@ -698,6 +724,51 @@
                 />
               </view>
 
+              <view wx:if="{{reviewFormMode === 'create'}}" class="review-form__field">
+                <view class="review-form__label-row">
+                  <text class="review-form__label">评价图片（选填）</text>
+                  <text class="review-form__counter">{{reviewImages.length}} / 6</text>
+                </view>
+                <text class="review-form__image-hint">最多 6 张，单张不超过 5MB</text>
+                <view class="review-draft-images">
+                  <view
+                    wx:for="{{reviewImages}}"
+                    wx:for-item="reviewImage"
+                    wx:key="fileId"
+                    class="review-draft-image"
+                  >
+                    <image
+                      class="review-draft-image__image"
+                      src="{{reviewImage.tempFilePath}}"
+                      mode="aspectFill"
+                      data-id="{{index}}"
+                      bindtap="onReviewDraftImagePreview"
+                    />
+                    <button
+                      class="review-draft-image__remove"
+                      data-id="{{index}}"
+                      bindtap="onReviewImageRemove"
+                      aria-label="移除第 {{index + 1}} 张评价图片"
+                    >×</button>
+                  </view>
+                  <button
+                    wx:if="{{reviewImages.length < 6}}"
+                    class="review-draft-image-add"
+                    loading="{{reviewImageUploading}}"
+                    disabled="{{reviewImageUploading || reviewSubmitting}}"
+                    bindtap="onReviewImageChoose"
+                    aria-label="添加评价图片"
+                  >
+                    <text class="review-draft-image-add__plus">＋</text>
+                    <text>添加图片</text>
+                  </button>
+                </view>
+              </view>
+
+              <view wx:if="{{reviewFormMode === 'update' && myReviews.length}}" class="review-form__image-note">
+                已发布图片会保留；如需更换图片，请删除后重新评价。
+              </view>
+
               <view class="review-anonymous-row">
                 <view>
                   <text class="review-form__label">匿名评价</text>
@@ -712,10 +783,10 @@
 
               <button
                 class="review-submit {{reviewSubmitting ? 'review-submit--disabled' : ''}}"
-                disabled="{{reviewSubmitting}}"
+                disabled="{{reviewSubmitting || reviewImageUploading}}"
                 loading="{{reviewSubmitting}}"
                 bindtap="onReviewSubmit"
-              >{{reviewFormMode === 'update' ? '保存修改' : '发布评价'}}</button>
+              >{{reviewImageUploading ? '图片上传中' : (reviewFormMode === 'update' ? '保存修改' : '发布评价')}}</button>
             </view>
 
             <view wx:if="{{myReviews.length}}" class="my-review-section">
@@ -738,6 +809,19 @@
                   <text class="review-item__date">{{review.createdAtText}}</text>
                 </view>
                 <text class="my-review-item__content">{{review.hasContent ? review.content : '未填写文字评价'}}</text>
+                <view wx:if="{{review.hasImages}}" class="review-image-gallery">
+                  <image
+                    wx:for="{{review.images}}"
+                    wx:for-item="reviewImage"
+                    wx:key="fileId"
+                    class="review-image-gallery__image"
+                    src="{{reviewImage.url}}"
+                    mode="aspectFill"
+                    data-review-id="{{review.id}}"
+                    data-image-url="{{reviewImage.url}}"
+                    bindtap="onReviewImagePreview"
+                  />
+                </view>
                 <view class="review-item__meta">
                   <text class="review-verified">已购</text>
                   <text wx:if="{{review.skuSpecText}}">{{review.skuSpecText}}</text>

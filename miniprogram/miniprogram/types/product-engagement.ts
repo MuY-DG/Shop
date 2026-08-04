@@ -13,6 +13,26 @@ export interface ProductReview {
   verifiedPurchase: boolean;
   createdAt: string;
   updatedAt: string;
+  images: ProductReviewImage[];
+}
+
+export interface ProductReviewImage {
+  fileId: number;
+  url: string;
+  sortOrder: number;
+}
+
+export interface ProductReviewImageUploadResponse {
+  id: number;
+  scope: "LIBRARY";
+  mediaKind: "IMAGE";
+  visibility: "PUBLIC";
+  originalFilename: string;
+  sizeBytes: number;
+  status: "ACTIVE";
+  url?: string;
+  publicUrl?: string;
+  expiresAt?: string;
 }
 
 export interface ProductReviewSummary {
@@ -31,6 +51,7 @@ export interface PublicProductReview {
   verifiedPurchase: boolean;
   createdAt: string;
   updatedAt: string;
+  images: ProductReviewImage[];
 }
 
 export interface ProductReviewPage {
@@ -56,6 +77,7 @@ export interface ProductReviewCreateRequest extends WechatMiniprogram.IAnyObject
   rating: number;
   content?: string;
   anonymous?: boolean;
+  imageFileIds?: number[];
 }
 
 export interface ProductReviewUpdateRequest extends WechatMiniprogram.IAnyObject {

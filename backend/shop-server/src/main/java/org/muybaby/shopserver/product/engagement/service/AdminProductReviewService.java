@@ -6,6 +6,7 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.engagement.ProductReviewStatus;
 import org.muybaby.shopserver.product.engagement.dto.AdminProductReviewQueryRequest;
 import org.muybaby.shopserver.product.engagement.dto.AdminProductReviewResponse;
+import org.muybaby.shopserver.product.engagement.dto.ProductReviewImageResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,7 +14,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -74,6 +77,7 @@ public class AdminProductReviewService {
                 .query(this::mapReview)
                 .list();
 
+        records = attachImages(records);
         return PageResult.of(records, total == null ? 0 : total, current, size);
     }
 
@@ -142,7 +146,56 @@ public class AdminProductReviewService {
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class),
                 rs.getObject("moderated_by_admin_user_id", Long.class),
-                rs.getObject("moderated_at", LocalDateTime.class)
+                rs.getObject("moderated_at", LocalDateTime.class),
+                List.of()
         );
+    }
+
+    private List<AdminProductReviewResponse> attachImages(
+            List<AdminProductReviewResponse> reviews
+    ) {
+        if (reviews.isEmpty()) {
+            return reviews;
+        }
+        Map<Long, List<ProductReviewImageResponse>> images = new LinkedHashMap<>();
+        jdbcClient.sql("""
+                        SELECT review_id, asset_id, image_url, sort_order
+                        FROM product_review_image
+                        WHERE review_id IN (:reviewIds)
+                        ORDER BY review_id, sort_order, id
+                        """)
+                .param("reviewIds", reviews.stream().map(AdminProductReviewResponse::id).toList())
+                .query((rs, rowNum) -> new ReviewImageProjection(
+                        rs.getLong("review_id"),
+                        new ProductReviewImageResponse(
+                                rs.getLong("asset_id"),
+                                rs.getString("image_url"),
+                                rs.getInt("sort_order")
+                        )
+                ))
+                .list()
+                .forEach(row -> images.computeIfAbsent(
+                        row.reviewId(), ignored -> new ArrayList<>()).add(row.image()));
+        return reviews.stream()
+                .map(review -> withImages(
+                        review, images.getOrDefault(review.id(), List.of())))
+                .toList();
+    }
+
+    private AdminProductReviewResponse withImages(
+            AdminProductReviewResponse review,
+            List<ProductReviewImageResponse> images
+    ) {
+        return new AdminProductReviewResponse(
+                review.id(), review.spuId(), review.productTitle(), review.productImage(),
+                review.userId(), review.reviewerName(), review.orderId(), review.orderNo(),
+                review.orderItemId(), review.orderDataCleaned(), review.specText(),
+                review.verifiedPurchase(), review.rating(), review.content(), review.anonymous(),
+                review.status(), review.createdAt(), review.updatedAt(),
+                review.moderatedByAdminUserId(), review.moderatedAt(), List.copyOf(images)
+        );
+    }
+
+    private record ReviewImageProjection(Long reviewId, ProductReviewImageResponse image) {
     }
 }

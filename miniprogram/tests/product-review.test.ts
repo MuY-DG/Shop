@@ -57,7 +57,12 @@ test("公开评价过滤无效记录并生成匿名、日期和规格展示", ()
       reviewerName: " 小灶 ",
       verifiedPurchase: true,
       createdAt: "2026-07-20T09:30:00Z",
-      updatedAt: "2026-07-20T09:30:00Z"
+      updatedAt: "2026-07-20T09:30:00Z",
+      images: [
+        { fileId: 12, url: " https://img.example/second.webp ", sortOrder: 1 },
+        { fileId: 11, url: "https://img.example/first.webp", sortOrder: 0 },
+        { fileId: 0, url: "https://img.example/invalid.webp", sortOrder: 2 }
+      ]
     },
     {
       id: 0,
@@ -68,7 +73,8 @@ test("公开评价过滤无效记录并生成匿名、日期和规格展示", ()
       reviewerName: "",
       verifiedPurchase: false,
       createdAt: "",
-      updatedAt: ""
+      updatedAt: "",
+      images: []
     }
   ]);
   assert.equal(views.length, 1);
@@ -77,6 +83,8 @@ test("公开评价过滤无效记录并生成匿名、日期和规格展示", ()
   assert.equal(views[0]?.content, "香味很足");
   assert.equal(views[0]?.createdAtText, "2026-07-20");
   assert.equal(views[0]?.skuSpecText, "500g 袋装");
+  assert.deepEqual(views[0]?.images.map((image) => image.fileId), [11, 12]);
+  assert.equal(views[0]?.hasImages, true);
 });
 
 test("可评价订单和文字输入生成提交前的安全值", () => {
@@ -108,7 +116,8 @@ test("我的评价保留修改和删除所需的订单与匿名状态", () => {
     reviewerName: "匿名用户",
     verifiedPurchase: true,
     createdAt: "2026-07-20T09:30:00Z",
-    updatedAt: "2026-07-20T09:30:00Z"
+    updatedAt: "2026-07-20T09:30:00Z",
+    images: []
   }]);
   assert.equal(views[0]?.id, 13);
   assert.equal(views[0]?.orderItemId, 21);

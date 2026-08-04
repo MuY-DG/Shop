@@ -53,15 +53,32 @@
         </template>
 
         <template #content="{ row }">
-          <ElTooltip
-            :content="row.content || '用户未填写文字评价'"
-            placement="top"
-            :show-after="300"
-          >
-            <span class="review-content" :class="{ 'is-empty': !row.content }">
-              {{ row.content || '仅评分' }}
-            </span>
-          </ElTooltip>
+          <div class="review-content-cell">
+            <ElTooltip
+              :content="row.content || '用户未填写文字评价'"
+              placement="top"
+              :show-after="300"
+            >
+              <span class="review-content" :class="{ 'is-empty': !row.content }">
+                {{ row.content || '仅评分' }}
+              </span>
+            </ElTooltip>
+            <div v-if="row.images?.length" class="review-image-list review-image-list--table">
+              <ElImage
+                v-for="(image, index) in row.images.slice(0, 3)"
+                :key="image.fileId"
+                class="review-image"
+                :src="image.url"
+                fit="cover"
+                :preview-src-list="reviewImageUrls(row.images)"
+                :initial-index="index"
+                preview-teleported
+              />
+              <span v-if="row.images.length > 3" class="review-image-count">
+                +{{ row.images.length - 3 }}
+              </span>
+            </div>
+          </div>
         </template>
 
         <template #orderNo="{ row }">
@@ -129,6 +146,20 @@
               {{ currentReview.content || '用户未填写文字评价' }}
             </div>
           </ElDescriptionsItem>
+          <ElDescriptionsItem v-if="currentReview.images?.length" label="评价图片">
+            <div class="review-image-list review-image-list--detail">
+              <ElImage
+                v-for="(image, index) in currentReview.images"
+                :key="image.fileId"
+                class="review-image review-image--detail"
+                :src="image.url"
+                fit="cover"
+                :preview-src-list="reviewImageUrls(currentReview.images)"
+                :initial-index="index"
+                preview-teleported
+              />
+            </div>
+          </ElDescriptionsItem>
           <ElDescriptionsItem label="购买规格">
             {{ currentReview.specText || '-' }}
           </ElDescriptionsItem>
@@ -175,6 +206,8 @@
   const detailVisible = ref(false)
   const currentReview = ref<Api.Product.ProductReview | null>(null)
   const statusUpdatingIds = ref(new Set<number>())
+  const reviewImageUrls = (images: Api.Product.ProductReviewImage[]) =>
+    images.map((image) => image.url)
 
   const searchForm = ref<{
     productTitle?: string
@@ -372,8 +405,42 @@
     -webkit-line-clamp: 2;
   }
 
+  .review-content-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
   .review-content.is-empty {
     color: var(--el-text-color-placeholder);
+  }
+
+  .review-image-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .review-image-list--table {
+    align-items: center;
+  }
+
+  .review-image {
+    width: 38px;
+    height: 38px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 6px;
+  }
+
+  .review-image--detail {
+    width: 92px;
+    height: 92px;
+    border-radius: 8px;
+  }
+
+  .review-image-count {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
   }
 
   .detail-product {

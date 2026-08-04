@@ -562,6 +562,12 @@ declare namespace Api {
 
     type ProductReviewList = Api.Common.PaginatedResponse<ProductReview>
 
+    interface ProductReviewImage {
+      fileId: number
+      url: string
+      sortOrder: number
+    }
+
     interface ProductReview {
       id: number
       spuId: number
@@ -583,6 +589,7 @@ declare namespace Api {
       updatedAt: string
       moderatedByAdminUserId?: number | null
       moderatedAt?: string | null
+      images: ProductReviewImage[]
     }
 
     type ProductReviewSearchParams = Partial<

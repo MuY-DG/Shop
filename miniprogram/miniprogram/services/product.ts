@@ -11,10 +11,13 @@ import type {
   ProductReviewCreateRequest,
   ProductReviewEligibility,
   ProductReviewPage,
+  ProductReviewImageUploadResponse,
   ProductReviewUpdateRequest
 } from "../types/product-engagement";
 import type { PageResult } from "../types/api";
 import { request } from "../utils/request";
+import { uploadFileDirect } from "../utils/direct-upload";
+import { uploadFile } from "../utils/upload";
 
 export function getProductCategories(): Promise<ProductCategory[]> {
   return request<ProductCategory[]>({
@@ -115,6 +118,23 @@ export function createProductReview(
     url: API_ENDPOINTS.product.reviews(spuId),
     method: "POST",
     data
+  });
+}
+
+export function uploadProductReviewImage(
+  orderItemId: number,
+  filePath: string
+): Promise<ProductReviewImageUploadResponse> {
+  return uploadFileDirect<ProductReviewImageUploadResponse>({
+    initUrl: API_ENDPOINTS.product.reviewImageUploads(orderItemId),
+    filePath,
+    timeoutMs: 60_000,
+    legacyFallback: () => uploadFile<ProductReviewImageUploadResponse>({
+      url: API_ENDPOINTS.product.reviewImage(orderItemId),
+      filePath,
+      name: "file",
+      timeoutMs: 30_000
+    })
   });
 }
 

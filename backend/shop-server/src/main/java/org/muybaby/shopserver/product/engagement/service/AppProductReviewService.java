@@ -8,6 +8,7 @@ import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.dto.AppProductReviewSummaryResponse;
 import org.muybaby.shopserver.product.engagement.dto.ProductEngagementPageRequest;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewEligibilityResponse;
+import org.muybaby.shopserver.product.engagement.dto.ProductReviewImageResponse;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewPageResponse;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewRequest;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewResponse;
@@ -15,28 +16,56 @@ import org.muybaby.shopserver.product.engagement.dto.ProductReviewUpdateRequest;
 import org.muybaby.shopserver.product.engagement.dto.PublicProductReviewResponse;
 import org.muybaby.shopserver.product.engagement.dto.ReviewableOrderItemResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.StorageFileUsageType;
+import org.muybaby.shopserver.storage.StorageUploadProfile;
+import org.muybaby.shopserver.storage.StorageUsageOwnerType;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionRequest;
+import org.muybaby.shopserver.storage.dto.DirectUploadSessionResponse;
+import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
+import org.muybaby.shopserver.storage.service.DirectUploadService;
+import org.muybaby.shopserver.storage.service.StorageService;
+import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 public class AppProductReviewService {
 
     private static final String PUBLISHED = "PUBLISHED";
     private static final String COMPLETED = "COMPLETED";
+    private static final String REVIEW_IMAGE_CONTEXT = "PRODUCT_REVIEW_ORDER_ITEM";
+    private static final int MAX_REVIEW_IMAGES = 6;
 
     private final JdbcClient jdbcClient;
+    private final StorageService storageService;
+    private final DirectUploadService directUploadService;
+    private final StorageUsageService storageUsageService;
 
-    public AppProductReviewService(JdbcClient jdbcClient) {
+    public AppProductReviewService(
+            JdbcClient jdbcClient,
+            StorageService storageService,
+            DirectUploadService directUploadService,
+            StorageUsageService storageUsageService
+    ) {
         this.jdbcClient = jdbcClient;
+        this.storageService = storageService;
+        this.directUploadService = directUploadService;
+        this.storageUsageService = storageUsageService;
     }
 
     public ProductReviewPageResponse page(Long spuId, ProductEngagementPageRequest request) {
@@ -67,6 +96,7 @@ public class AppProductReviewService {
                 .param("offset", offset)
                 .query(this::mapPublicReview)
                 .list();
+        records = attachPublicImages(records);
         return new ProductReviewPageResponse(
                 summary(spuId),
                 PageResult.of(records, total, current, size)
@@ -113,7 +143,65 @@ public class AppProductReviewService {
                 .param("offset", offset)
                 .query(this::mapReview)
                 .list();
+        records = attachOwnedImages(records);
         return PageResult.of(records, total == null ? 0 : total, current, size);
+    }
+
+    public StorageAssetResponse uploadImage(
+            AuthenticatedPrincipal principal,
+            Long orderItemId,
+            MultipartFile file
+    ) {
+        long userId = requireAppUser(principal);
+        requirePendingReviewableOrderItem(userId, orderItemId);
+        return storageService.uploadProductReviewImage(principal, orderItemId, file);
+    }
+
+    public DirectUploadSessionResponse createImageUploadSession(
+            AuthenticatedPrincipal principal,
+            Long orderItemId,
+            DirectUploadSessionRequest request
+    ) {
+        long userId = requireAppUser(principal);
+        requirePendingReviewableOrderItem(userId, orderItemId);
+        return directUploadService.create(
+                principal,
+                StorageUploadProfile.PRODUCT_REVIEW_IMAGE,
+                null,
+                REVIEW_IMAGE_CONTEXT,
+                orderItemId,
+                request
+        );
+    }
+
+    public StorageAssetResponse completeImageUploadSession(
+            AuthenticatedPrincipal principal,
+            Long orderItemId,
+            String uploadId
+    ) {
+        long userId = requireAppUser(principal);
+        requirePendingReviewableOrderItem(userId, orderItemId);
+        return directUploadService.complete(
+                principal,
+                uploadId,
+                StorageUploadProfile.PRODUCT_REVIEW_IMAGE,
+                orderItemId
+        ).asset();
+    }
+
+    public void cancelImageUploadSession(
+            AuthenticatedPrincipal principal,
+            Long orderItemId,
+            String uploadId
+    ) {
+        long userId = requireAppUser(principal);
+        requireOwnedOrderItem(userId, orderItemId);
+        directUploadService.cancel(
+                principal,
+                uploadId,
+                StorageUploadProfile.PRODUCT_REVIEW_IMAGE,
+                orderItemId
+        );
     }
 
     public ProductReviewEligibilityResponse eligibility(
@@ -206,6 +294,9 @@ public class AppProductReviewService {
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_ELIGIBLE));
+        List<Long> imageFileIds = normalizeImageFileIds(request.imageFileIds());
+        List<ReviewImageAsset> imageAssets = lockReviewImageAssets(
+                userId, request.orderItemId(), imageFileIds);
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         try {
             jdbcClient.sql("""
@@ -239,6 +330,7 @@ public class AppProductReviewService {
                 .param("orderItemId", request.orderItemId())
                 .query(Long.class)
                 .single();
+        bindReviewImages(reviewId, snapshot.productTitle(), imageAssets);
         return ownedReview(userId, reviewId);
     }
 
@@ -276,6 +368,8 @@ public class AppProductReviewService {
     @Transactional
     public void delete(AuthenticatedPrincipal principal, Long reviewId) {
         long userId = requireAppUser(principal);
+        List<Long> imageFileIds = reviewImageFileIdsForUpdate(userId, reviewId);
+        storageUsageService.removeOwnerUsages(StorageUsageOwnerType.PRODUCT_REVIEW, reviewId);
         int deleted = jdbcClient.sql("""
                         DELETE FROM product_review
                         WHERE id = :reviewId AND user_id = :userId
@@ -286,6 +380,7 @@ public class AppProductReviewService {
         if (deleted != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND);
         }
+        scheduleReviewImagesForCleanup(userId, imageFileIds);
     }
 
     public AppProductReviewSummaryResponse summary(Long spuId) {
@@ -311,7 +406,7 @@ public class AppProductReviewService {
     }
 
     private ProductReviewResponse ownedReview(long userId, Long reviewId) {
-        return jdbcClient.sql("""
+        ProductReviewResponse review = jdbcClient.sql("""
                         SELECT r.id, r.spu_id, r.product_title_snapshot AS product_title,
                                r.source_order_item_id AS order_item_id,
                                r.spec_text_snapshot AS spec_text,
@@ -330,6 +425,7 @@ public class AppProductReviewService {
                 .query(this::mapReview)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND));
+        return withImages(review, reviewImages(List.of(reviewId)).getOrDefault(reviewId, List.of()));
     }
 
     private ProductReviewResponse mapReview(ResultSet rs, int rowNum) throws SQLException {
@@ -345,7 +441,8 @@ public class AppProductReviewService {
                 rs.getString("reviewer_name"),
                 rs.getBoolean("verified_purchase"),
                 rs.getObject("created_at", LocalDateTime.class),
-                rs.getObject("updated_at", LocalDateTime.class)
+                rs.getObject("updated_at", LocalDateTime.class),
+                List.of()
         );
     }
 
@@ -359,8 +456,288 @@ public class AppProductReviewService {
                 rs.getString("reviewer_name"),
                 rs.getBoolean("verified_purchase"),
                 rs.getObject("created_at", LocalDateTime.class),
-                rs.getObject("updated_at", LocalDateTime.class)
+                rs.getObject("updated_at", LocalDateTime.class),
+                List.of()
         );
+    }
+
+    private List<Long> normalizeImageFileIds(List<Long> imageFileIds) {
+        if (imageFileIds == null || imageFileIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> normalized = new ArrayList<>();
+        for (Long fileId : imageFileIds) {
+            if (fileId == null || fileId <= 0) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+            if (!normalized.contains(fileId)) {
+                normalized.add(fileId);
+            }
+        }
+        if (normalized.size() > MAX_REVIEW_IMAGES) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return List.copyOf(normalized);
+    }
+
+    private List<ReviewImageAsset> lockReviewImageAssets(
+            long userId,
+            Long orderItemId,
+            List<Long> imageFileIds
+    ) {
+        if (imageFileIds.isEmpty()) {
+            return List.of();
+        }
+        List<ReviewImageAsset> rows = jdbcClient.sql("""
+                        SELECT asset.id, asset.public_url
+                        FROM storage_asset asset
+                        WHERE asset.id IN (:fileIds)
+                          AND asset.scope = 'LIBRARY'
+                          AND asset.media_kind = 'IMAGE'
+                          AND asset.visibility = 'PUBLIC'
+                          AND asset.status = 'ACTIVE'
+                          AND asset.uploaded_by_type = 'APP'
+                          AND asset.uploaded_by_id = :userId
+                          AND asset.upload_context_type = :contextType
+                          AND asset.upload_context_id = :orderItemId
+                          AND asset.public_url IS NOT NULL
+                          AND asset.public_url <> ''
+                          AND asset.expires_at > CURRENT_TIMESTAMP
+                          AND NOT EXISTS (
+                              SELECT 1 FROM storage_asset_usage usage
+                              WHERE usage.asset_id = asset.id AND usage.status = 'ACTIVE'
+                          )
+                        ORDER BY asset.id
+                        FOR UPDATE
+                        """)
+                .param("fileIds", imageFileIds)
+                .param("userId", userId)
+                .param("contextType", REVIEW_IMAGE_CONTEXT)
+                .param("orderItemId", orderItemId)
+                .query((rs, rowNum) -> new ReviewImageAsset(
+                        rs.getLong("id"), rs.getString("public_url")))
+                .list();
+        Map<Long, ReviewImageAsset> byId = rows.stream().collect(Collectors.toMap(
+                ReviewImageAsset::fileId,
+                Function.identity()
+        ));
+        if (byId.size() != imageFileIds.size()) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+        return imageFileIds.stream().map(byId::get).toList();
+    }
+
+    private void bindReviewImages(
+            Long reviewId,
+            String productTitle,
+            List<ReviewImageAsset> images
+    ) {
+        int sortOrder = 1;
+        for (ReviewImageAsset image : images) {
+            jdbcClient.sql("""
+                            INSERT INTO product_review_image
+                                (review_id, asset_id, image_url, sort_order)
+                            VALUES (:reviewId, :assetId, :imageUrl, :sortOrder)
+                            """)
+                    .param("reviewId", reviewId)
+                    .param("assetId", image.fileId())
+                    .param("imageUrl", image.url())
+                    .param("sortOrder", sortOrder)
+                    .update();
+            storageUsageService.addProtectedUsage(
+                    image.fileId(),
+                    StorageFileUsageType.PRODUCT_REVIEW_IMAGE,
+                    StorageUsageOwnerType.PRODUCT_REVIEW,
+                    reviewId,
+                    "商品评价 " + reviewId + " / " + productTitle,
+                    image.url(),
+                    sortOrder
+            );
+            sortOrder++;
+        }
+        if (!images.isEmpty()) {
+            int claimed = jdbcClient.sql("""
+                            UPDATE storage_asset
+                            SET expires_at = NULL,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id IN (:fileIds)
+                              AND expires_at IS NOT NULL
+                            """)
+                    .param("fileIds", images.stream().map(ReviewImageAsset::fileId).toList())
+                    .update();
+            if (claimed != images.size()) {
+                throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+            }
+        }
+    }
+
+    private List<Long> reviewImageFileIdsForUpdate(long userId, Long reviewId) {
+        boolean owned = jdbcClient.sql("""
+                        SELECT id FROM product_review
+                        WHERE id = :reviewId AND user_id = :userId
+                        FOR UPDATE
+                        """)
+                .param("reviewId", reviewId)
+                .param("userId", userId)
+                .query(Long.class)
+                .optional()
+                .isPresent();
+        if (!owned) {
+            throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND);
+        }
+        return jdbcClient.sql("""
+                        SELECT asset_id FROM product_review_image
+                        WHERE review_id = :reviewId
+                        ORDER BY sort_order, id
+                        FOR UPDATE
+                        """)
+                .param("reviewId", reviewId)
+                .query(Long.class)
+                .list();
+    }
+
+    private void scheduleReviewImagesForCleanup(long userId, List<Long> fileIds) {
+        if (fileIds.isEmpty()) {
+            return;
+        }
+        int updated = jdbcClient.sql("""
+                        UPDATE storage_asset
+                        SET status = 'DELETE_PENDING',
+                            folder_id = NULL,
+                            public_url = NULL,
+                            expires_at = NULL,
+                            cleanup_attempts = 0,
+                            cleanup_next_retry_at = CURRENT_TIMESTAMP,
+                            cleanup_lease_token = NULL,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id IN (:fileIds)
+                          AND status = 'ACTIVE'
+                          AND uploaded_by_type = 'APP'
+                          AND uploaded_by_id = :userId
+                          AND upload_context_type = :contextType
+                          AND NOT EXISTS (
+                              SELECT 1 FROM storage_asset_usage usage
+                              WHERE usage.asset_id = storage_asset.id
+                                AND usage.status = 'ACTIVE'
+                          )
+                        """)
+                .param("fileIds", fileIds)
+                .param("userId", userId)
+                .param("contextType", REVIEW_IMAGE_CONTEXT)
+                .update();
+        if (updated != fileIds.size()) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+    }
+
+    private Map<Long, List<ProductReviewImageResponse>> reviewImages(List<Long> reviewIds) {
+        if (reviewIds == null || reviewIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<ProductReviewImageResponse>> images = new LinkedHashMap<>();
+        jdbcClient.sql("""
+                        SELECT review_id, asset_id, image_url, sort_order
+                        FROM product_review_image
+                        WHERE review_id IN (:reviewIds)
+                        ORDER BY review_id, sort_order, id
+                        """)
+                .param("reviewIds", reviewIds)
+                .query((rs, rowNum) -> new ReviewImageProjection(
+                        rs.getLong("review_id"),
+                        new ProductReviewImageResponse(
+                                rs.getLong("asset_id"),
+                                rs.getString("image_url"),
+                                rs.getInt("sort_order")
+                        )
+                ))
+                .list()
+                .forEach(row -> images.computeIfAbsent(
+                        row.reviewId(), ignored -> new ArrayList<>()).add(row.image()));
+        return images;
+    }
+
+    private List<ProductReviewResponse> attachOwnedImages(List<ProductReviewResponse> reviews) {
+        Map<Long, List<ProductReviewImageResponse>> images = reviewImages(
+                reviews.stream().map(ProductReviewResponse::id).toList());
+        return reviews.stream()
+                .map(review -> withImages(review, images.getOrDefault(review.id(), List.of())))
+                .toList();
+    }
+
+    private List<PublicProductReviewResponse> attachPublicImages(
+            List<PublicProductReviewResponse> reviews
+    ) {
+        Map<Long, List<ProductReviewImageResponse>> images = reviewImages(
+                reviews.stream().map(PublicProductReviewResponse::id).toList());
+        return reviews.stream()
+                .map(review -> withImages(review, images.getOrDefault(review.id(), List.of())))
+                .toList();
+    }
+
+    private ProductReviewResponse withImages(
+            ProductReviewResponse review,
+            List<ProductReviewImageResponse> images
+    ) {
+        return new ProductReviewResponse(
+                review.id(), review.spuId(), review.productTitle(), review.orderItemId(),
+                review.skuSpecText(), review.rating(), review.content(), review.anonymous(),
+                review.reviewerName(), review.verifiedPurchase(), review.createdAt(),
+                review.updatedAt(), List.copyOf(images)
+        );
+    }
+
+    private PublicProductReviewResponse withImages(
+            PublicProductReviewResponse review,
+            List<ProductReviewImageResponse> images
+    ) {
+        return new PublicProductReviewResponse(
+                review.id(), review.skuSpecText(), review.rating(), review.content(),
+                review.anonymous(), review.reviewerName(), review.verifiedPurchase(),
+                review.createdAt(), review.updatedAt(), List.copyOf(images)
+        );
+    }
+
+    private void requirePendingReviewableOrderItem(long userId, Long orderItemId) {
+        boolean reviewable = jdbcClient.sql("""
+                        SELECT item.id
+                        FROM order_item item
+                        JOIN shop_order shop_order ON shop_order.id = item.order_id
+                        WHERE item.id = :orderItemId
+                          AND shop_order.user_id = :userId
+                          AND shop_order.status = :status
+                          AND shop_order.completed_at IS NOT NULL
+                          AND shop_order.app_deleted_at IS NULL
+                          AND NOT EXISTS (
+                              SELECT 1 FROM product_review review
+                              WHERE review.source_order_item_id = item.id
+                          )
+                        """)
+                .param("orderItemId", orderItemId)
+                .param("userId", userId)
+                .param("status", COMPLETED)
+                .query(Long.class)
+                .optional()
+                .isPresent();
+        if (!reviewable) {
+            throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_ELIGIBLE);
+        }
+    }
+
+    private void requireOwnedOrderItem(long userId, Long orderItemId) {
+        boolean owned = jdbcClient.sql("""
+                        SELECT item.id
+                        FROM order_item item
+                        JOIN shop_order shop_order ON shop_order.id = item.order_id
+                        WHERE item.id = :orderItemId AND shop_order.user_id = :userId
+                        """)
+                .param("orderItemId", orderItemId)
+                .param("userId", userId)
+                .query(Long.class)
+                .optional()
+                .isPresent();
+        if (!owned) {
+            throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_ELIGIBLE);
+        }
     }
 
     private long reviewCount(Long spuId) {
@@ -427,5 +804,11 @@ public class AppProductReviewService {
     }
 
     private record ReviewSnapshot(String productTitle, String specText) {
+    }
+
+    private record ReviewImageAsset(Long fileId, String url) {
+    }
+
+    private record ReviewImageProjection(Long reviewId, ProductReviewImageResponse image) {
     }
 }

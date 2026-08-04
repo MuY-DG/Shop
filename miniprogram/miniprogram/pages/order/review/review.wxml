@@ -138,6 +138,47 @@
           />
         </view>
 
+        <view class="form-section">
+          <view class="form-heading">
+            <text class="form-label">评价图片（选填）</text>
+            <text class="content-count">{{selectedItem.reviewImages.length}} / 6</text>
+          </view>
+          <text class="review-image-hint">最多 6 张，单张不超过 5MB</text>
+          <view class="review-image-grid">
+            <view
+              wx:for="{{selectedItem.reviewImages}}"
+              wx:for-item="reviewImage"
+              wx:key="fileId"
+              class="review-image-item"
+            >
+              <image
+                class="review-image-item__image"
+                src="{{reviewImage.tempFilePath}}"
+                mode="aspectFill"
+                data-index="{{index}}"
+                bindtap="onPreviewReviewImage"
+              />
+              <button
+                class="review-image-item__remove"
+                data-index="{{index}}"
+                bindtap="onRemoveReviewImage"
+                aria-label="移除第 {{index + 1}} 张评价图片"
+              >×</button>
+            </view>
+            <button
+              wx:if="{{selectedItem.reviewImages.length < 6}}"
+              class="review-image-add"
+              loading="{{uploadingOrderItemId === selectedItem.orderItemId}}"
+              disabled="{{uploadingOrderItemId || submittingOrderItemId}}"
+              bindtap="onChooseReviewImage"
+              aria-label="添加评价图片"
+            >
+              <text class="review-image-add__plus">＋</text>
+              <text>添加图片</text>
+            </button>
+          </view>
+        </view>
+
         <view class="anonymous-row">
           <view>
             <text class="form-label">匿名评价</text>
@@ -157,8 +198,8 @@
     <button
       class="review-submit"
       loading="{{submittingOrderItemId === selectedItem.orderItemId}}"
-      disabled="{{submittingOrderItemId}}"
+      disabled="{{submittingOrderItemId || uploadingOrderItemId}}"
       bindtap="onSubmitTap"
-    >发布评价</button>
+    >{{uploadingOrderItemId ? '图片上传中' : '发布评价'}}</button>
   </view>
 </view>
