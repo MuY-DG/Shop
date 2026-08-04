@@ -562,13 +562,63 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   const detailTemplate = readFileSync(`${detailPageRoot}.wxml`, "utf8");
   const detailLogic = readFileSync(`${detailPageRoot}.ts`, "utf8");
   const detailStyle = readFileSync(`${detailPageRoot}.less`, "utf8");
+  const productSummaryStyle = readFileSync(
+    resolve(sourceRoot, "components/product-summary/product-summary.less"),
+    "utf8"
+  );
+  const designTokens = readFileSync(
+    resolve(sourceRoot, "styles/tokens.less"),
+    "utf8"
+  );
 
   assert.equal(detailConfig.enablePullDownRefresh, false);
   assert.doesNotMatch(detailTemplate, /<sku-selector|stock-text=|categoryName/);
   assert.match(detailTemplate, /data-mode="CART"/);
   assert.match(detailTemplate, /data-mode="BUY"/);
   assert.match(detailTemplate, /activeSheet === 'purchase'/);
-  assert.match(detailTemplate, />商品评价</);
+  assert.match(detailTemplate, />买家评价</);
+  assert.match(detailTemplate, /reviewSummary\.hasReviews \? reviewSummary\.goodRateText : '暂无评价'/);
+  assert.doesNotMatch(detailTemplate, /class="review-score"/);
+  const reviewPreviewTemplate = detailTemplate.match(
+    /<view wx:elif="\{\{reviewPreview\.length\}\}"[\s\S]*?<view wx:else class="review-empty-preview">/
+  )?.[0] ?? "";
+  assert.match(reviewPreviewTemplate, /src="\/assets\/images\/profile-default-avatar\.png"/);
+  assert.doesNotMatch(
+    reviewPreviewTemplate,
+    /reviewerInitial|review-stars|review-item__date|review-item__meta|verifiedPurchase|skuSpecText/
+  );
+  assert.match(
+    reviewPreviewTemplate,
+    /review-item__content--empty'\}\}">\{\{review\.hasContent \? review\.content/
+  );
+  assert.match(detailLogic, /const REVIEW_PREVIEW_SIZE = 2;/);
+  assert.match(detailStyle, /\.review-card\s*\{[\s\S]*?background: @color-surface-white;/);
+  assert.match(detailStyle, /\.commerce-row--address\s*\{ border: 0; background: @color-surface-white; \}/);
+  assert.match(
+    detailTemplate,
+    /class="commerce-row commerce-row--address commerce-row--interactive"[\s\S]{0,100}bindtap="onAddressTap"/
+  );
+  assert.match(detailStyle, /\.review-card\s*\{[\s\S]*?border: 0;/);
+  assert.doesNotMatch(detailStyle, /\.review-item\s*\{[^}]*border-bottom:/);
+  assert.match(detailStyle, /\.review-preview-list \.review-item\s*\{\s*padding: 10rpx 0;/);
+  assert.match(detailStyle, /\.review-preview-list \.review-user__avatar\s*\{[\s\S]*?width: 42rpx;[\s\S]*?border: 0;/);
+  assert.match(detailStyle, /\.review-preview-list \.review-item__content\s*\{[\s\S]*?margin-top: 1rpx;[\s\S]*?padding-left: 0;/);
+  assert.match(detailStyle, /padding: 0 16rpx calc\(154rpx \+ env\(safe-area-inset-bottom\)\);/);
+  assert.match(detailStyle, /\.purchase-bar\s*\{[\s\S]*?background: @color-surface-white;/);
+  assert.match(detailTemplate, />暂时售空</);
+  assert.doesNotMatch(detailTemplate, /当前暂无可售规格|purchase-sold-out__hint/);
+  assert.match(
+    detailStyle,
+    /\.purchase-action--buy,\s*\.purchase-sold-out\s*\{[^}]*background: #ff172b;/
+  );
+  assert.match(detailTemplate, /activeSheet === 'reviews' \? 'sheet-panel--reviews'/);
+  assert.match(detailStyle, /\.sheet-panel--reviews\s*\{ background: @color-page; \}/);
+  assert.match(detailStyle, /\.review-item--sheet\s*\{[\s\S]*?background: @color-surface-white;/);
+  assert.match(productSummaryStyle, /background: @color-surface-white;/);
+  assert.match(productSummaryStyle, /border: 0;/);
+  assert.match(productSummaryStyle, /\.current-price\s*\{[\s\S]*?color: @color-detail-price;/);
+  assert.match(productSummaryStyle, /\.original-price\s*\{[\s\S]*?color: @color-text-placeholder;/);
+  assert.match(designTokens, /@color-detail-price: #ff0c1f;/);
   assert.match(detailTemplate, /activeSheet === 'reviews'/);
   assert.match(detailTemplate, /activeSheet === 'reviewManage'/);
   assert.match(detailTemplate, /activeSheet === 'address'/);

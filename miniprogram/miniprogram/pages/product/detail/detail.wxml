@@ -121,7 +121,7 @@
           <image class="commerce-action-icon" src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
         </view>
         <view
-          class="commerce-row commerce-row--interactive"
+          class="commerce-row commerce-row--address commerce-row--interactive"
           bindtap="onAddressTap"
           aria-role="button"
           aria-label="选择收货地址"
@@ -138,28 +138,17 @@
       <view class="detail-card review-card">
         <view class="review-card__header">
           <view>
-            <text class="section-heading__title">商品评价</text>
+            <text class="section-heading__title">买家评价</text>
             <text class="review-card__count">{{reviewSummary.reviewCountText}}</text>
           </view>
           <button
             class="review-card__all"
             bindtap="onReviewListOpen"
-            aria-label="查看全部商品评价"
+            aria-label="查看全部买家评价"
           >
-            <text>查看全部</text>
+            <text>{{reviewSummary.hasReviews ? reviewSummary.goodRateText : '暂无评价'}}</text>
             <image class="review-card__chevron" src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
           </button>
-        </view>
-
-        <view class="review-score">
-          <view class="review-score__primary">
-            <text class="review-score__number">{{reviewSummary.averageRatingText}}</text>
-            <text class="review-score__unit">/ 5</text>
-          </view>
-          <view class="review-score__meta">
-            <text class="review-score__good">{{reviewSummary.goodRateText}}</text>
-            <text class="review-score__hint">评价均来自已完成订单</text>
-          </view>
         </view>
 
         <view wx:if="{{reviewPreviewLoading}}" class="review-inline-state">
@@ -178,27 +167,17 @@
           >
             <view class="review-item__header">
               <view class="review-user">
-                <view class="review-user__avatar">{{review.reviewerInitial}}</view>
+                <image
+                  class="review-user__avatar review-user__avatar--image"
+                  src="/assets/images/profile-default-avatar.png"
+                  mode="aspectFill"
+                  aria-label="买家头像"
+                />
                 <view class="review-user__copy">
                   <text class="review-user__name">{{review.reviewerName}}</text>
-                  <view class="review-stars" aria-label="评分{{review.rating}}星">
-                    <text
-                      wx:for="{{review.stars}}"
-                      wx:for-item="star"
-                      wx:key="value"
-                      class="review-star {{star.filled ? 'review-star--filled' : ''}}"
-                    >★</text>
-                  </view>
+                  <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">{{review.hasContent ? review.content : '此用户没有填写文字评价'}}</text>
                 </view>
               </view>
-              <text class="review-item__date">{{review.createdAtText}}</text>
-            </view>
-            <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">
-              {{review.hasContent ? review.content : '此用户没有填写文字评价'}}
-            </text>
-            <view class="review-item__meta">
-              <text wx:if="{{review.verifiedPurchase}}" class="review-verified">已购</text>
-              <text wx:if="{{review.skuSpecText}}">{{review.skuSpecText}}</text>
             </view>
           </view>
         </view>
@@ -239,10 +218,9 @@
           wx:if="{{detail.saleState === 'SOLD_OUT'}}"
           class="purchase-sold-out"
           aria-role="text"
-          aria-label="暂时售罄，当前暂无可售规格"
+          aria-label="暂时售空"
         >
-          <text class="purchase-sold-out__title">暂时售罄</text>
-          <text class="purchase-sold-out__hint">当前暂无可售规格</text>
+          <text class="purchase-sold-out__title">暂时售空</text>
         </view>
         <block wx:else>
           <button
@@ -266,7 +244,7 @@
     catchtap="onCloseSheet"
     catchtouchmove="onPreventMove"
   >
-    <view class="sheet-panel {{sheetClosing ? 'sheet-panel--closing' : ''}} {{activeSheet === 'purchase' ? 'sheet-panel--purchase' : ''}} {{activeSheet === 'address' ? 'sheet-panel--address' : ''}}" catchtap="onPreventMove">
+    <view class="sheet-panel {{sheetClosing ? 'sheet-panel--closing' : ''}} {{activeSheet === 'purchase' ? 'sheet-panel--purchase' : ''}} {{activeSheet === 'address' ? 'sheet-panel--address' : ''}} {{activeSheet === 'reviews' ? 'sheet-panel--reviews' : ''}}" catchtap="onPreventMove">
       <block wx:if="{{activeSheet === 'purchase'}}">
         <view class="purchase-sheet-header">
           <view wx:if="{{purchaseImageUrl}}" class="purchase-image-wrap">

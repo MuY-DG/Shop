@@ -22,7 +22,7 @@ test("评价摘要规范评分、数量和好评率", () => {
     reviewCountText: "8 条评价",
     averageRating: 4.56,
     averageRatingText: "4.6",
-    goodRateText: "88% 好评",
+    goodRateText: "好评率88%",
     hasReviews: true
   });
   assert.deepEqual(buildProductReviewSummaryView(), {

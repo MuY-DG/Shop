@@ -94,7 +94,7 @@ export function buildProductReviewSummaryView(
     averageRating,
     averageRatingText: averageRating.toFixed(1),
     goodRateText: reviewCount
-      ? `${Math.round((goodReviewCount / reviewCount) * 100)}% 好评`
+      ? `好评率${Math.round((goodReviewCount / reviewCount) * 100)}%`
       : "期待首条评价",
     hasReviews: reviewCount > 0
   };
