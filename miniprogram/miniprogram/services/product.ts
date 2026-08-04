@@ -10,11 +10,10 @@ import type {
   ProductReview,
   ProductReviewCreateRequest,
   ProductReviewEligibility,
+  ProductReviewListQuery,
   ProductReviewPage,
-  ProductReviewImageUploadResponse,
-  ProductReviewUpdateRequest
+  ProductReviewImageUploadResponse
 } from "../types/product-engagement";
-import type { PageResult } from "../types/api";
 import { request } from "../utils/request";
 import { uploadFileDirect } from "../utils/direct-upload";
 import { uploadFile } from "../utils/upload";
@@ -91,12 +90,23 @@ export function getProductDetail(spuId: number): Promise<ProductDetail> {
 export function getProductReviews(
   spuId: number,
   current = 1,
-  size = 10
+  size = 10,
+  query: ProductReviewListQuery = {}
 ): Promise<ProductReviewPage> {
+  const data: WechatMiniprogram.IAnyObject = { current, size };
+  if (query.filter) {
+    data.filter = query.filter;
+  }
+  if (query.sort) {
+    data.sort = query.sort;
+  }
+  if (query.specText?.trim()) {
+    data.specText = query.specText.trim();
+  }
   return request<ProductReviewPage>({
     url: API_ENDPOINTS.product.reviews(spuId),
     method: "GET",
-    data: { current, size },
+    data,
     auth: false
   });
 }
@@ -135,35 +145,5 @@ export function uploadProductReviewImage(
       name: "file",
       timeoutMs: 30_000
     })
-  });
-}
-
-export function updateProductReview(
-  reviewId: number,
-  data: ProductReviewUpdateRequest
-): Promise<ProductReview> {
-  return request<ProductReview, ProductReviewUpdateRequest>({
-    url: API_ENDPOINTS.product.review(reviewId),
-    method: "PUT",
-    data
-  });
-}
-
-export function deleteProductReview(reviewId: number): Promise<void> {
-  return request<void>({
-    url: API_ENDPOINTS.product.review(reviewId),
-    method: "DELETE",
-    expectData: false
-  });
-}
-
-export function getMyProductReviews(
-  current = 1,
-  size = 10
-): Promise<PageResult<ProductReview>> {
-  return request<PageResult<ProductReview>>({
-    url: API_ENDPOINTS.product.myReviews,
-    method: "GET",
-    data: { current, size }
   });
 }

@@ -157,7 +157,7 @@ class AppProductEngagementControllerTest {
     }
 
     @Test
-    void completedPurchaseReviewSupportsEligibilityCrudPublicPageAndSummary() throws Exception {
+    void completedPurchaseReviewSupportsOneTimeCreateAndImmutablePublicPage() throws Exception {
         AppLogin owner = login("engagement-review-owner");
         AppLogin other = login("engagement-review-other");
         ProductIds product = createPublishedProduct("REVIEW");
@@ -206,34 +206,26 @@ class AppProductEngagementControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summary.reviewCount").value(1))
                 .andExpect(jsonPath("$.data.summary.averageRating").value(5.0))
+                .andExpect(jsonPath("$.data.summary.goodReviewCount").value(1))
+                .andExpect(jsonPath("$.data.summary.imageReviewCount").value(1))
+                .andExpect(jsonPath("$.data.summary.criticalReviewCount").value(0))
                 .andExpect(jsonPath("$.data.page.records[0].reviewerName").value("匿名用户"))
                 .andExpect(jsonPath("$.data.page.records[0].images[0].fileId").value(secondImageId));
         mockMvc.perform(get("/app/product/spus/" + product.spuId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.reviewSummary.reviewCount").value(1))
-                .andExpect(jsonPath("$.data.reviewSummary.goodReviewCount").value(1));
-
-        mockMvc.perform(put("/app/product/reviews/" + reviewId)
-                        .header("Authorization", bearer(other.token()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"rating\":3,\"content\":\"越权修改\",\"anonymous\":false}"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(200200));
+                .andExpect(jsonPath("$.data.reviewSummary.goodReviewCount").value(1))
+                .andExpect(jsonPath("$.data.reviewSummary.imageReviewCount").value(1))
+                .andExpect(jsonPath("$.data.reviewSummary.criticalReviewCount").value(0));
 
         mockMvc.perform(put("/app/product/reviews/" + reviewId)
                         .header("Authorization", bearer(owner.token()))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"rating\":4,\"content\":\" 更新后的评价 \",\"anonymous\":false}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rating").value(4))
-                .andExpect(jsonPath("$.data.content").value("更新后的评价"))
-                .andExpect(jsonPath("$.data.anonymous").value(false));
-        mockMvc.perform(get("/app/product/reviews/mine")
+                        .content("{\"rating\":4,\"content\":\"不允许修改\",\"anonymous\":false}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(delete("/app/product/reviews/" + reviewId)
                         .header("Authorization", bearer(owner.token())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.records[0].id").value(reviewId))
-                .andExpect(jsonPath("$.data.records[0].images.length()").value(2));
+                .andExpect(status().isNotFound());
 
         assertThat(jdbcClient.sql("""
                         SELECT COUNT(*) FROM storage_asset_usage
@@ -252,39 +244,94 @@ class AppProductEngagementControllerTest {
                 .query(Integer.class)
                 .single()).isEqualTo(2);
 
-        mockMvc.perform(delete("/app/product/reviews/" + reviewId)
-                        .header("Authorization", bearer(other.token())))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(200200));
-        mockMvc.perform(delete("/app/product/reviews/" + reviewId)
-                        .header("Authorization", bearer(owner.token())))
-                .andExpect(status().isOk());
-
-        assertThat(jdbcClient.sql("""
-                        SELECT COUNT(*) FROM storage_asset_usage
-                        WHERE owner_type = 'PRODUCT_REVIEW'
-                          AND owner_id = :reviewId
-                          AND status = 'ACTIVE'
-                        """)
-                .param("reviewId", reviewId)
-                .query(Integer.class)
-                .single()).isZero();
-        assertThat(jdbcClient.sql("""
-                        SELECT COUNT(*) FROM storage_asset
-                        WHERE id IN (:fileIds) AND status = 'DELETE_PENDING'
-                        """)
-                .param("fileIds", List.of(firstImageId, secondImageId))
-                .query(Integer.class)
-                .single()).isEqualTo(2);
-
         mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.summary.reviewCount").value(0))
-                .andExpect(jsonPath("$.data.page.total").value(0));
+                .andExpect(jsonPath("$.data.summary.reviewCount").value(1))
+                .andExpect(jsonPath("$.data.page.total").value(1))
+                .andExpect(jsonPath("$.data.page.records[0].rating").value(5));
         mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/review-eligibility")
                         .header("Authorization", bearer(owner.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orderItems.length()").value(1));
+                .andExpect(jsonPath("$.data.orderItems.length()").value(0));
+    }
+
+    @Test
+    void publicReviewsSupportGoodFirstSortingMediaRatingAndSpecificationFilters() throws Exception {
+        AppLogin imageReviewer = login("engagement-review-filter-image");
+        AppLogin latestGoodReviewer = login("engagement-review-filter-latest-good");
+        AppLogin criticalReviewer = login("engagement-review-filter-critical");
+        ProductIds product = createPublishedProduct("REVIEW-FILTERS");
+        long imageOrderItemId = insertCompletedOrder(imageReviewer.userId(), product);
+        long latestGoodOrderItemId = insertCompletedOrder(latestGoodReviewer.userId(), product);
+        long criticalOrderItemId = insertCompletedOrder(criticalReviewer.userId(), product);
+        long imageFileId = insertReviewImageAsset(
+                imageReviewer.userId(), imageOrderItemId, "filter-image");
+
+        long imageReviewId = read(mockMvc.perform(post(
+                                "/app/product/spus/" + product.spuId() + "/reviews")
+                        .header("Authorization", bearer(imageReviewer.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reviewBody(imageOrderItemId, 4, false, List.of(imageFileId))))
+                .andExpect(status().isOk())
+                .andReturn()).path("data").path("id").asLong();
+        long latestGoodReviewId = read(mockMvc.perform(post(
+                                "/app/product/spus/" + product.spuId() + "/reviews")
+                        .header("Authorization", bearer(latestGoodReviewer.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reviewBody(latestGoodOrderItemId, 5, false)))
+                .andExpect(status().isOk())
+                .andReturn()).path("data").path("id").asLong();
+        long criticalReviewId = read(mockMvc.perform(post(
+                                "/app/product/spus/" + product.spuId() + "/reviews")
+                        .header("Authorization", bearer(criticalReviewer.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reviewBody(criticalOrderItemId, 2, false)))
+                .andExpect(status().isOk())
+                .andReturn()).path("data").path("id").asLong();
+
+        updateReviewCreatedAt(imageReviewId, "2025-01-01 00:00:00");
+        updateReviewCreatedAt(latestGoodReviewId, "2025-01-02 00:00:00");
+        updateReviewCreatedAt(criticalReviewId, "2025-01-03 00:00:00");
+
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.summary.reviewCount").value(3))
+                .andExpect(jsonPath("$.data.summary.goodReviewCount").value(2))
+                .andExpect(jsonPath("$.data.summary.imageReviewCount").value(1))
+                .andExpect(jsonPath("$.data.summary.criticalReviewCount").value(1))
+                .andExpect(jsonPath("$.data.page.records[0].id").value(imageReviewId))
+                .andExpect(jsonPath("$.data.page.records[1].id").value(latestGoodReviewId))
+                .andExpect(jsonPath("$.data.page.records[2].id").value(criticalReviewId));
+
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews")
+                        .param("sort", "LATEST"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page.records[0].id").value(latestGoodReviewId))
+                .andExpect(jsonPath("$.data.page.records[1].id").value(imageReviewId))
+                .andExpect(jsonPath("$.data.page.records[2].id").value(criticalReviewId));
+
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews")
+                        .param("filter", "WITH_IMAGES"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page.total").value(1))
+                .andExpect(jsonPath("$.data.page.records[0].id").value(imageReviewId));
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews")
+                        .param("filter", "GOOD"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page.total").value(2));
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews")
+                        .param("filter", "CRITICAL"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page.total").value(1))
+                .andExpect(jsonPath("$.data.page.records[0].id").value(criticalReviewId));
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews")
+                        .param("specText", "默认规格"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page.total").value(3));
+        mockMvc.perform(get("/app/product/spus/" + product.spuId() + "/reviews")
+                        .param("specText", "不存在的规格"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.page.total").value(0));
     }
 
     @Test
@@ -340,21 +387,7 @@ class AppProductEngagementControllerTest {
                 .andExpect(jsonPath("$.data.page.records[0].verifiedPurchase").value(true));
         mockMvc.perform(get("/app/product/reviews/mine")
                         .header("Authorization", bearer(owner.token())))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(1))
-                .andExpect(jsonPath("$.data.records[0].productTitle").value("互动商品"))
-                .andExpect(jsonPath("$.data.records[0].skuSpecText").value("默认规格"))
-                .andExpect(jsonPath("$.data.records[0].orderItemId").value(orderItemId))
-                .andExpect(jsonPath("$.data.records[0].verifiedPurchase").value(true));
-        mockMvc.perform(put("/app/product/reviews/" + reviewId)
-                        .header("Authorization", bearer(owner.token()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"rating\":4,\"content\":\"订单清理后追评\",\"anonymous\":false}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.content").value("订单清理后追评"))
-                .andExpect(jsonPath("$.data.productTitle").value("互动商品"))
-                .andExpect(jsonPath("$.data.skuSpecText").value("默认规格"))
-                .andExpect(jsonPath("$.data.orderItemId").value(orderItemId));
+                .andExpect(status().isNotFound());
 
         PersistedReviewSnapshot persistedSnapshot = jdbcClient.sql("""
                         SELECT source_order_item_id, product_title_snapshot,
@@ -631,6 +664,17 @@ class AppProductEngagementControllerTest {
                 .param("objectKey", objectKey)
                 .query(Long.class)
                 .single();
+    }
+
+    private void updateReviewCreatedAt(long reviewId, String createdAt) {
+        jdbcClient.sql("""
+                        UPDATE product_review
+                        SET created_at = :createdAt, updated_at = :createdAt
+                        WHERE id = :reviewId
+                        """)
+                .param("createdAt", java.time.LocalDateTime.parse(createdAt.replace(' ', 'T')))
+                .param("reviewId", reviewId)
+                .update();
     }
 
     private JsonNode read(MvcResult result) throws Exception {

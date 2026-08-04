@@ -257,6 +257,19 @@ export function updateProductReviewStatus(
   })
 }
 
+export function updateProductReview(reviewId: number, data: Api.Product.ProductReviewUpdateForm) {
+  return request.put<void>({
+    url: `/admin/product/reviews/${reviewId}`,
+    data
+  })
+}
+
+export function deleteProductReview(reviewId: number) {
+  return request.del<void>({
+    url: `/admin/product/reviews/${reviewId}`
+  })
+}
+
 export function deleteProductGuaranteeService(serviceId: number) {
   return request.del<void>({
     url: `/admin/product/guarantee-services/${serviceId}`,

@@ -150,4 +150,6 @@ export interface ProductReviewSummary {
   reviewCount: number;
   averageRating: number;
   goodReviewCount: number;
+  imageReviewCount: number;
+  criticalReviewCount: number;
 }

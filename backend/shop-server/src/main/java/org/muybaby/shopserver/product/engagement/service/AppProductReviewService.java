@@ -6,13 +6,12 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.dto.AppProductReviewSummaryResponse;
-import org.muybaby.shopserver.product.engagement.dto.ProductEngagementPageRequest;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewEligibilityResponse;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewImageResponse;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewPageResponse;
+import org.muybaby.shopserver.product.engagement.dto.ProductReviewPageRequest;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewRequest;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewResponse;
-import org.muybaby.shopserver.product.engagement.dto.ProductReviewUpdateRequest;
 import org.muybaby.shopserver.product.engagement.dto.PublicProductReviewResponse;
 import org.muybaby.shopserver.product.engagement.dto.ReviewableOrderItemResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
@@ -68,13 +67,20 @@ public class AppProductReviewService {
         this.storageUsageService = storageUsageService;
     }
 
-    public ProductReviewPageResponse page(Long spuId, ProductEngagementPageRequest request) {
+    public ProductReviewPageResponse page(Long spuId, ProductReviewPageRequest request) {
         requireVisibleProduct(spuId);
-        ProductEngagementPageRequest normalized = normalized(request);
+        ProductReviewPageRequest normalized = normalized(request);
         long current = normalized.pageCurrent();
         long size = normalized.pageSize();
         long offset = (current - 1) * size;
-        long total = reviewCount(spuId);
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        String where = publicReviewWhere(spuId, normalized, parameters);
+        Long total = jdbcClient.sql("SELECT COUNT(*) FROM product_review r" + where)
+                .params(parameters)
+                .query(Long.class)
+                .single();
+        parameters.put("limit", size);
+        parameters.put("offset", offset);
         List<PublicProductReviewResponse> records = jdbcClient.sql("""
                         SELECT r.id, r.spec_text_snapshot AS spec_text,
                                r.rating, r.content, r.anonymous,
@@ -85,66 +91,17 @@ public class AppProductReviewService {
                                r.created_at, r.updated_at
                         FROM product_review r
                         JOIN app_user u ON u.id = r.user_id
-                        WHERE r.spu_id = :spuId
-                          AND r.status = :status
-                        ORDER BY r.created_at DESC, r.id DESC
+                        """ + where + "\n" + publicReviewOrderBy(normalized) + "\n" + """
                         LIMIT :limit OFFSET :offset
                         """)
-                .param("spuId", spuId)
-                .param("status", PUBLISHED)
-                .param("limit", size)
-                .param("offset", offset)
+                .params(parameters)
                 .query(this::mapPublicReview)
                 .list();
         records = attachPublicImages(records);
         return new ProductReviewPageResponse(
                 summary(spuId),
-                PageResult.of(records, total, current, size)
+                PageResult.of(records, total == null ? 0 : total, current, size)
         );
-    }
-
-    public PageResult<ProductReviewResponse> mine(
-            AuthenticatedPrincipal principal,
-            ProductEngagementPageRequest request
-    ) {
-        long userId = requireAppUser(principal);
-        ProductEngagementPageRequest normalized = normalized(request);
-        long current = normalized.pageCurrent();
-        long size = normalized.pageSize();
-        long offset = (current - 1) * size;
-        Long total = jdbcClient.sql("""
-                        SELECT COUNT(*) FROM product_review
-                        WHERE user_id = :userId AND status = :status
-                        """)
-                .param("userId", userId)
-                .param("status", PUBLISHED)
-                .query(Long.class)
-                .single();
-        List<ProductReviewResponse> records = jdbcClient.sql("""
-                        SELECT r.id, r.spu_id, r.product_title_snapshot AS product_title,
-                               r.source_order_item_id AS order_item_id,
-                               r.spec_text_snapshot AS spec_text,
-                               r.rating, r.content, r.anonymous,
-                               CASE WHEN r.anonymous = TRUE THEN '匿名用户'
-                                    WHEN u.nickname <> '' THEN u.nickname
-                                    ELSE CONCAT('用户', RIGHT(CONCAT('', u.id), 6)) END AS reviewer_name,
-                               r.verified_purchase,
-                               r.created_at, r.updated_at
-                        FROM product_review r
-                        JOIN app_user u ON u.id = r.user_id
-                        WHERE r.user_id = :userId
-                          AND r.status = :status
-                        ORDER BY r.created_at DESC, r.id DESC
-                        LIMIT :limit OFFSET :offset
-                        """)
-                .param("userId", userId)
-                .param("status", PUBLISHED)
-                .param("limit", size)
-                .param("offset", offset)
-                .query(this::mapReview)
-                .list();
-        records = attachOwnedImages(records);
-        return PageResult.of(records, total == null ? 0 : total, current, size);
     }
 
     public StorageAssetResponse uploadImage(
@@ -334,75 +291,39 @@ public class AppProductReviewService {
         return ownedReview(userId, reviewId);
     }
 
-    @Transactional
-    public ProductReviewResponse update(
-            AuthenticatedPrincipal principal,
-            Long reviewId,
-            ProductReviewUpdateRequest request
-    ) {
-        long userId = requireAppUser(principal);
-        int updated = jdbcClient.sql("""
-                        UPDATE product_review
-                        SET rating = :rating,
-                            content = :content,
-                            anonymous = :anonymous,
-                            updated_at = :updatedAt
-                        WHERE id = :reviewId
-                          AND user_id = :userId
-                          AND status = :status
-                        """)
-                .param("rating", request.rating())
-                .param("content", normalizeContent(request.content()))
-                .param("anonymous", Boolean.TRUE.equals(request.anonymous()))
-                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
-                .param("reviewId", reviewId)
-                .param("userId", userId)
-                .param("status", PUBLISHED)
-                .update();
-        if (updated != 1) {
-            throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND);
-        }
-        return ownedReview(userId, reviewId);
-    }
-
-    @Transactional
-    public void delete(AuthenticatedPrincipal principal, Long reviewId) {
-        long userId = requireAppUser(principal);
-        List<Long> imageFileIds = reviewImageFileIdsForUpdate(userId, reviewId);
-        storageUsageService.removeOwnerUsages(StorageUsageOwnerType.PRODUCT_REVIEW, reviewId);
-        int deleted = jdbcClient.sql("""
-                        DELETE FROM product_review
-                        WHERE id = :reviewId AND user_id = :userId
-                        """)
-                .param("reviewId", reviewId)
-                .param("userId", userId)
-                .update();
-        if (deleted != 1) {
-            throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND);
-        }
-        scheduleReviewImagesForCleanup(userId, imageFileIds);
-    }
-
     public AppProductReviewSummaryResponse summary(Long spuId) {
         SummaryRow row = jdbcClient.sql("""
                         SELECT COUNT(*) AS review_count,
                                COALESCE(AVG(rating), 0) AS average_rating,
-                               COALESCE(SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END), 0) AS good_review_count
-                        FROM product_review
-                        WHERE spu_id = :spuId AND status = :status
+                               COALESCE(SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END), 0) AS good_review_count,
+                               COALESCE(SUM(CASE WHEN rating <= 3 THEN 1 ELSE 0 END), 0) AS critical_review_count,
+                               COALESCE(SUM(CASE WHEN EXISTS (
+                                   SELECT 1 FROM product_review_image image
+                                   WHERE image.review_id = review.id
+                               ) THEN 1 ELSE 0 END), 0) AS image_review_count
+                        FROM product_review review
+                        WHERE review.spu_id = :spuId AND review.status = :status
                         """)
                 .param("spuId", spuId)
                 .param("status", PUBLISHED)
                 .query((rs, rowNum) -> new SummaryRow(
                         rs.getLong("review_count"),
                         rs.getBigDecimal("average_rating"),
-                        rs.getLong("good_review_count")
+                        rs.getLong("good_review_count"),
+                        rs.getLong("image_review_count"),
+                        rs.getLong("critical_review_count")
                 ))
                 .single();
         BigDecimal average = row.averageRating() == null
                 ? BigDecimal.ZERO.setScale(1)
                 : row.averageRating().setScale(1, RoundingMode.HALF_UP);
-        return new AppProductReviewSummaryResponse(row.reviewCount(), average, row.goodReviewCount());
+        return new AppProductReviewSummaryResponse(
+                row.reviewCount(),
+                average,
+                row.goodReviewCount(),
+                row.imageReviewCount(),
+                row.criticalReviewCount()
+        );
     }
 
     private ProductReviewResponse ownedReview(long userId, Long reviewId) {
@@ -571,65 +492,6 @@ public class AppProductReviewService {
         }
     }
 
-    private List<Long> reviewImageFileIdsForUpdate(long userId, Long reviewId) {
-        boolean owned = jdbcClient.sql("""
-                        SELECT id FROM product_review
-                        WHERE id = :reviewId AND user_id = :userId
-                        FOR UPDATE
-                        """)
-                .param("reviewId", reviewId)
-                .param("userId", userId)
-                .query(Long.class)
-                .optional()
-                .isPresent();
-        if (!owned) {
-            throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND);
-        }
-        return jdbcClient.sql("""
-                        SELECT asset_id FROM product_review_image
-                        WHERE review_id = :reviewId
-                        ORDER BY sort_order, id
-                        FOR UPDATE
-                        """)
-                .param("reviewId", reviewId)
-                .query(Long.class)
-                .list();
-    }
-
-    private void scheduleReviewImagesForCleanup(long userId, List<Long> fileIds) {
-        if (fileIds.isEmpty()) {
-            return;
-        }
-        int updated = jdbcClient.sql("""
-                        UPDATE storage_asset
-                        SET status = 'DELETE_PENDING',
-                            folder_id = NULL,
-                            public_url = NULL,
-                            expires_at = NULL,
-                            cleanup_attempts = 0,
-                            cleanup_next_retry_at = CURRENT_TIMESTAMP,
-                            cleanup_lease_token = NULL,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE id IN (:fileIds)
-                          AND status = 'ACTIVE'
-                          AND uploaded_by_type = 'APP'
-                          AND uploaded_by_id = :userId
-                          AND upload_context_type = :contextType
-                          AND NOT EXISTS (
-                              SELECT 1 FROM storage_asset_usage usage_ref
-                              WHERE usage_ref.asset_id = storage_asset.id
-                                AND usage_ref.status = 'ACTIVE'
-                          )
-                        """)
-                .param("fileIds", fileIds)
-                .param("userId", userId)
-                .param("contextType", REVIEW_IMAGE_CONTEXT)
-                .update();
-        if (updated != fileIds.size()) {
-            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
-        }
-    }
-
     private Map<Long, List<ProductReviewImageResponse>> reviewImages(List<Long> reviewIds) {
         if (reviewIds == null || reviewIds.isEmpty()) {
             return Map.of();
@@ -654,14 +516,6 @@ public class AppProductReviewService {
                 .forEach(row -> images.computeIfAbsent(
                         row.reviewId(), ignored -> new ArrayList<>()).add(row.image()));
         return images;
-    }
-
-    private List<ProductReviewResponse> attachOwnedImages(List<ProductReviewResponse> reviews) {
-        Map<Long, List<ProductReviewImageResponse>> images = reviewImages(
-                reviews.stream().map(ProductReviewResponse::id).toList());
-        return reviews.stream()
-                .map(review -> withImages(review, images.getOrDefault(review.id(), List.of())))
-                .toList();
     }
 
     private List<PublicProductReviewResponse> attachPublicImages(
@@ -740,16 +594,55 @@ public class AppProductReviewService {
         }
     }
 
-    private long reviewCount(Long spuId) {
-        Long count = jdbcClient.sql("""
-                        SELECT COUNT(*) FROM product_review
-                        WHERE spu_id = :spuId AND status = :status
-                        """)
-                .param("spuId", spuId)
-                .param("status", PUBLISHED)
-                .query(Long.class)
-                .single();
-        return count == null ? 0 : count;
+    private String publicReviewWhere(
+            Long spuId,
+            ProductReviewPageRequest request,
+            Map<String, Object> parameters
+    ) {
+        StringBuilder where = new StringBuilder("""
+                 WHERE r.spu_id = :spuId
+                   AND r.status = :status
+                """);
+        parameters.put("spuId", spuId);
+        parameters.put("status", PUBLISHED);
+        switch (request.pageFilter()) {
+            case WITH_IMAGES -> where.append("""
+                     AND EXISTS (
+                         SELECT 1 FROM product_review_image image
+                         WHERE image.review_id = r.id
+                     )
+                    """);
+            case GOOD -> where.append(" AND r.rating >= 4");
+            case CRITICAL -> where.append(" AND r.rating <= 3");
+            case ALL -> {
+                // No additional rating or media filter.
+            }
+        }
+        if (!request.normalizedSpecText().isEmpty()) {
+            where.append(" AND r.spec_text_snapshot = :specText");
+            parameters.put("specText", request.normalizedSpecText());
+        }
+        return where.toString();
+    }
+
+    private String publicReviewOrderBy(ProductReviewPageRequest request) {
+        return switch (request.pageSort()) {
+            case LATEST -> """
+                    ORDER BY CASE WHEN r.rating >= 4 THEN 0 ELSE 1 END,
+                             r.created_at DESC,
+                             r.id DESC
+                    """;
+            case RECOMMENDED -> """
+                    ORDER BY CASE WHEN r.rating >= 4 THEN 0 ELSE 1 END,
+                             CASE WHEN EXISTS (
+                                 SELECT 1 FROM product_review_image image
+                                 WHERE image.review_id = r.id
+                             ) THEN 0 ELSE 1 END,
+                             r.rating DESC,
+                             r.created_at DESC,
+                             r.id DESC
+                    """;
+        };
     }
 
     private void requireVisibleProduct(Long spuId) {
@@ -792,15 +685,23 @@ public class AppProductReviewService {
         return principal.subjectId();
     }
 
-    private ProductEngagementPageRequest normalized(ProductEngagementPageRequest request) {
-        return request == null ? new ProductEngagementPageRequest(null, null) : request;
+    private ProductReviewPageRequest normalized(ProductReviewPageRequest request) {
+        return request == null
+                ? new ProductReviewPageRequest(null, null, null, null, null)
+                : request;
     }
 
     private String normalizeContent(String content) {
         return content == null ? "" : content.trim();
     }
 
-    private record SummaryRow(long reviewCount, BigDecimal averageRating, long goodReviewCount) {
+    private record SummaryRow(
+            long reviewCount,
+            BigDecimal averageRating,
+            long goodReviewCount,
+            long imageReviewCount,
+            long criticalReviewCount
+    ) {
     }
 
     private record ReviewSnapshot(String productTitle, String specText) {

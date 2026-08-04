@@ -20,30 +20,16 @@ import {
   type WholesaleTierView
 } from "../../../features/product-catalog";
 import {
-  buildMyProductReviewViews,
   buildProductReviewSummaryView,
   buildPublicProductReviewViews,
-  buildRatingStars,
-  buildReviewableOrderItemViews,
-  normalizeRating,
-  normalizeReviewContent,
-  type MyProductReviewView,
   type ProductReviewSummaryView,
-  type PublicProductReviewView,
-  type RatingStarView,
-  type ReviewableOrderItemView
+  type PublicProductReviewView
 } from "../../../features/product-review";
 import { getAddresses } from "../../../services/address";
 import { addCartItem } from "../../../services/cart";
 import {
-  createProductReview,
-  deleteProductReview,
-  getMyProductReviews,
   getProductDetail,
-  getProductReviewEligibility,
-  getProductReviews,
-  uploadProductReviewImage,
-  updateProductReview
+  getProductReviews
 } from "../../../services/product";
 import {
   addFavorite,
@@ -53,6 +39,10 @@ import {
 } from "../../../services/product-preference";
 import { getSessionState } from "../../../services/session";
 import type { AddressResponse } from "../../../types/checkout";
+import type {
+  ProductReviewFilter,
+  ProductReviewSort
+} from "../../../types/product-engagement";
 import type {
   ProductDetail,
   ProductFreightTemplate,
@@ -67,7 +57,7 @@ interface PageOptions {
 }
 
 type InfoSheet = "parameters" | "guarantee" | "freight" | "wholesale";
-type ActiveSheet = "" | "purchase" | "address" | InfoSheet | "reviews" | "reviewManage";
+type ActiveSheet = "" | "purchase" | "address" | InfoSheet | "reviews";
 
 interface DatasetEvent {
   currentTarget: {
@@ -78,23 +68,11 @@ interface DatasetEvent {
       sheet?: InfoSheet;
       specName?: string;
       specValue?: string;
+      reviewFilter?: ProductReviewFilter;
+      reviewSpecText?: string;
       imageUrl?: string;
-      orderItemId?: number | string;
-      rating?: number | string;
       reviewId?: number | string;
     };
-  };
-}
-
-interface TextareaEvent {
-  detail: {
-    value: string;
-  };
-}
-
-interface SwitchEvent {
-  detail: {
-    value: boolean;
   };
 }
 
@@ -104,14 +82,16 @@ interface ParameterViewGroups {
   otherParameterViews: ProductParameterView[];
 }
 
-interface ReviewDraftImage {
-  fileId: number;
-  tempFilePath: string;
+interface ReviewSpecOptionView {
+  value: string;
+  label: string;
 }
 
-interface LocalReviewImage {
-  tempFilePath: string;
-  size: number;
+interface ReviewContentRect {
+  height?: number;
+  dataset?: {
+    reviewId?: number | string;
+  };
 }
 
 const EMPTY_SELECTION: PurchaseSelectionView = {
@@ -131,43 +111,16 @@ const EMPTY_SELECTION: PurchaseSelectionView = {
 const EMPTY_REVIEW_SUMMARY = buildProductReviewSummaryView();
 const REVIEW_PREVIEW_SIZE = 2;
 const REVIEW_PAGE_SIZE = 10;
-const MAX_REVIEW_IMAGE_COUNT = 6;
-const MAX_REVIEW_IMAGE_SIZE = 5 * 1024 * 1024;
 const SHEET_EXIT_DURATION_MS = 340;
 
 let latestDetailRequest = 0;
 let latestAddressRequest = 0;
 let latestReviewPreviewRequest = 0;
 let latestReviewPageRequest = 0;
-let latestReviewManagementRequest = 0;
 let sheetCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function chooseReviewImages(count: number): Promise<LocalReviewImage[]> {
-  return new Promise((resolve, reject) => {
-    wx.chooseMedia({
-      count,
-      mediaType: ["image"],
-      sourceType: ["album", "camera"],
-      sizeType: ["compressed"],
-      success: (result) => resolve(result.tempFiles
-        .map((file) => ({
-          tempFilePath: file.tempFilePath,
-          size: Number(file.size) || 0
-        }))
-        .filter((file) => Boolean(file.tempFilePath))),
-      fail: (error) => {
-        if (error.errMsg.includes("cancel")) {
-          resolve([]);
-          return;
-        }
-        reject(new Error(error.errMsg || "选择图片失败"));
-      }
-    });
-  });
 }
 
 function detailErrorMessage(error: unknown): string {
@@ -228,6 +181,17 @@ function wholesaleSummary(tiers: WholesaleTierView[]): string {
     .slice(0, 2)
     .map((tier) => `${tier.minQuantity}件起 ¥${tier.priceText}/件`)
     .join(" · ");
+}
+
+function buildReviewSpecOptions(skus: ProductSku[]): ReviewSpecOptionView[] {
+  const values = new Set<string>();
+  for (const sku of skus) {
+    const value = cleanText(sku.specText);
+    if (value) {
+      values.add(value);
+    }
+  }
+  return [...values].map((value) => ({ value, label: value }));
 }
 
 function cachePreviewImage(url: string): Promise<string> {
@@ -292,21 +256,12 @@ Page({
     reviewHasMore: false,
     reviewLoading: false,
     reviewErrorText: "",
-    reviewManagementLoading: false,
-    reviewManagementErrorText: "",
-    reviewOrderItems: [] as ReviewableOrderItemView[],
-    myReviews: [] as MyProductReviewView[],
-    reviewFormMode: "create" as "create" | "update",
-    reviewEditingId: 0,
-    reviewSelectedOrderItemId: 0,
-    reviewRating: 5,
-    reviewFormStars: buildRatingStars(5) as RatingStarView[],
-    reviewContent: "",
-    reviewAnonymous: false,
-    reviewImages: [] as ReviewDraftImage[],
-    reviewImageUploading: false,
-    reviewSubmitting: false,
-    reviewDeletingId: 0,
+    reviewFilter: "ALL" as ProductReviewFilter,
+    reviewSort: "RECOMMENDED" as ProductReviewSort,
+    reviewSpecText: "",
+    reviewSpecDraftText: "",
+    reviewSpecSheetOpen: false,
+    reviewSpecOptions: [] as ReviewSpecOptionView[],
     favorited: false,
     favoriteLoading: false,
     activeSheet: "" as ActiveSheet,
@@ -359,7 +314,6 @@ Page({
     latestAddressRequest += 1;
     latestReviewPreviewRequest += 1;
     latestReviewPageRequest += 1;
-    latestReviewManagementRequest += 1;
   },
 
   onShareAppMessage() {
@@ -426,6 +380,10 @@ Page({
         freightSummary: freight.summary,
         freightChargeText: freight.chargeText,
         wholesaleSummary: wholesaleSummary(selection.wholesaleTiers),
+        reviewSpecOptions: buildReviewSpecOptions(normalizedDetail.skus),
+        reviewSpecText: "",
+        reviewSpecDraftText: "",
+        reviewSpecSheetOpen: false,
         reviewSummary: buildProductReviewSummaryView(normalizedDetail.reviewSummary),
         reviewPreview: [],
         reviewPreviewLoading: true,
@@ -464,6 +422,12 @@ Page({
         reviewHasMore: false,
         reviewLoading: false,
         reviewErrorText: "",
+        reviewFilter: "ALL",
+        reviewSort: "RECOMMENDED",
+        reviewSpecText: "",
+        reviewSpecDraftText: "",
+        reviewSpecSheetOpen: false,
+        reviewSpecOptions: [],
         loading: false,
         loaded: false,
         errorText: detailErrorMessage(error)
@@ -514,12 +478,11 @@ Page({
   },
 
   onCloseSheet() {
-    if (
-      !this.data.confirmLoading &&
-      !this.data.reviewSubmitting &&
-      !this.data.reviewImageUploading &&
-      !this.data.reviewDeletingId
-    ) {
+    if (this.data.reviewSpecSheetOpen) {
+      this.setData({ reviewSpecSheetOpen: false });
+      return;
+    }
+    if (!this.data.confirmLoading) {
       this.animateSheetClose();
     }
   },
@@ -536,7 +499,8 @@ Page({
       sheetCloseTimer = null;
       this.setData({
         activeSheet: "",
-        sheetClosing: false
+        sheetClosing: false,
+        reviewSpecSheetOpen: false
       }, afterClose);
     }, SHEET_EXIT_DURATION_MS);
   },
@@ -796,8 +760,7 @@ Page({
     }
     const review = [
       ...this.data.reviewPreview,
-      ...this.data.reviewRecords,
-      ...this.data.myReviews
+      ...this.data.reviewRecords
     ].find((item) => item.id === reviewId);
     const urls = review?.images.map((image) => image.url).filter(Boolean) ?? [];
     wx.previewImage({
@@ -806,9 +769,113 @@ Page({
     });
   },
 
+  onReviewContentToggle(event: DatasetEvent) {
+    const reviewId = parsePositiveId(event.currentTarget.dataset.reviewId);
+    if (!reviewId) {
+      return;
+    }
+    this.setData({
+      reviewRecords: this.data.reviewRecords.map((review) => review.id === reviewId
+        ? { ...review, contentExpanded: !review.contentExpanded }
+        : review)
+    });
+  },
+
+  measureReviewContentOverflow() {
+    wx.nextTick(() => {
+      const query = wx.createSelectorQuery().in(this);
+      query.selectAll(".review-item__content-measure").boundingClientRect();
+      query.exec((results) => {
+        const rects = (Array.isArray(results?.[0]) ? results[0] : []) as ReviewContentRect[];
+        if (!rects.length) {
+          return;
+        }
+        const fiveLineHeight = (wx.getWindowInfo().windowWidth / 750) * 39 * 5;
+        const overflowById = new Map<number, boolean>();
+        rects.forEach((rect) => {
+          const reviewId = parsePositiveId(rect.dataset?.reviewId);
+          if (reviewId) {
+            overflowById.set(reviewId, Number(rect.height) > fiveLineHeight + 1);
+          }
+        });
+        if (!overflowById.size) {
+          return;
+        }
+        this.setData({
+          reviewRecords: this.data.reviewRecords.map((review) => {
+            const contentCollapsible = overflowById.get(review.id) ?? false;
+            return {
+              ...review,
+              contentCollapsible,
+              contentExpanded: contentCollapsible && review.contentExpanded
+            };
+          })
+        });
+      });
+    });
+  },
+
   onReviewListOpen() {
-    this.setData({ activeSheet: "reviews", sheetClosing: false });
+    this.setData({
+      activeSheet: "reviews",
+      sheetClosing: false,
+      reviewSpecSheetOpen: false
+    });
     void this.loadReviewPage(true);
+  },
+
+  onReviewFilterSelect(event: DatasetEvent) {
+    const reviewFilter = event.currentTarget.dataset.reviewFilter;
+    if (
+      !reviewFilter ||
+      !["ALL", "WITH_IMAGES", "GOOD", "CRITICAL"].includes(reviewFilter) ||
+      reviewFilter === this.data.reviewFilter
+    ) {
+      return;
+    }
+    this.setData({ reviewFilter });
+    void this.loadReviewPage(true);
+  },
+
+  onReviewSortTap() {
+    const reviewSort: ProductReviewSort = this.data.reviewSort === "LATEST"
+      ? "RECOMMENDED"
+      : "LATEST";
+    this.setData({ reviewSort });
+    void this.loadReviewPage(true);
+  },
+
+  onReviewSpecOpen() {
+    this.setData({
+      reviewSpecDraftText: this.data.reviewSpecText,
+      reviewSpecSheetOpen: true
+    });
+  },
+
+  onReviewSpecClose() {
+    this.setData({ reviewSpecSheetOpen: false });
+  },
+
+  onReviewSpecSelect(event: DatasetEvent) {
+    this.setData({
+      reviewSpecDraftText: cleanText(event.currentTarget.dataset.reviewSpecText)
+    });
+  },
+
+  onReviewSpecReset() {
+    this.setData({ reviewSpecDraftText: "" });
+  },
+
+  onReviewSpecConfirm() {
+    const reviewSpecText = this.data.reviewSpecDraftText;
+    const changed = reviewSpecText !== this.data.reviewSpecText;
+    this.setData({
+      reviewSpecText,
+      reviewSpecSheetOpen: false
+    });
+    if (changed) {
+      void this.loadReviewPage(true);
+    }
   },
 
   onReviewListRetry() {
@@ -839,7 +906,11 @@ Page({
       } : {})
     });
     try {
-      const result = await getProductReviews(productId, current, REVIEW_PAGE_SIZE);
+      const result = await getProductReviews(productId, current, REVIEW_PAGE_SIZE, {
+        filter: this.data.reviewFilter,
+        sort: this.data.reviewSort,
+        ...(this.data.reviewSpecText ? { specText: this.data.reviewSpecText } : {})
+      });
       if (requestId !== latestReviewPageRequest || productId !== this.data.productId) {
         return;
       }
@@ -855,7 +926,7 @@ Page({
         reviewHasMore: reviewRecords.length < result.page.total,
         reviewLoading: false,
         reviewErrorText: ""
-      });
+      }, () => this.measureReviewContentOverflow());
     } catch {
       if (requestId !== latestReviewPageRequest || productId !== this.data.productId) {
         return;
@@ -865,298 +936,6 @@ Page({
         reviewErrorText: "评价加载失败，请点击重试"
       });
     }
-  },
-
-  onReviewManageOpen() {
-    if (!this.requireLogin()) {
-      return;
-    }
-    this.setData({ activeSheet: "reviewManage", sheetClosing: false });
-    void this.loadReviewManagement();
-  },
-
-  onReviewManagementRetry() {
-    void this.loadReviewManagement();
-  },
-
-  async loadReviewManagement() {
-    const productId = this.data.productId;
-    if (!productId) {
-      return;
-    }
-    const requestId = ++latestReviewManagementRequest;
-    this.setData({
-      reviewManagementLoading: true,
-      reviewManagementErrorText: ""
-    });
-    try {
-      const [eligibility, mine] = await Promise.all([
-        getProductReviewEligibility(productId),
-        getMyProductReviews(1, 50)
-      ]);
-      if (requestId !== latestReviewManagementRequest || productId !== this.data.productId) {
-        return;
-      }
-      const reviewOrderItems = buildReviewableOrderItemViews(eligibility.orderItems);
-      const myReviews = buildMyProductReviewViews(
-        mine.records.filter((review) => review.spuId === productId)
-      );
-      this.setData({
-        reviewManagementLoading: false,
-        reviewManagementErrorText: "",
-        reviewOrderItems,
-        myReviews,
-        reviewFormMode: "create",
-        reviewEditingId: 0,
-        reviewSelectedOrderItemId: reviewOrderItems[0]?.orderItemId ?? 0,
-        reviewRating: 5,
-        reviewFormStars: buildRatingStars(5),
-        reviewContent: "",
-        reviewAnonymous: false,
-        reviewImages: [],
-        reviewImageUploading: false
-      });
-    } catch (error) {
-      if (requestId !== latestReviewManagementRequest || productId !== this.data.productId) {
-        return;
-      }
-      this.setData({
-        reviewManagementLoading: false,
-        reviewManagementErrorText: this.reviewActionErrorMessage(
-          error,
-          "评价资格加载失败，请稍后重试"
-        )
-      });
-    }
-  },
-
-  onReviewOrderSelect(event: DatasetEvent) {
-    const orderItemId = parsePositiveId(event.currentTarget.dataset.orderItemId);
-    if (
-      orderItemId !== this.data.reviewSelectedOrderItemId &&
-      this.data.reviewImages.length
-    ) {
-      wx.showToast({ title: "请先移除已上传图片再切换订单", icon: "none" });
-      return;
-    }
-    if (this.data.reviewOrderItems.some((item) => item.orderItemId === orderItemId)) {
-      this.setData({ reviewSelectedOrderItemId: orderItemId });
-    }
-  },
-
-  onReviewRatingSelect(event: DatasetEvent) {
-    const reviewRating = normalizeRating(event.currentTarget.dataset.rating);
-    this.setData({
-      reviewRating,
-      reviewFormStars: buildRatingStars(reviewRating)
-    });
-  },
-
-  onReviewContentInput(event: TextareaEvent) {
-    this.setData({ reviewContent: event.detail.value.slice(0, 1000) });
-  },
-
-  onReviewAnonymousChange(event: SwitchEvent) {
-    this.setData({ reviewAnonymous: event.detail.value });
-  },
-
-  async onReviewImageChoose() {
-    if (
-      this.data.reviewFormMode !== "create" ||
-      !this.data.reviewSelectedOrderItemId ||
-      this.data.reviewImageUploading ||
-      this.data.reviewSubmitting
-    ) {
-      return;
-    }
-    const remaining = MAX_REVIEW_IMAGE_COUNT - this.data.reviewImages.length;
-    if (remaining <= 0) {
-      wx.showToast({ title: "最多上传 6 张图片", icon: "none" });
-      return;
-    }
-    try {
-      const selected = await chooseReviewImages(remaining);
-      const accepted = selected.filter((file) => (
-        file.size > 0 && file.size <= MAX_REVIEW_IMAGE_SIZE
-      ));
-      if (accepted.length < selected.length) {
-        wx.showToast({ title: "单张图片不能超过 5MB", icon: "none" });
-      }
-      if (!accepted.length) {
-        return;
-      }
-      this.setData({ reviewImageUploading: true });
-      const reviewImages = this.data.reviewImages.slice();
-      for (const file of accepted) {
-        const uploaded = await uploadProductReviewImage(
-          this.data.reviewSelectedOrderItemId,
-          file.tempFilePath
-        );
-        reviewImages.push({
-          fileId: uploaded.id,
-          tempFilePath: file.tempFilePath
-        });
-        this.setData({ reviewImages });
-      }
-    } catch (error) {
-      wx.showToast({
-        title: this.reviewActionErrorMessage(error, "图片上传失败，请稍后重试"),
-        icon: "none"
-      });
-    } finally {
-      this.setData({ reviewImageUploading: false });
-    }
-  },
-
-  onReviewDraftImagePreview(event: DatasetEvent) {
-    const index = Number(event.currentTarget.dataset.id);
-    const current = this.data.reviewImages[index]?.tempFilePath;
-    if (current) {
-      wx.previewImage({
-        current,
-        urls: this.data.reviewImages.map((image) => image.tempFilePath)
-      });
-    }
-  },
-
-  onReviewImageRemove(event: DatasetEvent) {
-    if (this.data.reviewImageUploading || this.data.reviewSubmitting) {
-      return;
-    }
-    const index = Number(event.currentTarget.dataset.id);
-    if (!Number.isSafeInteger(index) || index < 0 || index >= this.data.reviewImages.length) {
-      return;
-    }
-    const reviewImages = this.data.reviewImages.slice();
-    reviewImages.splice(index, 1);
-    this.setData({ reviewImages });
-  },
-
-  onReviewEdit(event: DatasetEvent) {
-    const reviewId = parsePositiveId(event.currentTarget.dataset.reviewId);
-    const review = this.data.myReviews.find((item) => item.id === reviewId);
-    if (!review) {
-      return;
-    }
-    this.setData({
-      reviewFormMode: "update",
-      reviewEditingId: review.id,
-      reviewRating: review.rating,
-      reviewFormStars: buildRatingStars(review.rating),
-      reviewContent: review.content,
-      reviewAnonymous: review.anonymous,
-      reviewImages: []
-    });
-  },
-
-  onReviewEditCancel() {
-    this.resetReviewForm();
-  },
-
-  async onReviewSubmit() {
-    if (this.data.reviewSubmitting || this.data.reviewImageUploading) {
-      return;
-    }
-    const isUpdate = this.data.reviewFormMode === "update";
-    if (!isUpdate && !this.data.reviewSelectedOrderItemId) {
-      wx.showToast({ title: "暂无可评价订单", icon: "none" });
-      return;
-    }
-    this.setData({ reviewSubmitting: true });
-    try {
-      const payload = {
-        rating: this.data.reviewRating,
-        content: normalizeReviewContent(this.data.reviewContent),
-        anonymous: this.data.reviewAnonymous
-      };
-      if (isUpdate) {
-        await updateProductReview(this.data.reviewEditingId, payload);
-      } else {
-        await createProductReview(this.data.productId, {
-          orderItemId: this.data.reviewSelectedOrderItemId,
-          imageFileIds: this.data.reviewImages.map((image) => image.fileId),
-          ...payload
-        });
-      }
-      this.setData({ reviewSubmitting: false });
-      wx.showToast({ title: isUpdate ? "评价已更新" : "评价已发布", icon: "success" });
-      await Promise.all([
-        this.loadReviewPreview(),
-        this.loadReviewManagement()
-      ]);
-    } catch (error) {
-      this.setData({ reviewSubmitting: false });
-      wx.showToast({
-        title: this.reviewActionErrorMessage(error, "评价保存失败，请稍后重试"),
-        icon: "none"
-      });
-    }
-  },
-
-  onReviewDelete(event: DatasetEvent) {
-    const reviewId = parsePositiveId(event.currentTarget.dataset.reviewId);
-    if (!reviewId || this.data.reviewDeletingId || this.data.reviewSubmitting) {
-      return;
-    }
-    wx.showModal({
-      title: "删除评价",
-      content: "删除后该订单可重新评价，确定继续吗？",
-      confirmText: "删除",
-      confirmColor: "#B72B22",
-      success: (result) => {
-        if (result.confirm) {
-          void this.deleteOwnedReview(reviewId);
-        }
-      }
-    });
-  },
-
-  async deleteOwnedReview(reviewId: number) {
-    this.setData({ reviewDeletingId: reviewId });
-    try {
-      await deleteProductReview(reviewId);
-      this.setData({ reviewDeletingId: 0 });
-      wx.showToast({ title: "评价已删除", icon: "success" });
-      await Promise.all([
-        this.loadReviewPreview(),
-        this.loadReviewManagement()
-      ]);
-    } catch (error) {
-      this.setData({ reviewDeletingId: 0 });
-      wx.showToast({
-        title: this.reviewActionErrorMessage(error, "评价删除失败，请稍后重试"),
-        icon: "none"
-      });
-    }
-  },
-
-  resetReviewForm() {
-    this.setData({
-      reviewFormMode: "create",
-      reviewEditingId: 0,
-      reviewSelectedOrderItemId: this.data.reviewOrderItems[0]?.orderItemId ?? 0,
-      reviewRating: 5,
-      reviewFormStars: buildRatingStars(5),
-      reviewContent: "",
-      reviewAnonymous: false,
-      reviewImages: []
-    });
-  },
-
-  reviewActionErrorMessage(error: unknown, fallback: string): string {
-    if (!isApiError(error)) {
-      return fallback;
-    }
-    if (error.code === 200201) {
-      return "仅已完成订单可以评价";
-    }
-    if (error.code === 200202) {
-      return "该订单商品已经评价过了";
-    }
-    if (error.code === 200200) {
-      return "评价不存在或已被删除";
-    }
-    return error.message || fallback;
   },
 
   requireLogin(): boolean {

@@ -39,6 +39,17 @@ export interface ProductReviewSummary {
   reviewCount: number;
   averageRating: number;
   goodReviewCount: number;
+  imageReviewCount: number;
+  criticalReviewCount: number;
+}
+
+export type ProductReviewFilter = "ALL" | "WITH_IMAGES" | "GOOD" | "CRITICAL";
+export type ProductReviewSort = "RECOMMENDED" | "LATEST";
+
+export interface ProductReviewListQuery {
+  filter?: ProductReviewFilter;
+  sort?: ProductReviewSort;
+  specText?: string;
 }
 
 export interface PublicProductReview {
@@ -78,12 +89,6 @@ export interface ProductReviewCreateRequest extends WechatMiniprogram.IAnyObject
   content?: string;
   anonymous?: boolean;
   imageFileIds?: number[];
-}
-
-export interface ProductReviewUpdateRequest extends WechatMiniprogram.IAnyObject {
-  rating: number;
-  content?: string;
-  anonymous?: boolean;
 }
 
 export interface ProductFavoriteStatus {

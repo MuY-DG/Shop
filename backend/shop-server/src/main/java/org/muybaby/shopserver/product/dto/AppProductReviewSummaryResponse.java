@@ -5,6 +5,8 @@ import java.math.BigDecimal;
 public record AppProductReviewSummaryResponse(
         long reviewCount,
         BigDecimal averageRating,
-        long goodReviewCount
+        long goodReviewCount,
+        long imageReviewCount,
+        long criticalReviewCount
 ) {
 }

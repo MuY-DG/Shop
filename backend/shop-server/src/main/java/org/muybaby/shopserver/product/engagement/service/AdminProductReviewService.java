@@ -6,7 +6,10 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.engagement.ProductReviewStatus;
 import org.muybaby.shopserver.product.engagement.dto.AdminProductReviewQueryRequest;
 import org.muybaby.shopserver.product.engagement.dto.AdminProductReviewResponse;
+import org.muybaby.shopserver.product.engagement.dto.AdminProductReviewUpdateRequest;
 import org.muybaby.shopserver.product.engagement.dto.ProductReviewImageResponse;
+import org.muybaby.shopserver.storage.StorageUsageOwnerType;
+import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +26,8 @@ import java.util.Map;
 @Service
 public class AdminProductReviewService {
 
+    private static final String REVIEW_IMAGE_CONTEXT = "PRODUCT_REVIEW_ORDER_ITEM";
+
     private static final String REVIEW_FROM = """
             FROM product_review r
             JOIN app_user u ON u.id = r.user_id
@@ -32,9 +37,14 @@ public class AdminProductReviewService {
             """;
 
     private final JdbcClient jdbcClient;
+    private final StorageUsageService storageUsageService;
 
-    public AdminProductReviewService(JdbcClient jdbcClient) {
+    public AdminProductReviewService(
+            JdbcClient jdbcClient,
+            StorageUsageService storageUsageService
+    ) {
         this.jdbcClient = jdbcClient;
+        this.storageUsageService = storageUsageService;
     }
 
     public PageResult<AdminProductReviewResponse> page(AdminProductReviewQueryRequest request) {
@@ -98,6 +108,103 @@ public class AdminProductReviewService {
         if (updated != 1) {
             throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND);
         }
+    }
+
+    @Transactional
+    public void update(
+            Long reviewId,
+            AdminProductReviewUpdateRequest request,
+            long adminUserId
+    ) {
+        int updated = jdbcClient.sql("""
+                        UPDATE product_review
+                        SET rating = :rating,
+                            content = :content,
+                            anonymous = :anonymous,
+                            updated_at = :updatedAt,
+                            moderated_by_admin_user_id = :adminUserId,
+                            moderated_at = :moderatedAt
+                        WHERE id = :reviewId
+                        """)
+                .param("rating", request.rating())
+                .param("content", normalizeContent(request.content()))
+                .param("anonymous", Boolean.TRUE.equals(request.anonymous()))
+                .param("updatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
+                .param("adminUserId", adminUserId)
+                .param("moderatedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
+                .param("reviewId", reviewId)
+                .update();
+        if (updated != 1) {
+            throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND);
+        }
+    }
+
+    @Transactional
+    public void delete(Long reviewId) {
+        Long userId = jdbcClient.sql("""
+                        SELECT user_id FROM product_review
+                        WHERE id = :reviewId
+                        FOR UPDATE
+                        """)
+                .param("reviewId", reviewId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND));
+        List<Long> imageFileIds = jdbcClient.sql("""
+                        SELECT asset_id FROM product_review_image
+                        WHERE review_id = :reviewId
+                        ORDER BY sort_order, id
+                        FOR UPDATE
+                        """)
+                .param("reviewId", reviewId)
+                .query(Long.class)
+                .list();
+        storageUsageService.removeOwnerUsages(StorageUsageOwnerType.PRODUCT_REVIEW, reviewId);
+        int deleted = jdbcClient.sql("DELETE FROM product_review WHERE id = :reviewId")
+                .param("reviewId", reviewId)
+                .update();
+        if (deleted != 1) {
+            throw new BusinessException(ErrorCode.PRODUCT_REVIEW_NOT_FOUND);
+        }
+        scheduleReviewImagesForCleanup(userId, imageFileIds);
+    }
+
+    private void scheduleReviewImagesForCleanup(long userId, List<Long> fileIds) {
+        if (fileIds.isEmpty()) {
+            return;
+        }
+        int updated = jdbcClient.sql("""
+                        UPDATE storage_asset
+                        SET status = 'DELETE_PENDING',
+                            folder_id = NULL,
+                            public_url = NULL,
+                            expires_at = NULL,
+                            cleanup_attempts = 0,
+                            cleanup_next_retry_at = CURRENT_TIMESTAMP,
+                            cleanup_lease_token = NULL,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id IN (:fileIds)
+                          AND status = 'ACTIVE'
+                          AND uploaded_by_type = 'APP'
+                          AND uploaded_by_id = :userId
+                          AND upload_context_type = :contextType
+                          AND NOT EXISTS (
+                              SELECT 1 FROM storage_asset_usage usage_ref
+                              WHERE usage_ref.asset_id = storage_asset.id
+                                AND usage_ref.status = 'ACTIVE'
+                          )
+                        """)
+                .param("fileIds", fileIds)
+                .param("userId", userId)
+                .param("contextType", REVIEW_IMAGE_CONTEXT)
+                .update();
+        if (updated != fileIds.size()) {
+            throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
+        }
+    }
+
+    private String normalizeContent(String content) {
+        return content == null ? "" : content.trim();
     }
 
     private String buildWhere(AdminProductReviewQueryRequest query, Map<String, Object> parameters) {

@@ -4,6 +4,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.storage.StorageFileUsageType;
+import org.muybaby.shopserver.storage.StorageUsageOwnerType;
+import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,7 +18,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.muybaby.shopserver.support.AdminTokenTestSupport.issueAdminToken;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -37,6 +42,9 @@ class AdminProductReviewControllerTest {
     @Autowired
     private OpaqueTokenService opaqueTokenService;
 
+    @Autowired
+    private StorageUsageService storageUsageService;
+
     @BeforeEach
     void clearReviews() {
         jdbcClient.sql("DELETE FROM product_review").update();
@@ -45,7 +53,7 @@ class AdminProductReviewControllerTest {
     @Test
     void readPermissionSupportsFiltersAndExposesOrderContext() throws Exception {
         ReviewFixture fixture = insertReview(5, true, "筛选命中的评价");
-        long imageId = insertReviewImage(fixture.reviewId());
+        long imageId = insertReviewImage(fixture);
         insertReview(3, false, "其他评价");
         String token = issueAdminToken(
                 jdbcClient,
@@ -130,6 +138,67 @@ class AdminProductReviewControllerTest {
         mockMvc.perform(get("/app/product/spus/" + fixture.spuId() + "/reviews"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summary.reviewCount").value(1));
+    }
+
+    @Test
+    void moderationPermissionCanEditAndDeleteReviewWhileReadPermissionCannot() throws Exception {
+        ReviewFixture fixture = insertReview(5, false, "管理员修改前");
+        long imageId = insertReviewImage(fixture);
+        String readToken = issueAdminToken(
+                jdbcClient,
+                opaqueTokenService,
+                List.of("product:review:read")
+        );
+        String moderateToken = issueAdminToken(
+                jdbcClient,
+                opaqueTokenService,
+                List.of("product:review:moderate")
+        );
+
+        mockMvc.perform(put("/admin/product/reviews/" + fixture.reviewId())
+                        .header("Authorization", bearer(readToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rating\":2,\"content\":\"越权修改\",\"anonymous\":true}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/admin/product/reviews/" + fixture.reviewId())
+                        .header("Authorization", bearer(readToken)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/admin/product/reviews/" + fixture.reviewId())
+                        .header("Authorization", bearer(moderateToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rating\":2,\"content\":\" 管理员修改后 \",\"anonymous\":true}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/admin/product/reviews")
+                        .header("Authorization", bearer(moderateToken))
+                        .param("spuId", Long.toString(fixture.spuId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].rating").value(2))
+                .andExpect(jsonPath("$.data.records[0].content").value("管理员修改后"))
+                .andExpect(jsonPath("$.data.records[0].anonymous").value(true))
+                .andExpect(jsonPath("$.data.records[0].moderatedByAdminUserId").isNumber())
+                .andExpect(jsonPath("$.data.records[0].moderatedAt").isNotEmpty());
+
+        mockMvc.perform(delete("/admin/product/reviews/" + fixture.reviewId())
+                        .header("Authorization", bearer(moderateToken)))
+                .andExpect(status().isOk());
+        assertThat(jdbcClient.sql("SELECT COUNT(*) FROM product_review WHERE id = :reviewId")
+                .param("reviewId", fixture.reviewId())
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("""
+                        SELECT COUNT(*) FROM storage_asset_usage
+                        WHERE owner_type = 'PRODUCT_REVIEW'
+                          AND owner_id = :reviewId
+                          AND status = 'ACTIVE'
+                        """)
+                .param("reviewId", fixture.reviewId())
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("SELECT status FROM storage_asset WHERE id = :fileId")
+                .param("fileId", imageId)
+                .query(String.class)
+                .single()).isEqualTo("DELETE_PENDING");
     }
 
     @Test
@@ -277,27 +346,32 @@ class AdminProductReviewControllerTest {
                 .update();
 
         return new ReviewFixture(
-                reviewId, spuId, productTitle, nickname, orderId, orderNo, orderItemId
+                reviewId, userId, spuId, productTitle, nickname, orderId, orderNo, orderItemId
         );
     }
 
-    private long insertReviewImage(long reviewId) {
-        String objectKey = "public/library/image/admin-review/" + Math.abs(reviewId) + ".webp";
+    private long insertReviewImage(ReviewFixture fixture) {
+        String objectKey = "public/library/image/admin-review/"
+                + Math.abs(fixture.reviewId()) + ".webp";
         String publicUrl = "https://cdn.example.test/" + objectKey;
         jdbcClient.sql("""
                         INSERT INTO storage_asset (
                             scope, media_kind, visibility, provider, storage_container,
                             storage_region, object_key, original_filename, content_type,
                             extension, size_bytes, sha256, public_url, status,
-                            uploaded_by_type, uploaded_by_id
+                            uploaded_by_type, uploaded_by_id, upload_context_type,
+                            upload_context_id
                         ) VALUES (
                             'LIBRARY', 'IMAGE', 'PUBLIC', 'TENCENT_COS', 'review-test',
                             'ap-test', :objectKey, 'review.webp', 'image/webp',
-                            'webp', 100, '', :publicUrl, 'ACTIVE', 'APP', 1
+                            'webp', 100, '', :publicUrl, 'ACTIVE', 'APP', :userId,
+                            'PRODUCT_REVIEW_ORDER_ITEM', :orderItemId
                         )
                         """)
                 .param("objectKey", objectKey)
                 .param("publicUrl", publicUrl)
+                .param("userId", fixture.userId())
+                .param("orderItemId", fixture.orderItemId())
                 .update();
         Long assetId = jdbcClient.sql("SELECT id FROM storage_asset WHERE object_key = :objectKey")
                 .param("objectKey", objectKey)
@@ -308,10 +382,19 @@ class AdminProductReviewControllerTest {
                             (review_id, asset_id, image_url, sort_order)
                         VALUES (:reviewId, :assetId, :imageUrl, 1)
                         """)
-                .param("reviewId", reviewId)
+                .param("reviewId", fixture.reviewId())
                 .param("assetId", assetId)
                 .param("imageUrl", publicUrl)
                 .update();
+        storageUsageService.addProtectedUsage(
+                assetId,
+                StorageFileUsageType.PRODUCT_REVIEW_IMAGE,
+                StorageUsageOwnerType.PRODUCT_REVIEW,
+                fixture.reviewId(),
+                "后台评论测试",
+                publicUrl,
+                1
+        );
         return assetId;
     }
 
@@ -321,6 +404,7 @@ class AdminProductReviewControllerTest {
 
     private record ReviewFixture(
             long reviewId,
+            long userId,
             long spuId,
             String productTitle,
             String nickname,

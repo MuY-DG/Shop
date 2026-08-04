@@ -606,6 +606,12 @@ declare namespace Api {
       status: ProductReviewStatus
     }
 
+    interface ProductReviewUpdateForm {
+      rating: number
+      content: string
+      anonymous: boolean
+    }
+
     interface FreightTemplate {
       id: number
       name: string

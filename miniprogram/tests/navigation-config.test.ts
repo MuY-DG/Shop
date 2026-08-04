@@ -674,7 +674,8 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailStyle, /\.review-card__count\s*\{[\s\S]*?color: @color-text-primary;[\s\S]*?font-size: @font-size-md;/);
   assert.match(detailStyle, /\.review-preview-list \.review-user__name\s*\{[\s\S]*?font-family: -apple-system,[\s\S]*?font-size: 26rpx;[\s\S]*?font-weight: 400;/);
   assert.match(detailStyle, /\.review-preview-list \.review-item__content\s*\{[\s\S]*?padding-left: 60rpx;[\s\S]*?line-height: 36rpx;[\s\S]*?-webkit-line-clamp: 3;/);
-  assert.match(detailStyle, /\.review-preview-media\s*\{[\s\S]*?width: 158rpx;[\s\S]*?height: 158rpx;/);
+  assert.match(detailStyle, /\.review-preview-media\s*\{[\s\S]*?width: 158rpx;[\s\S]*?height: 158rpx;[\s\S]*?background: transparent;/);
+  assert.match(detailStyle, /\.review-preview-media__image\s*\{[\s\S]*?background: transparent;/);
   assert.match(detailStyle, /padding: 0 16rpx calc\(154rpx \+ env\(safe-area-inset-bottom\)\);/);
   assert.match(detailStyle, /\.purchase-bar\s*\{[\s\S]*?background: @color-surface-white;/);
   assert.match(detailTemplate, />暂时售空</);
@@ -684,8 +685,34 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
     /\.purchase-action--buy,\s*\.purchase-sold-out\s*\{[^}]*background: #ff172b;/
   );
   assert.match(detailTemplate, /activeSheet === 'reviews' \? 'sheet-panel--reviews'/);
-  assert.match(detailStyle, /\.sheet-panel--reviews\s*\{ background: @color-page; \}/);
+  assert.match(detailStyle, /\.sheet-panel--reviews\s*\{[\s\S]*?height: 72vh;[\s\S]*?background: #f3f3f7;/);
+  assert.match(detailStyle, /\.sheet-mask--reviews\s*\{[\s\S]*?bottom: calc\(104rpx \+ env\(safe-area-inset-bottom\)\);/);
+  assert.match(detailTemplate, />中\/差评 \{\{reviewSummary\.criticalReviewCount\}\}<\/button>/);
+  assert.match(detailStyle, /\.review-filter-bar\s*\{[\s\S]*?display: flex;[\s\S]*?background: #f3f3f7;[\s\S]*?gap: 14rpx;/);
+  assert.match(detailStyle, /\.review-filter-chip\s*\{[\s\S]*?width: auto !important;[\s\S]*?min-width: 96rpx !important;[\s\S]*?color: #000000;[\s\S]*?background: #ffffff;/);
+  assert.match(detailStyle, /\.review-filter-chip--active\s*\{[\s\S]*?border: 1rpx solid #fe0000;[\s\S]*?color: #fe0000;[\s\S]*?background: #ffebef;/);
   assert.match(detailStyle, /\.review-item--sheet\s*\{[\s\S]*?background: @color-surface-white;/);
+  assert.match(detailStyle, /\.review-toolbar__actions\s*\{[\s\S]*?justify-content: flex-end;[\s\S]*?margin-left: auto;/);
+  assert.match(detailTemplate, /review-rating-summary__label">\{\{review\.ratingLabel\}\}/);
+  assert.match(detailTemplate, /favorite-clarity-solid\.svg/);
+  assert.match(detailTemplate, /class="review-purchase-spec">｜已购 \{\{review\.purchaseSpecText\}\}/);
+  const reviewSheetTemplate = detailTemplate.match(
+    /<block wx:elif="\{\{activeSheet === 'reviews'\}\}">[\s\S]*?<\/block>\s*<\/view>\s*<\/view>\s*<\/view>/
+  )?.[0] ?? "";
+  assert.doesNotMatch(reviewSheetTemplate, /review\.createdAtText/);
+  assert.match(reviewSheetTemplate, /review\.contentCollapsible && !review\.contentExpanded/);
+  assert.match(reviewSheetTemplate, />…展开<\/button>/);
+  assert.match(reviewSheetTemplate, /class="review-content-collapse"[\s\S]*?> 收起<\/text>/);
+  assert.match(reviewSheetTemplate, /bindtap="onReviewContentToggle"/);
+  assert.match(detailStyle, /\.review-item--sheet \.review-item__content\s*\{[\s\S]*?-webkit-line-clamp: 5;/);
+  assert.match(detailStyle, /\.review-toolbar-action\s*\{[\s\S]*?font-size: 24rpx;/);
+  assert.match(detailStyle, /\.review-toolbar-action image\s*\{[\s\S]*?width: 31rpx;[\s\S]*?height: 31rpx;/);
+  assert.match(detailStyle, /\.review-content-toggle\s*\{[\s\S]*?color: #1677ff;/);
+  assert.match(detailStyle, /\.review-content-collapse\s*\{[\s\S]*?color: #1677ff;/);
+  assert.match(detailStyle, /\.review-item--sheet \.review-image-gallery__image\s*\{[\s\S]*?width: 200rpx;[\s\S]*?height: 200rpx;[\s\S]*?background: transparent;/);
+  assert.match(detailLogic, /measureReviewContentOverflow\(\)/);
+  assert.match(detailStyle, /\.review-spec-mask\s*\{[\s\S]*?position: fixed;[\s\S]*?inset: 0;[\s\S]*?z-index: 420;/);
+  assert.match(detailStyle, /\.review-spec-panel\s*\{[\s\S]*?height: 70vh;/);
   assert.match(productSummaryStyle, /background: @color-surface-white;/);
   assert.match(productSummaryStyle, /border: 0;/);
   assert.match(productSummaryStyle, /\.current-price\s*\{[\s\S]*?color: @color-detail-price;/);
@@ -722,11 +749,17 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailStyle, /\.review-empty-preview__description\s*\{[\s\S]*?color: #8f939c;/);
   assert.match(designTokens, /@color-detail-price: #ff0c1f;/);
   assert.match(detailTemplate, /activeSheet === 'reviews'/);
-  assert.match(detailTemplate, /activeSheet === 'reviewManage'/);
+  assert.match(detailTemplate, /data-review-filter="WITH_IMAGES"/);
+  assert.match(detailTemplate, /data-review-filter="GOOD"/);
+  assert.match(detailTemplate, /data-review-filter="CRITICAL"/);
+  assert.match(detailTemplate, /bindtap="onReviewSortTap"/);
+  assert.match(detailTemplate, /bindtap="onReviewSpecOpen"/);
+  assert.match(detailTemplate, /class="review-spec-panel"/);
+  assert.doesNotMatch(detailTemplate, /activeSheet === 'reviewManage'|写评价|onReviewSubmit|onReviewEdit|onReviewDelete/);
+  assert.doesNotMatch(detailLogic, /getMyProductReviews|updateProductReview|deleteProductReview|loadReviewManagement/);
   assert.match(detailTemplate, /activeSheet === 'address'/);
   assert.match(detailTemplate, /bindtap="onAddAddress">新增地址</);
   assert.match(detailTemplate, /bindscrolltolower="onReviewLoadMore"/);
-  assert.match(detailTemplate, /bindtap="onReviewSubmit"/);
   assert.doesNotMatch(detailTemplate, /bounces="{{false}}"/);
   assert.match(detailTemplate, /class="detail-scroll-content"/);
   assert.match(detailTemplate, /class="purchase-sheet-scroll-content"/);

@@ -246,15 +246,22 @@ public class AppProductService {
         return jdbcClient.sql("""
                         SELECT COUNT(*) AS review_count,
                                COALESCE(AVG(rating), 0) AS average_rating,
-                               COALESCE(SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END), 0) AS good_review_count
-                        FROM product_review
-                        WHERE spu_id = :spuId AND status = 'PUBLISHED'
+                               COALESCE(SUM(CASE WHEN rating >= 4 THEN 1 ELSE 0 END), 0) AS good_review_count,
+                               COALESCE(SUM(CASE WHEN rating <= 3 THEN 1 ELSE 0 END), 0) AS critical_review_count,
+                               COALESCE(SUM(CASE WHEN EXISTS (
+                                   SELECT 1 FROM product_review_image image
+                                   WHERE image.review_id = review.id
+                               ) THEN 1 ELSE 0 END), 0) AS image_review_count
+                        FROM product_review review
+                        WHERE review.spu_id = :spuId AND review.status = 'PUBLISHED'
                         """)
                 .param("spuId", spuId)
                 .query((rs, rowNum) -> new AppProductReviewSummaryResponse(
                         rs.getLong("review_count"),
                         normalizedRating(rs.getBigDecimal("average_rating")),
-                        rs.getLong("good_review_count")
+                        rs.getLong("good_review_count"),
+                        rs.getLong("image_review_count"),
+                        rs.getLong("critical_review_count")
                 ))
                 .single();
     }

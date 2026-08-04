@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  buildMyProductReviewViews,
   buildProductReviewSummaryView,
   buildPublicProductReviewViews,
   buildRatingStars,
@@ -16,9 +15,14 @@ test("评价摘要规范评分、数量和好评率", () => {
   assert.deepEqual(buildProductReviewSummaryView({
     reviewCount: 8,
     averageRating: 4.56,
-    goodReviewCount: 7
+    goodReviewCount: 7,
+    imageReviewCount: 3,
+    criticalReviewCount: 1
   }), {
     reviewCount: 8,
+    goodReviewCount: 7,
+    imageReviewCount: 3,
+    criticalReviewCount: 1,
     reviewCountText: "8 条评价",
     reviewCountPlusText: "8+",
     averageRating: 4.56,
@@ -28,6 +32,9 @@ test("评价摘要规范评分、数量和好评率", () => {
   });
   assert.deepEqual(buildProductReviewSummaryView(), {
     reviewCount: 0,
+    goodReviewCount: 0,
+    imageReviewCount: 0,
+    criticalReviewCount: 0,
     reviewCountText: "暂无评价",
     reviewCountPlusText: "0",
     averageRating: 0,
@@ -83,12 +90,37 @@ test("公开评价过滤无效记录并生成匿名、日期和规格展示", ()
   assert.equal(views[0]?.reviewerName, "小灶");
   assert.equal(views[0]?.reviewerInitial, "小");
   assert.equal(views[0]?.content, "香味很足");
+  assert.equal(views[0]?.ratingLabel, "超赞");
+  assert.equal(views[0]?.contentCollapsible, false);
+  assert.equal(views[0]?.contentExpanded, false);
   assert.equal(views[0]?.createdAtText, "2026-07-20");
   assert.equal(views[0]?.skuSpecText, "500g 袋装");
+  assert.equal(views[0]?.purchaseSpecText, "500g 袋装");
   assert.deepEqual(views[0]?.images.map((image) => image.fileId), [11, 12]);
   assert.equal(views[0]?.hasImages, true);
   assert.equal(views[0]?.previewImageUrl, "https://img.example/first.webp");
   assert.equal(views[0]?.imageCount, 2);
+});
+
+test("公开评价按星级生成评价文案并为缺省规格提供展示值", () => {
+  const base = {
+    id: 1,
+    skuSpecText: "",
+    content: "评价内容",
+    anonymous: false,
+    reviewerName: "买家",
+    verifiedPurchase: true,
+    createdAt: "2026-07-20T09:30:00Z",
+    updatedAt: "2026-07-20T09:30:00Z",
+    images: []
+  };
+  const views = buildPublicProductReviewViews([
+    { ...base, id: 1, rating: 4 },
+    { ...base, id: 2, rating: 3 },
+    { ...base, id: 3, rating: 2 }
+  ]);
+  assert.deepEqual(views.map((view) => view.ratingLabel), ["超赞", "还不错", ""]);
+  assert.equal(views[0]?.purchaseSpecText, "默认规格");
 });
 
 test("可评价订单和文字输入生成提交前的安全值", () => {
@@ -105,26 +137,4 @@ test("可评价订单和文字输入生成提交前的安全值", () => {
   assert.equal(formatReviewDate("invalid"), "");
   assert.equal(normalizeReviewContent("  很好吃  "), "很好吃");
   assert.equal(normalizeReviewContent("x".repeat(1002)).length, 1000);
-});
-
-test("我的评价保留修改和删除所需的订单与匿名状态", () => {
-  const views = buildMyProductReviewViews([{
-    id: 13,
-    spuId: 41,
-    productTitle: "经典牛油锅底",
-    orderItemId: 21,
-    skuSpecText: "500g",
-    rating: 4,
-    content: "不错",
-    anonymous: true,
-    reviewerName: "匿名用户",
-    verifiedPurchase: true,
-    createdAt: "2026-07-20T09:30:00Z",
-    updatedAt: "2026-07-20T09:30:00Z",
-    images: []
-  }]);
-  assert.equal(views[0]?.id, 13);
-  assert.equal(views[0]?.orderItemId, 21);
-  assert.equal(views[0]?.anonymous, true);
-  assert.equal(views[0]?.stars.filter((star) => star.filled).length, 4);
 });

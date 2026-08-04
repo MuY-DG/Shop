@@ -103,6 +103,10 @@
 
         <template #operation="{ row }">
           <ElButton type="primary" link @click="showDetail(row)">查看</ElButton>
+          <ElButton v-if="canModerate" type="primary" link @click="showEdit(row)">编辑</ElButton>
+          <ElButton v-if="canModerate" type="danger" link @click="requestDelete(row)">
+            删除
+          </ElButton>
         </template>
       </ArtTable>
     </ElCard>
@@ -187,6 +191,37 @@
         </ElDescriptions>
       </template>
     </ElDrawer>
+
+    <ElDialog
+      v-model="editVisible"
+      title="编辑评论"
+      width="520px"
+      destroy-on-close
+      :close-on-click-modal="false"
+    >
+      <ElForm label-position="top">
+        <ElFormItem label="评分" required>
+          <ElRate v-model="editForm.rating" />
+        </ElFormItem>
+        <ElFormItem label="评论内容">
+          <ElInput
+            v-model="editForm.content"
+            type="textarea"
+            :rows="6"
+            maxlength="1000"
+            show-word-limit
+            placeholder="允许为空，最多 1000 个字符"
+          />
+        </ElFormItem>
+        <ElFormItem label="匿名展示">
+          <ElSwitch v-model="editForm.anonymous" />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton :disabled="editSubmitting" @click="editVisible = false">取消</ElButton>
+        <ElButton type="primary" :loading="editSubmitting" @click="submitEdit"> 保存修改 </ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
@@ -197,13 +232,26 @@
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
   import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
-  import { fetchProductReviews, updateProductReviewStatus } from '@/api/product'
+  import {
+    deleteProductReview,
+    fetchProductReviews,
+    updateProductReview,
+    updateProductReviewStatus
+  } from '@/api/product'
 
   defineOptions({ name: 'ProductReview' })
 
   const { hasAuth } = useAuth()
   const canModerate = computed(() => hasAuth('product:review:moderate'))
   const detailVisible = ref(false)
+  const editVisible = ref(false)
+  const editSubmitting = ref(false)
+  const editingReviewId = ref(0)
+  const editForm = ref<Api.Product.ProductReviewUpdateForm>({
+    rating: 5,
+    content: '',
+    anonymous: false
+  })
   const currentReview = ref<Api.Product.ProductReview | null>(null)
   const statusUpdatingIds = ref(new Set<number>())
   const reviewImageUrls = (images: Api.Product.ProductReviewImage[]) =>
@@ -297,7 +345,7 @@
           formatter: (row) => formatDateTime(row.createdAt)
         },
         { prop: 'status', label: '显示状态', width: 160, useSlot: true },
-        { prop: 'operation', label: '操作', width: 90, fixed: 'right', useSlot: true }
+        { prop: 'operation', label: '操作', width: 180, fixed: 'right', useSlot: true }
       ]
     }
   })
@@ -316,6 +364,16 @@
   const showDetail = (row: Api.Product.ProductReview) => {
     currentReview.value = { ...row }
     detailVisible.value = true
+  }
+
+  const showEdit = (row: Api.Product.ProductReview) => {
+    editingReviewId.value = row.id
+    editForm.value = {
+      rating: row.rating,
+      content: row.content || '',
+      anonymous: row.anonymous
+    }
+    editVisible.value = true
   }
 
   const isMessageBoxCancel = (error: unknown) => error === 'cancel' || error === 'close'
@@ -346,6 +404,58 @@
       return false
     } finally {
       statusUpdatingIds.value.delete(row.id)
+    }
+  }
+
+  const submitEdit = async () => {
+    if (!editingReviewId.value || editSubmitting.value) return
+    if (editForm.value.rating < 1 || editForm.value.rating > 5) {
+      ElMessage.warning('请选择 1 至 5 星评分')
+      return
+    }
+    editSubmitting.value = true
+    try {
+      await updateProductReview(editingReviewId.value, {
+        rating: editForm.value.rating,
+        content: editForm.value.content.trim(),
+        anonymous: editForm.value.anonymous
+      })
+      ElMessage.success('评论已修改')
+      editVisible.value = false
+      await refreshUpdate()
+      if (currentReview.value?.id === editingReviewId.value) {
+        currentReview.value = {
+          ...currentReview.value,
+          rating: editForm.value.rating,
+          content: editForm.value.content.trim(),
+          anonymous: editForm.value.anonymous
+        }
+      }
+    } catch {
+      ElMessage.error('修改失败，评论未变更')
+    } finally {
+      editSubmitting.value = false
+    }
+  }
+
+  const requestDelete = async (row: Api.Product.ProductReview) => {
+    try {
+      await ElMessageBox.confirm('删除后评论及其图片将无法恢复，确定继续吗？', '删除评论', {
+        type: 'warning',
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消'
+      })
+      await deleteProductReview(row.id)
+      ElMessage.success('评论已删除')
+      if (currentReview.value?.id === row.id) {
+        detailVisible.value = false
+        currentReview.value = null
+      }
+      await refreshUpdate()
+    } catch (error) {
+      if (!isMessageBoxCancel(error)) {
+        ElMessage.error('删除失败，评论仍然保留')
+      }
     }
   }
 </script>

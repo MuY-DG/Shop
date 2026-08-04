@@ -1,5 +1,4 @@
 import type {
-  ProductReview,
   ProductReviewSummary,
   PublicProductReview,
   ProductReviewImage,
@@ -14,6 +13,9 @@ export interface RatingStarView {
 
 export interface ProductReviewSummaryView {
   reviewCount: number;
+  goodReviewCount: number;
+  imageReviewCount: number;
+  criticalReviewCount: number;
   reviewCountText: string;
   reviewCountPlusText: string;
   averageRating: number;
@@ -27,21 +29,20 @@ export interface PublicProductReviewView {
   reviewerName: string;
   reviewerInitial: string;
   rating: number;
+  ratingLabel: string;
   stars: RatingStarView[];
   content: string;
   hasContent: boolean;
+  contentCollapsible: boolean;
+  contentExpanded: boolean;
   skuSpecText: string;
+  purchaseSpecText: string;
   verifiedPurchase: boolean;
   createdAtText: string;
   images: ProductReviewImage[];
   hasImages: boolean;
   previewImageUrl: string;
   imageCount: number;
-}
-
-export interface MyProductReviewView extends PublicProductReviewView {
-  orderItemId: number;
-  anonymous: boolean;
 }
 
 export interface ReviewableOrderItemView extends ReviewableOrderItem {
@@ -110,12 +111,23 @@ export function buildProductReviewSummaryView(
     reviewCount,
     nonNegativeInteger(summary?.goodReviewCount)
   );
+  const imageReviewCount = Math.min(
+    reviewCount,
+    nonNegativeInteger(summary?.imageReviewCount)
+  );
+  const criticalReviewCount = Math.min(
+    reviewCount,
+    nonNegativeInteger(summary?.criticalReviewCount)
+  );
   const rawAverage = Number(summary?.averageRating);
   const averageRating = Number.isFinite(rawAverage)
     ? Math.min(5, Math.max(0, rawAverage))
     : 0;
   return {
     reviewCount,
+    goodReviewCount,
+    imageReviewCount,
+    criticalReviewCount,
     reviewCountText: reviewCount ? `${reviewCount} 条评价` : "暂无评价",
     reviewCountPlusText: reviewCount ? `${reviewCount}+` : "0",
     averageRating,
@@ -137,15 +149,20 @@ export function buildPublicProductReviewViews(
       const content = cleanText(review.content);
       const rating = normalizeRating(review.rating);
       const images = reviewImages(review.images);
+      const skuSpecText = cleanText(review.skuSpecText);
       return {
         id: review.id,
         reviewerName,
         reviewerInitial: reviewerName.slice(0, 1) || "用",
         rating,
+        ratingLabel: rating >= 4 ? "超赞" : rating === 3 ? "还不错" : "",
         stars: buildRatingStars(rating),
         content,
         hasContent: Boolean(content),
-        skuSpecText: cleanText(review.skuSpecText),
+        contentCollapsible: false,
+        contentExpanded: false,
+        skuSpecText,
+        purchaseSpecText: skuSpecText || "默认规格",
         verifiedPurchase: review.verifiedPurchase === true,
         createdAtText: formatReviewDate(review.createdAt),
         images,
@@ -154,23 +171,6 @@ export function buildPublicProductReviewViews(
         imageCount: images.length
       };
     });
-}
-
-export function buildMyProductReviewViews(
-  reviews: ProductReview[]
-): MyProductReviewView[] {
-  return (Array.isArray(reviews) ? reviews : [])
-    .map((review) => {
-      const publicView = buildPublicProductReviewViews([review])[0];
-      return publicView && Number.isSafeInteger(review.orderItemId) && review.orderItemId > 0
-        ? {
-          ...publicView,
-          orderItemId: review.orderItemId,
-          anonymous: review.anonymous === true
-        }
-        : undefined;
-    })
-    .filter((review): review is MyProductReviewView => Boolean(review));
 }
 
 export function buildReviewableOrderItemViews(
