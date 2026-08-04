@@ -63,6 +63,10 @@ class ApplicationYamlSafetyTest {
                 .doesNotContainKey("spring.profiles.active")
                 .containsEntry("spring.config.import", "file:.env.prod.local[.properties]")
                 .containsEntry("server.address", "${SERVER_ADDRESS:127.0.0.1}")
+                .containsEntry(
+                        "logging.level.org.muybaby.shopserver.logistics.provider.RealWechatShippingProvider",
+                        "warn"
+                )
                 .doesNotContainKeys(
                         "server.port",
                         "logging.level.org.muybaby.shopserver",

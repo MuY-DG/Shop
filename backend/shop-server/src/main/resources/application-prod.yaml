@@ -8,3 +8,7 @@ spring:
 
 server:
   address: ${SERVER_ADDRESS:127.0.0.1} # 直接运行 JAR 时只监听本机；Docker 内由 Compose 覆盖为 0.0.0.0。
+
+logging:
+  level:
+    org.muybaby.shopserver.logistics.provider.RealWechatShippingProvider: warn # 生产仅保留微信发货提供方的异常日志，隐藏高频正常查询过程。
