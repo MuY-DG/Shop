@@ -154,6 +154,7 @@ SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID=
 SHOP_SECRET_ENCRYPTION_KEY_RING=
 SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED=false
 SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
+SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=true
 ```
 
 The configured callback bases must be complete public HTTPS paths with no query, fragment, or user-info. With route issuance disabled, callbacks use `/wxpay/pay/notify` and `/wxpay/refund/notify`. With it enabled, the backend gives WeChat the corresponding `/r/{token}` path per payment/refund; do not pre-append a token in configuration. A real local WeChat Pay smoke check needs an HTTPS tunnel to the local backend.

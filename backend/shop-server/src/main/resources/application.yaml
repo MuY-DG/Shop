@@ -119,6 +119,13 @@ shop: # 商城项目自定义业务配置的统一入口。
       mock-enabled: false # 基础配置强制关闭小程序模拟模式。
     shipping: # 微信小程序发货信息管理配置。
       upload-enabled: ${SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED:false} # 默认不向微信上传发货信息。
+      receipt-reconciliation: # 微信自动收货后，将微信状态安全同步回本地订单。
+        enabled: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED:true} # 默认启用；仅处理真实微信且发货上传成功的订单。
+        delay: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_DELAY:5m} # 每 5 分钟扫描一批候选订单。
+        batch-size: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_BATCH_SIZE:50} # 单轮最多向微信查询 50 笔。
+        min-shipped-age: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_MIN_SHIPPED_AGE:1h} # 发货满 1 小时后才进入后台对账。
+        recheck-interval: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_RECHECK_INTERVAL:30m} # 同一待收货订单最多每 30 分钟查询一次。
+        claim-timeout: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_CLAIM_TIMEOUT:5m} # 进程中断后允许其他实例接管过期任务。
   pay: # 微信支付、退款和支付恢复任务配置入口。
     enabled: ${WECHAT_PAY_ENABLED:false} # 微信支付总开关，默认关闭。
     mock-enabled: ${WECHAT_PAY_MOCK_ENABLED:false} # 微信支付模拟实现开关，默认关闭。

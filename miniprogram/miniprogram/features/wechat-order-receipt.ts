@@ -1,4 +1,7 @@
+import { isApiError } from "../utils/api-error";
+
 const WECHAT_ORDER_CONFIRM_APP_ID = "wx1183b055aeec94d1";
+const WECHAT_RECEIPT_NOT_CONFIRMED_CODE = 600002;
 
 export type WechatReceiptComponentOutcome =
   | "SUCCESS"
@@ -34,6 +37,12 @@ export interface WechatReceiptShowOptions {
     appId?: string;
     extraData?: Record<string, unknown>;
   };
+}
+
+export interface ConfirmWechatOrderReceiptOptions {
+  transactionId: string;
+  confirmLocalReceipt: () => Promise<unknown>;
+  runtime?: WechatReceiptRuntime;
 }
 
 interface PendingConfirmation {
@@ -171,4 +180,34 @@ export function openWechatReceiptConfirmation(
       });
     }
   });
+}
+
+export async function confirmWechatOrderReceipt(
+  options: ConfirmWechatOrderReceiptOptions
+): Promise<WechatReceiptComponentResult> {
+  try {
+    await options.confirmLocalReceipt();
+    return { outcome: "SUCCESS" };
+  } catch (error) {
+    if (
+      !isApiError(error)
+      || error.code !== WECHAT_RECEIPT_NOT_CONFIRMED_CODE
+    ) {
+      throw error;
+    }
+  }
+
+  const componentResult = await openWechatReceiptConfirmation(
+    options.transactionId,
+    options.runtime
+  );
+  if (
+    componentResult.outcome === "CANCELLED"
+    || componentResult.outcome === "FAILED"
+  ) {
+    return componentResult;
+  }
+
+  await options.confirmLocalReceipt();
+  return { outcome: "SUCCESS" };
 }

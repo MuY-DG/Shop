@@ -55,6 +55,8 @@ shop:
       mock-enabled: true
     shipping:
       upload-enabled: false
+      receipt-reconciliation:
+        enabled: false
   pay:
     enabled: true
     mock-enabled: true

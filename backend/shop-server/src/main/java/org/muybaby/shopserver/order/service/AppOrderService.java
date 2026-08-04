@@ -53,9 +53,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.math.BigInteger;
@@ -96,7 +94,7 @@ public class AppOrderService {
     private final WechatShippingUploadRecovery shippingUploadRecovery;
     private final WechatShippingProvider wechatShippingProvider;
     private final OrderStatusLogService orderStatusLogService;
-    private final TransactionTemplate receiptTransaction;
+    private final OrderReceiptCompletionService orderReceiptCompletionService;
     private final Clock clock;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
@@ -111,7 +109,7 @@ public class AppOrderService {
             WechatShippingUploadRecovery shippingUploadRecovery,
             WechatShippingProvider wechatShippingProvider,
             OrderStatusLogService orderStatusLogService,
-            PlatformTransactionManager transactionManager,
+            OrderReceiptCompletionService orderReceiptCompletionService,
             Clock clock
     ) {
         this.jdbcClient = jdbcClient;
@@ -124,7 +122,7 @@ public class AppOrderService {
         this.shippingUploadRecovery = shippingUploadRecovery;
         this.wechatShippingProvider = wechatShippingProvider;
         this.orderStatusLogService = orderStatusLogService;
-        this.receiptTransaction = new TransactionTemplate(transactionManager);
+        this.orderReceiptCompletionService = orderReceiptCompletionService;
         this.clock = clock;
     }
 
@@ -743,9 +741,8 @@ public class AppOrderService {
         );
         verifyWechatReceipt(transactionId);
 
-        return Objects.requireNonNull(receiptTransaction.execute(
-                transactionStatus -> completeConfirmedReceipt(userId, verificationOrder.orderId())
-        ));
+        return orderReceiptCompletionService.completeForUser(
+                userId, verificationOrder.orderId());
     }
 
     private void verifyWechatReceipt(String transactionId) {
@@ -778,54 +775,6 @@ public class AppOrderService {
             throw new BusinessException(ErrorCode.WECHAT_RECEIPT_NOT_CONFIRMED);
         }
         throw new BusinessException(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
-    }
-
-    private OrderReceiptResponse completeConfirmedReceipt(Long userId, Long orderId) {
-        ReceiptOrder order = jdbcClient.sql("""
-                        select id as order_id,
-                               status,
-                               completed_at
-                        from shop_order
-                        where id = :orderId
-                          and user_id = :userId
-                          and app_deleted_at is null
-                        for update
-                        """)
-                .param("orderId", orderId)
-                .param("userId", userId)
-                .query((rs, rowNum) -> new ReceiptOrder(
-                        rs.getLong("order_id"),
-                        rs.getString("status"),
-                        rs.getObject("completed_at", LocalDateTime.class)
-                ))
-                .optional()
-                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-
-        if (OrderStatus.COMPLETED.name().equals(order.status())) {
-            return new OrderReceiptResponse(order.orderId(), order.status(), order.completedAt());
-        }
-        if (!OrderStatus.SHIPPED.name().equals(order.status())) {
-            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-        }
-        afterSaleFulfillmentPolicy.rejectIfBlocked(order.orderId());
-
-        LocalDateTime completedAt = LocalDateTime.now(clock).withNano(0);
-        jdbcClient.sql("""
-                        update shop_order
-                        set status = :completedStatus,
-                            completed_at = :completedAt,
-                            updated_at = :completedAt
-                        where id = :orderId
-                        """)
-                .param("completedStatus", OrderStatus.COMPLETED.name())
-                .param("completedAt", completedAt)
-                .param("orderId", order.orderId())
-                .update();
-        orderStatusLogService.record(
-                order.orderId(), OrderStatus.SHIPPED.name(), OrderStatus.COMPLETED.name(),
-                "ORDER_COMPLETED", OPERATOR_TYPE_APP, userId, "用户确认收货", completedAt
-        );
-        return new OrderReceiptResponse(order.orderId(), OrderStatus.COMPLETED.name(), completedAt);
     }
 
     private AppliedCoupon resolveCoupon(Long userId, Long userCouponId, CheckoutContext context, boolean forUpdate) {
@@ -1752,13 +1701,6 @@ public class AppOrderService {
     }
 
     private record ReceiverEditableOrder(Long orderId, String status) {
-    }
-
-    private record ReceiptOrder(
-            Long orderId,
-            String status,
-            LocalDateTime completedAt
-    ) {
     }
 
     private record ReceiptVerificationOrder(

@@ -1101,6 +1101,7 @@ SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false
 SHOP_SECRET_ENCRYPTION_WRITE_VERSION=1
 SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED=false
 SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
+SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=true
 ```
 
 2. Start the backend with the `dev` profile and expose it with an HTTPS tunnel.
@@ -1126,7 +1127,7 @@ Automated shipment checks use backend tests and mock or mocked HTTP providers; t
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest='AdminShipmentControllerTest,ShipmentSchemaTest,WechatShippingProviderTest' test
+./mvnw -Dtest='AdminShipmentControllerTest,ShipmentSchemaTest,WechatShippingProviderTest,WechatReceiptReconciliationServiceTest,WechatReceiptReconciliationSchedulerTest' test
 ```
 
 Local skipped path:
@@ -1146,6 +1147,15 @@ Real upload enabled path:
 - Verify shipment `wechatUploadStatus` becomes `UPLOADED`, or `FAILED` with a safe `wechatErrorCode` and `wechatErrorMessage`.
 - If upload fails, retry through `POST /admin/orders/{orderId}/shipping/retry-wechat-upload` and verify `retryCount` increments without creating a duplicate shipment row.
 - Confirm logs include only safe error summaries and never print access tokens.
+
+Automatic receipt reconciliation:
+
+- Keep `SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=true`. The default scan delay is 5 minutes, the minimum shipped age is 1 hour, and one still-unconfirmed order is queried at most every 30 minutes.
+- Use a `SHIPPED` order whose shipment has `wechatProviderMode=REAL` and `wechatUploadStatus=UPLOADED`.
+- Let WeChat confirm or automatically confirm receipt without tapping the mini program's local confirmation button.
+- After the configured reconciliation interval, verify the local order becomes `COMPLETED`, `completed_at` is populated, and `order_status_log` contains `ORDER_AUTO_COMPLETED` with `operator_type=SYSTEM`.
+- Verify a WeChat order that is still unconfirmed remains local `SHIPPED`, and a local order with an active blocking after-sale is not automatically completed.
+- Confirm concurrent scheduler runs make one provider query for a leased shipment and that an interrupted lease can be reclaimed after the configured claim timeout.
 
 ## Refund Smoke Checklist
 

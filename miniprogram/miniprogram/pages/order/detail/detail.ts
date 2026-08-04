@@ -18,7 +18,7 @@ import {
   executeOrderPayment,
   recoverOrderPayment
 } from "../../../features/order-payment";
-import { openWechatReceiptConfirmation } from "../../../features/wechat-order-receipt";
+import { confirmWechatOrderReceipt } from "../../../features/wechat-order-receipt";
 import { addCartItem } from "../../../services/cart";
 import {
   cancelOrder,
@@ -464,7 +464,10 @@ Page({
       const transactionId = this.data.detail?.transactionId
         || this.data.detail?.paymentTransactionId
         || "";
-      const componentResult = await openWechatReceiptConfirmation(transactionId);
+      const componentResult = await confirmWechatOrderReceipt({
+        transactionId,
+        confirmLocalReceipt: () => confirmOrderReceipt(this.data.orderId)
+      });
       if (componentResult.outcome === "CANCELLED") {
         return;
       }
@@ -475,7 +478,6 @@ Page({
         });
         return;
       }
-      await confirmOrderReceipt(this.data.orderId);
       wx.showToast({ title: "已确认收货", icon: "success" });
     } catch (error) {
       wx.showToast({
