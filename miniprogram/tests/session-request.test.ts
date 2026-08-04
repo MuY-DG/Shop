@@ -42,6 +42,7 @@ interface FakeRequestCall {
   data?: unknown;
   header?: Record<string, string>;
   timeout?: number;
+  enableHttp2?: boolean;
   success?: (response: FakeRequestResponse) => void;
   fail?: (error: { errMsg: string }) => void;
 }
@@ -63,6 +64,7 @@ interface FakeUploadCall {
   name: string;
   header?: Record<string, string>;
   formData?: Record<string, string>;
+  enableHttp2?: boolean;
   success?: (response: FakeUploadResponse) => void;
   fail?: (error: { errMsg: string }) => void;
 }
@@ -587,6 +589,7 @@ test("微信昵称和头像更新会同步到当前会话", async () => {
   );
   assert.equal(avatarCosCall.filePath, "/tmp/avatar.png");
   assert.equal(avatarCosCall.name, "file");
+  assert.equal(avatarCosCall.enableHttp2, true);
   assert.equal(avatarCosCall.header?.Authorization, undefined);
   assert.deepEqual(avatarCosCall.formData, {
     key: "staging/avatar-upload-1.png",
@@ -843,6 +846,7 @@ test("后端明确声明直传不可用时才回退业务上传接口", async ()
 
   const legacyUpload = takeUpload("/app/users/me/avatar");
   assert.equal(legacyUpload.header?.Authorization, "Bearer access-1");
+  assert.equal(legacyUpload.enableHttp2, true);
   respondUpload(legacyUpload, 200, {
     code: 200,
     msg: "success",
@@ -962,6 +966,7 @@ test("首页接口始终使用公开 GET 请求且不携带登录凭证", async 
   const publicHome = getHome();
   const publicCall = takeRequest("/app/home");
   assert.equal(publicCall.method, "GET");
+  assert.equal(publicCall.enableHttp2, true);
   assert.equal(publicCall.header?.Authorization, undefined);
   assert.equal(loginCallCount, 0);
   respond(publicCall, 200, {

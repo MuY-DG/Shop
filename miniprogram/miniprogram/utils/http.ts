@@ -98,6 +98,7 @@ export function rawRequest<
       data: options.data,
       header: headers,
       timeout: options.timeoutMs ?? APP_CONFIG.requestTimeoutMs,
+      enableHttp2: true,
       success: (response) => {
         resolve({
           statusCode: response.statusCode,

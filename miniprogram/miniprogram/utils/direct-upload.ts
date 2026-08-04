@@ -181,6 +181,7 @@ function uploadToCos(
       // 避免把小程序登录凭证泄露给云存储域名。
       formData: grant.formData,
       timeout: timeoutMs,
+      enableHttp2: true,
       success: (response) => {
         if (response.statusCode >= 200 && response.statusCode < 300) {
           resolve();

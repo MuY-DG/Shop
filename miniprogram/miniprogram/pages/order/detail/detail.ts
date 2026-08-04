@@ -6,8 +6,12 @@ import {
 import {
   buildOrderDetailView,
   buildOrderListUrl,
+  filterRebuyableOrderItems,
   formatPaymentCountdown,
   positiveOrderId,
+  REBUY_NO_AVAILABLE_ITEMS_MESSAGE,
+  rebuyFailureMessage,
+  rebuyPartialMessage,
   type OrderDetailView
 } from "../../../features/order-center";
 import {
@@ -405,7 +409,11 @@ Page({
     this.setData({ actionType: "rebuy" });
     const cartItemIds: number[] = [];
     let firstError: unknown = null;
-    for (const item of detail.items) {
+    const rebuyItems = filterRebuyableOrderItems(
+      detail.items,
+      detail.rebuyableOrderItemIds
+    );
+    for (const item of rebuyItems) {
       try {
         const cartItem = await addCartItem({
           skuId: item.skuId,
@@ -419,14 +427,20 @@ Page({
     if (!cartItemIds.length) {
       this.setData({ actionType: "" });
       wx.showToast({
-        title: actionError(firstError, "商品暂时无法再次购买"),
+        title: rebuyItems.length
+          ? rebuyFailureMessage(firstError)
+          : REBUY_NO_AVAILABLE_ITEMS_MESSAGE,
         icon: "none"
       });
       return;
     }
     this.setData({ actionType: "" });
     if (cartItemIds.length < detail.items.length) {
-      wx.showToast({ title: "部分商品暂不可购买", icon: "none" });
+      wx.showToast({
+        title: rebuyPartialMessage(cartItemIds.length, detail.items.length),
+        icon: "none",
+        duration: 2500
+      });
     }
     wx.redirectTo({
       url: buildCartCheckoutUrl(cartItemIds),

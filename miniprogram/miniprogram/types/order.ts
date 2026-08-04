@@ -113,6 +113,7 @@ export interface AppOrderDetailResponse {
   refundedAt?: string;
   shipment?: unknown;
   latestAfterSale?: AfterSaleResponse;
+  rebuyableOrderItemIds?: number[];
   items: OrderItemResponse[];
 }
 

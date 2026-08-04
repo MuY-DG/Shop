@@ -56,12 +56,18 @@ Component({
   },
 
   data: {
-    selected: 0,
-    hidden: false,
+    selected: -1,
+    hidden: true,
     list: TAB_ITEMS
   },
 
   methods: {
+    syncSelection(selected: number) {
+      if (Number.isSafeInteger(selected) && selected >= 0 && selected < this.data.list.length) {
+        this.setData({ selected, hidden: false });
+      }
+    },
+
     setHidden(hidden: boolean) {
       this.setData({ hidden: Boolean(hidden) });
     },
@@ -119,7 +125,12 @@ Component({
       if (!item) {
         return;
       }
-      wx.switchTab({ url: item.pagePath });
+      const previousSelected = this.data.selected;
+      this.setData({ selected: index });
+      wx.switchTab({
+        url: item.pagePath,
+        fail: () => this.setData({ selected: previousSelected })
+      });
     }
   }
 });

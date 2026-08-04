@@ -339,6 +339,29 @@ class AppOrderServiceTest {
     }
 
     @Test
+    void detailOnlyMarksCurrentlySellableAndStockedItemsAsRebuyable() {
+        long userId = insertUser("detail-rebuyable");
+        long orderId = insertReadOrder(userId, "COMPLETED", LocalDateTime.of(2026, 7, 9, 9, 30));
+        long availableItemId = insertReadOrderItem(orderId, "可再次购买商品", 2, 1200L);
+        long disabledItemId = insertReadOrderItem(orderId, "已下架商品", 1, 800L);
+        long availableSkuId = insertSku("detail-rebuyable-live", 1200L, 1500L, 5);
+        long disabledSkuId = insertSku("detail-rebuyable-disabled", 800L, 1000L, 5);
+        attachSkuToOrderItem(availableItemId, availableSkuId);
+        attachSkuToOrderItem(disabledItemId, disabledSkuId);
+        jdbcClient.sql("update product_sku set status = 'DISABLED' where id = :skuId")
+                .param("skuId", disabledSkuId)
+                .update();
+
+        AppOrderDetailResponse detail = appOrderService.detail(appPrincipal(userId), orderId);
+
+        assertThat(detail.rebuyableOrderItemIds()).containsExactly(availableItemId);
+
+        insertCartItem(userId, availableSkuId, 4);
+        AppOrderDetailResponse stockExceeded = appOrderService.detail(appPrincipal(userId), orderId);
+        assertThat(stockExceeded.rebuyableOrderItemIds()).isEmpty();
+    }
+
+    @Test
     void detailLatestPaymentUsesPersistedOrderFallbackForBlankTradeFieldsAndMissingPaidAt() {
         long userId = insertUser("detail-payment-fallback");
         LocalDateTime paidAt = LocalDateTime.of(2026, 7, 9, 10, 5);
@@ -879,6 +902,23 @@ class AppOrderServiceTest {
                 .param("lineAmountCent", Math.multiplyExact(unitPriceCent, quantity))
                 .update();
         return orderItemId;
+    }
+
+    private void attachSkuToOrderItem(long orderItemId, long skuId) {
+        Long spuId = jdbcClient.sql("select spu_id from product_sku where id = :skuId")
+                .param("skuId", skuId)
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        update order_item
+                        set sku_id = :skuId,
+                            spu_id = :spuId
+                        where id = :orderItemId
+                        """)
+                .param("skuId", skuId)
+                .param("spuId", spuId)
+                .param("orderItemId", orderItemId)
+                .update();
     }
 
     private void insertReview(long userId, long orderItemId) {

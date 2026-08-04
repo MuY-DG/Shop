@@ -43,6 +43,7 @@
   ],
   "style": "v2",
   "componentFramework": "glass-easel",
+  "lazyCodeLoading": "requiredComponents",
   "tabBar": {
     "custom": true,
     "color": "#785F50",

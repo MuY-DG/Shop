@@ -8,12 +8,16 @@ import {
   buildOrderModifyUrl,
   buildOrderReviewUrl,
   buildOrderSummaryView,
+  filterRebuyableOrderItems,
   formatPaymentCountdown,
   ORDER_STATUS_TABS,
   orderStatusText,
   parseOrderStatusGroup,
-  positiveOrderId
+  positiveOrderId,
+  rebuyFailureMessage,
+  rebuyPartialMessage
 } from "../miniprogram/features/order-center";
+import { ApiError } from "../miniprogram/utils/api-error";
 import { isPaymentCancelled } from "../miniprogram/utils/wechat-payment";
 import type {
   AppOrderDetailResponse,
@@ -210,4 +214,21 @@ test("微信支付取消只识别用户主动取消错误", () => {
   assert.equal(isPaymentCancelled({ errMsg: "requestPayment:fail cancel" }), true);
   assert.equal(isPaymentCancelled({ errMsg: "requestPayment:fail system error" }), false);
   assert.equal(isPaymentCancelled(new Error("cancel")), false);
+});
+
+test("再次购买对下架、库存和部分成功给出明确提示", () => {
+  const items = [{ orderItemId: 1 }, { orderItemId: 2 }];
+  assert.deepEqual(filterRebuyableOrderItems(items, [2]), [{ orderItemId: 2 }]);
+  assert.deepEqual(filterRebuyableOrderItems(items, undefined), items);
+  assert.equal(rebuyFailureMessage(new ApiError({
+    kind: "API",
+    message: "SKU unavailable",
+    code: 200002
+  })), "商品已下架，暂时无法再次购买");
+  assert.equal(rebuyFailureMessage(new ApiError({
+    kind: "API",
+    message: "Stock shortage",
+    code: 200100
+  })), "商品库存不足，暂时无法再次购买");
+  assert.equal(rebuyPartialMessage(2, 3), "已加入2款，1款暂不可购");
 });

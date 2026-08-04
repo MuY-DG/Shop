@@ -75,6 +75,7 @@ function rawUpload<T>(
       name: options.name || "file",
       header,
       timeout: options.timeoutMs ?? APP_CONFIG.requestTimeoutMs,
+      enableHttp2: true,
       success: (response) => resolve({
         statusCode: response.statusCode,
         body: parseEnvelope<T>(response.data),

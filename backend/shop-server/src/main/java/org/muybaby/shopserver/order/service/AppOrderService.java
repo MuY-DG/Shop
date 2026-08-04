@@ -516,6 +516,7 @@ public class AppOrderService {
                 ? header.paidAt()
                 : paymentOrder.paidAt();
         AfterSaleResponse latestAfterSale = appAfterSaleService.latestForOrder(principal, orderId);
+        List<Long> rebuyableOrderItemIds = findRebuyableOrderItemIds(userId, orderId);
 
         return new AppOrderDetailResponse(
                 header.orderId(),
@@ -550,8 +551,39 @@ public class AppOrderService {
                 header.refundedAt(),
                 findShipment(orderId),
                 latestAfterSale,
+                rebuyableOrderItemIds,
                 items
         );
+    }
+
+    private List<Long> findRebuyableOrderItemIds(Long userId, Long orderId) {
+        return jdbcClient.sql("""
+                        select item.id
+                        from order_item item
+                        join product_sku sku
+                          on sku.id = item.sku_id
+                         and sku.deleted_at is null
+                        join product_spu product
+                          on product.id = sku.spu_id
+                         and product.deleted_at is null
+                         and product.purged_at is null
+                        join product_category category
+                          on category.id = product.category_id
+                        left join cart_item cart
+                          on cart.user_id = :userId
+                         and cart.sku_id = sku.id
+                        where item.order_id = :orderId
+                          and sku.status = 'ENABLED'
+                          and product.status = 'ON_SALE'
+                          and category.status = 'ENABLED'
+                          and sku.stock_available >= item.quantity + coalesce(cart.quantity, 0)
+                          and item.quantity + coalesce(cart.quantity, 0) <= 999
+                        order by item.id asc
+                        """)
+                .param("userId", userId)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
     }
 
     @Transactional

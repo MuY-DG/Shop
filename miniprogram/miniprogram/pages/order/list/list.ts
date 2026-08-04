@@ -4,9 +4,13 @@ import {
   buildOrderReviewUrl,
   buildOrderSummaryView,
   createPageOperationGuard,
+  filterRebuyableOrderItems,
   ORDER_STATUS_TABS,
   parseOrderStatusGroup,
   positiveOrderId,
+  REBUY_NO_AVAILABLE_ITEMS_MESSAGE,
+  rebuyFailureMessage,
+  rebuyPartialMessage,
   type OrderSummaryView
 } from "../../../features/order-center";
 import { buildCartCheckoutUrl } from "../../../features/checkout";
@@ -327,7 +331,11 @@ Page({
       if (!rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
         return;
       }
-      for (const item of detail.items) {
+      const rebuyItems = filterRebuyableOrderItems(
+        detail.items,
+        detail.rebuyableOrderItemIds
+      );
+      for (const item of rebuyItems) {
         if (!rebuyOperationGuard.isCurrent(lifecycleToken, operationToken)) {
           return;
         }
@@ -352,13 +360,19 @@ Page({
       }
       if (!cartItemIds.length) {
         wx.showToast({
-          title: actionError(firstError, "商品暂时无法再次购买"),
+          title: rebuyItems.length
+            ? rebuyFailureMessage(firstError)
+            : REBUY_NO_AVAILABLE_ITEMS_MESSAGE,
           icon: "none"
         });
         return;
       }
       if (cartItemIds.length < detail.items.length) {
-        wx.showToast({ title: "部分商品暂不可购买", icon: "none" });
+        wx.showToast({
+          title: rebuyPartialMessage(cartItemIds.length, detail.items.length),
+          icon: "none",
+          duration: 2500
+        });
       }
       wx.redirectTo({
         url: buildCartCheckoutUrl(cartItemIds),

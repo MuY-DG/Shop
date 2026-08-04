@@ -10,6 +10,7 @@ import {
 
 interface AppConfig {
   pages: string[];
+  lazyCodeLoading?: string;
   tabBar?: {
     custom?: boolean;
     list?: Array<{
@@ -38,6 +39,7 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
   ];
 
   assert.equal(appConfig.tabBar?.custom, true);
+  assert.equal(appConfig.lazyCodeLoading, "requiredComponents");
   assert.deepEqual(
     appConfig.tabBar?.list?.map((item) => [item.pagePath, item.text]),
     expectedTabs
@@ -79,6 +81,19 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
   assert.equal(selected, 3);
   assert.equal(hidden, false);
 
+  let atomicSelected = -1;
+  syncCustomTabBar({
+    getTabBar: () => ({
+      setData() {
+        assert.fail("支持原子同步时不应分步更新");
+      },
+      syncSelection(value) {
+        atomicSelected = value;
+      }
+    })
+  }, 2);
+  assert.equal(atomicSelected, 2);
+
   setCustomTabBarHidden({
     getTabBar: () => ({
       setData() {},
@@ -95,11 +110,45 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
     "utf8"
   );
   const profileLogic = readFileSync(resolve(sourceRoot, "pages/profile/profile.ts"), "utf8");
+  const tabLogic = readFileSync(resolve(sourceRoot, "custom-tab-bar/index.ts"), "utf8");
   assert.match(cartLogic, /syncTabBar: true/);
   assert.match(cartPageLogic, /syncCustomTabBar\(this, 2\)/);
   assert.match(profileLogic, /syncCustomTabBar\(this, 3\)/);
+  assert.match(tabLogic, /selected: -1,[\s\S]*hidden: true/);
+  assert.match(tabLogic, /syncSelection\(selected: number\)[\s\S]*this\.setData\(\{ selected, hidden: false \}\)/);
 
   assert.doesNotThrow(() => syncCustomTabBar({}, 0));
+});
+
+test("购物车选择控件提供 88rpx 热区", () => {
+  const cartTemplate = readFileSync(
+    resolve(sourceRoot, "pages/cart/cart.wxml"),
+    "utf8"
+  );
+  const cartStyle = readFileSync(
+    resolve(sourceRoot, "pages/cart/cart.less"),
+    "utf8"
+  );
+
+  assert.match(
+    cartTemplate,
+    /class="selection-hit-target"[\s\S]*catchtap="onSelectionToggle"[\s\S]*class="selection /
+  );
+  assert.match(
+    cartStyle,
+    /\.selection-hit-target\s*\{[\s\S]*width: 88rpx;[\s\S]*height: 88rpx;/
+  );
+});
+
+test("本地品牌 Logo 保持 PNG 并限制像素和包体积", () => {
+  const logo = readFileSync(
+    resolve(sourceRoot, "assets/images/zaoxiangji-login-emblem18.png")
+  );
+
+  assert.equal(logo.subarray(1, 4).toString("ascii"), "PNG");
+  assert.equal(logo.readUInt32BE(16), 288);
+  assert.equal(logo.readUInt32BE(20), 216);
+  assert.ok(logo.byteLength < 20 * 1024);
 });
 
 test("分类筛选打开时隐藏自定义底部导航", () => {

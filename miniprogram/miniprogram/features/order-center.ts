@@ -14,6 +14,52 @@ import {
   isActiveAfterSale,
   type AfterSaleView
 } from "./after-sale";
+import { isApiError } from "../utils/api-error";
+
+const REBUY_UNAVAILABLE_CODES = new Set([200001, 200002]);
+const REBUY_STOCK_SHORTAGE_CODE = 200100;
+
+export function filterRebuyableOrderItems<T extends { orderItemId: number }>(
+  items: T[],
+  rebuyableOrderItemIds: number[] | undefined
+): T[] {
+  const safeItems = Array.isArray(items) ? items : [];
+  if (!Array.isArray(rebuyableOrderItemIds)) {
+    return safeItems;
+  }
+  const rebuyableIds = new Set(
+    rebuyableOrderItemIds.filter((value) => Number.isSafeInteger(value) && value > 0)
+  );
+  return safeItems.filter((item) => rebuyableIds.has(item.orderItemId));
+}
+
+export const REBUY_NO_AVAILABLE_ITEMS_MESSAGE = "订单中的商品已下架或库存不足";
+
+export function rebuyFailureMessage(error: unknown): string {
+  if (isApiError(error)) {
+    if (error.code !== undefined && REBUY_UNAVAILABLE_CODES.has(error.code)) {
+      return "商品已下架，暂时无法再次购买";
+    }
+    if (error.code === REBUY_STOCK_SHORTAGE_CODE) {
+      return "商品库存不足，暂时无法再次购买";
+    }
+    if (error.kind === "NETWORK") {
+      return "网络连接失败，请稍后重试";
+    }
+    if (error.message.trim()) {
+      return error.message;
+    }
+  }
+  return "商品暂时无法再次购买";
+}
+
+export function rebuyPartialMessage(addedCount: number, totalCount: number): string {
+  const safeTotal = Number.isSafeInteger(totalCount) ? Math.max(0, totalCount) : 0;
+  const safeAdded = Number.isSafeInteger(addedCount)
+    ? Math.min(safeTotal, Math.max(0, addedCount))
+    : 0;
+  return `已加入${safeAdded}款，${safeTotal - safeAdded}款暂不可购`;
+}
 
 export interface PageOperationGuard {
   mount(): number;
