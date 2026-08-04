@@ -20,9 +20,43 @@
 
 .product-subtitle {
   margin-top: 5rpx;
-  color: @color-text-secondary;
+  color: #8f939c;
   font-size: @font-size-sm;
   line-height: @line-height-base;
+}
+
+.selling-point-scroll {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 12rpx;
+  margin-left: 0;
+  padding-left: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.selling-point-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.selling-point-tag {
+  min-width: 0;
+  max-width: 280rpx;
+  box-sizing: border-box;
+  padding: 6rpx 14rpx;
+  flex: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: 10rpx;
+  color: #4f535c;
+  font-size: 26rpx;
+  line-height: 36rpx;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #f5f6fa;
 }
 
 .price-row {
@@ -52,7 +86,7 @@
 
 .original-price {
   margin-left: 16rpx;
-  color: @color-text-placeholder;
+  color: @color-text-black;
   font-family: @font-family-price;
   font-size: @font-size-xs;
   text-decoration: line-through;
@@ -71,78 +105,8 @@
 .sales-text {
   margin-left: auto;
   flex: none;
-  color: @color-text-muted;
+  color: @color-text-black;
   font-family: @font-family-base;
   font-size: 21rpx;
   font-weight: 500;
 }
-
-.parameter-strip {
-  box-sizing: border-box;
-  width: 100%;
-  height: 54rpx;
-  overflow: hidden;
-  margin-top: 14rpx;
-  border: 1rpx solid @color-border;
-  border-radius: @radius-sm;
-  background: fade(@color-surface-muted, 42%);
-  white-space: nowrap;
-}
-
-.parameter-track {
-  width: 100%;
-  min-width: 100%;
-  height: 54rpx;
-  display: flex;
-  box-sizing: border-box;
-  align-items: center;
-  padding: 10rpx 0;
-}
-
-.parameter-item {
-  position: relative;
-  width: 33.3333%;
-  max-width: 33.3333%;
-  display: flex;
-  box-sizing: border-box;
-  align-items: center;
-  justify-content: center;
-  padding: 0 9rpx;
-  flex: 0 0 33.3333%;
-  overflow: hidden;
-  color: @color-text-secondary;
-  font-family: @font-family-base;
-  font-size: 20rpx;
-  line-height: 28rpx;
-  white-space: nowrap;
-}
-
-.parameter-item + .parameter-item {
-  border-left: 1rpx solid @color-border;
-}
-
-.parameter-icons {
-  display: flex;
-  align-items: center;
-}
-
-.parameter-value {
-  min-width: 0;
-  overflow: hidden;
-  color: @color-text-secondary;
-  font-weight: 500;
-  text-overflow: ellipsis;
-}
-
-.parameter-icons { margin-left: 6rpx; }
-
-.parameter-icon {
-  width: 21rpx;
-  height: 21rpx;
-  margin-left: 2rpx;
-}
-
-.parameter-spice { font-weight: 650; }
-.parameter-spice--mild { color: @color-success; }
-.parameter-spice--medium { color: @color-warning; }
-.parameter-spice--hot { color: @color-brand; }

@@ -76,34 +76,7 @@
         has-original-price="{{hasOriginalPrice}}"
         wholesale-applied="{{wholesaleApplied}}"
         sales-text="已售 {{detail.salesCount}}+"
-        weight-parameter="{{weightParameter}}"
-        spice-parameter="{{spiceParameter}}"
-        other-parameters="{{otherParameterViews}}"
       />
-
-      <scroll-view
-        wx:if="{{benefitItems.length}}"
-        class="benefit-scroll"
-        scroll-x="{{true}}"
-        enhanced="{{true}}"
-        show-scrollbar="{{false}}"
-        enable-flex="{{true}}"
-      >
-        <view class="benefit-track">
-          <view
-            wx:for="{{benefitItems}}"
-            wx:key="key"
-            class="benefit-card {{item.interactive ? 'benefit-card--interactive' : 'benefit-card--plain'}}"
-            data-sheet="{{item.sheet}}"
-            bindtap="onInfoSheetOpen"
-            aria-role="{{item.interactive ? 'button' : 'text'}}"
-            aria-label="{{item.text}}"
-          >
-            <image wx:if="{{item.iconUrl}}" class="benefit-icon" src="{{item.iconUrl}}" mode="aspectFit" />
-            <text class="benefit-text">{{item.text}}</text>
-          </view>
-        </view>
-      </scroll-view>
 
       <view class="commerce-card">
         <view
@@ -121,6 +94,50 @@
           <image class="commerce-action-icon" src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
         </view>
         <view class="commerce-info-group">
+          <view
+            wx:if="{{weightParameter || spiceParameter || otherParameterViews.length}}"
+            class="commerce-row commerce-row--detail-info commerce-row--parameters commerce-row--interactive"
+            data-sheet="parameters"
+            bindtap="onInfoSheetOpen"
+            aria-role="button"
+            aria-label="查看商品参数"
+          >
+            <image class="commerce-icon" src="/assets/icons/tune-outline-rounded.svg" mode="aspectFit" />
+            <scroll-view
+              class="commerce-parameter-scroll"
+              scroll-x="{{true}}"
+              enhanced="{{true}}"
+              show-scrollbar="{{false}}"
+              enable-flex="{{true}}"
+            >
+              <view class="commerce-parameter-track">
+                <view wx:if="{{weightParameter}}" class="commerce-parameter-item">
+                  <text>净含量：{{weightParameter.value}}</text>
+                </view>
+                <view wx:if="{{weightParameter && weightParameter.fact.servingText}}" class="commerce-parameter-item">
+                  <text>{{weightParameter.fact.servingText}}</text>
+                </view>
+                <view wx:if="{{spiceParameter}}" class="commerce-parameter-item">
+                  <text>辣度：</text>
+                  <text class="commerce-parameter-spice commerce-parameter-spice--{{spiceParameter.fact.spiceTone}}">{{spiceParameter.value}}</text>
+                  <view class="commerce-parameter-icons">
+                    <image
+                      wx:for="{{spiceParameter.fact.spiceIconIndexes}}"
+                      wx:for-item="iconIndex"
+                      wx:key="*this"
+                      class="commerce-parameter-icon"
+                      src="{{spiceParameter.fact.iconPath}}"
+                      mode="aspectFit"
+                    />
+                  </view>
+                </view>
+                <view wx:for="{{otherParameterViews}}" wx:key="id" class="commerce-parameter-item">
+                  <text>{{item.name}}：{{item.value}}</text>
+                </view>
+              </view>
+            </scroll-view>
+            <image class="commerce-action-icon" src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" />
+          </view>
           <view
             class="commerce-row commerce-row--detail-info commerce-row--address commerce-row--interactive"
             bindtap="onAddressTap"
@@ -302,7 +319,7 @@
     catchtap="onCloseSheet"
     catchtouchmove="onPreventMove"
   >
-    <view class="sheet-panel {{sheetClosing ? 'sheet-panel--closing' : ''}} {{activeSheet === 'purchase' ? 'sheet-panel--purchase' : ''}} {{activeSheet === 'address' ? 'sheet-panel--address' : ''}} {{activeSheet === 'guarantee' ? 'sheet-panel--guarantee' : ''}} {{activeSheet === 'freight' ? 'sheet-panel--freight' : ''}} {{activeSheet === 'reviews' ? 'sheet-panel--reviews' : ''}}" catchtap="onPreventMove">
+    <view class="sheet-panel {{sheetClosing ? 'sheet-panel--closing' : ''}} {{activeSheet === 'purchase' ? 'sheet-panel--purchase' : ''}} {{activeSheet === 'address' ? 'sheet-panel--address' : ''}} {{activeSheet === 'parameters' ? 'sheet-panel--parameters' : ''}} {{activeSheet === 'guarantee' ? 'sheet-panel--guarantee' : ''}} {{activeSheet === 'freight' ? 'sheet-panel--freight' : ''}} {{activeSheet === 'reviews' ? 'sheet-panel--reviews' : ''}}" catchtap="onPreventMove">
       <block wx:if="{{activeSheet === 'purchase'}}">
         <view class="purchase-sheet-header">
           <view wx:if="{{purchaseImageUrl}}" class="purchase-image-wrap">
@@ -455,15 +472,13 @@
       </block>
 
       <block wx:elif="{{activeSheet === 'address'}}">
-        <view class="info-sheet-header address-sheet-header">
-          <view>
-            <text class="info-sheet-title">选择收货地址</text>
-            <text class="info-sheet-intro">请选择已保存的地址</text>
-          </view>
+        <view class="parameter-sheet-header address-sheet-header">
+          <text class="parameter-sheet-title">选择收货地址</text>
           <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭收货地址选择">
             <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
           </button>
         </view>
+        <text class="address-sheet-intro">请选择已保存的地址</text>
 
         <scroll-view
           class="address-sheet-scroll"
@@ -524,18 +539,51 @@
         </view>
       </block>
 
-      <block wx:elif="{{activeSheet === 'guarantee'}}">
-        <view class="info-sheet-header">
-          <view>
-            <text class="info-sheet-title">安心保障</text>
-            <text class="info-sheet-intro">我们用清晰的服务承诺，让每一次下单都更安心。</text>
+      <block wx:elif="{{activeSheet === 'parameters'}}">
+        <view class="parameter-sheet-header">
+          <text class="parameter-sheet-title">商品参数</text>
+          <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭商品参数">
+            <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
+          </button>
+        </view>
+
+        <scroll-view
+          class="parameter-sheet-scroll"
+          scroll-y="{{true}}"
+          enhanced="{{true}}"
+          bounces="{{true}}"
+          enable-passive="{{true}}"
+          show-scrollbar="{{false}}"
+        >
+          <view class="parameter-sheet-list">
+            <view wx:for="{{parameterViews}}" wx:key="id" class="parameter-sheet-row">
+              <text class="parameter-sheet-label">{{item.name}}</text>
+              <view class="parameter-sheet-value">
+                <text class="{{item.fact.kind === 'spice' ? 'parameter-sheet-spice parameter-sheet-spice--' + item.fact.spiceTone : ''}}">{{item.value}}</text>
+              </view>
+            </view>
+            <view wx:if="{{weightParameter && weightParameter.fact.servingText}}" class="parameter-sheet-row">
+              <text class="parameter-sheet-label">适合人数</text>
+              <text class="parameter-sheet-value">{{weightParameter.fact.servingText}}</text>
+            </view>
+            <text class="parameter-sheet-tip">商品参数仅供参考，具体信息以实物为准</text>
           </view>
+        </scroll-view>
+
+        <view class="parameter-sheet-footer">
+          <button class="parameter-sheet-confirm" bindtap="onCloseSheet">我知道了</button>
+        </view>
+      </block>
+
+      <block wx:elif="{{activeSheet === 'guarantee'}}">
+        <view class="parameter-sheet-header">
+          <text class="parameter-sheet-title">安心保障</text>
           <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭安心保障">
             <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
           </button>
         </view>
         <scroll-view
-          class="info-sheet-scroll"
+          class="info-sheet-scroll info-sheet-scroll--fill"
           scroll-y="{{true}}"
           enhanced="{{true}}"
           bounces="{{true}}"
@@ -549,14 +597,14 @@
             </view>
           </view>
         </scroll-view>
+        <view class="parameter-sheet-footer">
+          <button class="parameter-sheet-confirm" bindtap="onCloseSheet">我知道了</button>
+        </view>
       </block>
 
       <block wx:elif="{{activeSheet === 'freight'}}">
-        <view class="info-sheet-header">
-          <view>
-            <text class="info-sheet-title">运费说明</text>
-            <text class="info-sheet-intro">费用以当前商品绑定的运费模板为准。</text>
-          </view>
+        <view class="parameter-sheet-header">
+          <text class="parameter-sheet-title">运费说明</text>
           <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭运费说明">
             <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
           </button>
@@ -571,6 +619,9 @@
             <text class="freight-detail-value">{{freightChargeText}}</text>
           </view>
           <text class="freight-tip">最终运费会根据收货地址在结算时确认。</text>
+        </view>
+        <view class="parameter-sheet-footer">
+          <button class="parameter-sheet-confirm" bindtap="onCloseSheet">我知道了</button>
         </view>
       </block>
 

@@ -66,7 +66,7 @@ interface PageOptions {
   id?: string;
 }
 
-type InfoSheet = "guarantee" | "freight" | "wholesale";
+type InfoSheet = "parameters" | "guarantee" | "freight" | "wholesale";
 type ActiveSheet = "" | "purchase" | "address" | InfoSheet | "reviews" | "reviewManage";
 
 interface DatasetEvent {
@@ -96,14 +96,6 @@ interface SwitchEvent {
   detail: {
     value: boolean;
   };
-}
-
-interface BenefitItemView {
-  key: string;
-  text: string;
-  iconUrl: string;
-  sheet: "" | InfoSheet;
-  interactive: boolean;
 }
 
 interface ParameterViewGroups {
@@ -231,18 +223,6 @@ function parameterViewGroups(parameters: ProductParameterView[]): ParameterViewG
   };
 }
 
-function buildBenefitItems(detail: ProductDetail): BenefitItemView[] {
-  return detail.sellingPoints
-    .map((point, index) => ({
-      key: `selling-point-${index}`,
-      text: cleanText(point),
-      iconUrl: "",
-      sheet: "" as const,
-      interactive: false
-    }))
-    .filter((item) => item.text);
-}
-
 function wholesaleSummary(tiers: WholesaleTierView[]): string {
   return tiers
     .slice(0, 2)
@@ -288,7 +268,6 @@ Page({
     weightParameter: null as ProductParameterView | null,
     spiceParameter: null as ProductParameterView | null,
     otherParameterViews: [] as ProductParameterView[],
-    benefitItems: [] as BenefitItemView[],
     specificationGroups: [] as SkuSpecificationGroupView[],
     specificationImageMode: "list" as "list" | "image",
     ...EMPTY_SELECTION,
@@ -435,7 +414,6 @@ Page({
         galleryImages: buildGalleryImages(normalizedDetail),
         parameterViews,
         ...parameterGroups,
-        benefitItems: buildBenefitItems(normalizedDetail),
         specificationGroups: buildSkuSpecificationGroups(
           normalizedDetail.skus,
           selection.selectedSkuId
@@ -469,7 +447,6 @@ Page({
         weightParameter: null,
         spiceParameter: null,
         otherParameterViews: [],
-        benefitItems: [],
         specificationGroups: [],
         specificationImageMode: "list",
         ...EMPTY_SELECTION,

@@ -87,53 +87,6 @@
   box-shadow: @shadow-card;
 }
 
-.benefit-scroll {
-  box-sizing: border-box;
-  width: 100%;
-  height: 64rpx;
-  margin-top: 12rpx;
-  overflow: hidden;
-  white-space: nowrap;
-  background: transparent;
-}
-
-.benefit-track {
-  display: inline-flex;
-  box-sizing: border-box;
-  height: 64rpx;
-  align-items: center;
-  padding: 6rpx 0;
-  gap: 12rpx;
-}
-
-.benefit-card {
-  height: 52rpx;
-  display: inline-flex;
-  box-sizing: border-box;
-  align-items: center;
-  padding: 0 13rpx;
-  border-radius: 8rpx;
-  color: @color-text-primary;
-  font-size: 20rpx;
-  background: #f6f6fa;
-  gap: 6rpx;
-  letter-spacing: 0.2rpx;
-}
-
-.benefit-card--interactive:active { opacity: 0.66; }
-.benefit-card--interactive {
-  border: 1rpx solid fade(@color-gold, 15%);
-  color: @color-gold-text;
-  background: fade(@color-gold-soft, 58%);
-}
-
-.benefit-card--plain {
-  color: #1c1c1e;
-}
-
-.benefit-icon { width: 28rpx; height: 28rpx; flex: none; }
-.benefit-text { max-width: 310rpx; overflow: hidden; text-overflow: ellipsis; }
-
 .commerce-card {
   display: flex;
   margin-top: 14rpx;
@@ -178,6 +131,54 @@
 .commerce-row--detail-info .commerce-value--empty { color: @color-text-black; }
 .commerce-icon { width: 36rpx; height: 36rpx; display: block; flex: none; }
 
+.commerce-parameter-scroll {
+  min-width: 0;
+  height: 44rpx;
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.commerce-parameter-track {
+  min-width: 100%;
+  height: 44rpx;
+  display: inline-flex;
+  align-items: center;
+  color: @color-text-black;
+  font-size: @font-size-sm;
+  line-height: 44rpx;
+}
+
+.commerce-parameter-item {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  white-space: nowrap;
+}
+
+.commerce-parameter-item + .commerce-parameter-item::before {
+  margin: 0 10rpx;
+  color: @color-text-black;
+  content: "｜";
+}
+
+.commerce-parameter-spice { font-weight: 650; }
+.commerce-parameter-spice--mild { color: #7BAA6D; }
+.commerce-parameter-spice--medium { color: @color-warning; }
+.commerce-parameter-spice--hot { color: #ff172b; }
+
+.commerce-parameter-icons {
+  display: flex;
+  align-items: center;
+  margin-left: 5rpx;
+}
+
+.commerce-parameter-icon {
+  width: 21rpx;
+  height: 21rpx;
+  margin-left: 2rpx;
+}
+
 .commerce-value {
   min-width: 0;
   min-height: 36rpx;
@@ -219,8 +220,8 @@
   display: block;
   flex: 1;
   overflow: hidden;
-  font-size: @font-size-xs;
-  line-height: 32rpx;
+  font-size: @font-size-sm;
+  line-height: 36rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -392,8 +393,11 @@
   background: #fafafc;
 }
 
-.sheet-panel--address {
-  height: 70vh;
+.sheet-panel--address,
+.sheet-panel--parameters,
+.sheet-panel--guarantee,
+.sheet-panel--freight {
+  height: 80vh;
   display: flex;
   padding-bottom: 0;
   flex-direction: column;
@@ -402,9 +406,6 @@
 
 .sheet-panel--guarantee,
 .sheet-panel--freight { transform-origin: bottom center; }
-
-.sheet-panel--guarantee,
-.sheet-panel--freight { background: @color-surface-white; }
 
 .sheet-panel--reviews { background: @color-page; }
 
@@ -823,10 +824,116 @@
   padding: 4rpx 30rpx 26rpx;
 }
 
+.info-sheet-scroll--fill {
+  min-height: 0;
+  max-height: none;
+  flex: 1;
+}
+
+.parameter-sheet-header {
+  position: relative;
+  min-height: 116rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: @color-surface-white;
+}
+
+.parameter-sheet-title {
+  color: @color-text-primary;
+  font-size: @font-size-lg;
+  font-weight: 700;
+}
+
+.parameter-sheet-header .sheet-close {
+  top: 32rpx;
+}
+
+.parameter-sheet-scroll {
+  min-height: 0;
+  flex: 1;
+}
+
+.parameter-sheet-list {
+  padding: 14rpx 52rpx 40rpx;
+}
+
+.parameter-sheet-row {
+  min-height: 82rpx;
+  display: flex;
+  align-items: flex-start;
+  box-sizing: border-box;
+  padding: 18rpx 0;
+  gap: 28rpx;
+}
+
+.parameter-sheet-label {
+  width: 186rpx;
+  flex: none;
+  color: #8f939c;
+  font-size: @font-size-base;
+  line-height: 44rpx;
+}
+
+.parameter-sheet-value {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  color: @color-text-black;
+  font-size: @font-size-base;
+  line-height: 44rpx;
+  gap: 8rpx;
+}
+
+.parameter-sheet-spice { font-weight: 650; }
+.parameter-sheet-spice--mild { color: #7BAA6D; }
+.parameter-sheet-spice--medium { color: @color-warning; }
+.parameter-sheet-spice--hot { color: #ff172b; }
+
+.parameter-sheet-tip {
+  display: block;
+  margin-top: 20rpx;
+  color: #8f939c;
+  font-size: @font-size-xs;
+  line-height: @line-height-base;
+}
+
+.parameter-sheet-footer {
+  padding: @space-4 @space-6 calc(@space-4 + env(safe-area-inset-bottom));
+  flex: none;
+  background: @color-surface-white;
+}
+
+.parameter-sheet-confirm {
+  width: 100% !important;
+  height: 96rpx;
+  margin: 0 !important;
+  padding: 0;
+  border-radius: @radius-pill;
+  color: #fefcfc;
+  font-size: @font-size-md;
+  font-weight: 700;
+  line-height: 96rpx;
+  background: #ff172b;
+}
+
+.parameter-sheet-confirm::after { border: 0; }
+
 .address-sheet-header {
   flex: none;
   border-bottom: 0;
   background: @color-surface-white;
+}
+
+.address-sheet-intro {
+  display: block;
+  padding: 0 30rpx 18rpx;
+  flex: none;
+  color: #8f939c;
+  font-size: @font-size-xs;
+  line-height: @line-height-base;
 }
 
 .address-sheet-scroll {
@@ -1020,13 +1127,18 @@
 
 .guarantee-description {
   margin-top: 7rpx;
-  color: @color-text-secondary;
+  color: #8f939c;
   font-size: @font-size-xs;
   line-height: @line-height-base;
 }
 
 .freight-detail,
 .wholesale-table { padding: 12rpx 30rpx 34rpx; }
+
+.sheet-panel--freight .freight-detail {
+  min-height: 0;
+  flex: 1;
+}
 
 .freight-detail-row,
 .wholesale-table-row {
@@ -1038,13 +1150,13 @@
   gap: 24rpx;
 }
 
-.freight-detail-label { color: @color-text-muted; font-size: @font-size-xs; }
+.freight-detail-label { color: #8f939c; font-size: @font-size-xs; }
 .freight-detail-value { color: @color-text-primary; font-size: @font-size-sm; font-weight: 600; }
 
 .freight-tip {
   display: block;
   margin-top: 24rpx;
-  color: @color-text-muted;
+  color: #8f939c;
   font-size: @font-size-xs;
   line-height: @line-height-base;
 }
@@ -1383,7 +1495,7 @@
 
 .review-empty-preview__description {
   margin-top: 6rpx;
-  color: @color-text-muted;
+  color: #8f939c;
   font-size: @font-size-xs;
 }
 

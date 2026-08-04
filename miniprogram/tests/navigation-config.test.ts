@@ -581,6 +581,10 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
     resolve(sourceRoot, "components/product-summary/product-summary.less"),
     "utf8"
   );
+  const productSummaryTemplate = readFileSync(
+    resolve(sourceRoot, "components/product-summary/product-summary.wxml"),
+    "utf8"
+  );
   const designTokens = readFileSync(
     resolve(sourceRoot, "styles/tokens.less"),
     "utf8"
@@ -616,12 +620,12 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailStyle, /\.review-card\s*\{[\s\S]*?background: @color-surface-white;/);
   assert.match(
     detailTemplate,
-    /class="commerce-info-group"[\s\S]{0,520}location-on-outline-rounded\.svg[\s\S]*?data-sheet="guarantee"[\s\S]*?data-sheet="freight"/
+    /class="commerce-info-group"[\s\S]*?tune-outline-rounded\.svg[\s\S]*?location-on-outline-rounded\.svg[\s\S]*?data-sheet="guarantee"[\s\S]*?data-sheet="freight"/
   );
   assert.match(detailStyle, /\.commerce-info-group\s*\{[\s\S]*?background: @color-surface-white;[\s\S]*?box-shadow: @shadow-card;/);
   assert.match(detailStyle, /\.commerce-info-group \.commerce-row\s*\{[\s\S]*?min-height: 76rpx;[\s\S]*?gap: 14rpx;/);
   assert.match(detailStyle, /\.commerce-row--detail-info\s*\{[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/);
-  assert.equal((detailTemplate.match(/chevron-right-detail\.svg/g) ?? []).length, 3);
+  assert.equal((detailTemplate.match(/chevron-right-detail\.svg/g) ?? []).length, 4);
   assert.match(detailChevronIcon, /#a8abb3/i);
   detailInformationIcons.forEach((icon) => assert.match(icon, /#a8abb3/i));
   assert.match(detailTemplate, /data-sheet="guarantee"[\s\S]{0,260}verified-user-outline-rounded\.svg/);
@@ -641,9 +645,24 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailTemplate, /activeSheet === 'freight' \? 'sheet-panel--freight'/);
   assert.doesNotMatch(detailTemplate, /sheet-mask--above-purchase/);
   assert.doesNotMatch(detailStyle, /\.sheet-mask--above-purchase/);
-  assert.match(detailStyle, /\.sheet-panel--guarantee,\s*\.sheet-panel--freight\s*\{ background: @color-surface-white; \}/);
+  assert.match(
+    detailStyle,
+    /\.sheet-panel--address,\s*\.sheet-panel--parameters,\s*\.sheet-panel--guarantee,\s*\.sheet-panel--freight\s*\{[\s\S]*?height: 80vh;[\s\S]*?background: @color-surface-white;/
+  );
+  assert.match(
+    detailTemplate,
+    /activeSheet === 'guarantee'[\s\S]*?parameter-sheet-title">安心保障[\s\S]*?>我知道了<\/button>/
+  );
+  assert.match(
+    detailTemplate,
+    /activeSheet === 'freight'[\s\S]*?parameter-sheet-title">运费说明[\s\S]*?>我知道了<\/button>/
+  );
   assert.match(detailStyle, /@keyframes sheet-rise\s*\{\s*from \{ transform: translateY\(100%\); \}\s*to \{ transform: translateY\(0\); \}/);
-  assert.match(detailStyle, /\.sheet-panel--address\s*\{[\s\S]*?padding-bottom: 0;[\s\S]*?background: @color-surface-white;/);
+  assert.match(
+    detailTemplate,
+    /activeSheet === 'address'[\s\S]*?parameter-sheet-title">选择收货地址[\s\S]*?class="address-sheet-intro">请选择已保存的地址/
+  );
+  assert.match(detailStyle, /\.address-sheet-intro\s*\{[\s\S]*?color: #8f939c;/);
   assert.match(detailTemplate, /class="address-option__check"[\s\S]{0,260}check-rounded-material-symbols-iconify\.svg/);
   assert.match(detailStyle, /\.address-option--selected \.address-option__check\s*\{[\s\S]*?background: #ff172b;/);
   assert.match(detailStyle, /\.add-address-action\s*\{[\s\S]*?height: 96rpx;[\s\S]*?background: #ff172b;/);
@@ -670,7 +689,37 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(productSummaryStyle, /background: @color-surface-white;/);
   assert.match(productSummaryStyle, /border: 0;/);
   assert.match(productSummaryStyle, /\.current-price\s*\{[\s\S]*?color: @color-detail-price;/);
-  assert.match(productSummaryStyle, /\.original-price\s*\{[\s\S]*?color: @color-text-placeholder;/);
+  assert.match(productSummaryStyle, /\.original-price\s*\{[\s\S]*?color: @color-text-black;/);
+  assert.match(productSummaryStyle, /\.sales-text\s*\{[\s\S]*?color: @color-text-black;/);
+  assert.match(productSummaryStyle, /\.product-subtitle\s*\{[\s\S]*?color: #8f939c;/);
+  assert.match(productSummaryTemplate, /wx:for="\{\{detail\.sellingPoints\}\}"[\s\S]*?class="selling-point-tag"/);
+  assert.match(
+    productSummaryStyle,
+    /\.selling-point-tag\s*\{[\s\S]*?min-width: 0;[\s\S]*?padding: 6rpx 14rpx;[\s\S]*?border-radius: 10rpx;[\s\S]*?color: #4f535c;[\s\S]*?font-size: 26rpx;[\s\S]*?background: #f5f6fa;/
+  );
+  assert.match(productSummaryStyle, /\.selling-point-scroll\s*\{[\s\S]*?margin-left: 0;[\s\S]*?padding-left: 0;/);
+  assert.doesNotMatch(detailTemplate, /class="benefit-scroll"|benefitItems/);
+  assert.doesNotMatch(detailLogic, /BenefitItemView|buildBenefitItems|benefitItems/);
+  assert.doesNotMatch(productSummaryStyle, /\.parameter-strip/);
+  assert.doesNotMatch(detailTemplate, /weight-parameter="\{\{weightParameter\}\}"/);
+  assert.match(detailTemplate, /class="commerce-info-group"[\s\S]*?data-sheet="parameters"[\s\S]*?tune-outline-rounded\.svg[\s\S]*?bindtap="onAddressTap"/);
+  assert.match(detailTemplate, /commerce-parameter-item[\s\S]*?净含量：\{\{weightParameter\.value\}\}/);
+  assert.match(detailStyle, /\.commerce-parameter-track\s*\{[\s\S]*?color: @color-text-black;[\s\S]*?font-size: @font-size-sm;/);
+  assert.match(detailStyle, /\.commerce-value__text\s*\{[\s\S]*?font-size: @font-size-sm;[\s\S]*?line-height: 36rpx;/);
+  assert.match(detailStyle, /\.commerce-parameter-item \+ \.commerce-parameter-item::before\s*\{[\s\S]*?color: @color-text-black;[\s\S]*?content: "｜";/);
+  assert.match(detailStyle, /\.commerce-parameter-spice--mild\s*\{ color: #7BAA6D; \}/);
+  assert.match(detailStyle, /\.commerce-parameter-spice--medium\s*\{ color: @color-warning; \}/);
+  assert.match(detailStyle, /\.commerce-parameter-spice--hot\s*\{ color: #ff172b; \}/);
+  assert.match(detailTemplate, /activeSheet === 'parameters' \? 'sheet-panel--parameters'/);
+  assert.match(detailTemplate, />商品参数<\/text>[\s\S]*?wx:for="\{\{parameterViews\}\}"[\s\S]*?>我知道了<\/button>/);
+  assert.match(detailStyle, /\.parameter-sheet-spice--mild\s*\{ color: #7BAA6D; \}/);
+  assert.match(detailStyle, /\.parameter-sheet-spice--hot\s*\{ color: #ff172b; \}/);
+  assert.match(detailStyle, /\.parameter-sheet-label\s*\{[\s\S]*?color: #8f939c;/);
+  assert.match(detailStyle, /\.parameter-sheet-tip\s*\{[\s\S]*?color: #8f939c;/);
+  assert.match(detailStyle, /\.freight-detail-label\s*\{ color: #8f939c;/);
+  assert.match(detailStyle, /\.freight-tip\s*\{[\s\S]*?color: #8f939c;/);
+  assert.match(detailStyle, /\.parameter-sheet-confirm\s*\{[\s\S]*?background: #ff172b;/);
+  assert.match(detailStyle, /\.review-empty-preview__description\s*\{[\s\S]*?color: #8f939c;/);
   assert.match(designTokens, /@color-detail-price: #ff0c1f;/);
   assert.match(detailTemplate, /activeSheet === 'reviews'/);
   assert.match(detailTemplate, /activeSheet === 'reviewManage'/);
