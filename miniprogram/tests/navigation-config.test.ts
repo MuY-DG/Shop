@@ -126,6 +126,7 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
   assert.match(tabLogic, /syncSelection\(selected: number\)[\s\S]*this\.setData\(\{ selected, hidden: false \}\)/);
   assert.doesNotMatch(tabLogic, /this\.setData\(\{ selected: index \}\)/);
   assert.match(tabLogic, /wx\.switchTab\(\{ url: item\.pagePath \}\)/);
+  assert.match(tabLogic, /getCartItems\(\{ preferCache: true \}\)/);
   assert.match(tabTemplate, /src="\/assets\/icons\/tab-home\.svg"/);
   assert.match(tabTemplate, /src="\/assets\/icons\/tab-home-active\.svg"/);
   assert.doesNotMatch(tabTemplate, /src="\{\{selected === index/);
@@ -441,7 +442,6 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(homeLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
   assert.match(catalogLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
   assert.match(catalogTemplate, /<product-card[\s\S]*flat="\{\{true\}\}"/);
-  assert.match(tabLogic, /getCartItems\(\)/);
   assert.match(tabLogic, /cart\.totalQuantity/);
   assert.match(tabTemplate, /tab-bar__cart-handle/);
   assert.match(tabTemplate, /tab-bar__cart-basket/);

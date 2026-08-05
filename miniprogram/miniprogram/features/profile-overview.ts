@@ -62,3 +62,16 @@ export function profileOverviewDisplay(
     customerServiceOnline: overview.customerServiceOnline === true
   };
 }
+
+export function profileOverviewFingerprint(
+  display: ProfileOverviewDisplay
+): string {
+  return [
+    display.couponValue,
+    display.favoriteValue,
+    display.browseHistoryValue,
+    display.orderBadges.join(","),
+    display.customerServiceBadge,
+    display.customerServiceOnline ? "online" : "offline"
+  ].join("|");
+}

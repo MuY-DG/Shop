@@ -7,7 +7,8 @@ import {
   countBadge,
   guestProfileOverviewDisplay,
   overviewCount,
-  profileOverviewDisplay
+  profileOverviewDisplay,
+  profileOverviewFingerprint
 } from "../miniprogram/features/profile-overview";
 
 const sourceRoot = resolve(process.cwd(), "miniprogram");
@@ -46,6 +47,14 @@ test("真实概览数量生成订单、客服角标并限制为 99+", () => {
   assert.equal(countBadge(0), "");
   assert.equal(countBadge(100), "99+");
   assert.equal(overviewCount(Number.NaN), 0);
+  assert.equal(
+    profileOverviewFingerprint(display),
+    profileOverviewFingerprint({ ...display })
+  );
+  assert.notEqual(
+    profileOverviewFingerprint(display),
+    profileOverviewFingerprint({ ...display, favoriteValue: "13" })
+  );
 });
 
 test("我的页面从聚合接口取数并统一角标颜色", () => {
@@ -74,4 +83,33 @@ test("我的页面从聚合接口取数并统一角标颜色", () => {
   assert.match(style, /\.order-shortcut__badge[\s\S]*background: #ff172b/);
   assert.match(style, /\.service-item__badge[\s\S]*background: #ff172b/);
   assert.match(tabStyle, /\.tab-bar__badge[\s\S]*background: #ff172b/);
+});
+
+test("我的页面返回时保留同一用户的已有概览并静默刷新", () => {
+  const pageSource = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.ts"),
+    "utf8"
+  );
+  const loadOverviewSource = pageSource.slice(
+    pageSource.indexOf("async loadOverview"),
+    pageSource.indexOf("onMemberTap")
+  );
+
+  assert.match(
+    pageSource,
+    /const sameOverviewOwner = this\.data\.overviewOwnerKey === overviewOwnerKey/
+  );
+  assert.match(
+    pageSource,
+    /const overviewState = sameOverviewOwner\s*\? \{\}\s*: \{/
+  );
+  assert.match(pageSource, /profileOverviewState\(initialOverviewDisplay\)/);
+  assert.doesNotMatch(
+    loadOverviewSource,
+    /loadingProfileOverviewDisplay\(\)/
+  );
+  assert.match(
+    loadOverviewSource,
+    /this\.data\.overviewFingerprint !== overviewFingerprint/
+  );
 });

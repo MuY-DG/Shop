@@ -7,7 +7,8 @@ import { buildOrderListUrl, parseOrderStatusGroup } from "../../features/order-c
 import {
   guestProfileOverviewDisplay,
   loadingProfileOverviewDisplay,
-  profileOverviewDisplay
+  profileOverviewDisplay,
+  profileOverviewFingerprint
 } from "../../features/profile-overview";
 import type { ProfileOverviewDisplay } from "../../features/profile-overview";
 import { getPublicContact } from "../../services/contact";
@@ -137,7 +138,8 @@ function profileOverviewState(display: ProfileOverviewDisplay) {
   };
 }
 
-const GUEST_OVERVIEW_STATE = profileOverviewState(guestProfileOverviewDisplay());
+const GUEST_OVERVIEW_DISPLAY = guestProfileOverviewDisplay();
+const GUEST_OVERVIEW_STATE = profileOverviewState(GUEST_OVERVIEW_DISPLAY);
 
 Page({
   data: {
@@ -147,6 +149,8 @@ Page({
     avatarMode: "aspectFill",
     memberCopy: "登录后查看订单与会员服务",
     contactLoading: false,
+    overviewOwnerKey: "guest",
+    overviewFingerprint: profileOverviewFingerprint(GUEST_OVERVIEW_DISPLAY),
     ...GUEST_OVERVIEW_STATE
   },
 
@@ -157,11 +161,22 @@ Page({
       session.user && (session.accessToken || session.refreshToken)
     );
     const requestId = ++latestOverviewRequest;
-    const overviewState = profileOverviewState(
-      loggedIn ? loadingProfileOverviewDisplay() : guestProfileOverviewDisplay()
-    );
+    const overviewOwnerKey = loggedIn
+      ? `user:${session.user?.userId || "unknown"}`
+      : "guest";
+    const sameOverviewOwner = this.data.overviewOwnerKey === overviewOwnerKey;
+    const initialOverviewDisplay = loggedIn
+      ? loadingProfileOverviewDisplay()
+      : GUEST_OVERVIEW_DISPLAY;
+    const overviewState = sameOverviewOwner
+      ? {}
+      : {
+          overviewFingerprint: profileOverviewFingerprint(initialOverviewDisplay),
+          ...profileOverviewState(initialOverviewDisplay)
+        };
     this.setData({
       loggedIn,
+      overviewOwnerKey,
       nickname: loggedIn && session.user?.nickname
         ? session.user.nickname
         : "点击登录",
@@ -177,39 +192,58 @@ Page({
       ...overviewState
     });
     if (loggedIn) {
-      void this.loadOverview(requestId);
+      void this.loadOverview(requestId, overviewOwnerKey);
     } else {
-      void this.loadCustomerServicePresence(requestId);
+      void this.loadCustomerServicePresence(requestId, overviewOwnerKey);
     }
   },
 
-  async loadCustomerServicePresence(requestId: number) {
+  async loadCustomerServicePresence(requestId: number, overviewOwnerKey: string) {
     try {
       const presence = await getCustomerServicePresence();
-      if (requestId !== latestOverviewRequest || this.data.loggedIn) {
+      if (
+        requestId !== latestOverviewRequest ||
+        this.data.overviewOwnerKey !== overviewOwnerKey ||
+        this.data.loggedIn
+      ) {
         return;
       }
-      this.setData(profileOverviewState({
-        ...guestProfileOverviewDisplay(),
+      const display = {
+        ...GUEST_OVERVIEW_DISPLAY,
         customerServiceOnline: presence.online === true
-      }));
+      };
+      const overviewFingerprint = profileOverviewFingerprint(display);
+      if (this.data.overviewFingerprint !== overviewFingerprint) {
+        this.setData({
+          overviewFingerprint,
+          ...profileOverviewState(display)
+        });
+      }
     } catch (_error) {
       // Public presence is best-effort; keep the safe offline fallback on failure.
     }
   },
 
-  async loadOverview(requestId: number) {
+  async loadOverview(requestId: number, overviewOwnerKey: string) {
     try {
       const overview = await getMyOverview();
-      if (requestId !== latestOverviewRequest || !this.data.loggedIn) {
+      if (
+        requestId !== latestOverviewRequest ||
+        this.data.overviewOwnerKey !== overviewOwnerKey ||
+        !this.data.loggedIn
+      ) {
         return;
       }
-      this.setData(profileOverviewState(profileOverviewDisplay(overview)));
-    } catch (_error) {
-      if (requestId !== latestOverviewRequest || !this.data.loggedIn) {
-        return;
+      const display = profileOverviewDisplay(overview);
+      const overviewFingerprint = profileOverviewFingerprint(display);
+      if (this.data.overviewFingerprint !== overviewFingerprint) {
+        this.setData({
+          overviewFingerprint,
+          ...profileOverviewState(display)
+        });
       }
-      this.setData(profileOverviewState(loadingProfileOverviewDisplay()));
+    } catch {
+      // 静默刷新失败时保留已有概览，避免真实数字退回占位符造成闪动。
     }
   },
 

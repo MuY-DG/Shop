@@ -1,4 +1,5 @@
 import { API_ENDPOINTS } from "../constants/api-endpoints";
+import { CartItemsCache } from "../features/cart-items-cache";
 import type {
   AddCartItemRequest,
   CartItemResponse,
@@ -7,54 +8,88 @@ import type {
   UpdateCartQuantityRequest
 } from "../types/cart";
 import { request } from "../utils/request";
+import { getSessionState } from "./session";
 
-export function getCartItems(): Promise<CartListResponse> {
-  return request<CartListResponse>({
-    url: API_ENDPOINTS.cart.items,
-    method: "GET"
-  });
+const CART_ITEMS_CACHE_TTL_MS = 30_000;
+const cartItemsCache = new CartItemsCache<CartListResponse>(
+  CART_ITEMS_CACHE_TTL_MS
+);
+
+export interface GetCartItemsOptions {
+  preferCache?: boolean;
 }
 
-export function addCartItem(data: AddCartItemRequest): Promise<CartItemResponse> {
-  return request<CartItemResponse, AddCartItemRequest>({
+function cartOwnerKey(): string {
+  const session = getSessionState();
+  return session.user?.userId || session.refreshToken || session.accessToken || "guest";
+}
+
+function invalidateCartItemsCache(): void {
+  cartItemsCache.invalidate();
+}
+
+export function getCartItems(
+  options: GetCartItemsOptions = {}
+): Promise<CartListResponse> {
+  return cartItemsCache.get(
+    cartOwnerKey(),
+    () => request<CartListResponse>({
+      url: API_ENDPOINTS.cart.items,
+      method: "GET"
+    }),
+    options.preferCache === true
+  );
+}
+
+export async function addCartItem(
+  data: AddCartItemRequest
+): Promise<CartItemResponse> {
+  const item = await request<CartItemResponse, AddCartItemRequest>({
     url: API_ENDPOINTS.cart.items,
     method: "POST",
     data
   });
+  invalidateCartItemsCache();
+  return item;
 }
 
-export function updateCartItemQuantity(
+export async function updateCartItemQuantity(
   cartItemId: number,
   data: UpdateCartQuantityRequest
 ): Promise<CartItemResponse> {
-  return request<CartItemResponse, UpdateCartQuantityRequest>({
+  const item = await request<CartItemResponse, UpdateCartQuantityRequest>({
     url: API_ENDPOINTS.cart.quantity(cartItemId),
     method: "PUT",
     data
   });
+  invalidateCartItemsCache();
+  return item;
 }
 
-export function deleteCartItem(cartItemId: number): Promise<void> {
-  return request<void>({
+export async function deleteCartItem(cartItemId: number): Promise<void> {
+  await request<void>({
     url: API_ENDPOINTS.cart.item(cartItemId),
     method: "DELETE",
     expectData: false
   });
+  invalidateCartItemsCache();
 }
 
-export function deleteCartItems(cartItemIds: number[]): Promise<void> {
-  return request<void, DeleteCartItemsRequest>({
+export async function deleteCartItems(cartItemIds: number[]): Promise<void> {
+  await request<void, DeleteCartItemsRequest>({
     url: API_ENDPOINTS.cart.batchDelete,
     method: "DELETE",
     data: { cartItemIds },
     expectData: false
   });
+  invalidateCartItemsCache();
 }
 
-export function clearCart(): Promise<void> {
-  return request<void>({
+export async function clearCart(): Promise<void> {
+  await request<void>({
     url: API_ENDPOINTS.cart.items,
     method: "DELETE",
     expectData: false
   });
+  invalidateCartItemsCache();
 }

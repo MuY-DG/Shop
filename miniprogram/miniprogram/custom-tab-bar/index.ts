@@ -128,7 +128,7 @@ Component({
         return;
       }
       try {
-        const cart = await getCartItems();
+        const cart = await getCartItems({ preferCache: true });
         if (requestId === latestCartCountRequest) {
           this.setCartCount(cart.totalQuantity);
         }
