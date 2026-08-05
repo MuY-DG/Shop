@@ -47,7 +47,6 @@
   </swiper>
   <view wx:else class="hero-swiper"></view>
   <view class="hero-top-wash"></view>
-  <view class="hero-fade"></view>
   <view
     wx:if="{{banners.length > 1}}"
     class="banner-dots"

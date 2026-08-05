@@ -90,7 +90,7 @@
     lower-threshold="160"
     refresher-enabled="{{tabPage || scrollPage}}"
     refresher-triggered="{{contentRefreshing}}"
-    refresher-background="#F3F3F7"
+    refresher-background="#f6f6f6"
     bindscrolltolower="onContentLower"
     bindrefresherrefresh="onContentRefresh"
   >
@@ -140,7 +140,11 @@
       <view
         wx:elif="{{sourceProducts.length && sourceProducts.length >= total}}"
         class="catalog-footer catalog-footer--done"
-      >已经到底了</view>
+      >
+        <view class="catalog-footer__line" aria-hidden="true"></view>
+        <text>已经到底了</text>
+        <view class="catalog-footer__line" aria-hidden="true"></view>
+      </view>
     </block>
 
     <view

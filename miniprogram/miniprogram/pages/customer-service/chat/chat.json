@@ -4,6 +4,6 @@
     "ui-state": "/components/ui-state/ui-state"
   },
   "disableScroll": true,
-  "backgroundColor": "#F3F3F7",
+  "backgroundColor": "#f6f6f6",
   "backgroundTextStyle": "dark"
 }

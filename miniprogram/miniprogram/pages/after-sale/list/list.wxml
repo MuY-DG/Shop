@@ -1,5 +1,5 @@
 <view class="after-sale-list-page">
-  <navigation-bar title="退款售后" back="{{true}}" background="#F3F3F7" color="#2E1D16" loading="{{loaded && loading}}" />
+  <navigation-bar title="退款售后" back="{{true}}" background="#f6f6f6" color="#2E1D16" loading="{{loaded && loading}}" />
 
   <scroll-view
     class="after-sale-list-scroll"
@@ -10,7 +10,7 @@
     show-scrollbar="{{false}}"
     refresher-enabled="{{true}}"
     refresher-triggered="{{loaded && loading}}"
-    refresher-background="#F3F3F7"
+    refresher-background="#f6f6f6"
     lower-threshold="160"
     bindrefresherrefresh="onPullDownRefresh"
     bindscrolltolower="onReachBottom"

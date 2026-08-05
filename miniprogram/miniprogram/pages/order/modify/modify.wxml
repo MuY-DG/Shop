@@ -2,7 +2,7 @@
   <navigation-bar
     title="修改订单"
     back="{{true}}"
-    background="#F3F3F7"
+    background="#f6f6f6"
     color="#2E1D16"
     loading="{{loaded && loading}}"
   />

@@ -42,9 +42,6 @@
     </view>
 
     <view class="home-content {{banners.length && categories.length ? 'home-content--overlap' : ''}} {{!banners.length && hasContent ? 'home-content--after-intro' : ''}}">
-      <view class="ink-halo ink-halo--one"></view>
-      <view class="ink-halo ink-halo--two"></view>
-
       <home-category-grid
         wx:if="{{categories.length}}"
         categories="{{categories}}"

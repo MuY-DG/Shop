@@ -1,6 +1,6 @@
 <view class="category-page">
   <navigation-bar
-    background="#F3F3F7"
+    background="#f6f6f6"
     color="#2E1D16"
     show-divider="{{false}}"
     wide-center="{{true}}"

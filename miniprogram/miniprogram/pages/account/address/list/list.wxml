@@ -2,7 +2,7 @@
   <navigation-bar
     title="收货地址"
     back="{{true}}"
-    background="#F3F3F7"
+    background="#f6f6f6"
     color="#2E1D16"
     show-divider="{{false}}"
     loading="{{loaded && loading}}"
@@ -17,7 +17,7 @@
     show-scrollbar="{{false}}"
     refresher-enabled="{{true}}"
     refresher-triggered="{{loaded && loading}}"
-    refresher-background="#F3F3F7"
+    refresher-background="#f6f6f6"
     bindrefresherrefresh="onPullDownRefresh"
   >
   <view class="address-content">

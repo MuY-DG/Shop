@@ -78,8 +78,13 @@ test("我的页面从聚合接口取数并统一角标颜色", () => {
   assert.match(pageSource, /getMyOverview\(\)/);
   assert.match(pageSource, /getCustomerServicePresence\(\)/);
   assert.match(pageSource, /profileOverviewDisplay\(overview\)/);
+  assert.match(pageSource, /label: "收货地址",[\s\S]{0,100}iconPath: "\/assets\/icons\/profile-location\.svg"/);
+  assert.doesNotMatch(pageSource, /label: "收货地址",[\s\S]{0,100}location-on-outline-rounded\.svg/);
   assert.match(template, /service-presence--online/);
   assert.match(template, /service-item__badge/);
+  assert.match(style, /\.account-metrics\s*\{[\s\S]*background: @color-surface-white;/);
+  assert.match(style, /\.order-center-card,\s*\.service-card\s*\{[\s\S]*background: @color-surface-white;/);
+  assert.doesNotMatch(style, /backdrop-filter/);
   assert.match(style, /\.order-shortcut__badge[\s\S]*background: #ff172b/);
   assert.match(style, /\.service-item__badge[\s\S]*background: #ff172b/);
   assert.match(tabStyle, /\.tab-bar__badge[\s\S]*background: #ff172b/);

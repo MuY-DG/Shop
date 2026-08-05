@@ -13,6 +13,8 @@ interface AppConfig {
   lazyCodeLoading?: string;
   tabBar?: {
     custom?: boolean;
+    color?: string;
+    selectedColor?: string;
     list?: Array<{
       pagePath?: string;
       text?: string;
@@ -39,6 +41,8 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
   ];
 
   assert.equal(appConfig.tabBar?.custom, true);
+  assert.equal(appConfig.tabBar?.color, "#000000");
+  assert.equal(appConfig.tabBar?.selectedColor, "#FF172B");
   assert.equal(appConfig.lazyCodeLoading, "requiredComponents");
   assert.deepEqual(
     appConfig.tabBar?.list?.map((item) => [item.pagePath, item.text]),
@@ -63,6 +67,83 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
       true
     );
   });
+});
+
+test("除登录页外所有页面主体统一引用 @color-page 背景变量", () => {
+  const pageStyles = [
+    ["pages/index/index.less", "home-page"],
+    ["pages/category/category.less", "category-page"],
+    ["pages/cart/cart.less", "cart-page"],
+    ["pages/profile/profile.less", "profile-page"],
+    ["pages/account/profile/profile.less", "user-profile-page"],
+    ["styles/account-products.less", "account-page"],
+    ["pages/account/address/list/list.less", "address-page"],
+    ["pages/account/address/edit/edit.less", "address-edit-page"],
+    ["pages/account/coupon/coupon.less", "coupon-page"],
+    ["pages/product/search/search.less", "search-page"],
+    ["pages/product/list/list.less", "catalog-page"],
+    ["pages/product/detail/detail.less", "detail-page"],
+    ["pages/customer-service/chat/chat.less", "chat-page"],
+    ["pages/order/preview/preview.less", "preview-page"],
+    ["pages/order/created/created.less", "created-page"],
+    ["pages/order/list/list.less", "orders-page"],
+    ["pages/order/detail/detail.less", "detail-page"],
+    ["pages/order/review/review.less", "review-page"],
+    ["pages/order/modify/modify.less", "modify-page"],
+    ["pages/after-sale/apply/apply.less", "apply-page"],
+    ["pages/after-sale/list/list.less", "after-sale-list-page"],
+    ["pages/after-sale/detail/detail.less", "after-sale-detail-page"]
+  ] as const;
+
+  const tokens = readFileSync(resolve(sourceRoot, "styles/tokens.less"), "utf8");
+  assert.match(tokens, /@color-page: #f6f6f6;/);
+  assert.match(tokens, /@color-page-top: @color-page;/);
+  assert.match(tokens, /@color-page-middle: @color-page;/);
+  assert.match(tokens, /@color-page-bottom: @color-page;/);
+
+  const appStyle = readFileSync(resolve(sourceRoot, "app.less"), "utf8");
+  assert.match(appStyle, /page\s*\{[\s\S]*?background: @color-page;/);
+
+  pageStyles.forEach(([stylePath, rootClass]) => {
+    const style = readFileSync(resolve(sourceRoot, stylePath), "utf8");
+    assert.match(
+      style,
+      new RegExp(`\\.${rootClass}\\s*\\{[\\s\\S]*?background(?:-color)?: @color-page;`),
+      `${stylePath} should use the shared page background token`
+    );
+  });
+
+  const favoritesStyle = readFileSync(
+    resolve(sourceRoot, "pages/account/favorites/favorites.less"),
+    "utf8"
+  );
+  const historyStyle = readFileSync(
+    resolve(sourceRoot, "pages/account/history/history.less"),
+    "utf8"
+  );
+  assert.match(favoritesStyle, /\.account-page\.favorites-page\s*\{[\s\S]*?background: @color-page;/);
+  assert.match(historyStyle, /\.account-page\.history-page\s*\{[\s\S]*?background: @color-page;/);
+
+  const loginStyle = readFileSync(
+    resolve(sourceRoot, "pages/auth/login/login.less"),
+    "utf8"
+  );
+  assert.match(loginStyle, /page,[\s\S]*?\.login-page\s*\{[\s\S]*?background: #ffffff;/);
+
+  const homeTemplate = readFileSync(resolve(sourceRoot, "pages/index/index.wxml"), "utf8");
+  const homeStyle = readFileSync(resolve(sourceRoot, "pages/index/index.less"), "utf8");
+  const bannerTemplate = readFileSync(
+    resolve(sourceRoot, "components/home-banner/home-banner.wxml"),
+    "utf8"
+  );
+  const bannerStyle = readFileSync(
+    resolve(sourceRoot, "components/home-banner/home-banner.less"),
+    "utf8"
+  );
+  assert.doesNotMatch(homeTemplate, /ink-halo/);
+  assert.doesNotMatch(homeStyle, /ink-halo|\.home-page::after/);
+  assert.doesNotMatch(bannerTemplate, /hero-fade/);
+  assert.doesNotMatch(bannerStyle, /\.hero-fade/);
 });
 
 test("Tab 页面显示时同步自定义导航选中项", () => {
@@ -119,6 +200,14 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
     resolve(sourceRoot, "custom-tab-bar/index.less"),
     "utf8"
   );
+  const tabHomeIcon = readFileSync(
+    resolve(sourceRoot, "assets/icons/tab-home.svg"),
+    "utf8"
+  );
+  const tabHomeActiveIcon = readFileSync(
+    resolve(sourceRoot, "assets/icons/tab-home-active.svg"),
+    "utf8"
+  );
   assert.match(cartLogic, /syncTabBar: true/);
   assert.match(cartPageLogic, /syncCustomTabBar\(this, 2\)/);
   assert.match(profileLogic, /syncCustomTabBar\(this, 3\)/);
@@ -130,6 +219,10 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
   assert.match(tabTemplate, /src="\/assets\/icons\/tab-home\.svg"/);
   assert.match(tabTemplate, /src="\/assets\/icons\/tab-home-active\.svg"/);
   assert.doesNotMatch(tabTemplate, /src="\{\{selected === index/);
+  assert.match(tabStyle, /\.tab-bar__item\s*\{[\s\S]*color: #000000;/);
+  assert.match(tabStyle, /\.tab-bar__item--selected\s*\{[\s\S]*color: @color-action-primary;/);
+  assert.match(tabHomeIcon, /fill="#000000"/);
+  assert.match(tabHomeActiveIcon, /fill="#ff172b"/);
   assert.match(
     tabStyle,
     /\.tab-bar__icon-image\s*\{[\s\S]*position: absolute;[\s\S]*opacity: 0;[\s\S]*\.tab-bar__icon-image--visible\s*\{[\s\S]*opacity: 1;/
@@ -231,6 +324,9 @@ test("分类页固定工具区并统一搜索、排序和分类视觉", () => {
   assert.match(catalogStyle, /\.catalog-browser--fixed\s*\{[\s\S]*display: flex;[\s\S]*overflow: hidden/);
   assert.match(catalogStyle, /\.catalog-browser--tab \.catalog-content\s*\{[\s\S]*padding-bottom: 0/);
   assert.match(catalogStyle, /\.catalog-tab-spacer\s*\{[\s\S]*height: calc\(@tab-bar-height \+ @tab-bar-bottom-inset\)/);
+  assert.match(catalogTemplate, /catalog-footer catalog-footer--done[\s\S]*catalog-footer__line[\s\S]*已经到底了[\s\S]*catalog-footer__line/);
+  assert.match(catalogStyle, /\.catalog-browser--tab \.catalog-footer--done\s*\{[\s\S]*color: @color-text-muted;[\s\S]*font-family: "Songti SC", "STSong", serif;[\s\S]*font-size: 20rpx;[\s\S]*letter-spacing: 4rpx/);
+  assert.match(catalogStyle, /\.catalog-browser--tab \.catalog-footer__line\s*\{[\s\S]*width: 76rpx;[\s\S]*background: linear-gradient/);
   assert.doesNotMatch(catalogStyle, /\.catalog-tab-wash/);
   assert.match(catalogStyle, /\.sort-bar\s*\{[\s\S]*background: transparent/);
   assert.match(catalogStyle, /\.sort-item\s*\{[\s\S]*color: #000000/);
@@ -337,24 +433,36 @@ test("购物车提供管理批量删除并使用后端权威计价", () => {
   assert.match(logic, /previewOrder\(\{[\s\S]*source: "CART"/);
   assert.match(logic, /async onContentRefresh\(\)[\s\S]*await this\.loadCart\(\)/);
   assert.match(service, /API_ENDPOINTS\.cart\.batchDelete/);
-  assert.match(styles, /\.cart-page\s*\{[\s\S]*height: 100vh;[\s\S]*display: flex;[\s\S]*overflow: hidden;[\s\S]*background: #f3f3f7/);
-  assert.match(styles, /\.cart-content\s*\{[\s\S]*height: 0;[\s\S]*flex: 1/);
+  assert.match(styles, /\.cart-page\s*\{[\s\S]*height: 100vh;[\s\S]*display: flex;[\s\S]*overflow: hidden;[\s\S]*background: @color-page/);
+  assert.match(styles, /\.cart-content\s*\{[\s\S]*height: 0;[\s\S]*flex: 1;[\s\S]*padding: @space-4 12rpx calc\(@tab-bar-height \+ 186rpx\)/);
+  assert.doesNotMatch(styles, /\.cart-page::after/);
   assert.match(styles, /\.cart-login-state\s*\{[\s\S]*border: 0;[\s\S]*background: transparent;[\s\S]*box-shadow: none/);
   assert.match(styles, /\.cart-login-state\s*\{[\s\S]*flex: 1;[\s\S]*justify-content: center/);
   assert.match(styles, /button\.cart-login-state__action\s*\{[\s\S]*background: @color-login-action/);
   assert.match(loginStyles, /button\.primary-action\s*\{[\s\S]*background: @color-login-action/);
   assert.doesNotMatch(styles, /\.cart-login-state\s*\{[^}]*\.card-surface\(\)/);
-  assert.match(styles, /\.cart-card\s*\{[\s\S]*background: #ffffff/);
-  assert.match(styles, /\.cart-card__image-shell\s*\{[\s\S]*width: 166rpx;[\s\S]*height: 166rpx/);
+  assert.match(styles, /\.cart-card\s*\{[\s\S]*padding: 28rpx @space-5;[\s\S]*border: 0;[\s\S]*background: #ffffff;[\s\S]*box-shadow: none/);
+  assert.match(styles, /\.cart-card\s*\{[\s\S]*grid-template-columns: 36rpx 176rpx minmax\(0, 1fr\);[\s\S]*column-gap: @space-5/);
+  assert.match(styles, /\.cart-card__image-shell\s*\{[\s\S]*width: 176rpx;[\s\S]*height: 176rpx/);
+  assert.match(styles, /\.cart-card__body\s*\{[\s\S]*margin-left: @space-1/);
+  assert.match(styles, /\.cart-card__body\s*\{[\s\S]*grid-template-rows: 120rpx auto/);
+  assert.match(styles, /\.cart-card__title\s*\{[\s\S]*font-weight: 500/);
+  assert.match(styles, /\.cart-card__spec\s*\{[\s\S]*border-radius: @radius-xs;[\s\S]*background: #f5f5f5/);
   assert.match(styles, /\.cart-card__footer\s*\{[\s\S]*width: 162rpx;[\s\S]*justify-content: center/);
-  assert.match(styles, /\.settlement-bar\s*\{[\s\S]*border-top: 0;[\s\S]*background: #ffffff;[\s\S]*box-shadow: none/);
-  assert.match(styles, /\.quantity-stepper__value\s*\{[\s\S]*background: #f6f6f6/);
-  assert.match(styles, /\.selection--checked\s*\{[\s\S]*border-color: #ff172b;[\s\S]*background: #ff172b/);
-  assert.match(styles, /\.selection__check\s*\{[\s\S]*width: 26rpx;[\s\S]*height: 26rpx/);
+  assert.match(styles, /\.settlement-bar\s*\{[\s\S]*border: 0;[\s\S]*background: #ffffff;[\s\S]*background-image: none;[\s\S]*box-shadow: none/);
+  assert.match(styles, /\.settlement-bar \.selection--checked\s*\{[\s\S]*box-shadow: none/);
+  assert.match(styles, /\.quantity-stepper\s*\{[\s\S]*grid-template-columns: 46rpx 68rpx 46rpx/);
+  assert.match(styles, /\.quantity-stepper__value\s*\{[\s\S]*height: 42rpx;[\s\S]*background: #f6f6f6/);
+  assert.match(styles, /\.selection--checked\s*\{[\s\S]*border-color: #ff172b;[\s\S]*background: #ff172b;[\s\S]*box-shadow: none/);
+  assert.match(styles, /\.selection\s*\{[\s\S]*width: 36rpx;[\s\S]*height: 36rpx/);
+  assert.match(styles, /\.selection__check\s*\{[\s\S]*width: 24rpx;[\s\S]*height: 24rpx/);
+  assert.match(styles, /\.price-row__currency\s*\{[\s\S]*font-size: 24rpx/);
+  assert.match(styles, /\.price-row__integer\s*\{[\s\S]*font-size: 38rpx/);
+  assert.match(styles, /\.price-row__decimal\s*\{[\s\S]*font-size: 20rpx/);
   assert.match(styles, /\.wholesale-copy\s*\{[\s\S]*color: #ff172b;[\s\S]*font-weight: 600;/);
   assert.match(styles, /\.next-tier-copy\s*\{[\s\S]*color: @color-text-secondary;/);
   assert.doesNotMatch(styles, /\.next-tier-copy\s*\{[\s\S]*color: @color-gold-text;/);
-  assert.match(styles, /button\.checkout-action\s*\{[\s\S]*background: #ff172b/);
+  assert.match(styles, /button\.checkout-action\s*\{[\s\S]*background: #ff172b;[\s\S]*box-shadow: none/);
 });
 
 test("商品加购按钮调用真实购物车接口并同步底部角标", () => {
@@ -388,6 +496,7 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
     "utf8"
   );
   const homeTemplate = readFileSync(resolve(sourceRoot, "pages/index/index.wxml"), "utf8");
+  const homeStyle = readFileSync(resolve(sourceRoot, "pages/index/index.less"), "utf8");
   const homeLogic = readFileSync(resolve(sourceRoot, "pages/index/index.ts"), "utf8");
   const catalogTemplate = readFileSync(
     resolve(sourceRoot, "components/catalog-browser/catalog-browser.wxml"),
@@ -424,7 +533,7 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(productCardStyle, /\.product-card--list \.product-card__price-decimal\s*\{[^}]*font-size: 27rpx/);
   assert.match(productCardStyle, /\.product-card--featured\s*\{[\s\S]*box-shadow: none/);
   assert.match(productCardStyle, /\.product-card--flat\s*\{[\s\S]*box-shadow: none/);
-  assert.match(homeCategoryStyle, /\.category-card\s*\{[\s\S]*background: #ffffff/);
+  assert.match(homeCategoryStyle, /\.category-card\s*\{[\s\S]*padding: 22rpx 12rpx 20rpx;[\s\S]*border: 0;[\s\S]*background: #ffffff;[\s\S]*box-shadow: none/);
   assert.match(homeProductSectionStyle, /\.product-showcase\s*\{[\s\S]*border: 0;[\s\S]*background: transparent;[\s\S]*box-shadow: none/);
   assert.match(homeProductSectionStyle, /\.product-showcase\s*\{[\s\S]*margin: 8rpx 12rpx 0;[\s\S]*padding: 0 0 28rpx/);
   assert.match(homeProductSectionStyle, /\.product-showcase--separated\s*\{\s*margin-top: 4rpx/);
@@ -433,6 +542,7 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(homeProductSectionStyle, /\.section-heading__subtitle\s*\{[^}]*color: @home-section-subtitle-color/);
   assert.match(homeTemplate, /subtitle="大家都在买的川味好料"/);
   assert.match(homeTemplate, /subtitle="更多值得尝试的川味好料"/);
+  assert.doesNotMatch(homeStyle, /\.home-page::after/);
   assert.match(homeProductSectionStyle, /\.section-heading__more\s*\{[^}]*color: #e10203/);
   assert.match(homeProductSectionTemplate, /catchtap="onMoreTap"[\s\S]*>查看更多<\/text>/);
   assert.equal((homeProductSectionTemplate.match(/flat="\{\{true\}\}"/g) ?? []).length, 2);
@@ -447,8 +557,8 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(tabTemplate, /tab-bar__cart-basket/);
   assert.match(tabTemplate, /tab-bar__cart-wheel/);
   assert.doesNotMatch(tabTemplate, /shopping-cart-outline-iconify\.svg/);
-  assert.match(tabStyle, /\.tab-bar\s*\{[\s\S]*background: transparent;[\s\S]*isolation: isolate/);
-  assert.match(tabStyle, /\.tab-bar::before\s*\{[\s\S]*rgba\(255, 255, 255, 0\.72\)[\s\S]*backdrop-filter: blur\(20rpx\) saturate\(135%\)/);
+  assert.match(tabStyle, /\.tab-bar\s*\{[\s\S]*border: 0;[\s\S]*background: #ffffff;[\s\S]*box-shadow: none/);
+  assert.doesNotMatch(tabStyle, /\.tab-bar::before|backdrop-filter/);
   assert.match(tabStyle, /\.tab-bar__items\s*\{[\s\S]*position: relative;[\s\S]*z-index: 1/);
 });
 
@@ -779,7 +889,7 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
     detailTemplate,
     /class="commerce-info-group"[\s\S]*?tune-outline-rounded\.svg[\s\S]*?location-on-outline-rounded\.svg[\s\S]*?data-sheet="guarantee"[\s\S]*?data-sheet="freight"/
   );
-  assert.match(detailStyle, /\.commerce-info-group\s*\{[\s\S]*?background: @color-surface-white;[\s\S]*?box-shadow: @shadow-card;/);
+  assert.match(detailStyle, /\.commerce-info-group\s*\{[\s\S]*?background: @color-surface-white;[\s\S]*?box-shadow: none;/);
   assert.match(detailStyle, /\.commerce-info-group \.commerce-row\s*\{[\s\S]*?min-height: 76rpx;[\s\S]*?gap: 14rpx;/);
   assert.match(detailStyle, /\.commerce-row--detail-info\s*\{[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/);
   assert.equal((detailTemplate.match(/chevron-right-detail\.svg/g) ?? []).length, 5);
@@ -844,15 +954,21 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailStyle, /\.review-preview-media\s*\{[\s\S]*?width: 158rpx;[\s\S]*?height: 158rpx;[\s\S]*?background: transparent;/);
   assert.match(detailStyle, /\.review-preview-media__image\s*\{[\s\S]*?background: transparent;/);
   assert.match(detailStyle, /padding: 0 16rpx calc\(154rpx \+ env\(safe-area-inset-bottom\)\);/);
-  assert.match(detailStyle, /\.purchase-bar\s*\{[\s\S]*?background: @color-surface-white;/);
+  assert.match(detailStyle, /\.detail-page\s*\{[\s\S]*?background: @color-page;/);
+  assert.match(detailStyle, /\.detail-scroll\s*\{[\s\S]*?background: @color-page;/);
+  assert.match(detailStyle, /\.detail-scroll-content\s*\{[\s\S]*?background: @color-page;/);
+  assert.match(detailStyle, /\.detail-card\s*\{[\s\S]*?box-shadow: none;/);
+  assert.match(detailStyle, /\.commerce-row\s*\{[\s\S]*?box-shadow: none;/);
+  assert.match(detailStyle, /\.commerce-info-group\s*\{[\s\S]*?box-shadow: none;/);
+  assert.match(detailStyle, /\.purchase-bar\s*\{[\s\S]*?background: @color-surface-white;[\s\S]*?box-shadow: none;/);
   assert.match(detailTemplate, />暂时售空</);
   assert.doesNotMatch(detailTemplate, /当前暂无可售规格|purchase-sold-out__hint/);
   assert.match(
     detailStyle,
-    /\.purchase-action--buy,\s*\.purchase-sold-out\s*\{[^}]*background: #ff172b;/
+    /\.purchase-action--buy,\s*\.purchase-sold-out\s*\{[^}]*background: @color-action-primary;/
   );
   assert.match(detailTemplate, /activeSheet === 'reviews' \? 'sheet-panel--reviews'/);
-  assert.match(detailStyle, /\.sheet-panel--reviews\s*\{[\s\S]*?height: 72vh;[\s\S]*?background: #f3f3f7;/);
+  assert.match(detailStyle, /\.sheet-panel--reviews\s*\{[\s\S]*?height: 72vh;[\s\S]*?background: #f6f6f6;/);
   assert.match(
     detailStyle,
     /\.sheet-mask--reviews\s*\{\s*bottom: calc\(104rpx \+ env\(safe-area-inset-bottom\)\);\s*overflow: hidden;\s*\}/
@@ -865,8 +981,14 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
     /wx:if="\{\{purchaseSheetOpen\}\}"[\s\S]{0,260}purchase-sheet-mask[\s\S]*?catchtap="onClosePurchaseSheet"/
   );
   assert.match(detailStyle, /\.purchase-sheet-mask\s*\{\s*z-index: 360;\s*\}/);
+  assert.match(detailStyle, /\.sheet-panel--purchase\s*\{[\s\S]*?background: @color-page;/);
+  assert.match(detailStyle, /\.purchase-sheet-header\s*\{[\s\S]*?background: @color-surface-white;/);
+  assert.match(detailStyle, /\.purchase-sheet-scroll\s*\{[\s\S]*?background: @color-page;/);
+  assert.match(detailStyle, /\.purchase-sheet-scroll-content\s*\{[\s\S]*?background: @color-page;/);
+  assert.match(detailStyle, /\.sheet-section\s*\{[\s\S]*?background: @color-surface-white;/);
+  assert.match(detailStyle, /\.sheet-footer\s*\{[\s\S]*?border-top: 8rpx solid @color-page;[\s\S]*?background: @color-page;/);
   assert.match(detailTemplate, />中\/差评 \{\{reviewSummary\.criticalReviewCount\}\}<\/button>/);
-  assert.match(detailStyle, /\.review-filter-bar\s*\{[\s\S]*?display: flex;[\s\S]*?background: #f3f3f7;[\s\S]*?gap: 14rpx;/);
+  assert.match(detailStyle, /\.review-filter-bar\s*\{[\s\S]*?display: flex;[\s\S]*?background: #f6f6f6;[\s\S]*?gap: 14rpx;/);
   assert.match(detailStyle, /\.review-filter-chip\s*\{[\s\S]*?width: auto !important;[\s\S]*?min-width: 96rpx !important;[\s\S]*?color: #000000;[\s\S]*?background: #ffffff;/);
   assert.match(detailStyle, /\.review-filter-chip--active\s*\{[\s\S]*?border: 1rpx solid #fe0000;[\s\S]*?color: #fe0000;[\s\S]*?background: #ffebef;/);
   assert.match(detailStyle, /\.review-item--sheet\s*\{[\s\S]*?background: @color-surface-white;/);
@@ -958,7 +1080,10 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailStyle, /\.specification-option\s*\{[\s\S]*?color: @color-text-black;/);
   assert.match(detailStyle, /\.specification-option__sold-out\s*\{[\s\S]*?color: @color-text-gray;/);
   assert.match(detailStyle, /\.wholesale-shortcut__quantity\s*\{[\s\S]*?color: @color-text-black;/);
-  assert.match(detailStyle, /\.quantity-button\s*\{[\s\S]*?color: @color-text-black;/);
+  assert.match(detailStyle, /\.quantity-control\s*\{[\s\S]*?grid-template-columns: 46rpx 68rpx 46rpx;/);
+  assert.match(detailStyle, /\.quantity-button,[\s\S]*?\.quantity-value\s*\{[\s\S]*?height: 42rpx;/);
+  assert.match(detailStyle, /\.quantity-button\s*\{[\s\S]*?color: @color-text-primary;[\s\S]*?font-size: 28rpx;[\s\S]*?background: transparent;/);
+  assert.match(detailStyle, /\.quantity-value\s*\{[\s\S]*?border-radius: @radius-xs;[\s\S]*?background: #f6f6f6;[\s\S]*?font-size: @font-size-sm;[\s\S]*?font-weight: 600;/);
   assert.match(detailTemplate, /activeSheet === 'reviews'/);
   assert.match(detailTemplate, /data-review-filter="WITH_IMAGES"/);
   assert.match(detailTemplate, /data-review-filter="GOOD"/);

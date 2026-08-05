@@ -221,6 +221,32 @@
   color: @color-gold-text;
 }
 
+.catalog-footer__line {
+  display: none;
+}
+
+.catalog-browser--tab .catalog-footer--done {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: @color-text-muted;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 20rpx;
+  letter-spacing: 4rpx;
+}
+
+.catalog-browser--tab .catalog-footer__line {
+  width: 76rpx;
+  height: 1rpx;
+  margin: 0 @space-4;
+  display: block;
+  background: linear-gradient(90deg, transparent, fade(@color-gold, 48%));
+}
+
+.catalog-browser--tab .catalog-footer__line:last-child {
+  background: linear-gradient(90deg, fade(@color-gold, 48%), transparent);
+}
+
 .filter-mask {
   position: fixed;
   z-index: 1100;

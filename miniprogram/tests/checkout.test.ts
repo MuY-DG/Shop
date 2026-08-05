@@ -91,6 +91,9 @@ test("购物车选择只保留可购买商品并计算选中金额", () => {
   assert.equal(summary.selectedQuantity, 3);
   assert.equal(summary.selectedAmountCent, 5040);
   assert.equal(summary.selectedAmountText, "¥50.40");
+  assert.equal(summary.items[0]?.priceText, "¥16.80");
+  assert.equal(summary.items[0]?.priceIntegerText, "16");
+  assert.equal(summary.items[0]?.priceDecimalText, ".80");
   assert.equal(summary.availableCount, 2);
   assert.equal(summary.allAvailableSelected, false);
   assert.equal(summary.items[0]?.wholesaleText, "已享 3 件起批发价");

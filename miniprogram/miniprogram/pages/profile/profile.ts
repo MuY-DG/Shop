@@ -101,7 +101,7 @@ function serviceItems(display: ProfileOverviewDisplay) {
   return [
     {
       label: "收货地址",
-      iconPath: "/assets/icons/location-on-outline-rounded.svg",
+      iconPath: "/assets/icons/profile-location.svg",
       path: ACCOUNT_ROUTES.addresses,
       kind: "route"
     },

@@ -4,7 +4,7 @@
     back="{{navigationBack}}"
     wide-center="{{true}}"
     show-divider="{{false}}"
-    background="#F3F3F7"
+    background="#f6f6f6"
     color="#2E1D16"
     loading="{{loaded && loading}}"
   >
@@ -44,7 +44,7 @@
     show-scrollbar="{{false}}"
     refresher-enabled="{{true}}"
     refresher-triggered="{{contentRefreshing}}"
-    refresher-background="#F3F3F7"
+    refresher-background="#f6f6f6"
     bindrefresherrefresh="onContentRefresh"
   >
     <view wx:if="{{!loaded && loading}}" class="cart-state">
@@ -117,53 +117,61 @@
           </view>
 
           <view class="cart-card__body">
-            <view
-              class="cart-card__title"
-              data-id="{{item.id}}"
-              bindtap="onProductTap"
-            >{{item.productTitle}}</view>
-            <view wx:if="{{item.specText}}" class="cart-card__spec">{{item.specText}}</view>
-            <view wx:if="{{!item.available}}" class="unavailable-tag">{{item.unavailableText}}</view>
+            <view class="cart-card__details">
+              <view
+                class="cart-card__title"
+                data-id="{{item.id}}"
+                bindtap="onProductTap"
+              >{{item.productTitle}}</view>
+              <view wx:if="{{item.specText}}" class="cart-card__spec">{{item.specText}}</view>
+              <view wx:if="{{!item.available}}" class="unavailable-tag">{{item.unavailableText}}</view>
+            </view>
 
-            <view class="price-row">
-              <view class="price-row__prices">
-                <text class="price-row__current">{{item.priceText}}</text>
-                <text wx:if="{{item.hasRetailPrice}}" class="price-row__retail">{{item.retailPriceText}}</text>
-              </view>
-              <view class="cart-card__footer">
-                <view wx:if="{{!managing}}" class="quantity-stepper">
-                  <button
-                    class="quantity-stepper__button"
-                    data-id="{{item.id}}"
-                    disabled="{{!item.available || item.quantity <= 1 || updatingId || deletingBatch}}"
-                    catchtap="onQuantityMinus"
-                  >−</button>
-                  <view class="quantity-stepper__value">
-                    <view wx:if="{{updatingId === item.id}}" class="mini-spinner"></view>
-                    <text wx:else>{{item.quantity}}</text>
+            <view class="cart-card__pricing">
+              <view class="price-row">
+                <view class="price-row__prices">
+                  <view class="price-row__current" aria-label="{{item.priceText}}">
+                    <text class="price-row__currency">¥</text>
+                    <text class="price-row__integer">{{item.priceIntegerText}}</text>
+                    <text class="price-row__decimal">{{item.priceDecimalText}}</text>
+                  </view>
+                  <text wx:if="{{item.hasRetailPrice}}" class="price-row__retail">{{item.retailPriceText}}</text>
+                </view>
+                <view class="cart-card__footer">
+                  <view wx:if="{{!managing}}" class="quantity-stepper">
+                    <button
+                      class="quantity-stepper__button"
+                      data-id="{{item.id}}"
+                      disabled="{{!item.available || item.quantity <= 1 || updatingId || deletingBatch}}"
+                      catchtap="onQuantityMinus"
+                    >−</button>
+                    <view class="quantity-stepper__value">
+                      <view wx:if="{{updatingId === item.id}}" class="mini-spinner"></view>
+                      <text wx:else>{{item.quantity}}</text>
+                    </view>
+                    <button
+                      class="quantity-stepper__button"
+                      data-id="{{item.id}}"
+                      disabled="{{!item.available || item.quantity >= 999 || updatingId || deletingBatch}}"
+                      catchtap="onQuantityPlus"
+                    >+</button>
                   </view>
                   <button
-                    class="quantity-stepper__button"
+                    wx:else
+                    class="delete-icon-action"
                     data-id="{{item.id}}"
-                    disabled="{{!item.available || item.quantity >= 999 || updatingId || deletingBatch}}"
-                    catchtap="onQuantityPlus"
-                  >+</button>
+                    disabled="{{deletingBatch}}"
+                    catchtap="onItemDeleteTap"
+                    aria-label="删除{{item.productTitle}}"
+                  >
+                    <view wx:if="{{deletingId === item.id}}" class="mini-spinner"></view>
+                    <image wx:else src="/assets/icons/trash-can-outline-iconify.svg" mode="aspectFit" />
+                  </button>
                 </view>
-                <button
-                  wx:else
-                  class="delete-icon-action"
-                  data-id="{{item.id}}"
-                  disabled="{{deletingBatch}}"
-                  catchtap="onItemDeleteTap"
-                  aria-label="删除{{item.productTitle}}"
-                >
-                  <view wx:if="{{deletingId === item.id}}" class="mini-spinner"></view>
-                  <image wx:else src="/assets/icons/trash-can-outline-iconify.svg" mode="aspectFit" />
-                </button>
               </view>
+              <view wx:if="{{item.wholesaleText}}" class="wholesale-copy">{{item.wholesaleText}}</view>
+              <view wx:if="{{item.nextWholesaleText}}" class="next-tier-copy">{{item.nextWholesaleText}}</view>
             </view>
-            <view wx:if="{{item.wholesaleText}}" class="wholesale-copy">{{item.wholesaleText}}</view>
-            <view wx:if="{{item.nextWholesaleText}}" class="next-tier-copy">{{item.nextWholesaleText}}</view>
           </view>
         </view>
       </view>

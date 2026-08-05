@@ -148,7 +148,7 @@
             <view class="commerce-value {{selectedAddress ? '' : 'commerce-value--empty'}}">
               <view class="commerce-address-copy">
                 <text class="commerce-value__text commerce-value__text--address">{{selectedAddress ? selectedAddress.formattedAddress : '请选择收货地址'}}</text>
-                <text wx:if="{{selectedAddress && selectedAddress.isDefault}}" class="commerce-default-tag">默认</text>
+                <text wx:if="{{selectedAddress && selectedAddress.isDefault}}" class="address-default-tag commerce-default-tag">默认</text>
               </view>
             </view>
             <image class="commerce-action-icon" src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" />

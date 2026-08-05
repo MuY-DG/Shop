@@ -18,6 +18,8 @@ export interface CartItemView extends CartItemResponse {
   hasImage: boolean;
   imageUrl: string;
   priceText: string;
+  priceIntegerText: string;
+  priceDecimalText: string;
   retailPriceText: string;
   hasRetailPrice: boolean;
   wholesaleText: string;
@@ -88,6 +90,14 @@ function money(cent: unknown): string {
   return `¥${formatMoney(cent) || "0.00"}`;
 }
 
+function moneyParts(cent: unknown): { integerText: string; decimalText: string } {
+  const [integerText, fraction = "00"] = (formatMoney(cent) || "0.00").split(".");
+  return {
+    integerText,
+    decimalText: `.${fraction}`
+  };
+}
+
 function unavailableText(item: CartItemResponse): string {
   switch (item.unavailableReason) {
     case "SKU_UNAVAILABLE":
@@ -112,6 +122,7 @@ function cartItemView(
   const wholesaleApplied = Boolean(item.wholesaleTierMinQuantity);
   const nextTierQuantity = item.nextWholesaleTierQuantityNeeded ?? 0;
   const nextTierPrice = item.nextWholesaleTierPriceCent;
+  const priceParts = moneyParts(item.priceCent);
   return {
     ...item,
     specText: displaySpecText(item.specText),
@@ -119,6 +130,8 @@ function cartItemView(
     hasImage: Boolean(imageUrl),
     imageUrl,
     priceText: money(item.priceCent),
+    priceIntegerText: priceParts.integerText,
+    priceDecimalText: priceParts.decimalText,
     retailPriceText: money(item.retailPriceCent),
     hasRetailPrice: wholesaleApplied && item.retailPriceCent > item.priceCent,
     wholesaleText: wholesaleApplied
