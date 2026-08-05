@@ -79,21 +79,21 @@
       />
 
       <view class="commerce-card">
-        <view
-          wx:if="{{wholesaleSummary}}"
-          class="commerce-row commerce-row--interactive"
-          data-sheet="wholesale"
-          bindtap="onInfoSheetOpen"
-          aria-role="button"
-          aria-label="查看全部批发价格"
-        >
-          <image class="commerce-icon" src="/assets/icons/sell-outline-rounded.svg" mode="aspectFit" />
-          <view class="commerce-value">
-            <text class="commerce-value__text">{{wholesaleSummary}}</text>
-          </view>
-          <image class="commerce-action-icon" src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
-        </view>
         <view class="commerce-info-group">
+          <view
+            wx:if="{{wholesaleSummary}}"
+            class="commerce-row commerce-row--detail-info commerce-row--interactive"
+            data-sheet="wholesale"
+            bindtap="onInfoSheetOpen"
+            aria-role="button"
+            aria-label="查看全部批发价格"
+          >
+            <image class="commerce-icon" src="/assets/icons/sell-outline-rounded.svg" mode="aspectFit" />
+            <view class="commerce-value">
+              <text class="commerce-value__text">{{wholesaleSummary}}</text>
+            </view>
+            <image class="commerce-action-icon" src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" />
+          </view>
           <view
             wx:if="{{weightParameter || spiceParameter || otherParameterViews.length}}"
             class="commerce-row commerce-row--detail-info commerce-row--parameters commerce-row--interactive"
@@ -480,7 +480,7 @@
     catchtap="onCloseSheet"
     catchtouchmove="onPreventMove"
   >
-    <view class="sheet-panel {{sheetClosing ? 'sheet-panel--closing' : ''}} {{activeSheet === 'address' ? 'sheet-panel--address' : ''}} {{activeSheet === 'parameters' ? 'sheet-panel--parameters' : ''}} {{activeSheet === 'guarantee' ? 'sheet-panel--guarantee' : ''}} {{activeSheet === 'freight' ? 'sheet-panel--freight' : ''}} {{activeSheet === 'reviews' ? 'sheet-panel--reviews' : ''}}" catchtap="onPreventMove">
+    <view class="sheet-panel {{sheetClosing ? 'sheet-panel--closing' : ''}} {{activeSheet === 'address' ? 'sheet-panel--address' : ''}} {{activeSheet === 'parameters' ? 'sheet-panel--parameters' : ''}} {{activeSheet === 'guarantee' ? 'sheet-panel--guarantee' : ''}} {{activeSheet === 'freight' ? 'sheet-panel--freight' : ''}} {{activeSheet === 'wholesale' ? 'sheet-panel--wholesale' : ''}} {{activeSheet === 'reviews' ? 'sheet-panel--reviews' : ''}}" catchtap="onPreventMove">
 
       <block wx:if="{{activeSheet === 'address'}}">
         <view class="parameter-sheet-header address-sheet-header">
@@ -647,20 +647,32 @@
       </block>
 
       <block wx:elif="{{activeSheet === 'wholesale'}}">
-        <view class="info-sheet-header">
-          <view>
-            <text class="info-sheet-title">批发价格</text>
-            <text class="info-sheet-intro">购买数量达到门槛后，系统会自动使用对应单价。</text>
-          </view>
+        <view class="parameter-sheet-header">
+          <text class="parameter-sheet-title">批发价格</text>
           <button class="sheet-close" bindtap="onCloseSheet" aria-label="关闭批发价格">
             <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
           </button>
         </view>
-        <view class="wholesale-table">
-          <view wx:for="{{wholesaleTiers}}" wx:key="minQuantity" class="wholesale-table-row">
-            <text>{{item.minQuantity}} 件起</text>
-            <text class="wholesale-table-price">¥{{item.priceText}} / 件</text>
+
+        <scroll-view
+          class="parameter-sheet-scroll"
+          scroll-y="{{true}}"
+          enhanced="{{true}}"
+          bounces="{{true}}"
+          enable-passive="{{true}}"
+          show-scrollbar="{{false}}"
+        >
+          <view class="parameter-sheet-list">
+            <view wx:for="{{wholesaleTiers}}" wx:key="minQuantity" class="parameter-sheet-row">
+              <text class="parameter-sheet-label">{{item.minQuantity}} 件起</text>
+              <text class="parameter-sheet-value">¥{{item.priceText}} / 件</text>
+            </view>
+            <text class="parameter-sheet-tip">购买数量达到门槛后，系统会自动使用对应单价</text>
           </view>
+        </scroll-view>
+
+        <view class="parameter-sheet-footer">
+          <button class="parameter-sheet-confirm" bindtap="onCloseSheet">我知道了</button>
         </view>
       </block>
 

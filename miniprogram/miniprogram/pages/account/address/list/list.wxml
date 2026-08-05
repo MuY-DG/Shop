@@ -8,6 +8,18 @@
     loading="{{loaded && loading}}"
   />
 
+  <scroll-view
+    class="address-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{true}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{loaded && loading}}"
+    refresher-background="#F3F3F7"
+    bindrefresherrefresh="onPullDownRefresh"
+  >
   <view class="address-content">
     <view wx:if="{{!loaded && loading}}" class="address-state">
       <ui-state type="loading" title="正在加载地址" description="请稍候" />
@@ -41,6 +53,7 @@
       </view>
     </block>
   </view>
+  </scroll-view>
 
   <view class="address-footer">
     <button class="add-address-button" bindtap="onAddTap">新增收货地址</button>

@@ -1,6 +1,20 @@
 <view class="after-sale-list-page">
   <navigation-bar title="退款售后" back="{{true}}" background="#F3F3F7" color="#2E1D16" loading="{{loaded && loading}}" />
 
+  <scroll-view
+    class="after-sale-list-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{true}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{loaded && loading}}"
+    refresher-background="#F3F3F7"
+    lower-threshold="160"
+    bindrefresherrefresh="onPullDownRefresh"
+    bindscrolltolower="onReachBottom"
+  >
   <view class="list-content">
     <view wx:if="{{!loaded && loading}}" class="list-state">
       <ui-state type="loading" title="正在加载售后记录" description="请稍候" />
@@ -49,4 +63,5 @@
       <view wx:elif="{{records.length && !hasMore}}" class="page-tip">已显示全部售后记录</view>
     </block>
   </view>
+  </scroll-view>
 </view>

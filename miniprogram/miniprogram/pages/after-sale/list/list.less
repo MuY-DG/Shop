@@ -2,11 +2,21 @@
 @import "../../../styles/mixins.less";
 
 .after-sale-list-page {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
   background: @color-page;
 }
 
+.after-sale-list-scroll {
+  height: 0;
+  min-height: 0;
+  flex: 1;
+}
+
 .list-content {
+  box-sizing: border-box;
   padding: @space-5 @page-gutter @space-12;
 }
 

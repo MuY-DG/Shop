@@ -405,7 +405,8 @@
 .sheet-panel--address,
 .sheet-panel--parameters,
 .sheet-panel--guarantee,
-.sheet-panel--freight {
+.sheet-panel--freight,
+.sheet-panel--wholesale {
   height: 80vh;
   display: flex;
   padding-bottom: 0;
@@ -414,7 +415,8 @@
 }
 
 .sheet-panel--guarantee,
-.sheet-panel--freight { transform-origin: bottom center; }
+.sheet-panel--freight,
+.sheet-panel--wholesale { transform-origin: bottom center; }
 
 .sheet-panel--reviews {
   position: relative;
@@ -506,7 +508,7 @@
   width: 100%;
   margin-top: 10rpx;
   overflow: hidden;
-  color: @color-text-secondary;
+  color: @color-text-black;
   font-size: @font-size-xs;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -514,7 +516,7 @@
 
 .sheet-wholesale-hint {
   margin-top: 6rpx;
-  color: @color-gold-text;
+  color: @color-text-gray;
   font-size: 20rpx;
   line-height: 28rpx;
 }
@@ -555,7 +557,7 @@
 }
 
 .sheet-section-title {
-  color: @color-text-primary;
+  color: @color-text-black;
   font-size: @font-size-base;
   font-weight: 700;
 }
@@ -569,7 +571,7 @@
 
 .sheet-section-note,
 .quantity-note {
-  color: @color-text-muted;
+  color: @color-text-gray;
   font-size: 20rpx;
 }
 
@@ -621,7 +623,7 @@
   padding: 9rpx 22rpx;
   border: 1rpx solid transparent;
   border-radius: 12rpx;
-  color: @color-text-primary;
+  color: @color-text-black;
   background: #f6f6fa;
   gap: 10rpx;
 }
@@ -629,9 +631,10 @@
 .specification-option--with-image { padding: 7rpx 18rpx 7rpx 8rpx; }
 
 .specification-option--selected {
-  border-color: #ff172b;
-  color: #b72b22;
-  background: #fff1f2;
+  border-color: #fe0000;
+  color: #fe0000;
+  font-weight: 650;
+  background: #ffebef;
 }
 
 .specification-option--disabled { opacity: 0.36; }
@@ -662,7 +665,7 @@
 
 .specification-option__sold-out {
   flex: none;
-  color: @color-text-muted;
+  color: @color-text-gray;
   font-size: 18rpx;
   line-height: 26rpx;
 }
@@ -726,12 +729,14 @@
 }
 
 .wholesale-shortcut--active {
-  border-color: @color-brand;
-  background: @color-brand-soft;
+  border-color: #fe0000;
+  color: #fe0000;
+  font-weight: 650;
+  background: #ffebef;
 }
 
 .wholesale-shortcut__quantity {
-  color: @color-text-secondary;
+  color: @color-text-black;
   font-size: 20rpx;
 }
 
@@ -743,6 +748,9 @@
   font-variant-numeric: proportional-nums;
   font-weight: 600;
 }
+
+.wholesale-shortcut--active .wholesale-shortcut__quantity,
+.wholesale-shortcut--active .wholesale-shortcut__price { color: #fe0000; }
 
 .quantity-section {
   display: flex;
@@ -772,7 +780,7 @@
 }
 
 .quantity-button {
-  color: @color-brand-dark;
+  color: @color-text-black;
   font-size: 34rpx;
   background: #f6f6fa;
 }
@@ -783,7 +791,7 @@
 }
 
 .quantity-value {
-  color: @color-text-primary;
+  color: @color-text-black;
   font-family: @font-family-commerce-price;
   font-size: @font-size-base;
   font-variant-numeric: tabular-nums;
@@ -817,28 +825,6 @@
 .sheet-confirm--cart { color: #b16a27; background: #ffe8cb; }
 .sheet-confirm--buy { color: #fefcfc; background: #ff172b; }
 .sheet-confirm--disabled { color: @color-text-inverse; opacity: 0.48; }
-
-.info-sheet-header {
-  position: relative;
-  min-height: 150rpx;
-  padding: 32rpx 116rpx 26rpx 30rpx;
-  border-bottom: 1rpx solid @color-divider;
-}
-
-.info-sheet-title {
-  display: block;
-  color: @color-text-primary;
-  font-size: @font-size-lg;
-  font-weight: 700;
-}
-
-.info-sheet-intro {
-  display: block;
-  margin-top: 8rpx;
-  color: @color-text-secondary;
-  font-size: @font-size-xs;
-  line-height: @line-height-base;
-}
 
 .info-sheet-scroll {
   max-height: 54vh;
@@ -1165,16 +1151,14 @@
   line-height: @line-height-base;
 }
 
-.freight-detail,
-.wholesale-table { padding: 12rpx 30rpx 34rpx; }
+.freight-detail { padding: 12rpx 30rpx 34rpx; }
 
 .sheet-panel--freight .freight-detail {
   min-height: 0;
   flex: 1;
 }
 
-.freight-detail-row,
-.wholesale-table-row {
+.freight-detail-row {
   min-height: 84rpx;
   display: flex;
   align-items: center;
@@ -1192,15 +1176,6 @@
   color: #8f939c;
   font-size: @font-size-xs;
   line-height: @line-height-base;
-}
-
-.wholesale-table-row { color: @color-text-secondary; font-size: @font-size-sm; }
-
-.wholesale-table-price {
-  color: @color-price;
-  font-family: @font-family-commerce-price;
-  font-variant-numeric: proportional-nums;
-  font-weight: 600;
 }
 
 .review-card {

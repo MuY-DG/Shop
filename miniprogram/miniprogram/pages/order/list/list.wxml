@@ -19,6 +19,20 @@
     </view>
   </scroll-view>
 
+  <scroll-view
+    class="orders-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{true}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{loaded && loading}}"
+    refresher-background="#F3F3F7"
+    lower-threshold="160"
+    bindrefresherrefresh="onPullDownRefresh"
+    bindscrolltolower="onReachBottom"
+  >
   <view class="orders-content">
     <view wx:if="{{!loaded && loading}}" class="orders-state">
       <ui-state type="loading" title="正在加载订单" description="订单状态与支付结果正在同步" />
@@ -156,4 +170,5 @@
       <view wx:elif="{{orders.length && !hasMore}}" class="list-footer">没有更多订单了</view>
     </block>
   </view>
+  </scroll-view>
 </view>

@@ -23,6 +23,18 @@
     </view>
   </scroll-view>
 
+  <scroll-view
+    class="coupon-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{true}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{loaded && loading}}"
+    refresher-background="#F3F3F7"
+    bindrefresherrefresh="onPullDownRefresh"
+  >
   <view class="coupon-content">
     <view wx:if="{{!loaded && loading}}" class="coupon-state">
       <ui-state type="loading" title="正在加载优惠券" description="请稍候" />
@@ -61,4 +73,5 @@
       </view>
     </block>
   </view>
+  </scroll-view>
 </view>

@@ -9,6 +9,14 @@
     loading="{{loading || saving || savingAvatar || loggingOut}}"
   />
 
+  <scroll-view
+    class="user-profile-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{true}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+  >
   <view class="user-profile-content">
     <view class="profile-card">
       <view class="avatar-slot">
@@ -65,4 +73,5 @@
       >退出登录</button>
     </view>
   </view>
+  </scroll-view>
 </view>

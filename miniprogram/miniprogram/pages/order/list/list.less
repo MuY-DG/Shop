@@ -2,8 +2,17 @@
 @import "../../../styles/mixins.less";
 
 .orders-page {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
   background: @color-page;
+}
+
+.orders-scroll {
+  height: 0;
+  min-height: 0;
+  flex: 1;
 }
 
 .status-tabs {
@@ -11,6 +20,7 @@
   z-index: 20;
   top: 0;
   border-bottom: 1rpx solid @color-divider;
+  flex: none;
   white-space: nowrap;
   background: fade(@color-surface, 96%);
 }
@@ -48,6 +58,7 @@
 }
 
 .orders-content {
+  box-sizing: border-box;
   padding: @space-5 @page-gutter @space-12;
 }
 

@@ -8,10 +8,18 @@
 
 .user-profile-page {
   position: relative;
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
   overflow: hidden;
+  flex-direction: column;
   color: #333333;
   background: @profile-page;
+}
+
+.user-profile-scroll {
+  height: 0;
+  min-height: 0;
+  flex: 1;
 }
 
 .user-profile-content {
