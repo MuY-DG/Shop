@@ -96,6 +96,10 @@ export interface ProductFavoriteStatus {
   favorited: boolean;
 }
 
+export interface DeleteFavoriteItemsRequest {
+  spuIds: number[];
+}
+
 export interface ProductFavoriteItem {
   spuId: number;
   title: string;
@@ -113,6 +117,10 @@ export interface ProductBrowseRecord {
   viewCount: number;
 }
 
+export interface DeleteBrowseHistoryItemsRequest {
+  spuIds: number[];
+}
+
 export interface ProductBrowseHistoryItem {
   spuId: number;
   title: string;
@@ -127,4 +135,9 @@ export interface ProductBrowseHistoryItem {
 }
 
 export type ProductFavoritePage = PageResult<ProductFavoriteItem>;
-export type ProductBrowseHistoryPage = PageResult<ProductBrowseHistoryItem>;
+export interface ProductBrowseHistoryPage {
+  records: ProductBrowseHistoryItem[];
+  current: number;
+  size: number;
+  hasMore: boolean;
+}

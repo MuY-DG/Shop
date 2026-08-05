@@ -87,7 +87,7 @@ test("地址表单规范空白并校验姓名、电话、地区和详细地址",
   );
 });
 
-test("收藏与浏览记录映射价格、下架状态和足迹文案", () => {
+test("收藏复用分类商品卡片且不展示收藏时间，浏览记录保留足迹日期", () => {
   const favorites = buildFavoriteProductViews([{
     spuId: 12,
     title: "牛油火锅底料",
@@ -98,8 +98,15 @@ test("收藏与浏览记录映射价格、下架状态和足迹文案", () => {
     available: true,
     favoritedAt: "2026-07-20T12:00:00Z"
   }]);
-  assert.equal(favorites[0]?.priceText, "¥29.90–39.90");
-  assert.equal(favorites[0]?.metaText, "2026.07.20 收藏");
+  assert.equal(favorites[0]?.priceText, "29.90–39.90");
+  assert.equal(favorites[0]?.hasPrice, true);
+  assert.equal(favorites[0]?.priceIntegerText, "29");
+  assert.equal(favorites[0]?.priceDecimalText, ".90");
+  assert.equal(favorites[0]?.rangePriceIntegerText, "39");
+  assert.equal(favorites[0]?.rangePriceDecimalText, ".90");
+  assert.equal(favorites[0]?.hasPriceRange, true);
+  assert.equal(favorites[0]?.selected, false);
+  assert.equal("metaText" in (favorites[0] ?? {}), false);
   assert.equal(favorites[0]?.navigationPath, "/pages/product/detail/detail?id=12");
 
   const history = buildHistoryProductViews([{
@@ -113,8 +120,7 @@ test("收藏与浏览记录映射价格、下架状态和足迹文案", () => {
   }]);
   assert.equal(history[0]?.priceText, "¥19.90");
   assert.equal(history[0]?.availabilityText, "商品已下架");
-  assert.equal(history[0]?.metaText, "2026.07.21 · 浏览 3 次");
-  assert.equal(history[0]?.viewCountText, "浏览 3 次");
+  assert.equal(history[0]?.metaText, "");
   assert.equal(history[0]?.navigationPath, "/pages/product/detail/detail?id=13");
 });
 
@@ -153,7 +159,18 @@ test("足迹按本地日期分组并在分页、删除和图片降级后重新�
 
     assert.equal(firstPage[0]?.historyDateKey, "2026-07-29");
     assert.equal(firstPage[0]?.historyDateLabel, "07月29日");
-    assert.equal(firstPage[0]?.metaText, "2026.07.29 · 浏览 2 次");
+
+    const today = buildHistoryProductViews([{
+      spuId: 24,
+      title: "今日商品",
+      minPriceCent: 2190,
+      available: true,
+      firstViewedAt: "2026-07-30T16:00:00Z",
+      lastViewedAt: "2026-07-30T16:00:00Z",
+      viewCount: 1
+    }], new Date("2026-07-30T18:00:00Z"));
+    assert.equal(today[0]?.historyDateKey, "2026-07-30");
+    assert.equal(today[0]?.historyDateLabel, "今天");
 
     const appended = [...firstPage, ...nextPage];
     const appendedGroups = groupHistoryProductViews(appended);

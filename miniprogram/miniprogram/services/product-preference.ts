@@ -1,5 +1,7 @@
 import { API_ENDPOINTS } from "../constants/api-endpoints";
 import type {
+  DeleteBrowseHistoryItemsRequest,
+  DeleteFavoriteItemsRequest,
   ProductBrowseHistoryPage,
   ProductBrowseRecord,
   ProductFavoritePage,
@@ -25,6 +27,15 @@ export function removeFavorite(spuId: number): Promise<void> {
   return request<void>({
     url: API_ENDPOINTS.userProduct.favorite(spuId),
     method: "DELETE",
+    expectData: false
+  });
+}
+
+export function removeFavorites(spuIds: number[]): Promise<void> {
+  return request<void, DeleteFavoriteItemsRequest>({
+    url: API_ENDPOINTS.userProduct.favoriteBatch,
+    method: "DELETE",
+    data: { spuIds },
     expectData: false
   });
 }
@@ -59,6 +70,15 @@ export function deleteBrowseHistoryItem(spuId: number): Promise<void> {
   return request<void>({
     url: API_ENDPOINTS.userProduct.browseRecord(spuId),
     method: "DELETE",
+    expectData: false
+  });
+}
+
+export function deleteBrowseHistoryItems(spuIds: number[]): Promise<void> {
+  return request<void, DeleteBrowseHistoryItemsRequest>({
+    url: API_ENDPOINTS.userProduct.browseHistoryBatch,
+    method: "DELETE",
+    data: { spuIds },
     expectData: false
   });
 }

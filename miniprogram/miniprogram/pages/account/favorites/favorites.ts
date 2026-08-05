@@ -1,21 +1,39 @@
 import {
   buildFavoriteProductViews,
-  type AccountProductView
+  type FavoriteProductView
 } from "../../../features/account-center";
 import {
+  findDefaultSku,
+  parsePositiveId
+} from "../../../features/product-catalog";
+import { addCartItem } from "../../../services/cart";
+import {
   getFavorites,
-  removeFavorite
+  removeFavorites
 } from "../../../services/product-preference";
-import { parsePositiveId } from "../../../features/product-catalog";
+import { getProductDetail } from "../../../services/product";
+import { getSessionState } from "../../../services/session";
 import { isApiError } from "../../../utils/api-error";
+import { openLoginPage } from "../../../utils/login-navigation";
+import { refreshCustomTabBarCartCount } from "../../../utils/tab-bar";
 
 interface DatasetEvent {
   currentTarget: {
     dataset: {
       id?: number | string;
-      index?: number | string;
     };
   };
+}
+
+interface ProductCardEvent {
+  detail: {
+    spuId?: number | string;
+  };
+}
+
+interface FavoriteCollection {
+  items: FavoriteProductView[];
+  selectedIds: number[];
 }
 
 const PAGE_SIZE = 10;
@@ -29,22 +47,40 @@ function actionError(error: unknown, fallback: string): string {
       : fallback;
 }
 
-function confirmRemove(): Promise<boolean> {
+function confirmAction(title: string, content: string, confirmText: string): Promise<boolean> {
   return new Promise((resolve) => {
     wx.showModal({
-      title: "取消收藏",
-      content: "确定从收藏中移除该商品吗？",
-      confirmText: "移除",
-      confirmColor: "#B72B22",
+      title,
+      content,
+      confirmText,
+      confirmColor: "#FF172B",
       success: (result) => resolve(result.confirm),
       fail: () => resolve(false)
     });
   });
 }
 
+function favoriteCollection(
+  items: FavoriteProductView[],
+  selectedIds: number[] = []
+): FavoriteCollection {
+  const requestedIds = new Set(selectedIds);
+  const normalizedSelectedIds = items
+    .filter((item) => requestedIds.has(item.spuId))
+    .map((item) => item.spuId);
+  const selectedIdSet = new Set(normalizedSelectedIds);
+  return {
+    items: items.map((item) => ({
+      ...item,
+      selected: selectedIdSet.has(item.spuId)
+    })),
+    selectedIds: normalizedSelectedIds
+  };
+}
+
 Page({
   data: {
-    items: [] as AccountProductView[],
+    items: [] as FavoriteProductView[],
     current: 1,
     total: 0,
     hasMore: false,
@@ -52,7 +88,10 @@ Page({
     loaded: false,
     loadingMore: false,
     errorText: "",
-    actionSpuId: 0
+    managing: false,
+    selectedIds: [] as number[],
+    addingSpuId: 0,
+    deleting: false
   },
 
   onLoad() {
@@ -64,7 +103,9 @@ Page({
   },
 
   async onPullDownRefresh() {
-    await this.refresh();
+    if (!this.data.deleting) {
+      await this.refresh();
+    }
     wx.stopPullDownRefresh();
   },
 
@@ -84,13 +125,19 @@ Page({
       if (requestId !== latestRequest) {
         return;
       }
+      const sourceItems = buildFavoriteProductViews(response.records);
+      const managing = this.data.managing && sourceItems.length > 0;
       this.setData({
-        items: buildFavoriteProductViews(response.records),
+        ...favoriteCollection(
+          sourceItems,
+          managing ? this.data.selectedIds : []
+        ),
         current: response.current,
         total: response.total,
         hasMore: response.current * response.size < response.total,
         loading: false,
         loaded: true,
+        managing,
         errorText: ""
       });
     } catch (error) {
@@ -105,7 +152,12 @@ Page({
   },
 
   async loadMore() {
-    if (!this.data.hasMore || this.data.loading || this.data.loadingMore) {
+    if (
+      !this.data.hasMore
+      || this.data.loading
+      || this.data.loadingMore
+      || this.data.deleting
+    ) {
       return;
     }
     const requestId = ++latestRequest;
@@ -115,8 +167,12 @@ Page({
       if (requestId !== latestRequest) {
         return;
       }
+      const items = [
+        ...this.data.items,
+        ...buildFavoriteProductViews(response.records)
+      ];
       this.setData({
-        items: [...this.data.items, ...buildFavoriteProductViews(response.records)],
+        ...favoriteCollection(items, this.data.selectedIds),
         current: response.current,
         total: response.total,
         hasMore: response.current * response.size < response.total,
@@ -133,10 +189,24 @@ Page({
     }
   },
 
-  onProductTap(event: DatasetEvent) {
-    const spuId = parsePositiveId(event.currentTarget.dataset.id);
+  onManageToggle() {
+    if (this.data.deleting || this.data.addingSpuId) {
+      return;
+    }
+    this.setData({
+      managing: !this.data.managing,
+      ...favoriteCollection(this.data.items)
+    });
+  },
+
+  onProductSelect(event: ProductCardEvent) {
+    const spuId = parsePositiveId(event.detail.spuId);
     const product = this.data.items.find((item) => item.spuId === spuId);
     if (!product) {
+      return;
+    }
+    if (this.data.managing) {
+      this.toggleSelection(spuId);
       return;
     }
     if (!product.available) {
@@ -146,47 +216,112 @@ Page({
     wx.navigateTo({ url: product.navigationPath });
   },
 
-  onImageError(event: DatasetEvent) {
-    const index = Number(event.currentTarget.dataset.index);
-    if (!Number.isSafeInteger(index) || index < 0 || index >= this.data.items.length) {
+  onSelectionToggle(event: DatasetEvent) {
+    if (!this.data.managing || this.data.deleting) {
       return;
     }
-    this.setData({
-      items: this.data.items.map((item, itemIndex) => (
-        itemIndex === index ? { ...item, hasImage: false } : item
-      ))
-    });
-  },
-
-  onRemoveTap(event: DatasetEvent) {
     const spuId = parsePositiveId(event.currentTarget.dataset.id);
     if (spuId) {
-      void this.remove(spuId);
+      this.toggleSelection(spuId);
     }
   },
 
-  async remove(spuId: number) {
-    if (this.data.actionSpuId || !await confirmRemove()) {
+  toggleSelection(spuId: number) {
+    const selectedIds = this.data.selectedIds.includes(spuId)
+      ? this.data.selectedIds.filter((id) => id !== spuId)
+      : [...this.data.selectedIds, spuId];
+    this.setData(favoriteCollection(this.data.items, selectedIds));
+  },
+
+  onProductAdd(event: ProductCardEvent) {
+    const spuId = parsePositiveId(event.detail.spuId);
+    const product = this.data.items.find((item) => item.spuId === spuId);
+    if (
+      !product?.available
+      || this.data.managing
+      || this.data.addingSpuId
+      || this.data.deleting
+    ) {
       return;
     }
-    this.setData({ actionSpuId: spuId });
+    const session = getSessionState();
+    if (!session.user || (!session.accessToken && !session.refreshToken)) {
+      openLoginPage();
+      return;
+    }
+    void this.addProductToCart(spuId);
+  },
+
+  async addProductToCart(spuId: number) {
+    this.setData({ addingSpuId: spuId });
     try {
-      await removeFavorite(spuId);
-      this.setData({
-        items: this.data.items.filter((item) => item.spuId !== spuId),
-        current: 1,
-        total: Math.max(0, this.data.total - 1),
-        hasMore: false,
-        actionSpuId: 0
-      });
-      wx.showToast({ title: "已取消收藏", icon: "success" });
-      await this.refresh();
+      const detail = await getProductDetail(spuId);
+      const sku = findDefaultSku(detail.skus);
+      if (!sku) {
+        wx.showToast({ title: "该商品暂无可售规格", icon: "none" });
+        return;
+      }
+      await addCartItem({ skuId: sku.id, quantity: 1 });
+      void refreshCustomTabBarCartCount(this);
+      wx.showToast({ title: "已加入购物车", icon: "success" });
     } catch (error) {
-      this.setData({ actionSpuId: 0 });
+      if (isApiError(error) && error.kind === "AUTH") {
+        openLoginPage();
+        return;
+      }
       wx.showToast({
-        title: actionError(error, "取消收藏失败"),
+        title: actionError(error, "加入购物车失败，请稍后重试"),
         icon: "none"
       });
+    } finally {
+      if (this.data.addingSpuId === spuId) {
+        this.setData({ addingSpuId: 0 });
+      }
+    }
+  },
+
+  onCancelFavoritesTap() {
+    void this.cancelSelectedFavorites();
+  },
+
+  async cancelSelectedFavorites() {
+    if (this.data.deleting) {
+      return;
+    }
+    const selectedSpuIds = Array.from(new Set(this.data.selectedIds))
+      .filter((spuId) => Number.isSafeInteger(spuId) && spuId > 0);
+    if (!selectedSpuIds.length) {
+      wx.showToast({ title: "请选择要取消收藏的商品", icon: "none" });
+      return;
+    }
+    if (!await confirmAction(
+      "取消收藏",
+      `确定取消收藏这 ${selectedSpuIds.length} 件商品吗？`,
+      "取消收藏"
+    )) {
+      return;
+    }
+    latestRequest += 1;
+    this.setData({ deleting: true, loadingMore: false });
+    try {
+      await removeFavorites(selectedSpuIds);
+      const removedIds = new Set(selectedSpuIds);
+      const items = this.data.items.filter((item) => !removedIds.has(item.spuId));
+      this.setData({
+        ...favoriteCollection(items),
+        total: Math.max(0, this.data.total - selectedSpuIds.length),
+        managing: items.length > 0
+      });
+      await this.refresh();
+      wx.showToast({ title: "取消收藏成功", icon: "success" });
+    } catch (error) {
+      await this.refresh();
+      wx.showToast({
+        title: actionError(error, "取消收藏失败，请重试"),
+        icon: "none"
+      });
+    } finally {
+      this.setData({ deleting: false });
     }
   }
 });

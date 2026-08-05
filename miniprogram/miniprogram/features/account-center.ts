@@ -9,6 +9,10 @@ import type {
   ProductFavoriteItem
 } from "../types/product-engagement";
 import { formatLocalDate } from "../utils/date-time";
+import {
+  buildCatalogProductCard,
+  type CatalogProductCardView
+} from "./product-catalog";
 
 export const ACCOUNT_ROUTES = Object.freeze({
   profile: "/pages/account/profile/profile",
@@ -58,7 +62,12 @@ export interface AccountProductView {
 export interface HistoryProductView extends AccountProductView {
   historyDateKey: string;
   historyDateLabel: string;
-  viewCountText: string;
+  selected: boolean;
+}
+
+export interface FavoriteProductView extends CatalogProductCardView {
+  available: boolean;
+  selected: boolean;
 }
 
 export interface HistoryProductGroup {
@@ -108,7 +117,14 @@ function dateText(value: unknown): string {
   return formatLocalDate(value).replace(/-/g, ".");
 }
 
-function historyDate(value: unknown): Pick<
+function currentLocalDateKey(today: Date): string {
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function historyDate(value: unknown, today: Date): Pick<
   HistoryProductView,
   "historyDateKey" | "historyDateLabel"
 > {
@@ -122,7 +138,9 @@ function historyDate(value: unknown): Pick<
   const [, month, day] = localDate.split("-");
   return {
     historyDateKey: localDate,
-    historyDateLabel: `${month}月${day}日`
+    historyDateLabel: localDate === currentLocalDateKey(today)
+      ? "今天"
+      : `${month}月${day}日`
   };
 }
 
@@ -166,32 +184,46 @@ function buildProductView(
 
 export function buildFavoriteProductViews(
   items: ProductFavoriteItem[]
-): AccountProductView[] {
-  return (Array.isArray(items) ? items : [])
-    .map((item) => buildProductView(
-      item,
-      dateText(item.favoritedAt) ? `${dateText(item.favoritedAt)} 收藏` : "已收藏"
-    ))
-    .filter((item): item is AccountProductView => Boolean(item));
-}
-
-export function buildHistoryProductViews(
-  items: ProductBrowseHistoryItem[]
-): HistoryProductView[] {
+): FavoriteProductView[] {
   return (Array.isArray(items) ? items : [])
     .map((item) => {
-      const viewedAt = dateText(item.lastViewedAt);
-      const count = positiveId(item.viewCount);
-      const viewCountText = `浏览 ${count || 1} 次`;
-      const product = buildProductView(
-        item,
-        `${viewedAt ? `${viewedAt} · ` : ""}${viewCountText}`
-      );
+      const product = buildCatalogProductCard({
+        id: positiveId(item?.spuId),
+        categoryId: 0,
+        title: cleanText(item?.title),
+        subtitle: cleanText(item?.subtitle),
+        mainImage: cleanText(item?.mainImage),
+        sellingPoints: [],
+        minPriceCent: nonNegativeCent(item?.minPriceCent),
+        maxPriceCent: nonNegativeCent(item?.maxPriceCent),
+        displaySales: 0,
+        saleState: item?.available ? "AVAILABLE" : "SOLD_OUT",
+        parameters: []
+      });
       return product
         ? {
             ...product,
-            ...historyDate(item.lastViewedAt),
-            viewCountText
+            salesText: "",
+            available: Boolean(item?.available),
+            selected: false
+          }
+        : undefined;
+    })
+    .filter((item): item is FavoriteProductView => Boolean(item));
+}
+
+export function buildHistoryProductViews(
+  items: ProductBrowseHistoryItem[],
+  today = new Date()
+): HistoryProductView[] {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const product = buildProductView(item, "");
+      return product
+        ? {
+            ...product,
+            ...historyDate(item.lastViewedAt, today),
+            selected: false
           }
         : undefined;
     })

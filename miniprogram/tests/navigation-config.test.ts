@@ -614,7 +614,7 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   );
 });
 
-test("收藏与足迹整卡进入商品详情且移除操作不会冒泡", () => {
+test("收藏复用分类卡片并支持批量取消，足迹支持管理、批量删除和加购", () => {
   const favoriteTemplate = readFileSync(
     resolve(sourceRoot, "pages/account/favorites/favorites.wxml"),
     "utf8"
@@ -623,12 +623,20 @@ test("收藏与足迹整卡进入商品详情且移除操作不会冒泡", () =>
     resolve(sourceRoot, "pages/account/favorites/favorites.ts"),
     "utf8"
   );
+  const favoriteStyle = readFileSync(
+    resolve(sourceRoot, "pages/account/favorites/favorites.less"),
+    "utf8"
+  );
   const historyTemplate = readFileSync(
     resolve(sourceRoot, "pages/account/history/history.wxml"),
     "utf8"
   );
   const historyLogic = readFileSync(
     resolve(sourceRoot, "pages/account/history/history.ts"),
+    "utf8"
+  );
+  const historyStyle = readFileSync(
+    resolve(sourceRoot, "pages/account/history/history.less"),
     "utf8"
   );
   const orderTemplate = readFileSync(
@@ -644,22 +652,52 @@ test("收藏与足迹整卡进入商品详情且移除操作不会冒泡", () =>
     "utf8"
   );
 
-  [favoriteTemplate, historyTemplate].forEach((template) => {
-    assert.match(template, /data-id="\{\{item\.spuId\}\}"[\s\S]*bindtap="onProductTap"/);
-    assert.match(template, /catchtap="on(?:Remove|Delete)Tap"/);
-    assert.match(template, /aria-role="group"/);
-    assert.match(template, /aria-role="button"/);
-    assert.match(template, /aria-disabled="\{\{!item\.available\}\}"/);
-    assert.match(template, /aria-label="\{\{item\.available \?/);
-  });
-  [favoriteLogic, historyLogic].forEach((logic) => {
-    assert.match(logic, /wx\.navigateTo\(\{ url: product\.navigationPath \}\)/);
-    assert.match(logic, /async refresh\(\)[\s\S]{0,180}loadingMore: false/);
-  });
-  assert.match(favoriteLogic, /await removeFavorite\(spuId\);[\s\S]*await this\.refresh\(\);/);
-  assert.match(historyLogic, /await deleteBrowseHistoryItem\(spuId\);[\s\S]*await this\.refresh\(\);/);
-  assert.match(favoriteLogic, /current: 1,[\s\S]*hasMore: false/);
-  assert.match(historyLogic, /current: 1,[\s\S]*hasMore: false/);
+  assert.match(favoriteTemplate, /<navigation-bar[\s\S]*wide-center="\{\{true\}\}"[\s\S]*slot="center" class="favorites-navigation-title">我的收藏<\/view>/);
+  assert.match(favoriteTemplate, /\{\{managing \? '完成' : '管理'\}\}/);
+  assert.match(favoriteTemplate, /class="favorite-selection/);
+  assert.match(favoriteTemplate, /<product-card[\s\S]*variant="list"[\s\S]*flat="\{\{true\}\}"[\s\S]*bindselect="onProductSelect"[\s\S]*bindadd="onProductAdd"/);
+  assert.match(favoriteTemplate, /取消收藏（\{\{selectedIds\.length\}\}）/);
+  assert.match(favoriteTemplate, /bindtap="onCancelFavoritesTap"/);
+  assert.doesNotMatch(favoriteTemplate, /account-heading|metaText|收藏时间|onClearTap|onRemoveTap/);
+  assert.match(favoriteStyle, /\.favorites-navigation-title\s*\{[\s\S]*text-align:\s*left;/);
+  assert.match(favoriteStyle, /\.favorite-row\s*\{[\s\S]*overflow:\s*hidden;/);
+  assert.match(favoriteStyle, /\.favorite-row--managing[\s\S]*translateX\(/);
+  assert.match(favoriteLogic, /await removeFavorites\(selectedSpuIds\)/);
+  assert.match(favoriteLogic, /confirmAction\(\s*"取消收藏"/);
+  assert.match(favoriteLogic, /const detail = await getProductDetail\(spuId\);[\s\S]*await addCartItem/);
+  assert.match(favoriteLogic, /wx\.navigateTo\(\{ url: product\.navigationPath \}\)/);
+  assert.match(favoriteLogic, /async refresh\(\)[\s\S]{0,180}loadingMore: false/);
+  assert.doesNotMatch(favoriteLogic, /removeFavorite\(/);
+
+  assert.match(historyTemplate, /data-id="\{\{item\.spuId\}\}"[\s\S]*bindtap="onProductTap"/);
+  assert.match(historyTemplate, /aria-role="group"/);
+  assert.match(historyTemplate, /aria-role="button"/);
+  assert.match(historyTemplate, /aria-label="\{\{item\.available \?/);
+  assert.match(historyTemplate, /aria-disabled="\{\{!managing && !item\.available\}\}"/);
+  assert.match(historyLogic, /wx\.navigateTo\(\{ url: product\.navigationPath \}\)/);
+  assert.match(historyLogic, /async refresh\(\)[\s\S]{0,180}loadingMore: false/);
+  assert.match(historyTemplate, /<navigation-bar[\s\S]*wide-center="\{\{true\}\}"[\s\S]*slot="center" class="history-navigation-title">足迹<\/view>/);
+  assert.match(historyTemplate, /\{\{managing \? '完成' : '管理'\}\}/);
+  assert.match(historyTemplate, /bindtap="onClearTap"/);
+  assert.match(historyTemplate, /class="history-selection/);
+  assert.match(historyTemplate, /bindtap="onSelectAllToggle"/);
+  assert.match(historyTemplate, /已选 \{\{selectedIds\.length\}\} 个商品/);
+  assert.match(historyTemplate, /bindtap="onBatchDeleteTap"/);
+  assert.match(historyTemplate, /catchtap="onAddCartTap"/);
+  assert.match(historyTemplate, /history-card__cart-plus-horizontal/);
+  assert.match(historyTemplate, /history-card__cart-plus-vertical/);
+  assert.match(historyStyle, /\.history-navigation-title\s*\{[\s\S]*text-align:\s*left;/);
+  assert.match(historyStyle, /\.history-card\s*\{[\s\S]*background:\s*#ffffff;/);
+  assert.doesNotMatch(historyTemplate, /最近看过的商品|共 \{\{total\}\} 件|history-group__count|history-card__delete/);
+  assert.match(historyLogic, /await deleteBrowseHistoryItems\(selectedSpuIds\)/);
+  assert.match(historyLogic, /hasMore: response\.hasMore/);
+  assert.doesNotMatch(historyLogic, /response\.total/);
+  assert.match(historyLogic, /const detail = await getProductDetail\(spuId\);[\s\S]*await addCartItem/);
+  const deleteSelectedSource = historyLogic.slice(
+    historyLogic.indexOf("  async deleteSelected()"),
+    historyLogic.indexOf("  onClearTap()")
+  );
+  assert.doesNotMatch(deleteSelectedSource, /confirmAction|showModal/);
   assert.match(orderTemplate, /class="order-card"[\s\S]*aria-role="group"[\s\S]*class="order-card__detail"[\s\S]*aria-role="button"/);
   assert.match(orderTemplate, /wx:for="\{\{item\.items\}\}"[\s\S]*class="order-product/);
   assert.match(orderTemplate, /binderror="onItemImageError"/);

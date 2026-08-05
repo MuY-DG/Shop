@@ -4,13 +4,21 @@ import {
   type HistoryProductGroup,
   type HistoryProductView
 } from "../../../features/account-center";
-import { parsePositiveId } from "../../../features/product-catalog";
+import {
+  findDefaultSku,
+  parsePositiveId
+} from "../../../features/product-catalog";
+import { addCartItem } from "../../../services/cart";
 import {
   clearBrowseHistory,
-  deleteBrowseHistoryItem,
+  deleteBrowseHistoryItems,
   getBrowseHistory
 } from "../../../services/product-preference";
+import { getProductDetail } from "../../../services/product";
+import { getSessionState } from "../../../services/session";
 import { isApiError } from "../../../utils/api-error";
+import { openLoginPage } from "../../../utils/login-navigation";
+import { refreshCustomTabBarCartCount } from "../../../utils/tab-bar";
 
 interface DatasetEvent {
   currentTarget: {
@@ -18,6 +26,13 @@ interface DatasetEvent {
       id?: number | string;
     };
   };
+}
+
+interface HistoryCollection {
+  items: HistoryProductView[];
+  groups: HistoryProductGroup[];
+  selectedIds: number[];
+  allSelected: boolean;
 }
 
 const PAGE_SIZE = 10;
@@ -37,20 +52,32 @@ function confirmAction(title: string, content: string, confirmText: string): Pro
       title,
       content,
       confirmText,
-      confirmColor: "#B72B22",
+      confirmColor: "#FF172B",
       success: (result) => resolve(result.confirm),
       fail: () => resolve(false)
     });
   });
 }
 
-function historyCollection(items: HistoryProductView[]): {
-  items: HistoryProductView[];
-  groups: HistoryProductGroup[];
-} {
+function historyCollection(
+  items: HistoryProductView[],
+  selectedIds: number[] = []
+): HistoryCollection {
+  const requestedIds = new Set(selectedIds);
+  const normalizedSelectedIds = items
+    .filter((item) => requestedIds.has(item.spuId))
+    .map((item) => item.spuId);
+  const selectedIdSet = new Set(normalizedSelectedIds);
+  const selectedItems = items.map((item) => ({
+    ...item,
+    selected: selectedIdSet.has(item.spuId)
+  }));
   return {
-    items,
-    groups: groupHistoryProductViews(items)
+    items: selectedItems,
+    groups: groupHistoryProductViews(selectedItems),
+    selectedIds: normalizedSelectedIds,
+    allSelected: selectedItems.length > 0
+      && normalizedSelectedIds.length === selectedItems.length
   };
 }
 
@@ -59,14 +86,17 @@ Page({
     items: [] as HistoryProductView[],
     groups: [] as HistoryProductGroup[],
     current: 1,
-    total: 0,
     hasMore: false,
     loading: true,
     loaded: false,
     loadingMore: false,
-    clearing: false,
     errorText: "",
-    actionSpuId: 0
+    managing: false,
+    selectedIds: [] as number[],
+    allSelected: false,
+    addingSpuId: 0,
+    deleting: false,
+    clearing: false
   },
 
   onLoad() {
@@ -78,7 +108,9 @@ Page({
   },
 
   async onPullDownRefresh() {
-    await this.refresh();
+    if (!this.data.deleting && !this.data.clearing) {
+      await this.refresh();
+    }
     wx.stopPullDownRefresh();
   },
 
@@ -98,14 +130,18 @@ Page({
       if (requestId !== latestRequest) {
         return;
       }
-      const items = buildHistoryProductViews(response.records);
+      const sourceItems = buildHistoryProductViews(response.records);
+      const managing = this.data.managing && sourceItems.length > 0;
       this.setData({
-        ...historyCollection(items),
+        ...historyCollection(
+          sourceItems,
+          managing ? this.data.selectedIds : []
+        ),
         current: response.current,
-        total: response.total,
-        hasMore: response.current * response.size < response.total,
+        hasMore: response.hasMore,
         loading: false,
         loaded: true,
+        managing,
         errorText: ""
       });
     } catch (error) {
@@ -113,14 +149,20 @@ Page({
         this.setData({
           loading: false,
           loaded: this.data.items.length > 0,
-          errorText: actionError(error, "浏览记录加载失败，请稍后重试")
+          errorText: actionError(error, "足迹加载失败，请稍后重试")
         });
       }
     }
   },
 
   async loadMore() {
-    if (!this.data.hasMore || this.data.loading || this.data.loadingMore) {
+    if (
+      !this.data.hasMore
+      || this.data.loading
+      || this.data.loadingMore
+      || this.data.deleting
+      || this.data.clearing
+    ) {
       return;
     }
     const requestId = ++latestRequest;
@@ -135,21 +177,31 @@ Page({
         ...buildHistoryProductViews(response.records)
       ];
       this.setData({
-        ...historyCollection(items),
+        ...historyCollection(items, this.data.selectedIds),
         current: response.current,
-        total: response.total,
-        hasMore: response.current * response.size < response.total,
+        hasMore: response.hasMore,
         loadingMore: false
       });
     } catch (error) {
       if (requestId === latestRequest) {
         this.setData({ loadingMore: false });
         wx.showToast({
-          title: actionError(error, "更多浏览记录加载失败"),
+          title: actionError(error, "更多足迹加载失败"),
           icon: "none"
         });
       }
     }
+  },
+
+  onManageToggle() {
+    if (this.data.deleting || this.data.clearing || this.data.addingSpuId) {
+      return;
+    }
+    const managing = !this.data.managing;
+    this.setData({
+      managing,
+      ...historyCollection(this.data.items)
+    });
   },
 
   onProductTap(event: DatasetEvent) {
@@ -158,11 +210,42 @@ Page({
     if (!product) {
       return;
     }
+    if (this.data.managing) {
+      this.toggleSelection(spuId);
+      return;
+    }
     if (!product.available) {
       wx.showToast({ title: "商品已下架", icon: "none" });
       return;
     }
     wx.navigateTo({ url: product.navigationPath });
+  },
+
+  onSelectionToggle(event: DatasetEvent) {
+    if (!this.data.managing || this.data.deleting || this.data.clearing) {
+      return;
+    }
+    const spuId = parsePositiveId(event.currentTarget.dataset.id);
+    if (spuId) {
+      this.toggleSelection(spuId);
+    }
+  },
+
+  toggleSelection(spuId: number) {
+    const selectedIds = this.data.selectedIds.includes(spuId)
+      ? this.data.selectedIds.filter((id) => id !== spuId)
+      : [...this.data.selectedIds, spuId];
+    this.setData(historyCollection(this.data.items, selectedIds));
+  },
+
+  onSelectAllToggle() {
+    if (!this.data.managing || this.data.deleting || this.data.clearing) {
+      return;
+    }
+    const selectedIds = this.data.allSelected
+      ? []
+      : this.data.items.map((item) => item.spuId);
+    this.setData(historyCollection(this.data.items, selectedIds));
   },
 
   onImageError(event: DatasetEvent) {
@@ -174,45 +257,88 @@ Page({
     const items = this.data.items.map((item) => (
       item.spuId === spuId ? { ...item, hasImage: false } : item
     ));
-    this.setData({
-      ...historyCollection(items)
-    });
+    this.setData(historyCollection(items, this.data.selectedIds));
   },
 
-  onDeleteTap(event: DatasetEvent) {
+  onAddCartTap(event: DatasetEvent) {
     const spuId = parsePositiveId(event.currentTarget.dataset.id);
-    if (spuId) {
-      void this.remove(spuId);
-    }
-  },
-
-  async remove(spuId: number) {
+    const product = this.data.items.find((item) => item.spuId === spuId);
     if (
-      this.data.actionSpuId ||
-      !await confirmAction("删除记录", "确定删除该条浏览记录吗？", "删除")
+      !product?.available
+      || this.data.managing
+      || this.data.addingSpuId
+      || this.data.deleting
+      || this.data.clearing
     ) {
       return;
     }
-    this.setData({ actionSpuId: spuId });
+    const session = getSessionState();
+    if (!session.user || (!session.accessToken && !session.refreshToken)) {
+      openLoginPage();
+      return;
+    }
+    void this.addProductToCart(spuId);
+  },
+
+  async addProductToCart(spuId: number) {
+    this.setData({ addingSpuId: spuId });
     try {
-      await deleteBrowseHistoryItem(spuId);
-      const items = this.data.items.filter((item) => item.spuId !== spuId);
-      const total = Math.max(0, this.data.total - 1);
-      this.setData({
-        ...historyCollection(items),
-        current: 1,
-        total,
-        hasMore: false,
-        actionSpuId: 0
-      });
-      wx.showToast({ title: "记录已删除", icon: "success" });
-      await this.refresh();
+      const detail = await getProductDetail(spuId);
+      const sku = findDefaultSku(detail.skus);
+      if (!sku) {
+        wx.showToast({ title: "该商品暂无可售规格", icon: "none" });
+        return;
+      }
+      await addCartItem({ skuId: sku.id, quantity: 1 });
+      void refreshCustomTabBarCartCount(this);
+      wx.showToast({ title: "已加入购物车", icon: "success" });
     } catch (error) {
-      this.setData({ actionSpuId: 0 });
+      if (isApiError(error) && error.kind === "AUTH") {
+        openLoginPage();
+        return;
+      }
+      wx.showToast({
+        title: actionError(error, "加入购物车失败，请稍后重试"),
+        icon: "none"
+      });
+    } finally {
+      if (this.data.addingSpuId === spuId) {
+        this.setData({ addingSpuId: 0 });
+      }
+    }
+  },
+
+  onBatchDeleteTap() {
+    void this.deleteSelected();
+  },
+
+  async deleteSelected() {
+    if (this.data.deleting || this.data.clearing) {
+      return;
+    }
+    const selectedSpuIds = Array.from(new Set(this.data.selectedIds))
+      .filter((spuId) => Number.isSafeInteger(spuId) && spuId > 0);
+    if (!selectedSpuIds.length) {
+      wx.showToast({ title: "请选择要删除的商品", icon: "none" });
+      return;
+    }
+    latestRequest += 1;
+    this.setData({ deleting: true, loadingMore: false });
+    try {
+      await deleteBrowseHistoryItems(selectedSpuIds);
+      const deletedIds = new Set(selectedSpuIds);
+      const items = this.data.items.filter((item) => !deletedIds.has(item.spuId));
+      this.setData(historyCollection(items));
+      await this.refresh();
+      wx.showToast({ title: "删除成功", icon: "success" });
+    } catch (error) {
+      await this.refresh();
       wx.showToast({
         title: actionError(error, "删除失败，请重试"),
         icon: "none"
       });
+    } finally {
+      this.setData({ deleting: false });
     }
   },
 
@@ -222,28 +348,31 @@ Page({
 
   async clearAll() {
     if (
-      this.data.clearing ||
-      !this.data.items.length ||
-      !await confirmAction("清空记录", "清空后无法恢复，是否继续？", "清空")
+      this.data.clearing
+      || this.data.deleting
+      || !this.data.items.length
+      || !await confirmAction("清空足迹", "清空后无法恢复，是否继续？", "清空")
     ) {
       return;
     }
-    this.setData({ clearing: true });
+    latestRequest += 1;
+    this.setData({ clearing: true, loadingMore: false });
     try {
       await clearBrowseHistory();
       this.setData({
         ...historyCollection([]),
-        total: 0,
+        current: 1,
         hasMore: false,
-        clearing: false
+        managing: false
       });
-      wx.showToast({ title: "浏览记录已清空", icon: "success" });
+      wx.showToast({ title: "清空成功", icon: "success" });
     } catch (error) {
-      this.setData({ clearing: false });
       wx.showToast({
         title: actionError(error, "清空失败，请重试"),
         icon: "none"
       });
+    } finally {
+      this.setData({ clearing: false });
     }
   }
 });

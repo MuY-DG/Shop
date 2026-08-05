@@ -52,8 +52,10 @@ export const API_ENDPOINTS = Object.freeze({
   },
   userProduct: {
     favorites: "/app/users/me/favorites",
+    favoriteBatch: "/app/users/me/favorites/batch",
     favorite: (spuId: number): string => `/app/users/me/favorites/${spuId}`,
     browseHistory: "/app/users/me/browse-history",
+    browseHistoryBatch: "/app/users/me/browse-history/batch",
     browseRecord: (spuId: number): string => `/app/users/me/browse-history/${spuId}`
   },
   cart: {

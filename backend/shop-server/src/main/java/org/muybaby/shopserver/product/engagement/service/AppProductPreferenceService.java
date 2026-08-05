@@ -5,7 +5,10 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.ProductStatus;
+import org.muybaby.shopserver.product.engagement.dto.DeleteBrowseHistoryItemsRequest;
+import org.muybaby.shopserver.product.engagement.dto.DeleteFavoriteItemsRequest;
 import org.muybaby.shopserver.product.engagement.dto.ProductBrowseHistoryItemResponse;
+import org.muybaby.shopserver.product.engagement.dto.ProductBrowseHistoryPageResponse;
 import org.muybaby.shopserver.product.engagement.dto.ProductBrowseRecordResponse;
 import org.muybaby.shopserver.product.engagement.dto.ProductEngagementPageRequest;
 import org.muybaby.shopserver.product.engagement.dto.ProductFavoriteItemResponse;
@@ -19,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 @Service
@@ -77,6 +81,22 @@ public class AppProductPreferenceService {
                         """)
                 .param("userId", userId)
                 .param("spuId", spuId)
+                .update();
+    }
+
+    @Transactional
+    public void removeFavorites(
+            AuthenticatedPrincipal principal,
+            DeleteFavoriteItemsRequest request
+    ) {
+        long userId = requireAppUser(principal);
+        LinkedHashSet<Long> spuIds = new LinkedHashSet<>(request.spuIds());
+        jdbcClient.sql("""
+                        DELETE FROM user_product_favorite
+                        WHERE user_id = :userId AND spu_id IN (:spuIds)
+                        """)
+                .param("userId", userId)
+                .param("spuIds", spuIds)
                 .update();
     }
 
@@ -155,7 +175,7 @@ public class AppProductPreferenceService {
                 .single();
     }
 
-    public PageResult<ProductBrowseHistoryItemResponse> browseHistory(
+    public ProductBrowseHistoryPageResponse browseHistory(
             AuthenticatedPrincipal principal,
             ProductEngagementPageRequest request
     ) {
@@ -164,7 +184,7 @@ public class AppProductPreferenceService {
         long current = normalized.pageCurrent();
         long size = normalized.pageSize();
         long offset = (current - 1) * size;
-        long total = preferenceCount("user_product_browse_history", userId);
+        long fetchSize = size + 1;
         List<ProductBrowseHistoryItemResponse> records = jdbcClient.sql("""
                         SELECT h.spu_id, p.title, p.subtitle, p.main_image,
                                (SELECT MIN(k.price_cent) FROM product_sku k
@@ -184,11 +204,15 @@ public class AppProductPreferenceService {
                         LIMIT :limit OFFSET :offset
                         """)
                 .param("userId", userId)
-                .param("limit", size)
+                .param("limit", fetchSize)
                 .param("offset", offset)
                 .query(this::mapHistory)
                 .list();
-        return PageResult.of(records, total, current, size);
+        boolean hasMore = records.size() > size;
+        List<ProductBrowseHistoryItemResponse> pageRecords = hasMore
+                ? List.copyOf(records.subList(0, Math.toIntExact(size)))
+                : records;
+        return new ProductBrowseHistoryPageResponse(pageRecords, current, size, hasMore);
     }
 
     @Transactional
@@ -200,6 +224,22 @@ public class AppProductPreferenceService {
                         """)
                 .param("userId", userId)
                 .param("spuId", spuId)
+                .update();
+    }
+
+    @Transactional
+    public void deleteBrowseBatch(
+            AuthenticatedPrincipal principal,
+            DeleteBrowseHistoryItemsRequest request
+    ) {
+        long userId = requireAppUser(principal);
+        LinkedHashSet<Long> spuIds = new LinkedHashSet<>(request.spuIds());
+        jdbcClient.sql("""
+                        DELETE FROM user_product_browse_history
+                        WHERE user_id = :userId AND spu_id IN (:spuIds)
+                        """)
+                .param("userId", userId)
+                .param("spuIds", spuIds)
                 .update();
     }
 

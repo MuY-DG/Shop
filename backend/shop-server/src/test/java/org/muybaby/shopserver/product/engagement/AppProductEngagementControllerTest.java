@@ -129,12 +129,14 @@ class AppProductEngagementControllerTest {
         mockMvc.perform(get("/app/users/me/browse-history")
                         .header("Authorization", bearer(first.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records.length()").value(1))
+                .andExpect(jsonPath("$.data.hasMore").value(false))
                 .andExpect(jsonPath("$.data.records[0].viewCount").value(2));
         mockMvc.perform(get("/app/users/me/browse-history")
                         .header("Authorization", bearer(second.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(0));
+                .andExpect(jsonPath("$.data.records.length()").value(0))
+                .andExpect(jsonPath("$.data.hasMore").value(false));
 
         mockMvc.perform(delete("/app/users/me/favorites/" + product.spuId())
                         .header("Authorization", bearer(first.token())))
@@ -153,7 +155,110 @@ class AppProductEngagementControllerTest {
         mockMvc.perform(get("/app/users/me/browse-history")
                         .header("Authorization", bearer(first.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(0));
+                .andExpect(jsonPath("$.data.records.length()").value(0))
+                .andExpect(jsonPath("$.data.hasMore").value(false));
+    }
+
+    @Test
+    void browseHistoryBatchDeleteRemovesOnlyRequestedOwnedProducts() throws Exception {
+        AppLogin owner = login("engagement-history-batch-owner");
+        AppLogin other = login("engagement-history-batch-other");
+        ProductIds first = createPublishedProduct("HISTORY-BATCH-FIRST");
+        ProductIds second = createPublishedProduct("HISTORY-BATCH-SECOND");
+        ProductIds retained = createPublishedProduct("HISTORY-BATCH-RETAINED");
+
+        for (ProductIds product : List.of(first, second, retained)) {
+            mockMvc.perform(post("/app/users/me/browse-history/" + product.spuId())
+                            .header("Authorization", bearer(owner.token())))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(post("/app/users/me/browse-history/" + first.spuId())
+                        .header("Authorization", bearer(other.token())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/app/users/me/browse-history")
+                        .queryParam("current", "1")
+                        .queryParam("size", "2")
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(2))
+                .andExpect(jsonPath("$.data.hasMore").value(true));
+
+        mockMvc.perform(delete("/app/users/me/browse-history/batch")
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"spuIds":[%d,%d]}
+                                """.formatted(first.spuId(), second.spuId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(get("/app/users/me/browse-history")
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(1))
+                .andExpect(jsonPath("$.data.hasMore").value(false))
+                .andExpect(jsonPath("$.data.records[0].spuId").value(retained.spuId()));
+        mockMvc.perform(get("/app/users/me/browse-history")
+                        .header("Authorization", bearer(other.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(1))
+                .andExpect(jsonPath("$.data.hasMore").value(false))
+                .andExpect(jsonPath("$.data.records[0].spuId").value(first.spuId()));
+
+        mockMvc.perform(delete("/app/users/me/browse-history/batch")
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"spuIds":[]}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void favoriteBatchDeleteRemovesOnlyRequestedOwnedProducts() throws Exception {
+        AppLogin owner = login("engagement-favorite-batch-owner");
+        AppLogin other = login("engagement-favorite-batch-other");
+        ProductIds first = createPublishedProduct("FAVORITE-BATCH-FIRST");
+        ProductIds second = createPublishedProduct("FAVORITE-BATCH-SECOND");
+        ProductIds retained = createPublishedProduct("FAVORITE-BATCH-RETAINED");
+
+        for (ProductIds product : List.of(first, second, retained)) {
+            mockMvc.perform(put("/app/users/me/favorites/" + product.spuId())
+                            .header("Authorization", bearer(owner.token())))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(put("/app/users/me/favorites/" + first.spuId())
+                        .header("Authorization", bearer(other.token())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/app/users/me/favorites/batch")
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"spuIds":[%d,%d]}
+                                """.formatted(first.spuId(), second.spuId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(get("/app/users/me/favorites")
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].spuId").value(retained.spuId()));
+        mockMvc.perform(get("/app/users/me/favorites")
+                        .header("Authorization", bearer(other.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].spuId").value(first.spuId()));
+
+        mockMvc.perform(delete("/app/users/me/favorites/batch")
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"spuIds":[]}
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

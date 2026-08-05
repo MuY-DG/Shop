@@ -1,8 +1,11 @@
 package org.muybaby.shopserver.product.engagement;
 
+import jakarta.validation.Valid;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
-import org.muybaby.shopserver.product.engagement.dto.ProductBrowseHistoryItemResponse;
+import org.muybaby.shopserver.product.engagement.dto.DeleteBrowseHistoryItemsRequest;
+import org.muybaby.shopserver.product.engagement.dto.DeleteFavoriteItemsRequest;
+import org.muybaby.shopserver.product.engagement.dto.ProductBrowseHistoryPageResponse;
 import org.muybaby.shopserver.product.engagement.dto.ProductBrowseRecordResponse;
 import org.muybaby.shopserver.product.engagement.dto.ProductEngagementPageRequest;
 import org.muybaby.shopserver.product.engagement.dto.ProductFavoriteItemResponse;
@@ -15,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -61,6 +65,15 @@ public class AppProductPreferenceController {
         return ApiResponse.success();
     }
 
+    @DeleteMapping("/favorites/batch")
+    public ApiResponse<Void> removeFavorites(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @Valid @RequestBody DeleteFavoriteItemsRequest request
+    ) {
+        preferenceService.removeFavorites(principal, request);
+        return ApiResponse.success();
+    }
+
     @PostMapping("/browse-history/{spuId}")
     public ApiResponse<ProductBrowseRecordResponse> recordBrowse(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
@@ -70,7 +83,7 @@ public class AppProductPreferenceController {
     }
 
     @GetMapping("/browse-history")
-    public ApiResponse<PageResult<ProductBrowseHistoryItemResponse>> browseHistory(
+    public ApiResponse<ProductBrowseHistoryPageResponse> browseHistory(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             ProductEngagementPageRequest request
     ) {
@@ -83,6 +96,15 @@ public class AppProductPreferenceController {
             @PathVariable Long spuId
     ) {
         preferenceService.deleteBrowse(principal, spuId);
+        return ApiResponse.success();
+    }
+
+    @DeleteMapping("/browse-history/batch")
+    public ApiResponse<Void> deleteBrowseBatch(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @Valid @RequestBody DeleteBrowseHistoryItemsRequest request
+    ) {
+        preferenceService.deleteBrowseBatch(principal, request);
         return ApiResponse.success();
     }
 
