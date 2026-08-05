@@ -18,7 +18,7 @@ export interface ProductFactView {
 type FactAdapter = (feature: HomeProductFeature) => ProductFactView | undefined;
 
 const SPICE_ICON_PATH = "/assets/icons/chili-pepper-red.svg";
-const MAX_SPICE_ICON_COUNT = 20;
+const MAX_SPICE_ICON_COUNT = 5;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -46,37 +46,66 @@ function isWeightFeature(feature: HomeProductFeature): boolean {
     descriptor.includes("克重");
 }
 
-function spiceTone(level: unknown): Exclude<SpiceLevelTone, ""> {
-  if (typeof level !== "number" || !Number.isFinite(level) || level <= 1) {
-    return "mild";
+function spiceLevelFromText(displayText: string): number | undefined {
+  const normalized = displayText.replace(/\s+/g, "").toUpperCase();
+  if (/变态辣|EXTREME/.test(normalized)) {
+    return 4;
   }
-  return level === 2 ? "medium" : "hot";
+  if (/超辣|重辣|特辣|EXTRAHOT|HOT/.test(normalized)) {
+    return 3;
+  }
+  if (/中辣|MEDIUM/.test(normalized)) {
+    return 2;
+  }
+  if (/微辣|小辣|MILD|LIGHT/.test(normalized)) {
+    return 1;
+  }
+  return undefined;
 }
 
-function spiceIconIndexes(level: unknown): number[] {
-  const count = typeof level === "number" && Number.isSafeInteger(level)
-    ? Math.min(Math.max(level, 0), MAX_SPICE_ICON_COUNT)
-    : 0;
+function normalizeSpiceLevel(level: unknown, displayText: string): number | undefined {
+  if (typeof level === "number" && Number.isSafeInteger(level) && level > 0) {
+    return Math.min(level, MAX_SPICE_ICON_COUNT);
+  }
+  return spiceLevelFromText(displayText);
+}
+
+function spiceTone(level: number | undefined): SpiceLevelTone {
+  if (level === undefined) {
+    return "";
+  }
+  return level === 1 ? "mild" : level === 2 ? "medium" : "hot";
+}
+
+function spiceIconIndexes(level: number | undefined): number[] {
+  const count = level ?? 0;
   return Array.from({ length: count }, (_, index) => index);
 }
 
 /**
- * 辣度的卡片展示适配。后续新增专用参数类型时，可增加新的 adapter，
- * 无需让首页商品映射或卡片组件理解业务参数细节。
+ * 辣度的统一展示适配。后续新增专用参数类型时，可增加新的 adapter，
+ * 无需让首页、目录、详情或展示组件理解业务参数细节。
  */
 export const adaptSpiceFact: FactAdapter = (feature) => {
   const displayText = cleanText(feature.displayText);
   if (!displayText || !isSpiceFeature(feature)) {
     return undefined;
   }
-  const tone = spiceTone(feature.level);
+  const level = normalizeSpiceLevel(feature.level, displayText);
+  const tone = spiceTone(level);
   return {
     text: displayText,
-    tone: tone === "mild" ? "success" : tone === "medium" ? "orange" : "brand",
+    tone: tone === "mild"
+      ? "success"
+      : tone === "medium"
+        ? "orange"
+        : tone === "hot"
+          ? "brand"
+          : "neutral",
     kind: "spice",
     spiceTone: tone,
-    iconPath: SPICE_ICON_PATH,
-    spiceIconIndexes: spiceIconIndexes(feature.level)
+    iconPath: level === undefined ? "" : SPICE_ICON_PATH,
+    spiceIconIndexes: spiceIconIndexes(level)
   };
 };
 

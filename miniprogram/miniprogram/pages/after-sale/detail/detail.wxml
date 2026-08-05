@@ -42,8 +42,8 @@
         <view class="section-heading">退款信息</view>
         <view class="info-row"><text>售后类型</text><text>{{detail.typeText}}</text></view>
         <view class="info-row"><text>申请金额</text><text class="price-text">{{detail.requestedAmountText}}</text></view>
-        <view wx:if="{{detail.approvedAmountText}}" class="info-row"><text>审核金额</text><text>{{detail.approvedAmountText}}</text></view>
-        <view wx:if="{{detail.refundAmountText}}" class="info-row"><text>退款金额</text><text>{{detail.refundAmountText}}</text></view>
+        <view wx:if="{{detail.approvedAmountText}}" class="info-row"><text>审核金额</text><text class="price-text">{{detail.approvedAmountText}}</text></view>
+        <view wx:if="{{detail.refundAmountText}}" class="info-row"><text>退款金额</text><text class="price-text">{{detail.refundAmountText}}</text></view>
         <view class="info-row"><text>退款方式</text><text>原支付方式退回</text></view>
         <view class="info-row"><text>退款原因</text><text>{{detail.reason}}</text></view>
         <view wx:if="{{detail.description}}" class="description-block">

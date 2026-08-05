@@ -57,7 +57,7 @@ interface PageOptions {
 }
 
 type InfoSheet = "parameters" | "guarantee" | "freight" | "wholesale";
-type ActiveSheet = "" | "purchase" | "address" | InfoSheet | "reviews";
+type ActiveSheet = "" | "address" | InfoSheet | "reviews";
 
 interface DatasetEvent {
   currentTarget: {
@@ -118,6 +118,7 @@ let latestAddressRequest = 0;
 let latestReviewPreviewRequest = 0;
 let latestReviewPageRequest = 0;
 let sheetCloseTimer: ReturnType<typeof setTimeout> | null = null;
+let purchaseSheetCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -266,6 +267,8 @@ Page({
     favoriteLoading: false,
     activeSheet: "" as ActiveSheet,
     sheetClosing: false,
+    purchaseSheetOpen: false,
+    purchaseSheetClosing: false,
     purchaseMode: "BUY" as "CART" | "BUY",
     purchaseActionText: "立即购买",
     confirmLoading: false,
@@ -309,6 +312,10 @@ Page({
     if (sheetCloseTimer !== null) {
       clearTimeout(sheetCloseTimer);
       sheetCloseTimer = null;
+    }
+    if (purchaseSheetCloseTimer !== null) {
+      clearTimeout(purchaseSheetCloseTimer);
+      purchaseSheetCloseTimer = null;
     }
     latestDetailRequest += 1;
     latestAddressRequest += 1;
@@ -461,6 +468,9 @@ Page({
   },
 
   onOpenPurchase(event: DatasetEvent) {
+    if (this.data.purchaseSheetOpen || this.data.purchaseSheetClosing) {
+      return;
+    }
     if (!this.data.selectedSkuId) {
       wx.showToast({ title: "暂无可售规格", icon: "none" });
       return;
@@ -470,11 +480,17 @@ Page({
     }
     const purchaseMode = event.currentTarget.dataset.mode === "CART" ? "CART" : "BUY";
     this.setData({
-      activeSheet: "purchase",
-      sheetClosing: false,
+      purchaseSheetOpen: true,
+      purchaseSheetClosing: false,
       purchaseMode,
       purchaseActionText: purchaseMode === "CART" ? "加入购物车" : "立即购买"
     });
+  },
+
+  onClosePurchaseSheet() {
+    if (!this.data.confirmLoading) {
+      this.animatePurchaseSheetClose();
+    }
   },
 
   onCloseSheet() {
@@ -501,6 +517,23 @@ Page({
         activeSheet: "",
         sheetClosing: false,
         reviewSpecSheetOpen: false
+      }, afterClose);
+    }, SHEET_EXIT_DURATION_MS);
+  },
+
+  animatePurchaseSheetClose(afterClose?: () => void) {
+    if (!this.data.purchaseSheetOpen || this.data.purchaseSheetClosing) {
+      return;
+    }
+    this.setData({ purchaseSheetClosing: true });
+    if (purchaseSheetCloseTimer !== null) {
+      clearTimeout(purchaseSheetCloseTimer);
+    }
+    purchaseSheetCloseTimer = setTimeout(() => {
+      purchaseSheetCloseTimer = null;
+      this.setData({
+        purchaseSheetOpen: false,
+        purchaseSheetClosing: false
       }, afterClose);
     }, SHEET_EXIT_DURATION_MS);
   },
@@ -581,7 +614,7 @@ Page({
       return;
     }
     if (this.data.purchaseMode === "BUY") {
-      this.animateSheetClose(() => {
+      this.animatePurchaseSheetClose(() => {
         try {
           wx.navigateTo({
             url: buildDirectBuyUrl(this.data.selectedSkuId, this.data.quantity)
@@ -602,7 +635,7 @@ Page({
         quantity: this.data.quantity
       });
       this.setData({ confirmLoading: false });
-      this.animateSheetClose();
+      this.animatePurchaseSheetClose();
       wx.showToast({ title: "已加入购物车", icon: "success" });
     } catch (error) {
       this.setData({ confirmLoading: false });

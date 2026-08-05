@@ -366,6 +366,7 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
     resolve(sourceRoot, "components/product-card/product-card.less"),
     "utf8"
   );
+  const designTokens = readFileSync(resolve(sourceRoot, "styles/tokens.less"), "utf8");
   const homeCategoryStyle = readFileSync(
     resolve(sourceRoot, "components/home-category-grid/home-category-grid.less"),
     "utf8"
@@ -398,10 +399,25 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
 
   assert.match(productCardTemplate, /catchtap="handleCartTap"/);
   assert.match(productCardTemplate, /product-card__cart-plus-horizontal/);
+  assert.match(productCardStyle, /\.product-card__cart\s*\{[^}]*background: #ff172b;/);
   assert.match(productCardTemplate, /catchtap="handleTitleToggle"/);
   assert.match(productCardLogic, /measureTitleOverflow/);
   assert.match(productCardStyle, /\.product-card__title[\s\S]*text-overflow: ellipsis[\s\S]*white-space: nowrap/);
-  assert.match(productCardStyle, /\.product-card\s*\{[\s\S]*background: #ffffff/);
+  assert.match(designTokens, /@color-text-gray: #8f939c;/);
+  assert.match(designTokens, /@font-family-commerce-price:/);
+  assert.match(productCardStyle, /\.product-card\s*\{[^}]*border: 0;[^}]*background: #ffffff/);
+  assert.match(productCardStyle, /\.product-card\s*\{[^}]*height: 100%;[^}]*display: flex;[^}]*flex-direction: column/);
+  assert.match(productCardStyle, /\.product-card--list\s*\{[^}]*flex-direction: row/);
+  assert.match(productCardStyle, /\.product-card__body\s*\{[^}]*flex: 1/);
+  assert.match(productCardStyle, /\.product-card__subtitle\s*\{[^}]*color: @color-text-gray/);
+  assert.match(productCardStyle, /\.product-card__fact\s*\{[^}]*color: @color-text-gray/);
+  assert.match(productCardStyle, /\.product-card__sales\s*\{[^}]*color: @color-text-gray/);
+  assert.match(productCardStyle, /\.product-card__meta\s*\{[^}]*margin-top: 4rpx/);
+  assert.match(productCardStyle, /\.product-card__footer\s*\{[^}]*margin-top: auto;[^}]*padding-top: 12rpx/);
+  assert.match(productCardStyle, /\.product-card__price\s*\{[^}]*font-family: @font-family-commerce-price;[^}]*font-variant-numeric: proportional-nums;[^}]*line-height: 1\.08/);
+  assert.match(productCardStyle, /\.product-card__price-decimal\s*\{[^}]*font-size: 26rpx/);
+  assert.match(productCardStyle, /\.product-card--featured \.product-card__price-decimal\s*\{[^}]*font-size: 23rpx/);
+  assert.match(productCardStyle, /\.product-card--list \.product-card__price-decimal\s*\{[^}]*font-size: 27rpx/);
   assert.match(productCardStyle, /\.product-card--featured\s*\{[\s\S]*box-shadow: none/);
   assert.match(productCardStyle, /\.product-card--flat\s*\{[\s\S]*box-shadow: none/);
   assert.match(homeCategoryStyle, /\.category-card\s*\{[\s\S]*background: #ffffff/);
@@ -409,7 +425,8 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(homeProductSectionStyle, /\.product-showcase\s*\{[\s\S]*margin: 8rpx 12rpx 0;[\s\S]*padding: 0 0 28rpx/);
   assert.match(homeProductSectionStyle, /\.product-showcase--separated\s*\{\s*margin-top: 4rpx/);
   assert.match(homeProductSectionStyle, /\.product-showcase--featured\s*\{\s*padding-bottom: 0/);
-  assert.match(homeProductSectionStyle, /\.section-heading__more\s*\{[\s\S]*color: #e10203/);
+  assert.match(homeProductSectionStyle, /\.section-heading__subtitle\s*\{[^}]*color: @color-text-black/);
+  assert.match(homeProductSectionStyle, /\.section-heading__more\s*\{[^}]*color: #e10203/);
   assert.match(homeProductSectionTemplate, /catchtap="onMoreTap"[\s\S]*>查看更多<\/text>/);
   assert.equal((homeProductSectionTemplate.match(/flat="\{\{true\}\}"/g) ?? []).length, 2);
   assert.match(homeProductSectionLogic, /this\.triggerEvent\("more"\)/);
@@ -594,7 +611,7 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.doesNotMatch(detailTemplate, /<sku-selector|stock-text=|categoryName/);
   assert.match(detailTemplate, /data-mode="CART"/);
   assert.match(detailTemplate, /data-mode="BUY"/);
-  assert.match(detailTemplate, /activeSheet === 'purchase'/);
+  assert.match(detailTemplate, /wx:if="\{\{purchaseSheetOpen\}\}"/);
   assert.match(detailTemplate, />买家评价</);
   assert.match(detailTemplate, /\{\{reviewSummary\.reviewCountPlusText\}\}/);
   assert.match(detailTemplate, /reviewSummary\.hasReviews \? reviewSummary\.goodRateText : '暂无评价'/);
@@ -686,7 +703,18 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   );
   assert.match(detailTemplate, /activeSheet === 'reviews' \? 'sheet-panel--reviews'/);
   assert.match(detailStyle, /\.sheet-panel--reviews\s*\{[\s\S]*?height: 72vh;[\s\S]*?background: #f3f3f7;/);
-  assert.match(detailStyle, /\.sheet-mask--reviews\s*\{[\s\S]*?bottom: calc\(104rpx \+ env\(safe-area-inset-bottom\)\);/);
+  assert.match(
+    detailStyle,
+    /\.sheet-mask--reviews\s*\{\s*bottom: calc\(104rpx \+ env\(safe-area-inset-bottom\)\);\s*overflow: hidden;\s*\}/
+  );
+  assert.match(detailLogic, /purchaseSheetOpen: false/);
+  assert.match(detailLogic, /purchaseSheetOpen: true,[\s\S]{0,180}purchaseMode/);
+  assert.doesNotMatch(detailLogic, /activeSheet === "reviews"[\s\S]{0,120}animateSheetClose/);
+  assert.match(
+    detailTemplate,
+    /wx:if="\{\{purchaseSheetOpen\}\}"[\s\S]{0,260}purchase-sheet-mask[\s\S]*?catchtap="onClosePurchaseSheet"/
+  );
+  assert.match(detailStyle, /\.purchase-sheet-mask\s*\{\s*z-index: 360;\s*\}/);
   assert.match(detailTemplate, />中\/差评 \{\{reviewSummary\.criticalReviewCount\}\}<\/button>/);
   assert.match(detailStyle, /\.review-filter-bar\s*\{[\s\S]*?display: flex;[\s\S]*?background: #f3f3f7;[\s\S]*?gap: 14rpx;/);
   assert.match(detailStyle, /\.review-filter-chip\s*\{[\s\S]*?width: auto !important;[\s\S]*?min-width: 96rpx !important;[\s\S]*?color: #000000;[\s\S]*?background: #ffffff;/);
@@ -716,13 +744,14 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(productSummaryStyle, /background: @color-surface-white;/);
   assert.match(productSummaryStyle, /border: 0;/);
   assert.match(productSummaryStyle, /\.current-price\s*\{[\s\S]*?color: @color-detail-price;/);
-  assert.match(productSummaryStyle, /\.original-price\s*\{[\s\S]*?color: @color-text-black;/);
+  assert.match(productSummaryStyle, /\.original-price\s*\{[^}]*color: #a3a4a5;/);
+  assert.match(detailStyle, /\.sheet-original-price\s*\{[^}]*color: #a3a4a5;/);
   assert.match(productSummaryStyle, /\.sales-text\s*\{[\s\S]*?color: @color-text-black;/);
   assert.match(productSummaryStyle, /\.product-subtitle\s*\{[\s\S]*?color: #8f939c;/);
   assert.match(productSummaryTemplate, /wx:for="\{\{detail\.sellingPoints\}\}"[\s\S]*?class="selling-point-tag"/);
   assert.match(
     productSummaryStyle,
-    /\.selling-point-tag\s*\{[\s\S]*?min-width: 0;[\s\S]*?padding: 6rpx 14rpx;[\s\S]*?border-radius: 10rpx;[\s\S]*?color: #4f535c;[\s\S]*?font-size: 26rpx;[\s\S]*?background: #f5f6fa;/
+    /\.selling-point-tag\s*\{[\s\S]*?min-width: 0;[\s\S]*?padding: 6rpx 14rpx;[\s\S]*?border: 0;[\s\S]*?border-radius: 10rpx;[\s\S]*?color: #bb784e;[\s\S]*?font-size: 26rpx;[\s\S]*?background: #fff5e8;/
   );
   assert.match(productSummaryStyle, /\.selling-point-scroll\s*\{[\s\S]*?margin-left: 0;[\s\S]*?padding-left: 0;/);
   assert.doesNotMatch(detailTemplate, /class="benefit-scroll"|benefitItems/);
@@ -734,20 +763,21 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailStyle, /\.commerce-parameter-track\s*\{[\s\S]*?color: @color-text-black;[\s\S]*?font-size: @font-size-sm;/);
   assert.match(detailStyle, /\.commerce-value__text\s*\{[\s\S]*?font-size: @font-size-sm;[\s\S]*?line-height: 36rpx;/);
   assert.match(detailStyle, /\.commerce-parameter-item \+ \.commerce-parameter-item::before\s*\{[\s\S]*?color: @color-text-black;[\s\S]*?content: "｜";/);
-  assert.match(detailStyle, /\.commerce-parameter-spice--mild\s*\{ color: #7BAA6D; \}/);
-  assert.match(detailStyle, /\.commerce-parameter-spice--medium\s*\{ color: @color-warning; \}/);
-  assert.match(detailStyle, /\.commerce-parameter-spice--hot\s*\{ color: #ff172b; \}/);
+  assert.match(detailStyle, /\.commerce-parameter-spice--mild\s*\{ color: @color-spice-mild; \}/);
+  assert.match(detailStyle, /\.commerce-parameter-spice--medium\s*\{ color: @color-spice-medium; \}/);
+  assert.match(detailStyle, /\.commerce-parameter-spice--hot\s*\{ color: @color-spice-hot; \}/);
   assert.match(detailTemplate, /activeSheet === 'parameters' \? 'sheet-panel--parameters'/);
   assert.match(detailTemplate, />商品参数<\/text>[\s\S]*?wx:for="\{\{parameterViews\}\}"[\s\S]*?>我知道了<\/button>/);
-  assert.match(detailStyle, /\.parameter-sheet-spice--mild\s*\{ color: #7BAA6D; \}/);
-  assert.match(detailStyle, /\.parameter-sheet-spice--hot\s*\{ color: #ff172b; \}/);
+  assert.match(detailStyle, /\.parameter-sheet-spice--mild\s*\{ color: @color-spice-mild; \}/);
+  assert.match(detailStyle, /\.parameter-sheet-spice--hot\s*\{ color: @color-spice-hot; \}/);
   assert.match(detailStyle, /\.parameter-sheet-label\s*\{[\s\S]*?color: #8f939c;/);
   assert.match(detailStyle, /\.parameter-sheet-tip\s*\{[\s\S]*?color: #8f939c;/);
   assert.match(detailStyle, /\.freight-detail-label\s*\{ color: #8f939c;/);
   assert.match(detailStyle, /\.freight-tip\s*\{[\s\S]*?color: #8f939c;/);
   assert.match(detailStyle, /\.parameter-sheet-confirm\s*\{[\s\S]*?background: #ff172b;/);
   assert.match(detailStyle, /\.review-empty-preview__description\s*\{[\s\S]*?color: #8f939c;/);
-  assert.match(designTokens, /@color-detail-price: #ff0c1f;/);
+  assert.match(designTokens, /@color-price: #fa091d;/);
+  assert.match(designTokens, /@color-detail-price: @color-price;/);
   assert.match(detailTemplate, /activeSheet === 'reviews'/);
   assert.match(detailTemplate, /data-review-filter="WITH_IMAGES"/);
   assert.match(detailTemplate, /data-review-filter="GOOD"/);

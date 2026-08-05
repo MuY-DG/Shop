@@ -304,17 +304,19 @@ button.inline-error__action {
 .price-row__current,
 .settlement-total__amount {
   color: @color-price;
-  font-family: @font-family-price;
-  font-variant-numeric: tabular-nums;
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
+  line-height: 1.1;
 }
 
 .price-row__current {
   font-size: @font-size-lg;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .price-row__retail {
   color: @color-text-placeholder;
+  font-family: @font-family-base;
   font-size: @font-size-xs;
   text-decoration: line-through;
 }
@@ -451,7 +453,7 @@ button.delete-icon-action[disabled] {
 
 .settlement-total__amount {
   font-size: @font-size-lg;
-  font-weight: 750;
+  font-weight: 650;
 }
 
 button.checkout-action {

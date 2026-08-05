@@ -97,7 +97,7 @@
 
 .status-card__countdown {
   color: @color-warning-text;
-  font-family: @font-family-price;
+  font-family: @font-family-commerce-price;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
 }
@@ -218,8 +218,9 @@
 .detail-item__price-row text:first-child,
 .detail-item__subtotal {
   color: @color-price;
-  font-family: @font-family-price;
-  font-variant-numeric: tabular-nums;
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
+  font-weight: 600;
 }
 
 .detail-item__subtotal {
@@ -241,6 +242,13 @@
 
 .amount-row--discount {
   color: @color-gold-text;
+}
+
+.amount-row > text:last-child {
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
+  font-weight: 600;
+  text-align: right;
 }
 
 .info-row text:first-child {
@@ -271,6 +279,13 @@
 .after-sale-card__link {
   color: @color-text-muted;
   font-size: @font-size-sm;
+}
+
+.after-sale-card__amount {
+  color: @color-price;
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
+  font-weight: 600;
 }
 
 .after-sale-card__status {
@@ -368,6 +383,13 @@ button.detail-action--primary {
   color: @color-text-inverse;
   background: linear-gradient(135deg, @color-brand 0, @color-brand-dark 100%);
   box-shadow: @shadow-action;
+}
+
+.detail-action__amount {
+  margin-left: @space-2;
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
+  font-weight: 600;
 }
 
 button.detail-action[disabled] {

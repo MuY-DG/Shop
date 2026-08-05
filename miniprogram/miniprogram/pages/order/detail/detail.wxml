@@ -94,7 +94,7 @@
         <view class="after-sale-card__heading">
           <view>
             <view class="section-heading">退款售后</view>
-            <view class="after-sale-card__meta">{{detail.latestAfterSaleView.typeText}} · {{detail.latestAfterSaleView.requestedAmountText}}</view>
+            <view class="after-sale-card__meta">{{detail.latestAfterSaleView.typeText}} · <text class="after-sale-card__amount">{{detail.latestAfterSaleView.requestedAmountText}}</text></view>
           </view>
           <view class="after-sale-card__status after-sale-card__status--{{detail.latestAfterSaleView.statusTone}}">
             {{detail.latestAfterSaleView.statusText}}
@@ -131,7 +131,7 @@
       loading="{{actionType === 'pay'}}"
       disabled="{{actionType !== '' || paymentExpired}}"
       bindtap="onPayTap"
-    >支付 {{detail.payableAmountText}}</button>
+    ><text>支付</text><text class="detail-action__amount">{{detail.payableAmountText}}</text></button>
     <button
       wx:if="{{detail.canDelete}}"
       class="detail-action detail-action--secondary detail-action--minor"

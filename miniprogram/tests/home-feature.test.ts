@@ -292,9 +292,46 @@ test("辣度 level 未配置或非法时不显示辣椒图标", () => {
     ...(level === undefined ? {} : { level })
   });
 
-  assert.deepEqual(spiceFact()?.spiceIconIndexes, []);
-  assert.deepEqual(spiceFact(Number.NaN)?.spiceIconIndexes, []);
-  assert.deepEqual(spiceFact(1.5)?.spiceIconIndexes, []);
+  [spiceFact(), spiceFact(Number.NaN), spiceFact(1.5)].forEach((fact) => {
+    assert.equal(fact?.spiceTone, "");
+    assert.equal(fact?.tone, "neutral");
+    assert.deepEqual(fact?.spiceIconIndexes, []);
+  });
+});
+
+test("辣度 level 缺失时可从标准辣度文案补齐展示等级", () => {
+  const spiceFact = (displayText: string) => adaptProductFact({
+    code: "SPICE",
+    name: "辣度",
+    displayText,
+    renderer: "SPICE"
+  });
+
+  assert.deepEqual(
+    ["微辣", "中辣", "特辣", "变态辣"].map((label) => {
+      const fact = spiceFact(label);
+      return fact && [fact.spiceTone, fact.tone, fact.spiceIconIndexes?.length ?? 0];
+    }),
+    [
+      ["mild", "success", 1],
+      ["medium", "orange", 2],
+      ["hot", "brand", 3],
+      ["hot", "brand", 4]
+    ]
+  );
+});
+
+test("异常偏大的辣度等级最多展示五个辣椒图标", () => {
+  const fact = adaptProductFact({
+    code: "SPICE",
+    name: "辣度",
+    displayText: "超辣",
+    renderer: "SPICE",
+    level: 99
+  });
+
+  assert.equal(fact?.spiceTone, "hot");
+  assert.deepEqual(fact?.spiceIconIndexes, [0, 1, 2, 3, 4]);
 });
 
 test("重量参数按克数追加建议人数并保持独立类型", () => {

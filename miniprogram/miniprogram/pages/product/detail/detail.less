@@ -163,9 +163,9 @@
 }
 
 .commerce-parameter-spice { font-weight: 650; }
-.commerce-parameter-spice--mild { color: #7BAA6D; }
-.commerce-parameter-spice--medium { color: @color-warning; }
-.commerce-parameter-spice--hot { color: #ff172b; }
+.commerce-parameter-spice--mild { color: @color-spice-mild; }
+.commerce-parameter-spice--medium { color: @color-spice-medium; }
+.commerce-parameter-spice--hot { color: @color-spice-hot; }
 
 .commerce-parameter-icons {
   display: flex;
@@ -370,6 +370,11 @@
 
 .sheet-mask--reviews {
   bottom: calc(104rpx + env(safe-area-inset-bottom));
+  overflow: hidden;
+}
+
+.purchase-sheet-mask {
+  z-index: 360;
 }
 
 .sheet-mask--closing {
@@ -478,18 +483,21 @@
   display: flex;
   align-items: baseline;
   color: @color-price;
-  font-family: @font-family-price;
-  font-weight: 700;
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: 0;
 }
 
-.sheet-price__currency { font-size: 26rpx; }
-.sheet-price__integer { font-size: 52rpx; }
-.sheet-price__decimal { font-size: 34rpx; }
+.sheet-price__currency { font-size: 23rpx; }
+.sheet-price__integer { font-size: 50rpx; }
+.sheet-price__decimal { margin-left: 1rpx; font-size: 28rpx; }
 
 .sheet-original-price {
   margin-top: -4rpx;
-  color: @color-text-placeholder;
-  font-family: @font-family-price;
+  color: #a3a4a5;
+  font-family: @font-family-base;
   font-size: 20rpx;
   text-decoration: line-through;
 }
@@ -730,9 +738,10 @@
 .wholesale-shortcut__price {
   margin-top: 2rpx;
   color: @color-price;
-  font-family: @font-family-price;
+  font-family: @font-family-commerce-price;
   font-size: @font-size-sm;
-  font-weight: 700;
+  font-variant-numeric: proportional-nums;
+  font-weight: 600;
 }
 
 .quantity-section {
@@ -775,8 +784,9 @@
 
 .quantity-value {
   color: @color-text-primary;
-  font-family: @font-family-price;
+  font-family: @font-family-commerce-price;
   font-size: @font-size-base;
+  font-variant-numeric: tabular-nums;
   font-weight: 700;
 }
 
@@ -899,9 +909,21 @@
 }
 
 .parameter-sheet-spice { font-weight: 650; }
-.parameter-sheet-spice--mild { color: #7BAA6D; }
-.parameter-sheet-spice--medium { color: @color-warning; }
-.parameter-sheet-spice--hot { color: #ff172b; }
+.parameter-sheet-spice--mild { color: @color-spice-mild; }
+.parameter-sheet-spice--medium { color: @color-spice-medium; }
+.parameter-sheet-spice--hot { color: @color-spice-hot; }
+
+.parameter-sheet-spice-icons {
+  display: flex;
+  align-items: center;
+  margin-left: 2rpx;
+}
+
+.parameter-sheet-spice-icon {
+  width: 25rpx;
+  height: 25rpx;
+  margin-left: 2rpx;
+}
 
 .parameter-sheet-tip {
   display: block;
@@ -1176,8 +1198,9 @@
 
 .wholesale-table-price {
   color: @color-price;
-  font-family: @font-family-price;
-  font-weight: 700;
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
+  font-weight: 600;
 }
 
 .review-card {

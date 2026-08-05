@@ -50,13 +50,13 @@
   overflow: hidden;
   border: 0;
   border-radius: 10rpx;
-  color: #4f535c;
+  color: #bb784e;
   font-size: 26rpx;
   line-height: 36rpx;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background: #f5f6fa;
+  background: #fff5e8;
 }
 
 .price-row {
@@ -70,14 +70,16 @@
   display: flex;
   align-items: baseline;
   color: @color-detail-price;
-  font-family: @font-family-price;
-  font-weight: 800;
-  letter-spacing: -1rpx;
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
+  font-weight: 650;
+  line-height: 1.08;
+  letter-spacing: 0;
 }
 
-.currency { margin-right: 3rpx; font-size: 27rpx; font-weight: 700; }
+.currency { margin-right: 3rpx; font-size: 24rpx; font-weight: 600; }
 .price-integer { font-size: 56rpx; }
-.price-decimal { font-size: 34rpx; }
+.price-decimal { margin-left: 1rpx; font-size: 30rpx; }
 
 .price-unavailable {
   color: @color-text-muted;
@@ -86,8 +88,8 @@
 
 .original-price {
   margin-left: 16rpx;
-  color: @color-text-black;
-  font-family: @font-family-price;
+  color: #a3a4a5;
+  font-family: @font-family-base;
   font-size: @font-size-xs;
   text-decoration: line-through;
 }

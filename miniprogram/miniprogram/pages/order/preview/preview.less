@@ -225,13 +225,13 @@
 .preview-item__price,
 .preview-item__subtotal {
   color: @color-price;
-  font-family: @font-family-price;
-  font-variant-numeric: tabular-nums;
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
 }
 
 .preview-item__price {
   font-size: @font-size-md;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .preview-item__wholesale {
@@ -243,7 +243,7 @@
 .preview-item__subtotal {
   margin-top: @space-2;
   font-size: @font-size-sm;
-  font-weight: 650;
+  font-weight: 600;
   text-align: right;
 }
 
@@ -273,6 +273,14 @@
   display: flex;
   align-items: center;
   gap: @space-2;
+}
+
+.amount-row > text:last-child,
+.amount-row__choice > text:not(.amount-row__arrow) {
+  font-family: @font-family-commerce-price;
+  font-variant-numeric: proportional-nums;
+  font-weight: 600;
+  text-align: right;
 }
 
 .amount-row__arrow {
@@ -367,7 +375,9 @@ button.submit-action {
   position: absolute;
   right: 30rpx;
   color: inherit;
+  font-family: @font-family-commerce-price;
   font-size: @font-size-sm;
+  font-variant-numeric: proportional-nums;
   font-weight: 600;
 }
 
@@ -602,10 +612,10 @@ button.add-address-action {
 
 .coupon-option__value view {
   margin-top: 2rpx;
-  font-family: @font-family-price;
+  font-family: @font-family-commerce-price;
   font-size: @font-size-lg;
-  font-weight: 750;
-  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  font-variant-numeric: proportional-nums;
 }
 
 .coupon-option__body {
