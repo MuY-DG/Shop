@@ -1,7 +1,6 @@
 <view class="chat-page">
   <navigation-bar
     back="{{true}}"
-    background="#f6f6f6"
     color="#111111"
     show-divider="{{true}}"
   >

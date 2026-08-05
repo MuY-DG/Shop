@@ -315,6 +315,7 @@ test("分类页固定工具区并统一搜索、排序和分类视觉", () => {
   assert.equal(categoryConfig.disableScroll, true);
   assert.equal(categoryConfig.enablePullDownRefresh, false);
   assert.match(categoryTemplate, /search-material-symbols-iconify\.svg/);
+  assert.match(categoryTemplate, /<navigation-bar[\s\S]*?background="#f6f6f6"/);
   assert.match(categoryTemplate, /class="category-catalog"/);
   assert.match(categoryStyle, /\.category-page\s*\{[\s\S]*height: 100vh;[\s\S]*overflow: hidden/);
   assert.match(categoryStyle, /\.category-search\s*\{[\s\S]*width: calc\(100% - 40rpx\);[\s\S]*border-radius: 18rpx;[\s\S]*background: #ffffff/);
@@ -600,6 +601,7 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   assert.match(profileLogic, /accountNavigationPath/);
   assert.match(profileLogic, /profile-default-avatar\.png/);
   assert.match(profileTemplate, /profile-watercolor-background\.png/);
+  assert.match(profileTemplate, /<navigation-bar[\s\S]*?background="transparent"/);
   assert.match(profileTemplate, /class="member-card__avatar-frame"/);
   assert.match(profileTemplate, /src="\/assets\/images\/member-avatar-frame-v\.png"/);
   assert.equal(
@@ -682,12 +684,18 @@ test("全局导航统一返回图标且不再显示首页按钮", () => {
     resolve(sourceRoot, "components/navigation-bar/navigation-bar.ts"),
     "utf8"
   );
+  const navigationStyle = readFileSync(
+    resolve(sourceRoot, "components/navigation-bar/navigation-bar.less"),
+    "utf8"
+  );
   const addressListTemplate = readFileSync(
     resolve(sourceRoot, "pages/account/address/list/list.wxml"),
     "utf8"
   );
 
   assert.match(navigationTemplate, /navigation-back\.svg/);
+  assert.match(navigationLogic, /background:\s*\{[\s\S]*?value: '#ffffff'/);
+  assert.match(navigationStyle, /\.navigation-bar\s*\{[\s\S]*?background: @color-surface-white;/);
   assert.doesNotMatch(navigationTemplate, /navigation-bar__home|handleHome/);
   assert.doesNotMatch(navigationLogic, /\bhome:\s*\{|handleHome\(/);
   assert.doesNotMatch(addressListTemplate, /\bhome=/);
@@ -858,6 +866,7 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   );
 
   assert.equal(detailConfig.enablePullDownRefresh, false);
+  assert.match(detailTemplate, /<navigation-bar[\s\S]*?background="transparent"/);
   assert.doesNotMatch(detailTemplate, /<sku-selector|stock-text=|categoryName/);
   assert.match(detailTemplate, /data-mode="CART"/);
   assert.match(detailTemplate, /data-mode="BUY"/);
@@ -1216,6 +1225,7 @@ test("首页使用微信原生下拉刷新图标", () => {
 
   assert.equal(homeConfig.enablePullDownRefresh, true);
   assert.equal(homeConfig.disableScroll, undefined);
+  assert.doesNotMatch(homeTemplate, /home-navigation|<navigation-bar/);
   assert.doesNotMatch(homeTemplate, /refresher-/);
   assert.doesNotMatch(homeTemplate, /refreshText/);
   assert.match(homeLogic, /onPullDownRefresh\(\)[\s\S]*loadHome\(true\)/);

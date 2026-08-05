@@ -1,7 +1,6 @@
 <view class="search-page">
   <navigation-bar
     back="{{true}}"
-    background="#f6f6f6"
     color="#2E1D16"
     show-divider="{{false}}"
     wide-center="{{true}}"

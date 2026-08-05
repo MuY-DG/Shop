@@ -3,7 +3,6 @@
     title="MuYbaby"
     back="{{true}}"
     show-divider="{{false}}"
-    background="#FFFFFF"
     color="#2E1D16"
   />
 

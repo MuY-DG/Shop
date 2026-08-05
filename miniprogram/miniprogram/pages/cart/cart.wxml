@@ -4,7 +4,6 @@
     back="{{navigationBack}}"
     wide-center="{{true}}"
     show-divider="{{false}}"
-    background="#f6f6f6"
     color="#2E1D16"
     loading="{{loaded && loading}}"
   >

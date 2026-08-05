@@ -4,7 +4,6 @@
     back="{{true}}"
     round-back="{{true}}"
     show-divider="{{false}}"
-    background="transparent"
     color="#333333"
     loading="{{loading || saving || savingAvatar || loggingOut}}"
   />

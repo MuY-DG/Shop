@@ -136,7 +136,7 @@ Component({
     },
     background: {
       type: String,
-      value: '',
+      value: '#ffffff',
     },
     color: {
       type: String,
