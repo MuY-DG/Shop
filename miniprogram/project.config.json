@@ -23,7 +23,7 @@
     "skylineRenderEnable": false,
     "es6": true,
     "compileWorklet": false,
-    "uglifyFileName": false,
+    "uglifyFileName": true,
     "uploadWithSourceMap": true,
     "packNpmManually": false,
     "minifyWXSS": true,

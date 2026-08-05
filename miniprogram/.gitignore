@@ -1,5 +1,6 @@
 node_modules/
 miniprogram_npm/
 project.private.config.json
+.cloudbase/container/debug.json
 .DS_Store
 *.log
