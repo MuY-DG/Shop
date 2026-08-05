@@ -873,7 +873,18 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailStyle, /\.review-toolbar__actions\s*\{[\s\S]*?justify-content: flex-end;[\s\S]*?margin-left: auto;/);
   assert.match(detailTemplate, /review-rating-summary__label">\{\{review\.ratingLabel\}\}/);
   assert.match(detailTemplate, /favorite-clarity-solid\.svg/);
-  assert.match(detailTemplate, /class="review-purchase-spec">｜已购 \{\{review\.purchaseSpecText\}\}/);
+  assert.match(
+    detailTemplate,
+    /class="review-purchase-spec">\{\{review\.purchaseSpecText \? '｜已购 ' \+ review\.purchaseSpecText : '｜已购'\}\}/
+  );
+  assert.match(
+    detailTemplate,
+    /wx:if="\{\{selectedSkuName\}\}" class="selected-spec">已选：\{\{selectedSkuName\}\}/
+  );
+  assert.match(
+    detailTemplate,
+    /wx:if="\{\{reviewSpecOptions\.length\}\}"[\s\S]{0,140}bindtap="onReviewSpecOpen"/
+  );
   const reviewSheetTemplate = detailTemplate.match(
     /<block wx:elif="\{\{activeSheet === 'reviews'\}\}">[\s\S]*?<\/block>\s*<\/view>\s*<\/view>\s*<\/view>/
   )?.[0] ?? "";

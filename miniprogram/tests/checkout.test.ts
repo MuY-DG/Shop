@@ -96,6 +96,11 @@ test("购物车选择只保留可购买商品并计算选中金额", () => {
   assert.equal(summary.items[0]?.wholesaleText, "已享 3 件起批发价");
   assert.equal(summary.items[2]?.unavailableText, "库存不足，请调整数量");
 
+  const legacySingle = buildCartSummary([
+    cartItem({ specText: "默认规格" })
+  ], [11]);
+  assert.equal(legacySingle.items[0]?.specText, "");
+
   assert.deepEqual(reconcileCartSelection(items, [13], false, true), [13]);
   const managementSummary = buildCartSummary(items, [13], true);
   assert.deepEqual(managementSummary.selectedIds, [13]);
@@ -222,6 +227,12 @@ test("默认地址、当前地址和订单预览金额生成稳定展示模型",
   assert.equal(view.freightText, "¥0.00");
   assert.equal(view.payableAmountText, "¥45.40");
   assert.equal(view.items[0]?.wholesaleText, "3 件起批发价");
+
+  const legacySinglePreview = buildOrderPreviewView({
+    ...preview,
+    items: [{ ...preview.items[0]!, specText: "默认规格" }]
+  });
+  assert.equal(legacySinglePreview.items[0]?.specText, "");
 });
 
 test("优惠券选项区分可用状态、门槛和当前选中项", () => {

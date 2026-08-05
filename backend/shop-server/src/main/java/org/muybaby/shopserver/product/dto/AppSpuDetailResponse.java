@@ -8,6 +8,7 @@ public record AppSpuDetailResponse(
         Long id,
         Long categoryId,
         String categoryName,
+        String specType,
         String title,
         String subtitle,
         String mainImage,

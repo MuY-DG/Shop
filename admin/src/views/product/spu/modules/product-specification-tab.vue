@@ -56,6 +56,15 @@
               @change="updateSingleSkuImage"
             />
           </div>
+          <ElFormItem class="single-sku-form__display-text" label="对外规格说明（选填）">
+            <ElInput
+              :model-value="singleSku.specText"
+              maxlength="255"
+              placeholder="例如：500g/袋；留空则不展示"
+              :disabled="disabled"
+              @update:model-value="updateSingleSku({ specText: $event })"
+            />
+          </ElFormItem>
           <ElFormItem class="single-sku-form__money" label="售价（元）" required>
             <ElInputNumber
               :model-value="centToYuan(singleSku.priceCent)"
@@ -323,7 +332,6 @@
       defaultSelected: true,
       combinationKey: 'SINGLE',
       specJson: '{}',
-      specText: '默认规格',
       specValueKeys: [],
       sortOrder: 0
     }
@@ -628,6 +636,10 @@
     width: 180px;
   }
 
+  .single-sku-form__display-text {
+    width: 240px;
+  }
+
   .combination-alert {
     margin-top: 10px;
   }
@@ -649,7 +661,8 @@
 
     .single-sku-form__money,
     .single-sku-form__number,
-    .single-sku-form__code {
+    .single-sku-form__code,
+    .single-sku-form__display-text {
       flex: 1 1 140px;
       width: auto;
     }

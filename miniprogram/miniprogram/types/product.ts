@@ -3,6 +3,7 @@ import type { PageResult } from "./api";
 export type ProductParameterCardRole = "HIGHLIGHT" | "META";
 export type ProductParameterCardRenderer = "TEXT" | "PILL" | "LEVEL" | "SPICE";
 export type ProductSkuStatus = "ENABLED" | "DISABLED";
+export type ProductSpecType = "SINGLE" | "MULTI";
 export type ProductFreightChargeMode = "FREE" | "FIXED";
 export type ProductSaleState = "AVAILABLE" | "SOLD_OUT";
 export type ProductBadgeTone = "RED" | "ORANGE" | "GREEN" | "NEUTRAL";
@@ -130,6 +131,7 @@ export interface ProductDetail {
   id: number;
   categoryId: number;
   categoryName: string;
+  specType: ProductSpecType;
   title: string;
   subtitle?: string;
   mainImage?: string;

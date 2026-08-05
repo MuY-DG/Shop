@@ -343,7 +343,7 @@
               <text class="sheet-price__decimal">{{priceDecimalText}}</text>
             </view>
             <text wx:if="{{hasOriginalPrice}}" class="sheet-original-price">¥{{originalPriceText}}</text>
-            <text class="selected-spec">已选：{{selectedSkuName}}</text>
+            <text wx:if="{{selectedSkuName}}" class="selected-spec">已选：{{selectedSkuName}}</text>
             <text wx:if="{{wholesaleHint}}" class="sheet-wholesale-hint">{{wholesaleHint}}</text>
           </view>
           <button class="sheet-close" bindtap="onClosePurchaseSheet" aria-label="关闭规格选择">
@@ -721,6 +721,7 @@
               <image src="/assets/icons/chat-history.svg" mode="aspectFit" />
             </button>
             <button
+              wx:if="{{reviewSpecOptions.length}}"
               class="review-toolbar-action {{reviewSpecText ? 'review-toolbar-action--active' : ''}}"
               bindtap="onReviewSpecOpen"
             >
@@ -793,7 +794,7 @@
                     />
                   </view>
                 </view>
-                <text class="review-purchase-spec">｜已购 {{review.purchaseSpecText}}</text>
+                <text class="review-purchase-spec">{{review.purchaseSpecText ? '｜已购 ' + review.purchaseSpecText : '｜已购'}}</text>
               </view>
               <view class="review-item__content-wrap {{review.contentExpanded ? 'review-item__content-wrap--expanded' : ''}}">
                 <text class="review-item__content {{review.hasContent ? '' : 'review-item__content--empty'}}">{{review.hasContent ? review.content : '此用户没有填写文字评价'}}<text

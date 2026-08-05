@@ -73,7 +73,7 @@ test("独立评价页只接收已完成订单中的未评价商品和真实规�
   const pending = buildPendingOrderReviewItems([
     orderItem(1, false),
     orderItem(2, true),
-    orderItem(3, false, ""),
+    orderItem(3, false, "默认规格"),
     orderItem(4, false, "500g · 微辣", false)
   ]);
   assert.equal(pending.length, 2);

@@ -32,7 +32,7 @@ export const createEmptySpecGroup = (sortOrder = 0): ProductEditorSpecGroup => (
 export const createEmptySku = (overrides: Partial<ProductEditorSku> = {}): ProductEditorSku => ({
   skuCode: '',
   specJson: '{}',
-  specText: '默认规格',
+  specText: '',
   priceCent: null,
   costPriceCent: null,
   originalPriceCent: null,
@@ -50,6 +50,13 @@ export const createEmptySku = (overrides: Partial<ProductEditorSku> = {}): Produ
   sortOrder: 0,
   ...overrides
 })
+
+const LEGACY_SINGLE_SPEC_TEXTS = new Set(['默认规格', '默认'])
+
+export const normalizeSingleSpecText = (value: string | null | undefined) => {
+  const normalized = value?.trim() || ''
+  return LEGACY_SINGLE_SPEC_TEXTS.has(normalized) ? '' : normalized
+}
 
 export const combinationCount = (groups: ProductEditorSpecGroup[]) => {
   if (!groups.length) return 0

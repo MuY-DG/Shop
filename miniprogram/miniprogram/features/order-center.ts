@@ -1,4 +1,4 @@
-import { formatMoney } from "./product-catalog";
+import { displaySpecText, formatMoney } from "./product-catalog";
 import { formatLocalDateTime } from "../utils/date-time";
 import type {
   AppOrderDetailResponse,
@@ -321,9 +321,7 @@ function buildOrderSummaryItemView(
   const titleText = typeof item.productTitle === "string"
     ? item.productTitle.trim()
     : "";
-  const specificationText = typeof item.specText === "string"
-    ? item.specText.trim()
-    : "";
+  const specificationText = displaySpecText(item.specText);
   const quantity = Number.isSafeInteger(item.quantity)
     ? Math.max(0, item.quantity)
     : 0;
@@ -343,6 +341,7 @@ function buildOrderItemView(item: OrderItemResponse): OrderItemView {
   const imageUrl = (item.displayImage || item.skuImage || item.mainImage || "").trim();
   return {
     ...item,
+    specText: displaySpecText(item.specText),
     imageUrl,
     hasImage: Boolean(imageUrl),
     unitPriceText: money(item.unitPriceCent),

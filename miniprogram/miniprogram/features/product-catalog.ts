@@ -8,6 +8,7 @@ import type {
   ProductListQuery,
   ProductListSort,
   ProductParameterValue,
+  ProductSpecType,
   ProductSku,
   WholesaleTier
 } from "../types/product";
@@ -128,6 +129,13 @@ interface PriceParts {
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+const INTERNAL_SINGLE_SPEC_TEXTS = new Set(["默认规格", "默认"]);
+
+export function displaySpecText(value: unknown): string {
+  const normalized = cleanText(value);
+  return INTERNAL_SINGLE_SPEC_TEXTS.has(normalized) ? "" : normalized;
 }
 
 function positiveInteger(value: unknown): number | undefined {
@@ -455,8 +463,8 @@ function skuSpecificationEntries(sku: ProductSku): Array<[string, string]> {
       // Legacy SKUs may carry malformed JSON; fall back to their display text.
     }
   }
-  const fallbackValue = cleanText(sku?.specText) || "默认规格";
-  return [["规格", fallbackValue]];
+  const fallbackValue = displaySpecText(sku?.specText);
+  return fallbackValue ? [["规格", fallbackValue]] : [];
 }
 
 function skuSpecificationMap(sku: ProductSku): Map<string, string> {
@@ -563,6 +571,16 @@ export function buildSkuSpecificationGroups(
   });
 }
 
+export function buildVisibleSkuSpecificationGroups(
+  specType: ProductSpecType,
+  skus: ProductSku[],
+  selectedSkuId: number
+): SkuSpecificationGroupView[] {
+  return specType === "MULTI"
+    ? buildSkuSpecificationGroups(skus, selectedSkuId)
+    : [];
+}
+
 export function buildSpecificationPreviewUrls(
   groups: SkuSpecificationGroupView[],
   currentUrl: unknown = ""
@@ -626,7 +644,7 @@ export function buildSkuOptions(
     .map((sku) => {
       return {
         id: sku.id,
-        name: cleanText(sku.specText) || "默认规格",
+        name: displaySpecText(sku.specText),
         priceText: formatMoney(sku.priceCent),
         availabilityText: validSku(sku) ? "" : "暂时售罄",
         imageUrl: cleanText(sku.image) || cleanText(fallbackImage),

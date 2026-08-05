@@ -3,6 +3,7 @@ import {
   normalizeRating,
   type RatingStarView
 } from "../../../features/product-review";
+import { displaySpecText } from "../../../features/product-catalog";
 import type { OrderItemResponse } from "../../../types/order";
 
 export type OrderReviewSourceItem = OrderItemResponse;
@@ -63,7 +64,7 @@ export function buildPendingOrderReviewItems(
         productTitle: cleanText(item.productTitle) || "订单商品",
         imageUrl,
         hasImage: Boolean(imageUrl),
-        specTextDisplay: cleanText(item.specText),
+        specTextDisplay: displaySpecText(item.specText),
         rating,
         stars: buildRatingStars(rating),
         content: "",

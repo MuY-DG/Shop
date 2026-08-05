@@ -163,6 +163,10 @@ test("订单列表项只格式化后端真实图片、规格、单价与数量",
   const fallback = buildOrderSummaryView(withoutSpec).items[0];
   assert.equal(fallback?.imageUrl, "https://example.com/main.png");
   assert.equal(fallback?.specificationText, "");
+
+  const legacySingle = summary("COMPLETED");
+  legacySingle.items[0] = { ...legacySingle.items[0]!, specText: "默认规格" };
+  assert.equal(buildOrderSummaryView(legacySingle).items[0]?.specificationText, "");
 });
 
 test("订单详情使用零售金额与真实批发成交价生成可核对明细", () => {
@@ -176,6 +180,10 @@ test("订单详情使用零售金额与真实批发成交价生成可核对明�
   assert.equal(view.items[0]?.unitPriceText, "¥16.80");
   assert.equal(view.items[0]?.wholesaleText, "3 件起批发价");
   assert.equal(view.canSyncPayment, true);
+
+  const legacySingle = detail();
+  legacySingle.items[0] = { ...legacySingle.items[0]!, specText: "默认规格" };
+  assert.equal(buildOrderDetailView(legacySingle).items[0]?.specText, "");
 });
 
 test("支付倒计时稳定显示时分秒并收敛非法输入", () => {

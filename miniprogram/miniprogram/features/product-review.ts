@@ -5,6 +5,7 @@ import type {
   ReviewableOrderItem
 } from "../types/product-engagement";
 import { formatLocalDate } from "../utils/date-time";
+import { displaySpecText } from "./product-catalog";
 
 export interface RatingStarView {
   value: number;
@@ -149,7 +150,7 @@ export function buildPublicProductReviewViews(
       const content = cleanText(review.content);
       const rating = normalizeRating(review.rating);
       const images = reviewImages(review.images);
-      const skuSpecText = cleanText(review.skuSpecText);
+      const skuSpecText = displaySpecText(review.skuSpecText);
       return {
         id: review.id,
         reviewerName,
@@ -162,7 +163,7 @@ export function buildPublicProductReviewViews(
         contentCollapsible: false,
         contentExpanded: false,
         skuSpecText,
-        purchaseSpecText: skuSpecText || "默认规格",
+        purchaseSpecText: skuSpecText,
         verifiedPurchase: review.verifiedPurchase === true,
         createdAtText: formatReviewDate(review.createdAt),
         images,
@@ -179,11 +180,11 @@ export function buildReviewableOrderItemViews(
   return (Array.isArray(orderItems) ? orderItems : [])
     .filter((item) => Number.isSafeInteger(item?.orderItemId) && item.orderItemId > 0)
     .map((item) => {
-      const skuSpecText = cleanText(item.skuSpecText) || "默认规格";
+      const skuSpecText = displaySpecText(item.skuSpecText);
       return {
         ...item,
         skuSpecText,
-        label: skuSpecText,
+        label: skuSpecText || "商品",
         completedAtText: formatReviewDate(item.completedAt)
       };
     });

@@ -5,7 +5,8 @@ import {
   createEmptySpecGroup,
   describeCombinationCount,
   hydrateSkuImageFallbacks,
-  imageSpecFallback
+  imageSpecFallback,
+  normalizeSingleSpecText
 } from './sku-matrix'
 import type { ProductEditorSpecGroup } from './editor-model'
 
@@ -72,4 +73,11 @@ test('keeps specification images opt-in and uses a neutral draft label', () => {
 
   assert.equal(group.imageEnabled, false)
   assert.equal(describeCombinationCount([group]), '规格 1 1项 = 1 个组合')
+})
+
+test('keeps single-SKU display text optional and removes legacy placeholders', () => {
+  assert.equal(createEmptySku().specText, '')
+  assert.equal(normalizeSingleSpecText(' 默认规格 '), '')
+  assert.equal(normalizeSingleSpecText('默认'), '')
+  assert.equal(normalizeSingleSpecText(' 500g/袋 '), '500g/袋')
 })

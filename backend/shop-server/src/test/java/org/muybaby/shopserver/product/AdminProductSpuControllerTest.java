@@ -904,7 +904,7 @@ class AdminProductSpuControllerTest {
                                     {
                                       "skuCode": "OPTIONAL-DEFAULTS-SKU",
                                       "specJson": "{}",
-                                      "specText": "默认",
+                                      "specText": "",
                                       "priceCent": 1990,
                                       "originalPriceCent": 0,
                                       "stockAvailable": 0,
@@ -929,6 +929,10 @@ class AdminProductSpuControllerTest {
                 .param("spuId", spuId)
                 .query(Long.class)
                 .single()).isZero();
+        assertThat(jdbcClient.sql("select spec_text from product_sku where spu_id = :spuId")
+                .param("spuId", spuId)
+                .query(String.class)
+                .single()).isEmpty();
     }
 
     private long createCategory(String token) throws Exception {

@@ -11,6 +11,8 @@ import {
   buildSpecificationPreviewUrls,
   buildSkuOptions,
   buildSkuSpecificationGroups,
+  buildVisibleSkuSpecificationGroups,
+  displaySpecText,
   findDefaultSku,
   normalizeProductKeyword,
   normalizeProductRouteKeyword,
@@ -225,6 +227,7 @@ test("详情图片去重并将参数映射为展示数据", () => {
     id: 41,
     categoryId: 5,
     categoryName: "麻辣",
+    specType: "SINGLE",
     salesCount: 0,
     saleState: "AVAILABLE",
     title: "经典牛油锅底",
@@ -315,6 +318,18 @@ test("默认规格、售罄禁用态和批发阶梯价随数量联动", () => {
   const empty = resolvePurchaseSelection(unavailable, 1);
   assert.equal(empty.selectedSkuId, 0);
   assert.equal(empty.quantityMax, 0);
+});
+
+test("单规格展示文案隐藏内部占位值并保留真实规格说明", () => {
+  assert.equal(displaySpecText(" 默认规格 "), "");
+  assert.equal(displaySpecText("默认"), "");
+  assert.equal(displaySpecText(" 500g/袋 "), "500g/袋");
+  assert.deepEqual(buildSkuSpecificationGroups([
+    sku({ id: 199, specJson: "{}", specText: "默认规格" })
+  ], 199), []);
+  assert.deepEqual(buildVisibleSkuSpecificationGroups("SINGLE", [
+    sku({ id: 200, specJson: "{}", specText: "500g/袋" })
+  ], 200), []);
 });
 
 test("规格按名称和值分组并只允许选择真实可售组合", () => {

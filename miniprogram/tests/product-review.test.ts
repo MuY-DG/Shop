@@ -102,7 +102,7 @@ test("公开评价过滤无效记录并生成匿名、日期和规格展示", ()
   assert.equal(views[0]?.imageCount, 2);
 });
 
-test("公开评价按星级生成评价文案并为缺省规格提供展示值", () => {
+test("公开评价按星级生成评价文案并隐藏单规格占位值", () => {
   const base = {
     id: 1,
     skuSpecText: "",
@@ -120,7 +120,12 @@ test("公开评价按星级生成评价文案并为缺省规格提供展示值",
     { ...base, id: 3, rating: 2 }
   ]);
   assert.deepEqual(views.map((view) => view.ratingLabel), ["超赞", "还不错", ""]);
-  assert.equal(views[0]?.purchaseSpecText, "默认规格");
+  assert.equal(views[0]?.purchaseSpecText, "");
+
+  const legacySingle = buildPublicProductReviewViews([
+    { ...base, id: 4, rating: 5, skuSpecText: "默认规格" }
+  ]);
+  assert.equal(legacySingle[0]?.purchaseSpecText, "");
 });
 
 test("可评价订单和文字输入生成提交前的安全值", () => {
@@ -129,10 +134,10 @@ test("可评价订单和文字输入生成提交前的安全值", () => {
     orderId: 3,
     orderNo: "SO-3",
     skuId: 7,
-    skuSpecText: "",
+    skuSpecText: "默认规格",
     completedAt: "2026-07-01T12:00:00Z"
   }]);
-  assert.equal(items[0]?.label, "默认规格");
+  assert.equal(items[0]?.label, "商品");
   assert.equal(items[0]?.completedAtText, "2026-07-01");
   assert.equal(formatReviewDate("invalid"), "");
   assert.equal(normalizeReviewContent("  很好吃  "), "很好吃");

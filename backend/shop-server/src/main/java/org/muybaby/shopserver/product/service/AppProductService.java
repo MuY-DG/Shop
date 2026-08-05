@@ -151,7 +151,7 @@ public class AppProductService {
 
     public AppSpuDetailResponse detail(Long spuId) {
         SpuDetailRow spu = jdbcClient.sql("""
-                        SELECT s.id, s.category_id, c.name AS category_name, s.title, s.subtitle, s.main_image,
+                        SELECT s.id, s.category_id, c.name AS category_name, s.spec_type, s.title, s.subtitle, s.main_image,
                                s.main_image_file_id,
                                s.virtual_sales + COALESCE((
                                    SELECT SUM(oi.quantity)
@@ -225,6 +225,7 @@ public class AppProductService {
                 spu.id(),
                 spu.categoryId(),
                 spu.categoryName(),
+                spu.specType(),
                 spu.title(),
                 spu.subtitle(),
                 spu.mainImage(),
@@ -306,6 +307,7 @@ public class AppProductService {
                 rs.getLong("id"),
                 rs.getLong("category_id"),
                 rs.getString("category_name"),
+                rs.getString("spec_type"),
                 rs.getString("title"),
                 rs.getString("subtitle"),
                 rs.getString("main_image"),
@@ -465,6 +467,7 @@ public class AppProductService {
             Long id,
             Long categoryId,
             String categoryName,
+            String specType,
             String title,
             String subtitle,
             String mainImage,

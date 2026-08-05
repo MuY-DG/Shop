@@ -1,4 +1,4 @@
-import { formatMoney } from "./product-catalog";
+import { displaySpecText, formatMoney } from "./product-catalog";
 import type { CartItemResponse } from "../types/cart";
 import type {
   AddressResponse,
@@ -114,6 +114,7 @@ function cartItemView(
   const nextTierPrice = item.nextWholesaleTierPriceCent;
   return {
     ...item,
+    specText: displaySpecText(item.specText),
     selected: selected && (item.available || includeUnavailableSelection),
     hasImage: Boolean(imageUrl),
     imageUrl,
@@ -302,6 +303,7 @@ function previewItemView(item: OrderPreviewItem): OrderPreviewItemView {
   const wholesaleApplied = Boolean(item.wholesaleTierMinQuantity);
   return {
     ...item,
+    specText: displaySpecText(item.specText),
     imageUrl,
     hasImage: Boolean(imageUrl),
     unitPriceText: money(item.unitPriceCent),

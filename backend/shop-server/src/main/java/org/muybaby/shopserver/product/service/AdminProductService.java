@@ -1390,7 +1390,8 @@ public class AdminProductService {
                 throw new BusinessException(ErrorCode.SKU_UNAVAILABLE);
             }
             SkuSnapshot snapshot = resolveSkuSnapshot(product, sku, specValuesByKey);
-            if (!StringUtils.hasText(snapshot.specText()) || snapshot.specText().length() > 255
+            boolean singleSpec = ProductSpecType.SINGLE.name().equals(product.specType());
+            if ((!singleSpec && !StringUtils.hasText(snapshot.specText())) || snapshot.specText().length() > 255
                     || !StringUtils.hasText(snapshot.combinationKey()) || snapshot.combinationKey().length() > 512
                     || !retainedCombinationKeys.add(snapshot.combinationKey())
                     || !retainedSpecTexts.add(snapshot.specText().toLowerCase(Locale.ROOT))) {
@@ -1628,7 +1629,9 @@ public class AdminProductService {
         List<String> requestedKeys = sku.specValueKeys();
         if (requestedKeys.isEmpty() || specValuesByKey.isEmpty()) {
             String specJson = StringUtils.hasText(sku.specJson()) ? sku.specJson() : "{}";
-            String specText = StringUtils.hasText(sku.specText()) ? sku.specText() : "默认";
+            String specText = StringUtils.hasText(sku.specText())
+                    ? sku.specText().trim()
+                    : ProductSpecType.SINGLE.name().equals(product.specType()) ? "" : "默认";
             String combinationKey;
             if (StringUtils.hasText(sku.combinationKey())) {
                 combinationKey = sku.combinationKey().trim();

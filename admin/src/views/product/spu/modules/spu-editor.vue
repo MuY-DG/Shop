@@ -137,7 +137,8 @@
     createEditorKey,
     createEmptySku,
     hydrateSkuImageFallbacks,
-    normalizeDefaultSku
+    normalizeDefaultSku,
+    normalizeSingleSpecText
   } from './sku-matrix'
 
   interface Props {
@@ -304,7 +305,7 @@
     id: sku.id,
     skuCode: sku.skuCode || '',
     specJson: sku.specJson || '{}',
-    specText: sku.specText || '默认规格',
+    specText: sku.specText || '',
     priceCent: sku.priceCent ?? null,
     costPriceCent: sku.costPriceCent ?? null,
     originalPriceCent: sku.originalPriceCent ?? null,
@@ -366,7 +367,7 @@
           defaultSelected: true,
           combinationKey: 'SINGLE',
           specJson: '{}',
-          specText: '默认规格',
+          specText: normalizeSingleSpecText(single.specText),
           specValueKeys: [],
           sortOrder: 0
         }
@@ -473,7 +474,7 @@
       id: sku.id,
       skuCode: sku.skuCode.trim(),
       specJson: form.specType === 'SINGLE' ? '{}' : sku.specJson,
-      specText: form.specType === 'SINGLE' ? '默认规格' : sku.specText,
+      specText: form.specType === 'SINGLE' ? normalizeSingleSpecText(sku.specText) : sku.specText,
       priceCent: sku.priceCent,
       costPriceCent: sku.costPriceCent,
       originalPriceCent: sku.originalPriceCent,

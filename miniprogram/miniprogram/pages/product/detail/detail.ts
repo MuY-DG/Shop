@@ -7,7 +7,8 @@ import {
   buildGalleryImages,
   buildParameterViews,
   buildSpecificationPreviewUrls,
-  buildSkuSpecificationGroups,
+  buildVisibleSkuSpecificationGroups,
+  displaySpecText,
   findDefaultSku,
   formatMoney,
   parsePositiveId,
@@ -184,10 +185,16 @@ function wholesaleSummary(tiers: WholesaleTierView[]): string {
     .join(" · ");
 }
 
-function buildReviewSpecOptions(skus: ProductSku[]): ReviewSpecOptionView[] {
+function buildReviewSpecOptions(
+  skus: ProductSku[],
+  specType: ProductDetail["specType"]
+): ReviewSpecOptionView[] {
+  if (specType === "SINGLE") {
+    return [];
+  }
   const values = new Set<string>();
   for (const sku of skus) {
-    const value = cleanText(sku.specText);
+    const value = displaySpecText(sku.specText);
     if (value) {
       values.add(value);
     }
@@ -354,6 +361,7 @@ Page({
       }
       const normalizedDetail: ProductDetail = {
         ...detail,
+        specType: detail.specType === "MULTI" ? "MULTI" : "SINGLE",
         salesCount: Number.isSafeInteger(detail.salesCount) && detail.salesCount >= 0
           ? detail.salesCount
           : 0,
@@ -375,19 +383,20 @@ Page({
         galleryImages: buildGalleryImages(normalizedDetail),
         parameterViews,
         ...parameterGroups,
-        specificationGroups: buildSkuSpecificationGroups(
+        specificationGroups: buildVisibleSkuSpecificationGroups(
+          normalizedDetail.specType,
           normalizedDetail.skus,
           selection.selectedSkuId
         ),
         specificationImageMode: "list",
         ...selection,
-        selectedSkuName: cleanText(selectedSku?.specText) || "默认规格",
+        selectedSkuName: displaySpecText(selectedSku?.specText),
         purchaseImageUrl: cleanText(selectedSku?.image) || cleanText(normalizedDetail.mainImage),
         guaranteeSummary: guaranteeSummary(normalizedDetail),
         freightSummary: freight.summary,
         freightChargeText: freight.chargeText,
         wholesaleSummary: wholesaleSummary(selection.wholesaleTiers),
-        reviewSpecOptions: buildReviewSpecOptions(normalizedDetail.skus),
+        reviewSpecOptions: buildReviewSpecOptions(normalizedDetail.skus, normalizedDetail.specType),
         reviewSpecText: "",
         reviewSpecDraftText: "",
         reviewSpecSheetOpen: false,
@@ -988,11 +997,14 @@ Page({
     const fallbackImage = this.data.detail?.mainImage ?? "";
     this.setData({
       ...selection,
-      specificationGroups: buildSkuSpecificationGroups(
-        this.data.detail?.skus ?? [],
-        selection.selectedSkuId
-      ),
-      selectedSkuName: cleanText(sku.specText) || "默认规格",
+      specificationGroups: this.data.detail
+        ? buildVisibleSkuSpecificationGroups(
+            this.data.detail.specType,
+            this.data.detail.skus,
+            selection.selectedSkuId
+          )
+        : [],
+      selectedSkuName: displaySpecText(sku.specText),
       purchaseImageUrl: cleanText(sku.image) || cleanText(fallbackImage),
       wholesaleSummary: wholesaleSummary(selection.wholesaleTiers)
     });
