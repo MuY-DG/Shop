@@ -136,6 +136,7 @@ Component({
     total: 0,
     loading: true,
     loadingMore: false,
+    silentRefreshing: false,
     contentRefreshing: false,
     loaded: false,
     errorText: "",
@@ -195,6 +196,34 @@ Component({
       ]);
     },
 
+    async silentRefresh() {
+      if (
+        !this.data.loaded
+        || this.data.loading
+        || this.data.loadingMore
+        || this.data.silentRefreshing
+        || this.data.contentRefreshing
+        || this.data.filterVisible
+        || this.data.addingSpuId
+      ) {
+        return;
+      }
+      this.setData({ silentRefreshing: true });
+      try {
+        await Promise.all([
+          this.loadCategories(true),
+          this.loadFilterFacets(
+            this.data.activeCategoryId,
+            this.data.selectedParameterValues,
+            true
+          ),
+          this.loadFirstPage(true, true)
+        ]);
+      } finally {
+        this.setData({ silentRefreshing: false });
+      }
+    },
+
     async loadCategories(silent = false) {
       try {
         const categories = await getProductCategories();
@@ -237,6 +266,9 @@ Component({
         if (!isCurrentFacetRequest(this, requestId)) {
           return;
         }
+        if (silent) {
+          return;
+        }
         this.setData({
           filterFacets: [],
           parameterFilterGroups: []
@@ -250,14 +282,17 @@ Component({
       }
     },
 
-    async loadFirstPage(preserveContent = false) {
+    async loadFirstPage(preserveContent = false, suppressError = false) {
       const requestId = nextRequestId(this);
       const keepCurrentContent = preserveContent && this.data.loaded;
-      this.setData({
-        loading: true,
-        loadingMore: false,
-        errorText: keepCurrentContent ? this.data.errorText : ""
-      });
+      const background = keepCurrentContent && suppressError;
+      if (!background) {
+        this.setData({
+          loading: true,
+          loadingMore: false,
+          errorText: keepCurrentContent ? this.data.errorText : ""
+        });
+      }
       try {
         const result = await getProductList(buildProductListQuery(
           this.data.activeCategoryId,
@@ -286,7 +321,9 @@ Component({
         const message = productErrorMessage(error, "商品加载失败，请稍后重试");
         if (keepCurrentContent) {
           this.setData({ loading: false });
-          wx.showToast({ title: "刷新失败，已保留当前商品", icon: "none" });
+          if (!suppressError) {
+            wx.showToast({ title: "刷新失败，已保留当前商品", icon: "none" });
+          }
         } else {
           this.setData({
             sourceProducts: [],

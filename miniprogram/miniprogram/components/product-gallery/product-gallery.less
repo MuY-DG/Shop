@@ -4,7 +4,7 @@
   position: relative;
   width: 100%;
   overflow: hidden;
-  background: @color-surface-muted;
+  background: @color-surface-white;
 }
 
 .gallery {
@@ -45,7 +45,7 @@
 
 .gallery-image {
   display: block;
-  background: @color-surface;
+  background: @color-surface-white;
 }
 
 .gallery-placeholder {
@@ -55,9 +55,7 @@
   flex-direction: column;
   color: @color-text-muted;
   font-size: @font-size-sm;
-  background:
-    radial-gradient(circle at 50% 44%, fade(@color-brand, 8%), transparent 32%),
-    @color-surface-muted;
+  background: @color-surface-white;
 }
 
 .gallery-placeholder__seal {
@@ -73,6 +71,6 @@
   font-family: "Songti SC", "STSong", serif;
   font-size: 48rpx;
   font-weight: 700;
-  background: fade(@color-surface, 76%);
+  background: @color-surface-white;
   transform: rotate(-4deg);
 }

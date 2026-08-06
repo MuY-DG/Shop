@@ -298,6 +298,7 @@ test("分类页固定工具区并统一搜索、排序和分类视觉", () => {
     readFileSync(`${categoryRoot}.json`, "utf8")
   ) as DetailPageConfig;
   const categoryTemplate = readFileSync(`${categoryRoot}.wxml`, "utf8");
+  const categoryLogic = readFileSync(`${categoryRoot}.ts`, "utf8");
   const categoryStyle = readFileSync(`${categoryRoot}.less`, "utf8");
   const catalogTemplate = readFileSync(
     resolve(sourceRoot, "components/catalog-browser/catalog-browser.wxml"),
@@ -345,6 +346,8 @@ test("分类页固定工具区并统一搜索、排序和分类视觉", () => {
   assert.match(catalogTemplate, />确定<\/view>/);
   assert.doesNotMatch(catalogTemplate, />查看商品<\/view>/);
   assert.match(catalogLogic, /async onContentRefresh\(\)[\s\S]*await this\.refresh\(\)/);
+  assert.match(categoryLogic, /this\.data\.shown[\s\S]*this\.catalog\(\)\?\.silentRefresh\(\)/);
+  assert.match(catalogLogic, /async silentRefresh\(\)[\s\S]*this\.loadFirstPage\(true, true\)/);
   assert.match(catalogLogic, /onContentLower\(\)[\s\S]*this\.loadMore\(\)/);
 });
 
@@ -426,13 +429,20 @@ test("购物车提供管理批量删除并使用后端权威计价", () => {
   assert.match(template, /check-rounded-material-symbols-iconify\.svg/);
   assert.doesNotMatch(template, />✓<\/text>/);
   assert.match(template, /class="cart-content"[\s\S]*scroll-y="\{\{true\}\}"[\s\S]*bindrefresherrefresh="onContentRefresh"/);
+  assert.match(template, /class="cart-content"[\s\S]*bounces="\{\{false\}\}"[\s\S]*refresher-triggered="\{\{contentRefreshing\}\}"/);
   assert.match(template, /class="batch-delete-action"/);
+  assert.match(template, /settlement-total__amount">\{\{selectedAmountText\}\}/);
+  assert.doesNotMatch(template, /计算中/);
   assert.doesNotMatch(template, /商品清单与结算信息/);
   assert.doesNotMatch(template, /这一锅，慢慢挑|>清空<|>移除<|小计|优惠将在结算页计算|已选 \{\{/);
   assert.match(logic, /确认要删除这\$\{normalizedIds\.length\}种商品吗/);
   assert.match(logic, /您还没有选择商品/);
   assert.match(logic, /previewOrder\(\{[\s\S]*source: "CART"/);
   assert.match(logic, /async onContentRefresh\(\)[\s\S]*await this\.loadCart\(\)/);
+  assert.match(logic, /void this\.loadCart\(\{ suppressError: this\.data\.loaded \}\)/);
+  assert.match(logic, /pricingCache\.get\(signature\) \?\? summary\.selectedAmountText/);
+  assert.match(logic, /loadCart\(\{ preserveItemOrder: true \}\)/);
+  assert.doesNotMatch(logic, /onPullDownRefresh|stopPullDownRefresh/);
   assert.match(service, /API_ENDPOINTS\.cart\.batchDelete/);
   assert.match(styles, /\.cart-page\s*\{[\s\S]*height: 100vh;[\s\S]*display: flex;[\s\S]*overflow: hidden;[\s\S]*background: @color-page/);
   assert.match(styles, /\.cart-content\s*\{[\s\S]*height: 0;[\s\S]*flex: 1;[\s\S]*padding: @space-4 12rpx calc\(@tab-bar-height \+ 186rpx\)/);
@@ -666,7 +676,7 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(favoriteLogic, /confirmAction\(\s*"取消收藏"/);
   assert.match(favoriteLogic, /const detail = await getProductDetail\(spuId\);[\s\S]*await addCartItem/);
   assert.match(favoriteLogic, /wx\.navigateTo\(\{ url: product\.navigationPath \}\)/);
-  assert.match(favoriteLogic, /async refresh\(\)[\s\S]{0,180}loadingMore: false/);
+  assert.match(favoriteLogic, /async refresh\(options: RefreshOptions = \{\}\)[\s\S]{0,360}loadingMore: false/);
   assert.doesNotMatch(favoriteLogic, /removeFavorite\(/);
 
   assert.match(historyTemplate, /data-id="\{\{item\.spuId\}\}"[\s\S]*bindtap="onProductTap"/);
@@ -675,7 +685,7 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(historyTemplate, /aria-label="\{\{item\.available \?/);
   assert.match(historyTemplate, /aria-disabled="\{\{!managing && !item\.available\}\}"/);
   assert.match(historyLogic, /wx\.navigateTo\(\{ url: product\.navigationPath \}\)/);
-  assert.match(historyLogic, /async refresh\(\)[\s\S]{0,180}loadingMore: false/);
+  assert.match(historyLogic, /async refresh\(options: RefreshOptions = \{\}\)[\s\S]{0,360}loadingMore: false/);
   assert.match(historyTemplate, /<navigation-bar[\s\S]*wide-center="\{\{true\}\}"[\s\S]*slot="center" class="history-navigation-title">足迹<\/view>/);
   assert.match(historyTemplate, /\{\{managing \? '完成' : '管理'\}\}/);
   assert.match(historyTemplate, /bindtap="onClearTap"/);
@@ -792,6 +802,45 @@ test("全局空状态统一使用黑色图标和灰色说明文字", () => {
   );
 });
 
+test("图片缺失与加载占位背景统一为白色", () => {
+  const placeholderSelectors = new Map<string, string[]>([
+    ["components/home-banner/home-banner.less", ["hero-section", "hero-swiper", "hero-placeholder"]],
+    ["components/home-category-grid/home-category-grid.less", ["category-placeholder"]],
+    ["components/product-card/product-card.less", ["product-card__image-wrap", "product-card__placeholder"]],
+    ["components/product-gallery/product-gallery.less", ["gallery-shell", "gallery-image", "gallery-placeholder"]],
+    ["pages/index/index.less", ["skeleton-block"]],
+    ["pages/account/history/history.less", ["history-card__image-wrap", "history-card__placeholder"]],
+    ["styles/account-products.less", ["account-product__image-wrap", "account-product__placeholder"]],
+    ["pages/cart/cart.less", ["cart-card__image-shell"]],
+    ["pages/order/preview/preview.less", ["preview-item__image-shell"]],
+    ["pages/order/detail/detail.less", ["detail-item__image-shell"]],
+    ["pages/order/list/list.less", ["order-product__image-shell"]],
+    ["pages/after-sale/apply/apply.less", ["order-item__image-shell"]],
+    ["pages/order/review/review.less", ["product-option__image", "review-product__image-shell", "review-image-item__image"]],
+    ["pages/product/detail/detail.less", ["purchase-image", "review-image-gallery__image", "review-spec-product__image"]]
+  ]);
+
+  placeholderSelectors.forEach((selectors, path) => {
+    const style = readFileSync(resolve(sourceRoot, path), "utf8");
+    selectors.forEach((selector) => {
+      assert.match(
+        style,
+        new RegExp(`\\.${selector}\\s*\\{[^}]*background:\\s*(?:@color-surface-white|#fff(?:fff)?);`),
+        `${path} .${selector} should use a white placeholder background`
+      );
+    });
+  });
+
+  const customerServiceStyle = readFileSync(
+    resolve(sourceRoot, "pages/customer-service/chat/chat.less"),
+    "utf8"
+  );
+  assert.match(
+    customerServiceStyle,
+    /\.chat-card__image-shell,[\s\S]*?\.candidate__image-shell\s*\{[^}]*background:\s*#ffffff;/
+  );
+});
+
 test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
   const fixedPages = [
     {
@@ -865,6 +914,7 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
       readFileSync(resolve(sourceRoot, `${page.path}.json`), "utf8")
     ) as DetailPageConfig;
     const template = readFileSync(resolve(sourceRoot, `${page.path}.wxml`), "utf8");
+    const logic = readFileSync(resolve(sourceRoot, `${page.path}.ts`), "utf8");
     const style = readFileSync(resolve(sourceRoot, page.stylePath), "utf8");
 
     assert.equal(config.disableScroll, true, `${page.path} should disable page scrolling`);
@@ -884,7 +934,13 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
 
     if (page.refreshable) {
       assert.match(template, /refresher-enabled="\{\{true\}\}"/);
-      assert.match(template, /bindrefresherrefresh="onPullDownRefresh"/);
+      assert.match(template, /bounces="\{\{false\}\}"/);
+      assert.match(template, /refresher-triggered="\{\{contentRefreshing\}\}"/);
+      assert.match(template, /bindrefresherrefresh="onContentRefresh"/);
+      assert.match(logic, /contentRefreshing: false/);
+      assert.match(logic, /async onContentRefresh\(\)[\s\S]*contentRefreshing: true[\s\S]*contentRefreshing: false/);
+      assert.match(logic, /silent: true, suppressError: true/);
+      assert.doesNotMatch(logic, /onPullDownRefresh|stopPullDownRefresh/);
     } else {
       assert.doesNotMatch(template, /bindrefresherrefresh=/);
     }
@@ -1384,7 +1440,8 @@ test("首页使用微信原生下拉刷新图标", () => {
   assert.doesNotMatch(homeTemplate, /home-navigation|<navigation-bar/);
   assert.doesNotMatch(homeTemplate, /refresher-/);
   assert.doesNotMatch(homeTemplate, /refreshText/);
-  assert.match(homeLogic, /onPullDownRefresh\(\)[\s\S]*loadHome\(true\)/);
+  assert.match(homeLogic, /onShow\(\)[\s\S]*loadHome\(\{ preserveContent: true, suppressError: true \}\)/);
+  assert.match(homeLogic, /onPullDownRefresh\(\)[\s\S]*stopPullDownRefresh: true/);
   assert.match(homeLogic, /wx\.stopPullDownRefresh\(\)/);
 });
 
@@ -1406,7 +1463,7 @@ test("商品轮播延后同步当前位置并在手势中断时恢复吸附", ()
   assert.match(galleryLogic, /swiperVisible: false, current/);
 });
 
-test("首页轮播在动画完成后同步位置并在前后台切换时重建原生实例", () => {
+test("首页轮播在动画完成后同步位置并在页面切换时保留原生实例", () => {
   const bannerTemplate = readFileSync(
     resolve(sourceRoot, "components/home-banner/home-banner.wxml"),
     "utf8"
@@ -1428,8 +1485,11 @@ test("首页轮播在动画完成后同步位置并在前后台切换时重建�
   assert.match(bannerTemplate, /bindtouchcancel="onBannerTouchCancel"/);
   assert.match(bannerLogic, /runtime\.pendingCurrent = current/);
   assert.match(bannerLogic, /pageLifetimes:\s*{[\s\S]*hide\(\)/);
-  assert.match(
-    bannerLogic,
-    /autoplayEnabled: false,[\s\S]*swiperVisible: false/
+  const pageHideSource = bannerLogic.slice(
+    bannerLogic.indexOf("    hide()"),
+    bannerLogic.indexOf("    show()")
   );
+  assert.match(pageHideSource, /autoplayEnabled: false,[\s\S]*currentBanner/);
+  assert.doesNotMatch(pageHideSource, /swiperVisible: false/);
+  assert.match(bannerLogic, /show\(\)[\s\S]*scheduleAutoplayResume\(this\)/);
 });

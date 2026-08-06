@@ -173,6 +173,24 @@ export function reconcileCartSelection(
   return Array.from(new Set(selectedIds)).filter((id) => availableSet.has(id));
 }
 
+export function preserveCartItemOrder(
+  items: CartItemResponse[],
+  previousIds: number[]
+): CartItemResponse[] {
+  if (!items.length || !previousIds.length) {
+    return [...items];
+  }
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const ordered = previousIds
+    .map((id) => itemById.get(id))
+    .filter((item): item is CartItemResponse => Boolean(item));
+  const previousIdSet = new Set(previousIds);
+  return [
+    ...ordered,
+    ...items.filter((item) => !previousIdSet.has(item.id))
+  ];
+}
+
 export function buildCartSummary(
   items: CartItemResponse[],
   selectedIds: number[],

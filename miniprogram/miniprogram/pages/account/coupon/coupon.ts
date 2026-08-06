@@ -27,6 +27,11 @@ interface DatasetEvent {
   };
 }
 
+interface RefreshOptions {
+  silent?: boolean;
+  suppressError?: boolean;
+}
+
 let latestRequest = 0;
 
 function actionError(error: unknown, fallback: string): string {
@@ -71,6 +76,7 @@ Page({
     coupons: [] as CouponCardView[],
     loading: true,
     loaded: false,
+    contentRefreshing: false,
     errorText: "",
     emptyTitle: "暂无可领取优惠券",
     claimingTemplateId: 0
@@ -80,13 +86,35 @@ Page({
     void this.loadCoupons();
   },
 
+  onShow() {
+    if (
+      this.data.loaded
+      && !this.data.loading
+      && !this.data.contentRefreshing
+      && !this.data.claimingTemplateId
+    ) {
+      void this.loadCoupons({ silent: true, suppressError: true });
+    }
+  },
+
   onUnload() {
     latestRequest += 1;
   },
 
-  async onPullDownRefresh() {
-    await this.loadCoupons();
-    wx.stopPullDownRefresh();
+  async onContentRefresh() {
+    if (
+      this.data.contentRefreshing
+      || this.data.loading
+      || this.data.claimingTemplateId
+    ) {
+      return;
+    }
+    this.setData({ contentRefreshing: true });
+    try {
+      await this.loadCoupons({ silent: true });
+    } finally {
+      this.setData({ contentRefreshing: false });
+    }
   },
 
   onRetry() {
@@ -130,16 +158,23 @@ Page({
     void this.loadCoupons();
   },
 
-  async loadCoupons() {
+  async loadCoupons(options: RefreshOptions = {}) {
     const requestId = ++latestRequest;
     const section = this.data.activeSection;
     const status = this.data.activeStatus;
     const copy = emptyCopy(section, status);
-    this.setData({
-      loading: true,
-      errorText: "",
-      emptyTitle: copy.title
-    });
+    const silent = options.silent === true && this.data.loaded;
+    if (silent) {
+      if (!options.suppressError) {
+        this.setData({ errorText: "" });
+      }
+    } else {
+      this.setData({
+        loading: true,
+        errorText: "",
+        emptyTitle: copy.title
+      });
+    }
     try {
       const coupons = section === "CLAIMABLE"
         ? buildClaimableCouponViews(await getClaimableCoupons())
@@ -157,6 +192,9 @@ Page({
       });
     } catch (error) {
       if (requestId === latestRequest) {
+        if (silent && options.suppressError) {
+          return;
+        }
         this.setData({
           loading: false,
           loaded: this.data.coupons.length > 0,

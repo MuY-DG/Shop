@@ -35,6 +35,11 @@ interface DatasetEvent {
   };
 }
 
+interface RefreshOptions {
+  silent?: boolean;
+  suppressError?: boolean;
+}
+
 const PAGE_SIZE = 10;
 let latestListRequest = 0;
 const rebuyOperationGuard = createPageOperationGuard();
@@ -72,6 +77,7 @@ Page({
     loading: true,
     loaded: false,
     loadingMore: false,
+    contentRefreshing: false,
     errorText: "",
     actionOrderId: 0,
     actionType: ""
@@ -86,8 +92,14 @@ Page({
   },
 
   onShow() {
-    if (this.data.loaded && !this.data.loading && !this.data.actionOrderId) {
-      void this.refreshOrders();
+    if (
+      this.data.loaded
+      && !this.data.loading
+      && !this.data.loadingMore
+      && !this.data.contentRefreshing
+      && !this.data.actionOrderId
+    ) {
+      void this.refreshOrders({ silent: true, suppressError: true });
     }
   },
 
@@ -96,9 +108,21 @@ Page({
     latestListRequest += 1;
   },
 
-  async onPullDownRefresh() {
-    await this.refreshOrders();
-    wx.stopPullDownRefresh();
+  async onContentRefresh() {
+    if (
+      this.data.contentRefreshing
+      || this.data.loading
+      || this.data.loadingMore
+      || this.data.actionOrderId
+    ) {
+      return;
+    }
+    this.setData({ contentRefreshing: true });
+    try {
+      await this.refreshOrders({ silent: true });
+    } finally {
+      this.setData({ contentRefreshing: false });
+    }
   },
 
   onReachBottom() {
@@ -123,9 +147,16 @@ Page({
     void this.refreshOrders();
   },
 
-  async refreshOrders() {
+  async refreshOrders(options: RefreshOptions = {}) {
     const requestId = ++latestListRequest;
-    this.setData({ loading: true, loadingMore: false, errorText: "" });
+    const silent = options.silent === true && this.data.loaded;
+    if (silent) {
+      if (!options.suppressError) {
+        this.setData({ errorText: "" });
+      }
+    } else {
+      this.setData({ loading: true, loadingMore: false, errorText: "" });
+    }
     try {
       const response = await getOrders({
         current: 1,
@@ -147,6 +178,9 @@ Page({
       });
     } catch (error) {
       if (requestId === latestListRequest) {
+        if (silent && options.suppressError) {
+          return;
+        }
         this.setData({
           loading: false,
           loadingMore: false,

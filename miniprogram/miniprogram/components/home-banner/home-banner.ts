@@ -158,12 +158,12 @@ Component({
       )
         ? pendingCurrent
         : this.data.currentBanner;
-      // Tear down the native swiper while the page is hidden. This drops any
-      // queued autoplay animation instead of letting it replay after foregrounding.
+      // Keep the native swiper and its decoded image alive while the detail page
+      // covers the homepage. Recreating it on return exposes the brown fallback
+      // until the image node mounts again.
       this.setData({
         autoplayEnabled: false,
-        currentBanner,
-        swiperVisible: false
+        currentBanner
       });
     },
 
@@ -171,14 +171,7 @@ Component({
       const runtime = bannerRuntime(this);
       runtime.pageVisible = true;
       clearResumeTimer(runtime);
-      if (!this.data.swiperVisible) {
-        this.setData({
-          autoplayEnabled: false,
-          swiperVisible: true
-        }, () => {
-          scheduleAutoplayResume(this);
-        });
-      }
+      scheduleAutoplayResume(this);
     }
   },
 

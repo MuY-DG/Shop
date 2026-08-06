@@ -3,6 +3,7 @@ import {
   buildCartCheckoutUrl,
   buildCartSummary,
   buildOrderPreviewView,
+  preserveCartItemOrder,
   reconcileCartSelection,
   toggleCartSelection,
   type CartItemView,
@@ -37,6 +38,26 @@ interface CartPageConfig {
   syncTabBar: boolean;
 }
 
+interface CartLoadOptions {
+  preserveItemOrder?: boolean;
+  suppressError?: boolean;
+}
+
+interface PricingRefreshOptions {
+  fallbackAmountText: string;
+  suppressError?: boolean;
+}
+
+const MAX_PRICING_CACHE_ENTRIES = 24;
+
+function pricingSignature(items: CartItemResponse[], selectedIds: number[]): string {
+  const quantityById = new Map(items.map((item) => [item.id, item.quantity]));
+  return [...selectedIds]
+    .sort((left, right) => left - right)
+    .map((id) => `${id}:${quantityById.get(id) ?? 0}`)
+    .join("|");
+}
+
 function actionError(error: unknown, fallback: string): string {
   return isApiError(error)
     ? error.message
@@ -49,6 +70,8 @@ export function registerCartPage(config: CartPageConfig): void {
   let latestCartRequest = 0;
   let latestPricingRequest = 0;
   let checkoutSelectionBeforeManage: number[] = [];
+  const pricingCache = new Map<string, string>();
+  let pricingOwnerKey = "";
 
   Page({
     data: {
@@ -83,6 +106,8 @@ export function registerCartPage(config: CartPageConfig): void {
       }
       const session = getSessionState();
       if (!session.user || (!session.accessToken && !session.refreshToken)) {
+        pricingCache.clear();
+        pricingOwnerKey = "";
         this.setData({
           loaded: false,
           loading: false,
@@ -94,20 +119,18 @@ export function registerCartPage(config: CartPageConfig): void {
         });
         return;
       }
+      const nextPricingOwnerKey = session.user.userId || session.refreshToken || session.accessToken;
+      if (pricingOwnerKey !== nextPricingOwnerKey) {
+        pricingCache.clear();
+        pricingOwnerKey = nextPricingOwnerKey;
+      }
       this.setData({ loginRequired: false });
-      void this.loadCart();
+      void this.loadCart({ suppressError: this.data.loaded });
     },
 
     onUnload() {
       latestCartRequest += 1;
       latestPricingRequest += 1;
-    },
-
-    async onPullDownRefresh() {
-      if (!this.data.loginRequired) {
-        await this.loadCart();
-      }
-      wx.stopPullDownRefresh();
     },
 
     async onContentRefresh() {
@@ -124,12 +147,12 @@ export function registerCartPage(config: CartPageConfig): void {
       }
     },
 
-    async loadCart() {
+    async loadCart(options: CartLoadOptions = {}) {
       const requestId = ++latestCartRequest;
       latestPricingRequest += 1;
       this.setData({
         loading: !this.data.loaded,
-        errorText: "",
+        ...(options.suppressError ? {} : { errorText: "" }),
         pricingLoading: false
       });
       try {
@@ -137,38 +160,54 @@ export function registerCartPage(config: CartPageConfig): void {
         if (requestId !== latestCartRequest) {
           return;
         }
-        const managing = this.data.managing && response.items.length > 0;
+        const responseItems = options.preserveItemOrder
+          ? preserveCartItemOrder(
+              response.items,
+              this.data.rawItems.map((item) => item.id)
+            )
+          : response.items;
+        const managing = this.data.managing && responseItems.length > 0;
         const selectedIds = reconcileCartSelection(
-          response.items,
+          responseItems,
           this.data.selectedIds,
           !this.data.selectionInitialized,
           managing
         );
-        const summary = buildCartSummary(response.items, selectedIds, managing);
+        const summary = buildCartSummary(responseItems, selectedIds, managing);
+        const signature = pricingSignature(responseItems, summary.selectedIds);
+        const fallbackAmountText = summary.selectedIds.length
+          ? pricingCache.get(signature) ?? summary.selectedAmountText
+          : "¥0.00";
         this.setData({
           loaded: true,
           loading: false,
           errorText: "",
-          rawItems: response.items,
+          rawItems: responseItems,
           cartTotalQuantity: response.totalQuantity,
           unavailableCount: response.unavailableCount,
           selectionInitialized: true,
           managing,
           ...summary,
-          selectedAmountText: summary.selectedIds.length
-            ? this.data.selectedAmountText
-            : "¥0.00"
+          selectedAmountText: fallbackAmountText
         });
         setCustomTabBarCartCount(this, response.totalQuantity);
-        this.refreshSelectedPricing(summary.selectedIds, managing);
+        this.refreshSelectedPricing(summary.selectedIds, managing, {
+          fallbackAmountText,
+          suppressError: options.suppressError
+        });
       } catch (error) {
         if (requestId !== latestCartRequest) {
+          return;
+        }
+        const loginRequired = isApiError(error) && error.kind === "AUTH";
+        if (options.suppressError && this.data.loaded && !loginRequired) {
+          this.setData({ loading: false, pricingLoading: false });
           return;
         }
         this.setData({
           loaded: this.data.rawItems.length > 0,
           loading: false,
-          loginRequired: isApiError(error) && error.kind === "AUTH",
+          loginRequired,
           errorText: actionError(error, "购物车加载失败，请稍后重试")
         });
       }
@@ -250,7 +289,7 @@ export function registerCartPage(config: CartPageConfig): void {
       this.setData({ updatingId: cartItemId });
       try {
         await updateCartItemQuantity(cartItemId, { quantity });
-        await this.loadCart();
+        await this.loadCart({ preserveItemOrder: true });
       } catch (error) {
         wx.showToast({
           title: actionError(error, "数量修改失败"),
@@ -369,16 +408,24 @@ export function registerCartPage(config: CartPageConfig): void {
     },
 
     applySummary(summary: CartSummaryView, managing: boolean) {
+      const signature = pricingSignature(this.data.rawItems, summary.selectedIds);
+      const fallbackAmountText = summary.selectedIds.length
+        ? pricingCache.get(signature) ?? summary.selectedAmountText
+        : "¥0.00";
       this.setData({
         ...summary,
-        selectedAmountText: summary.selectedIds.length
-          ? this.data.selectedAmountText
-          : "¥0.00"
+        selectedAmountText: fallbackAmountText
       });
-      this.refreshSelectedPricing(summary.selectedIds, managing);
+      this.refreshSelectedPricing(summary.selectedIds, managing, {
+        fallbackAmountText
+      });
     },
 
-    refreshSelectedPricing(selectedIds: number[], managing: boolean) {
+    refreshSelectedPricing(
+      selectedIds: number[],
+      managing: boolean,
+      options: PricingRefreshOptions
+    ) {
       const requestId = ++latestPricingRequest;
       if (managing || !selectedIds.length) {
         this.setData({
@@ -387,6 +434,7 @@ export function registerCartPage(config: CartPageConfig): void {
         });
         return;
       }
+      const signature = pricingSignature(this.data.rawItems, selectedIds);
       this.setData({ pricingLoading: true });
       void previewOrder({
         source: "CART",
@@ -395,9 +443,17 @@ export function registerCartPage(config: CartPageConfig): void {
         if (requestId !== latestPricingRequest) {
           return;
         }
+        const selectedAmountText = buildOrderPreviewView(preview).payableAmountText;
+        pricingCache.set(signature, selectedAmountText);
+        if (pricingCache.size > MAX_PRICING_CACHE_ENTRIES) {
+          const oldestKey = pricingCache.keys().next().value as string | undefined;
+          if (oldestKey) {
+            pricingCache.delete(oldestKey);
+          }
+        }
         this.setData({
           pricingLoading: false,
-          selectedAmountText: buildOrderPreviewView(preview).payableAmountText
+          selectedAmountText
         });
       }).catch((error) => {
         if (requestId !== latestPricingRequest) {
@@ -405,12 +461,14 @@ export function registerCartPage(config: CartPageConfig): void {
         }
         this.setData({
           pricingLoading: false,
-          selectedAmountText: "¥--"
+          selectedAmountText: options.fallbackAmountText
         });
-        wx.showToast({
-          title: actionError(error, "金额计算失败，请稍后重试"),
-          icon: "none"
-        });
+        if (!options.suppressError) {
+          wx.showToast({
+            title: actionError(error, "金额计算失败，请稍后重试"),
+            icon: "none"
+          });
+        }
       });
     },
 

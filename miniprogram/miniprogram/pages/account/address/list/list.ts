@@ -19,6 +19,11 @@ interface AddressListItem extends AddressResponse {
   phoneDisplay: string;
 }
 
+interface RefreshOptions {
+  silent?: boolean;
+  suppressError?: boolean;
+}
+
 let latestRequest = 0;
 
 function actionError(error: unknown, fallback: string): string {
@@ -54,29 +59,50 @@ Page({
     addresses: [] as AddressListItem[],
     loading: true,
     loaded: false,
+    contentRefreshing: false,
     errorText: ""
   },
 
   onShow() {
-    void this.loadAddresses();
+    if (this.data.loaded && !this.data.loading && !this.data.contentRefreshing) {
+      void this.loadAddresses({ silent: true, suppressError: true });
+      return;
+    }
+    if (!this.data.loaded) {
+      void this.loadAddresses();
+    }
   },
 
   onUnload() {
     latestRequest += 1;
   },
 
-  async onPullDownRefresh() {
-    await this.loadAddresses();
-    wx.stopPullDownRefresh();
+  async onContentRefresh() {
+    if (this.data.contentRefreshing || this.data.loading) {
+      return;
+    }
+    this.setData({ contentRefreshing: true });
+    try {
+      await this.loadAddresses({ silent: true });
+    } finally {
+      this.setData({ contentRefreshing: false });
+    }
   },
 
   onRetry() {
     void this.loadAddresses();
   },
 
-  async loadAddresses() {
+  async loadAddresses(options: RefreshOptions = {}) {
     const requestId = ++latestRequest;
-    this.setData({ loading: true, errorText: "" });
+    const silent = options.silent === true && this.data.loaded;
+    if (silent) {
+      if (!options.suppressError) {
+        this.setData({ errorText: "" });
+      }
+    } else {
+      this.setData({ loading: true, errorText: "" });
+    }
     try {
       const addresses = await getAddresses();
       if (requestId !== latestRequest) {
@@ -90,6 +116,9 @@ Page({
       });
     } catch (error) {
       if (requestId === latestRequest) {
+        if (silent && options.suppressError) {
+          return;
+        }
         this.setData({
           loading: false,
           loaded: this.data.addresses.length > 0,

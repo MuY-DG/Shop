@@ -35,6 +35,11 @@ interface HistoryCollection {
   allSelected: boolean;
 }
 
+interface RefreshOptions {
+  silent?: boolean;
+  suppressError?: boolean;
+}
+
 const PAGE_SIZE = 10;
 let latestRequest = 0;
 
@@ -90,6 +95,7 @@ Page({
     loading: true,
     loaded: false,
     loadingMore: false,
+    contentRefreshing: false,
     errorText: "",
     managing: false,
     selectedIds: [] as number[],
@@ -103,15 +109,39 @@ Page({
     void this.refresh();
   },
 
+  onShow() {
+    if (
+      this.data.loaded
+      && !this.data.loading
+      && !this.data.loadingMore
+      && !this.data.contentRefreshing
+      && !this.data.deleting
+      && !this.data.clearing
+    ) {
+      void this.refresh({ silent: true, suppressError: true });
+    }
+  },
+
   onUnload() {
     latestRequest += 1;
   },
 
-  async onPullDownRefresh() {
-    if (!this.data.deleting && !this.data.clearing) {
-      await this.refresh();
+  async onContentRefresh() {
+    if (
+      this.data.contentRefreshing
+      || this.data.loading
+      || this.data.loadingMore
+      || this.data.deleting
+      || this.data.clearing
+    ) {
+      return;
     }
-    wx.stopPullDownRefresh();
+    this.setData({ contentRefreshing: true });
+    try {
+      await this.refresh({ silent: true });
+    } finally {
+      this.setData({ contentRefreshing: false });
+    }
   },
 
   onReachBottom() {
@@ -122,9 +152,16 @@ Page({
     void this.refresh();
   },
 
-  async refresh() {
+  async refresh(options: RefreshOptions = {}) {
     const requestId = ++latestRequest;
-    this.setData({ loading: true, loadingMore: false, errorText: "" });
+    const silent = options.silent === true && this.data.loaded;
+    if (silent) {
+      if (!options.suppressError) {
+        this.setData({ errorText: "" });
+      }
+    } else {
+      this.setData({ loading: true, loadingMore: false, errorText: "" });
+    }
     try {
       const response = await getBrowseHistory(1, PAGE_SIZE);
       if (requestId !== latestRequest) {
@@ -146,6 +183,9 @@ Page({
       });
     } catch (error) {
       if (requestId === latestRequest) {
+        if (silent && options.suppressError) {
+          return;
+        }
         this.setData({
           loading: false,
           loaded: this.data.items.length > 0,

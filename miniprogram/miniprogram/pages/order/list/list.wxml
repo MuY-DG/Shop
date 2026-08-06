@@ -21,14 +21,14 @@
     class="orders-scroll"
     scroll-y="{{true}}"
     enhanced="{{true}}"
-    bounces="{{true}}"
+    bounces="{{false}}"
     enable-passive="{{true}}"
     show-scrollbar="{{false}}"
     refresher-enabled="{{true}}"
-    refresher-triggered="{{loaded && loading}}"
+    refresher-triggered="{{contentRefreshing}}"
     refresher-background="#f6f6f6"
     lower-threshold="160"
-    bindrefresherrefresh="onPullDownRefresh"
+    bindrefresherrefresh="onContentRefresh"
     bindscrolltolower="onReachBottom"
   >
   <view class="orders-content">

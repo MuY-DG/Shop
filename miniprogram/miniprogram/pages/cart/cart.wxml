@@ -39,6 +39,7 @@
     class="cart-content"
     scroll-y="{{true}}"
     enhanced="{{true}}"
+    bounces="{{false}}"
     show-scrollbar="{{false}}"
     refresher-enabled="{{true}}"
     refresher-triggered="{{contentRefreshing}}"
@@ -195,7 +196,7 @@
       <text>全选</text>
     </view>
     <view wx:if="{{!managing}}" class="settlement-total">
-      <view><text class="settlement-total__label">合计</text><text class="settlement-total__amount">{{pricingLoading ? '计算中' : selectedAmountText}}</text></view>
+      <view><text class="settlement-total__label">合计</text><text class="settlement-total__amount">{{selectedAmountText}}</text></view>
     </view>
     <view wx:else class="settlement-spacer"></view>
     <button

@@ -40,6 +40,12 @@ interface IndexedComponentEvent {
   };
 }
 
+interface HomeLoadOptions {
+  preserveContent?: boolean;
+  stopPullDownRefresh?: boolean;
+  suppressError?: boolean;
+}
+
 let latestHomeRequest = 0;
 
 function homeErrorMessage(error: unknown): string {
@@ -89,6 +95,9 @@ Page({
 
   onShow() {
     syncCustomTabBar(this, 0);
+    if (this.data.loaded && !this.data.loading) {
+      void this.loadHome({ preserveContent: true, suppressError: true });
+    }
   },
 
   onUnload() {
@@ -96,7 +105,10 @@ Page({
   },
 
   onPullDownRefresh() {
-    void this.loadHome(true);
+    void this.loadHome({
+      preserveContent: true,
+      stopPullDownRefresh: true
+    });
   },
 
   onShareAppMessage() {
@@ -112,9 +124,9 @@ Page({
     };
   },
 
-  async loadHome(preserveContent = false) {
+  async loadHome(options: HomeLoadOptions = {}) {
     const requestId = ++latestHomeRequest;
-    const keepCurrentContent = preserveContent && this.data.loaded;
+    const keepCurrentContent = options.preserveContent === true && this.data.loaded;
     this.setData({
       loading: true,
       errorText: keepCurrentContent ? this.data.errorText : ""
@@ -139,10 +151,12 @@ Page({
       const message = homeErrorMessage(error);
       if (keepCurrentContent) {
         this.setData({ loading: false });
-        wx.showToast({
-          title: "刷新失败，已保留当前内容",
-          icon: "none"
-        });
+        if (!options.suppressError) {
+          wx.showToast({
+            title: "刷新失败，已保留当前内容",
+            icon: "none"
+          });
+        }
       } else {
         this.setData({
           loading: false,
@@ -151,7 +165,7 @@ Page({
         });
       }
     } finally {
-      if (requestId === latestHomeRequest) {
+      if (requestId === latestHomeRequest && options.stopPullDownRefresh) {
         wx.stopPullDownRefresh();
       }
     }

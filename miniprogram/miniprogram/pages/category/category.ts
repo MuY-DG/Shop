@@ -8,6 +8,7 @@ import {
 
 interface CatalogBrowserInstance {
   refresh(): Promise<void>;
+  silentRefresh(): Promise<void>;
   loadMore(): Promise<void>;
 }
 
@@ -24,9 +25,18 @@ interface FilterVisibilityChangeEvent {
 }
 
 Page({
+  data: {
+    shown: false
+  },
+
   onShow() {
     enableNativeShareMenu();
     syncCustomTabBar(this, 1);
+    if (this.data.shown) {
+      void this.catalog()?.silentRefresh();
+    } else {
+      this.setData({ shown: true });
+    }
   },
 
   onShareAppMessage() {

@@ -12,6 +12,7 @@ import {
   buildSubmitRequest,
   createIdempotencyKey,
   parseCheckoutQuery,
+  preserveCartItemOrder,
   reconcileCartSelection,
   resolveAddressSelection,
   toggleCartSelection
@@ -117,6 +118,23 @@ test("购物车选择只保留可购买商品并计算选中金额", () => {
 
   assert.deepEqual(toggleCartSelection([11], 12), [11, 12]);
   assert.deepEqual(toggleCartSelection([11, 12], 11), [12]);
+});
+
+test("购物车数量更新后保持原有商品顺序并在末尾接入新商品", () => {
+  const responseItems = [
+    cartItem({ id: 12, quantity: 2 }),
+    cartItem({ id: 11, quantity: 4 }),
+    cartItem({ id: 14 })
+  ];
+
+  assert.deepEqual(
+    preserveCartItemOrder(responseItems, [11, 12, 13]).map((item) => item.id),
+    [11, 12, 14]
+  );
+  assert.deepEqual(
+    preserveCartItemOrder(responseItems, []).map((item) => item.id),
+    [12, 11, 14]
+  );
 });
 
 test("CART 与 DIRECT 结算链接只接受严格正整数参数", () => {

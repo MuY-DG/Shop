@@ -15,6 +15,11 @@ interface DatasetEvent {
   };
 }
 
+interface RefreshOptions {
+  silent?: boolean;
+  suppressError?: boolean;
+}
+
 const PAGE_SIZE = 10;
 let latestListRequest = 0;
 
@@ -35,6 +40,7 @@ Page({
     loading: true,
     loadingMore: false,
     loaded: false,
+    contentRefreshing: false,
     errorText: ""
   },
 
@@ -43,8 +49,13 @@ Page({
   },
 
   onShow() {
-    if (this.data.loaded && !this.data.loading && !this.data.loadingMore) {
-      void this.loadRecords(true);
+    if (
+      this.data.loaded
+      && !this.data.loading
+      && !this.data.loadingMore
+      && !this.data.contentRefreshing
+    ) {
+      void this.loadRecords(true, { silent: true, suppressError: true });
     }
   },
 
@@ -52,9 +63,16 @@ Page({
     latestListRequest += 1;
   },
 
-  async onPullDownRefresh() {
-    await this.loadRecords(true);
-    wx.stopPullDownRefresh();
+  async onContentRefresh() {
+    if (this.data.contentRefreshing || this.data.loading || this.data.loadingMore) {
+      return;
+    }
+    this.setData({ contentRefreshing: true });
+    try {
+      await this.loadRecords(true, { silent: true });
+    } finally {
+      this.setData({ contentRefreshing: false });
+    }
   },
 
   onReachBottom() {
@@ -67,15 +85,22 @@ Page({
     void this.loadRecords(true);
   },
 
-  async loadRecords(reset: boolean) {
-    if (reset && this.data.loading && this.data.loaded) {
+  async loadRecords(reset: boolean, options: RefreshOptions = {}) {
+    if (reset && this.data.loading && this.data.loaded && !options.silent) {
       return;
     }
     const requestId = ++latestListRequest;
     const current = reset ? 1 : this.data.current + 1;
-    this.setData(reset
-      ? { loading: true, errorText: "" }
-      : { loadingMore: true, errorText: "" });
+    const silent = reset && options.silent === true && this.data.loaded;
+    if (silent) {
+      if (!options.suppressError) {
+        this.setData({ errorText: "" });
+      }
+    } else {
+      this.setData(reset
+        ? { loading: true, errorText: "" }
+        : { loadingMore: true, errorText: "" });
+    }
     try {
       const page = await getAfterSales(current, PAGE_SIZE);
       if (requestId !== latestListRequest) {
@@ -95,6 +120,9 @@ Page({
       });
     } catch (error) {
       if (requestId === latestListRequest) {
+        if (silent && options.suppressError) {
+          return;
+        }
         this.setData({
           loading: false,
           loadingMore: false,
