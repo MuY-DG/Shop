@@ -263,9 +263,11 @@ Page({
       return;
     }
     this.setData({ actionOrderId: orderId, actionType: "pay" });
+    let paid = false;
     try {
       const outcome = await executeOrderPayment(orderId);
-      if (outcome === "PAID") {
+      paid = outcome === "PAID";
+      if (paid) {
         wx.showToast({ title: "支付成功", icon: "success" });
       } else if (outcome === "PENDING") {
         wx.showToast({ title: "正在确认支付结果", icon: "none" });
@@ -279,8 +281,30 @@ Page({
       });
     } finally {
       this.setData({ actionOrderId: 0, actionType: "" });
-      await this.refreshOrders();
+      if (paid) {
+        this.navigatePaymentSuccess(orderId);
+      } else {
+        await this.refreshOrders();
+      }
     }
+  },
+
+  navigatePaymentSuccess(orderId: number) {
+    const order = this.data.orders.find((item) => item.orderId === orderId);
+    if (!order) {
+      void this.refreshOrders();
+      return;
+    }
+    const query = [
+      `order_id=${encodeURIComponent(String(order.orderId))}`,
+      `order_no=${encodeURIComponent(order.orderNo)}`,
+      `amount=${encodeURIComponent(String(order.payableAmountCent))}`,
+      "payment_status=PAID"
+    ].join("&");
+    wx.navigateTo({
+      url: `/pages/order/created/created?${query}`,
+      fail: () => void this.refreshOrders()
+    });
   },
 
   onCancelTap(event: DatasetEvent) {

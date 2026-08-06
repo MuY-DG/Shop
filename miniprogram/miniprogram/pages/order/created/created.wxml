@@ -1,25 +1,45 @@
 <view class="created-page">
+  <image
+    class="created-background"
+    src="/assets/images/payment-success-background.png"
+    mode="aspectFill"
+    aria-hidden="true"
+  />
+
   <navigation-bar
-    title="支付成功"
+    title=""
+    back="{{true}}"
+    round-back="{{true}}"
+    background="transparent"
     color="#2E1D16"
+    show-divider="{{false}}"
   />
 
   <view class="created-content">
-    <view class="success-mark" aria-hidden="true">✓</view>
+    <image
+      class="success-mark"
+      src="/assets/images/payment-success-check.png"
+      mode="aspectFit"
+      aria-hidden="true"
+    />
     <view class="result-title">支付成功</view>
-    <view class="result-subtitle">支付已确认，商家将尽快为你安排发货</view>
 
     <view class="result-amount">
-      <text>支付金额</text>
-      <view>{{paymentAmountText}}</view>
+      <text class="result-amount__label">已成功支付金额</text>
+      <text class="result-amount__value">{{paymentAmountText}}</text>
     </view>
 
-    <view class="order-card">
-      <view class="order-row"><text>订单号</text><text>{{orderNo || '已创建'}}</text></view>
-      <view class="order-row"><text>订单状态</text><text class="status-tag">{{statusText}}</text></view>
-    </view>
-
-    <button class="secondary-action" bindtap="onDetailTap">查看订单详情</button>
-    <button class="text-action" bindtap="onHomeTap">返回首页</button>
+    <button
+      class="order-action"
+      bindtap="onDetailTap"
+      hover-class="order-action--pressed"
+      hover-stay-time="80"
+    >查看订单</button>
+    <button
+      class="home-action"
+      bindtap="onHomeTap"
+      hover-class="home-action--pressed"
+      hover-stay-time="80"
+    >返回首页</button>
   </view>
 </view>

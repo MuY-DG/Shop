@@ -718,6 +718,8 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderLogic, /const detail = await getOrderDetail\(orderId\)[\s\S]*await addCartItem/);
   assert.match(orderLogic, /buildOrderReviewUrl\(orderId\)/);
   assert.match(orderLogic, /buildOrderModifyUrl\(orderId\)/);
+  assert.match(orderLogic, /if \(paid\) \{\s*this\.navigatePaymentSuccess\(orderId\);/);
+  assert.match(orderLogic, /navigatePaymentSuccess\(orderId: number\)[\s\S]*wx\.navigateTo\(\{[\s\S]*pages\/order\/created\/created/);
   assert.match(orderLogic, /this\.data\.loadingMore/);
   assert.match(orderLogic, /loading: true, loadingMore: false/);
   assert.match(profileLogic, /group: "TO_REVIEW",[\s\S]{0,80}label: "待评价"/);
@@ -1392,6 +1394,10 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
     resolve(sourceRoot, "pages/order/created/created.wxml"),
     "utf8"
   );
+  const createdStyles = readFileSync(
+    resolve(sourceRoot, "pages/order/created/created.less"),
+    "utf8"
+  );
   const listTemplate = readFileSync(
     resolve(sourceRoot, "pages/order/list/list.wxml"),
     "utf8"
@@ -1413,7 +1419,24 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.ok(appConfig.pages.includes("pages/order/detail/detail"));
   assert.match(createdTemplate, /支付成功/);
   assert.match(createdTemplate, /支付金额/);
+  assert.match(createdTemplate, /payment-success-background\.png/);
+  assert.match(createdTemplate, /payment-success-check\.png/);
+  assert.equal(
+    existsSync(resolve(sourceRoot, "assets/images/payment-success-background.png")),
+    true
+  );
+  assert.equal(
+    existsSync(resolve(sourceRoot, "assets/images/payment-success-check.png")),
+    true
+  );
+  assert.match(createdTemplate, /back="\{\{true\}\}"/);
+  assert.match(createdTemplate, /background="transparent"/);
+  assert.match(createdTemplate, /show-divider="\{\{false\}\}"/);
+  assert.match(createdTemplate, />查看订单<\/button>/);
+  assert.match(createdTemplate, />返回首页<\/button>/);
+  assert.match(createdStyles, /\.created-background\s*\{/);
   assert.doesNotMatch(createdTemplate, /待支付金额|应付金额|订单提交成功|同步支付结果/);
+  assert.doesNotMatch(createdTemplate, /title="支付成功"|order-card|result-subtitle/);
   assert.match(listTemplate, /bindtap="onOrderTap"/);
   assert.match(listTemplate, /catchtap="onCancelTap"/);
   assert.match(detailTemplate, /bindtap="onConfirmTap"/);
