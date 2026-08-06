@@ -1,5 +1,5 @@
 <view class="after-sale-list-page">
-  <navigation-bar title="退款售后" back="{{true}}" color="#2E1D16" loading="{{loaded && loading}}" />
+  <navigation-bar title="退款售后" back="{{true}}" color="#2E1D16" />
 
   <scroll-view
     class="after-sale-list-scroll"

@@ -123,37 +123,18 @@
   height: 22px;
 }
 
+.navigation-bar__back-icon--light {
+  filter: brightness(0) invert(1);
+}
+
 .navigation-bar__left-slot {
   display: flex;
   min-width: 0;
   align-items: center;
 }
 
-.navigation-bar__loading {
-  box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  margin-right: 6px;
-  flex: none;
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  opacity: 0.65;
-  animation: navigation-bar-spin 0.8s linear infinite;
-}
-
 .navigation-bar__title {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-@keyframes navigation-bar-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
 }

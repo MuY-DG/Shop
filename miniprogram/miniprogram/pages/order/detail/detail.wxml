@@ -3,7 +3,6 @@
     title="{{navigationTitle}}"
     back="{{true}}"
     color="#2E1D16"
-    loading="{{loaded && loading}}"
   />
 
   <view class="detail-content">

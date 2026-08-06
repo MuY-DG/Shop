@@ -43,8 +43,16 @@ export interface OrderPreviewItemView extends OrderPreviewItem {
   imageUrl: string;
   hasImage: boolean;
   unitPriceText: string;
+  retailPriceText: string;
+  hasRetailPrice: boolean;
+  retailLineAmountText: string;
+  hasRetailLineAmount: boolean;
   wholesaleText: string;
   lineAmountText: string;
+}
+
+export interface CheckoutAddressView extends AddressResponse {
+  receiverPhoneDisplay: string;
 }
 
 export interface OrderPreviewView extends OrderPreviewResponse {
@@ -57,6 +65,10 @@ export interface OrderPreviewView extends OrderPreviewResponse {
   hasCouponDiscount: boolean;
   freightText: string;
   payableAmountText: string;
+  originalPayableAmountText: string;
+  totalDiscountText: string;
+  hasTotalDiscount: boolean;
+  totalQuantity: number;
 }
 
 export interface CouponOptionView extends AvailableCouponItem {
@@ -258,10 +270,20 @@ export function parseCheckoutQuery(
   throw new Error("结算来源无效");
 }
 
-export function resolveAddressSelection(
-  addresses: AddressResponse[],
+export function buildCheckoutAddressView(address: AddressResponse): CheckoutAddressView {
+  const receiverPhone = address.receiverPhone.trim();
+  return {
+    ...address,
+    receiverPhoneDisplay: /^\d{11}$/.test(receiverPhone)
+      ? `${receiverPhone.slice(0, 3)}****${receiverPhone.slice(-4)}`
+      : receiverPhone
+  };
+}
+
+export function resolveAddressSelection<T extends AddressResponse>(
+  addresses: T[],
   current: AddressResponse | null
-): AddressResponse | null {
+): T | null {
   if (current) {
     const matched = addresses.find((address) => address.id === current.id);
     if (matched) {
@@ -314,12 +336,17 @@ export function buildSubmitRequest(
 function previewItemView(item: OrderPreviewItem): OrderPreviewItemView {
   const imageUrl = (item.displayImage || item.skuImage || item.mainImage || "").trim();
   const wholesaleApplied = Boolean(item.wholesaleTierMinQuantity);
+  const retailLineAmountCent = item.retailUnitPriceCent * item.quantity;
   return {
     ...item,
     specText: displaySpecText(item.specText),
     imageUrl,
     hasImage: Boolean(imageUrl),
     unitPriceText: money(item.unitPriceCent),
+    retailPriceText: money(item.retailUnitPriceCent),
+    hasRetailPrice: wholesaleApplied && item.retailUnitPriceCent > item.unitPriceCent,
+    retailLineAmountText: money(retailLineAmountCent),
+    hasRetailLineAmount: wholesaleApplied && retailLineAmountCent > item.lineAmountCent,
     wholesaleText: wholesaleApplied
       ? `${item.wholesaleTierMinQuantity} 件起批发价`
       : "",
@@ -336,6 +363,15 @@ export function buildOrderPreviewView(preview: OrderPreviewResponse): OrderPrevi
     retailProductAmountCent - preview.productAmountCent,
     0
   );
+  const originalPayableAmountCent = retailProductAmountCent + preview.freightCent;
+  const totalDiscountCent = Math.max(
+    originalPayableAmountCent - preview.payableAmountCent,
+    0
+  );
+  const totalQuantity = preview.items.reduce(
+    (total, item) => total + item.quantity,
+    0
+  );
   return {
     ...preview,
     items: preview.items.map(previewItemView),
@@ -346,7 +382,11 @@ export function buildOrderPreviewView(preview: OrderPreviewResponse): OrderPrevi
     couponDiscountText: money(preview.couponDiscountCent),
     hasCouponDiscount: preview.couponDiscountCent > 0,
     freightText: money(preview.freightCent),
-    payableAmountText: money(preview.payableAmountCent)
+    payableAmountText: money(preview.payableAmountCent),
+    originalPayableAmountText: money(originalPayableAmountCent),
+    totalDiscountText: money(totalDiscountCent),
+    hasTotalDiscount: totalDiscountCent > 0,
+    totalQuantity
   };
 }
 

@@ -3,7 +3,6 @@
     <navigation-bar
       title=""
       back="{{true}}"
-      loading="{{loading}}"
       background="transparent"
       color="#2E1D16"
       show-divider="{{false}}"

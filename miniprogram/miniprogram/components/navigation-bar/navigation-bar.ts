@@ -130,10 +130,6 @@ Component({
       type: Boolean,
       value: false,
     },
-    loading: {
-      type: Boolean,
-      value: false,
-    },
     background: {
       type: String,
       value: '#ffffff',
@@ -147,6 +143,10 @@ Component({
       value: true,
     },
     roundBack: {
+      type: Boolean,
+      value: false,
+    },
+    lightBack: {
       type: Boolean,
       value: false,
     },

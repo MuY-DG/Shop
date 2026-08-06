@@ -3,7 +3,10 @@
     "navigation-bar": "/components/navigation-bar/navigation-bar",
     "ui-state": "/components/ui-state/ui-state"
   },
-  "enablePullDownRefresh": true,
+  "disableScroll": true,
+  "enablePullDownRefresh": false,
+  "navigationBarBackgroundColor": "#fd4041",
+  "navigationBarTextStyle": "white",
   "backgroundColor": "#f6f6f6",
-  "backgroundTextStyle": "dark"
+  "backgroundTextStyle": "light"
 }

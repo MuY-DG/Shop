@@ -5,6 +5,7 @@ import {
   buildCartCheckoutUrl,
   buildCartSummary,
   buildCouponOptionViews,
+  buildCheckoutAddressView,
   buildDirectBuyUrl,
   buildOrderPreviewView,
   buildPreviewRequest,
@@ -190,6 +191,11 @@ test("默认地址、当前地址和订单预览金额生成稳定展示模型",
   const preferred = address({ id: "102", isDefault: true });
   const addresses = [first, preferred];
 
+  assert.equal(buildCheckoutAddressView(first).receiverPhoneDisplay, "138****0000");
+  assert.equal(
+    buildCheckoutAddressView(address({ receiverPhone: "028-12345678" })).receiverPhoneDisplay,
+    "028-12345678"
+  );
   assert.equal(resolveAddressSelection(addresses, null)?.id, "102");
   assert.equal(resolveAddressSelection(addresses, first)?.id, "101");
   assert.equal(resolveAddressSelection([preferred], first)?.id, "102");
@@ -230,6 +236,34 @@ test("默认地址、当前地址和订单预览金额生成稳定展示模型",
   assert.equal(view.freightText, "¥0.00");
   assert.equal(view.payableAmountText, "¥45.40");
   assert.equal(view.items[0]?.wholesaleText, "3 件起批发价");
+  assert.equal(view.items[0]?.retailPriceText, "¥18.80");
+  assert.equal(view.items[0]?.hasRetailPrice, true);
+  assert.equal(view.items[0]?.retailLineAmountText, "¥56.40");
+  assert.equal(view.items[0]?.hasRetailLineAmount, true);
+  assert.equal(view.totalQuantity, 3);
+  assert.equal(view.originalPayableAmountText, "¥56.40");
+  assert.equal(view.totalDiscountText, "¥11.00");
+  assert.equal(view.hasTotalDiscount, true);
+
+  const retailView = buildOrderPreviewView({
+    ...preview,
+    items: [{
+      ...preview.items[0]!,
+      unitPriceCent: 1880,
+      retailUnitPriceCent: 1880,
+      wholesaleTierMinQuantity: undefined,
+      lineAmountCent: 5640
+    }],
+    productAmountCent: 5640,
+    userCouponId: undefined,
+    couponName: undefined,
+    couponDiscountCent: 0,
+    payableAmountCent: 5640
+  });
+  assert.equal(retailView.items[0]?.hasRetailPrice, false);
+  assert.equal(retailView.items[0]?.hasRetailLineAmount, false);
+  assert.equal(retailView.totalDiscountText, "¥0.00");
+  assert.equal(retailView.hasTotalDiscount, false);
 
   const legacySinglePreview = buildOrderPreviewView({
     ...preview,

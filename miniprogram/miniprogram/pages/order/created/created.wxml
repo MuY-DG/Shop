@@ -2,7 +2,6 @@
   <navigation-bar
     title="支付成功"
     color="#2E1D16"
-    loading="{{loading}}"
   />
 
   <view class="created-content">

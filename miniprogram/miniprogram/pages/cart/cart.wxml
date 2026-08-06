@@ -5,7 +5,6 @@
     wide-center="{{true}}"
     show-divider="{{false}}"
     color="#2E1D16"
-    loading="{{loaded && loading}}"
   >
     <view slot="center" class="cart-navigation-title">购物车（{{cartTotalQuantity}}）</view>
     <button

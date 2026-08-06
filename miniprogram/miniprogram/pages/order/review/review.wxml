@@ -3,7 +3,6 @@
     title="评价订单"
     back="{{true}}"
     color="#2E1D16"
-    loading="{{loaded && loading}}"
   />
 
   <view class="review-content">

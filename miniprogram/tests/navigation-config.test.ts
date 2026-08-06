@@ -713,7 +713,10 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(profileLogic, /group: "TO_REVIEW",[\s\S]{0,80}label: "待评价"/);
 });
 
-test("全局导航统一返回图标且不再显示首页按钮", () => {
+test("全局导航统一返回图标且不再显示首页按钮和加载圈", () => {
+  const appConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "app.json"), "utf8")
+  ) as AppConfig;
   const navigationTemplate = readFileSync(
     resolve(sourceRoot, "components/navigation-bar/navigation-bar.wxml"),
     "utf8"
@@ -733,10 +736,32 @@ test("全局导航统一返回图标且不再显示首页按钮", () => {
 
   assert.match(navigationTemplate, /navigation-back\.svg/);
   assert.match(navigationLogic, /background:\s*\{[\s\S]*?value: '#ffffff'/);
+  assert.match(navigationLogic, /lightBack:\s*\{[\s\S]*?value: false/);
   assert.match(navigationStyle, /\.navigation-bar\s*\{[\s\S]*?background: @color-surface-white;/);
+  assert.match(navigationStyle, /\.navigation-bar__back-icon--light\s*\{[^}]*filter:/);
   assert.doesNotMatch(navigationTemplate, /navigation-bar__home|handleHome/);
+  assert.doesNotMatch(navigationTemplate, /navigation-bar__loading|\{\{loading\}\}/);
   assert.doesNotMatch(navigationLogic, /\bhome:\s*\{|handleHome\(/);
+  assert.doesNotMatch(navigationLogic, /\bloading:\s*\{/);
+  assert.doesNotMatch(navigationStyle, /navigation-bar__loading|navigation-bar-spin/);
   assert.doesNotMatch(addressListTemplate, /\bhome=/);
+
+  appConfig.pages.forEach((pagePath) => {
+    const templatePath = resolve(sourceRoot, `${pagePath}.wxml`);
+    if (!existsSync(templatePath)) {
+      return;
+    }
+
+    const template = readFileSync(templatePath, "utf8");
+    const navigationTags = template.match(/<navigation-bar\b[\s\S]*?(?:\/>|>)/g) ?? [];
+    navigationTags.forEach((navigationTag) => {
+      assert.doesNotMatch(
+        navigationTag,
+        /\bloading=/,
+        `${pagePath} should not pass loading state to navigation-bar`
+      );
+    });
+  });
 });
 
 test("全局空状态统一使用黑色图标和灰色说明文字", () => {
@@ -800,6 +825,14 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
       stylePath: "pages/order/list/list.less",
       refreshable: true,
       pageable: true
+    },
+    {
+      path: "pages/order/preview/preview",
+      rootClass: "preview-page",
+      scrollClass: "preview-scroll",
+      stylePath: "pages/order/preview/preview.less",
+      refreshable: false,
+      pageable: false
     },
     {
       path: "pages/after-sale/list/list",
@@ -1170,6 +1203,13 @@ test("购物车与结算页注册真实交易路径", () => {
     resolve(sourceRoot, "pages/order/preview/preview.ts"),
     "utf8"
   );
+  const previewStyle = readFileSync(
+    resolve(sourceRoot, "pages/order/preview/preview.less"),
+    "utf8"
+  );
+  const previewConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "pages/order/preview/preview.json"), "utf8")
+  ) as Record<string, unknown>;
   const productDetailLogic = readFileSync(
     resolve(sourceRoot, "pages/product/detail/detail.ts"),
     "utf8"
@@ -1203,7 +1243,85 @@ test("购物车与结算页注册真实交易路径", () => {
   assert.doesNotMatch(previewLogic, /wx\.chooseAddress|createAddress/);
   assert.match(previewTemplate, /bindtap="onPayTap"/);
   assert.match(previewTemplate, /立即支付/);
+  assert.match(previewTemplate, /wide-center="\{\{true\}\}"/);
+  assert.match(previewTemplate, /light-back="\{\{true\}\}"/);
+  assert.match(previewTemplate, /background="#fd4041"/);
+  assert.match(previewTemplate, /slot="center" class="preview-navigation-title">确认订单/);
+  assert.match(previewTemplate, /class="preview-scroll"[\s\S]*bounces="\{\{false\}\}"/);
+  assert.doesNotMatch(
+    previewTemplate,
+    /pullGesture|preview-pull\.wxs|bindtouchstart|bindtouchmove|bindtouchend|bindtouchcancel|refresher-enabled|refresher-triggered|bindrefresherrefresh/
+  );
+  assert.doesNotMatch(previewLogic, /contentRefreshing|onPullDownRefresh|stopPullDownRefresh/);
+  assert.equal(previewConfig.navigationBarBackgroundColor, "#fd4041");
+  assert.equal(previewConfig.navigationBarTextStyle, "white");
   assert.doesNotMatch(previewTemplate, /应付金额|提交订单/);
+  assert.doesNotMatch(previewTemplate, /商品清单|金额明细|放心下单/);
+  assert.doesNotMatch(previewTemplate, /address-card__marker/);
+  assert.doesNotMatch(previewTemplate, /productSubtitle|preview-item__subtitle/);
+  assert.match(previewTemplate, /receiverPhoneDisplay/);
+  assert.match(previewTemplate, /preview-item__quantity">x\{\{item\.quantity\}\}/);
+  assert.match(previewTemplate, /preview-item__line-prices/);
+  assert.match(previewTemplate, /retailLineAmountText/);
+  assert.match(previewTemplate, /商品金额[\s\S]*运费[\s\S]*批发优惠[\s\S]*优惠券/);
+  assert.match(
+    previewStyle,
+    /\.amount-row\s*\{[^}]*color:\s*@color-text-primary;[^}]*font-size:\s*@font-size-base;/
+  );
+  assert.match(
+    previewStyle,
+    /\.amount-row--discount\s*>\s*text:last-child,[\s\S]*?\.amount-row__discount-value\s*\{[^}]*color:\s*@color-price;/
+  );
+  assert.match(previewTemplate, /class="amount-row__discount-value"/);
+  assert.match(previewStyle, /\.preview-content\s*\{[^}]*padding:\s*0 @page-gutter /);
+  assert.doesNotMatch(previewStyle, /min-height:\s*calc\(100% \+ 1px\)|will-change:\s*transform|overflow-anchor/);
+  assert.match(previewStyle, /\.preview-navigation-title\s*\{[^}]*text-align:\s*left;/);
+  assert.match(
+    previewStyle,
+    /\.address-card,[\s\S]*?\.preview-section,[\s\S]*?\.preview-items\s*\{[^}]*border-radius:\s*@radius-lg;/
+  );
+  assert.match(previewTemplate, /class="address-hero"[\s\S]*class="address-card"/);
+  assert.doesNotMatch(previewTemplate, /address-card--joined/);
+  assert.match(
+    previewStyle,
+    /\.address-hero\s*\{[^}]*background:\s*linear-gradient\([\s\S]*?#fd4041[\s\S]*?@color-page 100%/
+  );
+  assert.match(previewStyle, /\.preview-items\s*\{[^}]*margin-top:\s*0;[^}]*gap:\s*0;/);
+  assert.doesNotMatch(previewStyle, /\.preview-items\s*\{[^}]*border-top:/);
+  assert.match(
+    previewStyle,
+    /\.preview-item\s*\{[^}]*padding:\s*@space-2 @space-6;[^}]*grid-template-columns:\s*136rpx minmax\(0, 1fr\);/
+  );
+  assert.match(
+    previewStyle,
+    /\.preview-item__body\s*\{[^}]*height:\s*136rpx;[^}]*grid-template-rows:\s*repeat\(3, minmax\(0, 1fr\)\);/
+  );
+  assert.doesNotMatch(previewStyle, /\.preview-item \+ \.preview-item\s*\{[^}]*border-top:/);
+  assert.match(previewStyle, /\.preview-item__quantity\s*\{[^}]*color:\s*@color-text-primary;/);
+  assert.match(previewTemplate, /amount-section__divider/);
+  assert.match(previewTemplate, /共\{\{preview\.totalQuantity\}\}件，合计/);
+  assert.match(
+    previewStyle,
+    /\.amount-section__divider\s*\{[^}]*background-image:\s*linear-gradient\([\s\S]*?20rpx,[\s\S]*?transparent 32rpx[\s\S]*?background-size:\s*32rpx 1rpx;/
+  );
+  assert.match(previewTemplate, /class="amount-row amount-row--discount"/);
+  assert.match(previewTemplate, /class="amount-row amount-row--interactive amount-row--discount"/);
+  assert.match(previewTemplate, /总计优惠/);
+  assert.match(previewTemplate, /class="sheet-panel sheet-panel--address"/);
+  assert.match(previewTemplate, /class="sheet-panel sheet-panel--coupon"/);
+  assert.match(previewTemplate, /close-material-symbols\.svg/);
+  assert.match(previewTemplate, /data-tab="available"[\s\S]*可用券（\{\{availableCoupons\.length\}\}）/);
+  assert.match(previewTemplate, /data-tab="unavailable"[\s\S]*不可用券（\{\{unavailableCoupons\.length\}\}）/);
+  assert.match(previewTemplate, /couponSheetTab === 'available'/);
+  assert.match(previewLogic, /couponSheetTab:\s*"available" as CouponSheetTab/);
+  assert.match(previewLogic, /onCouponTabTap\(event: DatasetEvent\)/);
+  assert.match(
+    previewStyle,
+    /\.sheet-panel\s*\{[^}]*height:\s*80vh;[^}]*border-radius:\s*36rpx 36rpx 0 0;/
+  );
+  assert.match(previewStyle, /\.sheet-header\s*\{[^}]*min-height:\s*116rpx;/);
+  assert.match(previewStyle, /\.coupon-sheet-tab--active::after\s*\{/);
+  assert.doesNotMatch(previewTemplate, /coupon-group-heading/);
   assert.match(previewLogic, /executeOrderPayment/);
   assert.doesNotMatch(previewLogic, /wx\.showModal/);
   assert.doesNotMatch(previewTemplate, /商品原价|批发\/活动优惠/);

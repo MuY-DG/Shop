@@ -1,4 +1,5 @@
 import {
+  buildCheckoutAddressView,
   buildCouponOptionViews,
   buildOrderPreviewView,
   buildPreviewRequest,
@@ -6,6 +7,7 @@ import {
   createIdempotencyKey,
   parseCheckoutQuery,
   resolveAddressSelection,
+  type CheckoutAddressView,
   type CouponOptionView,
   type OrderPreviewView
 } from "../../../features/checkout";
@@ -14,14 +16,17 @@ import { buildOrderDetailUrl } from "../../../features/order-center";
 import { getAddresses } from "../../../services/address";
 import { getAvailableCoupons } from "../../../services/coupon";
 import { previewOrder, submitOrder } from "../../../services/order";
-import type { AddressResponse, CheckoutSelection } from "../../../types/checkout";
+import type { CheckoutSelection } from "../../../types/checkout";
 import { isApiError } from "../../../utils/api-error";
+
+type CouponSheetTab = "available" | "unavailable";
 
 interface DatasetEvent {
   currentTarget: {
     dataset: {
       id?: string;
       index?: number | string;
+      tab?: CouponSheetTab;
     };
   };
 }
@@ -38,13 +43,25 @@ function actionError(error: unknown, fallback: string): string {
       : fallback;
 }
 
+function couponViewState(coupons: CouponOptionView[]) {
+  const availableCoupons = coupons.filter((coupon) => coupon.available);
+  return {
+    coupons,
+    availableCoupons,
+    unavailableCoupons: coupons.filter((coupon) => !coupon.available),
+    couponAvailableCount: availableCoupons.length
+  };
+}
+
 Page({
   data: {
     selection: null as CheckoutSelection | null,
-    addresses: [] as AddressResponse[],
-    selectedAddress: null as AddressResponse | null,
+    addresses: [] as CheckoutAddressView[],
+    selectedAddress: null as CheckoutAddressView | null,
     preview: null as OrderPreviewView | null,
     coupons: [] as CouponOptionView[],
+    availableCoupons: [] as CouponOptionView[],
+    unavailableCoupons: [] as CouponOptionView[],
     couponAvailableCount: 0,
     idempotencyKey: "",
     loading: true,
@@ -56,6 +73,7 @@ Page({
     addressErrorText: "",
     addressEditorOpen: false,
     couponSheetOpen: false,
+    couponSheetTab: "available" as CouponSheetTab,
     couponLoading: false,
     couponLoaded: false,
     couponErrorText: "",
@@ -93,11 +111,6 @@ Page({
     void this.reloadAddressesAfterEdit();
   },
 
-  async onPullDownRefresh() {
-    await this.refreshCheckout();
-    wx.stopPullDownRefresh();
-  },
-
   onRetry() {
     void this.refreshCheckout();
   },
@@ -123,7 +136,7 @@ Page({
           response: null,
           errorText: actionError(error, "优惠券加载失败，请重试")
         }));
-      const addresses = await getAddresses();
+      const addresses = (await getAddresses()).map(buildCheckoutAddressView);
       const selectedAddress = resolveAddressSelection(addresses, this.data.selectedAddress);
       const response = await previewOrder(buildPreviewRequest(
         selection,
@@ -140,8 +153,7 @@ Page({
         addresses,
         selectedAddress,
         preview: buildOrderPreviewView(response),
-        coupons,
-        couponAvailableCount: coupons.filter((coupon) => coupon.available).length,
+        ...couponViewState(coupons),
         couponLoading: false,
         couponLoaded: couponResult.response !== null,
         couponErrorText: couponResult.errorText,
@@ -191,7 +203,7 @@ Page({
     void this.reloadPreviewForAddress(selectedAddress);
   },
 
-  async reloadPreviewForAddress(selectedAddress: AddressResponse) {
+  async reloadPreviewForAddress(selectedAddress: CheckoutAddressView) {
     const selection = this.data.selection;
     if (!selection) {
       return;
@@ -207,10 +219,11 @@ Page({
       if (requestId !== latestPreviewRequest) {
         return;
       }
+      const coupons = buildCouponOptionViews(this.data.coupons, response.userCouponId);
       this.setData({
         selectedAddress,
         preview: buildOrderPreviewView(response),
-        coupons: buildCouponOptionViews(this.data.coupons, response.userCouponId),
+        ...couponViewState(coupons),
         loading: false,
         loaded: true
       });
@@ -235,7 +248,7 @@ Page({
     const previousAddress = this.data.selectedAddress;
     this.setData({ addressLoading: true, addressErrorText: "" });
     try {
-      const addresses = await getAddresses();
+      const addresses = (await getAddresses()).map(buildCheckoutAddressView);
       if (requestId !== latestAddressRequest) {
         return;
       }
@@ -281,7 +294,7 @@ Page({
     const previousAddress = this.data.selectedAddress;
     this.setData({ addressLoading: true, addressErrorText: "" });
     try {
-      const addresses = await getAddresses();
+      const addresses = (await getAddresses()).map(buildCheckoutAddressView);
       if (requestId !== latestAddressRequest) {
         return;
       }
@@ -316,7 +329,20 @@ Page({
 
   onCouponTap() {
     if (!this.data.submitting && this.data.preview) {
-      this.setData({ couponSheetOpen: true });
+      this.setData({
+        couponSheetOpen: true,
+        couponSheetTab: "available"
+      });
+    }
+  },
+
+  onCouponTabTap(event: DatasetEvent) {
+    const couponSheetTab = event.currentTarget.dataset.tab;
+    if (
+      (couponSheetTab === "available" || couponSheetTab === "unavailable") &&
+      couponSheetTab !== this.data.couponSheetTab
+    ) {
+      this.setData({ couponSheetTab });
     }
   },
 
@@ -347,8 +373,7 @@ Page({
         this.data.preview?.userCouponId
       );
       this.setData({
-        coupons,
-        couponAvailableCount: coupons.filter((coupon) => coupon.available).length,
+        ...couponViewState(coupons),
         couponLoading: false,
         couponLoaded: true,
         couponErrorText: ""
@@ -394,9 +419,10 @@ Page({
       if (requestId !== latestPreviewRequest) {
         return;
       }
+      const coupons = buildCouponOptionViews(this.data.coupons, response.userCouponId);
       this.setData({
         preview: buildOrderPreviewView(response),
-        coupons: buildCouponOptionViews(this.data.coupons, response.userCouponId),
+        ...couponViewState(coupons),
         couponSheetOpen: false,
         couponSelectingId: 0
       });

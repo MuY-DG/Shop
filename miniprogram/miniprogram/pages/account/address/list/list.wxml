@@ -4,7 +4,6 @@
     back="{{true}}"
     color="#2E1D16"
     show-divider="{{false}}"
-    loading="{{loaded && loading}}"
   />
 
   <scroll-view

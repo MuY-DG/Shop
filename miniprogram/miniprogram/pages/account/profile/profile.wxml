@@ -5,7 +5,6 @@
     round-back="{{true}}"
     show-divider="{{false}}"
     color="#333333"
-    loading="{{loading || saving || savingAvatar || loggingOut}}"
   />
 
   <scroll-view

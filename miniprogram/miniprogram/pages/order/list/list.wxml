@@ -3,7 +3,6 @@
     title="我的订单"
     back="{{true}}"
     color="#2E1D16"
-    loading="{{loaded && loading}}"
   />
 
   <scroll-view class="status-tabs" scroll-x="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">

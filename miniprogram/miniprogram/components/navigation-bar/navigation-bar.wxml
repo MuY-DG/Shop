@@ -21,7 +21,7 @@
         aria-label="返回上一页"
       >
         <image
-          class="navigation-bar__back-icon"
+          class="navigation-bar__back-icon {{lightBack ? 'navigation-bar__back-icon--light' : ''}}"
           src="/assets/icons/navigation-back.svg"
           mode="aspectFit"
           aria-hidden="true"
@@ -39,13 +39,6 @@
       aria-role="heading"
       aria-level="1"
     >
-      <view
-        wx:if="{{loading}}"
-        class="navigation-bar__loading"
-        aria-role="img"
-        aria-label="加载中"
-      ></view>
-
       <text wx:if="{{title}}" class="navigation-bar__title">{{title}}</text>
       <slot wx:else name="center"></slot>
     </view>
