@@ -145,6 +145,26 @@ class WechatShippingUploadCoordinatorTest {
     }
 
     @Test
+    void initialAttemptUsesPaidPaymentSnapshotAfterAppUserIsDeleted() {
+        long orderId = insertPaidOrder(true);
+        OrderShipmentResponse local = localShipmentService.create(
+                ADMIN, orderId, request(LogisticsType.PICKUP, "历史订单商品", null)
+        );
+        jdbcClient.sql("delete from app_user where id = :userId")
+                .param("userId", orderId)
+                .update();
+
+        coordinator.attemptInitial(local.shipmentId());
+
+        OrderShipmentResponse result = localShipmentService.getForAdmin(orderId);
+        assertThat(result.wechatUploadStatus()).isEqualTo(WechatShippingUploadStatus.UPLOADED);
+        assertThat(provider.uploadRequests).singleElement().satisfies(upload -> {
+            assertThat(upload.transactionId()).isEqualTo("wx-" + orderId);
+            assertThat(upload.openid()).isEqualTo("openid-" + orderId);
+        });
+    }
+
+    @Test
     @ExtendWith(OutputCaptureExtension.class)
     void successfulUploadLogsNoRequestFactsOrSecrets(CapturedOutput output) {
         long orderId = insertPaidOrder(true);

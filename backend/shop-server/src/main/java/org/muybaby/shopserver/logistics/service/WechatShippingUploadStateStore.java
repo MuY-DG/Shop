@@ -276,11 +276,9 @@ public class WechatShippingUploadStateStore {
         AttemptContext shipment = jdbcClient.sql("""
                         select sh.id as shipment_id, sh.order_id, sh.logistics_type, sh.delivery_mode,
                                sh.item_desc, sh.express_company_code, sh.tracking_no,
-                               sh.consignor_contact, sh.receiver_contact, sh.upload_time,
-                               o.user_id, u.openid
+                               sh.consignor_contact, sh.receiver_contact, sh.upload_time
                         from order_shipment sh
                         join shop_order o on o.id = sh.order_id
-                        join app_user u on u.id = o.user_id
                         where sh.id = :shipmentId
                           and sh.wechat_upload_status = :uploading
                         """)
@@ -289,18 +287,23 @@ public class WechatShippingUploadStateStore {
                 .query(this::mapAttemptContext)
                 .optional()
                 .orElseThrow(this::conflict);
-        String transactionId = jdbcClient.sql("""
-                        select transaction_id
+        PaymentIdentity paymentIdentity = jdbcClient.sql("""
+                        select transaction_id, payer_openid
                         from payment_order
                         where order_id = :orderId and status = 'PAID'
                         order by updated_at desc, id desc
                         limit 1
                         """)
                 .param("orderId", shipment.orderId())
-                .query(String.class)
+                .query((rs, rowNum) -> new PaymentIdentity(
+                        defaultString(rs.getString("transaction_id")),
+                        defaultString(rs.getString("payer_openid"))
+                ))
                 .optional()
-                .orElse("");
-        return shipment.withTransactionId(transactionId);
+                .orElse(new PaymentIdentity("", ""));
+        return shipment.withPaymentIdentity(
+                paymentIdentity.transactionId(), paymentIdentity.payerOpenid()
+        );
     }
 
     private AttemptContext mapAttemptContext(ResultSet rs, int rowNum) throws SQLException {
@@ -315,7 +318,7 @@ public class WechatShippingUploadStateStore {
                 rs.getString("consignor_contact"),
                 rs.getString("receiver_contact"),
                 "",
-                rs.getString("openid"),
+                "",
                 rs.getString("upload_time")
         );
     }
@@ -341,6 +344,9 @@ public class WechatShippingUploadStateStore {
 
     private String defaultString(String value) {
         return value == null ? "" : value;
+    }
+
+    private record PaymentIdentity(String transactionId, String payerOpenid) {
     }
 
     private record RetryCandidate(
@@ -392,11 +398,11 @@ public class WechatShippingUploadStateStore {
             String openid,
             String uploadTime
     ) {
-        AttemptContext withTransactionId(String value) {
+        AttemptContext withPaymentIdentity(String transactionIdValue, String openidValue) {
             return new AttemptContext(
                     shipmentId, orderId, logisticsType, deliveryMode, itemDesc,
                     expressCompanyCode, trackingNo, consignorContact, receiverContact,
-                    value, openid, uploadTime
+                    transactionIdValue, openidValue, uploadTime
             );
         }
 

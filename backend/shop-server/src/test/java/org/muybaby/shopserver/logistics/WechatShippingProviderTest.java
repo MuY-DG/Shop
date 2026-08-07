@@ -184,6 +184,7 @@ class WechatShippingProviderTest {
         assertThat(result.errorCode()).isEqualTo("WECHAT_48001");
         assertThat(result.errorMessage()).isEqualTo("WeChat shipping upload failed");
         assertSafeLogs(output, "orderId=91", "FAILED", "WECHAT_48001");
+        assertThat(output.getAll()).contains(" WARN ");
         fixture.server().verify();
     }
 
@@ -295,7 +296,7 @@ class WechatShippingProviderTest {
     }
 
     @Test
-    void receiptQueryRejectsMismatchedOrderAndAmbiguousWechatResponse() {
+    void receiptQueryRejectsMismatchedOrderAndAmbiguousWechatResponse(CapturedOutput output) {
         ProviderFixture mismatch = fixture();
         mismatch.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
                 .andRespond(withSuccess("""
@@ -319,6 +320,8 @@ class WechatShippingProviderTest {
         assertThat(rejectedResult.status()).isEqualTo(WechatReceiptQueryStatus.UNKNOWN);
         assertThat(rejectedResult.errorCode()).isEqualTo("WECHAT_10060001");
         assertThat(rejectedResult.errorMessage()).isEqualTo("WeChat receipt status could not be confirmed");
+        assertSafeLogs(output, "status=UNKNOWN", "WECHAT_10060001");
+        assertThat(output.getAll()).contains(" WARN ");
         rejected.server().verify();
     }
 

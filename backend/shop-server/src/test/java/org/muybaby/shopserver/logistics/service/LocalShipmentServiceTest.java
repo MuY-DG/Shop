@@ -114,6 +114,9 @@ class LocalShipmentServiceTest {
         assertThat(sanitizer.sanitize(
                 "TOKEN_EXPIRED", "safe", List.of()
         ).code()).isEqualTo("TOKEN_EXPIRED");
+        assertThat(sanitizer.sanitize(
+                "WECHAT_10060001", "safe", List.of()
+        ).code()).isEqualTo("WECHAT_10060001");
 
         String payload = "payload={\"shipping_list\":[{\"transaction_id\":\"tx-alpha\","
                 + "\"item_desc\":\"private item\"}]}";

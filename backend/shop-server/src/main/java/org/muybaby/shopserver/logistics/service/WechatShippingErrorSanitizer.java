@@ -27,6 +27,7 @@ public class WechatShippingErrorSanitizer {
     );
     private static final Pattern LONG_DIGIT_SEQUENCE = Pattern.compile("(?<!\\d)\\d{7,}(?!\\d)");
     private static final Pattern SAFE_ERROR_CODE = Pattern.compile("[A-Z0-9_.-]+");
+    private static final Pattern SAFE_WECHAT_NUMERIC_CODE = Pattern.compile("WECHAT_[0-9]{1,10}");
     private static final Pattern SAFE_TOKEN_SEMANTIC_CODE = Pattern.compile(
             "(?:ACCESS_)?TOKEN_(?:UNAVAILABLE|EXPIRED|INVALID|MISSING|FAILED)"
     );
@@ -42,7 +43,10 @@ public class WechatShippingErrorSanitizer {
         code = redactKnownSecrets(code, knownSecrets);
         code = AUTHORIZATION_VALUE.matcher(code).replaceAll("$1" + REDACTED);
         code = TOKEN_VALUE.matcher(code).replaceAll("$1" + REDACTED);
-        code = LONG_DIGIT_SEQUENCE.matcher(code).replaceAll(REDACTED);
+        boolean safeWechatNumericCode = SAFE_WECHAT_NUMERIC_CODE.matcher(code).matches();
+        if (!safeWechatNumericCode) {
+            code = LONG_DIGIT_SEQUENCE.matcher(code).replaceAll(REDACTED);
+        }
         boolean suspiciousTokenFragment = TOKEN_LIKE_FRAGMENT.matcher(code).find()
                 && !SAFE_TOKEN_SEMANTIC_CODE.matcher(code).matches();
         if (!StringUtils.hasText(code)

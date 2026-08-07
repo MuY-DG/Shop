@@ -6,7 +6,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.muybaby.shopserver.logistics.LogisticsType;
+import org.muybaby.shopserver.logistics.WechatReceiptQueryStatus;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
+import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.wechat.WechatAccessTokenProvider;
 import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
 import org.slf4j.Logger;
@@ -511,21 +513,36 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
     }
 
     private void logReceiptResult(WechatReceiptQueryResult result, Exception exception) {
-        if (exception == null) {
-            log.info(
+        if (exception != null) {
+            log.warn(
+                    "WeChat receipt status query failed safely: status={}, errorCode={}, exception={}",
+                    result.status(), result.errorCode(), exception.getClass().getSimpleName()
+            );
+            return;
+        }
+        if (result.status() == WechatReceiptQueryStatus.UNKNOWN
+                || result.status() == WechatReceiptQueryStatus.UNAVAILABLE) {
+            log.warn(
                     "WeChat receipt status query completed: status={}, orderState={}, errorCode={}",
                     result.status(), result.orderState(), result.errorCode()
             );
             return;
         }
-        log.warn(
-                "WeChat receipt status query failed safely: status={}, errorCode={}, exception={}",
-                result.status(), result.errorCode(), exception.getClass().getSimpleName()
+        log.info(
+                "WeChat receipt status query completed: status={}, orderState={}, errorCode={}",
+                result.status(), result.orderState(), result.errorCode()
         );
     }
 
     private void logUploadResult(Long orderId, WechatShippingUploadResult result) {
-        log.info(
+        if (result.status() == WechatShippingUploadStatus.UPLOADED) {
+            log.info(
+                    "WeChat shipping upload completed: orderId={}, status={}, errorCode={}",
+                    orderId, result.status(), result.errorCode()
+            );
+            return;
+        }
+        log.warn(
                 "WeChat shipping upload completed: orderId={}, status={}, errorCode={}",
                 orderId, result.status(), result.errorCode()
         );
