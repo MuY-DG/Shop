@@ -141,17 +141,28 @@
                     <button
                       class="quantity-stepper__button"
                       data-id="{{item.id}}"
-                      disabled="{{!item.available || item.quantity <= 1 || updatingId || deletingBatch}}"
+                      disabled="{{item.quantity <= 1 || updatingId || deletingBatch}}"
                       catchtap="onQuantityMinus"
                     >−</button>
-                    <view class="quantity-stepper__value">
-                      <view wx:if="{{updatingId === item.id}}" class="mini-spinner"></view>
-                      <text wx:else>{{item.quantity}}</text>
+                    <view wx:if="{{updatingId === item.id}}" class="quantity-stepper__value">
+                      <view class="mini-spinner"></view>
                     </view>
+                    <input
+                      wx:else
+                      class="quantity-stepper__value quantity-stepper__input"
+                      type="number"
+                      maxlength="3"
+                      value="{{item.quantity}}"
+                      confirm-type="done"
+                      data-id="{{item.id}}"
+                      bindblur="onQuantityInputCommit"
+                      bindconfirm="onQuantityInputCommit"
+                      aria-label="输入{{item.productTitle}}的购买数量"
+                    />
                     <button
                       class="quantity-stepper__button"
                       data-id="{{item.id}}"
-                      disabled="{{!item.available || item.quantity >= 999 || updatingId || deletingBatch}}"
+                      disabled="{{updatingId || deletingBatch}}"
                       catchtap="onQuantityPlus"
                     >+</button>
                   </view>

@@ -5,6 +5,7 @@ import {
   type HomeCategoryView,
   type HomeProductCardView
 } from "../../features/home";
+import { cartAddErrorMessage } from "../../features/cart-feedback";
 import { findDefaultSku, parsePositiveId } from "../../features/product-catalog";
 import { addCartItem } from "../../services/cart";
 import { getHome } from "../../services/home";
@@ -222,9 +223,7 @@ Page({
         return;
       }
       wx.showToast({
-        title: isApiError(error)
-          ? error.message
-          : "加入购物车失败，请稍后重试",
+        title: cartAddErrorMessage(error, "加入购物车失败，请稍后重试"),
         icon: "none"
       });
     } finally {

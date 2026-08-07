@@ -54,7 +54,8 @@ export function getOrders(query: OrderListQuery): Promise<PageResult<OrderSummar
     data: {
       current: query.current,
       size: query.size,
-      statusGroup: query.statusGroup
+      statusGroup: query.statusGroup,
+      ...(query.keyword ? { keyword: query.keyword } : {})
     }
   });
 }

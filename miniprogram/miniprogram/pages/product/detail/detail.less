@@ -764,12 +764,12 @@
 .quantity-button,
 .quantity-value {
   height: 42rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .quantity-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: @color-text-primary;
   font-size: 28rpx;
   line-height: 42rpx;
@@ -782,12 +782,18 @@
 }
 
 .quantity-value {
+  width: 68rpx;
+  min-height: 42rpx;
+  padding: 0;
   border-radius: @radius-xs;
+  box-sizing: border-box;
   color: @color-text-primary;
   background: #f6f6f6;
   font-size: @font-size-sm;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+  line-height: 42rpx;
+  text-align: center;
 }
 
 .sheet-footer {

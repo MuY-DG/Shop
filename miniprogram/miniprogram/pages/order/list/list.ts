@@ -13,7 +13,9 @@ import {
   rebuyPartialMessage,
   type OrderSummaryView
 } from "../../../features/order-center";
+import { buildAfterSaleApplyUrl } from "../../../features/after-sale";
 import { buildCartCheckoutUrl } from "../../../features/checkout";
+import { normalizeOrderRouteKeyword } from "../../../features/order-search";
 import { executeOrderPayment } from "../../../features/order-payment";
 import { addCartItem } from "../../../services/cart";
 import {
@@ -70,6 +72,7 @@ Page({
     lifecycleToken: 0,
     tabs: ORDER_STATUS_TABS,
     activeGroup: "ALL" as OrderStatusGroup,
+    keyword: "",
     orders: [] as OrderSummaryView[],
     current: 1,
     total: 0,
@@ -86,7 +89,8 @@ Page({
   onLoad(query: Record<string, string | undefined>) {
     this.setData({
       lifecycleToken: rebuyOperationGuard.mount(),
-      activeGroup: parseOrderStatusGroup(query.group)
+      activeGroup: parseOrderStatusGroup(query.group),
+      keyword: normalizeOrderRouteKeyword(query.keyword)
     });
     void this.refreshOrders();
   },
@@ -161,7 +165,8 @@ Page({
       const response = await getOrders({
         current: 1,
         size: PAGE_SIZE,
-        statusGroup: this.data.activeGroup
+        statusGroup: this.data.activeGroup,
+        keyword: this.data.keyword
       });
       if (requestId !== latestListRequest) {
         return;
@@ -202,7 +207,8 @@ Page({
       const response = await getOrders({
         current: nextPage,
         size: PAGE_SIZE,
-        statusGroup: this.data.activeGroup
+        statusGroup: this.data.activeGroup,
+        keyword: this.data.keyword
       });
       if (requestId !== latestListRequest) {
         return;
@@ -231,6 +237,13 @@ Page({
       return;
     }
     wx.navigateTo({ url: buildOrderDetailUrl(orderId) });
+  },
+
+  onSearchTap() {
+    const query = this.data.keyword
+      ? `?keyword=${encodeURIComponent(this.data.keyword)}`
+      : "";
+    wx.navigateTo({ url: `/pages/order/search/search${query}` });
   },
 
   onItemImageError(event: DatasetEvent) {
@@ -341,6 +354,21 @@ Page({
     if (orderId) {
       void this.deleteSelectedOrder(orderId);
     }
+  },
+
+  onMoreTap(event: DatasetEvent) {
+    const orderId = positiveOrderId(event.currentTarget.dataset.id);
+    if (!orderId || this.data.actionOrderId) {
+      return;
+    }
+    wx.showActionSheet({
+      itemList: ["删除订单"],
+      success: (result) => {
+        if (result.tapIndex === 0) {
+          void this.deleteSelectedOrder(orderId);
+        }
+      }
+    });
   },
 
   async deleteSelectedOrder(orderId: number) {
@@ -459,6 +487,13 @@ Page({
     const orderId = positiveOrderId(event.currentTarget.dataset.id);
     if (orderId && !this.data.actionOrderId) {
       wx.navigateTo({ url: buildOrderModifyUrl(orderId) });
+    }
+  },
+
+  onAfterSaleTap(event: DatasetEvent) {
+    const orderId = positiveOrderId(event.currentTarget.dataset.id);
+    if (orderId && !this.data.actionOrderId) {
+      wx.navigateTo({ url: buildAfterSaleApplyUrl(orderId) });
     }
   },
 

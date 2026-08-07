@@ -136,6 +136,36 @@
     </button>
   </view>
 
+  <view wx:if="{{stockShortageOpen}}" class="stock-shortage-mask" catchtouchmove="onSheetTouchMove">
+    <view class="stock-shortage-dialog">
+      <view class="stock-shortage-title">以下商品当前库存不足</view>
+      <scroll-view class="stock-shortage-scroll" scroll-y="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
+        <view class="stock-shortage-list">
+          <view wx:for="{{stockShortageItems}}" wx:key="cartItemId" class="stock-shortage-item">
+            <view class="stock-shortage-image-shell">
+              <image
+                wx:if="{{item.hasImage}}"
+                class="stock-shortage-image"
+                src="{{item.imageUrl}}"
+                mode="aspectFill"
+                data-index="{{index}}"
+                binderror="onStockShortageImageError"
+              />
+              <view wx:else class="stock-shortage-image-fallback">灶</view>
+              <view class="stock-shortage-image-filter"></view>
+              <view class="stock-shortage-image-badge">库存不足</view>
+            </view>
+            <view class="stock-shortage-item-body">
+              <view class="stock-shortage-item-title">{{item.productTitle}}</view>
+              <view class="stock-shortage-item-quantity">{{item.quantityText}}</view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+      <button class="stock-shortage-back" bindtap="onStockShortageBackTap">返回购物车</button>
+    </view>
+  </view>
+
   <view
     wx:if="{{addressSheetOpen}}"
     class="sheet-mask"

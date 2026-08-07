@@ -120,6 +120,7 @@ export interface ProductSku {
   priceCent: number;
   originalPriceCent?: number;
   saleState: ProductSaleState;
+  maxPurchaseQuantity?: number;
   weightGram?: number;
   image?: string;
   imageFileId?: number;

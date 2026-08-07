@@ -23,6 +23,7 @@ export interface OrderListQuery {
   current: number;
   size: number;
   statusGroup: OrderStatusGroup;
+  keyword?: string;
 }
 
 export interface OrderSummaryResponse {

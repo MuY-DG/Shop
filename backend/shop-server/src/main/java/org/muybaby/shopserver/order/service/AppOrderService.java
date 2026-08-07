@@ -78,6 +78,7 @@ public class AppOrderService {
 
     private static final String OPERATOR_TYPE_APP = "APP";
     private static final int DEFAULT_PAGE_SIZE = 10;
+    private static final int MAX_ORDER_SEARCH_KEYWORD_LENGTH = 80;
     private static final int MAX_PAGE_SIZE = 100;
     private static final DateTimeFormatter ORDER_NO_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final int ORDER_NO_RANDOM_BYTES = 9;
@@ -237,11 +238,24 @@ public class AppOrderService {
             String status,
             OrderStatusGroup statusGroup
     ) {
+        return list(principal, current, size, status, statusGroup, null);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResult<OrderSummaryResponse> list(
+            AuthenticatedPrincipal principal,
+            Long current,
+            Long size,
+            String status,
+            OrderStatusGroup statusGroup,
+            String keyword
+    ) {
         Long userId = requireAppUser(principal);
         long pageCurrent = normalizeCurrent(current);
         long pageSize = normalizeSize(size);
         long offset = (pageCurrent - 1) * pageSize;
         String normalizedStatus = normalizeStatus(status);
+        String keywordLike = normalizeOrderSearchKeyword(keyword);
         OrderStatusGroup normalizedStatusGroup = statusGroup == null ? OrderStatusGroup.ALL : statusGroup;
         if (normalizedStatus != null && normalizedStatusGroup != OrderStatusGroup.ALL) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
@@ -259,6 +273,14 @@ public class AppOrderService {
                           and app_deleted_at is null
                           and (:status is null or status = :status)
                           and (:allStatuses = true or status in (:groupedStatuses))
+                          and (:keywordLike is null
+                              or lower(shop_order.order_no) like :keywordLike escape '!'
+                              or exists (
+                                  select 1
+                                  from order_item search_item
+                                  where search_item.order_id = shop_order.id
+                                    and lower(search_item.product_title) like :keywordLike escape '!'
+                              ))
                           and (:pendingReviewsOnly = false or (
                               status = 'COMPLETED'
                               and completed_at is not null
@@ -284,6 +306,7 @@ public class AppOrderService {
                 .param("status", normalizedStatus)
                 .param("allStatuses", allStatuses)
                 .param("groupedStatuses", groupedStatuses)
+                .param("keywordLike", keywordLike)
                 .param("pendingReviewsOnly", pendingReviewsOnly)
                 .query(Long.class)
                 .single();
@@ -304,6 +327,14 @@ public class AppOrderService {
                           and o.app_deleted_at is null
                           and (:status is null or o.status = :status)
                           and (:allStatuses = true or o.status in (:groupedStatuses))
+                          and (:keywordLike is null
+                              or lower(o.order_no) like :keywordLike escape '!'
+                              or exists (
+                                  select 1
+                                  from order_item search_item
+                                  where search_item.order_id = o.id
+                                    and lower(search_item.product_title) like :keywordLike escape '!'
+                              ))
                           and (:pendingReviewsOnly = false or (
                               o.status = 'COMPLETED'
                               and o.completed_at is not null
@@ -331,6 +362,7 @@ public class AppOrderService {
                 .param("status", normalizedStatus)
                 .param("allStatuses", allStatuses)
                 .param("groupedStatuses", groupedStatuses)
+                .param("keywordLike", keywordLike)
                 .param("pendingReviewsOnly", pendingReviewsOnly)
                 .param("limit", pageSize)
                 .param("offset", offset)
@@ -657,7 +689,8 @@ public class AppOrderService {
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
         if (!OrderStatus.CREATED.name().equals(order.status())
-                && !OrderStatus.PAYING.name().equals(order.status())) {
+                && !OrderStatus.PAYING.name().equals(order.status())
+                && !OrderStatus.PAID.name().equals(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
 
@@ -1571,6 +1604,21 @@ public class AppOrderService {
 
     private String normalizeStatus(String status) {
         return StringUtils.hasText(status) ? status.trim() : null;
+    }
+
+    private String normalizeOrderSearchKeyword(String keyword) {
+        if (!StringUtils.hasText(keyword)) {
+            return null;
+        }
+        String normalized = keyword.trim().replaceAll("\\s+", " ");
+        if (normalized.length() > MAX_ORDER_SEARCH_KEYWORD_LENGTH) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        String escaped = normalized
+                .replace("!", "!!")
+                .replace("%", "!%")
+                .replace("_", "!_");
+        return "%" + escaped.toLowerCase(Locale.ROOT) + "%";
     }
 
     private List<String> statusesForGroup(OrderStatusGroup statusGroup) {

@@ -51,6 +51,14 @@ export interface OrderPreviewItemView extends OrderPreviewItem {
   lineAmountText: string;
 }
 
+export interface StockShortageItemView {
+  cartItemId: number;
+  productTitle: string;
+  quantityText: string;
+  imageUrl: string;
+  hasImage: boolean;
+}
+
 export interface CheckoutAddressView extends AddressResponse {
   receiverPhoneDisplay: string;
 }
@@ -224,6 +232,33 @@ export function buildCartSummary(
     allAvailableSelected: availableCount > 0 && normalizedSelectedIds.length === availableCount,
     checkoutDisabled: normalizedSelectedIds.length === 0
   };
+}
+
+export function buildStockShortageItemViews(
+  items: CartItemResponse[],
+  selectedIds: number[]
+): StockShortageItemView[] {
+  const selectedSet = new Set(selectedIds);
+  return items
+    .filter((item) => {
+      if (!selectedSet.has(item.id)) {
+        return false;
+      }
+      const maximum = item.maxPurchaseQuantity ?? 999;
+      return item.quantity > maximum
+        || item.unavailableReason === "STOCK_SHORTAGE"
+        || item.unavailableReason === "SOLD_OUT";
+    })
+    .map((item) => {
+      const imageUrl = (item.mainImage || item.displayImage || item.skuImage || "").trim();
+      return {
+        cartItemId: item.id,
+        productTitle: item.productTitle.trim() || "购物车商品",
+        quantityText: `购买数量：${Math.max(0, item.quantity)}`,
+        imageUrl,
+        hasImage: Boolean(imageUrl)
+      };
+    });
 }
 
 export function toggleCartSelection(

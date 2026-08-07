@@ -31,6 +31,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
@@ -209,7 +210,7 @@ class AppOrderServiceTest {
     }
 
     @Test
-    void receiverUpdateUsesOwnedAddressAndOnlyAllowsUnpaidStates() {
+    void receiverUpdateUsesOwnedAddressAndAllowsUnshippedStates() {
         long userId = insertUser("receiver-update-owner");
         long otherUserId = insertUser("receiver-update-other");
         long ownedAddressId = insertAddress(
@@ -220,26 +221,30 @@ class AppOrderServiceTest {
         long createdOrder = insertReadOrder(userId, "CREATED", now);
         long payingOrder = insertReadOrder(userId, "PAYING", now.plusMinutes(1));
         long paidOrder = insertReadOrder(userId, "PAID", now.plusMinutes(2));
+        long shippedOrder = insertReadOrder(userId, "SHIPPED", now.plusMinutes(3));
 
         var created = appOrderService.updateReceiver(
                 appPrincipal(userId), createdOrder, new AppOrderReceiverUpdateRequest(ownedAddressId));
         var paying = appOrderService.updateReceiver(
                 appPrincipal(userId), payingOrder, new AppOrderReceiverUpdateRequest(ownedAddressId));
+        var paid = appOrderService.updateReceiver(
+                appPrincipal(userId), paidOrder, new AppOrderReceiverUpdateRequest(ownedAddressId));
 
         assertThat(created.status()).isEqualTo("CREATED");
         assertThat(paying.status()).isEqualTo("PAYING");
+        assertThat(paid.status()).isEqualTo("PAID");
         assertThat(created.receiverName()).isEqualTo("新收货人");
         assertThat(created.receiverAddress()).isEqualTo("四川省成都市武侯区火锅路 88 号");
         assertReceiverSnapshot(createdOrder, "新收货人", "13900139000", "四川省成都市武侯区火锅路 88 号");
         assertReceiverSnapshot(payingOrder, "新收货人", "13900139000", "四川省成都市武侯区火锅路 88 号");
+        assertReceiverSnapshot(paidOrder, "新收货人", "13900139000", "四川省成都市武侯区火锅路 88 号");
         assertBusiness(ErrorCode.VALIDATION_FAILED, () -> appOrderService.updateReceiver(
                 appPrincipal(userId), createdOrder, new AppOrderReceiverUpdateRequest(otherAddressId)));
         assertBusiness(ErrorCode.ORDER_STATE_CONFLICT, () -> appOrderService.updateReceiver(
-                appPrincipal(userId), paidOrder, new AppOrderReceiverUpdateRequest(ownedAddressId)));
+                appPrincipal(userId), shippedOrder, new AppOrderReceiverUpdateRequest(ownedAddressId)));
         assertReceiverUpdateEvent(createdOrder, "CREATED", userId);
         assertReceiverUpdateEvent(payingOrder, "PAYING", userId);
-        assertThat(jdbcClient.sql("select count(*) from order_status_log where order_id = :orderId")
-                .param("orderId", paidOrder).query(Long.class).single()).isZero();
+        assertReceiverUpdateEvent(paidOrder, "PAID", userId);
     }
 
     @Test
@@ -271,6 +276,39 @@ class AppOrderServiceTest {
                 () -> appOrderService.list(appPrincipal(userId), 1L, 0L, null, OrderStatusGroup.ALL));
         assertBusiness(ErrorCode.VALIDATION_FAILED,
                 () -> appOrderService.list(appPrincipal(userId), 1L, 10L, "PAID", OrderStatusGroup.TO_SHIP));
+    }
+
+    @Test
+    void listSearchesOwnedOrdersByOrderNumberOrSnapshotProductName() {
+        long userId = insertUser("order-search-owner");
+        long otherUserId = insertUser("order-search-other");
+        LocalDateTime base = LocalDateTime.of(2026, 8, 6, 10, 0);
+        long beefOrder = insertReadOrder(userId, "PAID", base);
+        long tomatoOrder = insertReadOrder(userId, "COMPLETED", base.plusMinutes(1));
+        long otherOrder = insertReadOrder(otherUserId, "PAID", base.plusMinutes(2));
+        insertReadOrderItem(beefOrder, "川味牛油火锅底料", 1, 1680L);
+        insertReadOrderItem(tomatoOrder, "番茄浓汤锅底", 2, 1280L);
+        insertReadOrderItem(otherOrder, "牛油锅底其他用户", 1, 990L);
+
+        PageResult<OrderSummaryResponse> byProductName = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.ALL, " 牛油 ");
+        PageResult<OrderSummaryResponse> byOrderNo = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.ALL,
+                ("read-" + tomatoOrder).toLowerCase(Locale.ROOT));
+        PageResult<OrderSummaryResponse> combinedWithStatus = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.TO_SHIP, "牛油");
+        PageResult<OrderSummaryResponse> literalWildcard = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.ALL, "%");
+
+        assertThat(byProductName.records()).extracting(OrderSummaryResponse::orderId)
+                .containsExactly(beefOrder);
+        assertThat(byOrderNo.records()).extracting(OrderSummaryResponse::orderId)
+                .containsExactly(tomatoOrder);
+        assertThat(combinedWithStatus.records()).extracting(OrderSummaryResponse::orderId)
+                .containsExactly(beefOrder);
+        assertThat(literalWildcard.total()).isZero();
+        assertBusiness(ErrorCode.VALIDATION_FAILED, () -> appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.ALL, "x".repeat(81)));
     }
 
     @Test

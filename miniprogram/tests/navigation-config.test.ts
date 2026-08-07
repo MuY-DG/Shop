@@ -464,6 +464,9 @@ test("购物车提供管理批量删除并使用后端权威计价", () => {
   assert.match(styles, /\.settlement-bar \.selection--checked\s*\{[\s\S]*box-shadow: none/);
   assert.match(styles, /\.quantity-stepper\s*\{[\s\S]*grid-template-columns: 46rpx 68rpx 46rpx/);
   assert.match(styles, /\.quantity-stepper__value\s*\{[\s\S]*height: 42rpx;[\s\S]*background: #f6f6f6/);
+  assert.match(template, /class="quantity-stepper__value quantity-stepper__input"[\s\S]*bindblur="onQuantityInputCommit"[\s\S]*bindconfirm="onQuantityInputCommit"/);
+  assert.match(logic, /async recoverStockShortage\(cartItemId: number\)/);
+  assert.doesNotMatch(template, /disabled="\{\{!item\.available \|\| item\.quantity <= 1/);
   assert.match(styles, /\.selection--checked\s*\{[\s\S]*border-color: #ff172b;[\s\S]*background: #ff172b;[\s\S]*box-shadow: none/);
   assert.match(styles, /\.selection\s*\{[\s\S]*width: 36rpx;[\s\S]*height: 36rpx/);
   assert.match(styles, /\.selection__check\s*\{[\s\S]*width: 24rpx;[\s\S]*height: 24rpx/);
@@ -657,6 +660,22 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
     resolve(sourceRoot, "pages/order/list/list.ts"),
     "utf8"
   );
+  const orderStyle = readFileSync(
+    resolve(sourceRoot, "pages/order/list/list.less"),
+    "utf8"
+  );
+  const orderSearchTemplate = readFileSync(
+    resolve(sourceRoot, "pages/order/search/search.wxml"),
+    "utf8"
+  );
+  const orderSearchLogic = readFileSync(
+    resolve(sourceRoot, "pages/order/search/search.ts"),
+    "utf8"
+  );
+  const orderService = readFileSync(
+    resolve(sourceRoot, "services/order.ts"),
+    "utf8"
+  );
   const profileLogic = readFileSync(
     resolve(sourceRoot, "pages/profile/profile.ts"),
     "utf8"
@@ -711,8 +730,24 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderTemplate, /class="order-card"[\s\S]*aria-role="group"[\s\S]*class="order-card__detail"[\s\S]*aria-role="button"/);
   assert.match(orderTemplate, /wx:for="\{\{item\.items\}\}"[\s\S]*class="order-product/);
   assert.match(orderTemplate, /binderror="onItemImageError"/);
-  ["onCancelTap", "onModifyTap", "onDeleteTap", "onRebuyTap", "onReviewTap", "onPayTap"]
+  ["onCancelTap", "onModifyTap", "onDeleteTap", "onMoreTap", "onAfterSaleTap", "onRebuyTap", "onReviewTap", "onPayTap"]
     .forEach((handler) => assert.match(orderTemplate, new RegExp(`catchtap="${handler}"`)));
+  assert.doesNotMatch(orderTemplate, /title="我的订单"/);
+  assert.match(orderTemplate, /class="order-search"[\s\S]*搜索商品名称或订单号/);
+  assert.match(orderTemplate, /wx:if="\{\{item\.canShowMore\}\}"[\s\S]*>更多<\/button>/);
+  assert.match(orderTemplate, /\{\{item\.afterSaleActionText\}\}/);
+  assert.match(orderTemplate, /class="order-product__quantity"[\s\S]*class="order-product__commerce"/);
+  assert.doesNotMatch(orderTemplate, /order-status--\{\{item\.statusTone\}\}/);
+  assert.match(orderStyle, /\.status-tab--active\s*\{[\s\S]*border:\s*1rpx solid #fe0000;/);
+  assert.match(orderTemplate, /wx:if="\{\{keyword\}\}" class="order-search__text order-search__keyword">\{\{keyword\}\}<\/text>/);
+  assert.match(orderStyle, /\.order-search__text\s*\{[\s\S]*height:\s*64rpx;[\s\S]*font-size:\s*@font-size-base;[\s\S]*line-height:\s*64rpx;/);
+  assert.match(orderStyle, /\.order-search__keyword\s*\{[\s\S]*color:\s*#2e1d16;/);
+  assert.match(orderStyle, /\.order-card__actions\s*\{[\s\S]*border:\s*0;/);
+  assert.match(orderStyle, /button\.order-action--secondary\s*\{[\s\S]*border:\s*2rpx solid #c9c9c9;/);
+  assert.match(orderStyle, /button\.order-action--primary\s*\{[\s\S]*color:\s*#fe0000;[\s\S]*background:\s*transparent;/);
+  assert.match(orderSearchTemplate, /搜索商品名称或订单号/);
+  assert.match(orderSearchLogic, /ORDER_SEARCH_HISTORY_KEY/);
+  assert.match(orderService, /\.\.\.\(query\.keyword \? \{ keyword: query\.keyword \} : \{\}\)/);
   assert.doesNotMatch(orderTemplate, /灶香集|order-card__merchant|onSyncTap|onConfirmTap|评价晒单/);
   assert.match(orderLogic, /await deleteOrder\(orderId\)/);
   assert.match(orderLogic, /const detail = await getOrderDetail\(orderId\)[\s\S]*await addCartItem/);
@@ -1220,6 +1255,7 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.match(detailStyle, /\.wholesale-shortcut__quantity\s*\{[\s\S]*?color: @color-text-black;/);
   assert.match(detailStyle, /\.quantity-control\s*\{[\s\S]*?grid-template-columns: 46rpx 68rpx 46rpx;/);
   assert.match(detailStyle, /\.quantity-button,[\s\S]*?\.quantity-value\s*\{[\s\S]*?height: 42rpx;/);
+  assert.match(detailTemplate, /class="quantity-value"[\s\S]*bindblur="onQuantityInputCommit"[\s\S]*bindconfirm="onQuantityInputCommit"/);
   assert.match(detailStyle, /\.quantity-button\s*\{[\s\S]*?color: @color-text-primary;[\s\S]*?font-size: 28rpx;[\s\S]*?background: transparent;/);
   assert.match(detailStyle, /\.quantity-value\s*\{[\s\S]*?border-radius: @radius-xs;[\s\S]*?background: #f6f6f6;[\s\S]*?font-size: @font-size-sm;[\s\S]*?font-weight: 600;/);
   assert.match(detailTemplate, /activeSheet === 'reviews'/);
@@ -1331,6 +1367,10 @@ test("购物车与结算页注册真实交易路径", () => {
     /\.amount-row--discount\s*>\s*text:last-child,[\s\S]*?\.amount-row__discount-value\s*\{[^}]*color:\s*@color-price;/
   );
   assert.match(previewTemplate, /class="amount-row__discount-value"/);
+  assert.match(previewTemplate, /以下商品当前库存不足/);
+  assert.match(previewTemplate, /class="stock-shortage-image-badge">库存不足<\/view>/);
+  assert.match(previewTemplate, /bindtap="onStockShortageBackTap">返回购物车<\/button>/);
+  assert.match(previewStyle, /\.stock-shortage-mask\s*\{[\s\S]*z-index:\s*3200;/);
   assert.match(previewStyle, /\.preview-content\s*\{[^}]*padding:\s*0 @page-gutter /);
   assert.doesNotMatch(previewStyle, /min-height:\s*calc\(100% \+ 1px\)|will-change:\s*transform|overflow-anchor/);
   assert.match(previewStyle, /\.preview-navigation-title\s*\{[^}]*text-align:\s*left;/);

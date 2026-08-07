@@ -2,6 +2,7 @@ import {
   buildFavoriteProductViews,
   type FavoriteProductView
 } from "../../../features/account-center";
+import { cartAddErrorMessage } from "../../../features/cart-feedback";
 import {
   findDefaultSku,
   parsePositiveId
@@ -308,7 +309,7 @@ Page({
         return;
       }
       wx.showToast({
-        title: actionError(error, "加入购物车失败，请稍后重试"),
+        title: cartAddErrorMessage(error, "加入购物车失败，请稍后重试"),
         icon: "none"
       });
     } finally {

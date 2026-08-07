@@ -19,7 +19,7 @@ export function parseModifyOrderId(value: unknown): number {
 }
 
 export function canModifyOrderReceiver(status: unknown): boolean {
-  return status === "CREATED" || status === "PAYING";
+  return status === "CREATED" || status === "PAYING" || status === "PAID";
 }
 
 export function normalizeSelectedAddressId(value: unknown): string {

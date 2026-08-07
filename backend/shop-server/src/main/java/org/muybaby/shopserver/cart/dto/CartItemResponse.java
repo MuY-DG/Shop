@@ -19,6 +19,7 @@ public record CartItemResponse(
         Integer nextWholesaleTierMinQuantity,
         Long nextWholesaleTierPriceCent,
         Integer nextWholesaleTierQuantityNeeded,
+        Integer maxPurchaseQuantity,
         Integer quantity,
         Long lineAmountCent,
         String skuStatus,

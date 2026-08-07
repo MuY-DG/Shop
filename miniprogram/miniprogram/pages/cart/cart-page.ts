@@ -10,6 +10,13 @@ import {
   type CartSummaryView
 } from "../../features/checkout";
 import {
+  isStockShortageError
+} from "../../features/cart-feedback";
+import {
+  normalizeQuantityInput,
+  stockQuantityCorrectedMessage
+} from "../../features/quantity";
+import {
   deleteCartItems,
   getCartItems,
   updateCartItemQuantity
@@ -29,6 +36,12 @@ interface DatasetEvent {
     dataset: {
       id?: number | string;
     };
+  };
+}
+
+interface QuantityInputEvent extends DatasetEvent {
+  detail: {
+    value: string;
   };
 }
 
@@ -59,6 +72,9 @@ function pricingSignature(items: CartItemResponse[], selectedIds: number[]): str
 }
 
 function actionError(error: unknown, fallback: string): string {
+  if (isStockShortageError(error)) {
+    return "商品库存不足";
+  }
   return isApiError(error)
     ? error.message
     : error instanceof Error
@@ -277,9 +293,44 @@ export function registerCartPage(config: CartPageConfig): void {
 
     onQuantityPlus(event: DatasetEvent) {
       const item = this.findItem(event);
-      if (item?.available && item.quantity < 999) {
-        void this.updateQuantity(item.id, item.quantity + 1);
+      if (!item) {
+        return;
       }
+      const maximum = item.maxPurchaseQuantity ?? 999;
+      if (!item.available || maximum <= 0 || item.quantity >= maximum) {
+        wx.showToast({ title: "商品已达最大可购买数", icon: "none" });
+        return;
+      }
+      void this.updateQuantity(item.id, item.quantity + 1);
+    },
+
+    onQuantityInputCommit(event: QuantityInputEvent) {
+      const item = this.findItem(event);
+      if (!item) {
+        return;
+      }
+      const maximum = item.maxPurchaseQuantity ?? 999;
+      const result = normalizeQuantityInput(
+        event.detail.value,
+        item.quantity,
+        maximum
+      );
+      if (result.quantity <= 0) {
+        this.refreshQuantityInput(item.id);
+        wx.showToast({ title: "商品库存不足", icon: "none" });
+        return;
+      }
+      if (result.exceededStock) {
+        wx.showToast({
+          title: stockQuantityCorrectedMessage(maximum),
+          icon: "none"
+        });
+      }
+      if (result.quantity === item.quantity) {
+        this.refreshQuantityInput(item.id);
+        return;
+      }
+      void this.updateQuantity(item.id, result.quantity);
     },
 
     async updateQuantity(cartItemId: number, quantity: number) {
@@ -291,12 +342,47 @@ export function registerCartPage(config: CartPageConfig): void {
         await updateCartItemQuantity(cartItemId, { quantity });
         await this.loadCart({ preserveItemOrder: true });
       } catch (error) {
+        if (isStockShortageError(error) && await this.recoverStockShortage(cartItemId)) {
+          return;
+        }
         wx.showToast({
           title: actionError(error, "数量修改失败"),
           icon: "none"
         });
       } finally {
         this.setData({ updatingId: 0 });
+      }
+    },
+
+    refreshQuantityInput(cartItemId: number) {
+      this.setData({
+        items: this.data.items.map((item) => (
+          item.id === cartItemId ? { ...item } : item
+        ))
+      });
+    },
+
+    async recoverStockShortage(cartItemId: number): Promise<boolean> {
+      try {
+        const response = await getCartItems();
+        const item = response.items.find((candidate) => candidate.id === cartItemId);
+        const maximum = item?.maxPurchaseQuantity ?? 0;
+        if (!item || maximum <= 0) {
+          await this.loadCart({ preserveItemOrder: true, suppressError: true });
+          wx.showToast({ title: "商品库存不足", icon: "none" });
+          return true;
+        }
+        if (item.quantity !== maximum) {
+          await updateCartItemQuantity(cartItemId, { quantity: maximum });
+        }
+        await this.loadCart({ preserveItemOrder: true });
+        wx.showToast({
+          title: stockQuantityCorrectedMessage(maximum),
+          icon: "none"
+        });
+        return true;
+      } catch {
+        return false;
       }
     },
 

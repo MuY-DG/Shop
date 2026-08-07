@@ -870,6 +870,20 @@ class AppOrderControllerTest {
                 .andExpect(jsonPath("$.data.total").value(2));
 
         mockMvc.perform(get("/app/orders")
+                        .param("keyword", "Paying Item")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(1))
+                .andExpect(jsonPath("$.data.records[0].orderId").value(9202L));
+
+        mockMvc.perform(get("/app/orders")
+                        .param("keyword", "center-shipped")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(1))
+                .andExpect(jsonPath("$.data.records[0].orderId").value(9203L));
+
+        mockMvc.perform(get("/app/orders")
                         .param("statusGroup", "CANCELLED")
                         .header("Authorization", "Bearer " + owner.token()))
                 .andExpect(status().isOk())
@@ -975,7 +989,7 @@ class AppOrderControllerTest {
     }
 
     @Test
-    void userCanUpdateReceiverSnapshotForOwnedUnpaidOrders() throws Exception {
+    void userCanUpdateReceiverSnapshotForOwnedUnshippedOrders() throws Exception {
         AppLoginSession owner = appLogin("order-receiver-owner");
         AppLoginSession other = appLogin("order-receiver-other");
         long skuId = createPublishedSku("ORDER-RECEIVER-SKU", 3990L, 4990L, 10, "ENABLED");
@@ -984,8 +998,10 @@ class AppOrderControllerTest {
         insertOrderSnapshot(9401L, "ORD-RECEIVER-CREATED", owner.userId(), skuId, 9941L, "Created Item");
         insertOrderSnapshot(9402L, "ORD-RECEIVER-PAYING", owner.userId(), skuId, 9942L, "Paying Item");
         insertOrderSnapshot(9403L, "ORD-RECEIVER-PAID", owner.userId(), skuId, 9943L, "Paid Item");
+        insertOrderSnapshot(9404L, "ORD-RECEIVER-SHIPPED", owner.userId(), skuId, 9944L, "Shipped Item");
         jdbcClient.sql("update shop_order set status = 'PAYING' where id = 9402").update();
         jdbcClient.sql("update shop_order set status = 'PAID' where id = 9403").update();
+        jdbcClient.sql("update shop_order set status = 'SHIPPED' where id = 9404").update();
 
         mockMvc.perform(put("/app/orders/{orderId}/receiver", 9401L)
                         .header("Authorization", "Bearer " + owner.token())
@@ -1015,6 +1031,13 @@ class AppOrderControllerTest {
                 .andExpect(jsonPath("$.code").value(100400));
 
         mockMvc.perform(put("/app/orders/{orderId}/receiver", 9403L)
+                        .header("Authorization", "Bearer " + owner.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"addressId\":" + ownerAddressId + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("PAID"));
+
+        mockMvc.perform(put("/app/orders/{orderId}/receiver", 9404L)
                         .header("Authorization", "Bearer " + owner.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"addressId\":" + ownerAddressId + "}"))

@@ -10,6 +10,7 @@ import {
   type CatalogProductCardView,
   type CategoryTabView
 } from "../../features/product-catalog";
+import { cartAddErrorMessage } from "../../features/cart-feedback";
 import { addCartItem } from "../../services/cart";
 import {
   getProductCategories,
@@ -612,7 +613,7 @@ Component({
           return;
         }
         wx.showToast({
-          title: productErrorMessage(error, "加入购物车失败，请稍后重试"),
+          title: cartAddErrorMessage(error, "加入购物车失败，请稍后重试"),
           icon: "none"
         });
       } finally {

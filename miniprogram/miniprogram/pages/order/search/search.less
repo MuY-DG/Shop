@@ -1,0 +1,135 @@
+@import "../../../styles/tokens.less";
+
+.search-page {
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  color: @color-text-primary;
+  background: @color-page;
+}
+
+.search-field {
+  width: calc(100% - 40rpx);
+  height: 64rpx;
+  display: flex;
+  margin: 0 auto;
+  box-sizing: border-box;
+  align-items: center;
+  padding: 0 6rpx 0 22rpx;
+  overflow: hidden;
+  border: 0;
+  border-radius: 18rpx;
+  background: #ffffff;
+}
+
+.search-field__input {
+  min-width: 0;
+  height: 64rpx;
+  flex: 1;
+  color: @color-text-primary;
+  font-size: @font-size-base;
+  font-weight: 400;
+  line-height: 64rpx;
+  text-align: left;
+}
+
+.search-field__clear {
+  width: 28rpx;
+  height: 28rpx;
+  margin: 0 10rpx;
+  flex: none;
+  opacity: 0.62;
+}
+
+.search-field__submit {
+  height: 54rpx;
+  min-width: 88rpx;
+  display: flex;
+  padding: 0 20rpx;
+  border-radius: 14rpx;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: @color-text-inverse;
+  background: #e93a3d;
+  font-size: 24rpx;
+  font-weight: 600;
+  transition: opacity @duration-fast @ease-standard;
+}
+
+.search-field__submit--pressed {
+  opacity: 0.78;
+}
+
+.search-content {
+  min-height: 0;
+  display: flex;
+  padding: 34rpx @page-gutter env(safe-area-inset-bottom);
+  flex: 1;
+  box-sizing: border-box;
+  flex-direction: column;
+}
+
+.search-history__header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.search-history__title {
+  font-size: @font-size-lg;
+  font-weight: 650;
+}
+
+.search-history__clear {
+  width: 60rpx;
+  height: 52rpx;
+  display: flex;
+  margin-right: 8rpx;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.search-history__clear-icon {
+  width: 38rpx;
+  height: 38rpx;
+  display: block;
+}
+
+.search-history__scroll {
+  height: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.search-history__list {
+  display: flex;
+  margin-top: 24rpx;
+  flex-wrap: wrap;
+  gap: 18rpx 14rpx;
+}
+
+.search-history__item {
+  max-width: 300rpx;
+  padding: 14rpx 24rpx;
+  overflow: hidden;
+  border: 0;
+  border-radius: @radius-pill;
+  color: #b5b5b5;
+  background: #ffffff;
+  font-size: @font-size-sm;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-history__item--pressed {
+  color: #e93a3d;
+  background: #ffebef;
+}
+
+.search-empty {
+  margin-top: 36rpx;
+}

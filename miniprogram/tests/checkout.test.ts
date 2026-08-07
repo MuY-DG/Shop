@@ -10,6 +10,7 @@ import {
   buildOrderPreviewView,
   buildPreviewRequest,
   buildSubmitRequest,
+  buildStockShortageItemViews,
   createIdempotencyKey,
   parseCheckoutQuery,
   preserveCartItemOrder,
@@ -39,6 +40,7 @@ function cartItem(overrides: Partial<CartItemResponse> = {}): CartItemResponse {
     nextWholesaleTierMinQuantity: 6,
     nextWholesaleTierPriceCent: 1480,
     nextWholesaleTierQuantityNeeded: 3,
+    maxPurchaseQuantity: 20,
     quantity: 3,
     lineAmountCent: 5040,
     skuStatus: "ENABLED",
@@ -118,6 +120,34 @@ test("购物车选择只保留可购买商品并计算选中金额", () => {
 
   assert.deepEqual(toggleCartSelection([11], 12), [11, 12]);
   assert.deepEqual(toggleCartSelection([11, 12], 11), [12]);
+});
+
+test("结算库存变化时只展示已选中的库存不足商品", () => {
+  const views = buildStockShortageItemViews([
+    cartItem({
+      id: 11,
+      quantity: 5,
+      maxPurchaseQuantity: 2,
+      available: false,
+      unavailableReason: "STOCK_SHORTAGE"
+    }),
+    cartItem({ id: 12, quantity: 1, maxPurchaseQuantity: 8 }),
+    cartItem({
+      id: 13,
+      quantity: 2,
+      maxPurchaseQuantity: 0,
+      available: false,
+      unavailableReason: "SOLD_OUT"
+    })
+  ], [11, 12]);
+
+  assert.deepEqual(views, [{
+    cartItemId: 11,
+    productTitle: "牛油火锅底料",
+    quantityText: "购买数量：5",
+    imageUrl: "https://example.com/product.png",
+    hasImage: true
+  }]);
 });
 
 test("购物车数量更新后保持原有商品顺序并在末尾接入新商品", () => {

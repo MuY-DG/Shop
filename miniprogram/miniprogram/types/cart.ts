@@ -20,6 +20,7 @@ export interface CartItemResponse {
   nextWholesaleTierMinQuantity?: number;
   nextWholesaleTierPriceCent?: number;
   nextWholesaleTierQuantityNeeded?: number;
+  maxPurchaseQuantity?: number;
   quantity: number;
   lineAmountCent: number;
   skuStatus?: "ENABLED" | "DISABLED";

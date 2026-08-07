@@ -94,12 +94,13 @@ test("独立评价页只接收已完成订单中的未评价商品和真实规�
   assert.equal(reviewProgressText(1, 2), "已完成 1/2");
 });
 
-test("修改订单页只允许待付款状态并只选择本人已保存地址", () => {
+test("修改订单页允许发货前状态并只选择本人已保存地址", () => {
   assert.equal(parseModifyOrderId("88"), 88);
   assert.equal(parseModifyOrderId("-1"), 0);
   assert.equal(canModifyOrderReceiver("CREATED"), true);
   assert.equal(canModifyOrderReceiver("PAYING"), true);
-  assert.equal(canModifyOrderReceiver("PAID"), false);
+  assert.equal(canModifyOrderReceiver("PAID"), true);
+  assert.equal(canModifyOrderReceiver("SHIPPED"), false);
   assert.equal(normalizeSelectedAddressId(" 2 "), "2");
   assert.equal(normalizeSelectedAddressId("2x"), "");
 
@@ -175,6 +176,7 @@ test("评价与修改订单页面注册真实端点并支持评价图片", () =>
 
   assert.ok(appConfig.pages.includes("pages/order/review/review"));
   assert.ok(appConfig.pages.includes("pages/order/modify/modify"));
+  assert.ok(appConfig.pages.includes("pages/order/search/search"));
   assert.match(endpoints, /`\/app\/orders\/\$\{orderId\}\/receiver`/);
   assert.match(orderService, /updateOrderReceiver[\s\S]*method: "PUT"[\s\S]*data: \{ addressId \}/);
 
@@ -217,7 +219,7 @@ test("评价与修改订单页面注册真实端点并支持评价图片", () =>
     modifyLogic,
     /setTimeout\([\s\S]*modifyOperationGuard\.isCurrent\(lifecycleToken, operationToken\)[\s\S]*this\.leavePage\(\)/
   );
-  assert.match(modifyTemplate, /仅支持修改收货地址/);
+  assert.match(modifyTemplate, /发货前可修改收货地址/);
   assert.doesNotMatch(modifyTemplate, /普通快递|配送方式/);
   assert.match(modifyTemplate, /bindtap="onAddAddress"/);
   assert.doesNotMatch(modifyTemplate, /修改商品|修改数量|修改价格/);
@@ -225,6 +227,9 @@ test("评价与修改订单页面注册真实端点并支持评价图片", () =>
   assert.match(modifyStyle, /\.address-empty button \{[\s\S]*height: 88rpx/);
 
   assert.match(orderListLogic, /rebuyOperationGuard\.unmount\(this\.data\.lifecycleToken\)/);
+  assert.match(orderListLogic, /keyword: normalizeOrderRouteKeyword\(query\.keyword\)/);
+  assert.match(orderListLogic, /buildAfterSaleApplyUrl\(orderId\)/);
+  assert.match(orderListLogic, /itemList: \["删除订单"\]/);
   assert.match(
     orderListLogic,
     /await getOrderDetail[\s\S]*rebuyOperationGuard\.isCurrent\(lifecycleToken, operationToken\)[\s\S]*await addCartItem/

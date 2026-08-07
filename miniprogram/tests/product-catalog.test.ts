@@ -309,11 +309,14 @@ test("默认规格、售罄禁用态和批发阶梯价随数量联动", () => {
   assert.match(wholesale.wholesaleHint, /再买 3 件/);
   assert.equal(wholesale.hasOriginalPrice, true);
 
-  const clamped = resolvePurchaseSelection(available, 200);
-  assert.equal(clamped.quantity, 200);
-  assert.equal(clamped.quantityMax, 999);
-  assert.equal(clamped.priceText, "18.00");
-  assert.equal(clamped.wholesaleTiers[1]?.active, true);
+  const clamped = resolvePurchaseSelection({
+    ...available,
+    maxPurchaseQuantity: 8
+  }, 200);
+  assert.equal(clamped.quantity, 8);
+  assert.equal(clamped.quantityMax, 8);
+  assert.equal(clamped.priceText, "19.00");
+  assert.equal(clamped.wholesaleTiers[0]?.active, true);
 
   const empty = resolvePurchaseSelection(unavailable, 1);
   assert.equal(empty.selectedSkuId, 0);
@@ -323,7 +326,8 @@ test("默认规格、售罄禁用态和批发阶梯价随数量联动", () => {
 test("单规格展示文案隐藏内部占位值并保留真实规格说明", () => {
   assert.equal(displaySpecText(" 默认规格 "), "");
   assert.equal(displaySpecText("默认"), "");
-  assert.equal(displaySpecText(" 500g/袋 "), "500g/袋");
+  assert.equal(displaySpecText(" 500g/袋 "), "500g | 袋");
+  assert.equal(displaySpecText(" 绿色 / 500g "), "绿色 | 500g");
   assert.deepEqual(buildSkuSpecificationGroups([
     sku({ id: 199, specJson: "{}", specText: "默认规格" })
   ], 199), []);

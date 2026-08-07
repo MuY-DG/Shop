@@ -448,7 +448,16 @@
                 aria-role="button"
                 aria-label="减少数量"
               >−</view>
-              <text class="quantity-value">{{quantity}}</text>
+              <input
+                class="quantity-value"
+                type="number"
+                maxlength="3"
+                value="{{quantity}}"
+                confirm-type="done"
+                bindblur="onQuantityInputCommit"
+                bindconfirm="onQuantityInputCommit"
+                aria-label="输入购买数量"
+              />
               <view
                 class="quantity-button {{quantityMax <= 0 || quantity >= quantityMax ? 'quantity-button--disabled' : ''}}"
                 bindtap="onQuantityPlus"
@@ -724,7 +733,7 @@
               class="review-toolbar-action {{reviewSpecText ? 'review-toolbar-action--active' : ''}}"
               bindtap="onReviewSpecOpen"
             >
-              <text>{{reviewSpecText || '规格'}}</text>
+              <text>{{reviewSpecLabel || '规格'}}</text>
               <image src="/assets/icons/tune-outline-rounded.svg" mode="aspectFit" />
             </button>
           </view>

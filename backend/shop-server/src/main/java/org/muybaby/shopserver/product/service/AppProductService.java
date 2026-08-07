@@ -211,7 +211,8 @@ public class AppProductService {
         List<AppSkuResponse> skus = skuRows.stream()
                 .map(sku -> new AppSkuResponse(
                         sku.id(), sku.skuCode(), sku.specJson(), sku.specText(), sku.priceCent(),
-                        sku.originalPriceCent(), saleState(sku.stockAvailable()), sku.weightGram(), sku.image(),
+                        sku.originalPriceCent(), saleState(sku.stockAvailable()),
+                        Math.min(sku.stockAvailable(), 999), sku.weightGram(), sku.image(),
                         sku.imageFileId(), sku.status(),
                         wholesaleTiersBySkuId.getOrDefault(sku.id(), List.of())
                 ))

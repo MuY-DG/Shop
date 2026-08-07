@@ -18,6 +18,7 @@
     "pages/customer-service/chat/chat",
     "pages/order/preview/preview",
     "pages/order/created/created",
+    "pages/order/search/search",
     "pages/order/list/list",
     "pages/order/detail/detail",
     "pages/order/review/review",

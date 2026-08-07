@@ -134,9 +134,12 @@ interface OrderSummaryActions {
   canCancel: boolean;
   canModify: boolean;
   canDelete: boolean;
+  canShowMore: boolean;
   canRebuy: boolean;
   canReview: boolean;
+  canAfterSale: boolean;
   hasActions: boolean;
+  afterSaleActionText: string;
   paymentActionText: string;
 }
 
@@ -269,15 +272,21 @@ function summaryActions(
   const canPay = status === "CREATED" || status === "PAYING";
   const canReview = status === "COMPLETED" && pendingReviewCount > 0;
   const canDelete = status === "COMPLETED" || status === "CLOSED";
+  const canShowMore = status === "COMPLETED";
   const canRebuy = status === "SHIPPED" || canDelete;
+  const canAfterSale = status === "PAID" || status === "SHIPPED" || status === "COMPLETED";
+  const canModify = canPay || status === "PAID";
   return {
     canPay,
     canCancel: canPay,
-    canModify: canPay,
+    canModify,
     canDelete,
+    canShowMore,
     canRebuy,
     canReview,
-    hasActions: canPay || canDelete || canRebuy || canReview,
+    canAfterSale,
+    hasActions: canPay || canDelete || canRebuy || canReview || canAfterSale || canModify,
+    afterSaleActionText: status === "PAID" ? "退款|售后" : "退换|售后",
     paymentActionText: "去支付"
   };
 }

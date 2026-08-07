@@ -95,6 +95,7 @@ class AppProductControllerTest {
                 .andExpect(jsonPath("$.data.skus[0].imageFileId").value(skuFile.id()))
                 .andExpect(jsonPath("$.data.saleState").value("AVAILABLE"))
                 .andExpect(jsonPath("$.data.skus[0].saleState").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.skus[0].maxPurchaseQuantity").value(9))
                 .andExpect(jsonPath("$.data.skus[0].stockAvailable").doesNotExist());
 
         adminProductService.unpublishSpu(spuId);

@@ -79,6 +79,7 @@ class AppCartControllerTest {
                 .andExpect(jsonPath("$.data.priceCent").value(3990))
                 .andExpect(jsonPath("$.data.lineAmountCent").value(7980))
                 .andExpect(jsonPath("$.data.available").value(true))
+                .andExpect(jsonPath("$.data.maxPurchaseQuantity").value(10))
                 .andExpect(jsonPath("$.data.stockAvailable").doesNotExist());
 
         mockMvc.perform(post("/app/cart/items")
@@ -98,6 +99,7 @@ class AppCartControllerTest {
                 .andExpect(jsonPath("$.data.totalQuantity").value(5))
                 .andExpect(jsonPath("$.data.totalAmountCent").value(19950))
                 .andExpect(jsonPath("$.data.unavailableCount").value(0))
+                .andExpect(jsonPath("$.data.items[0].maxPurchaseQuantity").value(10))
                 .andExpect(jsonPath("$.data.items[0].stockAvailable").doesNotExist())
                 .andReturn()
                 .getResponse()
@@ -185,6 +187,7 @@ class AppCartControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].available").value(false))
                 .andExpect(jsonPath("$.data.items[0].unavailableReason").value("STOCK_SHORTAGE"))
+                .andExpect(jsonPath("$.data.items[0].maxPurchaseQuantity").value(1))
                 .andExpect(jsonPath("$.data.unavailableCount").value(1));
 
         jdbcClient.sql("""
@@ -200,6 +203,7 @@ class AppCartControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.items[0].available").value(false))
                 .andExpect(jsonPath("$.data.items[0].unavailableReason").value("SOLD_OUT"))
+                .andExpect(jsonPath("$.data.items[0].maxPurchaseQuantity").value(0))
                 .andExpect(jsonPath("$.data.items[0].stockAvailable").doesNotExist());
 
         mockMvc.perform(put("/app/cart/items/{cartItemId}/quantity", cartItemId)

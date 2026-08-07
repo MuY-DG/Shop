@@ -12,6 +12,7 @@ public record AppSkuResponse(
         Long priceCent,
         Long originalPriceCent,
         ProductSaleState saleState,
+        Integer maxPurchaseQuantity,
         Integer weightGram,
         String image,
         Long imageFileId,

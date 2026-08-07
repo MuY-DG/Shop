@@ -462,6 +462,7 @@ public class AppCartService {
                 nextWholesaleTierMinQuantity,
                 nextWholesaleTierPriceCent,
                 nextWholesaleTierMinQuantity == null ? null : nextWholesaleTierMinQuantity - quantity,
+                Math.min(stockAvailable, MAX_QUANTITY),
                 quantity,
                 priceCent * quantity,
                 skuStatus,

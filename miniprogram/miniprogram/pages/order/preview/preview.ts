@@ -3,6 +3,7 @@ import {
   buildCouponOptionViews,
   buildOrderPreviewView,
   buildPreviewRequest,
+  buildStockShortageItemViews,
   buildSubmitRequest,
   createIdempotencyKey,
   parseCheckoutQuery,
@@ -11,12 +12,15 @@ import {
   type CouponOptionView,
   type OrderPreviewView
 } from "../../../features/checkout";
+import { isStockShortageError } from "../../../features/cart-feedback";
 import { executeOrderPayment } from "../../../features/order-payment";
 import { buildOrderDetailUrl } from "../../../features/order-center";
 import { getAddresses } from "../../../services/address";
 import { getAvailableCoupons } from "../../../services/coupon";
+import { getCartItems } from "../../../services/cart";
 import { previewOrder, submitOrder } from "../../../services/order";
 import type { CheckoutSelection } from "../../../types/checkout";
+import type { StockShortageItemView } from "../../../features/checkout";
 import { isApiError } from "../../../utils/api-error";
 
 type CouponSheetTab = "available" | "unavailable";
@@ -36,6 +40,9 @@ let latestCouponRequest = 0;
 let latestAddressRequest = 0;
 
 function actionError(error: unknown, fallback: string): string {
+  if (isStockShortageError(error)) {
+    return "商品库存不足";
+  }
   return isApiError(error)
     ? error.message
     : error instanceof Error
@@ -78,7 +85,9 @@ Page({
     couponLoaded: false,
     couponErrorText: "",
     couponSelectingId: 0,
-    submitting: false
+    submitting: false,
+    stockShortageOpen: false,
+    stockShortageItems: [] as StockShortageItemView[]
   },
 
   onLoad(query: Record<string, string | undefined>) {
@@ -127,7 +136,9 @@ Page({
       addressLoading: true,
       addressErrorText: "",
       couponLoading: true,
-      couponErrorText: ""
+      couponErrorText: "",
+      stockShortageOpen: false,
+      stockShortageItems: []
     });
     try {
       const couponResultPromise = getAvailableCoupons(selection)
@@ -166,6 +177,9 @@ Page({
       });
     } catch (error) {
       if (requestId !== latestPreviewRequest) {
+        return;
+      }
+      if (await this.showCartStockShortage(error)) {
         return;
       }
       this.setData({
@@ -229,6 +243,9 @@ Page({
       });
     } catch (error) {
       if (requestId === latestPreviewRequest) {
+        if (await this.showCartStockShortage(error)) {
+          return;
+        }
         this.setData({
           loading: false,
           errorText: actionError(error, "地址切换失败，请重试")
@@ -428,6 +445,9 @@ Page({
       });
     } catch (error) {
       if (requestId === latestPreviewRequest) {
+        if (await this.showCartStockShortage(error)) {
+          return;
+        }
         this.setData({ couponSelectingId: 0 });
         wx.showToast({
           title: actionError(error, "优惠券选择失败，请重试"),
@@ -449,6 +469,58 @@ Page({
           itemIndex === index ? { ...item, hasImage: false } : item
         ))
       }
+    });
+  },
+
+  onStockShortageImageError(event: DatasetEvent) {
+    const index = Number(event.currentTarget.dataset.index);
+    if (!Number.isSafeInteger(index) || index < 0) {
+      return;
+    }
+    this.setData({
+      stockShortageItems: this.data.stockShortageItems.map((item, itemIndex) => (
+        itemIndex === index ? { ...item, hasImage: false } : item
+      ))
+    });
+  },
+
+  async showCartStockShortage(error: unknown): Promise<boolean> {
+    const selection = this.data.selection;
+    if (selection?.source !== "CART" || !isStockShortageError(error)) {
+      return false;
+    }
+    try {
+      const cart = await getCartItems();
+      const stockShortageItems = buildStockShortageItemViews(
+        cart.items,
+        selection.cartItemIds
+      );
+      if (!stockShortageItems.length) {
+        return false;
+      }
+      this.setData({
+        loading: false,
+        loaded: true,
+        errorText: "",
+        addressLoading: false,
+        couponLoading: false,
+        submitting: false,
+        couponSelectingId: 0,
+        couponSheetOpen: false,
+        addressSheetOpen: false,
+        stockShortageOpen: true,
+        stockShortageItems
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
+  onStockShortageBackTap() {
+    wx.navigateBack({
+      delta: 1,
+      fail: () => wx.switchTab({ url: "/pages/cart/cart" })
     });
   },
 
@@ -510,6 +582,9 @@ Page({
         }
       });
     } catch (error) {
+      if (await this.showCartStockShortage(error)) {
+        return;
+      }
       this.setData({ submitting: false });
       wx.showToast({
         title: actionError(error, "订单提交失败，请重试"),

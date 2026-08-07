@@ -1,9 +1,29 @@
 <view class="orders-page">
   <navigation-bar
-    title="我的订单"
     back="{{true}}"
     color="#2E1D16"
-  />
+    background="#f6f6f6"
+    show-divider="{{false}}"
+    wide-center="{{true}}"
+  >
+    <view
+      slot="center"
+      class="order-search"
+      bindtap="onSearchTap"
+      hover-class="order-search--pressed"
+      aria-role="button"
+      aria-label="搜索订单商品名称或订单号"
+    >
+      <image
+        class="order-search__icon"
+        src="/assets/icons/search-material-symbols-iconify.svg"
+        mode="aspectFit"
+        aria-hidden="true"
+      />
+      <text wx:if="{{keyword}}" class="order-search__text order-search__keyword">{{keyword}}</text>
+      <text wx:else class="order-search__text order-search__placeholder">搜索商品名称或订单号</text>
+    </view>
+  </navigation-bar>
 
   <scroll-view class="status-tabs" scroll-x="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
     <view class="status-tabs__inner">
@@ -13,6 +33,9 @@
         class="status-tab {{activeGroup === item.value ? 'status-tab--active' : ''}}"
         data-group="{{item.value}}"
         bindtap="onTabTap"
+        hover-class="status-tab--pressed"
+        aria-role="button"
+        aria-label="{{item.label}}{{activeGroup === item.value ? '，已选择' : ''}}"
       >{{item.label}}</view>
     </view>
   </scroll-view>
@@ -31,142 +54,161 @@
     bindrefresherrefresh="onContentRefresh"
     bindscrolltolower="onReachBottom"
   >
-  <view class="orders-content">
-    <view wx:if="{{!loaded && loading}}" class="orders-state">
-      <ui-state type="loading" title="正在加载订单" description="订单状态与支付结果正在同步" />
-    </view>
-    <view wx:elif="{{!loaded && errorText}}" class="orders-state">
-      <ui-state type="error" title="订单加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
-    </view>
-    <view wx:elif="{{loaded && !orders.length}}" class="orders-state orders-state--empty">
-      <ui-state type="empty" icon="/assets/icons/empty-orders.svg" description="暂无相关订单" />
-    </view>
-
-    <block wx:else>
-      <view wx:if="{{errorText}}" class="inline-error">
-        <text>{{errorText}}</text>
-        <button bindtap="onRetry">重试</button>
+    <view class="orders-content">
+      <view wx:if="{{!loaded && loading}}" class="orders-state">
+        <ui-state type="loading" title="正在加载订单" description="订单状态与支付结果正在同步" />
       </view>
-      <view
-        wx:for="{{orders}}"
-        wx:key="orderId"
-        class="order-card"
-        aria-role="group"
-        aria-label="订单 {{item.orderNo}}"
-      >
+      <view wx:elif="{{!loaded && errorText}}" class="orders-state">
+        <ui-state type="error" title="订单加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
+      </view>
+      <view wx:elif="{{loaded && !orders.length}}" class="orders-state orders-state--empty">
+        <ui-state type="empty" icon="/assets/icons/empty-orders.svg" description="{{keyword ? '没有找到相关订单' : '暂无相关订单'}}" />
+      </view>
+
+      <block wx:else>
+        <view wx:if="{{errorText}}" class="inline-error">
+          <text>{{errorText}}</text>
+          <button bindtap="onRetry">重试</button>
+        </view>
         <view
-          class="order-card__detail"
-          data-id="{{item.orderId}}"
-          bindtap="onOrderTap"
-          hover-class="order-card--pressed"
-          hover-stay-time="80"
-          aria-role="button"
-          aria-label="查看订单 {{item.orderNo}}，{{item.statusText}}，{{item.itemCountText}}"
+          wx:for="{{orders}}"
+          wx:key="orderId"
+          class="order-card"
+          aria-role="group"
+          aria-label="订单 {{item.orderNo}}"
         >
-          <text class="order-status order-status--{{item.statusTone}}">{{item.statusText}}</text>
-          <view wx:if="{{item.items.length}}" class="order-card__items">
-            <view
-              wx:for="{{item.items}}"
-              wx:for-item="product"
-              wx:for-index="productIndex"
-              wx:key="orderItemId"
-              class="order-product {{productIndex ? 'order-product--divided' : ''}}"
-            >
-              <view class="order-product__image-shell">
-                <image
-                  wx:if="{{product.hasImage}}"
-                  class="order-product__image"
-                  src="{{product.imageUrl}}"
-                  mode="aspectFill"
-                  data-id="{{item.orderId}}"
-                  data-item-id="{{product.orderItemId}}"
-                  binderror="onItemImageError"
-                />
-                <image
-                  wx:else
-                  class="order-product__fallback-icon"
-                  src="/assets/icons/empty-products.svg"
-                  mode="aspectFit"
-                  aria-hidden="true"
-                />
-              </view>
-              <view class="order-product__body">
-                <view class="order-product__title">{{product.titleText}}</view>
-                <view wx:if="{{product.specificationText}}" class="order-product__spec">{{product.specificationText}}</view>
-              </view>
-              <view class="order-product__commerce">
-                <text class="order-product__price">{{product.unitPriceText}}</text>
-                <text class="order-product__quantity">{{product.quantityText}}</text>
+          <view
+            class="order-card__detail"
+            data-id="{{item.orderId}}"
+            bindtap="onOrderTap"
+            hover-class="order-card--pressed"
+            hover-stay-time="80"
+            aria-role="button"
+            aria-label="查看订单 {{item.orderNo}}，{{item.statusText}}，{{item.itemCountText}}"
+          >
+            <text class="order-status">{{item.statusText}}</text>
+            <view wx:if="{{item.items.length}}" class="order-card__items">
+              <view
+                wx:for="{{item.items}}"
+                wx:for-item="product"
+                wx:for-index="productIndex"
+                wx:key="orderItemId"
+                class="order-product {{productIndex ? 'order-product--divided' : ''}}"
+              >
+                <view class="order-product__image-shell">
+                  <image
+                    wx:if="{{product.hasImage}}"
+                    class="order-product__image"
+                    src="{{product.imageUrl}}"
+                    mode="aspectFill"
+                    data-id="{{item.orderId}}"
+                    data-item-id="{{product.orderItemId}}"
+                    binderror="onItemImageError"
+                  />
+                  <image
+                    wx:else
+                    class="order-product__fallback-icon"
+                    src="/assets/icons/empty-products.svg"
+                    mode="aspectFit"
+                    aria-hidden="true"
+                  />
+                </view>
+                <view class="order-product__body">
+                  <view class="order-product__details">
+                    <view class="order-product__title">{{product.titleText}}</view>
+                    <view wx:if="{{product.specificationText}}" class="order-product__spec">{{product.specificationText}}</view>
+                  </view>
+                  <text class="order-product__quantity">{{product.quantityText}}</text>
+                </view>
+                <view class="order-product__commerce">
+                  <text class="order-product__price">{{product.unitPriceText}}</text>
+                </view>
               </view>
             </view>
+            <view wx:else class="order-card__empty-product">商品信息暂不可用</view>
           </view>
-          <view wx:else class="order-card__empty-product">
-            商品信息暂不可用
+
+          <view wx:if="{{item.hasActions}}" class="order-card__actions">
+            <button
+              wx:if="{{item.canShowMore}}"
+              class="order-action order-action--secondary order-action--more"
+              data-id="{{item.orderId}}"
+              disabled="{{actionOrderId}}"
+              catchtap="onMoreTap"
+              hover-class="order-action--pressed"
+              aria-label="更多订单操作 {{item.orderNo}}"
+            >更多</button>
+            <button
+              wx:if="{{item.canCancel}}"
+              class="order-action order-action--secondary"
+              data-id="{{item.orderId}}"
+              disabled="{{actionOrderId}}"
+              catchtap="onCancelTap"
+              hover-class="order-action--pressed"
+              aria-label="取消订单 {{item.orderNo}}"
+            >取消订单</button>
+            <button
+              wx:if="{{item.canDelete && !item.canShowMore}}"
+              class="order-action order-action--secondary"
+              data-id="{{item.orderId}}"
+              loading="{{actionOrderId === item.orderId && actionType === 'delete'}}"
+              disabled="{{actionOrderId}}"
+              catchtap="onDeleteTap"
+              hover-class="order-action--pressed"
+              aria-label="删除订单 {{item.orderNo}}"
+            >删除订单</button>
+            <button
+              wx:if="{{item.canAfterSale}}"
+              class="order-action order-action--secondary"
+              data-id="{{item.orderId}}"
+              disabled="{{actionOrderId}}"
+              catchtap="onAfterSaleTap"
+              hover-class="order-action--pressed"
+              aria-label="{{item.afterSaleActionText}}，订单 {{item.orderNo}}"
+            >{{item.afterSaleActionText}}</button>
+            <button
+              wx:if="{{item.canModify}}"
+              class="order-action order-action--secondary"
+              data-id="{{item.orderId}}"
+              disabled="{{actionOrderId}}"
+              catchtap="onModifyTap"
+              hover-class="order-action--pressed"
+              aria-label="修改订单 {{item.orderNo}}"
+            >修改订单</button>
+            <button
+              wx:if="{{item.canReview}}"
+              class="order-action order-action--secondary"
+              data-id="{{item.orderId}}"
+              disabled="{{actionOrderId}}"
+              catchtap="onReviewTap"
+              hover-class="order-action--pressed"
+              aria-label="评价订单 {{item.orderNo}} 的商品"
+            >评价</button>
+            <button
+              wx:if="{{item.canRebuy}}"
+              class="order-action order-action--primary"
+              data-id="{{item.orderId}}"
+              loading="{{actionOrderId === item.orderId && actionType === 'rebuy'}}"
+              disabled="{{actionOrderId}}"
+              catchtap="onRebuyTap"
+              hover-class="order-action--pressed"
+              aria-label="再次购买订单 {{item.orderNo}} 的商品"
+            >再次购买</button>
+            <button
+              wx:if="{{item.canPay}}"
+              class="order-action order-action--primary"
+              data-id="{{item.orderId}}"
+              loading="{{actionOrderId === item.orderId && actionType === 'pay'}}"
+              disabled="{{actionOrderId}}"
+              catchtap="onPayTap"
+              hover-class="order-action--pressed"
+              aria-label="{{item.paymentActionText}}，订单 {{item.orderNo}}"
+            >{{item.paymentActionText}}</button>
           </view>
         </view>
-        <view wx:if="{{item.hasActions}}" class="order-card__actions">
-          <button
-            wx:if="{{item.canCancel}}"
-            class="order-action order-action--secondary"
-            data-id="{{item.orderId}}"
-            disabled="{{actionOrderId}}"
-            catchtap="onCancelTap"
-            hover-class="order-action--pressed"
-            aria-label="取消订单 {{item.orderNo}}"
-          >取消订单</button>
-          <button
-            wx:if="{{item.canModify}}"
-            class="order-action order-action--secondary"
-            data-id="{{item.orderId}}"
-            disabled="{{actionOrderId}}"
-            catchtap="onModifyTap"
-            hover-class="order-action--pressed"
-            aria-label="修改订单 {{item.orderNo}}"
-          >修改订单</button>
-          <button
-            wx:if="{{item.canDelete}}"
-            class="order-action order-action--secondary"
-            data-id="{{item.orderId}}"
-            loading="{{actionOrderId === item.orderId && actionType === 'delete'}}"
-            disabled="{{actionOrderId}}"
-            catchtap="onDeleteTap"
-            hover-class="order-action--pressed"
-            aria-label="删除订单 {{item.orderNo}}"
-          >删除订单</button>
-          <button
-            wx:if="{{item.canRebuy}}"
-            class="order-action order-action--secondary"
-            data-id="{{item.orderId}}"
-            loading="{{actionOrderId === item.orderId && actionType === 'rebuy'}}"
-            disabled="{{actionOrderId}}"
-            catchtap="onRebuyTap"
-            hover-class="order-action--pressed"
-            aria-label="再次购买订单 {{item.orderNo}} 的商品"
-          >再次购买</button>
-          <button
-            wx:if="{{item.canReview}}"
-            class="order-action order-action--primary"
-            data-id="{{item.orderId}}"
-            disabled="{{actionOrderId}}"
-            catchtap="onReviewTap"
-            hover-class="order-action--pressed"
-            aria-label="评价订单 {{item.orderNo}} 的商品"
-          >评价</button>
-          <button
-            wx:if="{{item.canPay}}"
-            class="order-action order-action--primary"
-            data-id="{{item.orderId}}"
-            loading="{{actionOrderId === item.orderId && actionType === 'pay'}}"
-            disabled="{{actionOrderId}}"
-            catchtap="onPayTap"
-            hover-class="order-action--pressed"
-            aria-label="{{item.paymentActionText}}，订单 {{item.orderNo}}"
-          >{{item.paymentActionText}}</button>
-        </view>
-      </view>
-      <view wx:if="{{loadingMore}}" class="list-footer">正在加载更多…</view>
-      <view wx:elif="{{orders.length && !hasMore}}" class="list-footer">没有更多订单了</view>
-    </block>
-  </view>
+        <view wx:if="{{loadingMore}}" class="list-footer">正在加载更多…</view>
+        <view wx:elif="{{orders.length && !hasMore}}" class="list-footer">没有更多订单了</view>
+      </block>
+    </view>
   </scroll-view>
 </view>

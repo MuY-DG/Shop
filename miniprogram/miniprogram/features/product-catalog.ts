@@ -135,7 +135,9 @@ const INTERNAL_SINGLE_SPEC_TEXTS = new Set(["默认规格", "默认"]);
 
 export function displaySpecText(value: unknown): string {
   const normalized = cleanText(value);
-  return INTERNAL_SINGLE_SPEC_TEXTS.has(normalized) ? "" : normalized;
+  return INTERNAL_SINGLE_SPEC_TEXTS.has(normalized)
+    ? ""
+    : normalized.replace(/\s*\/\s*/g, " | ");
 }
 
 function positiveInteger(value: unknown): number | undefined {
@@ -681,7 +683,8 @@ export function resolvePurchaseSelection(
       wholesaleTiers: []
     };
   }
-  const quantityMax = 999;
+  const reportedMaximum = nonNegativeInteger(sku.maxPurchaseQuantity);
+  const quantityMax = Math.min(reportedMaximum ?? 999, 999);
   const quantity = Math.min(Math.max(positiveInteger(requestedQuantity) ?? 1, 1), quantityMax);
   const tiers = validWholesaleTiers(sku.wholesaleTiers);
   const eligibleTiers = tiers.filter((tier) => tier.minQuantity <= quantity);

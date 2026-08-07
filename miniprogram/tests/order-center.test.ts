@@ -116,31 +116,40 @@ test("订单状态映射稳定并只开放合法操作", () => {
   assert.equal(paying.paymentActionText, "去支付");
 
   const paid = buildOrderSummaryView(summary("PAID"));
-  assert.equal(paid.hasActions, false);
+  assert.equal(paid.hasActions, true);
   assert.equal(paid.canRebuy, false);
+  assert.equal(paid.canModify, true);
+  assert.equal(paid.canAfterSale, true);
+  assert.equal(paid.afterSaleActionText, "退款|售后");
 
   const shipped = buildOrderSummaryView(summary("SHIPPED"));
   assert.equal(shipped.canPay, false);
   assert.equal(shipped.canRebuy, true);
   assert.equal(shipped.canDelete, false);
+  assert.equal(shipped.canAfterSale, true);
+  assert.equal(shipped.afterSaleActionText, "退换|售后");
   assert.equal(shipped.amountText, "¥45.40");
 
   const pendingReview = buildOrderSummaryView(summary("COMPLETED", 1));
   assert.equal(pendingReview.statusText, "待评价");
   assert.equal(pendingReview.canReview, true);
   assert.equal(pendingReview.canDelete, true);
+  assert.equal(pendingReview.canShowMore, true);
   assert.equal(pendingReview.canRebuy, true);
+  assert.equal(pendingReview.canAfterSale, true);
 
   const completed = buildOrderSummaryView(summary("COMPLETED", 0));
   assert.equal(completed.statusText, "已完成");
   assert.equal(completed.canReview, false);
   assert.equal(completed.canDelete, true);
+  assert.equal(completed.canShowMore, true);
   assert.equal(completed.canRebuy, true);
   assert.equal(orderStatusText("REFUNDED"), "已退款");
 
   const closed = buildOrderSummaryView(summary("CLOSED"));
   assert.equal(closed.statusText, "已取消");
   assert.equal(closed.canDelete, true);
+  assert.equal(closed.canShowMore, false);
   assert.equal(closed.canRebuy, true);
 });
 

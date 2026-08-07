@@ -434,6 +434,140 @@ button.submit-action[disabled] {
   opacity: 0.48;
 }
 
+.stock-shortage-mask {
+  position: fixed;
+  z-index: 3200;
+  inset: 0;
+  display: flex;
+  padding: 40rpx;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.stock-shortage-dialog {
+  width: 100%;
+  max-height: 74vh;
+  display: flex;
+  overflow: hidden;
+  padding: 34rpx 30rpx 30rpx;
+  border-radius: 28rpx;
+  box-sizing: border-box;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.stock-shortage-title {
+  flex: none;
+  color: @color-text-primary;
+  font-size: @font-size-lg;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.stock-shortage-scroll {
+  max-height: 52vh;
+  margin-top: 28rpx;
+}
+
+.stock-shortage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.stock-shortage-item {
+  display: grid;
+  min-width: 0;
+  align-items: center;
+  grid-template-columns: 144rpx minmax(0, 1fr);
+  gap: 24rpx;
+}
+
+.stock-shortage-image-shell {
+  position: relative;
+  width: 144rpx;
+  height: 144rpx;
+  display: flex;
+  overflow: hidden;
+  border-radius: @radius-md;
+  align-items: center;
+  justify-content: center;
+  background: #f6f6f6;
+}
+
+.stock-shortage-image,
+.stock-shortage-image-filter {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.stock-shortage-image-filter {
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.stock-shortage-image-fallback {
+  color: @color-text-placeholder;
+  font-size: @font-size-lg;
+}
+
+.stock-shortage-image-badge {
+  position: relative;
+  z-index: 2;
+  width: 88rpx;
+  height: 88rpx;
+  display: flex;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  background: rgba(91, 91, 91, 0.74);
+  font-size: 20rpx;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.stock-shortage-item-body {
+  min-width: 0;
+}
+
+.stock-shortage-item-title {
+  .text-ellipsis(2);
+  color: @color-text-primary;
+  font-size: @font-size-base;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.stock-shortage-item-quantity {
+  margin-top: 18rpx;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+button.stock-shortage-back {
+  width: 100%;
+  height: 82rpx;
+  min-height: 82rpx;
+  margin: 30rpx 0 0;
+  padding: 0;
+  border-radius: @radius-pill;
+  flex: none;
+  color: #ffffff;
+  background: #ff172b;
+  font-size: @font-size-base;
+  line-height: 82rpx;
+}
+
+button.stock-shortage-back::after {
+  border: 0;
+}
+
 .sheet-mask {
   position: fixed;
   z-index: 2000;

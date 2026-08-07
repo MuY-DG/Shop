@@ -128,7 +128,7 @@ Page({
         loading: false,
         loaded: true,
         errorText: "",
-        blockingText: modifiable ? "" : "只有待付款订单可以修改收货地址"
+        blockingText: modifiable ? "" : "只有待付款或待发货订单可以修改收货地址"
       });
     } catch (error) {
       if (requestId === latestRequest) {

@@ -56,9 +56,10 @@ public class AppOrderController {
             Long current,
             Long size,
             String status,
-            OrderStatusGroup statusGroup
+            OrderStatusGroup statusGroup,
+            String keyword
     ) {
-        return ApiResponse.success(appOrderService.list(principal, current, size, status, statusGroup));
+        return ApiResponse.success(appOrderService.list(principal, current, size, status, statusGroup, keyword));
     }
 
     @GetMapping("/{orderId}")

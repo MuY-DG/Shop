@@ -1,0 +1,84 @@
+<view class="search-page">
+  <navigation-bar
+    back="{{true}}"
+    color="#2E1D16"
+    show-divider="{{false}}"
+    wide-center="{{true}}"
+  >
+    <view slot="center" class="search-field">
+      <input
+        class="search-field__input"
+        value="{{keyword}}"
+        maxlength="80"
+        focus="{{true}}"
+        confirm-type="search"
+        placeholder="搜索商品名称或订单号"
+        placeholder-style="color: #b9b9b9;"
+        bindinput="onInput"
+        bindconfirm="onConfirm"
+      />
+      <image
+        wx:if="{{keyword}}"
+        class="search-field__clear"
+        src="/assets/icons/close-material-symbols.svg"
+        mode="aspectFit"
+        bindtap="onClearInput"
+        aria-role="button"
+        aria-label="清除关键词"
+      />
+      <view
+        class="search-field__submit"
+        bindtap="onSearchTap"
+        hover-class="search-field__submit--pressed"
+        aria-role="button"
+      >搜索</view>
+    </view>
+  </navigation-bar>
+
+  <view class="search-content">
+    <block wx:if="{{history.length}}">
+      <view class="search-history__header">
+        <text class="search-history__title">最近搜索</text>
+        <view
+          class="search-history__clear"
+          bindtap="onClearHistory"
+          aria-role="button"
+          aria-label="清空订单搜索记录"
+        >
+          <image
+            class="search-history__clear-icon"
+            src="/assets/icons/trash-can-outline-muted-iconify.svg"
+            mode="aspectFit"
+            aria-hidden="true"
+          />
+        </view>
+      </view>
+      <scroll-view
+        class="search-history__scroll"
+        scroll-y="{{true}}"
+        enhanced="{{true}}"
+        show-scrollbar="{{false}}"
+      >
+        <view class="search-history__list">
+          <view
+            wx:for="{{history}}"
+            wx:key="*this"
+            class="search-history__item"
+            data-keyword="{{item}}"
+            bindtap="onHistoryTap"
+            hover-class="search-history__item--pressed"
+            aria-role="button"
+          >{{item}}</view>
+        </view>
+      </scroll-view>
+    </block>
+
+    <view wx:else class="search-empty">
+      <ui-state
+        type="empty"
+        icon="/assets/icons/empty-search.svg"
+        description="暂无搜索记录，试试搜索订单商品名称或订单号"
+      />
+    </view>
+  </view>
+</view>

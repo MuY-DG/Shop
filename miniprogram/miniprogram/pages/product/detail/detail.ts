@@ -28,6 +28,11 @@ import {
 } from "../../../features/product-review";
 import { getAddresses } from "../../../services/address";
 import { addCartItem } from "../../../services/cart";
+import { cartAddErrorMessage } from "../../../features/cart-feedback";
+import {
+  normalizeQuantityInput,
+  stockQuantityCorrectedMessage
+} from "../../../features/quantity";
 import {
   getProductDetail,
   getProductReviews
@@ -74,6 +79,12 @@ interface DatasetEvent {
       imageUrl?: string;
       reviewId?: number | string;
     };
+  };
+}
+
+interface QuantityInputEvent {
+  detail: {
+    value: string;
   };
 }
 
@@ -194,12 +205,15 @@ function buildReviewSpecOptions(
   }
   const values = new Set<string>();
   for (const sku of skus) {
-    const value = displaySpecText(sku.specText);
+    const value = cleanText(sku.specText);
     if (value) {
       values.add(value);
     }
   }
-  return [...values].map((value) => ({ value, label: value }));
+  return [...values].map((value) => ({
+    value,
+    label: displaySpecText(value)
+  }));
 }
 
 function cachePreviewImage(url: string): Promise<string> {
@@ -267,6 +281,7 @@ Page({
     reviewFilter: "ALL" as ProductReviewFilter,
     reviewSort: "RECOMMENDED" as ProductReviewSort,
     reviewSpecText: "",
+    reviewSpecLabel: "",
     reviewSpecDraftText: "",
     reviewSpecSheetOpen: false,
     reviewSpecOptions: [] as ReviewSpecOptionView[],
@@ -398,6 +413,7 @@ Page({
         wholesaleSummary: wholesaleSummary(selection.wholesaleTiers),
         reviewSpecOptions: buildReviewSpecOptions(normalizedDetail.skus, normalizedDetail.specType),
         reviewSpecText: "",
+        reviewSpecLabel: "",
         reviewSpecDraftText: "",
         reviewSpecSheetOpen: false,
         reviewSummary: buildProductReviewSummaryView(normalizedDetail.reviewSummary),
@@ -441,6 +457,7 @@ Page({
         reviewFilter: "ALL",
         reviewSort: "RECOMMENDED",
         reviewSpecText: "",
+        reviewSpecLabel: "",
         reviewSpecDraftText: "",
         reviewSpecSheetOpen: false,
         reviewSpecOptions: [],
@@ -612,10 +629,35 @@ Page({
 
   onQuantityPlus() {
     const sku = this.selectedSku();
-    if (!sku || this.data.quantity >= this.data.quantityMax) {
+    if (!sku) {
+      return;
+    }
+    if (this.data.quantity >= this.data.quantityMax) {
+      wx.showToast({ title: "商品已达最大可购买数", icon: "none" });
       return;
     }
     this.applySelection(sku, this.data.quantity + 1);
+  },
+
+  onQuantityInputCommit(event: QuantityInputEvent) {
+    const sku = this.selectedSku();
+    if (!sku) {
+      return;
+    }
+    const result = normalizeQuantityInput(
+      event.detail.value,
+      this.data.quantity,
+      this.data.quantityMax
+    );
+    if (result.quantity > 0) {
+      this.applySelection(sku, result.quantity);
+    }
+    if (result.exceededStock) {
+      wx.showToast({
+        title: stockQuantityCorrectedMessage(this.data.quantityMax),
+        icon: "none"
+      });
+    }
   },
 
   async onPurchaseConfirm() {
@@ -649,7 +691,7 @@ Page({
     } catch (error) {
       this.setData({ confirmLoading: false });
       wx.showToast({
-        title: isApiError(error) ? error.message : "加入购物车失败，请稍后重试",
+        title: cartAddErrorMessage(error, "加入购物车失败，请稍后重试"),
         icon: "none"
       });
     }
@@ -911,8 +953,12 @@ Page({
   onReviewSpecConfirm() {
     const reviewSpecText = this.data.reviewSpecDraftText;
     const changed = reviewSpecText !== this.data.reviewSpecText;
+    const reviewSpecLabel = this.data.reviewSpecOptions.find(
+      (option) => option.value === reviewSpecText
+    )?.label ?? "";
     this.setData({
       reviewSpecText,
+      reviewSpecLabel,
       reviewSpecSheetOpen: false
     });
     if (changed) {
