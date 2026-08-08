@@ -493,46 +493,41 @@ button.receiver-card__modify {
   word-break: break-all;
 }
 
-.info-row__value--copy {
-  min-width: 0;
-  display: flex;
-  overflow: visible;
-  flex: 1;
-  align-items: flex-start;
-  justify-content: flex-end;
-}
-
 .info-row--order-no {
-  display: flex;
+  display: grid;
   align-items: center;
-  gap: 12rpx;
+  justify-content: stretch;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0;
 }
 
-.info-row--order-no .info-row__value {
-  width: 0;
-  max-width: none;
-  flex: 1 1 0%;
-  justify-content: flex-end;
+.info-row--order-no > text:first-child {
+  margin-right: 12rpx;
 }
 
-.info-row__value--copy > text:first-child {
+.info-row__order-no {
+  width: 100%;
   min-width: 0;
-  flex: 0 0 auto;
-  overflow: visible;
+  display: block;
+  overflow: hidden;
   margin-left: 0;
-  font-size: 18rpx;
-  text-overflow: clip;
+  color: @color-text-black;
+  font-size: @font-size-sm;
+  text-align: right;
+  text-overflow: ellipsis;
   white-space: nowrap;
   word-break: normal;
 }
 
 button.copy-action {
+  width: auto !important;
   min-width: 0;
   display: flex;
   margin: 0;
   padding: 0;
   flex: none;
   align-items: center;
+  justify-self: end;
   background: transparent;
   font-size: @font-size-sm;
   line-height: 1.5;

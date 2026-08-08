@@ -1548,13 +1548,14 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(detailTemplate, /countdownHours[\s\S]*payment-notice__separator[\s\S]*countdownMinutes[\s\S]*payment-notice__separator[\s\S]*countdownSeconds/);
   assert.match(detailStyles, /\.payment-notice__separator\s*\{[\s\S]*display:\s*inline;[\s\S]*margin:\s*0 -2rpx;/);
   assert.match(detailStyles, /button\.receiver-card__modify\s*\{[\s\S]*width:\s*92rpx !important;/);
-  assert.match(detailStyles, /\.info-row__value--copy > text:first-child\s*\{[\s\S]*flex:\s*0 0 auto;[\s\S]*overflow:\s*visible;[\s\S]*text-overflow:\s*clip;[\s\S]*white-space:\s*nowrap;/);
+  assert.match(detailTemplate, /<view class="info-row info-row--order-no">\s*<text>订单编号<\/text>\s*<text class="info-row__order-no">\{\{detail\.orderNo\}\}<\/text>\s*<button class="copy-action"/);
+  assert.match(detailStyles, /\.info-row__order-no\s*\{[\s\S]*width:\s*100%;[\s\S]*min-width:\s*0;[\s\S]*display:\s*block;[\s\S]*overflow:\s*hidden;[\s\S]*color:\s*@color-text-black;[\s\S]*font-size:\s*@font-size-sm;[\s\S]*text-align:\s*right;[\s\S]*text-overflow:\s*ellipsis;[\s\S]*white-space:\s*nowrap;/);
   assert.match(detailTemplate, /class="order-info__toggle[\s\S]*chevron-right-detail\.svg/);
   assert.doesNotMatch(detailTemplate, /orderInfoExpanded \? '⌃' : '⌄'/);
   assert.match(detailStyles, /\.order-info__toggle\s*\{[\s\S]*width:\s*44rpx;[\s\S]*height:\s*44rpx;[\s\S]*transform:\s*rotate\(90deg\);/);
   assert.match(detailStyles, /\.order-info__heading\s*\{[\s\S]*height:\s*92rpx;/);
-  assert.match(detailStyles, /\.info-row--order-no\s*\{[\s\S]*display:\s*flex;[\s\S]*gap:\s*12rpx;/);
-  assert.match(detailStyles, /\.info-row--order-no \.info-row__value\s*\{[\s\S]*width:\s*0;[\s\S]*flex:\s*1 1 0%;[\s\S]*justify-content:\s*flex-end;/);
+  assert.match(detailStyles, /\.info-row--order-no\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-content:\s*stretch;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;[\s\S]*gap:\s*0;/);
+  assert.match(detailStyles, /button\.copy-action\s*\{[\s\S]*width:\s*auto !important;[\s\S]*justify-self:\s*end;/);
   assert.match(detailTemplate, /class="payment-utilities"[\s\S]*class="payment-tool__icon-frame"/);
   assert.match(detailStyles, /button\.payment-tool\s*\{[\s\S]*width:\s*76rpx !important;[\s\S]*height:\s*80rpx !important;/);
   assert.match(detailStyles, /\.payment-tool__icon-frame\s*\{[\s\S]*width:\s*44rpx;[\s\S]*height:\s*44rpx;/);

@@ -169,13 +169,11 @@
           <view wx:if="{{orderInfoExpanded}}" class="order-info__content">
             <view class="info-row info-row--order-no">
               <text>订单编号</text>
-              <view class="info-row__value info-row__value--copy">
-                <text>{{detail.orderNo}}</text>
-                <button class="copy-action" catchtap="onCopyOrderNoTap">
-                  <text class="copy-action__divider">｜</text>
-                  <text class="copy-action__label">复制</text>
-                </button>
-              </view>
+              <text class="info-row__order-no">{{detail.orderNo}}</text>
+              <button class="copy-action" catchtap="onCopyOrderNoTap">
+                <text class="copy-action__divider">｜</text>
+                <text class="copy-action__label">复制</text>
+              </button>
             </view>
             <view class="info-row"><text>下单时间</text><text>{{detail.createdAtText}}</text></view>
             <view wx:if="{{detail.paidAtText}}" class="info-row"><text>支付时间</text><text>{{detail.paidAtText}}</text></view>
