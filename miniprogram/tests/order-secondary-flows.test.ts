@@ -173,6 +173,10 @@ test("评价与修改订单页面注册真实端点并支持评价图片", () =>
     resolve(sourceRoot, "pages/order/list/list.ts"),
     "utf8"
   );
+  const orderCenterLogic = readFileSync(
+    resolve(sourceRoot, "features/order-center.ts"),
+    "utf8"
+  );
 
   assert.ok(appConfig.pages.includes("pages/order/review/review"));
   assert.ok(appConfig.pages.includes("pages/order/modify/modify"));
@@ -229,7 +233,11 @@ test("评价与修改订单页面注册真实端点并支持评价图片", () =>
   assert.match(orderListLogic, /rebuyOperationGuard\.unmount\(this\.data\.lifecycleToken\)/);
   assert.match(orderListLogic, /keyword: normalizeOrderRouteKeyword\(query\.keyword\)/);
   assert.match(orderListLogic, /buildAfterSaleApplyUrl\(orderId\)/);
-  assert.match(orderListLogic, /itemList: \["删除订单"\]/);
+  assert.doesNotMatch(orderListLogic, /showActionSheet/);
+  assert.match(orderListLogic, /onCopyOrderNoTap[\s\S]*copyOrderNo\(event\.currentTarget\.dataset\.orderNo\)/);
+  assert.match(orderListLogic, /onDeleteMenuTap[\s\S]*if \(!order\?\.canDelete\)[\s\S]*deleteSelectedOrder\(orderId\)/);
+  assert.match(orderCenterLogic, /setClipboardData\([\s\S]*data: orderNo[\s\S]*clipboardFailureMessage\(error\)/);
+  assert.doesNotMatch(orderCenterLogic, /getClipboardData\(/);
   assert.match(
     orderListLogic,
     /await getOrderDetail[\s\S]*rebuyOperationGuard\.isCurrent\(lifecycleToken, operationToken\)[\s\S]*await addCartItem/

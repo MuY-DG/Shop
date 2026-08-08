@@ -649,7 +649,7 @@ public class AppOrderService {
                             updated_at = :deletedAt
                         where id = :orderId
                           and user_id = :userId
-                          and status in ('CLOSED', 'COMPLETED')
+                          and status in ('CLOSED', 'COMPLETED', 'REFUNDED')
                           and app_deleted_at is null
                         """)
                 .param("deletedAt", LocalDateTime.now(java.time.ZoneOffset.UTC))
@@ -1634,7 +1634,8 @@ public class AppOrderService {
 
     private boolean isAppDeletableStatus(String status) {
         return OrderStatus.CLOSED.name().equals(status)
-                || OrderStatus.COMPLETED.name().equals(status);
+                || OrderStatus.COMPLETED.name().equals(status)
+                || OrderStatus.REFUNDED.name().equals(status);
     }
 
     static String nextOrderNo(LocalDateTime now) {

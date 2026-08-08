@@ -25,6 +25,10 @@ test("shows the same instant in each device timezone", () => {
   try {
     process.env.TZ = "Asia/Shanghai";
     assert.equal(formatLocalDateTime("2026-08-01T12:00:00Z"), "2026-08-01 20:00");
+    assert.equal(
+      formatLocalDateTime("2026-08-01T12:00:09Z", "second"),
+      "2026-08-01 20:00:09"
+    );
     process.env.TZ = "America/Los_Angeles";
     assert.equal(formatLocalDateTime("2026-08-01T12:00:00Z"), "2026-08-01 05:00");
   } finally {

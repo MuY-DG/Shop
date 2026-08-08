@@ -730,11 +730,24 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderTemplate, /class="order-card"[\s\S]*aria-role="group"[\s\S]*class="order-card__detail"[\s\S]*aria-role="button"/);
   assert.match(orderTemplate, /wx:for="\{\{item\.items\}\}"[\s\S]*class="order-product/);
   assert.match(orderTemplate, /binderror="onItemImageError"/);
-  ["onCancelTap", "onModifyTap", "onDeleteTap", "onMoreTap", "onAfterSaleTap", "onRebuyTap", "onReviewTap", "onPayTap"]
+  [
+    "onCancelTap",
+    "onModifyTap",
+    "onMoreTap",
+    "onDeleteMenuTap",
+    "onAfterSaleTap",
+    "onRebuyTap",
+    "onReviewTap",
+    "onPayTap"
+  ]
     .forEach((handler) => assert.match(orderTemplate, new RegExp(`catchtap="${handler}"`)));
   assert.doesNotMatch(orderTemplate, /title="我的订单"/);
   assert.match(orderTemplate, /class="order-search"[\s\S]*搜索商品名称或订单号/);
-  assert.match(orderTemplate, /wx:if="\{\{item\.canShowMore\}\}"[\s\S]*>更多<\/button>/);
+  assert.match(orderTemplate, /class="order-card__time">下单时间：\{\{item\.createdAtText\}\}<\/text>/);
+  assert.match(orderTemplate, /class="order-card__actions">[\s\S]*class="order-more"[\s\S]*catchtap="onMoreTap"[\s\S]*wx:if="\{\{item\.canCancel\}\}"/);
+  assert.match(orderTemplate, /class="order-menu"[\s\S]*data-order-no="\{\{item\.orderNo\}\}"[\s\S]*catchtap="onCopyOrderNoTap"[\s\S]*>复制订单号<\/button>[\s\S]*wx:if="\{\{item\.canDelete\}\}"[\s\S]*>删除订单<\/button>/);
+  assert.doesNotMatch(orderTemplate, /order-menu-mask|onMenuMaskTap/);
+  assert.doesNotMatch(orderTemplate, />更多<\/button>|catchtap="onDeleteTap"/);
   assert.match(orderTemplate, /\{\{item\.afterSaleActionText\}\}/);
   assert.match(orderTemplate, /class="order-product__quantity"[\s\S]*class="order-product__commerce"/);
   assert.doesNotMatch(orderTemplate, /order-status--\{\{item\.statusTone\}\}/);
@@ -745,6 +758,10 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderStyle, /\.order-card__actions\s*\{[\s\S]*border:\s*0;/);
   assert.match(orderStyle, /button\.order-action--secondary\s*\{[\s\S]*border:\s*2rpx solid #c9c9c9;/);
   assert.match(orderStyle, /button\.order-action--primary\s*\{[\s\S]*color:\s*#fe0000;[\s\S]*background:\s*transparent;/);
+  assert.match(orderStyle, /\.order-more__dot\s*\{[\s\S]*border-radius:\s*50%;/);
+  assert.match(orderStyle, /\.order-more\s*\{[\s\S]*margin-right:\s*auto;/);
+  assert.match(orderStyle, /\.order-menu\s*\{[\s\S]*bottom:\s*76rpx;[\s\S]*background:\s*#ffffff;[\s\S]*box-shadow:/);
+  assert.doesNotMatch(orderStyle, /\.order-menu-mask/);
   assert.match(orderSearchTemplate, /搜索商品名称或订单号/);
   assert.match(orderSearchLogic, /ORDER_SEARCH_HISTORY_KEY/);
   assert.match(orderService, /\.\.\.\(query\.keyword \? \{ keyword: query\.keyword \} : \{\}\)/);

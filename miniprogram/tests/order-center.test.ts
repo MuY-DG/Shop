@@ -11,7 +11,6 @@ import {
   filterRebuyableOrderItems,
   formatPaymentCountdown,
   ORDER_STATUS_TABS,
-  orderStatusText,
   parseOrderStatusGroup,
   positiveOrderId,
   rebuyFailureMessage,
@@ -134,7 +133,6 @@ test("订单状态映射稳定并只开放合法操作", () => {
   assert.equal(pendingReview.statusText, "待评价");
   assert.equal(pendingReview.canReview, true);
   assert.equal(pendingReview.canDelete, true);
-  assert.equal(pendingReview.canShowMore, true);
   assert.equal(pendingReview.canRebuy, true);
   assert.equal(pendingReview.canAfterSale, true);
 
@@ -142,15 +140,22 @@ test("订单状态映射稳定并只开放合法操作", () => {
   assert.equal(completed.statusText, "已完成");
   assert.equal(completed.canReview, false);
   assert.equal(completed.canDelete, true);
-  assert.equal(completed.canShowMore, true);
   assert.equal(completed.canRebuy, true);
-  assert.equal(orderStatusText("REFUNDED"), "已退款");
+
+  const refunded = buildOrderSummaryView(summary("REFUNDED"));
+  assert.equal(refunded.statusText, "已退款");
+  assert.equal(refunded.canDelete, true);
+  assert.equal(refunded.canRebuy, true);
 
   const closed = buildOrderSummaryView(summary("CLOSED"));
   assert.equal(closed.statusText, "已取消");
   assert.equal(closed.canDelete, true);
-  assert.equal(closed.canShowMore, false);
   assert.equal(closed.canRebuy, true);
+});
+
+test("订单列表下单时间显示到秒", () => {
+  const view = buildOrderSummaryView(summary("COMPLETED"));
+  assert.match(view.createdAtText, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
 });
 
 test("订单列表项只格式化后端真实图片、规格、单价与数量", () => {

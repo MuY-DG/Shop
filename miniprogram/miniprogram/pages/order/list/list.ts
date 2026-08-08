@@ -3,6 +3,7 @@ import {
   buildOrderModifyUrl,
   buildOrderReviewUrl,
   buildOrderSummaryView,
+  copyOrderNo,
   createPageOperationGuard,
   filterRebuyableOrderItems,
   ORDER_STATUS_TABS,
@@ -33,6 +34,7 @@ interface DatasetEvent {
       group?: string;
       id?: number | string;
       itemId?: number | string;
+      orderNo?: string;
     };
   };
 }
@@ -83,7 +85,8 @@ Page({
     contentRefreshing: false,
     errorText: "",
     actionOrderId: 0,
-    actionType: ""
+    actionType: "",
+    openMenuOrderId: 0
   },
 
   onLoad(query: Record<string, string | undefined>) {
@@ -349,26 +352,32 @@ Page({
     }
   },
 
-  onDeleteTap(event: DatasetEvent) {
-    const orderId = positiveOrderId(event.currentTarget.dataset.id);
-    if (orderId) {
-      void this.deleteSelectedOrder(orderId);
-    }
-  },
-
   onMoreTap(event: DatasetEvent) {
     const orderId = positiveOrderId(event.currentTarget.dataset.id);
     if (!orderId || this.data.actionOrderId) {
       return;
     }
-    wx.showActionSheet({
-      itemList: ["删除订单"],
-      success: (result) => {
-        if (result.tapIndex === 0) {
-          void this.deleteSelectedOrder(orderId);
-        }
-      }
+    if (!this.data.orders.some((item) => item.orderId === orderId)) {
+      return;
+    }
+    this.setData({
+      openMenuOrderId: this.data.openMenuOrderId === orderId ? 0 : orderId
     });
+  },
+
+  onCopyOrderNoTap(event: DatasetEvent) {
+    copyOrderNo(event.currentTarget.dataset.orderNo);
+    this.setData({ openMenuOrderId: 0 });
+  },
+
+  onDeleteMenuTap(event: DatasetEvent) {
+    const orderId = positiveOrderId(event.currentTarget.dataset.id);
+    const order = this.data.orders.find((item) => item.orderId === orderId);
+    if (!order?.canDelete) {
+      return;
+    }
+    this.setData({ openMenuOrderId: 0 });
+    void this.deleteSelectedOrder(orderId);
   },
 
   async deleteSelectedOrder(orderId: number) {

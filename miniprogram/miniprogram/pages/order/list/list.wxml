@@ -86,7 +86,10 @@
             aria-role="button"
             aria-label="查看订单 {{item.orderNo}}，{{item.statusText}}，{{item.itemCountText}}"
           >
-            <text class="order-status">{{item.statusText}}</text>
+            <view class="order-card__header">
+              <text class="order-card__time">下单时间：{{item.createdAtText}}</text>
+              <text class="order-status">{{item.statusText}}</text>
+            </view>
             <view wx:if="{{item.items.length}}" class="order-card__items">
               <view
                 wx:for="{{item.items}}"
@@ -128,16 +131,42 @@
             <view wx:else class="order-card__empty-product">商品信息暂不可用</view>
           </view>
 
-          <view wx:if="{{item.hasActions}}" class="order-card__actions">
-            <button
-              wx:if="{{item.canShowMore}}"
-              class="order-action order-action--secondary order-action--more"
-              data-id="{{item.orderId}}"
-              disabled="{{actionOrderId}}"
-              catchtap="onMoreTap"
-              hover-class="order-action--pressed"
-              aria-label="更多订单操作 {{item.orderNo}}"
-            >更多</button>
+          <view class="order-card__actions">
+            <view class="order-more">
+              <button
+                class="order-action order-action--more"
+                data-id="{{item.orderId}}"
+                disabled="{{actionOrderId}}"
+                catchtap="onMoreTap"
+                hover-class="order-action--pressed"
+                aria-label="订单操作 {{item.orderNo}}"
+              >
+                <view class="order-more__dot"></view>
+                <view class="order-more__dot"></view>
+                <view class="order-more__dot"></view>
+              </button>
+              <view
+                wx:if="{{openMenuOrderId === item.orderId}}"
+                class="order-menu"
+                aria-role="menu"
+              >
+                <button
+                  class="order-menu__item"
+                  data-order-no="{{item.orderNo}}"
+                  catchtap="onCopyOrderNoTap"
+                  hover-class="order-menu__item--pressed"
+                  aria-role="menuitem"
+                >复制订单号</button>
+                <button
+                  wx:if="{{item.canDelete}}"
+                  class="order-menu__item"
+                  data-id="{{item.orderId}}"
+                  catchtap="onDeleteMenuTap"
+                  hover-class="order-menu__item--pressed"
+                  aria-role="menuitem"
+                >删除订单</button>
+              </view>
+            </view>
             <button
               wx:if="{{item.canCancel}}"
               class="order-action order-action--secondary"
@@ -147,16 +176,6 @@
               hover-class="order-action--pressed"
               aria-label="取消订单 {{item.orderNo}}"
             >取消订单</button>
-            <button
-              wx:if="{{item.canDelete && !item.canShowMore}}"
-              class="order-action order-action--secondary"
-              data-id="{{item.orderId}}"
-              loading="{{actionOrderId === item.orderId && actionType === 'delete'}}"
-              disabled="{{actionOrderId}}"
-              catchtap="onDeleteTap"
-              hover-class="order-action--pressed"
-              aria-label="删除订单 {{item.orderNo}}"
-            >删除订单</button>
             <button
               wx:if="{{item.canAfterSale}}"
               class="order-action order-action--secondary"

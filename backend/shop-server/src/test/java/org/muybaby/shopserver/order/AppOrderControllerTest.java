@@ -938,18 +938,24 @@ class AppOrderControllerTest {
     }
 
     @Test
-    void userCanSoftDeleteOnlyOwnedClosedOrCompletedOrders() throws Exception {
+    void userCanSoftDeleteOnlyOwnedClosedCompletedOrRefundedOrders() throws Exception {
         AppLoginSession owner = appLogin("order-delete-owner");
         AppLoginSession other = appLogin("order-delete-other");
         long skuId = createPublishedSku("ORDER-DELETE-SKU", 3990L, 4990L, 10, "ENABLED");
         insertOrderSnapshot(9301L, "ORD-DELETE-CLOSED", owner.userId(), skuId, 9931L, "Closed Item");
         insertOrderSnapshot(9302L, "ORD-DELETE-CREATED", owner.userId(), skuId, 9932L, "Created Item");
         insertOrderSnapshot(9303L, "ORD-DELETE-COMPLETED", owner.userId(), skuId, 9933L, "Completed Item");
+        insertOrderSnapshot(9304L, "ORD-DELETE-REFUNDED", owner.userId(), skuId, 9934L, "Refunded Item");
         jdbcClient.sql("update shop_order set status = 'CLOSED' where id = 9301").update();
         jdbcClient.sql("""
                         update shop_order
                         set status = 'COMPLETED', completed_at = timestamp '2026-07-08 12:00:00'
                         where id = 9303
+                        """).update();
+        jdbcClient.sql("""
+                        update shop_order
+                        set status = 'REFUNDED', refunded_at = timestamp '2026-07-08 13:00:00'
+                        where id = 9304
                         """).update();
 
         mockMvc.perform(delete("/app/orders/{orderId}", 9301L)
@@ -972,6 +978,11 @@ class AppOrderControllerTest {
                 .andExpect(status().isOk());
 
         mockMvc.perform(delete("/app/orders/{orderId}", 9303L)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(delete("/app/orders/{orderId}", 9304L)
                         .header("Authorization", "Bearer " + owner.token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));

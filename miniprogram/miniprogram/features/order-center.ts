@@ -19,6 +19,71 @@ import { isApiError } from "../utils/api-error";
 const REBUY_UNAVAILABLE_CODES = new Set([200001, 200002]);
 const REBUY_STOCK_SHORTAGE_CODE = 200100;
 
+interface ClipboardRuntime {
+  setClipboardData(options: {
+    data: string;
+    success?: () => void;
+    fail?: (error: ClipboardFailure) => void;
+  }): void;
+  showToast(options: {
+    title: string;
+    icon: "success" | "none";
+  }): void;
+}
+
+interface ClipboardFailure {
+  errMsg?: string;
+  errno?: number | string;
+}
+
+function normalizedOrderNo(value: unknown): string {
+  return typeof value === "string" ? value.trim() : String(value ?? "").trim();
+}
+
+function clipboardFailureMessage(error: ClipboardFailure): string {
+  const errno = Number(error.errno);
+  const message = String(error.errMsg ?? "").toLowerCase();
+  if (
+    errno === 112
+    || message.includes("scope is not declared")
+    || message.includes("privacy api banned")
+  ) {
+    return "请先在后台声明剪切板用途";
+  }
+  if (
+    errno === 103
+    || errno === 104
+    || message.includes("privacy authorization")
+    || message.includes("privacy agreement")
+  ) {
+    return "请同意隐私保护指引后重试";
+  }
+  return "复制失败，请稍后重试";
+}
+
+export function copyOrderNo(
+  value: unknown,
+  runtime: ClipboardRuntime = wx
+): void {
+  const orderNo = normalizedOrderNo(value);
+  if (!orderNo) {
+    runtime.showToast({ title: "订单号暂不可用", icon: "none" });
+    return;
+  }
+  runtime.setClipboardData({
+    data: orderNo,
+    success: () => {
+      runtime.showToast({ title: "订单号已复制", icon: "success" });
+    },
+    fail: (error) => {
+      if (typeof wx !== "undefined" && runtime === wx) {
+        console.error("[order-copy] wx.setClipboardData failed", error);
+      }
+      runtime.showToast({ title: clipboardFailureMessage(error), icon: "none" });
+    }
+  });
+}
+
 export function filterRebuyableOrderItems<T extends { orderItemId: number }>(
   items: T[],
   rebuyableOrderItemIds: number[] | undefined
@@ -134,7 +199,6 @@ interface OrderSummaryActions {
   canCancel: boolean;
   canModify: boolean;
   canDelete: boolean;
-  canShowMore: boolean;
   canRebuy: boolean;
   canReview: boolean;
   canAfterSale: boolean;
@@ -271,8 +335,7 @@ function summaryActions(
 ): OrderSummaryActions {
   const canPay = status === "CREATED" || status === "PAYING";
   const canReview = status === "COMPLETED" && pendingReviewCount > 0;
-  const canDelete = status === "COMPLETED" || status === "CLOSED";
-  const canShowMore = status === "COMPLETED";
+  const canDelete = status === "COMPLETED" || status === "CLOSED" || status === "REFUNDED";
   const canRebuy = status === "SHIPPED" || canDelete;
   const canAfterSale = status === "PAID" || status === "SHIPPED" || status === "COMPLETED";
   const canModify = canPay || status === "PAID";
@@ -281,7 +344,6 @@ function summaryActions(
     canCancel: canPay,
     canModify,
     canDelete,
-    canShowMore,
     canRebuy,
     canReview,
     canAfterSale,
@@ -318,7 +380,7 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     amountText: money(order.status === "PAID" || order.paidAmountCent > 0
       ? order.paidAmountCent
       : order.payableAmountCent),
-    createdAtText: formatLocalDateTime(order.createdAt),
+    createdAtText: formatLocalDateTime(order.createdAt, "second"),
     itemCountText: `共 ${Math.max(0, order.itemCount)} 件商品`
   };
 }
