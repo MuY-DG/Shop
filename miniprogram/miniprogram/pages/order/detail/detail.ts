@@ -6,6 +6,8 @@ import {
 import {
   buildOrderDetailView,
   buildOrderListUrl,
+  buildOrderModifyUrl,
+  copyOrderNo,
   filterRebuyableOrderItems,
   formatPaymentCountdown,
   positiveOrderId,
@@ -14,6 +16,7 @@ import {
   rebuyPartialMessage,
   type OrderDetailView
 } from "../../../features/order-center";
+import { buildCustomerServiceUrl } from "../../../features/customer-service";
 import {
   executeOrderPayment,
   recoverOrderPayment
@@ -40,6 +43,22 @@ let latestDetailRequest = 0;
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
 let countdownDeadlineMs = 0;
 
+function countdownDisplay(value: number): {
+  countdownText: string;
+  countdownHours: string;
+  countdownMinutes: string;
+  countdownSeconds: string;
+} {
+  const countdownText = formatPaymentCountdown(value);
+  const [countdownHours, countdownMinutes, countdownSeconds] = countdownText.split(":");
+  return {
+    countdownText,
+    countdownHours,
+    countdownMinutes,
+    countdownSeconds
+  };
+}
+
 function actionError(error: unknown, fallback: string): string {
   return isApiError(error)
     ? error.message
@@ -61,22 +80,15 @@ function confirmAction(title: string, content: string, confirmText: string): Pro
   });
 }
 
-function navigationTitle(detail: OrderDetailView): string {
-  if (detail.canPay) {
-    return "待付款";
-  }
-  if (detail.status === "CLOSED") {
-    return "已取消";
-  }
-  return "订单详情";
-}
-
 Page({
   data: {
     orderId: 0,
     detail: null as OrderDetailView | null,
-    navigationTitle: "待付款",
+    orderInfoExpanded: true,
     countdownText: "",
+    countdownHours: "",
+    countdownMinutes: "",
+    countdownSeconds: "",
     hasCountdown: false,
     paymentExpired: false,
     expiryAttempted: false,
@@ -103,9 +115,10 @@ Page({
   onShow() {
     if (this.data.loaded && this.data.detail?.status === "PAYING" && !this.data.actionType) {
       void this.recoverPayment();
-    } else if (this.data.detail?.canPay && countdownDeadlineMs > 0) {
-      this.startCountdownTimer();
     } else if (this.data.loaded && !this.data.actionType) {
+      if (this.data.detail?.canPay && countdownDeadlineMs > 0) {
+        this.startCountdownTimer();
+      }
       void this.refreshDetail();
     }
   },
@@ -118,11 +131,6 @@ Page({
     latestDetailRequest += 1;
     this.stopCountdownTimer();
     countdownDeadlineMs = 0;
-  },
-
-  async onPullDownRefresh() {
-    await this.refreshDetail();
-    wx.stopPullDownRefresh();
   },
 
   onRetry() {
@@ -143,7 +151,6 @@ Page({
       const detail = buildOrderDetailView(response);
       this.setData({
         detail,
-        navigationTitle: navigationTitle(detail),
         loading: false,
         loaded: true,
         errorText: ""
@@ -167,6 +174,9 @@ Page({
       countdownDeadlineMs = 0;
       this.setData({
         countdownText: "",
+        countdownHours: "",
+        countdownMinutes: "",
+        countdownSeconds: "",
         hasCountdown: false,
         paymentExpired: false,
         expiryAttempted: false,
@@ -179,6 +189,9 @@ Page({
       countdownDeadlineMs = 0;
       this.setData({
         countdownText: "",
+        countdownHours: "",
+        countdownMinutes: "",
+        countdownSeconds: "",
         hasCountdown: false,
         paymentExpired: false,
         countdownConfirmed: false
@@ -188,7 +201,7 @@ Page({
     const remainingSeconds = Math.max(0, Math.floor(value));
     countdownDeadlineMs = Date.now() + remainingSeconds * 1000;
     this.setData({
-      countdownText: formatPaymentCountdown(remainingSeconds),
+      ...countdownDisplay(remainingSeconds),
       hasCountdown: true,
       paymentExpired: remainingSeconds === 0,
       expiryAttempted: remainingSeconds > 0 ? false : this.data.expiryAttempted,
@@ -222,7 +235,7 @@ Page({
       Math.ceil((countdownDeadlineMs - Date.now()) / 1000)
     );
     this.setData({
-      countdownText: formatPaymentCountdown(remainingSeconds),
+      ...countdownDisplay(remainingSeconds),
       hasCountdown: true,
       paymentExpired: remainingSeconds === 0
     });
@@ -338,6 +351,30 @@ Page({
 
   onCancelTap() {
     void this.cancelCurrentOrder();
+  },
+
+  onModifyTap() {
+    const detail = this.data.detail;
+    if (!detail?.canModifyReceiver || this.data.actionType) {
+      return;
+    }
+    wx.navigateTo({ url: buildOrderModifyUrl(detail.orderId) });
+  },
+
+  onCopyOrderNoTap() {
+    copyOrderNo(this.data.detail?.orderNo);
+  },
+
+  onOrderInfoToggle() {
+    this.setData({ orderInfoExpanded: !this.data.orderInfoExpanded });
+  },
+
+  onCustomerServiceTap() {
+    const detail = this.data.detail;
+    if (!detail || this.data.actionType) {
+      return;
+    }
+    wx.navigateTo({ url: buildCustomerServiceUrl("ORDER", detail.orderId) });
   },
 
   async cancelCurrentOrder() {

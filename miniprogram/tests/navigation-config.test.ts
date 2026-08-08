@@ -1475,6 +1475,13 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
     resolve(sourceRoot, "pages/order/detail/detail.ts"),
     "utf8"
   );
+  const detailStyles = readFileSync(
+    resolve(sourceRoot, "pages/order/detail/detail.less"),
+    "utf8"
+  );
+  const detailConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "pages/order/detail/detail.json"), "utf8")
+  ) as DetailPageConfig;
   const paymentAdapter = readFileSync(
     resolve(sourceRoot, "utils/wechat-payment.ts"),
     "utf8"
@@ -1505,13 +1512,54 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(listTemplate, /bindtap="onOrderTap"/);
   assert.match(listTemplate, /catchtap="onCancelTap"/);
   assert.match(detailTemplate, /bindtap="onConfirmTap"/);
-  assert.match(detailTemplate, /countdownText/);
+  assert.match(detailTemplate, /countdownHours/);
   assert.match(detailTemplate, /bindtap="onDeleteTap"/);
   assert.match(detailTemplate, /bindtap="onRebuyTap"/);
   assert.doesNotMatch(detailTemplate, /应付金额|同步结果/);
-  assert.match(detailTemplate, /title="{{navigationTitle}}"/);
-  assert.match(detailLogic, /return "待付款"/);
-  assert.match(detailLogic, /return "已取消"/);
+  assert.doesNotMatch(detailTemplate, /商品清单|金额明细/);
+  assert.match(detailTemplate, /class="status-navigation"[\s\S]*detail\.statusIcon[\s\S]*detail\.statusHeadline/);
+  assert.match(detailTemplate, /还剩[\s\S]*countdownHours[\s\S]*countdownMinutes[\s\S]*countdownSeconds[\s\S]*订单自动取消/);
+  assert.match(detailTemplate, /receiverPhoneDisplay/);
+  assert.match(detailTemplate, /bindtap="onModifyTap"[\s\S]*>修改<\/button>/);
+  assert.match(detailTemplate, /共\{\{detail\.orderInfoItemCount\}\}项/);
+  assert.match(detailTemplate, /bindtap="onOrderInfoToggle"/);
+  assert.match(detailTemplate, /bindtap="onCustomerServiceTap"/);
+  assert.match(detailTemplate, /class="payment-action"[\s\S]*继续支付/);
+  assert.match(detailTemplate, /payment-summary__main[\s\S]*支付金额[\s\S]*detail\.payableAmountText[\s\S]*detail\.originalPayableAmountText/);
+  assert.match(detailTemplate, /payment-summary__discount">总计优惠 \{\{detail\.totalDiscountText\}\}/);
+  assert.match(detailTemplate, /cancel-rounded-material-symbols-iconify\.svg[\s\S]*payment-tool__label">取消<\/text>/);
+  assert.equal(
+    existsSync(resolve(sourceRoot, "assets/icons/cancel-rounded-material-symbols-iconify.svg")),
+    true
+  );
+  assert.match(detailTemplate, /copy-action__divider">｜<\/text>[\s\S]*copy-action__label">复制<\/text>/);
+  assert.match(detailTemplate, /class="detail-scroll"[\s\S]*scroll-y="\{\{true\}\}"/);
+  assert.match(detailLogic, /buildOrderModifyUrl/);
+  assert.match(detailLogic, /copyOrderNo/);
+  assert.match(detailLogic, /buildCustomerServiceUrl\("ORDER", detail\.orderId\)/);
+  assert.equal(detailConfig.disableScroll, true);
+  assert.equal(detailConfig.enablePullDownRefresh, false);
+  assert.match(detailStyles, /\.detail-page\s*\{[\s\S]*height:\s*100vh;[\s\S]*overflow:\s*hidden;/);
+  assert.match(detailStyles, /\.detail-scroll\s*\{[\s\S]*height:\s*0;[\s\S]*flex:\s*1;/);
+  assert.match(detailStyles, /\.detail-card,[\s\S]*\.payment-notice\s*\{[\s\S]*background:\s*#ffffff;/);
+  assert.match(detailStyles, /\.payment-notice\s*\{[^}]*border:\s*0;/);
+  assert.match(detailStyles, /\.payment-notice\s*\{[^}]*align-items:\s*baseline;/);
+  assert.match(detailStyles, /\.payment-notice__countdown\s*\{[\s\S]*color:\s*@color-action-primary;/);
+  assert.match(detailTemplate, /countdownHours[\s\S]*payment-notice__separator[\s\S]*countdownMinutes[\s\S]*payment-notice__separator[\s\S]*countdownSeconds/);
+  assert.match(detailStyles, /\.payment-notice__separator\s*\{[\s\S]*display:\s*inline;[\s\S]*margin:\s*0 -2rpx;/);
+  assert.match(detailStyles, /button\.receiver-card__modify\s*\{[\s\S]*width:\s*92rpx !important;/);
+  assert.match(detailStyles, /\.info-row__value--copy > text:first-child\s*\{[\s\S]*flex:\s*0 0 auto;[\s\S]*overflow:\s*visible;[\s\S]*text-overflow:\s*clip;[\s\S]*white-space:\s*nowrap;/);
+  assert.match(detailTemplate, /class="order-info__toggle[\s\S]*chevron-right-detail\.svg/);
+  assert.doesNotMatch(detailTemplate, /orderInfoExpanded \? '⌃' : '⌄'/);
+  assert.match(detailStyles, /\.order-info__toggle\s*\{[\s\S]*width:\s*44rpx;[\s\S]*height:\s*44rpx;[\s\S]*transform:\s*rotate\(90deg\);/);
+  assert.match(detailStyles, /\.order-info__heading\s*\{[\s\S]*height:\s*92rpx;/);
+  assert.match(detailStyles, /\.info-row--order-no\s*\{[\s\S]*display:\s*flex;[\s\S]*gap:\s*12rpx;/);
+  assert.match(detailStyles, /\.info-row--order-no \.info-row__value\s*\{[\s\S]*width:\s*0;[\s\S]*flex:\s*1 1 0%;[\s\S]*justify-content:\s*flex-end;/);
+  assert.match(detailTemplate, /class="payment-utilities"[\s\S]*class="payment-tool__icon-frame"/);
+  assert.match(detailStyles, /button\.payment-tool\s*\{[\s\S]*width:\s*76rpx !important;[\s\S]*height:\s*80rpx !important;/);
+  assert.match(detailStyles, /\.payment-tool__icon-frame\s*\{[\s\S]*width:\s*44rpx;[\s\S]*height:\s*44rpx;/);
+  assert.match(detailStyles, /\.payment-tool__icon--service\s*\{[\s\S]*width:\s*44rpx;[\s\S]*height:\s*44rpx;/);
+  assert.match(detailStyles, /button\.payment-action\s*\{[\s\S]*width:\s*224rpx;[\s\S]*height:\s*84rpx;[\s\S]*background:\s*#ff172b;/);
   assert.match(paymentAdapter, /wx\.requestPayment/);
 });
 

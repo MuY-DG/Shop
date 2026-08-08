@@ -230,6 +230,8 @@ export interface OrderItemView extends OrderItemResponse {
   hasImage: boolean;
   unitPriceText: string;
   lineAmountText: string;
+  retailLineAmountText: string;
+  hasRetailLineAmount: boolean;
   wholesaleText: string;
 }
 
@@ -237,7 +239,13 @@ export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
   items: OrderItemView[];
   statusText: string;
   statusTone: string;
+  statusHeadline: string;
+  statusIcon: string;
   statusDescription: string;
+  receiverPhoneDisplay: string;
+  totalQuantity: number;
+  orderInfoItemCount: number;
+  canModifyReceiver: boolean;
   productAmountText: string;
   wholesaleDiscountCent: number;
   wholesaleDiscountText: string;
@@ -246,6 +254,9 @@ export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
   hasCouponDiscount: boolean;
   freightText: string;
   payableAmountText: string;
+  originalPayableAmountText: string;
+  totalDiscountText: string;
+  hasTotalDiscount: boolean;
   paidAmountText: string;
   createdAtText: string;
   paidAtText: string;
@@ -316,6 +327,52 @@ function statusDescription(status: OrderStatus): string {
   }
 }
 
+function statusHeadline(status: OrderStatus): string {
+  switch (status) {
+    case "CREATED":
+    case "PAYING":
+      return "等待付款";
+    case "PAID":
+      return "正在出库";
+    case "SHIPPED":
+      return "运输中";
+    case "COMPLETED":
+      return "已完成";
+    case "CLOSED":
+      return "已取消";
+    case "REFUNDING":
+      return "退款中";
+    case "REFUNDED":
+      return "已退款";
+  }
+}
+
+function statusIcon(status: OrderStatus): string {
+  switch (status) {
+    case "CREATED":
+    case "PAYING":
+      return "/assets/icons/order-wallet.svg";
+    case "PAID":
+      return "/assets/icons/order-package.svg";
+    case "SHIPPED":
+      return "/assets/icons/order-receive.svg";
+    case "COMPLETED":
+      return "/assets/icons/verified-user-outline-rounded.svg";
+    case "CLOSED":
+      return "/assets/icons/close-material-symbols.svg";
+    case "REFUNDING":
+    case "REFUNDED":
+      return "/assets/icons/order-after-sale.svg";
+  }
+}
+
+function maskReceiverPhone(value: unknown): string {
+  const phone = typeof value === "string" ? value.trim() : "";
+  return /^\d{11}$/.test(phone)
+    ? `${phone.slice(0, 3)}****${phone.slice(-4)}`
+    : phone;
+}
+
 function actions(status: OrderStatus): OrderActions {
   const canPay = status === "CREATED" || status === "PAYING";
   return {
@@ -325,7 +382,7 @@ function actions(status: OrderStatus): OrderActions {
     canConfirmReceipt: status === "SHIPPED",
     canDelete: status === "CLOSED",
     canRebuy: status === "CLOSED",
-    paymentActionText: status === "PAYING" ? "继续支付" : "立即支付"
+    paymentActionText: "继续支付"
   };
 }
 
@@ -362,7 +419,7 @@ export function formatPaymentCountdown(value: unknown): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   const twoDigits = (part: number): string => String(part).padStart(2, "0");
-  return `${twoDigits(hours)}时${twoDigits(minutes)}分${twoDigits(seconds)}秒`;
+  return `${twoDigits(hours)}:${twoDigits(minutes)}:${twoDigits(seconds)}`;
 }
 
 export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummaryView {
@@ -410,6 +467,7 @@ function buildOrderSummaryItemView(
 
 function buildOrderItemView(item: OrderItemResponse): OrderItemView {
   const imageUrl = (item.displayImage || item.skuImage || item.mainImage || "").trim();
+  const retailLineAmountCent = Math.max(0, item.retailUnitPriceCent * item.quantity);
   return {
     ...item,
     specText: displaySpecText(item.specText),
@@ -417,6 +475,8 @@ function buildOrderItemView(item: OrderItemResponse): OrderItemView {
     hasImage: Boolean(imageUrl),
     unitPriceText: money(item.unitPriceCent),
     lineAmountText: money(item.lineAmountCent),
+    retailLineAmountText: money(retailLineAmountCent),
+    hasRetailLineAmount: retailLineAmountCent > item.lineAmountCent,
     wholesaleText: item.wholesaleTierMinQuantity
       ? `${item.wholesaleTierMinQuantity} 件起批发价`
       : ""
@@ -432,6 +492,11 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     retailProductAmountCent - order.productAmountCent,
     0
   );
+  const originalPayableAmountCent = retailProductAmountCent + order.freightCent;
+  const totalDiscountCent = Math.max(
+    originalPayableAmountCent - order.payableAmountCent,
+    0
+  );
   const latestAfterSaleView = order.latestAfterSale
     ? buildAfterSaleView(order.latestAfterSale)
     : undefined;
@@ -439,13 +504,32 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
   const fulfillmentBlocked = order.latestAfterSale
     ? isActiveAfterSale(order.latestAfterSale.status)
     : false;
+  const totalQuantity = order.items.reduce(
+    (total, item) => total + Math.max(0, item.quantity),
+    0
+  );
+  const orderInfoItemCount = [
+    order.orderNo,
+    order.createdAt,
+    order.paidAt,
+    order.shippedAt,
+    order.completedAt,
+    order.closeReason,
+    order.transactionId
+  ].filter(Boolean).length;
   return {
     ...order,
     ...orderActions,
     items: order.items.map(buildOrderItemView),
     statusText: orderStatusText(order.status),
     statusTone: orderStatusTone(order.status),
+    statusHeadline: statusHeadline(order.status),
+    statusIcon: statusIcon(order.status),
     statusDescription: statusDescription(order.status),
+    receiverPhoneDisplay: maskReceiverPhone(order.receiverPhone),
+    totalQuantity,
+    orderInfoItemCount,
+    canModifyReceiver: orderActions.canPay || order.status === "PAID",
     productAmountText: money(retailProductAmountCent),
     wholesaleDiscountCent,
     wholesaleDiscountText: money(wholesaleDiscountCent),
@@ -454,6 +538,9 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     hasCouponDiscount: order.couponDiscountCent > 0,
     freightText: money(order.freightCent),
     payableAmountText: money(order.payableAmountCent),
+    originalPayableAmountText: money(originalPayableAmountCent),
+    totalDiscountText: money(totalDiscountCent),
+    hasTotalDiscount: totalDiscountCent > 0,
     paidAmountText: money(order.paidAmountCent),
     createdAtText: formatLocalDateTime(order.createdAt),
     paidAtText: formatLocalDateTime(order.paidAt),

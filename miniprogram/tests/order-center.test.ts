@@ -191,20 +191,51 @@ test("订单详情使用零售金额与真实批发成交价生成可核对明�
   assert.equal(view.couponDiscountText, "¥5.00");
   assert.equal(view.freightText, "¥0.00");
   assert.equal(view.payableAmountText, "¥45.40");
+  assert.equal(view.originalPayableAmountText, "¥56.40");
+  assert.equal(view.totalDiscountText, "¥11.00");
+  assert.equal(view.hasTotalDiscount, true);
   assert.equal(view.items[0]?.unitPriceText, "¥16.80");
+  assert.equal(view.items[0]?.retailLineAmountText, "¥56.40");
+  assert.equal(view.items[0]?.hasRetailLineAmount, true);
   assert.equal(view.items[0]?.wholesaleText, "3 件起批发价");
   assert.equal(view.canSyncPayment, true);
+  assert.equal(view.canModifyReceiver, true);
+  assert.equal(view.paymentActionText, "继续支付");
+  assert.equal(view.statusHeadline, "等待付款");
+  assert.equal(view.statusIcon, "/assets/icons/order-wallet.svg");
+  assert.equal(view.receiverPhoneDisplay, "138****0000");
+  assert.equal(view.totalQuantity, 3);
+  assert.equal(view.orderInfoItemCount, 2);
 
   const legacySingle = detail();
   legacySingle.items[0] = { ...legacySingle.items[0]!, specText: "默认规格" };
   assert.equal(buildOrderDetailView(legacySingle).items[0]?.specText, "");
 });
 
-test("支付倒计时稳定显示时分秒并收敛非法输入", () => {
-  assert.equal(formatPaymentCountdown(899), "00时14分59秒");
-  assert.equal(formatPaymentCountdown(3661), "01时01分01秒");
-  assert.equal(formatPaymentCountdown(-1), "00时00分00秒");
-  assert.equal(formatPaymentCountdown("invalid"), "00时00分00秒");
+test("订单详情顶部按真实订单状态显示履约标题且完成态不受待评价分组影响", () => {
+  const expected = new Map<OrderStatus, string>([
+    ["CREATED", "等待付款"],
+    ["PAYING", "等待付款"],
+    ["PAID", "正在出库"],
+    ["SHIPPED", "运输中"],
+    ["COMPLETED", "已完成"],
+    ["CLOSED", "已取消"],
+    ["REFUNDING", "退款中"],
+    ["REFUNDED", "已退款"]
+  ]);
+
+  expected.forEach((headline, status) => {
+    assert.equal(buildOrderDetailView(detail(status)).statusHeadline, headline);
+  });
+  assert.equal(buildOrderDetailView(detail("PAID")).canModifyReceiver, true);
+  assert.equal(buildOrderDetailView(detail("SHIPPED")).canModifyReceiver, false);
+});
+
+test("支付倒计时使用冒号格式并收敛非法输入", () => {
+  assert.equal(formatPaymentCountdown(899), "00:14:59");
+  assert.equal(formatPaymentCountdown(3661), "01:01:01");
+  assert.equal(formatPaymentCountdown(-1), "00:00:00");
+  assert.equal(formatPaymentCountdown("invalid"), "00:00:00");
 });
 
 test("订单中心路由和查询参数拒绝非法订单 ID 与状态组", () => {

@@ -91,7 +91,7 @@ test("小计、合计和售后金额沿用统一的金额样式", () => {
   assert.match(previewStyle, /\.amount-row\s*>\s*text:last-child[\s\S]*font-variant-numeric:\s*proportional-nums;/);
   assert.match(previewStyle, /\.submit-action__amount\s*\{[\s\S]*font-family:\s*@font-family-commerce-price;/);
   assert.match(orderDetailStyle, /\.amount-row\s*>\s*text:last-child[\s\S]*font-variant-numeric:\s*proportional-nums;/);
-  assert.match(orderDetailTemplate, /class="detail-action__amount"/);
+  assert.match(orderDetailTemplate, /class="payment-summary__amount"/);
   assert.match(afterSaleTemplate, /审核金额<\/text><text class="price-text">/);
   assert.match(afterSaleTemplate, /退款金额<\/text><text class="price-text">/);
 });

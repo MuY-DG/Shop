@@ -40,6 +40,7 @@
 - `navigation-back.svg`、`address-search.svg`：用户提供的全局导航与搜索 SVG。
 - `edit-square-outline-mdi-iconify.svg`：[Iconify Material Design Icons `mdi:square-edit-outline`](https://icon-sets.iconify.design/mdi/square-edit-outline/)，Apache 2.0，用于编辑收货地址。
 - `check-rounded-material-symbols-iconify.svg`：[Iconify Material Symbols `material-symbols:check-rounded`](https://icon-sets.iconify.design/material-symbols/check-rounded/)，Apache 2.0，用于购物车商品选中状态。
+- `cancel-rounded-material-symbols-iconify.svg`：[Iconify Material Symbols `material-symbols:cancel-rounded`](https://icon-sets.iconify.design/material-symbols/cancel-rounded/)，Apache 2.0，用于待付款订单的取消入口。
 - `address-edit.svg`：[Material Symbols](https://fonts.google.com/icons)，Apache 2.0，旧版地址编辑图标（当前未使用）。
 - `wechat.svg`：[Simple Icons WeChat](https://simpleicons.org/?q=wechat)，CC0 1.0，用于从微信导入收货地址。
 - `empty-products.svg`、`empty-cart.svg`、`empty-orders.svg`、`empty-favorites.svg`、`empty-history.svg`、`empty-coupons.svg`、`empty-addresses.svg`、`empty-after-sale.svg`、`empty-search.svg`：[Iconify Material Symbols](https://icon-sets.iconify.design/material-symbols/)，Apache 2.0；分别使用 `inventory-2-outline-rounded`、`remove-shopping-cart-outline-rounded`、`receipt-long-outline-rounded`、`favorite-outline-rounded`、`history-rounded`、`confirmation-number-outline-rounded`、`location-off-outline-rounded`、`assignment-return-outline-rounded`、`search-off-rounded`，统一为页面空状态的暖灰色线性图标。

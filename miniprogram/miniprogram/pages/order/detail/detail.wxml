@@ -1,135 +1,236 @@
 <view class="detail-page">
   <navigation-bar
-    title="{{navigationTitle}}"
+    title=""
     back="{{true}}"
-    color="#2E1D16"
-  />
-
-  <view class="detail-content">
-    <view wx:if="{{!loaded && loading}}" class="detail-state">
-      <ui-state type="loading" title="正在读取订单" description="支付与履约状态正在同步" />
+    color="#1c1c1e"
+    background="#ffffff"
+    show-divider="{{false}}"
+  >
+    <view slot="center" class="status-navigation">
+      <image
+        wx:if="{{detail}}"
+        class="status-navigation__icon"
+        src="{{detail.statusIcon}}"
+        mode="aspectFit"
+        aria-hidden="true"
+      />
+      <text>{{detail ? detail.statusHeadline : '订单详情'}}</text>
     </view>
-    <view wx:elif="{{!loaded && errorText}}" class="detail-state">
-      <ui-state type="error" title="订单详情加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
-    </view>
+  </navigation-bar>
 
-    <block wx:elif="{{detail}}">
-      <view wx:if="{{errorText}}" class="inline-error">
-        <text>{{errorText}}</text>
-        <button bindtap="onRetry">重试</button>
-      </view>
-
-      <view class="status-card status-card--{{detail.statusTone}}">
-        <view class="status-card__icon">{{detail.status === 'CLOSED' ? '×' : detail.canPay ? '时' : detail.status === 'COMPLETED' ? '✓' : '灶'}}</view>
-        <view>
-          <view class="status-card__title">{{detail.statusText}}</view>
-          <view wx:if="{{detail.canPay && hasCountdown}}" class="status-card__description">
-            请在 <text class="status-card__countdown">{{countdownText}}</text> 内完成支付，超时订单自动取消
-          </view>
-          <view wx:else class="status-card__description">{{detail.canPay ? '支付时限正在确认，请尽快完成支付' : detail.statusDescription}}</view>
-        </view>
-      </view>
-
-      <view class="detail-card receiver-card">
-        <view class="receiver-card__marker">收</view>
-        <view>
-          <view class="receiver-card__person">{{detail.receiverName}}　{{detail.receiverPhone}}</view>
-          <view class="receiver-card__address">{{detail.receiverAddress}}</view>
-        </view>
-      </view>
-
-      <view class="detail-card">
-        <view class="section-heading">商品清单</view>
-        <view
-          wx:for="{{detail.items}}"
-          wx:key="orderItemId"
-          class="detail-item"
-        >
-          <view class="detail-item__image-shell">
-            <image
-              wx:if="{{item.hasImage}}"
-              class="detail-item__image"
-              src="{{item.imageUrl}}"
-              mode="aspectFill"
-              data-index="{{index}}"
-              binderror="onItemImageError"
-            />
-            <view wx:else class="detail-item__fallback">灶</view>
-          </view>
-          <view class="detail-item__body">
-            <view class="detail-item__title">{{item.productTitle}}</view>
-            <view wx:if="{{item.specText}}" class="detail-item__spec">{{item.specText}}</view>
-            <view wx:if="{{item.wholesaleText}}" class="detail-item__wholesale">{{item.wholesaleText}}</view>
-            <view class="detail-item__price-row">
-              <text>{{item.unitPriceText}}</text>
-              <text>×{{item.quantity}}</text>
-            </view>
-            <view class="detail-item__subtotal">小计 {{item.lineAmountText}}</view>
-          </view>
-        </view>
-      </view>
-
-      <view class="detail-card amount-card">
-        <view class="section-heading">金额明细</view>
-        <view class="amount-row"><text>商品金额</text><text>{{detail.productAmountText}}</text></view>
-        <view class="amount-row {{detail.hasWholesaleDiscount ? 'amount-row--discount' : ''}}">
-          <text>批发优惠</text>
-          <text>{{detail.hasWholesaleDiscount ? '-' + detail.wholesaleDiscountText : '暂无优惠'}}</text>
-        </view>
-        <view class="amount-row {{detail.hasCouponDiscount ? 'amount-row--discount' : ''}}">
-          <text>优惠券<text wx:if="{{detail.couponName}}">（{{detail.couponName}}）</text></text>
-          <text>{{detail.hasCouponDiscount ? '-' + detail.couponDiscountText : '未使用'}}</text>
-        </view>
-        <view class="amount-row"><text>运费</text><text>{{detail.freightText}}</text></view>
-      </view>
-
-      <view
-        wx:if="{{detail.hasAfterSale}}"
-        class="detail-card after-sale-card"
-        bindtap="onAfterSaleDetailTap"
-        aria-role="button"
-      >
-        <view class="after-sale-card__heading">
-          <view>
-            <view class="section-heading">退款售后</view>
-            <view class="after-sale-card__meta">{{detail.latestAfterSaleView.typeText}} · <text class="after-sale-card__amount">{{detail.latestAfterSaleView.requestedAmountText}}</text></view>
-          </view>
-          <view class="after-sale-card__status after-sale-card__status--{{detail.latestAfterSaleView.statusTone}}">
-            {{detail.latestAfterSaleView.statusText}}
-          </view>
-        </view>
-        <view class="after-sale-card__description">{{detail.latestAfterSaleView.statusDescription}}</view>
-        <view class="after-sale-card__link">查看处理进度 <text>›</text></view>
-      </view>
-
-      <view class="detail-card order-info">
-        <view class="section-heading">订单信息</view>
-        <view class="info-row"><text>订单编号</text><text>{{detail.orderNo}}</text></view>
-        <view class="info-row"><text>下单时间</text><text>{{detail.createdAtText}}</text></view>
-        <view wx:if="{{detail.paidAtText}}" class="info-row"><text>支付时间</text><text>{{detail.paidAtText}}</text></view>
-        <view wx:if="{{detail.shippedAtText}}" class="info-row"><text>发货时间</text><text>{{detail.shippedAtText}}</text></view>
-        <view wx:if="{{detail.completedAtText}}" class="info-row"><text>完成时间</text><text>{{detail.completedAtText}}</text></view>
-        <view wx:if="{{detail.closeReason}}" class="info-row"><text>关闭原因</text><text>{{detail.closeReason}}</text></view>
-        <view wx:if="{{detail.transactionId}}" class="info-row"><text>微信支付单号</text><text>{{detail.transactionId}}</text></view>
-      </view>
+  <view wx:if="{{detail && detail.canPay}}" class="payment-notice">
+    <block wx:if="{{hasCountdown}}">
+      <text>还剩</text>
+      <text class="payment-notice__countdown">
+        <text class="payment-notice__digits">{{countdownHours}}</text><text class="payment-notice__separator">:</text><text class="payment-notice__digits">{{countdownMinutes}}</text><text class="payment-notice__separator">:</text><text class="payment-notice__digits">{{countdownSeconds}}</text>
+      </text>
+      <text>订单自动取消</text>
     </block>
+    <text wx:else>支付时限正在确认，请尽快完成支付</text>
   </view>
 
-  <view wx:if="{{detail && (detail.canPay || detail.canConfirmReceipt || detail.canDelete || detail.canRebuy || detail.canApplyAfterSale)}}" class="detail-actions">
+  <scroll-view
+    class="detail-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{false}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+  >
+    <view class="detail-content">
+      <view wx:if="{{!loaded && loading}}" class="detail-state">
+        <ui-state type="loading" title="正在读取订单" description="支付与履约状态正在同步" />
+      </view>
+      <view wx:elif="{{!loaded && errorText}}" class="detail-state">
+        <ui-state type="error" title="订单详情加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
+      </view>
+
+      <block wx:elif="{{detail}}">
+        <view wx:if="{{errorText}}" class="inline-error">
+          <text>{{errorText}}</text>
+          <button bindtap="onRetry">重试</button>
+        </view>
+
+        <view class="detail-card receiver-card">
+          <image
+            class="receiver-card__icon"
+            src="/assets/icons/location-on-outline-rounded.svg"
+            mode="aspectFit"
+            aria-hidden="true"
+          />
+          <view class="receiver-card__body">
+            <view class="receiver-card__person">
+              <text>{{detail.receiverName}}</text>
+              <text>{{detail.receiverPhoneDisplay}}</text>
+            </view>
+            <view class="receiver-card__address">{{detail.receiverAddress}}</view>
+          </view>
+          <button
+            wx:if="{{detail.canModifyReceiver}}"
+            class="receiver-card__modify"
+            disabled="{{actionType !== ''}}"
+            bindtap="onModifyTap"
+            aria-label="修改订单收货地址"
+          >修改</button>
+        </view>
+
+        <view class="detail-card product-card">
+          <view
+            wx:for="{{detail.items}}"
+            wx:key="orderItemId"
+            class="detail-item {{index ? 'detail-item--divided' : ''}}"
+          >
+            <view class="detail-item__image-shell">
+              <image
+                wx:if="{{item.hasImage}}"
+                class="detail-item__image"
+                src="{{item.imageUrl}}"
+                mode="aspectFill"
+                data-index="{{index}}"
+                binderror="onItemImageError"
+              />
+              <image
+                wx:else
+                class="detail-item__fallback"
+                src="/assets/icons/empty-products.svg"
+                mode="aspectFit"
+                aria-hidden="true"
+              />
+            </view>
+            <view class="detail-item__body">
+              <view class="detail-item__title-row">
+                <view class="detail-item__title">{{item.productTitle}}</view>
+                <view class="detail-item__line-prices">
+                  <text wx:if="{{item.hasRetailLineAmount}}" class="detail-item__line-original">{{item.retailLineAmountText}}</text>
+                  <text class="detail-item__line-amount">{{item.lineAmountText}}</text>
+                </view>
+              </view>
+              <view wx:if="{{item.specText}}" class="detail-item__spec">{{item.specText}}</view>
+              <view class="detail-item__quantity">x{{item.quantity}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="detail-card amount-card">
+          <view class="amount-row"><text>商品金额</text><text>{{detail.productAmountText}}</text></view>
+          <view class="amount-row"><text>运费</text><text>{{detail.freightText}}</text></view>
+          <view class="amount-row amount-row--discount">
+            <text>批发优惠</text>
+            <text>{{detail.hasWholesaleDiscount ? '-' + detail.wholesaleDiscountText : '¥0.00'}}</text>
+          </view>
+          <view class="amount-row amount-row--discount">
+            <text>优惠券<text wx:if="{{detail.couponName}}">（{{detail.couponName}}）</text></text>
+            <text>{{detail.hasCouponDiscount ? '-' + detail.couponDiscountText : '¥0.00'}}</text>
+          </view>
+          <view class="amount-card__divider"></view>
+          <view class="amount-total">
+            <text>共{{detail.totalQuantity}}件，合计</text>
+            <text class="amount-total__value">{{detail.payableAmountText}}</text>
+          </view>
+        </view>
+
+        <view
+          wx:if="{{detail.hasAfterSale}}"
+          class="detail-card after-sale-card"
+          bindtap="onAfterSaleDetailTap"
+          aria-role="button"
+        >
+          <view class="after-sale-card__heading">
+            <view>
+              <view class="section-heading">退款售后</view>
+              <view class="after-sale-card__meta">{{detail.latestAfterSaleView.typeText}} · <text class="after-sale-card__amount">{{detail.latestAfterSaleView.requestedAmountText}}</text></view>
+            </view>
+            <view class="after-sale-card__status after-sale-card__status--{{detail.latestAfterSaleView.statusTone}}">
+              {{detail.latestAfterSaleView.statusText}}
+            </view>
+          </view>
+          <view class="after-sale-card__description">{{detail.latestAfterSaleView.statusDescription}}</view>
+          <view class="after-sale-card__link">查看处理进度 <text>›</text></view>
+        </view>
+
+        <view class="detail-card order-info">
+          <view
+            class="order-info__heading"
+            bindtap="onOrderInfoToggle"
+            aria-role="button"
+            aria-label="{{orderInfoExpanded ? '收起' : '展开'}}订单信息，共{{detail.orderInfoItemCount}}项"
+          >
+            <view class="order-info__title">
+              <text>订单信息</text>
+              <text class="order-info__count">共{{detail.orderInfoItemCount}}项</text>
+            </view>
+            <image
+              class="order-info__toggle {{orderInfoExpanded ? 'order-info__toggle--expanded' : ''}}"
+              src="/assets/icons/chevron-right-detail.svg"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
+          </view>
+          <view wx:if="{{orderInfoExpanded}}" class="order-info__content">
+            <view class="info-row info-row--order-no">
+              <text>订单编号</text>
+              <view class="info-row__value info-row__value--copy">
+                <text>{{detail.orderNo}}</text>
+                <button class="copy-action" catchtap="onCopyOrderNoTap">
+                  <text class="copy-action__divider">｜</text>
+                  <text class="copy-action__label">复制</text>
+                </button>
+              </view>
+            </view>
+            <view class="info-row"><text>下单时间</text><text>{{detail.createdAtText}}</text></view>
+            <view wx:if="{{detail.paidAtText}}" class="info-row"><text>支付时间</text><text>{{detail.paidAtText}}</text></view>
+            <view wx:if="{{detail.shippedAtText}}" class="info-row"><text>发货时间</text><text>{{detail.shippedAtText}}</text></view>
+            <view wx:if="{{detail.completedAtText}}" class="info-row"><text>完成时间</text><text>{{detail.completedAtText}}</text></view>
+            <view wx:if="{{detail.closeReason}}" class="info-row"><text>关闭原因</text><text>{{detail.closeReason}}</text></view>
+            <view wx:if="{{detail.transactionId}}" class="info-row"><text>微信支付单号</text><text>{{detail.transactionId}}</text></view>
+          </view>
+        </view>
+      </block>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{detail && detail.canPay}}" class="payment-bar">
+    <view class="payment-utilities">
+      <button
+        class="payment-tool"
+        disabled="{{actionType !== ''}}"
+        bindtap="onCustomerServiceTap"
+        aria-label="联系订单客服"
+      >
+        <view class="payment-tool__icon-frame">
+          <image class="payment-tool__icon payment-tool__icon--service" src="/assets/icons/support-agent-outline-rounded.svg" mode="aspectFit" aria-hidden="true" />
+        </view>
+        <text class="payment-tool__label">客服</text>
+      </button>
+      <button
+        class="payment-tool"
+        disabled="{{actionType !== ''}}"
+        bindtap="onCancelTap"
+        aria-label="取消订单"
+      >
+        <view class="payment-tool__icon-frame">
+          <image class="payment-tool__icon" src="/assets/icons/cancel-rounded-material-symbols-iconify.svg" mode="aspectFit" aria-hidden="true" />
+        </view>
+        <text class="payment-tool__label">取消</text>
+      </button>
+    </view>
+    <view class="payment-summary">
+      <view class="payment-summary__main">
+        <text class="payment-summary__label">支付金额</text>
+        <text class="payment-summary__amount">{{detail.payableAmountText}}</text>
+        <text wx:if="{{detail.hasTotalDiscount}}" class="payment-summary__original">{{detail.originalPayableAmountText}}</text>
+      </view>
+      <view class="payment-summary__discount">总计优惠 {{detail.totalDiscountText}}</view>
+    </view>
     <button
-      wx:if="{{detail.canCancel}}"
-      class="detail-action detail-action--secondary detail-action--minor"
-      loading="{{actionType === 'cancel' || actionType === 'expire'}}"
-      disabled="{{actionType !== ''}}"
-      bindtap="onCancelTap"
-    >取消订单</button>
-    <button
-      wx:if="{{detail.canPay}}"
-      class="detail-action detail-action--primary detail-action--major"
+      class="payment-action"
       loading="{{actionType === 'pay'}}"
       disabled="{{actionType !== '' || paymentExpired}}"
       bindtap="onPayTap"
-    ><text>支付</text><text class="detail-action__amount">{{detail.payableAmountText}}</text></button>
+    ><text class="payment-action__label">继续支付</text></button>
+  </view>
+
+  <view wx:elif="{{detail && (detail.canConfirmReceipt || detail.canDelete || detail.canRebuy || detail.canApplyAfterSale)}}" class="detail-actions">
     <button
       wx:if="{{detail.canDelete}}"
       class="detail-action detail-action--secondary detail-action--minor"
