@@ -938,6 +938,14 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
       pageable: false
     },
     {
+      path: "pages/order/modify/modify",
+      rootClass: "modify-page",
+      scrollClass: "modify-scroll",
+      stylePath: "pages/order/modify/modify.less",
+      refreshable: true,
+      pageable: false
+    },
+    {
       path: "pages/after-sale/list/list",
       rootClass: "after-sale-list-page",
       scrollClass: "after-sale-list-scroll",

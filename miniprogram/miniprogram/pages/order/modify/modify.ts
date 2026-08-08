@@ -7,24 +7,28 @@ import {
 import type { AppOrderDetailResponse } from "../../../types/order";
 import { isApiError } from "../../../utils/api-error";
 import {
+  buildCurrentReceiverView,
   buildOrderAddressOptions,
+  buildSelectedReceiverView,
   canModifyOrderReceiver,
-  maskReceiverPhone,
   normalizeSelectedAddressId,
   parseModifyOrderId,
-  type OrderAddressOptionView
+  resolveCurrentOrderAddressId,
+  type OrderAddressOptionView,
+  type OrderReceiverView
 } from "./model";
 
-interface RadioChangeEvent {
-  detail: {
-    value: string;
+interface DatasetEvent {
+  currentTarget: {
+    dataset: {
+      id?: string | number;
+    };
   };
 }
 
-interface CurrentReceiverView {
-  receiverName: string;
-  receiverPhoneDisplay: string;
-  receiverAddress: string;
+interface RefreshOptions {
+  silent?: boolean;
+  suppressError?: boolean;
 }
 
 let latestRequest = 0;
@@ -39,22 +43,17 @@ function actionError(error: unknown, fallback: string): string {
       : fallback;
 }
 
-function currentReceiver(detail: AppOrderDetailResponse): CurrentReceiverView {
-  return {
-    receiverName: detail.receiverName.trim(),
-    receiverPhoneDisplay: maskReceiverPhone(detail.receiverPhone),
-    receiverAddress: detail.receiverAddress.trim()
-  };
-}
-
 Page({
   data: {
     lifecycleToken: 0,
     orderId: 0,
     detail: null as AppOrderDetailResponse | null,
-    currentReceiver: null as CurrentReceiverView | null,
+    currentReceiver: null as OrderReceiverView | null,
     addressOptions: [] as OrderAddressOptionView[],
     selectedAddressId: "",
+    addressChanged: false,
+    addressSheetOpen: false,
+    contentRefreshing: false,
     loading: true,
     loaded: false,
     saving: false,
@@ -78,7 +77,9 @@ Page({
 
   onShow() {
     if (this.data.orderId && !this.data.saving) {
-      void this.loadPage();
+      void this.loadPage(this.data.loaded
+        ? { silent: true, suppressError: true }
+        : {});
     }
   },
 
@@ -91,21 +92,35 @@ Page({
     }
   },
 
-  async onPullDownRefresh() {
-    await this.loadPage();
-    wx.stopPullDownRefresh();
+  async onContentRefresh() {
+    if (this.data.contentRefreshing || this.data.loading) {
+      return;
+    }
+    this.setData({ contentRefreshing: true });
+    try {
+      await this.loadPage({ silent: true });
+    } finally {
+      this.setData({ contentRefreshing: false });
+    }
   },
 
   onRetry() {
     void this.loadPage();
   },
 
-  async loadPage() {
+  async loadPage(options: RefreshOptions = {}) {
     if (!this.data.orderId || this.data.saving) {
       return;
     }
     const requestId = ++latestRequest;
-    this.setData({ loading: true, errorText: "", blockingText: "" });
+    const silent = options.silent === true && this.data.loaded;
+    if (silent) {
+      if (!options.suppressError) {
+        this.setData({ errorText: "", blockingText: "" });
+      }
+    } else {
+      this.setData({ loading: true, errorText: "", blockingText: "" });
+    }
     try {
       const [detail, addresses] = await Promise.all([
         getOrderDetail(this.data.orderId),
@@ -115,16 +130,24 @@ Page({
         return;
       }
       const modifiable = canModifyOrderReceiver(detail.status);
-      const selectedAddressId = addresses.some(
+      const retainedAddressId = this.data.addressChanged && addresses.some(
         (address) => address.id === this.data.selectedAddressId
-      )
-        ? this.data.selectedAddressId
-        : "";
+      ) ? this.data.selectedAddressId : "";
+      const unselectedAddressOptions = buildOrderAddressOptions(addresses, "");
+      const selectedAddressId = retainedAddressId
+        || resolveCurrentOrderAddressId(detail, unselectedAddressOptions);
+      const addressOptions = buildOrderAddressOptions(addresses, selectedAddressId);
+      const selectedAddress = addressOptions.find(
+        (address) => address.id === selectedAddressId
+      );
       this.setData({
         detail,
-        currentReceiver: currentReceiver(detail),
-        addressOptions: buildOrderAddressOptions(addresses, selectedAddressId),
+        currentReceiver: retainedAddressId && selectedAddress
+          ? buildSelectedReceiverView(selectedAddress)
+          : buildCurrentReceiverView(detail, addressOptions),
+        addressOptions,
         selectedAddressId,
+        addressChanged: Boolean(retainedAddressId),
         loading: false,
         loaded: true,
         errorText: "",
@@ -132,6 +155,9 @@ Page({
       });
     } catch (error) {
       if (requestId === latestRequest) {
+        if (silent && options.suppressError) {
+          return;
+        }
         this.setData({
           loading: false,
           loaded: this.data.detail !== null,
@@ -141,20 +167,36 @@ Page({
     }
   },
 
-  onAddressChange(event: RadioChangeEvent) {
+  onAddressSheetOpen() {
+    if (!this.data.saving && !this.data.blockingText) {
+      this.setData({ addressSheetOpen: true });
+    }
+  },
+
+  onAddressSheetClose() {
+    this.setData({ addressSheetOpen: false });
+  },
+
+  onAddressSelect(event: DatasetEvent) {
     if (this.data.saving || this.data.blockingText) {
       return;
     }
-    const selectedAddressId = normalizeSelectedAddressId(event.detail.value);
-    if (!selectedAddressId) {
+    const selectedAddressId = normalizeSelectedAddressId(event.currentTarget.dataset.id);
+    const selectedAddress = this.data.addressOptions.find(
+      (address) => address.id === selectedAddressId
+    );
+    if (!selectedAddress) {
       return;
     }
     this.setData({
       selectedAddressId,
+      addressChanged: true,
+      currentReceiver: buildSelectedReceiverView(selectedAddress),
       addressOptions: buildOrderAddressOptions(
         this.data.addressOptions,
         selectedAddressId
-      )
+      ),
+      addressSheetOpen: false
     });
   },
 
@@ -165,7 +207,40 @@ Page({
   },
 
   onConfirmTap() {
-    void this.saveReceiver();
+    if (this.data.saving || this.data.blockingText) {
+      return;
+    }
+    if (!normalizeSelectedAddressId(this.data.selectedAddressId)) {
+      wx.showModal({
+        title: "请选择收货地址",
+        content: "当前订单地址未匹配到已保存地址，请先切换地址后再确认修改。",
+        showCancel: false,
+        confirmText: "去选择",
+        confirmColor: "#ff172b",
+        success: (result) => {
+          if (result.confirm) {
+            this.onAddressSheetOpen();
+          }
+        }
+      });
+      return;
+    }
+    wx.showModal({
+      title: "确认修改",
+      content: "确认将订单收货信息修改为当前显示的地址吗？",
+      cancelText: "取消",
+      confirmText: "确认修改",
+      confirmColor: "#ff172b",
+      success: (result) => {
+        if (result.confirm) {
+          void this.saveReceiver();
+        }
+      }
+    });
+  },
+
+  onSheetTouchMove() {
+    // 阻止底层页面随地址弹层一起滚动。
   },
 
   async saveReceiver() {
@@ -195,11 +270,8 @@ Page({
       }
       this.setData({
         saving: false,
-        currentReceiver: {
-          receiverName: response.receiverName.trim(),
-          receiverPhoneDisplay: maskReceiverPhone(response.receiverPhone),
-          receiverAddress: response.receiverAddress.trim()
-        }
+        addressChanged: false,
+        currentReceiver: buildCurrentReceiverView(response, this.data.addressOptions)
       });
       wx.showToast({ title: "收货地址已修改", icon: "success" });
       leaveTimer = setTimeout(() => {

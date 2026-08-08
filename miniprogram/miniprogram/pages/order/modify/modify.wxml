@@ -5,6 +5,19 @@
     color="#2E1D16"
   />
 
+  <scroll-view
+    class="modify-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{false}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{contentRefreshing}}"
+    refresher-background="#f6f6f6"
+    bindrefresherrefresh="onContentRefresh"
+  >
+
   <view class="modify-notice">
     发货前可修改收货地址。订单商品、数量和价格不会变化。
   </view>
@@ -40,64 +53,111 @@
 
       <view wx:if="{{currentReceiver}}" class="info-card current-card">
         <view class="section-heading">
-          <text class="section-heading__title">当前收货信息</text>
-          <text class="section-heading__meta">订单 {{detail.orderNo}}</text>
-        </view>
-        <view class="receiver-identity">
-          <text>{{currentReceiver.receiverName}}</text>
-          <text>{{currentReceiver.receiverPhoneDisplay}}</text>
-        </view>
-        <view class="receiver-address">{{currentReceiver.receiverAddress}}</view>
-      </view>
-
-      <view class="address-section">
-        <view class="section-heading section-heading--addresses">
-          <view>
-            <text class="section-heading__title">选择新的收货地址</text>
-            <text class="section-heading__description">仅可选择你已保存的地址</text>
-          </view>
-          <button class="add-address" bindtap="onAddAddress">新增地址</button>
-        </view>
-
-        <view wx:if="{{!addressOptions.length}}" class="address-empty">
-          <image src="/assets/icons/location-on-outline-rounded.svg" mode="aspectFit" />
-          <text>还没有可选的收货地址</text>
-          <button bindtap="onAddAddress">新增收货地址</button>
-        </view>
-
-        <radio-group wx:else class="address-options" bindchange="onAddressChange">
-          <label
-            wx:for="{{addressOptions}}"
-            wx:key="id"
-            class="address-option {{item.selected ? 'address-option--selected' : ''}}"
-            aria-label="选择 {{item.receiverName}} 的收货地址"
+          <text class="section-heading__title">修改收货人信息</text>
+          <button
+            class="switch-address"
+            disabled="{{saving}}"
+            bindtap="onAddressSheetOpen"
+            aria-label="切换收货地址"
           >
-            <radio
-              class="address-option__radio"
-              value="{{item.id}}"
-              checked="{{item.selected}}"
-              color="#B72B22"
-            />
-            <view class="address-option__body">
-              <view class="address-option__identity">
-                <text class="address-option__name">{{item.receiverName}}</text>
-                <text>{{item.phoneDisplay}}</text>
-                <text wx:if="{{item.isDefault}}" class="default-tag">默认</text>
-              </view>
-              <text class="address-option__detail">{{item.detailDisplay}}</text>
-            </view>
-          </label>
-        </radio-group>
+            <image src="/assets/icons/profile-location.svg" mode="aspectFit" aria-hidden="true" />
+            <text>切换地址</text>
+          </button>
+        </view>
+
+        <view class="receiver-fields">
+          <view class="receiver-field">
+            <text class="receiver-field__label">收货人</text>
+            <text class="receiver-field__value">{{currentReceiver.receiverName}}</text>
+          </view>
+          <view class="receiver-field">
+            <text class="receiver-field__label">手机号码</text>
+            <text class="receiver-field__value">{{currentReceiver.receiverPhone}}</text>
+          </view>
+          <view class="receiver-field receiver-field--address">
+            <text class="receiver-field__label">所在地区</text>
+            <text class="receiver-field__value">{{currentReceiver.receiverRegion}}</text>
+          </view>
+          <view class="receiver-field receiver-field--address">
+            <text class="receiver-field__label">详细地址</text>
+            <text class="receiver-field__value">{{currentReceiver.receiverDetailAddress}}</text>
+          </view>
+        </view>
       </view>
     </block>
   </view>
+  </scroll-view>
 
   <view wx:if="{{loaded && !blockingText}}" class="modify-footer">
     <button
       class="modify-submit"
       loading="{{saving}}"
-      disabled="{{saving || !selectedAddressId}}"
+      disabled="{{saving}}"
       bindtap="onConfirmTap"
     >确认修改</button>
+  </view>
+
+  <view
+    wx:if="{{addressSheetOpen}}"
+    class="sheet-mask"
+    bindtap="onAddressSheetClose"
+    catchtouchmove="onSheetTouchMove"
+  >
+    <view class="sheet-panel sheet-panel--address" catchtap="onSheetTouchMove">
+      <view class="sheet-header">
+        <text class="sheet-title">选择收货地址</text>
+        <button class="sheet-close" bindtap="onAddressSheetClose" aria-label="关闭收货地址选择">
+          <image class="sheet-close__icon" src="/assets/icons/close-material-symbols.svg" mode="aspectFit" />
+        </button>
+      </view>
+      <text class="address-sheet-intro">请选择已保存的地址</text>
+
+      <scroll-view
+        class="address-sheet-scroll"
+        scroll-y="{{true}}"
+        enhanced="{{true}}"
+        bounces="{{true}}"
+        enable-passive="{{true}}"
+        show-scrollbar="{{false}}"
+      >
+        <view wx:if="{{!addressOptions.length}}" class="address-sheet-state">
+          <text class="address-sheet-state__title">还没有收货地址</text>
+          <text>新增后即可在这里选择</text>
+        </view>
+        <view wx:else class="address-options">
+          <view
+            wx:for="{{addressOptions}}"
+            wx:key="id"
+            class="address-option {{item.selected ? 'address-option--selected' : ''}}"
+            data-id="{{item.id}}"
+            bindtap="onAddressSelect"
+            aria-role="button"
+            aria-label="选择{{item.receiverName}}的收货地址"
+          >
+            <view class="address-option__check">
+              <image
+                wx:if="{{item.selected}}"
+                class="address-option__check-icon"
+                src="/assets/icons/check-rounded-material-symbols-iconify.svg"
+                mode="aspectFit"
+                aria-hidden="true"
+              />
+            </view>
+            <view class="address-option__body">
+              <view class="address-option__detail">{{item.detailDisplay}}</view>
+              <view class="address-option__identity">
+                <text wx:if="{{item.isDefault}}" class="default-tag">默认</text>
+                <text>{{item.receiverName}}</text>
+                <text>{{item.phoneDisplay}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="address-sheet-footer">
+        <button class="add-address-action" bindtap="onAddAddress">新增地址</button>
+      </view>
+    </view>
   </view>
 </view>

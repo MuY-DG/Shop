@@ -4,10 +4,13 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 
 import {
+  buildCurrentReceiverView,
   buildOrderAddressOptions,
+  buildSelectedReceiverView,
   canModifyOrderReceiver,
   normalizeSelectedAddressId,
-  parseModifyOrderId
+  parseModifyOrderId,
+  resolveCurrentOrderAddressId
 } from "../miniprogram/pages/order/modify/model";
 import {
   buildPendingOrderReviewItems,
@@ -111,6 +114,38 @@ test("修改订单页允许发货前状态并只选择本人已保存地址", ()
   assert.equal(options[0]?.phoneDisplay, "138****8000");
   assert.equal(options[1]?.selected, true);
   assert.equal(options[1]?.detailDisplay, "四川省 成都市 锦江区 春熙路 1 号");
+
+  const selectedReceiver = buildSelectedReceiverView(options[0]!);
+  assert.equal(selectedReceiver.receiverPhone, "13800138000");
+  assert.equal(selectedReceiver.receiverRegion, "四川省 成都市 锦江区");
+  assert.equal(selectedReceiver.receiverDetailAddress, "春熙路 1 号");
+
+  const currentReceiver = buildCurrentReceiverView({
+    receiverName: "勇敢牛牛",
+    receiverPhone: "15212347668",
+    receiverAddress: "宁夏回族自治区吴忠市盐池县紫都学府商业楼"
+  }, []);
+  assert.equal(currentReceiver.receiverPhone, "15212347668");
+  assert.equal(currentReceiver.receiverRegion, "宁夏回族自治区 吴忠市 盐池县");
+  assert.equal(currentReceiver.receiverDetailAddress, "紫都学府商业楼");
+  assert.equal(resolveCurrentOrderAddressId({
+    receiverAddress: "四川省成都市锦江区春熙路 1 号"
+  }, options), "1");
+
+  const doorplateOption = buildOrderAddressOptions([{
+    ...address("3", ""),
+    locationName: "春熙里",
+    doorplate: "3 栋 201"
+  }], "3")[0]!;
+  const doorplateReceiver = buildSelectedReceiverView(doorplateOption);
+  assert.equal(
+    doorplateReceiver.receiverDetailAddress,
+    "春熙路 1 号 春熙里 3 栋 201"
+  );
+  assert.equal(
+    doorplateOption.detailDisplay,
+    "四川省 成都市 锦江区 春熙路 1 号 春熙里 3 栋 201"
+  );
 });
 
 test("页面操作令牌在卸载和后续操作后立即失效", () => {
@@ -213,6 +248,16 @@ test("评价与修改订单页面注册真实端点并支持评价图片", () =>
 
   assert.match(modifyLogic, /getAddresses/);
   assert.match(modifyLogic, /updateOrderReceiver/);
+  assert.match(modifyLogic, /onAddressSheetOpen/);
+  assert.match(modifyLogic, /onAddressSheetClose/);
+  assert.match(
+    modifyLogic,
+    /onConfirmTap[\s\S]*wx\.showModal[\s\S]*title: "确认修改"[\s\S]*result\.confirm[\s\S]*this\.saveReceiver\(\)/
+  );
+  assert.match(
+    modifyLogic,
+    /onAddressSelect[\s\S]*selectedAddressId[\s\S]*currentReceiver[\s\S]*addressSheetOpen: false/
+  );
   assert.match(modifyLogic, /await this\.loadPage\(\)/);
   assert.match(modifyLogic, /modifyOperationGuard\.unmount\(this\.data\.lifecycleToken\)/);
   assert.match(
@@ -224,11 +269,29 @@ test("评价与修改订单页面注册真实端点并支持评价图片", () =>
     /setTimeout\([\s\S]*modifyOperationGuard\.isCurrent\(lifecycleToken, operationToken\)[\s\S]*this\.leavePage\(\)/
   );
   assert.match(modifyTemplate, /发货前可修改收货地址/);
+  assert.match(modifyTemplate, /<navigation-bar[\s\S]*?<scroll-view[\s\S]*?class="modify-scroll"[\s\S]*?scroll-y="\{\{true\}\}"/);
+  assert.match(modifyTemplate, /修改收货人信息/);
+  assert.match(modifyTemplate, /class="switch-address"[\s\S]*profile-location\.svg[\s\S]*切换地址/);
+  assert.match(modifyTemplate, /receiver-field__label">收货人/);
+  assert.match(modifyTemplate, /receiver-field__label">手机号码/);
+  assert.match(modifyTemplate, /receiver-field__label">所在地区/);
+  assert.match(modifyTemplate, /receiver-field__label">详细地址/);
+  assert.match(modifyTemplate, /addressSheetOpen[\s\S]*选择收货地址[\s\S]*onAddressSelect/);
+  assert.match(modifyTemplate, /disabled="\{\{saving\}\}"[\s\S]*bindtap="onConfirmTap"/);
+  assert.doesNotMatch(modifyTemplate, /disabled="\{\{saving \|\| !selectedAddressId\}\}"/);
+  assert.doesNotMatch(modifyTemplate, /当前收货信息|订单 \{\{detail\.orderNo\}\}/);
+  assert.doesNotMatch(modifyTemplate, /选择新的收货地址/);
   assert.doesNotMatch(modifyTemplate, /普通快递|配送方式/);
   assert.match(modifyTemplate, /bindtap="onAddAddress"/);
   assert.doesNotMatch(modifyTemplate, /修改商品|修改数量|修改价格/);
-  assert.match(modifyStyle, /\.add-address \{[\s\S]*height: 88rpx/);
-  assert.match(modifyStyle, /\.address-empty button \{[\s\S]*height: 88rpx/);
+  assert.match(modifyStyle, /\.modify-page \{[\s\S]*height: 100vh;[\s\S]*display: flex;[\s\S]*overflow: hidden;[\s\S]*flex-direction: column/);
+  assert.match(modifyStyle, /\.modify-scroll \{[\s\S]*height: 0;[\s\S]*min-height: 0;[\s\S]*flex: 1/);
+  assert.match(modifyStyle, /\.info-card \{[\s\S]*background: @color-surface-white/);
+  assert.match(modifyStyle, /\.switch-address \{[\s\S]*color: @color-text-black;[\s\S]*background: #eeeeee/);
+  assert.match(modifyStyle, /\.receiver-field__label \{[\s\S]*color: @color-text-gray/);
+  assert.match(modifyStyle, /\.receiver-field__value \{[\s\S]*color: @color-text-black;[\s\S]*text-align: right/);
+  assert.match(modifyStyle, /\.modify-footer \{[\s\S]*background: @color-surface-white/);
+  assert.match(modifyStyle, /\.modify-submit \{[\s\S]*background: @color-action-primary/);
 
   assert.match(orderListLogic, /rebuyOperationGuard\.unmount\(this\.data\.lifecycleToken\)/);
   assert.match(orderListLogic, /keyword: normalizeOrderRouteKeyword\(query\.keyword\)/);
