@@ -4,28 +4,60 @@
     "pages/category/category",
     "pages/cart/cart",
     "pages/cart/standalone/standalone",
-    "pages/profile/profile",
-    "pages/auth/login/login",
-    "pages/account/profile/profile",
-    "pages/account/address/list/list",
-    "pages/account/address/edit/edit",
-    "pages/account/coupon/coupon",
-    "pages/account/favorites/favorites",
-    "pages/account/history/history",
-    "pages/product/search/search",
-    "pages/product/list/list",
-    "pages/product/detail/detail",
-    "pages/customer-service/chat/chat",
-    "pages/order/preview/preview",
-    "pages/order/created/created",
-    "pages/order/search/search",
-    "pages/order/list/list",
-    "pages/order/detail/detail",
-    "pages/order/review/review",
-    "pages/order/modify/modify",
-    "pages/after-sale/apply/apply",
-    "pages/after-sale/list/list",
-    "pages/after-sale/detail/detail"
+    "pages/profile/profile"
+  ],
+  "subPackages": [
+    {
+      "root": "pages/auth",
+      "pages": [
+        "login/login"
+      ]
+    },
+    {
+      "root": "pages/account",
+      "pages": [
+        "profile/profile",
+        "address/list/list",
+        "address/edit/edit",
+        "coupon/coupon",
+        "favorites/favorites",
+        "history/history"
+      ]
+    },
+    {
+      "root": "pages/product",
+      "pages": [
+        "search/search",
+        "list/list",
+        "detail/detail"
+      ]
+    },
+    {
+      "root": "pages/customer-service",
+      "pages": [
+        "chat/chat"
+      ]
+    },
+    {
+      "root": "pages/order",
+      "pages": [
+        "preview/preview",
+        "created/created",
+        "search/search",
+        "list/list",
+        "detail/detail",
+        "review/review",
+        "modify/modify"
+      ]
+    },
+    {
+      "root": "pages/after-sale",
+      "pages": [
+        "apply/apply",
+        "list/list",
+        "detail/detail"
+      ]
+    }
   ],
   "window": {
     "navigationBarTextStyle": "black",

@@ -176,13 +176,20 @@ test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
   const sourceRoot = resolve(process.cwd(), "miniprogram");
   const appConfig = JSON.parse(readFileSync(resolve(sourceRoot, "app.json"), "utf8")) as {
     pages: string[];
+    subPackages?: Array<{ root: string; pages: string[] }>;
   };
+  const pagePaths = [
+    ...appConfig.pages,
+    ...(appConfig.subPackages ?? []).flatMap(({ root, pages }) =>
+      pages.map((pagePath) => `${root}/${pagePath}`)
+    )
+  ];
   [
     "pages/after-sale/apply/apply",
     "pages/after-sale/list/list",
     "pages/after-sale/detail/detail"
   ].forEach((pagePath) => {
-    assert.ok(appConfig.pages.includes(pagePath));
+    assert.ok(pagePaths.includes(pagePath));
     ["json", "ts", "wxml", "less"].forEach((extension) => {
       assert.equal(existsSync(resolve(sourceRoot, `${pagePath}.${extension}`)), true);
     });

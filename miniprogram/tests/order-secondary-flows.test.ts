@@ -171,7 +171,16 @@ test("页面操作令牌在卸载和后续操作后立即失效", () => {
 test("评价与修改订单页面注册真实端点并支持评价图片", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")
-  ) as { pages: string[] };
+  ) as {
+    pages: string[];
+    subPackages?: Array<{ root: string; pages: string[] }>;
+  };
+  const pagePaths = [
+    ...appConfig.pages,
+    ...(appConfig.subPackages ?? []).flatMap(({ root, pages }) =>
+      pages.map((pagePath) => `${root}/${pagePath}`)
+    )
+  ];
   const endpoints = readFileSync(
     resolve(sourceRoot, "constants/api-endpoints.ts"),
     "utf8"
@@ -213,9 +222,9 @@ test("评价与修改订单页面注册真实端点并支持评价图片", () =>
     "utf8"
   );
 
-  assert.ok(appConfig.pages.includes("pages/order/review/review"));
-  assert.ok(appConfig.pages.includes("pages/order/modify/modify"));
-  assert.ok(appConfig.pages.includes("pages/order/search/search"));
+  assert.ok(pagePaths.includes("pages/order/review/review"));
+  assert.ok(pagePaths.includes("pages/order/modify/modify"));
+  assert.ok(pagePaths.includes("pages/order/search/search"));
   assert.match(endpoints, /`\/app\/orders\/\$\{orderId\}\/receiver`/);
   assert.match(orderService, /updateOrderReceiver[\s\S]*method: "PUT"[\s\S]*data: \{ addressId \}/);
 

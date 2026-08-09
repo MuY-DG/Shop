@@ -10,6 +10,10 @@ import {
 
 interface AppConfig {
   pages: string[];
+  subPackages?: Array<{
+    root: string;
+    pages: string[];
+  }>;
   lazyCodeLoading?: string;
   plugins?: Record<string, {
     version?: string;
@@ -24,6 +28,15 @@ interface AppConfig {
       text?: string;
     }>;
   };
+}
+
+function configuredPagePaths(appConfig: AppConfig): string[] {
+  return [
+    ...appConfig.pages,
+    ...(appConfig.subPackages ?? []).flatMap(({ root, pages }) =>
+      pages.map((pagePath) => `${root}/${pagePath}`)
+    )
+  ];
 }
 
 interface DetailPageConfig {
@@ -49,6 +62,17 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
   assert.equal(appConfig.tabBar?.selectedColor, "#FF172B");
   assert.equal(appConfig.lazyCodeLoading, "requiredComponents");
   assert.deepEqual(
+    appConfig.subPackages?.map(({ root }) => root),
+    [
+      "pages/auth",
+      "pages/account",
+      "pages/product",
+      "pages/customer-service",
+      "pages/order",
+      "pages/after-sale"
+    ]
+  );
+  assert.deepEqual(
     appConfig.tabBar?.list?.map((item) => [item.pagePath, item.text]),
     expectedTabs
   );
@@ -64,6 +88,9 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
       );
     });
   });
+
+  const configuredPages = configuredPagePaths(appConfig);
+  assert.equal(new Set(configuredPages).size, configuredPages.length);
 
   ["json", "ts", "wxml", "less"].forEach((extension) => {
     assert.equal(
@@ -592,13 +619,14 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
     "pages/account/favorites/favorites",
     "pages/account/history/history"
   ];
+  const pagePaths = configuredPagePaths(appConfig);
   accountPages.forEach((pagePath) => {
-    assert.ok(appConfig.pages.includes(pagePath));
+    assert.ok(pagePaths.includes(pagePath));
     ["json", "ts", "wxml", "less"].forEach((extension) => {
       assert.equal(existsSync(resolve(sourceRoot, `${pagePath}.${extension}`)), true);
     });
   });
-  assert.equal(appConfig.pages.includes("pages/message/message"), false);
+  assert.equal(pagePaths.includes("pages/message/message"), false);
   assert.equal(existsSync(resolve(sourceRoot, "pages/message/message.wxml")), false);
 
   const profileTemplate = readFileSync(
@@ -1314,6 +1342,7 @@ test("购物车与结算页注册真实交易路径", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")
   ) as AppConfig;
+  const pagePaths = configuredPagePaths(appConfig);
   const cartTemplate = readFileSync(
     resolve(sourceRoot, "pages/cart/cart.wxml"),
     "utf8"
@@ -1344,8 +1373,8 @@ test("购物车与结算页注册真实交易路径", () => {
   const standaloneCartStyle = readFileSync(`${standaloneCartRoot}.less`, "utf8");
 
   assert.ok(appConfig.pages.includes("pages/cart/standalone/standalone"));
-  assert.ok(appConfig.pages.includes("pages/order/preview/preview"));
-  assert.ok(appConfig.pages.includes("pages/order/created/created"));
+  assert.ok(pagePaths.includes("pages/order/preview/preview"));
+  assert.ok(pagePaths.includes("pages/order/created/created"));
   ["json", "ts", "wxml", "less"].forEach((extension) => {
     assert.equal(existsSync(`${standaloneCartRoot}.${extension}`), true);
   });
@@ -1459,6 +1488,7 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")
   ) as AppConfig;
+  const pagePaths = configuredPagePaths(appConfig);
   const createdTemplate = readFileSync(
     resolve(sourceRoot, "pages/order/created/created.wxml"),
     "utf8"
@@ -1499,19 +1529,31 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
     "utf8"
   );
 
-  assert.ok(appConfig.pages.includes("pages/order/list/list"));
-  assert.ok(appConfig.pages.includes("pages/order/detail/detail"));
+  assert.ok(pagePaths.includes("pages/order/list/list"));
+  assert.ok(pagePaths.includes("pages/order/detail/detail"));
+  assert.deepEqual(appConfig.plugins?.logisticsPlugin, {
+    version: "2.3.0",
+    provider: "wx9ad912bf20548d92"
+  });
   assert.match(createdTemplate, /支付成功/);
   assert.match(createdTemplate, /支付金额/);
   assert.match(createdTemplate, /payment-success-background\.png/);
   assert.match(createdTemplate, /payment-success-check\.png/);
   assert.equal(
-    existsSync(resolve(sourceRoot, "assets/images/payment-success-background.png")),
+    existsSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-background.png")),
     true
   );
   assert.equal(
-    existsSync(resolve(sourceRoot, "assets/images/payment-success-check.png")),
+    existsSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-check.png")),
     true
+  );
+  assert.equal(
+    existsSync(resolve(sourceRoot, "assets/images/payment-success-background.png")),
+    false
+  );
+  assert.equal(
+    existsSync(resolve(sourceRoot, "assets/images/payment-success-check.png")),
+    false
   );
   assert.match(createdTemplate, /back="\{\{true\}\}"/);
   assert.match(createdTemplate, /background="transparent"/);

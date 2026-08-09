@@ -1,7 +1,7 @@
 <view class="created-page">
   <image
     class="created-background"
-    src="/assets/images/payment-success-background.png"
+    src="../assets/images/payment-success-background.png"
     mode="aspectFill"
     aria-hidden="true"
   />
@@ -18,7 +18,7 @@
   <view class="created-content">
     <image
       class="success-mark"
-      src="/assets/images/payment-success-check.png"
+      src="../assets/images/payment-success-check.png"
       mode="aspectFit"
       aria-hidden="true"
     />
