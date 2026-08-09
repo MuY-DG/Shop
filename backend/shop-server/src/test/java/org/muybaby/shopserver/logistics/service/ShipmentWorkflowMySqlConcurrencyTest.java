@@ -56,11 +56,11 @@ class ShipmentWorkflowMySqlConcurrencyTest {
     private static final AtomicLong IDS = new AtomicLong(1_100_000L);
     private static final AuthenticatedPrincipal ADMIN = new AuthenticatedPrincipal(
             TokenKind.ADMIN, 1L, "mysql-shipping-admin", List.of("R_SUPER"),
-            List.of("order:ship", "order:shipping:retry")
+            List.of("order:ship", "order:shipping:retry", "order:waybill:manage")
     );
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4.10")
             .withDatabaseName("shipment_workflow")
             .withUsername("shop_test")
             .withPassword("shop_test");
@@ -90,7 +90,9 @@ class ShipmentWorkflowMySqlConcurrencyTest {
 
     @BeforeEach
     void reset() {
+        jdbcClient.sql("delete from shipment_waybill_registration").update();
         jdbcClient.sql("delete from order_shipment").update();
+        jdbcClient.sql("delete from order_electronic_waybill").update();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from order_item").update();
         jdbcClient.sql("delete from shop_order").update();
@@ -119,6 +121,34 @@ class ShipmentWorkflowMySqlConcurrencyTest {
                 .param("id", orderId).query(Integer.class).single()).isEqualTo(1);
         assertThat(jdbcClient.sql("select status from shop_order where id=:id")
                 .param("id", orderId).query(String.class).single()).isEqualTo("SHIPPED");
+    }
+
+    @Test
+    void concurrentElectronicConfirmationIsIdempotentAndCreatesOneShipment() throws Exception {
+        long orderId = insertPaidOrder();
+        long waybillRecordId = insertCreatedWaybill(orderId);
+
+        List<Throwable> outcomes = race(
+                () -> localShipmentService.confirmElectronicWaybill(
+                        ADMIN, orderId, waybillRecordId
+                ),
+                () -> localShipmentService.confirmElectronicWaybill(
+                        ADMIN, orderId, waybillRecordId
+                )
+        );
+
+        assertThat(outcomes).containsOnlyNulls();
+        assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id=:id")
+                .param("id", orderId).query(Integer.class).single()).isOne();
+        assertThat(jdbcClient.sql("select status from shop_order where id=:id")
+                .param("id", orderId).query(String.class).single()).isEqualTo("SHIPPED");
+        assertThat(jdbcClient.sql("select status from order_electronic_waybill where id=:id")
+                .param("id", waybillRecordId).query(String.class).single()).isEqualTo("CONFIRMED");
+        assertThat(jdbcClient.sql("""
+                        select count(*) from order_status_log
+                        where order_id=:id and event_type='ORDER_SHIPPED'
+                        """)
+                .param("id", orderId).query(Integer.class).single()).isOne();
     }
 
     @Test
@@ -220,7 +250,59 @@ class ShipmentWorkflowMySqlConcurrencyTest {
                 .param("id", id).param("outTradeNo", "mch-mysql-" + id)
                 .param("prepayId", "prepay-mysql-" + id).param("transactionId", "wx-mysql-" + id)
                 .param("openid", "mysql-openid-" + id).param("now", now).update();
+        jdbcClient.sql("""
+                        insert into order_item(
+                            order_id, sku_id, spu_id, product_title, product_subtitle,
+                            main_image, sku_image, display_image, sku_code, spec_text,
+                            original_price_cent, unit_price_cent, quantity,
+                            line_original_amount_cent, line_amount_cent, created_at)
+                        values (
+                            :id, 1, 1, 'MySQL shipment item', '',
+                            'https://example.test/item.jpg', 'https://example.test/item.jpg',
+                            'https://example.test/item.jpg', :skuCode, '',
+                            100, 100, 1, 100, 100, :now)
+                        """)
+                .param("id", id)
+                .param("skuCode", "MYSQL-SKU-" + id)
+                .param("now", now)
+                .update();
         return id;
+    }
+
+    private long insertCreatedWaybill(long orderId) {
+        jdbcClient.sql("""
+                        insert into order_electronic_waybill(
+                            order_id, attempt_no, idempotency_key, request_digest,
+                            provider_order_id, mode, delivery_id, delivery_name, biz_id,
+                            service_type, service_name, status, pending_operation, waybill_id,
+                            parcel_count, weight_kg, length_cm, width_cm, height_cm,
+                            sender_name, sender_mobile, sender_company, sender_province,
+                            sender_city, sender_district, sender_detail_address,
+                            receiver_name, receiver_phone, receiver_province, receiver_city,
+                            receiver_district, receiver_detail_address, payment_order_id,
+                            payer_openid, created_by)
+                        select
+                            :orderId, 1, :idempotencyKey, :requestDigest, :providerOrderId,
+                            'SANDBOX', 'TEST', '微信官方测试运力', 'test_biz_id', 1,
+                            'test_service_name', 'CREATED', 'NONE', :waybillId, 1,
+                            1.000, 20.00, 15.00, 10.00, 'Sender', '13800138000',
+                            'Shop', '广东省', '深圳市', '南山区', '测试路1号',
+                            o.receiver_name, o.receiver_phone, '广东省', '深圳市', '南山区',
+                            '测试路2号', po.id, po.payer_openid, 1
+                        from shop_order o
+                        join payment_order po on po.order_id = o.id
+                        where o.id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .param("idempotencyKey", "mysql-waybill-" + orderId)
+                .param("requestDigest", "d".repeat(64))
+                .param("providerOrderId", "SHOPWB-" + orderId + "-1")
+                .param("waybillId", "TEST-MYSQL-" + orderId)
+                .update();
+        return jdbcClient.sql("select id from order_electronic_waybill where order_id=:orderId")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .single();
     }
 
     @FunctionalInterface

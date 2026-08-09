@@ -385,6 +385,71 @@
                     </div>
                   </dl>
                 </template>
+                <template v-else-if="currentDetail.electronicWaybill">
+                  <ElAlert
+                    title="存在发货前电子面单记录，尚未确认发货"
+                    description="生成和打印不会改变订单状态；请在发货窗口中明确执行“确认发货”。"
+                    type="info"
+                    :closable="false"
+                    show-icon
+                    class="pre-shipment-waybill__notice"
+                  />
+                  <dl class="detail-facts detail-facts--compact">
+                    <div class="detail-fact">
+                      <dt>面单状态</dt>
+                      <dd>{{ formatWaybillStatus(currentDetail.electronicWaybill.status) }}</dd>
+                    </div>
+                    <div class="detail-fact">
+                      <dt>运行环境</dt>
+                      <dd>{{
+                        formatWaybillEnvironment(currentDetail.electronicWaybill.environment)
+                      }}</dd>
+                    </div>
+                    <div class="detail-fact">
+                      <dt>快递公司</dt>
+                      <dd>
+                        {{ currentDetail.electronicWaybill.deliveryName || '-' }}（{{
+                          currentDetail.electronicWaybill.deliveryId || '-'
+                        }}）
+                      </dd>
+                    </div>
+                    <div class="detail-fact">
+                      <dt>服务类型</dt>
+                      <dd>
+                        {{ currentDetail.electronicWaybill.serviceName || '-' }}（{{
+                          currentDetail.electronicWaybill.serviceType
+                        }}）
+                      </dd>
+                    </div>
+                    <div class="detail-fact">
+                      <dt>电子面单号</dt>
+                      <dd>
+                        <span class="detail-fact__mono">
+                          {{ currentDetail.electronicWaybill.waybillNo || '-' }}
+                        </span>
+                        <ElButton
+                          v-if="currentDetail.electronicWaybill.waybillNo"
+                          link
+                          type="primary"
+                          class="copy-button"
+                          aria-label="复制电子面单号"
+                          @click="copyText(currentDetail.electronicWaybill.waybillNo, '电子面单号')"
+                        >
+                          <ElIcon><CopyDocument /></ElIcon>
+                          复制
+                        </ElButton>
+                      </dd>
+                    </div>
+                    <div class="detail-fact">
+                      <dt>创建时间</dt>
+                      <dd>{{ formatDateTime(currentDetail.electronicWaybill.createdAt) }}</dd>
+                    </div>
+                    <div class="detail-fact">
+                      <dt>打印请求</dt>
+                      <dd>{{ currentDetail.electronicWaybill.printCount }} 次</dd>
+                    </div>
+                  </dl>
+                </template>
                 <ElEmpty v-else description="当前订单暂无发货信息" :image-size="64" />
               </section>
             </div>
@@ -498,6 +563,42 @@
                     </div>
                   </dl>
                 </ElCollapseItem>
+                <ElCollapseItem title="微信物流轨迹登记" name="waybill-registration">
+                  <dl class="shipping-diagnostic-grid">
+                    <div class="shipping-diagnostic">
+                      <dt>轨迹能力</dt>
+                      <dd>
+                        {{
+                          currentDetail.shipment.waybillTrackingSupported ? '已支持' : '暂不支持'
+                        }}
+                      </dd>
+                    </div>
+                    <div class="shipping-diagnostic">
+                      <dt>登记类型</dt>
+                      <dd>
+                        {{
+                          formatWaybillRegistrationKind(
+                            currentDetail.shipment.waybillRegistrationKind
+                          )
+                        }}
+                      </dd>
+                    </div>
+                    <div class="shipping-diagnostic">
+                      <dt>登记状态</dt>
+                      <dd>
+                        {{
+                          formatWaybillRegistrationStatus(
+                            currentDetail.shipment.waybillRegistrationStatus
+                          )
+                        }}
+                      </dd>
+                    </div>
+                    <div class="shipping-diagnostic shipping-diagnostic--full">
+                      <dt>状态说明</dt>
+                      <dd>{{ formatText(currentDetail.shipment.waybillRegistrationMessage) }}</dd>
+                    </div>
+                  </dl>
+                </ElCollapseItem>
               </ElCollapse>
             </section>
           </div>
@@ -508,12 +609,12 @@
         <div class="order-detail__footer">
           <ElButton @click="drawerVisible = false">关闭</ElButton>
           <ElButton
-            v-if="currentDetail?.canShip"
-            v-auth="'order:ship'"
+            v-if="currentDetail && canOpenShipmentDialogFor(currentDetail)"
+            v-auth="shipmentEntryPermission"
             type="success"
             @click="openShipDialog(currentDetail.orderId, currentDetail.orderNo)"
           >
-            发货
+            {{ shipmentEntryLabel(currentDetail) }}
           </ElButton>
           <ElButton
             v-else-if="currentDetail?.status === 'PAID' && currentDetail.activeAfterSale"
@@ -534,6 +635,20 @@
             @click="handleRetryShippingUpload(currentDetail.orderId, currentDetail.orderNo)"
           >
             重试微信上传
+          </ElButton>
+          <ElButton
+            v-if="currentDetail?.shipment && canRetryWaybillRegistration(currentDetail.shipment)"
+            v-auth="'order:shipping:registration:retry'"
+            type="warning"
+            plain
+            :loading="registrationRetryingOrderId === currentDetail?.orderId"
+            :disabled="
+              registrationRetryingOrderId !== null &&
+              registrationRetryingOrderId !== currentDetail?.orderId
+            "
+            @click="handleRetryWaybillRegistration(currentDetail.orderId, currentDetail.orderNo)"
+          >
+            重试物流轨迹登记
           </ElButton>
           <ElButton
             v-if="currentDetail?.status === 'CREATED'"
@@ -582,139 +697,194 @@
     <ElDialog
       v-model="shipDialogVisible"
       title="订单发货"
-      width="640px"
+      width="820px"
       align-center
-      :close-on-click-modal="!shipSubmitting"
-      :close-on-press-escape="!shipSubmitting"
-      :show-close="!shipSubmitting"
+      :close-on-click-modal="!shipmentDialogBusy"
+      :close-on-press-escape="!shipmentDialogBusy"
+      :show-close="!shipmentDialogBusy"
       @close="markShipDialogClosing"
       @closed="handleShipDialogClosed"
     >
-      <div v-loading="shipDialogLoading">
-        <ElAlert
-          :title="shipCapabilityText"
-          :type="shipCapabilityAlertType"
-          :closable="false"
-          show-icon
-          class="shipping-capability"
-        />
-        <div v-if="wechatShippingCapability" class="shipping-capability__meta">
-          <span>提供方：{{ formatWechatProviderMode(wechatShippingCapability.providerMode) }}</span>
-          <span>能力状态：{{ wechatShippingCapability.state }}</span>
-          <span>检查时间：{{ formatDateTime(wechatShippingCapability.checkedAt) }}</span>
-          <span v-if="wechatShippingCapability.errorCode || wechatShippingCapability.errorMessage">
-            安全错误：{{
-              [wechatShippingCapability.errorCode, wechatShippingCapability.errorMessage]
-                .filter(Boolean)
-                .join(' / ')
-            }}
-          </span>
+      <div v-loading="shipDialogLoading" class="shipment-dialog-body">
+        <div class="shipment-mode-toolbar">
+          <div>
+            <strong>订单 {{ shipTargetOrderNo || '-' }}</strong>
+            <span>选择手动填写现有运单，或先生成电子面单再确认发货。</span>
+          </div>
+          <ElRadioGroup v-model="shipmentMode" @change="handleShipmentModeChange">
+            <ElRadioButton value="manual" :disabled="!manualShipmentAvailable">
+              手动填写运单
+            </ElRadioButton>
+            <ElRadioButton value="electronic" :disabled="!canManageWaybill">
+              生成电子面单
+            </ElRadioButton>
+          </ElRadioGroup>
         </div>
 
-        <ElForm ref="shipFormRef" :model="shipForm" :rules="shipRules" label-width="106px">
-          <ElFormItem label="订单号">
-            <ElInput :model-value="shipTargetOrderNo" disabled />
-          </ElFormItem>
-          <ElFormItem label="履约方式" prop="logisticsType">
-            <ElSelect
-              v-model="shipForm.logisticsType"
-              placeholder="请选择履约方式"
-              style="width: 100%"
-              @change="handleLogisticsTypeChange"
+        <ElAlert
+          v-if="activeWaybillLocksManual"
+          title="当前存在活动电子面单，手动发货已锁定"
+          description="请先在电子面单模式中刷新或取消该面单；直接生成面单不会改变订单状态。"
+          type="warning"
+          :closable="false"
+          show-icon
+          class="shipment-mode-lock"
+        />
+
+        <div v-show="shipmentMode === 'manual'" class="manual-shipment-panel">
+          <ElAlert
+            :title="shipCapabilityText"
+            :type="shipCapabilityAlertType"
+            :closable="false"
+            show-icon
+            class="shipping-capability"
+          />
+          <div v-if="wechatShippingCapability" class="shipping-capability__meta">
+            <span
+              >提供方：{{ formatWechatProviderMode(wechatShippingCapability.providerMode) }}</span
             >
-              <ElOption
-                v-for="option in LOGISTICS_TYPE_OPTIONS"
-                :key="option.value"
-                :label="option.label"
-                :value="option.value"
-              />
-            </ElSelect>
-          </ElFormItem>
-          <ElFormItem label="商品描述" prop="itemDesc">
-            <div class="shipping-item-desc">
-              <ElInput
-                v-model="shipForm.itemDesc"
-                type="textarea"
-                :rows="3"
-                placeholder="请输入传给微信的商品描述"
-                @input="shipItemDescEdited = true"
-              />
-              <div
-                class="shipping-item-desc__counter"
-                :class="{ 'is-over-limit': shipItemDescCount > 120 }"
+            <span>能力状态：{{ wechatShippingCapability.state }}</span>
+            <span>检查时间：{{ formatDateTime(wechatShippingCapability.checkedAt) }}</span>
+            <span
+              v-if="wechatShippingCapability.errorCode || wechatShippingCapability.errorMessage"
+            >
+              安全错误：{{
+                [wechatShippingCapability.errorCode, wechatShippingCapability.errorMessage]
+                  .filter(Boolean)
+                  .join(' / ')
+              }}
+            </span>
+          </div>
+
+          <ElForm ref="shipFormRef" :model="shipForm" :rules="shipRules" label-width="106px">
+            <ElFormItem label="订单号">
+              <ElInput :model-value="shipTargetOrderNo" disabled />
+            </ElFormItem>
+            <ElFormItem label="履约方式" prop="logisticsType">
+              <ElSelect
+                v-model="shipForm.logisticsType"
+                placeholder="请选择履约方式"
+                style="width: 100%"
+                @change="handleLogisticsTypeChange"
               >
-                {{ shipItemDescCount }} / 120（按 Unicode 字符计数）
-              </div>
-            </div>
-          </ElFormItem>
-
-          <template v-if="shipForm.logisticsType === 1">
-            <ElFormItem label="快递公司" prop="expressCompanyCode">
-              <div class="shipping-carrier-field">
-                <ElSelect
-                  v-model="shipForm.expressCompanyCode"
-                  filterable
-                  clearable
-                  :loading="carrierLoading"
-                  placeholder="请选择已缓存的快递公司"
-                  style="width: 100%"
+                <ElOption
+                  v-for="option in LOGISTICS_TYPE_OPTIONS"
+                  :key="option.value"
+                  :label="option.label"
+                  :value="option.value"
+                />
+              </ElSelect>
+            </ElFormItem>
+            <ElFormItem label="商品描述" prop="itemDesc">
+              <div class="shipping-item-desc">
+                <ElInput
+                  v-model="shipForm.itemDesc"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="请输入传给微信的商品描述"
+                  @input="shipItemDescEdited = true"
+                />
+                <div
+                  class="shipping-item-desc__counter"
+                  :class="{ 'is-over-limit': shipItemDescCount > 120 }"
                 >
-                  <ElOption
-                    v-for="carrier in shippingCarriers"
-                    :key="carrier.deliveryId"
-                    :label="carrier.deliveryName"
-                    :value="carrier.deliveryId"
+                  {{ shipItemDescCount }} / 120（按 Unicode 字符计数）
+                </div>
+              </div>
+            </ElFormItem>
+
+            <template v-if="shipForm.logisticsType === 1">
+              <ElFormItem label="快递公司" prop="expressCompanyCode">
+                <div class="shipping-carrier-field">
+                  <ElSelect
+                    v-model="shipForm.expressCompanyCode"
+                    filterable
+                    clearable
+                    :loading="carrierLoading"
+                    placeholder="请选择已缓存的快递公司"
+                    style="width: 100%"
                   >
-                    <span>{{ carrier.deliveryName }}</span>
-                    <span class="shipping-carrier-field__code">{{ carrier.deliveryId }}</span>
-                  </ElOption>
-                </ElSelect>
-                <ElButton
-                  v-auth="'order:ship'"
-                  link
-                  type="primary"
-                  :loading="carrierSyncing"
-                  :disabled="!canStartCarrierSync(carrierLoading, carrierSyncing)"
-                  @click="handleSyncCarriers"
-                >
-                  同步快递公司
-                </ElButton>
-              </div>
-              <div class="shipping-field-help">{{ carrierSyncSummary }}</div>
-            </ElFormItem>
-            <ElFormItem label="快递单号" prop="trackingNo">
-              <ElInput v-model="shipForm.trackingNo" maxlength="80" placeholder="请输入快递单号" />
-            </ElFormItem>
-            <ElFormItem label="寄件人联系方式" prop="consignorContact">
-              <ElInput
-                v-model="shipForm.consignorContact"
-                maxlength="128"
-                placeholder="可选，由后端规范化并脱敏"
-              />
-              <div class="shipping-field-help">{{ receiverContactHelp }}</div>
-            </ElFormItem>
-          </template>
+                    <ElOption
+                      v-for="carrier in shippingCarriers"
+                      :key="carrier.deliveryId"
+                      :label="carrier.deliveryName"
+                      :value="carrier.deliveryId"
+                    >
+                      <span>{{ carrier.deliveryName }}</span>
+                      <span class="shipping-carrier-field__code">{{ carrier.deliveryId }}</span>
+                    </ElOption>
+                  </ElSelect>
+                  <ElButton
+                    v-auth="'order:ship'"
+                    link
+                    type="primary"
+                    :loading="carrierSyncing"
+                    :disabled="!canStartCarrierSync(carrierLoading, carrierSyncing)"
+                    @click="handleSyncCarriers"
+                  >
+                    同步快递公司
+                  </ElButton>
+                </div>
+                <div class="shipping-field-help">{{ carrierSyncSummary }}</div>
+              </ElFormItem>
+              <ElFormItem label="快递单号" prop="trackingNo">
+                <ElInput
+                  v-model="shipForm.trackingNo"
+                  maxlength="80"
+                  placeholder="请输入快递单号"
+                />
+                <div class="shipping-field-help">
+                  任意单号只能验证小程序的静态物流卡片；微信官方物流轨迹需要快递公司与真实运单匹配，并在发货后登记成功。
+                </div>
+              </ElFormItem>
+              <ElFormItem label="寄件人联系方式" prop="consignorContact">
+                <ElInput
+                  v-model="shipForm.consignorContact"
+                  maxlength="128"
+                  placeholder="可选，由后端规范化并脱敏"
+                />
+                <div class="shipping-field-help">{{ receiverContactHelp }}</div>
+              </ElFormItem>
+            </template>
 
-          <ElFormItem label="发货备注" prop="shipmentNote">
-            <ElInput
-              v-model="shipForm.shipmentNote"
-              type="textarea"
-              maxlength="255"
-              show-word-limit
-              :rows="3"
-              placeholder="可选，给运营记录使用"
-            />
-          </ElFormItem>
-        </ElForm>
+            <ElFormItem label="发货备注" prop="shipmentNote">
+              <ElInput
+                v-model="shipForm.shipmentNote"
+                type="textarea"
+                maxlength="255"
+                show-word-limit
+                :rows="3"
+                placeholder="可选，给运营记录使用"
+              />
+            </ElFormItem>
+          </ElForm>
+        </div>
+
+        <ElectronicWaybillPanel
+          v-show="shipmentMode === 'electronic'"
+          :open="shipDialogVisible"
+          :order-id="shipTargetOrderId"
+          :order-no="shipTargetOrderNo"
+          :initial-attempt="waybillPanelAttempt"
+          :can-manage="canManageWaybill"
+          :can-print="canPrintWaybill"
+          :can-test="canTestWaybill"
+          :can-confirm-shipment="canConfirmElectronicShipment"
+          @attempt-change="handleWaybillAttemptChange"
+          @busy-change="waybillPanelBusy = $event"
+          @shipment-confirmed="handleElectronicShipmentConfirmed"
+        />
       </div>
 
       <template #footer>
         <div class="dialog-footer">
-          <ElButton :disabled="shipSubmitting" @click="closeShipDialog()">取消</ElButton>
+          <ElButton :disabled="shipmentDialogBusy" @click="closeShipDialog()">关闭</ElButton>
           <ElButton
+            v-if="shipmentMode === 'manual'"
+            v-auth="'order:ship'"
             type="primary"
             :loading="shipSubmitting"
-            :disabled="shipDialogLoading"
+            :disabled="shipDialogLoading || !manualShipmentAvailable"
             @click="handleShipOrder"
           >
             确认发货
@@ -749,6 +919,7 @@
     fetchWechatShippingCarriers,
     syncWechatShippingCarriers
   } from '@/api/wechat-shipping'
+  import { retryWaybillRegistration } from '@/api/waybill'
   import {
     canLoadWechatShippingCatalog,
     canRetryWechatUpload,
@@ -767,6 +938,16 @@
     trimItemDesc,
     validateShippingForm
   } from './shipping-form'
+  import {
+    canRetryWaybillRegistration,
+    canUseManualShipment,
+    formatWaybillRegistrationKind,
+    formatWaybillRegistrationStatus,
+    initialShipmentMode,
+    isActiveWaybillAttempt,
+    type ShipmentDialogMode
+  } from './waybill-workflow'
+  import ElectronicWaybillPanel from './modules/electronic-waybill-panel.vue'
   import {
     ElButton,
     ElImage,
@@ -792,10 +973,12 @@
   const recordsRequestSeq = ref(0)
   const closingOrderId = ref<number | null>(null)
   const retryingOrderId = ref<number | null>(null)
+  const registrationRetryingOrderId = ref<number | null>(null)
   const currentDetail = ref<Api.Order.OrderDetail | null>(null)
   const detailTargetOrderId = ref<number | null>(null)
   const detailRequestSeq = ref(0)
   const retryRequestGeneration = ref(0)
+  const registrationRetryRequestGeneration = ref(0)
   const shipDialogVisible = ref(false)
   const shipDialogLoading = ref(false)
   const capabilityLoading = ref(false)
@@ -813,6 +996,10 @@
   const carrierRequestGeneration = ref(0)
   const wechatShippingCapability = ref<Api.Order.WechatShippingCapability | null>(null)
   const shippingCarriers = ref<Api.Order.WechatDeliveryCompany[]>([])
+  const shipmentMode = ref<ShipmentDialogMode>('manual')
+  const waybillPanelAttempt = ref<Api.Waybill.Attempt | null>(null)
+  const waybillPanelBusy = ref(false)
+  const waybillPanelResolved = ref(false)
 
   const shipForm = reactive<Api.Order.ShipOrderForm>({
     logisticsType: 1,
@@ -968,6 +1155,27 @@
   }
 
   const shipItemDescCount = computed(() => itemDescLength(shipForm.itemDesc))
+  const canManualShip = computed(() => hasAuth('order:ship'))
+  const canManageWaybill = computed(() => hasAuth('order:waybill:manage'))
+  const canPrintWaybill = computed(() => hasAuth('order:waybill:print'))
+  const canTestWaybill = computed(() => hasAuth('order:waybill:test'))
+  const canConfirmElectronicShipment = computed(() => canManageWaybill.value && canManualShip.value)
+  const activeWaybillLocksManual = computed(() => isActiveWaybillAttempt(waybillPanelAttempt.value))
+  const manualShipmentAvailable = computed(() =>
+    canUseManualShipment(canManualShip.value, waybillPanelAttempt.value)
+  )
+  const shipmentDialogBusy = computed(() => shipSubmitting.value || waybillPanelBusy.value)
+  const shipmentEntryPermission = computed(() =>
+    canManualShip.value ? 'order:ship' : 'order:waybill:manage'
+  )
+
+  const canOpenShipmentDialogFor = (detail: Api.Order.OrderDetail) => {
+    if (isActiveWaybillAttempt(detail.electronicWaybill)) return canManageWaybill.value
+    return detail.canShip && (canManualShip.value || canManageWaybill.value)
+  }
+
+  const shipmentEntryLabel = (detail: Api.Order.OrderDetail) =>
+    isActiveWaybillAttempt(detail.electronicWaybill) ? '处理电子面单' : '发货'
 
   const shipCapabilityText = computed(() =>
     capabilityLoading.value
@@ -1137,6 +1345,22 @@
     }
     return value ? labels[value] : '-'
   }
+
+  const formatWaybillStatus = (value: Api.Waybill.AttemptStatus) => {
+    const labels: Record<Api.Waybill.AttemptStatus, string> = {
+      CREATING: '生成中',
+      CREATED: '已生成，待确认发货',
+      CANCELING: '取消中',
+      CANCELED: '已取消',
+      UNKNOWN: '结果待恢复',
+      FAILED: '生成失败',
+      CONFIRMED: '已确认发货'
+    }
+    return labels[value]
+  }
+
+  const formatWaybillEnvironment = (value: Api.Waybill.Environment) =>
+    value === 'SANDBOX' ? '微信沙箱' : '正式环境'
 
   const formatSource = (value: string | null | undefined) => {
     if (!value) return '-'
@@ -1582,10 +1806,15 @@
   }
 
   const openShipDialog = async (orderId: number, orderNo: string) => {
-    if (!canLoadWechatShippingCatalog(hasAuth('order:ship'))) return
+    if (!canManualShip.value && !canManageWaybill.value) return
     const cachedDetail = currentDetail.value?.orderId === orderId ? currentDetail.value : null
-    if (cachedDetail && !cachedDetail.canShip) {
+    const cachedAttempt = cachedDetail?.electronicWaybill || null
+    if (cachedDetail && !cachedDetail.canShip && !isActiveWaybillAttempt(cachedAttempt)) {
       ElMessage.warning('订单存在进行中售后，已暂停发货')
+      return
+    }
+    if (isActiveWaybillAttempt(cachedAttempt) && !canManageWaybill.value) {
+      ElMessage.warning('当前存在活动电子面单，需要电子面单管理权限才能继续处理')
       return
     }
     const generation = ++shipDialogGeneration.value
@@ -1594,13 +1823,21 @@
     shipTargetOrderNo.value = orderNo
     shipSubmitting.value = false
     carrierSyncing.value = false
+    waybillPanelBusy.value = false
+    waybillPanelResolved.value = false
+    waybillPanelAttempt.value = cachedAttempt
+    shipmentMode.value = initialShipmentMode(
+      canManualShip.value,
+      canManageWaybill.value,
+      cachedAttempt
+    )
     resetShipForm(cachedDetail)
     wechatShippingCapability.value = null
     shippingCarriers.value = []
     shipDialogVisible.value = true
     shipDialogLoading.value = !cachedDetail
-    capabilityLoading.value = true
-    carrierLoading.value = true
+    capabilityLoading.value = canManualShip.value
+    carrierLoading.value = canManualShip.value
 
     const capabilityGeneration = ++capabilityRequestGeneration.value
     const carrierGeneration = ++carrierRequestGeneration.value
@@ -1609,6 +1846,22 @@
       .then((detail) => {
         if (!isCurrentShipDialog(generation, orderId)) return
         shipOrderDetail.value = detail
+        const resolvedAttempt = waybillPanelResolved.value
+          ? waybillPanelAttempt.value
+          : detail.electronicWaybill
+        if (!detail.canShip && !isActiveWaybillAttempt(resolvedAttempt)) {
+          ElMessage.warning('订单当前不满足发货条件')
+          closeShipDialog(generation)
+          return
+        }
+        if (!waybillPanelResolved.value) {
+          waybillPanelAttempt.value = detail.electronicWaybill || null
+          shipmentMode.value = initialShipmentMode(
+            canManualShip.value,
+            canManageWaybill.value,
+            waybillPanelAttempt.value
+          )
+        }
         if (!shipItemDescEdited.value) shipForm.itemDesc = suggestItemDesc(detail.items)
       })
       .catch(() => undefined)
@@ -1617,63 +1870,67 @@
         shipDialogLoading.value = false
       })
 
-    const capabilityRequest = fetchWechatShippingCapability()
-      .then((capability) => {
-        if (
-          !isCurrentShipDialog(generation, orderId) ||
-          capabilityGeneration !== capabilityRequestGeneration.value
-        ) {
-          return
-        }
-        wechatShippingCapability.value = capability
-      })
-      .catch(() => {
-        if (
-          !isCurrentShipDialog(generation, orderId) ||
-          capabilityGeneration !== capabilityRequestGeneration.value
-        ) {
-          return
-        }
-        wechatShippingCapability.value = null
-      })
-      .finally(() => {
-        if (
-          !isCurrentShipDialog(generation, orderId) ||
-          capabilityGeneration !== capabilityRequestGeneration.value
-        ) {
-          return
-        }
-        capabilityLoading.value = false
-      })
+    const capabilityRequest = canManualShip.value
+      ? fetchWechatShippingCapability()
+          .then((capability) => {
+            if (
+              !isCurrentShipDialog(generation, orderId) ||
+              capabilityGeneration !== capabilityRequestGeneration.value
+            ) {
+              return
+            }
+            wechatShippingCapability.value = capability
+          })
+          .catch(() => {
+            if (
+              !isCurrentShipDialog(generation, orderId) ||
+              capabilityGeneration !== capabilityRequestGeneration.value
+            ) {
+              return
+            }
+            wechatShippingCapability.value = null
+          })
+          .finally(() => {
+            if (
+              !isCurrentShipDialog(generation, orderId) ||
+              capabilityGeneration !== capabilityRequestGeneration.value
+            ) {
+              return
+            }
+            capabilityLoading.value = false
+          })
+      : Promise.resolve()
 
-    const carrierRequest = fetchWechatShippingCarriers()
-      .then((carriers) => {
-        if (
-          !isCurrentShipDialog(generation, orderId) ||
-          carrierGeneration !== carrierRequestGeneration.value
-        ) {
-          return
-        }
-        shippingCarriers.value = carriers
-      })
-      .catch(() => {
-        if (
-          !isCurrentShipDialog(generation, orderId) ||
-          carrierGeneration !== carrierRequestGeneration.value
-        ) {
-          return
-        }
-        shippingCarriers.value = []
-      })
-      .finally(() => {
-        if (
-          !isCurrentShipDialog(generation, orderId) ||
-          carrierGeneration !== carrierRequestGeneration.value
-        ) {
-          return
-        }
-        carrierLoading.value = false
-      })
+    const carrierRequest = canManualShip.value
+      ? fetchWechatShippingCarriers()
+          .then((carriers) => {
+            if (
+              !isCurrentShipDialog(generation, orderId) ||
+              carrierGeneration !== carrierRequestGeneration.value
+            ) {
+              return
+            }
+            shippingCarriers.value = carriers
+          })
+          .catch(() => {
+            if (
+              !isCurrentShipDialog(generation, orderId) ||
+              carrierGeneration !== carrierRequestGeneration.value
+            ) {
+              return
+            }
+            shippingCarriers.value = []
+          })
+          .finally(() => {
+            if (
+              !isCurrentShipDialog(generation, orderId) ||
+              carrierGeneration !== carrierRequestGeneration.value
+            ) {
+              return
+            }
+            carrierLoading.value = false
+          })
+      : Promise.resolve()
 
     await Promise.allSettled([detailRequest, capabilityRequest, carrierRequest])
   }
@@ -1686,6 +1943,45 @@
       delete shipForm.consignorContact
       shipFormRef.value?.clearValidate(['expressCompanyCode', 'trackingNo', 'consignorContact'])
     }
+  }
+
+  const handleShipmentModeChange = (value: string | number | boolean | undefined) => {
+    if (value === 'manual' && !manualShipmentAvailable.value) {
+      shipmentMode.value = 'electronic'
+      ElMessage.warning('当前活动电子面单尚未取消，不能切换为手动发货')
+      return
+    }
+    if (value === 'electronic' && !canManageWaybill.value) {
+      shipmentMode.value = 'manual'
+      ElMessage.warning('当前账号没有电子面单管理权限')
+    }
+  }
+
+  const handleWaybillAttemptChange = (nextAttempt: Api.Waybill.Attempt | null) => {
+    waybillPanelResolved.value = true
+    waybillPanelAttempt.value = nextAttempt
+    if (shipOrderDetail.value) shipOrderDetail.value.electronicWaybill = nextAttempt
+    if (currentDetail.value && currentDetail.value.orderId === shipTargetOrderId.value) {
+      currentDetail.value.electronicWaybill = nextAttempt
+    }
+    if (isActiveWaybillAttempt(nextAttempt)) shipmentMode.value = 'electronic'
+  }
+
+  const handleElectronicShipmentConfirmed = async (shipment: Api.Order.Shipment) => {
+    const orderId = shipTargetOrderId.value
+    const generation = shipDialogGeneration.value
+    if (!orderId || !isCurrentShipDialog(generation, orderId)) return
+    notifyShippingOutcome(shipment)
+    if (currentDetail.value?.orderId === orderId) {
+      currentDetail.value.shipment = shipment
+    }
+    closeShipDialog(generation)
+    drawerVisible.value = true
+
+    await Promise.allSettled([
+      Promise.resolve().then(() => handleRefresh()),
+      loadOrderDetail(orderId)
+    ])
   }
 
   const markShipDialogClosing = () => {
@@ -1714,6 +2010,10 @@
     carrierLoading.value = false
     shipSubmitting.value = false
     carrierSyncing.value = false
+    shipmentMode.value = 'manual'
+    waybillPanelAttempt.value = null
+    waybillPanelBusy.value = false
+    waybillPanelResolved.value = false
     shipTargetOrderId.value = null
     shipTargetOrderNo.value = ''
     resetShipForm()
@@ -1761,6 +2061,7 @@
   }
 
   const handleShipOrder = async () => {
+    if (shipmentMode.value !== 'manual' || !manualShipmentAvailable.value) return
     if (shipSubmitting.value) return
     shipSubmitting.value = true
     const orderId = shipTargetOrderId.value
@@ -1848,6 +2149,54 @@
     } finally {
       if (requestGeneration === retryRequestGeneration.value && retryingOrderId.value === orderId) {
         retryingOrderId.value = null
+      }
+    }
+  }
+
+  const handleRetryWaybillRegistration = async (orderId: number, orderNo: string) => {
+    if (!hasAuth('order:shipping:registration:retry')) return
+    if (registrationRetryingOrderId.value !== null) return
+    const requestGeneration = ++registrationRetryRequestGeneration.value
+    registrationRetryingOrderId.value = orderId
+    try {
+      await ElMessageBox.confirm(`确定重试订单 ${orderNo} 的微信物流轨迹登记吗？`, '重试确认', {
+        type: 'warning',
+        confirmButtonText: '确定',
+        cancelButtonText: '取消'
+      })
+      if (
+        requestGeneration !== registrationRetryRequestGeneration.value ||
+        registrationRetryingOrderId.value !== orderId
+      ) {
+        return
+      }
+
+      const shipment = await retryWaybillRegistration(orderId)
+      if (
+        requestGeneration !== registrationRetryRequestGeneration.value ||
+        registrationRetryingOrderId.value !== orderId
+      ) {
+        return
+      }
+      if (currentDetail.value?.orderId === orderId) {
+        currentDetail.value.shipment = shipment
+      }
+
+      const statusText = formatWaybillRegistrationStatus(shipment.waybillRegistrationStatus)
+      const message = shipment.waybillRegistrationMessage?.trim()
+      const outcome = `订单 ${orderNo}：${message || statusText}`
+      if (shipment.waybillRegistrationStatus === 'REGISTERED') {
+        ElMessage.success(outcome)
+      } else {
+        ElMessage.warning({ message: outcome, duration: 6000 })
+      }
+      await Promise.allSettled([refreshData()])
+    } finally {
+      if (
+        requestGeneration === registrationRetryRequestGeneration.value &&
+        registrationRetryingOrderId.value === orderId
+      ) {
+        registrationRetryingOrderId.value = null
       }
     }
   }
@@ -2459,6 +2808,54 @@
     width: 100%;
   }
 
+  .shipment-dialog-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .shipment-mode-toolbar {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    background: var(--el-fill-color-extra-light);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+
+    > div:first-child {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    strong {
+      color: var(--el-text-color-primary);
+    }
+
+    span {
+      font-size: 12px;
+      line-height: 18px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .shipment-mode-lock {
+    margin: 0;
+  }
+
+  .manual-shipment-panel {
+    padding: 16px 16px 0;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
+  .pre-shipment-waybill__notice {
+    margin-bottom: 14px;
+  }
+
   .shipping-capability {
     margin-bottom: 8px;
   }
@@ -2540,6 +2937,19 @@
     .detail-card-grid--two,
     .shipping-diagnostic-grid {
       grid-template-columns: minmax(0, 1fr);
+    }
+
+    .shipment-mode-toolbar {
+      flex-direction: column;
+      align-items: stretch;
+
+      :deep(.el-radio-group) {
+        display: flex;
+      }
+
+      :deep(.el-radio-button) {
+        flex: 1;
+      }
     }
 
     .detail-fact--full,

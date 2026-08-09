@@ -1318,6 +1318,7 @@ declare namespace Api {
       canShip: boolean
       activeAfterSale: ActiveAfterSaleSummary | null
       shipment?: Shipment | null
+      electronicWaybill?: Api.Waybill.Attempt | null
       closeReason: string | null
       closedAt: string | null
       createdAt: string
@@ -1348,6 +1349,12 @@ declare namespace Api {
       uploadTime?: string | null
       wechatUploadedAt?: string | null
       lastAttemptAt?: string | null
+      shipmentSource?: Api.Waybill.ShipmentSource
+      electronicWaybillId?: number | null
+      waybillTrackingSupported: boolean
+      waybillRegistrationKind: Api.Waybill.RegistrationKind | null
+      waybillRegistrationStatus: Api.Waybill.RegistrationStatus | null
+      waybillRegistrationMessage: string | null
     }
 
     interface ShipOrderForm {

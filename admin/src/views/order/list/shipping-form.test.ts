@@ -50,6 +50,10 @@ const shipment = (
   wechatProviderMode: providerMode,
   wechatUploadStatus,
   retryCount: 0,
+  waybillTrackingSupported: false,
+  waybillRegistrationKind: null,
+  waybillRegistrationStatus: null,
+  waybillRegistrationMessage: null,
   ...overrides
 })
 
@@ -214,7 +218,11 @@ test('formats non-express shipment facts when express-only keys are absent', () 
     localShipmentStatus: 'SHIPPED',
     wechatProviderMode: 'REAL',
     wechatUploadStatus: 'FAILED',
-    retryCount: 0
+    retryCount: 0,
+    waybillTrackingSupported: false,
+    waybillRegistrationKind: null,
+    waybillRegistrationStatus: null,
+    waybillRegistrationMessage: null
   }
 
   assert.equal(Object.hasOwn(localDelivery, 'expressCompanyCode'), false)

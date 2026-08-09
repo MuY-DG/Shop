@@ -1148,6 +1148,58 @@ Real upload enabled path:
 - If upload fails, retry through `POST /admin/orders/{orderId}/shipping/retry-wechat-upload` and verify `retryCount` increments without creating a duplicate shipment row.
 - Confirm logs include only safe error summaries and never print access tokens.
 
+### Electronic Waybill And Mini Program Logistics
+
+Automated checks cover the database contract, configuration modes, provider
+payloads, lifecycle/idempotency, explicit shipment confirmation, registration,
+and Mini Program fallback behavior. They do not prove that WeChat accepted a
+real carrier/waybill relationship:
+
+```bash
+cd backend/shop-server
+./mvnw -Dtest='WechatWaybillSchemaTest,AdminWechatExpressConfigControllerTest,WechatExpressProviderTest,AdminElectronicWaybillControllerTest,AdminShipmentControllerTest,OrderAggregateCleanupServiceTest' test
+cd ../../admin
+pnpm typecheck
+pnpm build
+cd ../miniprogram
+pnpm check
+```
+
+Sandbox smoke:
+
+1. In `订单管理 / 电子面单配置`, select `SANDBOX`, fill the structured sender
+   and single-parcel defaults, and save. Confirm the effective account shows
+   `TEST / test_biz_id / 1 / test_service_name`.
+2. Use a real paid order whose payer OpenID belongs to a Mini Program
+   administrator, operator, or developer. The official sandbox permits at most
+   10 waybills per day.
+3. Open the order's shipment dialog, choose “生成电子面单”, create the label,
+   and verify the order remains `PAID` with no `order_shipment` row.
+4. Preview and print the existing label. Preview/reprint must call only the
+   print endpoint and must not create a second upstream order.
+5. Exercise the server-provided sandbox actions for pickup, transit, delivery,
+   and signed status. Do not expose any action outside the server whitelist.
+6. Click “确认发货” once or twice. Verify exactly one shipment exists, its
+   source is `WECHAT_WAYBILL`, the waybill attempt is `CONFIRMED`, and the order
+   becomes `SHIPPED` once.
+
+Manual and Mini Program smoke:
+
+- Keep `POST /admin/orders/{orderId}/ship` available for an existing real
+  carrier and tracking number. An active electronic waybill must block manual
+  shipment and receiver-address changes until it is canceled or recovered.
+- In Mini Program order detail, verify the static logistics card shows carrier,
+  full tracking number, copy action, and shipped time even if official
+  registration fails.
+- A random/fabricated tracking number is valid only for that static-card test.
+  It is not expected to yield an official waybill token or trajectory.
+- For official trajectory smoke, use WeChat DevTools **Preview** and a real
+  device with the actual buyer/order/phone/transaction/carrier/waybill match.
+  The logistics plugin cannot be fully simulated in the DevTools simulator.
+- Verify the token and label responses include `Cache-Control: no-store`, and
+  confirm logs/client storage never contain access tokens, waybill tokens,
+  OpenIDs, phone/address data, transaction IDs, or label HTML.
+
 Automatic receipt reconciliation:
 
 - Keep `SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=true`. The default scan delay is 5 minutes, the minimum shipped age is 1 hour, and one still-unconfirmed order is queried at most every 30 minutes.

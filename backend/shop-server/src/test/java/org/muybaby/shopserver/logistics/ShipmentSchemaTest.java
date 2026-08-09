@@ -51,6 +51,8 @@ class ShipmentSchemaTest {
                         from order_shipment
                         where order_id = 19201
                           and tracking_no = 'SF1234567890'
+                          and shipment_source = 'MANUAL'
+                          and electronic_waybill_id is null
                           and logistics_type = 1
                           and delivery_mode = 1
                           and item_desc = 'Shipment Item'

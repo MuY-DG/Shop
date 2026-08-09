@@ -11,6 +11,10 @@ import {
 interface AppConfig {
   pages: string[];
   lazyCodeLoading?: string;
+  plugins?: Record<string, {
+    version?: string;
+    provider?: string;
+  }>;
   tabBar?: {
     custom?: boolean;
     color?: string;
@@ -1482,6 +1486,14 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   const detailConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "pages/order/detail/detail.json"), "utf8")
   ) as DetailPageConfig;
+  const orderService = readFileSync(
+    resolve(sourceRoot, "services/order.ts"),
+    "utf8"
+  );
+  const logisticsFeature = readFileSync(
+    resolve(sourceRoot, "features/order-logistics.ts"),
+    "utf8"
+  );
   const paymentAdapter = readFileSync(
     resolve(sourceRoot, "utils/wechat-payment.ts"),
     "utf8"
@@ -1521,6 +1533,13 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(detailTemplate, /还剩[\s\S]*countdownHours[\s\S]*countdownMinutes[\s\S]*countdownSeconds[\s\S]*订单自动取消/);
   assert.match(detailTemplate, /receiverPhoneDisplay/);
   assert.match(detailTemplate, /bindtap="onModifyTap"[\s\S]*>修改<\/button>/);
+  assert.match(detailTemplate, /class="detail-card logistics-card"/);
+  assert.match(detailTemplate, /detail\.shipmentView\.carrierName/);
+  assert.match(detailTemplate, /detail\.shipmentView\.trackingNo/);
+  assert.match(detailTemplate, /catchtap="onCopyTrackingNoTap"/);
+  assert.match(detailTemplate, /catchtap="onOpenLogisticsTap"/);
+  assert.match(detailTemplate, /loading="\{\{logisticsOpening\}\}"/);
+  assert.match(detailTemplate, /disabled="\{\{logisticsOpening\}\}"/);
   assert.match(detailTemplate, /共\{\{detail\.orderInfoItemCount\}\}项/);
   assert.match(detailTemplate, /bindtap="onOrderInfoToggle"/);
   assert.match(detailTemplate, /bindtap="onCustomerServiceTap"/);
@@ -1536,6 +1555,15 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(detailTemplate, /class="detail-scroll"[\s\S]*scroll-y="\{\{true\}\}"/);
   assert.match(detailLogic, /buildOrderModifyUrl/);
   assert.match(detailLogic, /copyOrderNo/);
+  assert.match(detailLogic, /copyTrackingNo/);
+  assert.match(detailLogic, /openOrderLogistics/);
+  assert.match(detailLogic, /getOrderWaybillToken/);
+  assert.match(detailLogic, /this\.data\.logisticsOpening/);
+  assert.match(detailLogic, /finally\s*\{\s*this\.setData\(\{ logisticsOpening: false \}\)/);
+  assert.doesNotMatch(detailLogic, /setData\(\{[^}]*waybillToken/);
+  assert.match(orderService, /waybillToken\(orderId\)[\s\S]*method:\s*"POST"/);
+  assert.match(logisticsFeature, /requirePlugin\("logisticsPlugin"\)/);
+  assert.doesNotMatch(logisticsFeature, /setStorage|globalData|console\./);
   assert.match(detailLogic, /buildCustomerServiceUrl\("ORDER", detail\.orderId\)/);
   assert.equal(detailConfig.disableScroll, true);
   assert.equal(detailConfig.enablePullDownRefresh, false);
@@ -1556,6 +1584,8 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(detailStyles, /\.order-info__heading\s*\{[\s\S]*height:\s*92rpx;/);
   assert.match(detailStyles, /\.info-row--order-no\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-content:\s*stretch;[\s\S]*grid-template-columns:\s*auto minmax\(0, 1fr\) auto;[\s\S]*gap:\s*0;/);
   assert.match(detailStyles, /button\.copy-action\s*\{[\s\S]*width:\s*auto !important;[\s\S]*justify-self:\s*end;/);
+  assert.match(detailStyles, /\.logistics-card\s*\{/);
+  assert.match(detailStyles, /\.logistics-card__tracking-no\s*\{[\s\S]*text-overflow:\s*ellipsis;/);
   assert.match(detailTemplate, /class="payment-utilities"[\s\S]*class="payment-tool__icon-frame"/);
   assert.match(detailStyles, /button\.payment-tool\s*\{[\s\S]*width:\s*76rpx !important;[\s\S]*height:\s*80rpx !important;/);
   assert.match(detailStyles, /\.payment-tool__icon-frame\s*\{[\s\S]*width:\s*44rpx;[\s\S]*height:\s*44rpx;/);

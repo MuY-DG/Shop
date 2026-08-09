@@ -81,6 +81,55 @@ export interface OrderItemResponse {
   reviewable: boolean;
 }
 
+export type LogisticsType = 1 | 2 | 3 | 4;
+export type DeliveryMode = 1;
+export type ShipmentSource = "MANUAL" | "WECHAT_WAYBILL";
+export type WechatShippingProviderMode = "REAL" | "MOCK" | "DISABLED" | "UNKNOWN";
+export type WechatShippingUploadStatus =
+  | "SKIPPED"
+  | "UPLOADING"
+  | "UPLOADED"
+  | "FAILED"
+  | "UNAVAILABLE"
+  | "UNKNOWN";
+export type WaybillRegistrationKind = "TRACE" | "FOLLOW";
+export type WaybillRegistrationStatus =
+  | "PENDING"
+  | "REGISTERING"
+  | "REGISTERED"
+  | "FAILED"
+  | "UNKNOWN"
+  | "UNAVAILABLE"
+  | "SKIPPED";
+
+export interface AppOrderShipmentResponse {
+  shipmentId: number;
+  orderId: number;
+  logisticsType: LogisticsType;
+  deliveryMode: DeliveryMode;
+  itemDesc: string;
+  expressCompanyCode: string | null;
+  expressCompanyName: string | null;
+  trackingNo: string | null;
+  shipmentSource: ShipmentSource;
+  electronicWaybillId?: number;
+  localShipmentStatus: string;
+  wechatProviderMode: WechatShippingProviderMode;
+  wechatUploadStatus: WechatShippingUploadStatus;
+  wechatUploadMessage: string | null;
+  waybillTrackingSupported: boolean;
+  waybillRegistrationKind: WaybillRegistrationKind | null;
+  waybillRegistrationStatus: WaybillRegistrationStatus | null;
+  waybillRegistrationMessage: string | null;
+  shippedAt: string;
+  uploadTime: string | null;
+  wechatUploadedAt: string | null;
+}
+
+export interface OrderWaybillTokenResponse {
+  waybillToken: string;
+}
+
 export interface AppOrderDetailResponse {
   orderId: number;
   orderNo: string;
@@ -112,7 +161,7 @@ export interface AppOrderDetailResponse {
   completedAt?: string;
   refundingAt?: string;
   refundedAt?: string;
-  shipment?: unknown;
+  shipment?: AppOrderShipmentResponse | null;
   latestAfterSale?: AfterSaleResponse;
   rebuyableOrderItemIds?: number[];
   items: OrderItemResponse[];

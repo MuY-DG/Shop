@@ -85,7 +85,9 @@ export const API_ENDPOINTS = Object.freeze({
     pay: (orderId: number): string => `/app/orders/${orderId}/pay`,
     cancel: (orderId: number): string => `/app/orders/${orderId}/cancel`,
     paymentSync: (orderId: number): string => `/app/orders/${orderId}/payment/sync`,
-    confirmReceipt: (orderId: number): string => `/app/orders/${orderId}/confirm-receipt`
+    confirmReceipt: (orderId: number): string => `/app/orders/${orderId}/confirm-receipt`,
+    waybillToken: (orderId: number): string =>
+      `/app/orders/${orderId}/logistics/waybill-token`
   },
   afterSales: {
     list: "/app/after-sales",

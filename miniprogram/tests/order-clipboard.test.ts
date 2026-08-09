@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { copyOrderNo } from "../miniprogram/features/order-center";
+import {
+  copyOrderNo,
+  copyTrackingNo
+} from "../miniprogram/features/order-center";
 
 interface ToastRecord {
   title: string;
@@ -38,6 +41,18 @@ test("复制订单号会规范文本并写入剪贴板", () => {
   copyOrderNo("  ORD-20260807  ", fixture.runtime);
   assert.deepEqual(fixture.written, ["ORD-20260807"]);
   assert.deepEqual(fixture.toasts, [{ title: "订单号已复制", icon: "success" }]);
+});
+
+test("复制运单号会规范文本并写入剪贴板", () => {
+  const fixture = clipboardRuntime();
+  copyTrackingNo("  SF1234567890  ", fixture.runtime);
+  assert.deepEqual(fixture.written, ["SF1234567890"]);
+  assert.deepEqual(fixture.toasts, [{ title: "运单号已复制", icon: "success" }]);
+
+  const empty = clipboardRuntime();
+  copyTrackingNo(null, empty.runtime);
+  assert.deepEqual(empty.written, []);
+  assert.deepEqual(empty.toasts, [{ title: "运单号暂不可用", icon: "none" }]);
 });
 
 test("复制订单号对空值和普通写入失败给出明确反馈", () => {

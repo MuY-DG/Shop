@@ -2,6 +2,7 @@ package org.muybaby.shopserver.order.dto;
 
 import org.muybaby.shopserver.common.api.JsonStringId;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
+import org.muybaby.shopserver.logistics.waybill.dto.ElectronicWaybillAttemptResponse;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -43,6 +44,7 @@ public record OrderDetailResponse(
         Boolean canShip,
         AdminOrderAfterSaleSummaryResponse activeAfterSale,
         OrderShipmentResponse shipment,
+        ElectronicWaybillAttemptResponse electronicWaybill,
         List<OrderItemResponse> items
 ) {
 }

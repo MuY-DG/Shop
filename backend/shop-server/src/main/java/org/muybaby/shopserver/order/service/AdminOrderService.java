@@ -7,10 +7,15 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.logistics.DeliveryMode;
 import org.muybaby.shopserver.logistics.LogisticsType;
+import org.muybaby.shopserver.logistics.ShipmentSource;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
 import org.muybaby.shopserver.logistics.service.WechatShippingUploadRecovery;
+import org.muybaby.shopserver.logistics.waybill.ElectronicWaybillService;
+import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationKind;
+import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationStatus;
+import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationSummary;
 import org.muybaby.shopserver.order.AdminOrderStatusGroup;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.dto.AdminOrderAfterSaleSummaryResponse;
@@ -43,17 +48,20 @@ public class AdminOrderService {
     private final OrderCloseService orderCloseService;
     private final WechatShippingUploadRecovery shippingUploadRecovery;
     private final AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy;
+    private final ElectronicWaybillService electronicWaybillService;
 
     public AdminOrderService(
             JdbcClient jdbcClient,
             OrderCloseService orderCloseService,
             WechatShippingUploadRecovery shippingUploadRecovery,
-            AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy
+            AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
+            ElectronicWaybillService electronicWaybillService
     ) {
         this.jdbcClient = jdbcClient;
         this.orderCloseService = orderCloseService;
         this.shippingUploadRecovery = shippingUploadRecovery;
         this.afterSaleFulfillmentPolicy = afterSaleFulfillmentPolicy;
+        this.electronicWaybillService = electronicWaybillService;
     }
 
     public PageResult<AdminOrderSummaryResponse> page(AuthenticatedPrincipal principal, AdminOrderQueryRequest query) {
@@ -380,6 +388,7 @@ public class AdminOrderService {
                 canShip,
                 activeAfterSale,
                 findShipment(orderId),
+                electronicWaybillService.latestSummary(orderId),
                 items
         );
     }
@@ -653,6 +662,8 @@ public class AdminOrderService {
                                express_company_code,
                                express_company_name,
                                tracking_no,
+                               shipment_source,
+                               electronic_waybill_id,
                                shipment_note,
                                status as local_shipment_status,
                                wechat_provider_mode,
@@ -663,7 +674,17 @@ public class AdminOrderService {
                                shipped_at,
                                upload_time,
                                wechat_uploaded_at,
-                               last_attempt_at
+                               last_attempt_at,
+                               (
+                                   select registration_kind
+                                   from shipment_waybill_registration registration
+                                   where registration.shipment_id = order_shipment.id
+                               ) as waybill_registration_kind,
+                               (
+                                   select status
+                                   from shipment_waybill_registration registration
+                                   where registration.shipment_id = order_shipment.id
+                               ) as waybill_registration_status
                         from order_shipment
                         where order_id = :orderId
                         """)
@@ -674,27 +695,52 @@ public class AdminOrderService {
     }
 
     private OrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {
+        LogisticsType logisticsType = LogisticsType.fromValue(rs.getInt("logistics_type"));
+        WaybillRegistrationKind registrationKind = registrationKind(
+                rs.getString("waybill_registration_kind")
+        );
+        WaybillRegistrationStatus registrationStatus = registrationStatus(
+                rs.getString("waybill_registration_status")
+        );
         return new OrderShipmentResponse(
                 rs.getLong("shipment_id"),
                 rs.getLong("order_id"),
-                LogisticsType.fromValue(rs.getInt("logistics_type")),
+                logisticsType,
                 DeliveryMode.fromValue(rs.getInt("delivery_mode")),
                 rs.getString("item_desc"),
                 rs.getString("express_company_code"),
                 rs.getString("express_company_name"),
                 rs.getString("tracking_no"),
+                shipmentSource(rs.getString("shipment_source")),
+                rs.getObject("electronic_waybill_id", Long.class),
                 blankToNull(rs.getString("shipment_note")),
                 rs.getString("local_shipment_status"),
                 providerMode(rs.getString("wechat_provider_mode")),
                 uploadStatus(rs.getString("wechat_upload_status")),
                 blankToNull(rs.getString("wechat_error_code")),
                 blankToNull(rs.getString("wechat_error_message")),
+                WaybillRegistrationSummary.trackingSupported(
+                        logisticsType,
+                        rs.getString("express_company_code"),
+                        rs.getString("tracking_no")
+                ),
+                registrationKind,
+                registrationStatus,
+                WaybillRegistrationSummary.safeMessage(registrationStatus),
                 rs.getInt("retry_count"),
                 rs.getObject("shipped_at", LocalDateTime.class),
                 rs.getString("upload_time"),
                 rs.getObject("wechat_uploaded_at", LocalDateTime.class),
                 rs.getObject("last_attempt_at", LocalDateTime.class)
         );
+    }
+
+    private ShipmentSource shipmentSource(String value) {
+        try {
+            return ShipmentSource.valueOf(value);
+        } catch (RuntimeException ex) {
+            return ShipmentSource.MANUAL;
+        }
     }
 
     private WechatProviderMode providerMode(String value) {
@@ -710,6 +756,22 @@ public class AdminOrderService {
             return WechatShippingUploadStatus.valueOf(value);
         } catch (RuntimeException ex) {
             return WechatShippingUploadStatus.UNKNOWN;
+        }
+    }
+
+    private WaybillRegistrationKind registrationKind(String value) {
+        try {
+            return value == null ? null : WaybillRegistrationKind.valueOf(value);
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private WaybillRegistrationStatus registrationStatus(String value) {
+        try {
+            return value == null ? null : WaybillRegistrationStatus.valueOf(value);
+        } catch (RuntimeException ex) {
+            return WaybillRegistrationStatus.UNKNOWN;
         }
     }
 

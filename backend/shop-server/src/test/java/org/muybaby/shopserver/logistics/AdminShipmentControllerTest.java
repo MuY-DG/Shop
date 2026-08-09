@@ -133,6 +133,164 @@ class AdminShipmentControllerTest {
     }
 
     @Test
+    void activeElectronicWaybillBlocksManualShipment() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(
+                appLogin("ship-active-waybill-user"),
+                "SHIP-ACTIVE-WAYBILL",
+                "wx-active-waybill"
+        );
+        insertElectronicWaybill(orderId, "CREATED", "TEST-WAYBILL-001");
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(shipRequest()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("PAID");
+    }
+
+    @Test
+    void electronicWaybillConfirmationRequiresManageAndShipPermissions() throws Exception {
+        long orderId = insertPaidOrder(
+                appLogin("confirm-waybill-permission-user"),
+                "CONFIRM-WAYBILL-PERMISSION",
+                "wx-confirm-waybill-permission"
+        );
+        long waybillRecordId = insertElectronicWaybill(
+                orderId, "CREATED", "TEST-WAYBILL-PERMISSION"
+        );
+
+        for (List<String> permissions : List.of(
+                List.of("order:waybill:manage"),
+                List.of("order:ship")
+        )) {
+            mockMvc.perform(post(
+                            "/admin/orders/{orderId}/waybills/{waybillRecordId}/confirm-shipment",
+                            orderId, waybillRecordId
+                    )
+                            .header("Authorization", "Bearer " + adminToken(permissions)))
+                    .andExpect(status().isForbidden())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
+        }
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("PAID");
+        assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single()).isZero();
+    }
+
+    @Test
+    void electronicWaybillOnlyShipsAfterExplicitIdempotentConfirmation() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(
+                appLogin("confirm-waybill-user"),
+                "CONFIRM-WAYBILL",
+                "wx-confirm-waybill"
+        );
+        long waybillRecordId = insertElectronicWaybill(
+                orderId, "CREATED", "TEST-WAYBILL-CONFIRM"
+        );
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("PAID");
+        assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single()).isZero();
+
+        for (int requestNumber = 0; requestNumber < 2; requestNumber++) {
+            mockMvc.perform(post(
+                            "/admin/orders/{orderId}/waybills/{waybillRecordId}/confirm-shipment",
+                            orderId, waybillRecordId
+                    )
+                            .header("Authorization", "Bearer " + adminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.orderId").value(orderId))
+                    .andExpect(jsonPath("$.data.logisticsType").value(1))
+                    .andExpect(jsonPath("$.data.expressCompanyCode").value("TEST"))
+                    .andExpect(jsonPath("$.data.trackingNo").value("TEST-WAYBILL-CONFIRM"))
+                    .andExpect(jsonPath("$.data.shipmentSource").value("WECHAT_WAYBILL"))
+                    .andExpect(jsonPath("$.data.electronicWaybillId").value(waybillRecordId));
+        }
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("SHIPPED");
+        assertThat(jdbcClient.sql("select status from order_electronic_waybill where id = :id")
+                .param("id", waybillRecordId)
+                .query(String.class)
+                .single()).isEqualTo("CONFIRMED");
+        assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single()).isOne();
+        assertThat(jdbcClient.sql("select count(*) from order_status_log where order_id = :orderId and event_type = 'ORDER_SHIPPED'")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single()).isOne();
+    }
+
+    @Test
+    void electronicWaybillCannotBeConfirmedWhileUpstreamRefreshIsInFlight() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(
+                appLogin("confirm-refreshing-waybill-user"),
+                "CONFIRM-REFRESHING-WAYBILL",
+                "wx-confirm-refreshing-waybill"
+        );
+        long waybillRecordId = insertElectronicWaybill(
+                orderId, "CREATED", "TEST-WAYBILL-REFRESHING"
+        );
+        jdbcClient.sql("""
+                        update order_electronic_waybill
+                        set pending_operation = 'REFRESH',
+                            last_attempt_at = current_timestamp,
+                            updated_at = current_timestamp
+                        where id = :id
+                        """)
+                .param("id", waybillRecordId)
+                .update();
+
+        mockMvc.perform(post(
+                        "/admin/orders/{orderId}/waybills/{waybillRecordId}/confirm-shipment",
+                        orderId, waybillRecordId
+                )
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ORDER_STATE_CONFLICT.code()));
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("PAID");
+        assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(jdbcClient.sql("select status from order_electronic_waybill where id = :id")
+                .param("id", waybillRecordId)
+                .query(String.class)
+                .single()).isEqualTo("CREATED");
+    }
+
+    @Test
     void activeAfterSaleBlocksShipmentUntilTheRequestIsRejected() throws Exception {
         String adminToken = adminLoginAndExtractToken();
         AppLoginSession session = appLogin("ship-after-sale-hold-user");
@@ -234,6 +392,8 @@ class AdminShipmentControllerTest {
                 .getResponse()
                 .getContentAsString()).path("data");
         assertExactAdminShipmentFields(createShipment);
+        assertThat(createShipment.path("shipmentSource").asText()).isEqualTo("MANUAL");
+        assertThat(createShipment.has("electronicWaybillId")).isFalse();
 
         JsonNode adminShipment = objectMapper.readTree(mockMvc.perform(get("/admin/orders/{orderId}", orderId)
                         .header("Authorization", "Bearer " + adminToken))
@@ -242,6 +402,8 @@ class AdminShipmentControllerTest {
                 .getResponse()
                 .getContentAsString()).path("data").path("shipment");
         assertExactAdminShipmentFields(adminShipment);
+        assertThat(adminShipment.path("shipmentSource").asText()).isEqualTo("MANUAL");
+        assertThat(adminShipment.has("electronicWaybillId")).isFalse();
 
         JsonNode appShipment = objectMapper.readTree(mockMvc.perform(get("/app/orders/{orderId}", orderId)
                         .header("Authorization", "Bearer " + session.token()))
@@ -251,9 +413,14 @@ class AdminShipmentControllerTest {
                 .getContentAsString()).path("data").path("shipment");
         assertExactFields(appShipment,
                 "shipmentId", "orderId", "logisticsType", "deliveryMode", "itemDesc",
-                "expressCompanyCode", "expressCompanyName", "trackingNo", "localShipmentStatus",
+                "expressCompanyCode", "expressCompanyName", "trackingNo", "shipmentSource",
+                "localShipmentStatus",
                 "wechatProviderMode", "wechatUploadStatus", "wechatUploadMessage", "shippedAt",
+                "waybillTrackingSupported", "waybillRegistrationKind",
+                "waybillRegistrationStatus", "waybillRegistrationMessage",
                 "uploadTime", "wechatUploadedAt");
+        assertThat(appShipment.path("shipmentSource").asText()).isEqualTo("MANUAL");
+        assertThat(appShipment.has("electronicWaybillId")).isFalse();
     }
 
     @Test
@@ -661,8 +828,11 @@ class AdminShipmentControllerTest {
     private void assertExactAdminShipmentFields(JsonNode shipment) {
         assertExactFields(shipment,
                 "shipmentId", "orderId", "logisticsType", "deliveryMode", "itemDesc",
-                "expressCompanyCode", "expressCompanyName", "trackingNo", "shipmentNote",
+                "expressCompanyCode", "expressCompanyName", "trackingNo", "shipmentSource",
+                "shipmentNote",
                 "localShipmentStatus", "wechatProviderMode", "wechatUploadStatus", "retryCount",
+                "waybillTrackingSupported", "waybillRegistrationKind",
+                "waybillRegistrationStatus", "waybillRegistrationMessage",
                 "shippedAt", "uploadTime", "wechatUploadedAt", "lastAttemptAt");
     }
 
@@ -701,6 +871,10 @@ class AdminShipmentControllerTest {
     }
 
     private String adminTokenWithoutPermissions() {
+        return adminToken(List.of());
+    }
+
+    private String adminToken(List<String> permissions) {
         long userId = LIMITED_ADMIN_ID.incrementAndGet();
         long roleId = userId;
         String username = "ShipmentLimited" + userId;
@@ -708,7 +882,7 @@ class AdminShipmentControllerTest {
 
         return opaqueTokenService.issue(
                 TokenKind.ADMIN,
-                TokenSession.admin(userId, username, List.of(), List.of(), Instant.now())
+                TokenSession.admin(userId, username, List.of(), permissions, Instant.now())
         ).accessToken();
     }
 
@@ -803,6 +977,47 @@ class AdminShipmentControllerTest {
                 .param("skuCode", "SKU-" + orderNo)
                 .update();
         return orderId;
+    }
+
+    private long insertElectronicWaybill(long orderId, String status, String waybillId) {
+        jdbcClient.sql("""
+                        insert into order_electronic_waybill(
+                            order_id, attempt_no, idempotency_key, request_digest, provider_order_id,
+                            mode, delivery_id, delivery_name, biz_id, service_type, service_name,
+                            status, pending_operation, waybill_id, parcel_count, weight_kg,
+                            length_cm, width_cm, height_cm, sender_name, sender_mobile,
+                            sender_company, sender_province, sender_city, sender_district,
+                            sender_detail_address, receiver_name, receiver_phone, receiver_province,
+                            receiver_city, receiver_district, receiver_detail_address,
+                            payment_order_id, payer_openid, created_by)
+                        select
+                            :orderId, 1, :idempotencyKey, :requestDigest, :providerOrderId,
+                            'SANDBOX', 'TEST', '微信官方测试运力', 'test_biz_id', 1,
+                            'test_service_name', :status, 'NONE', :waybillId, 1, 1.000,
+                            20.00, 15.00, 10.00, '寄件人', '13800138000', '沐宝商城',
+                            '广东省', '深圳市', '南山区', '测试路1号',
+                            o.receiver_name, o.receiver_phone, '广东省', '深圳市', '南山区',
+                            '测试路2号', po.id, po.payer_openid, 1
+                        from shop_order o
+                        join payment_order po on po.order_id = o.id
+                        where o.id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .param("idempotencyKey", "active-waybill-" + orderId)
+                .param("requestDigest", "a".repeat(64))
+                .param("providerOrderId", "SHOPWB-" + orderId + "-1")
+                .param("status", status)
+                .param("waybillId", waybillId)
+                .update();
+        return jdbcClient.sql("""
+                        select id
+                        from order_electronic_waybill
+                        where order_id = :orderId and waybill_id = :waybillId
+                        """)
+                .param("orderId", orderId)
+                .param("waybillId", waybillId)
+                .query(Long.class)
+                .single();
     }
 
     private String shipRequest() {

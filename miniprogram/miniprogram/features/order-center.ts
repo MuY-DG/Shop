@@ -36,7 +36,7 @@ interface ClipboardFailure {
   errno?: number | string;
 }
 
-function normalizedOrderNo(value: unknown): string {
+function normalizedClipboardText(value: unknown): string {
   return typeof value === "string" ? value.trim() : String(value ?? "").trim();
 }
 
@@ -65,7 +65,7 @@ export function copyOrderNo(
   value: unknown,
   runtime: ClipboardRuntime = wx
 ): void {
-  const orderNo = normalizedOrderNo(value);
+  const orderNo = normalizedClipboardText(value);
   if (!orderNo) {
     runtime.showToast({ title: "订单号暂不可用", icon: "none" });
     return;
@@ -78,6 +78,29 @@ export function copyOrderNo(
     fail: (error) => {
       if (typeof wx !== "undefined" && runtime === wx) {
         console.error("[order-copy] wx.setClipboardData failed", error);
+      }
+      runtime.showToast({ title: clipboardFailureMessage(error), icon: "none" });
+    }
+  });
+}
+
+export function copyTrackingNo(
+  value: unknown,
+  runtime: ClipboardRuntime = wx
+): void {
+  const trackingNo = normalizedClipboardText(value);
+  if (!trackingNo) {
+    runtime.showToast({ title: "运单号暂不可用", icon: "none" });
+    return;
+  }
+  runtime.setClipboardData({
+    data: trackingNo,
+    success: () => {
+      runtime.showToast({ title: "运单号已复制", icon: "success" });
+    },
+    fail: (error) => {
+      if (typeof wx !== "undefined" && runtime === wx) {
+        console.error("[tracking-copy] wx.setClipboardData failed", error);
       }
       runtime.showToast({ title: clipboardFailureMessage(error), icon: "none" });
     }
@@ -235,6 +258,14 @@ export interface OrderItemView extends OrderItemResponse {
   wholesaleText: string;
 }
 
+export interface OrderShipmentView {
+  carrierName: string;
+  trackingNo: string;
+  shippedAtText: string;
+  canCopyTrackingNo: boolean;
+  canOpenTracking: boolean;
+}
+
 export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
   items: OrderItemView[];
   statusText: string;
@@ -262,10 +293,34 @@ export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
   paidAtText: string;
   shippedAtText: string;
   completedAtText: string;
+  shipmentView?: OrderShipmentView;
   hasAfterSale: boolean;
   canApplyAfterSale: boolean;
   afterSaleActionText: string;
   latestAfterSaleView?: AfterSaleView;
+}
+
+function normalizedShipmentView(order: AppOrderDetailResponse): OrderShipmentView | undefined {
+  const shipment = order.shipment;
+  if (!shipment || shipment.logisticsType !== 1) {
+    return undefined;
+  }
+  const carrierCode = normalizedClipboardText(shipment.expressCompanyCode);
+  const carrierName = normalizedClipboardText(shipment.expressCompanyName);
+  const trackingNo = normalizedClipboardText(shipment.trackingNo);
+  const shippedAt = normalizedClipboardText(shipment.shippedAt)
+    || normalizedClipboardText(order.shippedAt);
+  return {
+    carrierName: carrierName || carrierCode || "快递",
+    trackingNo,
+    shippedAtText: formatLocalDateTime(shippedAt),
+    canCopyTrackingNo: Boolean(trackingNo),
+    canOpenTracking: Boolean(
+      carrierCode
+      && trackingNo
+      && shipment.waybillTrackingSupported
+    )
+  };
 }
 
 function money(cent: unknown): string {
@@ -508,6 +563,7 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     (total, item) => total + Math.max(0, item.quantity),
     0
   );
+  const shipmentView = normalizedShipmentView(order);
   const orderInfoItemCount = [
     order.orderNo,
     order.createdAt,
@@ -546,6 +602,7 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     paidAtText: formatLocalDateTime(order.paidAt),
     shippedAtText: formatLocalDateTime(order.shippedAt),
     completedAtText: formatLocalDateTime(order.completedAt),
+    shipmentView,
     canConfirmReceipt: orderActions.canConfirmReceipt && !fulfillmentBlocked,
     hasAfterSale: Boolean(latestAfterSaleView),
     canApplyAfterSale: canApplyAfterSale(order.status, order.latestAfterSale),

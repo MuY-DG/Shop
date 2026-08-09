@@ -115,6 +115,7 @@
 
 .inline-error button::after,
 .receiver-card__modify::after,
+.logistics-card__view::after,
 .copy-action::after,
 .payment-tool::after,
 .payment-action::after,
@@ -185,6 +186,80 @@ button.receiver-card__modify {
   background: #eeeeee;
   font-size: 22rpx;
   line-height: 44rpx;
+}
+
+.logistics-card {
+  padding: @space-5;
+}
+
+.logistics-card__heading {
+  min-height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: @space-4;
+}
+
+button.logistics-card__view {
+  width: 168rpx !important;
+  min-width: 168rpx;
+  height: 56rpx;
+  margin: 0;
+  padding: 0 @space-3;
+  border-radius: @radius-pill;
+  color: #ffffff;
+  background: @color-action-primary;
+  font-size: @font-size-sm;
+  line-height: 56rpx;
+}
+
+button.logistics-card__view[disabled] {
+  opacity: 0.64;
+}
+
+.logistics-card__content {
+  margin-top: @space-3;
+  padding-top: @space-2;
+  border-top: 1rpx solid @color-divider;
+}
+
+.logistics-card__row {
+  min-width: 0;
+  display: grid;
+  padding: @space-3 0;
+  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: @space-4;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.logistics-card__row--tracking {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0;
+}
+
+.logistics-card__row--tracking .logistics-card__label {
+  margin-right: @space-4;
+}
+
+.logistics-card__label {
+  flex: none;
+}
+
+.logistics-card__value,
+.logistics-card__tracking-no {
+  min-width: 0;
+  color: @color-text-black;
+  text-align: right;
+}
+
+.logistics-card__tracking-no {
+  width: 100%;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .product-card {

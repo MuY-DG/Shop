@@ -274,6 +274,36 @@ WeChat getPhoneNumber failed: errcode=40029, errmsg=invalid code
 
 These logs intentionally do not print `WECHAT_MINI_PROGRAM_APP_SECRET`, access tokens, login codes, or phone codes. If `stableToken` returns `412 PRECONDITION_FAILED`, verify the backend is running the current code that sends non-chunked JSON request bodies. If `getPhoneNumber` returns `40029 invalid code`, retry with a fresh one-time phone authorization code from WeChat DevTools or a real device.
 
+### WeChat Electronic Waybill And Logistics Query
+
+Electronic-waybill configuration is stored in the database and managed from
+`订单管理 / 电子面单配置` (or `GET/PUT
+/admin/logistics/wechat-express/config`). It has three modes:
+
+- `DISABLED`: keep the existing manual shipment path only.
+- `SANDBOX`: the backend forces the official `TEST`, `test_biz_id`, service
+  type `1`, and `test_service_name` values regardless of any saved production
+  draft.
+- `PRODUCTION`: use the saved carrier, customer number, and service values.
+
+Configure a complete structured sender and the default single-parcel weight and
+dimensions before enabling sandbox or production. Production carrier passwords
+are intentionally neither requested nor stored; a future carrier-account bind
+must forward any one-time credential directly to WeChat and discard it.
+
+The sandbox still calls the real WeChat express-business APIs. It is limited to
+10 waybills per day, and its recipient OpenID must belong to a Mini Program
+administrator, operator, or developer. Creating a label keeps the Shop order in
+`PAID`; only the explicit “确认发货” action creates `order_shipment` and changes
+the order to `SHIPPED`.
+
+The Mini Program declares the official logistics plugin. A saved physical
+shipment always renders its carrier and tracking number locally. Opening the
+official trajectory additionally requires a successful server-side
+`trace_waybill` or `follow_waybill` registration for the real paid order,
+recipient phone, payer OpenID, transaction ID, carrier, and waybill. A fabricated
+tracking number can test only the local card and copy action.
+
 ## Authentication Smoke Checks
 
 Backend test profile uses an in-memory token store and a mock WeChat mini program client. Use this only for local smoke checks, not on a shared or exposed environment. The smoke command opts into Maven's test classpath so H2 and `src/test/resources/application-test.yaml` are available at runtime.

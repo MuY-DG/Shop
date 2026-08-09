@@ -8,6 +8,7 @@ import type {
 import type { PageResult } from "../types/api";
 import type {
   AppOrderDetailResponse,
+  OrderWaybillTokenResponse,
   OrderListQuery,
   OrderReceiptResponse,
   OrderStatus,
@@ -64,6 +65,13 @@ export function getOrderDetail(orderId: number): Promise<AppOrderDetailResponse>
   return request<AppOrderDetailResponse>({
     url: API_ENDPOINTS.orders.detail(orderId),
     method: "GET"
+  });
+}
+
+export function getOrderWaybillToken(orderId: number): Promise<OrderWaybillTokenResponse> {
+  return request<OrderWaybillTokenResponse>({
+    url: API_ENDPOINTS.orders.waybillToken(orderId),
+    method: "POST"
   });
 }
 

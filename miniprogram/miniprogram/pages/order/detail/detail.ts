@@ -8,6 +8,7 @@ import {
   buildOrderListUrl,
   buildOrderModifyUrl,
   copyOrderNo,
+  copyTrackingNo,
   filterRebuyableOrderItems,
   formatPaymentCountdown,
   positiveOrderId,
@@ -16,6 +17,10 @@ import {
   rebuyPartialMessage,
   type OrderDetailView
 } from "../../../features/order-center";
+import {
+  LOGISTICS_UNAVAILABLE_MESSAGE,
+  openOrderLogistics
+} from "../../../features/order-logistics";
 import { buildCustomerServiceUrl } from "../../../features/customer-service";
 import {
   executeOrderPayment,
@@ -27,7 +32,8 @@ import {
   cancelOrder,
   confirmOrderReceipt,
   deleteOrder,
-  getOrderDetail
+  getOrderDetail,
+  getOrderWaybillToken
 } from "../../../services/order";
 import { isApiError } from "../../../utils/api-error";
 
@@ -96,7 +102,8 @@ Page({
     loading: true,
     loaded: false,
     errorText: "",
-    actionType: ""
+    actionType: "",
+    logisticsOpening: false
   },
 
   onLoad(query: Record<string, string | undefined>) {
@@ -363,6 +370,35 @@ Page({
 
   onCopyOrderNoTap() {
     copyOrderNo(this.data.detail?.orderNo);
+  },
+
+  onCopyTrackingNoTap() {
+    copyTrackingNo(this.data.detail?.shipmentView?.trackingNo);
+  },
+
+  onOpenLogisticsTap() {
+    void this.openCurrentOrderLogistics();
+  },
+
+  async openCurrentOrderLogistics() {
+    const detail = this.data.detail;
+    if (
+      !detail?.shipmentView?.canOpenTracking
+      || this.data.logisticsOpening
+    ) {
+      return;
+    }
+    this.setData({ logisticsOpening: true });
+    try {
+      const opened = await openOrderLogistics({
+        requestWaybillToken: () => getOrderWaybillToken(detail.orderId)
+      });
+      if (!opened) {
+        wx.showToast({ title: LOGISTICS_UNAVAILABLE_MESSAGE, icon: "none" });
+      }
+    } finally {
+      this.setData({ logisticsOpening: false });
+    }
   },
 
   onOrderInfoToggle() {

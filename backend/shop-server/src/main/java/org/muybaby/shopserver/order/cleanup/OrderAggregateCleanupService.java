@@ -199,6 +199,25 @@ public class OrderAggregateCleanupService {
                               where shipment.order_id = o.id and shipment.updated_at >= :cutoff
                           )
                           and not exists (
+                              select 1 from order_electronic_waybill waybill
+                              where waybill.order_id = o.id
+                                and (
+                                    waybill.updated_at >= :cutoff
+                                    or waybill.status in ('CREATING', 'CREATED', 'CANCELING', 'UNKNOWN')
+                                )
+                          )
+                          and not exists (
+                              select 1
+                              from shipment_waybill_registration registration
+                              join order_shipment registered_shipment
+                                on registered_shipment.id = registration.shipment_id
+                              where registered_shipment.order_id = o.id
+                                and (
+                                    registration.updated_at >= :cutoff
+                                    or registration.status in ('PENDING', 'REGISTERING')
+                                )
+                          )
+                          and not exists (
                               select 1 from order_status_log status_log
                               where status_log.order_id = o.id and status_log.created_at >= :cutoff
                           )
@@ -276,6 +295,25 @@ public class OrderAggregateCleanupService {
                           and not exists (
                               select 1 from order_shipment shipment
                               where shipment.order_id = o.id and shipment.updated_at >= :cutoff
+                          )
+                          and not exists (
+                              select 1 from order_electronic_waybill waybill
+                              where waybill.order_id = o.id
+                                and (
+                                    waybill.updated_at >= :cutoff
+                                    or waybill.status in ('CREATING', 'CREATED', 'CANCELING', 'UNKNOWN')
+                                )
+                          )
+                          and not exists (
+                              select 1
+                              from shipment_waybill_registration registration
+                              join order_shipment registered_shipment
+                                on registered_shipment.id = registration.shipment_id
+                              where registered_shipment.order_id = o.id
+                                and (
+                                    registration.updated_at >= :cutoff
+                                    or registration.status in ('PENDING', 'REGISTERING')
+                                )
                           )
                           and not exists (
                               select 1 from order_status_log status_log
@@ -384,6 +422,15 @@ public class OrderAggregateCleanupService {
         sections.put("payment_callbacks", callbacks);
         sections.put("shipments", rows(
                 "select * from order_shipment where order_id = :orderId order by id", orderId));
+        sections.put("electronic_waybills", rows(
+                "select * from order_electronic_waybill where order_id = :orderId order by id", orderId));
+        sections.put("waybill_registrations", rows("""
+                select registration.*
+                from shipment_waybill_registration registration
+                join order_shipment shipment on shipment.id = registration.shipment_id
+                where shipment.order_id = :orderId
+                order by registration.id
+                """, orderId));
         sections.put("after_sales", afterSales);
         sections.put("after_sale_evidence", rows("""
                 select evidence.*
@@ -543,8 +590,13 @@ public class OrderAggregateCleanupService {
                 """, orderId);
         delete("delete from refund_order where order_id = :orderId", orderId);
         delete("delete from after_sale_request where order_id = :orderId", orderId);
-        delete("delete from payment_order where order_id = :orderId", orderId);
+        delete("""
+                delete from shipment_waybill_registration
+                where shipment_id in (select id from order_shipment where order_id = :orderId)
+                """, orderId);
         delete("delete from order_shipment where order_id = :orderId", orderId);
+        delete("delete from order_electronic_waybill where order_id = :orderId", orderId);
+        delete("delete from payment_order where order_id = :orderId", orderId);
         delete("delete from stock_lock where order_id = :orderId", orderId);
         delete("delete from stock_log where order_id = :orderId", orderId);
         delete("""
@@ -584,6 +636,25 @@ public class OrderAggregateCleanupService {
                 .query(Long.class)
                 .list();
         jdbcClient.sql("select id from payment_order where order_id = :orderId order by id for update")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("select id from order_electronic_waybill where order_id = :orderId order by id for update")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("select id from order_shipment where order_id = :orderId order by id for update")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("""
+                        select registration.id
+                        from shipment_waybill_registration registration
+                        join order_shipment shipment on shipment.id = registration.shipment_id
+                        where shipment.order_id = :orderId
+                        order by registration.id
+                        for update
+                        """)
                 .param("orderId", orderId)
                 .query(Long.class)
                 .list();

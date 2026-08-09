@@ -5,6 +5,12 @@ public record OwnedAddress(
         Long userId,
         String receiverName,
         String receiverPhone,
+        String province,
+        String city,
+        String district,
+        String detailAddress,
+        String locationName,
+        String doorplate,
         String formattedAddress
 ) {
 }

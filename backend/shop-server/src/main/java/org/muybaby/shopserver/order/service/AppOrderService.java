@@ -11,6 +11,10 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.coupon.UserCouponStatus;
 import org.muybaby.shopserver.logistics.DeliveryMode;
 import org.muybaby.shopserver.logistics.LogisticsType;
+import org.muybaby.shopserver.logistics.ShipmentSource;
+import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationKind;
+import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationStatus;
+import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationSummary;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatReceiptQueryStatus;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
@@ -693,6 +697,9 @@ public class AppOrderService {
                 && !OrderStatus.PAID.name().equals(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+        if (hasActiveElectronicWaybill(order.orderId())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
 
         OwnedAddress receiver = appAddressService.requireOwnedForUpdate(userId, request.addressId());
         LocalDateTime updatedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
@@ -701,6 +708,12 @@ public class AppOrderService {
                         set receiver_name = :receiverName,
                             receiver_phone = :receiverPhone,
                             receiver_address = :receiverAddress,
+                            receiver_province = :receiverProvince,
+                            receiver_city = :receiverCity,
+                            receiver_district = :receiverDistrict,
+                            receiver_detail_address = :receiverDetailAddress,
+                            receiver_location_name = :receiverLocationName,
+                            receiver_doorplate = :receiverDoorplate,
                             updated_at = :updatedAt
                         where id = :orderId
                           and user_id = :userId
@@ -710,6 +723,12 @@ public class AppOrderService {
                 .param("receiverName", receiver.receiverName())
                 .param("receiverPhone", receiver.receiverPhone())
                 .param("receiverAddress", receiver.formattedAddress())
+                .param("receiverProvince", receiver.province())
+                .param("receiverCity", receiver.city())
+                .param("receiverDistrict", receiver.district())
+                .param("receiverDetailAddress", receiver.detailAddress())
+                .param("receiverLocationName", receiver.locationName())
+                .param("receiverDoorplate", receiver.doorplate())
                 .param("updatedAt", updatedAt)
                 .param("orderId", order.orderId())
                 .param("userId", userId)
@@ -730,6 +749,19 @@ public class AppOrderService {
                 receiver.formattedAddress(),
                 updatedAt
         );
+    }
+
+    private boolean hasActiveElectronicWaybill(long orderId) {
+        Integer activeCount = jdbcClient.sql("""
+                        select count(*)
+                        from order_electronic_waybill
+                        where order_id = :orderId
+                          and status in ('CREATING', 'CREATED', 'CANCELING', 'UNKNOWN')
+                        """)
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single();
+        return activeCount != null && activeCount > 0;
     }
 
     public OrderReceiptResponse confirmReceipt(AuthenticatedPrincipal principal, Long orderId) {
@@ -986,6 +1018,12 @@ public class AppOrderService {
                             receiver_name = :receiverName,
                             receiver_phone = :receiverPhone,
                             receiver_address = :receiverAddress,
+                            receiver_province = :receiverProvince,
+                            receiver_city = :receiverCity,
+                            receiver_district = :receiverDistrict,
+                            receiver_detail_address = :receiverDetailAddress,
+                            receiver_location_name = :receiverLocationName,
+                            receiver_doorplate = :receiverDoorplate,
                             updated_at = :updatedAt
                         where id = :orderId
                         """)
@@ -1000,6 +1038,12 @@ public class AppOrderService {
                 .param("receiverName", receiver.receiverName())
                 .param("receiverPhone", receiver.receiverPhone())
                 .param("receiverAddress", receiver.formattedAddress())
+                .param("receiverProvince", receiver.province())
+                .param("receiverCity", receiver.city())
+                .param("receiverDistrict", receiver.district())
+                .param("receiverDetailAddress", receiver.detailAddress())
+                .param("receiverLocationName", receiver.locationName())
+                .param("receiverDoorplate", receiver.doorplate())
                 .param("updatedAt", now)
                 .param("orderId", orderId)
                 .update();
@@ -1482,12 +1526,24 @@ public class AppOrderService {
                                express_company_code,
                                express_company_name,
                                tracking_no,
+                               shipment_source,
+                               electronic_waybill_id,
                                status as local_shipment_status,
                                wechat_provider_mode,
                                wechat_upload_status,
                                shipped_at,
                                upload_time,
-                               wechat_uploaded_at
+                               wechat_uploaded_at,
+                               (
+                                   select registration_kind
+                                   from shipment_waybill_registration registration
+                                   where registration.shipment_id = order_shipment.id
+                               ) as waybill_registration_kind,
+                               (
+                                   select status
+                                   from shipment_waybill_registration registration
+                                   where registration.shipment_id = order_shipment.id
+                               ) as waybill_registration_status
                         from order_shipment
                         where order_id = :orderId
                         """)
@@ -1500,23 +1556,48 @@ public class AppOrderService {
     private AppOrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {
         WechatProviderMode providerMode = providerMode(rs.getString("wechat_provider_mode"));
         WechatShippingUploadStatus uploadStatus = uploadStatus(rs.getString("wechat_upload_status"));
+        LogisticsType logisticsType = LogisticsType.fromValue(rs.getInt("logistics_type"));
+        WaybillRegistrationKind registrationKind = registrationKind(
+                rs.getString("waybill_registration_kind")
+        );
+        WaybillRegistrationStatus registrationStatus = registrationStatus(
+                rs.getString("waybill_registration_status")
+        );
         return new AppOrderShipmentResponse(
                 rs.getLong("shipment_id"),
                 rs.getLong("order_id"),
-                LogisticsType.fromValue(rs.getInt("logistics_type")),
+                logisticsType,
                 DeliveryMode.fromValue(rs.getInt("delivery_mode")),
                 rs.getString("item_desc"),
                 rs.getString("express_company_code"),
                 rs.getString("express_company_name"),
                 rs.getString("tracking_no"),
+                shipmentSource(rs.getString("shipment_source")),
+                rs.getObject("electronic_waybill_id", Long.class),
                 rs.getString("local_shipment_status"),
                 providerMode,
                 uploadStatus,
                 uploadMessage(providerMode, uploadStatus),
+                WaybillRegistrationSummary.trackingSupported(
+                        logisticsType,
+                        rs.getString("express_company_code"),
+                        rs.getString("tracking_no")
+                ),
+                registrationKind,
+                registrationStatus,
+                WaybillRegistrationSummary.safeMessage(registrationStatus),
                 rs.getObject("shipped_at", LocalDateTime.class),
                 rs.getString("upload_time"),
                 rs.getObject("wechat_uploaded_at", LocalDateTime.class)
         );
+    }
+
+    private ShipmentSource shipmentSource(String value) {
+        try {
+            return ShipmentSource.valueOf(value);
+        } catch (RuntimeException ex) {
+            return ShipmentSource.MANUAL;
+        }
     }
 
     private WechatProviderMode providerMode(String value) {
@@ -1532,6 +1613,22 @@ public class AppOrderService {
             return WechatShippingUploadStatus.valueOf(value);
         } catch (RuntimeException ex) {
             return WechatShippingUploadStatus.UNKNOWN;
+        }
+    }
+
+    private WaybillRegistrationKind registrationKind(String value) {
+        try {
+            return value == null ? null : WaybillRegistrationKind.valueOf(value);
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private WaybillRegistrationStatus registrationStatus(String value) {
+        try {
+            return value == null ? null : WaybillRegistrationStatus.valueOf(value);
+        } catch (RuntimeException ex) {
+            return WaybillRegistrationStatus.UNKNOWN;
         }
     }
 

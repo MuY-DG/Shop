@@ -74,6 +74,43 @@
           >修改</button>
         </view>
 
+        <view wx:if="{{detail.shipmentView}}" class="detail-card logistics-card">
+          <view class="logistics-card__heading">
+            <text class="section-heading">物流信息</text>
+            <button
+              wx:if="{{detail.shipmentView.canOpenTracking}}"
+              class="logistics-card__view"
+              loading="{{logisticsOpening}}"
+              disabled="{{logisticsOpening}}"
+              catchtap="onOpenLogisticsTap"
+              aria-label="{{logisticsOpening ? '正在打开物流轨迹' : '查看物流轨迹'}}"
+            >{{logisticsOpening ? '打开中' : '查看物流'}}</button>
+          </view>
+          <view class="logistics-card__content">
+            <view class="logistics-card__row">
+              <text class="logistics-card__label">承运商</text>
+              <text class="logistics-card__value">{{detail.shipmentView.carrierName}}</text>
+            </view>
+            <view class="logistics-card__row logistics-card__row--tracking">
+              <text class="logistics-card__label">运单号</text>
+              <text class="logistics-card__tracking-no">{{detail.shipmentView.trackingNo || '暂不可用'}}</text>
+              <button
+                wx:if="{{detail.shipmentView.canCopyTrackingNo}}"
+                class="copy-action"
+                catchtap="onCopyTrackingNoTap"
+                aria-label="复制完整运单号"
+              >
+                <text class="copy-action__divider">｜</text>
+                <text class="copy-action__label">复制</text>
+              </button>
+            </view>
+            <view wx:if="{{detail.shipmentView.shippedAtText}}" class="logistics-card__row">
+              <text class="logistics-card__label">发货时间</text>
+              <text class="logistics-card__value">{{detail.shipmentView.shippedAtText}}</text>
+            </view>
+          </view>
+        </view>
+
         <view class="detail-card product-card">
           <view
             wx:for="{{detail.items}}"

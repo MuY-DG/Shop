@@ -167,6 +167,6 @@ class AfterSaleSchemaTest {
         assertThat(childMenuCount).isEqualTo(2);
         assertThat(disabledLegacyParentCount).isEqualTo(2);
         assertThat(superRoleMenuCount).isEqualTo(3);
-        assertThat(permissionCount).isEqualTo(6);
+        assertThat(permissionCount).isEqualTo(10);
     }
 }

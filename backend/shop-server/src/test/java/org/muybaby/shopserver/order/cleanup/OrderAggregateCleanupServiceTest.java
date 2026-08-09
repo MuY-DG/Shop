@@ -50,6 +50,9 @@ class OrderAggregateCleanupServiceTest {
     private static final long PAYMENT_ID = 9_870_005L;
     private static final long REVIEW_ID = 9_870_006L;
     private static final long CONVERSATION_ID = 9_870_030L;
+    private static final long WAYBILL_RECORD_ID = 9_870_041L;
+    private static final long SHIPMENT_ID = 9_870_042L;
+    private static final long REGISTRATION_ID = 9_870_043L;
     private static final long CATEGORY_ID = 9_870_020L;
     private static final long SPU_ID = 9_870_021L;
     private static final long SKU_ID = 9_870_022L;
@@ -103,6 +106,9 @@ class OrderAggregateCleanupServiceTest {
         assertThat(count("after_sale_request", "order_id", ORDER_ID)).isZero();
         assertThat(count("after_sale_evidence", "after_sale_id", AFTER_SALE_ID)).isZero();
         assertThat(count("order_status_log", "order_id", ORDER_ID)).isZero();
+        assertThat(count("order_electronic_waybill", "order_id", ORDER_ID)).isZero();
+        assertThat(count("order_shipment", "order_id", ORDER_ID)).isZero();
+        assertThat(count("shipment_waybill_registration", "id", REGISTRATION_ID)).isZero();
         assertThat(count("stock_lock", "order_id", ORDER_ID)).isZero();
         assertThat(count("stock_log", "order_id", ORDER_ID)).isZero();
         assertThat(count("customer_service_conversation_order", "order_id", ORDER_ID)).isZero();
@@ -216,6 +222,11 @@ class OrderAggregateCleanupServiceTest {
         List<String> entries = zipEntryNames(archive.inputStream());
         assertThat(entries).contains(
                 "archive.json", "assets/" + ASSET_ID, "assets/" + ORDER_ITEM_ASSET_ID);
+        String archiveJson = archiveJson(storageProvider.open(manifest.objectKey()).inputStream());
+        assertThat(archiveJson)
+                .contains("\"electronic_waybills\"")
+                .contains("\"waybill_registrations\"")
+                .contains("\"shipments\"");
 
         assertThat(storageAssetCleanupService.cleanupAsset(ASSET_ID)).isTrue();
         assertThat(storageAssetCleanupService.cleanupAsset(ORDER_ITEM_ASSET_ID)).isTrue();
@@ -254,6 +265,56 @@ class OrderAggregateCleanupServiceTest {
         assertThat(jdbcClient.sql("select count(*) from order_archive_manifest where source_order_id = :orderId")
                 .param("orderId", ORDER_ID)
                 .query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void safelySkipsRecentOrActiveWaybillWork() {
+        seedCompletedRefundedOrder();
+
+        jdbcClient.sql("""
+                        update order_electronic_waybill
+                        set updated_at = current_timestamp
+                        where id = :waybillRecordId
+                        """)
+                .param("waybillRecordId", WAYBILL_RECORD_ID)
+                .update();
+        assertThat(cleanupService.cleanupBatch(CUTOFF, 20, true, () -> true)).isZero();
+
+        jdbcClient.sql("""
+                        update order_electronic_waybill
+                        set updated_at = :oldAt
+                        where id = :waybillRecordId
+                        """)
+                .param("oldAt", oldAt())
+                .param("waybillRecordId", WAYBILL_RECORD_ID)
+                .update();
+        jdbcClient.sql("""
+                        update shipment_waybill_registration
+                        set updated_at = current_timestamp
+                        where id = :registrationId
+                        """)
+                .param("registrationId", REGISTRATION_ID)
+                .update();
+        assertThat(cleanupService.cleanupBatch(CUTOFF, 20, true, () -> true)).isZero();
+
+        jdbcClient.sql("""
+                        update shipment_waybill_registration
+                        set updated_at = :oldAt
+                        where id = :registrationId
+                        """)
+                .param("oldAt", oldAt())
+                .param("registrationId", REGISTRATION_ID)
+                .update();
+        jdbcClient.sql("""
+                        update order_electronic_waybill
+                        set status = 'CREATED', updated_at = :oldAt
+                        where id = :waybillRecordId
+                        """)
+                .param("oldAt", oldAt())
+                .param("waybillRecordId", WAYBILL_RECORD_ID)
+                .update();
+        assertThat(cleanupService.cleanupBatch(CUTOFF, 20, true, () -> true)).isZero();
+        assertThat(count("shop_order", "id", ORDER_ID)).isOne();
     }
 
     @Test
@@ -489,6 +550,7 @@ class OrderAggregateCleanupServiceTest {
                 .param("oldAt", oldAt())
                 .update();
         insertPayment("PAID");
+        insertWaybillAuditRows();
         jdbcClient.sql("""
                         insert into payment_attempt
                             (id, order_id, payment_order_id, out_trade_no, status, amount_cent,
@@ -695,6 +757,69 @@ class OrderAggregateCleanupServiceTest {
                 .update();
     }
 
+    private void insertWaybillAuditRows() {
+        jdbcClient.sql("""
+                        insert into order_electronic_waybill(
+                            id, order_id, attempt_no, idempotency_key, request_digest,
+                            provider_order_id, mode, delivery_id, delivery_name, biz_id,
+                            service_type, service_name, status, pending_operation, waybill_id,
+                            parcel_count, weight_kg, length_cm, width_cm, height_cm,
+                            sender_name, sender_mobile, sender_company, sender_province,
+                            sender_city, sender_district, sender_detail_address,
+                            receiver_name, receiver_phone, receiver_province, receiver_city,
+                            receiver_district, receiver_detail_address, payment_order_id,
+                            payer_openid, created_by, confirmed_by, created_at, updated_at,
+                            confirmed_at)
+                        values (
+                            :id, :orderId, 1, 'cleanup-waybill', :requestDigest,
+                            :providerOrderId, 'SANDBOX', 'TEST', '微信官方测试运力',
+                            'test_biz_id', 1, 'test_service_name', 'CONFIRMED', 'NONE',
+                            :waybillId, 1, 1.000, 20.00, 15.00, 10.00,
+                            'Cleanup Sender', '13800138000', 'Shop', '广东省', '深圳市',
+                            '南山区', '测试路1号', 'Archive User', '13800000000', '广东省',
+                            '深圳市', '南山区', '测试路2号', :paymentId,
+                            'cleanup-openid', 1, 1, :oldAt, :oldAt, :oldAt)
+                        """)
+                .param("id", WAYBILL_RECORD_ID)
+                .param("orderId", ORDER_ID)
+                .param("requestDigest", "c".repeat(64))
+                .param("providerOrderId", "SHOPWB-" + ORDER_ID + "-1")
+                .param("waybillId", "TEST-CLEANUP-WAYBILL")
+                .param("paymentId", PAYMENT_ID)
+                .param("oldAt", oldAt())
+                .update();
+        jdbcClient.sql("""
+                        insert into order_shipment(
+                            id, order_id, logistics_type, delivery_mode, item_desc,
+                            express_company_code, express_company_name, tracking_no,
+                            shipment_note, shipment_source, electronic_waybill_id,
+                            status, wechat_provider_mode, wechat_upload_status,
+                            shipped_at, created_at, updated_at)
+                        values (
+                            :id, :orderId, 1, 1, 'Archive Item x1', 'TEST',
+                            '微信官方测试运力', 'TEST-CLEANUP-WAYBILL', '',
+                            'WECHAT_WAYBILL', :waybillRecordId, 'SHIPPED', 'DISABLED',
+                            'SKIPPED', :oldAt, :oldAt, :oldAt)
+                        """)
+                .param("id", SHIPMENT_ID)
+                .param("orderId", ORDER_ID)
+                .param("waybillRecordId", WAYBILL_RECORD_ID)
+                .param("oldAt", oldAt())
+                .update();
+        jdbcClient.sql("""
+                        insert into shipment_waybill_registration(
+                            id, shipment_id, registration_kind, status, waybill_token,
+                            attempt_count, last_attempt_at, registered_at, created_at, updated_at)
+                        values (
+                            :id, :shipmentId, 'TRACE', 'REGISTERED', 'archive-token',
+                            1, :oldAt, :oldAt, :oldAt, :oldAt)
+                        """)
+                .param("id", REGISTRATION_ID)
+                .param("shipmentId", SHIPMENT_ID)
+                .param("oldAt", oldAt())
+                .update();
+    }
+
     private void insertAfterSaleAsset() {
         byte[] bytes = "after-sale-evidence".getBytes();
         String objectKey = sourceAssetObjectKey();
@@ -804,6 +929,19 @@ class OrderAggregateCleanupServiceTest {
         return names;
     }
 
+    private String archiveJson(InputStream input) throws Exception {
+        try (ZipInputStream zip = new ZipInputStream(input)) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if ("archive.json".equals(entry.getName())) {
+                    return new String(zip.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+                zip.closeEntry();
+            }
+        }
+        throw new IllegalStateException("archive.json is missing");
+    }
+
     private int count(String table, String column, long value) {
         return jdbcClient.sql("select count(*) from " + table + " where " + column + " = :value")
                 .param("value", value)
@@ -872,6 +1010,12 @@ class OrderAggregateCleanupServiceTest {
         jdbcClient.sql("delete from refund_order where order_id = :orderId")
                 .param("orderId", ORDER_ID).update();
         jdbcClient.sql("delete from after_sale_request where order_id = :orderId")
+                .param("orderId", ORDER_ID).update();
+        jdbcClient.sql("delete from shipment_waybill_registration where id = :registrationId")
+                .param("registrationId", REGISTRATION_ID).update();
+        jdbcClient.sql("delete from order_shipment where order_id = :orderId")
+                .param("orderId", ORDER_ID).update();
+        jdbcClient.sql("delete from order_electronic_waybill where order_id = :orderId")
                 .param("orderId", ORDER_ID).update();
         jdbcClient.sql("delete from payment_order where order_id = :orderId")
                 .param("orderId", ORDER_ID).update();

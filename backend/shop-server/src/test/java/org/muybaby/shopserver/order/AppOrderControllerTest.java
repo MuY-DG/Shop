@@ -38,6 +38,7 @@ import java.sql.PreparedStatement;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
@@ -317,6 +318,16 @@ class AppOrderControllerTest {
                 .param("orderId", orderId)
                 .query(Integer.class)
                 .single();
+        Map<String, Object> receiverSnapshot = jdbcClient.sql("""
+                        select receiver_name, receiver_phone, receiver_address,
+                               receiver_province, receiver_city, receiver_district,
+                               receiver_detail_address, receiver_location_name, receiver_doorplate
+                        from shop_order
+                        where id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .query()
+                .singleRow();
         Integer stockLockCount = jdbcClient.sql("""
                         select count(*)
                         from stock_lock
@@ -362,6 +373,15 @@ class AppOrderControllerTest {
         assertThat(orderItemCount).isEqualTo(1);
         assertThat(operatingSnapshotCount).isEqualTo(1);
         assertThat(attributionCount).isEqualTo(1);
+        assertThat(receiverSnapshot.get("RECEIVER_NAME")).isEqualTo("收货人-submit");
+        assertThat(receiverSnapshot.get("RECEIVER_PHONE")).isEqualTo("13800138000");
+        assertThat(receiverSnapshot.get("RECEIVER_ADDRESS")).isEqualTo("北京市朝阳区火锅路-submit号");
+        assertThat(receiverSnapshot.get("RECEIVER_PROVINCE")).isEqualTo("北京市");
+        assertThat(receiverSnapshot.get("RECEIVER_CITY")).isEqualTo("");
+        assertThat(receiverSnapshot.get("RECEIVER_DISTRICT")).isEqualTo("朝阳区");
+        assertThat(receiverSnapshot.get("RECEIVER_DETAIL_ADDRESS")).isEqualTo("火锅路-submit号");
+        assertThat(receiverSnapshot.get("RECEIVER_LOCATION_NAME")).isEqualTo("");
+        assertThat(receiverSnapshot.get("RECEIVER_DOORPLATE")).isEqualTo("");
         assertThat(stockLockCount).isEqualTo(1);
         assertThat(stockLogCount).isEqualTo(1);
         assertThat(remainingCartRows).isEqualTo(0);
@@ -1010,9 +1030,12 @@ class AppOrderControllerTest {
         insertOrderSnapshot(9402L, "ORD-RECEIVER-PAYING", owner.userId(), skuId, 9942L, "Paying Item");
         insertOrderSnapshot(9403L, "ORD-RECEIVER-PAID", owner.userId(), skuId, 9943L, "Paid Item");
         insertOrderSnapshot(9404L, "ORD-RECEIVER-SHIPPED", owner.userId(), skuId, 9944L, "Shipped Item");
+        insertOrderSnapshot(9405L, "ORD-RECEIVER-WAYBILL", owner.userId(), skuId, 9945L, "Waybill Item");
         jdbcClient.sql("update shop_order set status = 'PAYING' where id = 9402").update();
         jdbcClient.sql("update shop_order set status = 'PAID' where id = 9403").update();
         jdbcClient.sql("update shop_order set status = 'SHIPPED' where id = 9404").update();
+        jdbcClient.sql("update shop_order set status = 'PAID' where id = 9405").update();
+        insertActiveElectronicWaybill(9405L);
 
         mockMvc.perform(put("/app/orders/{orderId}/receiver", 9401L)
                         .header("Authorization", "Bearer " + owner.token())
@@ -1048,7 +1071,31 @@ class AppOrderControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("PAID"));
 
+        Map<String, Object> reselectedSnapshot = jdbcClient.sql("""
+                        select receiver_address, receiver_province, receiver_city, receiver_district,
+                               receiver_detail_address, receiver_location_name, receiver_doorplate
+                        from shop_order
+                        where id = 9403
+                        """)
+                .query()
+                .singleRow();
+        assertThat(reselectedSnapshot.get("RECEIVER_ADDRESS"))
+                .isEqualTo("北京市朝阳区火锅路-receiver-new号");
+        assertThat(reselectedSnapshot.get("RECEIVER_PROVINCE")).isEqualTo("北京市");
+        assertThat(reselectedSnapshot.get("RECEIVER_CITY")).isEqualTo("");
+        assertThat(reselectedSnapshot.get("RECEIVER_DISTRICT")).isEqualTo("朝阳区");
+        assertThat(reselectedSnapshot.get("RECEIVER_DETAIL_ADDRESS")).isEqualTo("火锅路-receiver-new号");
+        assertThat(reselectedSnapshot.get("RECEIVER_LOCATION_NAME")).isEqualTo("");
+        assertThat(reselectedSnapshot.get("RECEIVER_DOORPLATE")).isEqualTo("");
+
         mockMvc.perform(put("/app/orders/{orderId}/receiver", 9404L)
+                        .header("Authorization", "Bearer " + owner.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"addressId\":" + ownerAddressId + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        mockMvc.perform(put("/app/orders/{orderId}/receiver", 9405L)
                         .header("Authorization", "Bearer " + owner.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"addressId\":" + ownerAddressId + "}"))
@@ -1135,6 +1182,53 @@ class AppOrderControllerTest {
                 .param("orderId", orderId)
                 .param("skuId", skuId)
                 .param("productTitle", productTitle)
+                .update();
+    }
+
+    private void insertActiveElectronicWaybill(long orderId) {
+        jdbcClient.sql("""
+                        insert into payment_order(
+                            order_id, out_trade_no, prepay_id, transaction_id, payer_openid,
+                            status, amount_cent, expires_at, paid_at)
+                        select :orderId, :outTradeNo, :prepayId, :transactionId, u.openid,
+                               'PAID', o.payable_amount_cent,
+                               timestamp '2026-07-08 11:00:00', timestamp '2026-07-08 10:00:00'
+                        from shop_order o
+                        join app_user u on u.id = o.user_id
+                        where o.id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .param("outTradeNo", "WB-MCH-" + orderId)
+                .param("prepayId", "WB-PREPAY-" + orderId)
+                .param("transactionId", "WB-TX-" + orderId)
+                .update();
+        jdbcClient.sql("""
+                        insert into order_electronic_waybill(
+                            order_id, attempt_no, idempotency_key, request_digest, provider_order_id,
+                            mode, delivery_id, delivery_name, biz_id, service_type, service_name,
+                            status, pending_operation, waybill_id, parcel_count, weight_kg,
+                            length_cm, width_cm, height_cm, sender_name, sender_mobile,
+                            sender_company, sender_province, sender_city, sender_district,
+                            sender_detail_address, receiver_name, receiver_phone, receiver_province,
+                            receiver_city, receiver_district, receiver_detail_address,
+                            payment_order_id, payer_openid, created_by)
+                        select
+                            :orderId, 1, :idempotencyKey, :requestDigest, :providerOrderId,
+                            'SANDBOX', 'TEST', '微信官方测试运力', 'test_biz_id', 1,
+                            'test_service_name', 'CREATED', 'NONE', :waybillId, 1, 1.000,
+                            20.00, 15.00, 10.00, '寄件人', '13800138000', '沐宝商城',
+                            '广东省', '深圳市', '南山区', '测试路1号',
+                            o.receiver_name, o.receiver_phone, '广东省', '深圳市', '南山区',
+                            '测试路2号', po.id, po.payer_openid, 1
+                        from shop_order o
+                        join payment_order po on po.order_id = o.id
+                        where o.id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .param("idempotencyKey", "receiver-waybill-" + orderId)
+                .param("requestDigest", "b".repeat(64))
+                .param("providerOrderId", "SHOPWB-" + orderId + "-1")
+                .param("waybillId", "TEST-WAYBILL-" + orderId)
                 .update();
     }
 

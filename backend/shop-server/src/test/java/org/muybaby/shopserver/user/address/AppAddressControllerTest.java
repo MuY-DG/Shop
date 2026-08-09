@@ -250,6 +250,12 @@ class AppAddressControllerTest {
         assertThat(owned.userId()).isEqualTo(userA.userId());
         assertThat(owned.receiverName()).isEqualTo("张三");
         assertThat(owned.receiverPhone()).isEqualTo("13800138000");
+        assertThat(owned.province()).isEqualTo("北京市");
+        assertThat(owned.city()).isEqualTo("北京市");
+        assertThat(owned.district()).isEqualTo("朝阳区");
+        assertThat(owned.detailAddress()).isEqualTo("火锅路张三号");
+        assertThat(owned.locationName()).isEmpty();
+        assertThat(owned.doorplate()).isEmpty();
         assertThat(owned.formattedAddress()).isEqualTo("北京市北京市朝阳区火锅路张三号");
     }
 

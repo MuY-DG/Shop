@@ -42,4 +42,25 @@ public class AdminShipmentController {
     ) {
         return ApiResponse.success(adminShipmentService.retryWechatUpload(principal, orderId));
     }
+
+    @PostMapping("/{orderId}/shipping/retry-waybill-registration")
+    @PreAuthorize("hasAuthority('order:shipping:registration:retry')")
+    public ApiResponse<OrderShipmentResponse> retryWaybillRegistration(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId
+    ) {
+        return ApiResponse.success(adminShipmentService.retryWaybillRegistration(principal, orderId));
+    }
+
+    @PostMapping("/{orderId}/waybills/{waybillRecordId}/confirm-shipment")
+    @PreAuthorize("hasAuthority('order:waybill:manage') and hasAuthority('order:ship')")
+    public ApiResponse<OrderShipmentResponse> confirmElectronicWaybill(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @PathVariable Long waybillRecordId
+    ) {
+        return ApiResponse.success(adminShipmentService.confirmElectronicWaybill(
+                principal, orderId, waybillRecordId
+        ));
+    }
 }

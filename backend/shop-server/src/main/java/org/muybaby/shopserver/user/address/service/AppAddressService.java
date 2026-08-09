@@ -132,6 +132,12 @@ public class AppAddressService {
                 address.userId(),
                 address.receiverName(),
                 address.receiverPhone(),
+                address.province(),
+                address.city(),
+                address.district(),
+                address.detailAddress(),
+                address.locationName(),
+                address.doorplate(),
                 formattedAddress(address)
         );
     }

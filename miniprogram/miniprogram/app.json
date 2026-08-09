@@ -42,6 +42,12 @@
     "chooseLocation",
     "chooseAddress"
   ],
+  "plugins": {
+    "logisticsPlugin": {
+      "version": "2.3.0",
+      "provider": "wx9ad912bf20548d92"
+    }
+  },
   "style": "v2",
   "componentFramework": "glass-easel",
   "lazyCodeLoading": "requiredComponents",

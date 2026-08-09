@@ -212,6 +212,91 @@ test("订单详情使用零售金额与真实批发成交价生成可核对明�
   assert.equal(buildOrderDetailView(legacySingle).items[0]?.specText, "");
 });
 
+test("订单详情为实体快递生成独立于 token 的静态物流视图", () => {
+  const shipped = detail("SHIPPED");
+  shipped.shippedAt = "2026-08-08T10:20:30Z";
+  shipped.shipment = {
+    shipmentId: 701,
+    orderId: shipped.orderId,
+    logisticsType: 1,
+    deliveryMode: 1,
+    itemDesc: "火锅底料",
+    expressCompanyCode: "  SF  ",
+    expressCompanyName: "  顺丰速运  ",
+    trackingNo: "  SF1234567890  ",
+    shipmentSource: "MANUAL",
+    localShipmentStatus: "SHIPPED",
+    wechatProviderMode: "REAL",
+    wechatUploadStatus: "FAILED",
+    wechatUploadMessage: "上传失败",
+    waybillTrackingSupported: true,
+    waybillRegistrationKind: "TRACE",
+    waybillRegistrationStatus: "FAILED",
+    waybillRegistrationMessage: "登记失败",
+    shippedAt: "2026-08-08T10:20:30Z",
+    uploadTime: "2026-08-08T10:20:30+00:00",
+    wechatUploadedAt: null
+  };
+
+  const view = buildOrderDetailView(shipped);
+  assert.deepEqual(view.shipmentView, {
+    carrierName: "顺丰速运",
+    trackingNo: "SF1234567890",
+    shippedAtText: "2026-08-08 10:20",
+    canCopyTrackingNo: true,
+    canOpenTracking: true
+  });
+});
+
+test("物流查询条件不完整时保留静态卡但不误开插件", () => {
+  const shipped = detail("SHIPPED");
+  shipped.shipment = {
+    shipmentId: 702,
+    orderId: shipped.orderId,
+    logisticsType: 1,
+    deliveryMode: 1,
+    itemDesc: "火锅底料",
+    expressCompanyCode: "",
+    expressCompanyName: "",
+    trackingNo: "SF0002",
+    shipmentSource: "WECHAT_WAYBILL",
+    electronicWaybillId: 801,
+    localShipmentStatus: "SHIPPED",
+    wechatProviderMode: "REAL",
+    wechatUploadStatus: "UNKNOWN",
+    wechatUploadMessage: null,
+    waybillTrackingSupported: true,
+    waybillRegistrationKind: null,
+    waybillRegistrationStatus: "UNKNOWN",
+    waybillRegistrationMessage: null,
+    shippedAt: "2026-08-08T11:20:30Z",
+    uploadTime: "2026-08-08T11:20:30+00:00",
+    wechatUploadedAt: null
+  };
+
+  const withoutCarrier = buildOrderDetailView(shipped);
+  assert.equal(withoutCarrier.shipmentView?.carrierName, "快递");
+  assert.equal(withoutCarrier.shipmentView?.trackingNo, "SF0002");
+  assert.equal(withoutCarrier.shipmentView?.canOpenTracking, false);
+
+  shipped.shipment = {
+    ...shipped.shipment,
+    expressCompanyCode: "SF",
+    waybillTrackingSupported: false
+  };
+  const unsupported = buildOrderDetailView(shipped);
+  assert.equal(unsupported.shipmentView?.canOpenTracking, false);
+
+  shipped.shipment = {
+    ...shipped.shipment,
+    logisticsType: 2,
+    expressCompanyCode: null,
+    expressCompanyName: null,
+    trackingNo: null
+  };
+  assert.equal(buildOrderDetailView(shipped).shipmentView, undefined);
+});
+
 test("订单详情顶部按真实订单状态显示履约标题且完成态不受待评价分组影响", () => {
   const expected = new Map<OrderStatus, string>([
     ["CREATED", "等待付款"],
