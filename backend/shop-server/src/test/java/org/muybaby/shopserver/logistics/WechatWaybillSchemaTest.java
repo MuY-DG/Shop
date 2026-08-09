@@ -202,4 +202,45 @@ class WechatWaybillSchemaTest {
                 .query(Integer.class)
                 .single()).isOne();
     }
+
+    @Test
+    void migrationCreatesShipmentTrackingTablesAndSyncPermission() {
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.tables
+                        where lower(table_name) in (
+                            'shipment_tracking_snapshot', 'shipment_tracking_event'
+                        )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.indexes
+                        where lower(index_name) in (
+                            'idx_shipment_tracking_claim',
+                            'uk_shipment_tracking_event_identity',
+                            'idx_shipment_tracking_event_display'
+                        )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(3);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission permission_item
+                        join admin_menu_permission menu_permission
+                          on menu_permission.permission_id = permission_item.id
+                        join admin_role_permission role_permission
+                          on role_permission.permission_id = permission_item.id
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        where permission_item.id = 8401
+                          and permission_item.auth_mark = 'order:shipping:tracking:sync'
+                          and menu_permission.menu_id = 501
+                          and role_item.code = 'R_SUPER'
+                        """)
+                .query(Integer.class)
+                .single()).isOne();
+    }
 }

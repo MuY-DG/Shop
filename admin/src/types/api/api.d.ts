@@ -1357,6 +1357,52 @@ declare namespace Api {
       waybillRegistrationMessage: string | null
     }
 
+    type TrackingSyncStatus =
+      | 'NOT_REQUESTED'
+      | 'SYNCING'
+      | 'SYNCED'
+      | 'UNSUPPORTED'
+      | 'FAILED'
+      | 'UNKNOWN'
+      | 'UNAVAILABLE'
+
+    type WechatLogisticsStatus =
+      | 'NOT_FOUND'
+      | 'PICKED_UP'
+      | 'IN_TRANSIT'
+      | 'OUT_FOR_DELIVERY'
+      | 'SIGNED'
+      | 'EXCEPTION'
+      | 'SIGNED_BY_OTHER'
+
+    interface ShipmentTrackingEvent {
+      actionTime: number
+      actionType: number
+      actionMessage: string
+    }
+
+    interface ShipmentTracking {
+      shipmentId: number
+      orderId: number
+      carrierCode: string
+      carrierName: string
+      trackingNo: string
+      querySupported: boolean
+      querySyncStatus: TrackingSyncStatus
+      logisticsStatus: WechatLogisticsStatus | null
+      logisticsStatusText: string | null
+      queryErrorCode: string | null
+      queryErrorMessage: string | null
+      pathSupported: boolean
+      pathSyncStatus: TrackingSyncStatus
+      pathErrorCode: string | null
+      pathErrorMessage: string | null
+      officialViewAvailable: boolean
+      pathItems: ShipmentTrackingEvent[]
+      lastAttemptAt: string | null
+      lastSyncedAt: string | null
+    }
+
     interface ShipOrderForm {
       logisticsType: LogisticsType
       itemDesc: string

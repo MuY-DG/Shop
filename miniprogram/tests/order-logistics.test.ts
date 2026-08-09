@@ -5,9 +5,11 @@ import { test } from "node:test";
 
 import { API_ENDPOINTS } from "../miniprogram/constants/api-endpoints";
 import {
+  buildOrderTrackingView,
   openOrderLogistics,
   type LogisticsPluginRuntime
 } from "../miniprogram/features/order-logistics";
+import type { ShipmentTrackingResponse } from "../miniprogram/types/order";
 
 test("小程序声明官方物流查询插件", () => {
   const appConfig = JSON.parse(
@@ -27,6 +29,67 @@ test("物流 token 端点固定为订单所有者路径", () => {
     API_ENDPOINTS.orders.waybillToken(123),
     "/app/orders/123/logistics/waybill-token"
   );
+});
+
+test("物流数据端点区分只读快照和主动同步", () => {
+  assert.equal(
+    API_ENDPOINTS.orders.tracking(123),
+    "/app/orders/123/logistics/tracking"
+  );
+  assert.equal(
+    API_ENDPOINTS.orders.syncTracking(123),
+    "/app/orders/123/logistics/tracking/sync"
+  );
+});
+
+test("自定义物流视图格式化摘要状态和 getPath 时间线", () => {
+  const view = buildOrderTrackingView(trackingResponse({
+    logisticsStatus: "IN_TRANSIT",
+    logisticsStatusText: "运输中",
+    pathSyncStatus: "SYNCED",
+    pathItems: [
+      {
+        actionTime: 1_786_000_000,
+        actionType: 200001,
+        actionMessage: " 快件正在运输中 "
+      }
+    ],
+    lastSyncedAt: "2026-08-09T12:30:00Z"
+  }));
+
+  assert.equal(view.statusText, "运输中");
+  assert.equal(view.statusTone, "active");
+  assert.equal(view.hasPathItems, true);
+  assert.equal(view.pathItems[0]?.actionMessage, "快件正在运输中");
+  assert.equal(view.pathItems[0]?.actionTimeText, "2026-08-06 07:06");
+  assert.equal(view.lastSyncedAtText, "2026-08-09 12:30");
+});
+
+test("getPath 无节点或失败时仍返回可展示的空态", () => {
+  const empty = buildOrderTrackingView(trackingResponse({
+    pathSyncStatus: "SYNCED",
+    pathItems: []
+  }));
+  assert.equal(empty.hasPathItems, false);
+  assert.equal(empty.pathStateText, "暂无更详细的物流轨迹");
+
+  const failed = buildOrderTrackingView(trackingResponse({
+    pathSyncStatus: "FAILED",
+    pathItems: []
+  }));
+  assert.equal(failed.hasPathItems, false);
+  assert.equal(failed.pathStateText, "详细物流轨迹暂不可用，请稍后再试");
+});
+
+test("订单详情始终保留自定义轨迹区域和官方全部物流入口", () => {
+  const template = readFileSync(
+    resolve(process.cwd(), "miniprogram/pages/order/detail/detail.wxml"),
+    "utf8"
+  );
+  assert.match(template, /class="tracking-panel"/);
+  assert.match(template, /物流轨迹/);
+  assert.match(template, /查看全部物流/);
+  assert.match(template, /trackingView && trackingView\.hasPathItems/);
 });
 
 test("有效 token 只以规范后的值调起一次官方物流插件", async () => {
@@ -88,3 +151,30 @@ test("插件加载或调用异常统一安全降级", async () => {
     })
   }), false);
 });
+
+function trackingResponse(
+  overrides: Partial<ShipmentTrackingResponse> = {}
+): ShipmentTrackingResponse {
+  return {
+    shipmentId: 1,
+    orderId: 123,
+    carrierCode: "SF",
+    carrierName: "顺丰速运",
+    trackingNo: "SF123",
+    querySupported: true,
+    querySyncStatus: "SYNCED",
+    logisticsStatus: "PICKED_UP",
+    logisticsStatusText: "已揽件",
+    queryErrorCode: null,
+    queryErrorMessage: null,
+    pathSupported: true,
+    pathSyncStatus: "SYNCED",
+    pathErrorCode: null,
+    pathErrorMessage: null,
+    officialViewAvailable: true,
+    pathItems: [],
+    lastAttemptAt: "2026-08-09T12:30:00Z",
+    lastSyncedAt: "2026-08-09T12:30:00Z",
+    ...overrides
+  };
+}

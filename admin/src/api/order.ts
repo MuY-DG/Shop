@@ -45,3 +45,15 @@ export function retryOrderShippingUpload(orderId: number) {
     url: `/admin/orders/${orderId}/shipping/retry-wechat-upload`
   })
 }
+
+export function fetchOrderShipmentTracking(orderId: number) {
+  return request.get<Api.Order.ShipmentTracking>({
+    url: `/admin/orders/${orderId}/shipping/tracking`
+  })
+}
+
+export function syncOrderShipmentTracking(orderId: number) {
+  return request.post<Api.Order.ShipmentTracking>({
+    url: `/admin/orders/${orderId}/shipping/tracking/sync`
+  })
+}

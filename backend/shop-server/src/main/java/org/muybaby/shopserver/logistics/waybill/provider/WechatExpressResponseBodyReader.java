@@ -6,12 +6,12 @@ import org.springframework.web.client.RestClientException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
-final class WechatExpressResponseBodyReader {
+public final class WechatExpressResponseBodyReader {
 
     private WechatExpressResponseBodyReader() {
     }
 
-    static String readJson(ClientHttpResponse response, int maxResponseBytes) throws IOException {
+    public static String readJson(ClientHttpResponse response, int maxResponseBytes) throws IOException {
         if (!response.getStatusCode().is2xxSuccessful()) {
             throw new RestClientException("WeChat express API returned a non-success HTTP status");
         }
@@ -26,7 +26,7 @@ final class WechatExpressResponseBodyReader {
         return new String(body, StandardCharsets.UTF_8);
     }
 
-    static final class ResponseTooLargeException extends RestClientException {
+    public static final class ResponseTooLargeException extends RestClientException {
 
         private ResponseTooLargeException() {
             super("WeChat express API response exceeded the configured byte limit");

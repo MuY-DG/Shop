@@ -122,6 +122,10 @@ shop: # 商城项目自定义业务配置的统一入口。
         connect-timeout: ${SHOP_WECHAT_EXPRESS_HTTP_CONNECT_TIMEOUT:3s} # 建立微信 API 连接最多等待 3 秒。
         read-timeout: ${SHOP_WECHAT_EXPRESS_HTTP_READ_TIMEOUT:15s} # 单次微信物流请求最多等待 15 秒。
         max-response-size: ${SHOP_WECHAT_EXPRESS_HTTP_MAX_RESPONSE_SIZE:5MB} # 解码前最多读取 5MB 响应体。
+      tracking: # 查询组件摘要状态与电子面单 getPath 轨迹的按需同步边界。
+        refresh-interval: ${SHOP_WECHAT_TRACKING_REFRESH_INTERVAL:5m} # 小程序短时间重复打开订单时复用最近同步结果。
+        claim-timeout: ${SHOP_WECHAT_TRACKING_CLAIM_TIMEOUT:5m} # 进程中断后允许下一次请求接管同步占用。
+        max-path-items: ${SHOP_WECHAT_TRACKING_MAX_PATH_ITEMS:200} # 单次最多接受 200 个规范化轨迹节点。
     shipping: # 微信小程序发货信息管理配置。
       upload-enabled: ${SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED:false} # 默认不向微信上传发货信息。
       receipt-reconciliation: # 微信自动收货后，将微信状态安全同步回本地订单。

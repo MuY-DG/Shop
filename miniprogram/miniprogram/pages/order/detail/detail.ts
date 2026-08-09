@@ -18,8 +18,10 @@ import {
   type OrderDetailView
 } from "../../../features/order-center";
 import {
+  buildOrderTrackingView,
   LOGISTICS_UNAVAILABLE_MESSAGE,
-  openOrderLogistics
+  openOrderLogistics,
+  type OrderTrackingView
 } from "../../../features/order-logistics";
 import { buildCustomerServiceUrl } from "../../../features/customer-service";
 import {
@@ -33,7 +35,8 @@ import {
   confirmOrderReceipt,
   deleteOrder,
   getOrderDetail,
-  getOrderWaybillToken
+  getOrderWaybillToken,
+  syncOrderTracking
 } from "../../../services/order";
 import { isApiError } from "../../../utils/api-error";
 
@@ -46,6 +49,7 @@ interface DatasetEvent {
 }
 
 let latestDetailRequest = 0;
+let latestTrackingRequest = 0;
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
 let countdownDeadlineMs = 0;
 
@@ -103,7 +107,10 @@ Page({
     loaded: false,
     errorText: "",
     actionType: "",
-    logisticsOpening: false
+    logisticsOpening: false,
+    trackingView: null as OrderTrackingView | null,
+    trackingLoading: false,
+    trackingErrorText: ""
   },
 
   onLoad(query: Record<string, string | undefined>) {
@@ -136,6 +143,7 @@ Page({
 
   onUnload() {
     latestDetailRequest += 1;
+    latestTrackingRequest += 1;
     this.stopCountdownTimer();
     countdownDeadlineMs = 0;
   },
@@ -163,6 +171,16 @@ Page({
         errorText: ""
       });
       this.configureCountdown(detail);
+      if (detail.shipmentView) {
+        void this.refreshTracking(detail.orderId);
+      } else {
+        latestTrackingRequest += 1;
+        this.setData({
+          trackingView: null,
+          trackingLoading: false,
+          trackingErrorText: ""
+        });
+      }
     } catch (error) {
       if (requestId !== latestDetailRequest) {
         return;
@@ -171,6 +189,34 @@ Page({
         loading: false,
         loaded: this.data.detail !== null,
         errorText: actionError(error, "订单详情加载失败")
+      });
+    }
+  },
+
+  async refreshTracking(orderId: number) {
+    const requestId = ++latestTrackingRequest;
+    this.setData({ trackingLoading: true, trackingErrorText: "" });
+    try {
+      const response = await syncOrderTracking(orderId);
+      if (
+        requestId !== latestTrackingRequest
+        || this.data.orderId !== orderId
+        || this.data.detail?.orderId !== orderId
+      ) {
+        return;
+      }
+      this.setData({
+        trackingView: buildOrderTrackingView(response),
+        trackingLoading: false,
+        trackingErrorText: ""
+      });
+    } catch (error) {
+      if (requestId !== latestTrackingRequest || this.data.orderId !== orderId) {
+        return;
+      }
+      this.setData({
+        trackingLoading: false,
+        trackingErrorText: actionError(error, "物流轨迹暂不可用，请稍后再试")
       });
     }
   },

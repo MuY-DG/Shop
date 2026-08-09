@@ -130,6 +130,52 @@ export interface OrderWaybillTokenResponse {
   waybillToken: string;
 }
 
+export type WechatTrackingSyncStatus =
+  | "NOT_REQUESTED"
+  | "SYNCING"
+  | "SYNCED"
+  | "UNSUPPORTED"
+  | "FAILED"
+  | "UNKNOWN"
+  | "UNAVAILABLE";
+
+export type WechatLogisticsStatus =
+  | "NOT_FOUND"
+  | "PICKED_UP"
+  | "IN_TRANSIT"
+  | "OUT_FOR_DELIVERY"
+  | "SIGNED"
+  | "EXCEPTION"
+  | "SIGNED_BY_OTHER";
+
+export interface ShipmentTrackingEventResponse {
+  actionTime: number;
+  actionType: number;
+  actionMessage: string;
+}
+
+export interface ShipmentTrackingResponse {
+  shipmentId: number;
+  orderId: number;
+  carrierCode: string;
+  carrierName: string;
+  trackingNo: string;
+  querySupported: boolean;
+  querySyncStatus: WechatTrackingSyncStatus;
+  logisticsStatus: WechatLogisticsStatus | null;
+  logisticsStatusText: string | null;
+  queryErrorCode: string | null;
+  queryErrorMessage: string | null;
+  pathSupported: boolean;
+  pathSyncStatus: WechatTrackingSyncStatus;
+  pathErrorCode: string | null;
+  pathErrorMessage: string | null;
+  officialViewAvailable: boolean;
+  pathItems: ShipmentTrackingEventResponse[];
+  lastAttemptAt: string | null;
+  lastSyncedAt: string | null;
+}
+
 export interface AppOrderDetailResponse {
   orderId: number;
   orderNo: string;

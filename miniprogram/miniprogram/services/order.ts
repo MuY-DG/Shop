@@ -15,6 +15,7 @@ import type {
   OrderSummaryResponse,
   PaymentCancelResponse,
   PaymentSyncResponse,
+  ShipmentTrackingResponse,
   WechatPaymentParamsResponse
 } from "../types/order";
 import { request } from "../utils/request";
@@ -71,6 +72,20 @@ export function getOrderDetail(orderId: number): Promise<AppOrderDetailResponse>
 export function getOrderWaybillToken(orderId: number): Promise<OrderWaybillTokenResponse> {
   return request<OrderWaybillTokenResponse>({
     url: API_ENDPOINTS.orders.waybillToken(orderId),
+    method: "POST"
+  });
+}
+
+export function getOrderTracking(orderId: number): Promise<ShipmentTrackingResponse> {
+  return request<ShipmentTrackingResponse>({
+    url: API_ENDPOINTS.orders.tracking(orderId),
+    method: "GET"
+  });
+}
+
+export function syncOrderTracking(orderId: number): Promise<ShipmentTrackingResponse> {
+  return request<ShipmentTrackingResponse>({
+    url: API_ENDPOINTS.orders.syncTracking(orderId),
     method: "POST"
   });
 }

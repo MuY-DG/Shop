@@ -132,6 +132,7 @@ class AdminAuthControllerTest {
                         "order:waybill:print",
                         "order:waybill:test",
                         "order:shipping:registration:retry",
+                        "order:shipping:tracking:sync",
                         "logistics:express:config:read",
                         "logistics:express:config:write",
                         "customer-service:conversation:read",

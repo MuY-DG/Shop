@@ -304,6 +304,30 @@ official trajectory additionally requires a successful server-side
 recipient phone, payer OpenID, transaction ID, carrier, and waybill. A fabricated
 tracking number can test only the local card and copy action.
 
+The order detail also renders a Shop-owned logistics data area. Its two sources
+are deliberately independent:
+
+- `query_trace` or `query_follow_trace` reads the WeChat summary status from the
+  registered `waybill_token`.
+- Electronic-waybill `getPath` reads `path_item_list` from the saved upstream
+  order ID, payer OpenID, carrier ID, and waybill ID.
+
+An empty or failed `getPath` response does not hide the area, and a failure from
+one source does not discard a successful result from the other. The admin order
+drawer exposes both source statuses, safe errors, and stored path nodes; manual
+refresh requires `order:shipping:tracking:sync`. Tracking synchronization does
+**not** change `shop_order.status` or write order status logs. The official Mini
+Program “查看全部物流” plugin entry remains available when token registration
+succeeds.
+
+Optional runtime bounds keep repeated reads and provider responses controlled:
+
+```env
+SHOP_WECHAT_TRACKING_REFRESH_INTERVAL=5m
+SHOP_WECHAT_TRACKING_CLAIM_TIMEOUT=5m
+SHOP_WECHAT_TRACKING_MAX_PATH_ITEMS=200
+```
+
 ## Authentication Smoke Checks
 
 Backend test profile uses an in-memory token store and a mock WeChat mini program client. Use this only for local smoke checks, not on a shared or exposed environment. The smoke command opts into Maven's test classpath so H2 and `src/test/resources/application-test.yaml` are available at runtime.

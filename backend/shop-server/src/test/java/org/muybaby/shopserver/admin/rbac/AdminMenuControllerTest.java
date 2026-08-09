@@ -165,7 +165,8 @@ class AdminMenuControllerTest {
                         "order:waybill:manage",
                         "order:waybill:print",
                         "order:waybill:test",
-                        "order:shipping:registration:retry"
+                        "order:shipping:registration:retry",
+                        "order:shipping:tracking:sync"
                 )))
                 .andExpect(jsonPath("$.data[4].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "aftersale:read",

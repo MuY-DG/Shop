@@ -218,6 +218,17 @@ public class OrderAggregateCleanupService {
                                 )
                           )
                           and not exists (
+                              select 1
+                              from shipment_tracking_snapshot tracking
+                              join order_shipment tracked_shipment
+                                on tracked_shipment.id = tracking.shipment_id
+                              where tracked_shipment.order_id = o.id
+                                and (
+                                    tracking.updated_at >= :cutoff
+                                    or tracking.claim_token is not null
+                                )
+                          )
+                          and not exists (
                               select 1 from order_status_log status_log
                               where status_log.order_id = o.id and status_log.created_at >= :cutoff
                           )
@@ -313,6 +324,17 @@ public class OrderAggregateCleanupService {
                                 and (
                                     registration.updated_at >= :cutoff
                                     or registration.status in ('PENDING', 'REGISTERING')
+                                )
+                          )
+                          and not exists (
+                              select 1
+                              from shipment_tracking_snapshot tracking
+                              join order_shipment tracked_shipment
+                                on tracked_shipment.id = tracking.shipment_id
+                              where tracked_shipment.order_id = o.id
+                                and (
+                                    tracking.updated_at >= :cutoff
+                                    or tracking.claim_token is not null
                                 )
                           )
                           and not exists (
@@ -430,6 +452,20 @@ public class OrderAggregateCleanupService {
                 join order_shipment shipment on shipment.id = registration.shipment_id
                 where shipment.order_id = :orderId
                 order by registration.id
+                """, orderId));
+        sections.put("tracking_snapshots", rows("""
+                select tracking.*
+                from shipment_tracking_snapshot tracking
+                join order_shipment shipment on shipment.id = tracking.shipment_id
+                where shipment.order_id = :orderId
+                order by tracking.shipment_id
+                """, orderId));
+        sections.put("tracking_events", rows("""
+                select event.*
+                from shipment_tracking_event event
+                join order_shipment shipment on shipment.id = event.shipment_id
+                where shipment.order_id = :orderId
+                order by event.shipment_id, event.display_order, event.id
                 """, orderId));
         sections.put("after_sales", afterSales);
         sections.put("after_sale_evidence", rows("""
@@ -591,6 +627,14 @@ public class OrderAggregateCleanupService {
         delete("delete from refund_order where order_id = :orderId", orderId);
         delete("delete from after_sale_request where order_id = :orderId", orderId);
         delete("""
+                delete from shipment_tracking_event
+                where shipment_id in (select id from order_shipment where order_id = :orderId)
+                """, orderId);
+        delete("""
+                delete from shipment_tracking_snapshot
+                where shipment_id in (select id from order_shipment where order_id = :orderId)
+                """, orderId);
+        delete("""
                 delete from shipment_waybill_registration
                 where shipment_id in (select id from order_shipment where order_id = :orderId)
                 """, orderId);
@@ -644,6 +688,28 @@ public class OrderAggregateCleanupService {
                 .query(Long.class)
                 .list();
         jdbcClient.sql("select id from order_shipment where order_id = :orderId order by id for update")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("""
+                        select tracking.shipment_id
+                        from shipment_tracking_snapshot tracking
+                        join order_shipment shipment on shipment.id = tracking.shipment_id
+                        where shipment.order_id = :orderId
+                        order by tracking.shipment_id
+                        for update
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("""
+                        select event.id
+                        from shipment_tracking_event event
+                        join order_shipment shipment on shipment.id = event.shipment_id
+                        where shipment.order_id = :orderId
+                        order by event.id
+                        for update
+                        """)
                 .param("orderId", orderId)
                 .query(Long.class)
                 .list();

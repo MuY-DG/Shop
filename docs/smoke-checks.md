@@ -1157,8 +1157,9 @@ real carrier/waybill relationship:
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest='WechatWaybillSchemaTest,AdminWechatExpressConfigControllerTest,WechatExpressProviderTest,AdminElectronicWaybillControllerTest,AdminShipmentControllerTest,OrderAggregateCleanupServiceTest' test
+./mvnw -Dtest='WechatWaybillSchemaTest,WechatExpressProviderTest,WechatTrackingProviderTest,ShipmentTrackingStateStoreTest,AdminWechatExpressConfigControllerTest,AdminElectronicWaybillControllerTest,AdminShipmentControllerTest,OrderAggregateCleanupServiceTest' test
 cd ../../admin
+pnpm exec tsx --test src/views/order/list/tracking-state.test.ts
 pnpm typecheck
 pnpm build
 cd ../miniprogram
@@ -1190,14 +1191,28 @@ Manual and Mini Program smoke:
   shipment and receiver-address changes until it is canceled or recovered.
 - In Mini Program order detail, verify the static logistics card shows carrier,
   full tracking number, copy action, and shipped time even if official
-  registration fails.
+  registration fails. The “物流轨迹” area must remain visible while loading,
+  when `getPath` returns no nodes, and when either provider source fails.
+- For an electronic-waybill shipment, trigger the app tracking sync and verify
+  the summary status and `getPath` nodes render in the custom timeline. Keep the
+  “查看全部物流” button and verify it still opens the official plugin when the
+  waybill-token registration is available.
+- Open the same order in the admin drawer. Verify “微信物流数据（query_trace /
+  getPath）” shows each source capability/status/error independently and shows
+  the same stored path nodes. Use an account with
+  `order:shipping:tracking:sync` to exercise “手动刷新”; an account without that
+  permission must not receive a successful sync response.
+- Before and after both app and admin refreshes, verify `shop_order.status` and
+  the count/content of `order_status_log` are unchanged. This phase never maps
+  logistics status to order state.
 - A random/fabricated tracking number is valid only for that static-card test.
   It is not expected to yield an official waybill token or trajectory.
 - For official trajectory smoke, use WeChat DevTools **Preview** and a real
   device with the actual buyer/order/phone/transaction/carrier/waybill match.
   The logistics plugin cannot be fully simulated in the DevTools simulator.
 - Verify the token and label responses include `Cache-Control: no-store`, and
-  confirm logs/client storage never contain access tokens, waybill tokens,
+  verify both app/admin tracking responses also use `Cache-Control: no-store`,
+  and confirm logs/client storage never contain access tokens, waybill tokens,
   OpenIDs, phone/address data, transaction IDs, or label HTML.
 
 Automatic receipt reconciliation:

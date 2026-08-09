@@ -109,6 +109,8 @@ class OrderAggregateCleanupServiceTest {
         assertThat(count("order_electronic_waybill", "order_id", ORDER_ID)).isZero();
         assertThat(count("order_shipment", "order_id", ORDER_ID)).isZero();
         assertThat(count("shipment_waybill_registration", "id", REGISTRATION_ID)).isZero();
+        assertThat(count("shipment_tracking_snapshot", "shipment_id", SHIPMENT_ID)).isZero();
+        assertThat(count("shipment_tracking_event", "shipment_id", SHIPMENT_ID)).isZero();
         assertThat(count("stock_lock", "order_id", ORDER_ID)).isZero();
         assertThat(count("stock_log", "order_id", ORDER_ID)).isZero();
         assertThat(count("customer_service_conversation_order", "order_id", ORDER_ID)).isZero();
@@ -226,6 +228,8 @@ class OrderAggregateCleanupServiceTest {
         assertThat(archiveJson)
                 .contains("\"electronic_waybills\"")
                 .contains("\"waybill_registrations\"")
+                .contains("\"tracking_snapshots\"")
+                .contains("\"tracking_events\"")
                 .contains("\"shipments\"");
 
         assertThat(storageAssetCleanupService.cleanupAsset(ASSET_ID)).isTrue();
@@ -304,6 +308,23 @@ class OrderAggregateCleanupServiceTest {
                         """)
                 .param("oldAt", oldAt())
                 .param("registrationId", REGISTRATION_ID)
+                .update();
+        jdbcClient.sql("""
+                        update shipment_tracking_snapshot
+                        set updated_at = current_timestamp
+                        where shipment_id = :shipmentId
+                        """)
+                .param("shipmentId", SHIPMENT_ID)
+                .update();
+        assertThat(cleanupService.cleanupBatch(CUTOFF, 20, true, () -> true)).isZero();
+
+        jdbcClient.sql("""
+                        update shipment_tracking_snapshot
+                        set updated_at = :oldAt
+                        where shipment_id = :shipmentId
+                        """)
+                .param("oldAt", oldAt())
+                .param("shipmentId", SHIPMENT_ID)
                 .update();
         jdbcClient.sql("""
                         update order_electronic_waybill
@@ -818,6 +839,29 @@ class OrderAggregateCleanupServiceTest {
                 .param("shipmentId", SHIPMENT_ID)
                 .param("oldAt", oldAt())
                 .update();
+        jdbcClient.sql("""
+                        insert into shipment_tracking_snapshot(
+                            shipment_id, query_supported, query_sync_status, logistics_status,
+                            path_supported, path_sync_status, attempt_count, last_attempt_at,
+                            last_synced_at, created_at, updated_at)
+                        values (
+                            :shipmentId, true, 'SYNCED', 2, true, 'SYNCED', 1, :oldAt,
+                            :oldAt, :oldAt, :oldAt)
+                        """)
+                .param("shipmentId", SHIPMENT_ID)
+                .param("oldAt", oldAt())
+                .update();
+        jdbcClient.sql("""
+                        insert into shipment_tracking_event(
+                            shipment_id, action_time, action_type, action_message,
+                            message_digest, display_order, created_at)
+                        values (
+                            :shipmentId, 1700000000, 1001, '快件运输中', :digest, 0, :oldAt)
+                        """)
+                .param("shipmentId", SHIPMENT_ID)
+                .param("digest", "d".repeat(64))
+                .param("oldAt", oldAt())
+                .update();
     }
 
     private void insertAfterSaleAsset() {
@@ -1011,6 +1055,10 @@ class OrderAggregateCleanupServiceTest {
                 .param("orderId", ORDER_ID).update();
         jdbcClient.sql("delete from after_sale_request where order_id = :orderId")
                 .param("orderId", ORDER_ID).update();
+        jdbcClient.sql("delete from shipment_tracking_event where shipment_id = :shipmentId")
+                .param("shipmentId", SHIPMENT_ID).update();
+        jdbcClient.sql("delete from shipment_tracking_snapshot where shipment_id = :shipmentId")
+                .param("shipmentId", SHIPMENT_ID).update();
         jdbcClient.sql("delete from shipment_waybill_registration where id = :registrationId")
                 .param("registrationId", REGISTRATION_ID).update();
         jdbcClient.sql("delete from order_shipment where order_id = :orderId")

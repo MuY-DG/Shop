@@ -599,6 +599,114 @@
                     </div>
                   </dl>
                 </ElCollapseItem>
+                <ElCollapseItem title="微信物流数据（query_trace / getPath）" name="wechat-tracking">
+                  <div v-loading="trackingLoading" class="tracking-diagnostics">
+                    <div class="tracking-diagnostics__toolbar">
+                      <span>摘要状态与详细轨迹独立同步，刷新不会改变订单状态。</span>
+                      <ElButton
+                        v-auth="'order:shipping:tracking:sync'"
+                        type="primary"
+                        size="small"
+                        :loading="trackingSyncing"
+                        :disabled="trackingSyncing || trackingLoading"
+                        @click.stop="handleSyncTracking"
+                      >
+                        手动刷新
+                      </ElButton>
+                    </div>
+                    <ElAlert
+                      v-if="trackingErrorText"
+                      :title="trackingErrorText"
+                      type="warning"
+                      :closable="false"
+                      show-icon
+                    />
+                    <template v-if="currentTracking">
+                      <dl class="shipping-diagnostic-grid tracking-diagnostics__facts">
+                        <div class="shipping-diagnostic">
+                          <dt>摘要能力</dt>
+                          <dd>{{ currentTracking.querySupported ? '已支持' : '暂不支持' }}</dd>
+                        </div>
+                        <div class="shipping-diagnostic">
+                          <dt>摘要同步</dt>
+                          <dd>{{ formatTrackingSyncStatus(currentTracking.querySyncStatus) }}</dd>
+                        </div>
+                        <div class="shipping-diagnostic">
+                          <dt>物流状态</dt>
+                          <dd>{{ currentTracking.logisticsStatusText || '-' }}</dd>
+                        </div>
+                        <div class="shipping-diagnostic">
+                          <dt>getPath 能力</dt>
+                          <dd>{{ currentTracking.pathSupported ? '已支持' : '暂不支持' }}</dd>
+                        </div>
+                        <div class="shipping-diagnostic">
+                          <dt>getPath 同步</dt>
+                          <dd>{{ formatTrackingSyncStatus(currentTracking.pathSyncStatus) }}</dd>
+                        </div>
+                        <div class="shipping-diagnostic">
+                          <dt>轨迹节点</dt>
+                          <dd>{{ currentTracking.pathItems.length }} 条</dd>
+                        </div>
+                        <div class="shipping-diagnostic">
+                          <dt>最近尝试</dt>
+                          <dd>{{ formatDateTime(currentTracking.lastAttemptAt) }}</dd>
+                        </div>
+                        <div class="shipping-diagnostic">
+                          <dt>最近成功</dt>
+                          <dd>{{ formatDateTime(currentTracking.lastSyncedAt) }}</dd>
+                        </div>
+                        <div class="shipping-diagnostic shipping-diagnostic--full">
+                          <dt>摘要错误</dt>
+                          <dd>
+                            {{
+                              formatTrackingSourceError(
+                                currentTracking.queryErrorCode,
+                                currentTracking.queryErrorMessage
+                              )
+                            }}
+                          </dd>
+                        </div>
+                        <div class="shipping-diagnostic shipping-diagnostic--full">
+                          <dt>getPath 错误</dt>
+                          <dd>
+                            {{
+                              formatTrackingSourceError(
+                                currentTracking.pathErrorCode,
+                                currentTracking.pathErrorMessage
+                              )
+                            }}
+                          </dd>
+                        </div>
+                      </dl>
+                      <div class="tracking-diagnostics__timeline">
+                        <div class="tracking-diagnostics__timeline-title">getPath 轨迹明细</div>
+                        <ElTimeline v-if="currentTracking.pathItems.length">
+                          <ElTimelineItem
+                            v-for="(item, index) in currentTracking.pathItems"
+                            :key="`${item.actionTime}-${item.actionType}-${index}`"
+                            :timestamp="formatTrackingActionTime(item.actionTime)"
+                            :type="index === 0 ? 'primary' : undefined"
+                          >
+                            <div class="tracking-diagnostics__message">{{ item.actionMessage }}</div>
+                            <div class="tracking-diagnostics__action-type">
+                              动作类型：{{ item.actionType }}
+                            </div>
+                          </ElTimelineItem>
+                        </ElTimeline>
+                        <ElEmpty
+                          v-else
+                          :description="trackingPathEmptyText(currentTracking)"
+                          :image-size="56"
+                        />
+                      </div>
+                    </template>
+                    <ElEmpty
+                      v-else-if="!trackingLoading"
+                      :description="trackingPathEmptyText(null)"
+                      :image-size="56"
+                    />
+                  </div>
+                </ElCollapseItem>
               </ElCollapse>
             </section>
           </div>
@@ -911,8 +1019,10 @@
     fetchOrderStatusCounts,
     fetchOrderStatusLogs,
     fetchOrders,
+    fetchOrderShipmentTracking,
     retryOrderShippingUpload,
-    shipOrder
+    shipOrder,
+    syncOrderShipmentTracking
   } from '@/api/order'
   import {
     fetchWechatShippingCapability,
@@ -947,6 +1057,11 @@
     isActiveWaybillAttempt,
     type ShipmentDialogMode
   } from './waybill-workflow'
+  import {
+    formatTrackingSourceError,
+    formatTrackingSyncStatus,
+    trackingPathEmptyText
+  } from './tracking-state'
   import ElectronicWaybillPanel from './modules/electronic-waybill-panel.vue'
   import {
     ElButton,
@@ -975,6 +1090,11 @@
   const retryingOrderId = ref<number | null>(null)
   const registrationRetryingOrderId = ref<number | null>(null)
   const currentDetail = ref<Api.Order.OrderDetail | null>(null)
+  const currentTracking = ref<Api.Order.ShipmentTracking | null>(null)
+  const trackingLoading = ref(false)
+  const trackingSyncing = ref(false)
+  const trackingErrorText = ref('')
+  const trackingRequestSeq = ref(0)
   const detailTargetOrderId = ref<number | null>(null)
   const detailRequestSeq = ref(0)
   const retryRequestGeneration = ref(0)
@@ -1742,19 +1862,90 @@
   })
 
   onBeforeUnmount(() => {
+    trackingRequestSeq.value += 1
     unsubscribeOrderRealtime?.()
     if (realtimeOrderRefreshTimer) clearTimeout(realtimeOrderRefreshTimer)
   })
+
+  const resetTrackingState = () => {
+    trackingRequestSeq.value += 1
+    currentTracking.value = null
+    trackingLoading.value = false
+    trackingSyncing.value = false
+    trackingErrorText.value = ''
+  }
+
+  const loadOrderTracking = async (orderId: number) => {
+    const requestId = ++trackingRequestSeq.value
+    trackingLoading.value = true
+    trackingErrorText.value = ''
+    try {
+      const tracking = await fetchOrderShipmentTracking(orderId)
+      if (
+        requestId !== trackingRequestSeq.value ||
+        currentDetail.value?.orderId !== orderId ||
+        !drawerVisible.value
+      ) {
+        return
+      }
+      currentTracking.value = tracking
+    } catch {
+      if (requestId !== trackingRequestSeq.value || currentDetail.value?.orderId !== orderId) return
+      currentTracking.value = null
+      trackingErrorText.value = '微信物流数据读取失败，可稍后手动刷新'
+    } finally {
+      if (requestId === trackingRequestSeq.value) trackingLoading.value = false
+    }
+  }
+
+  const handleSyncTracking = async () => {
+    const orderId = currentDetail.value?.orderId
+    if (
+      !orderId ||
+      currentDetail.value?.shipment?.logisticsType !== 1 ||
+      trackingSyncing.value ||
+      !hasAuth('order:shipping:tracking:sync')
+    ) {
+      return
+    }
+    const requestId = ++trackingRequestSeq.value
+    trackingSyncing.value = true
+    trackingErrorText.value = ''
+    try {
+      const tracking = await syncOrderShipmentTracking(orderId)
+      if (
+        requestId !== trackingRequestSeq.value ||
+        currentDetail.value?.orderId !== orderId ||
+        !drawerVisible.value
+      ) {
+        return
+      }
+      currentTracking.value = tracking
+      ElMessage.success('微信物流数据已刷新')
+    } catch {
+      if (requestId !== trackingRequestSeq.value || currentDetail.value?.orderId !== orderId) return
+      trackingErrorText.value = '微信物流数据刷新失败，已保留最近一次成功结果'
+    } finally {
+      if (requestId === trackingRequestSeq.value) trackingSyncing.value = false
+    }
+  }
+
+  const formatTrackingActionTime = (actionTime: number) => {
+    if (!Number.isFinite(actionTime) || actionTime <= 0) return '-'
+    return formatDateTime(new Date(Math.floor(actionTime) * 1000).toISOString())
+  }
 
   const loadOrderDetail = async (orderId: number) => {
     const requestId = ++detailRequestSeq.value
     detailTargetOrderId.value = orderId
     drawerLoading.value = true
     currentDetail.value = null
+    resetTrackingState()
     try {
       const detail = await fetchOrderDetail(orderId)
       if (requestId !== detailRequestSeq.value) return
       currentDetail.value = detail
+      if (detail.shipment?.logisticsType === 1) void loadOrderTracking(orderId)
     } catch (error) {
       if (requestId !== detailRequestSeq.value) return
       currentDetail.value = null
@@ -2180,6 +2371,7 @@
       }
       if (currentDetail.value?.orderId === orderId) {
         currentDetail.value.shipment = shipment
+        if (shipment.logisticsType === 1) void loadOrderTracking(orderId)
       }
 
       const statusText = formatWaybillRegistrationStatus(shipment.waybillRegistrationStatus)
@@ -2682,6 +2874,50 @@
 
   .shipping-diagnostic--full {
     grid-column: 1 / -1;
+  }
+
+  .tracking-diagnostics {
+    min-height: 120px;
+  }
+
+  .tracking-diagnostics__toolbar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .tracking-diagnostics__facts {
+    margin-top: 12px;
+  }
+
+  .tracking-diagnostics__timeline {
+    padding: 14px 14px 0;
+    margin-top: 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
+  .tracking-diagnostics__timeline-title {
+    margin-bottom: 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+
+  .tracking-diagnostics__message {
+    line-height: 20px;
+    color: var(--el-text-color-primary);
+  }
+
+  .tracking-diagnostics__action-type {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--el-text-color-secondary);
   }
 
   .detail-card--products {
