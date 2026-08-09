@@ -1535,6 +1535,11 @@ public class AppOrderService {
                                upload_time,
                                wechat_uploaded_at,
                                (
+                                   select mode
+                                   from order_electronic_waybill electronic_waybill
+                                   where electronic_waybill.id = order_shipment.electronic_waybill_id
+                               ) as electronic_waybill_mode,
+                               (
                                    select registration_kind
                                    from shipment_waybill_registration registration
                                    where registration.shipment_id = order_shipment.id
@@ -1560,8 +1565,9 @@ public class AppOrderService {
         WaybillRegistrationKind registrationKind = registrationKind(
                 rs.getString("waybill_registration_kind")
         );
-        WaybillRegistrationStatus registrationStatus = registrationStatus(
-                rs.getString("waybill_registration_status")
+        WaybillRegistrationStatus registrationStatus = WaybillRegistrationSummary.effectiveStatus(
+                registrationStatus(rs.getString("waybill_registration_status")),
+                rs.getString("electronic_waybill_mode")
         );
         return new AppOrderShipmentResponse(
                 rs.getLong("shipment_id"),
@@ -1581,7 +1587,8 @@ public class AppOrderService {
                 WaybillRegistrationSummary.trackingSupported(
                         logisticsType,
                         rs.getString("express_company_code"),
-                        rs.getString("tracking_no")
+                        rs.getString("tracking_no"),
+                        registrationStatus
                 ),
                 registrationKind,
                 registrationStatus,

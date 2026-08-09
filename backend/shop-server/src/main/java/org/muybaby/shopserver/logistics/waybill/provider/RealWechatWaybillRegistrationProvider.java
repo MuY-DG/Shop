@@ -34,6 +34,7 @@ public class RealWechatWaybillRegistrationProvider implements WechatWaybillRegis
             "https://api.weixin.qq.com/cgi-bin/express/delivery/open_msg/trace_waybill?access_token={accessToken}";
     private static final String FOLLOW_URL =
             "https://api.weixin.qq.com/cgi-bin/express/delivery/open_msg/follow_waybill?access_token={accessToken}";
+    private static final String SANDBOX_DELIVERY_ID = "TEST";
     private static final int MAX_WAYBILL_TOKEN_LENGTH = 1024;
     private static final String REJECTED_MESSAGE = "WeChat waybill registration failed";
     private static final String UNKNOWN_MESSAGE = "WeChat waybill registration result is unknown";
@@ -170,7 +171,11 @@ public class RealWechatWaybillRegistrationProvider implements WechatWaybillRegis
         payload.put("trans_id", request.transactionId());
         payload.put("order_detail_path", request.orderDetailPath());
         if (StringUtils.hasText(request.deliveryId())) {
-            payload.put("delivery_id", request.deliveryId().trim());
+            String deliveryId = request.deliveryId().trim();
+            // TEST belongs to the electronic-waybill sandbox, not the query/message carrier directory.
+            if (!SANDBOX_DELIVERY_ID.equalsIgnoreCase(deliveryId)) {
+                payload.put("delivery_id", deliveryId);
+            }
         }
         return payload;
     }

@@ -289,6 +289,14 @@ test("物流查询条件不完整时保留静态卡但不误开插件", () => {
 
   shipped.shipment = {
     ...shipped.shipment,
+    waybillTrackingSupported: true,
+    waybillRegistrationStatus: "SKIPPED"
+  };
+  const sandboxSkipped = buildOrderDetailView(shipped);
+  assert.equal(sandboxSkipped.shipmentView?.canOpenTracking, false);
+
+  shipped.shipment = {
+    ...shipped.shipment,
     logisticsType: 2,
     expressCompanyCode: null,
     expressCompanyName: null,

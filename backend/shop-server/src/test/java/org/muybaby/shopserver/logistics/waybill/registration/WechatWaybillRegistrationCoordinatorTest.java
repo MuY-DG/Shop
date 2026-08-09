@@ -362,6 +362,59 @@ class WechatWaybillRegistrationCoordinatorTest {
         assertThat(provider.transactionActive).isFalse();
     }
 
+    @Test
+    void sandboxElectronicWaybillSkipsUnsupportedOfficialTrackingRegistration() throws Exception {
+        long orderId = insertPaidOrder();
+        long waybillRecordId = insertElectronicWaybill(
+                orderId,
+                "SANDBOX",
+                "TEST",
+                "WB-REG" + orderId + "-1_waybill_id"
+        );
+
+        var electronic = adminShipmentService.confirmElectronicWaybill(
+                adminPrincipal(), orderId, waybillRecordId
+        );
+
+        assertThat(electronic.localShipmentStatus()).isEqualTo("SHIPPED");
+        assertThat(electronic.waybillTrackingSupported()).isFalse();
+        assertThat(electronic.waybillRegistrationStatus()).isEqualTo(WaybillRegistrationStatus.SKIPPED);
+        assertThat(electronic.waybillRegistrationMessage()).isEqualTo("电子面单沙盒不支持微信官方物流轨迹");
+        assertThat(provider.traceRequests).isEmpty();
+        assertThat(provider.followRequests).isEmpty();
+        assertRegistration(electronic.shipmentId(), "TRACE", "SKIPPED", "", 0);
+
+        jdbcClient.sql("""
+                        update shipment_waybill_registration
+                        set status = 'FAILED',
+                            last_error_code = 'WECHAT_931023',
+                            last_error_message = 'legacy sandbox rejection',
+                            attempt_count = 17
+                        where shipment_id = :shipmentId
+                        """)
+                .param("shipmentId", electronic.shipmentId())
+                .update();
+
+        mockMvc.perform(get("/app/orders/{orderId}", orderId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + appToken(orderId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shipment.waybillTrackingSupported").value(false))
+                .andExpect(jsonPath("$.data.shipment.waybillRegistrationStatus").value("SKIPPED"))
+                .andExpect(jsonPath("$.data.shipment.waybillRegistrationMessage")
+                        .value("电子面单沙盒不支持微信官方物流轨迹"));
+
+        String permitted = adminToken(List.of("order:shipping:registration:retry"));
+        mockMvc.perform(post("/admin/orders/{orderId}/shipping/retry-waybill-registration", orderId)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + permitted))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.waybillTrackingSupported").value(false))
+                .andExpect(jsonPath("$.data.waybillRegistrationStatus").value("SKIPPED"))
+                .andExpect(jsonPath("$.data.waybillRegistrationMessage")
+                        .value("电子面单沙盒不支持微信官方物流轨迹"));
+        assertThat(provider.traceRequests).isEmpty();
+        assertRegistration(electronic.shipmentId(), "TRACE", "SKIPPED", "", 17);
+    }
+
     private ShipmentSeed insertExistingShipment(
             LogisticsType logisticsType,
             ShipmentSource shipmentSource,
@@ -478,6 +531,15 @@ class WechatWaybillRegistrationCoordinatorTest {
     }
 
     private long insertElectronicWaybill(long orderId) {
+        return insertElectronicWaybill(orderId, "PRODUCTION", "SF", "SF" + orderId);
+    }
+
+    private long insertElectronicWaybill(
+            long orderId,
+            String mode,
+            String deliveryId,
+            String waybillId
+    ) {
         jdbcClient.sql("""
                         insert into order_electronic_waybill(
                             order_id, attempt_no, idempotency_key, request_digest, provider_order_id,
@@ -490,7 +552,7 @@ class WechatWaybillRegistrationCoordinatorTest {
                             payment_order_id, payer_openid, created_by)
                         select
                             :orderId, 1, :key, :digest, :providerOrderId,
-                            'SANDBOX', 'SF', '顺丰速运', 'test_biz_id', 1, 'test_service_name',
+                            :mode, :deliveryId, '顺丰速运', 'test_biz_id', 1, 'test_service_name',
                             'CREATED', 'NONE', :waybillId, 1, 1.000,
                             20.00, 15.00, 10.00, '寄件人', '13900139000', '沐宝商城',
                             '广东省', '深圳市', '南山区', '测试路1号',
@@ -504,7 +566,9 @@ class WechatWaybillRegistrationCoordinatorTest {
                 .param("key", "confirm-" + orderId)
                 .param("digest", "a".repeat(64))
                 .param("providerOrderId", "PROVIDER-" + orderId)
-                .param("waybillId", "SF" + orderId)
+                .param("mode", mode)
+                .param("deliveryId", deliveryId)
+                .param("waybillId", waybillId)
                 .update();
         return jdbcClient.sql("select id from order_electronic_waybill where order_id = :orderId")
                 .param("orderId", orderId)

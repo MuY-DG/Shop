@@ -329,7 +329,7 @@ class WechatExpressProviderTest {
     }
 
     @Test
-    void traceAndFollowUseExactOfficialPayloadAndReturnToken() throws Exception {
+    void traceOmitsSandboxDeliveryIdAndFollowPreservesRealDeliveryId() throws Exception {
         RegistrationFixture traceFixture = registrationFixture(() -> ACCESS_TOKEN);
         AtomicReference<JsonNode> traceBody = new AtomicReference<>();
         traceFixture.server().expect(once(), endpoint("/cgi-bin/express/delivery/open_msg/trace_waybill"))
@@ -349,8 +349,7 @@ class WechatExpressProviderTest {
                     "goods_img_url":"https://img.example.test/product.webp"
                   }]},
                   "trans_id":"4200000000000000999",
-                  "order_detail_path":"pages/order/detail/detail?order_id=91",
-                  "delivery_id":"TEST"
+                  "order_detail_path":"pages/order/detail/detail?order_id=91"
                 }
                 """));
         assertThat(trace.outcome()).isEqualTo(WechatProviderOutcome.SUCCESS);
@@ -358,10 +357,13 @@ class WechatExpressProviderTest {
         traceFixture.server().verify();
 
         RegistrationFixture followFixture = registrationFixture(() -> ACCESS_TOKEN);
+        AtomicReference<JsonNode> followBody = new AtomicReference<>();
         followFixture.server().expect(once(), endpoint("/cgi-bin/express/delivery/open_msg/follow_waybill"))
+                .andExpect(captureJson(followBody))
                 .andRespond(withSuccess("{\"errcode\":0,\"waybill_token\":\"follow-token\"}", MediaType.APPLICATION_JSON));
-        var follow = followFixture.provider().follow(registrationRequest());
+        var follow = followFixture.provider().follow(registrationRequest(OPENID, "SF"));
 
+        assertThat(followBody.get().path("delivery_id").asText()).isEqualTo("SF");
         assertThat(follow.outcome()).isEqualTo(WechatProviderOutcome.SUCCESS);
         assertThat(follow.waybillToken()).isEqualTo("follow-token");
         followFixture.server().verify();
@@ -532,13 +534,17 @@ class WechatExpressProviderTest {
     }
 
     private WechatWaybillRegistrationRequest registrationRequest(String openid) {
+        return registrationRequest(openid, "TEST");
+    }
+
+    private WechatWaybillRegistrationRequest registrationRequest(String openid, String deliveryId) {
         return new WechatWaybillRegistrationRequest(
                 701L,
                 openid,
                 SENDER_PHONE,
                 RECEIVER_PHONE,
                 WAYBILL_ID,
-                "TEST",
+                deliveryId,
                 TRANSACTION_ID,
                 "pages/order/detail/detail?order_id=91",
                 List.of(new WechatWaybillGoodsItem(

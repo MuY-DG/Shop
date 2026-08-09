@@ -319,6 +319,7 @@ function normalizedShipmentView(order: AppOrderDetailResponse): OrderShipmentVie
       carrierCode
       && trackingNo
       && shipment.waybillTrackingSupported
+      && shipment.waybillRegistrationStatus !== "SKIPPED"
     )
   };
 }

@@ -172,6 +172,11 @@ public class WechatWaybillRegistrationStateStore {
                 .param("updatedAt", LocalDateTime.now(ZoneOffset.UTC))
                 .update();
 
+        if (WaybillRegistrationSummary.isSandboxElectronicWaybill(context.electronicWaybillMode())) {
+            markSkipped(shipmentId);
+            return Optional.empty();
+        }
+
         RegistrationRow row = jdbcClient.sql("""
                         select registration_kind, status
                         from shipment_waybill_registration
@@ -285,6 +290,7 @@ public class WechatWaybillRegistrationStateStore {
                                sh.shipment_source,
                                sh.express_company_code,
                                sh.tracking_no,
+                               coalesce(ew.mode, '') as electronic_waybill_mode,
                                o.receiver_phone,
                                coalesce(nullif(ew.sender_mobile, ''), setting.sender_mobile, '') as sender_phone,
                                coalesce(setting.message_enabled, false) as message_enabled
@@ -303,12 +309,35 @@ public class WechatWaybillRegistrationStateStore {
                         shipmentSource(rs.getString("shipment_source")),
                         defaultString(rs.getString("express_company_code")),
                         defaultString(rs.getString("tracking_no")),
+                        defaultString(rs.getString("electronic_waybill_mode")),
                         defaultString(rs.getString("sender_phone")),
                         defaultString(rs.getString("receiver_phone")),
                         rs.getBoolean("message_enabled")
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+    }
+
+    private void markSkipped(long shipmentId) {
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        jdbcClient.sql("""
+                        update shipment_waybill_registration
+                        set registration_kind = :registrationKind,
+                            status = :status,
+                            waybill_token = '',
+                            last_error_code = '',
+                            last_error_message = '',
+                            claim_token = null,
+                            claimed_at = null,
+                            registered_at = null,
+                            updated_at = :updatedAt
+                        where shipment_id = :shipmentId
+                        """)
+                .param("registrationKind", WaybillRegistrationKind.TRACE.name())
+                .param("status", WaybillRegistrationStatus.SKIPPED.name())
+                .param("updatedAt", now)
+                .param("shipmentId", shipmentId)
+                .update();
     }
 
     private PaymentIdentity loadPaymentIdentity(long orderId) {
@@ -441,6 +470,7 @@ public class WechatWaybillRegistrationStateStore {
             ShipmentSource shipmentSource,
             String deliveryId,
             String waybillId,
+            String electronicWaybillMode,
             String senderPhone,
             String receiverPhone,
             boolean messageEnabled
