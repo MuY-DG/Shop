@@ -43,7 +43,7 @@
           </view>
         </view>
       </view>
-      <view class="settings-note">页面仅展示后台当前已发布的正式版本；未发布时不会显示占位或虚构信息。</view>
+      <view class="settings-note">隐私保护指引由微信小程序平台只读展示；其他协议仅展示后台当前已发布的正式版本。</view>
     </view>
   </scroll-view>
 </view>

@@ -33,20 +33,7 @@
 
         <view class="login-actions">
           <button
-            wx:if="{{policyLoading}}"
-            class="primary-action"
-            loading="{{true}}"
-            disabled="{{true}}"
-          >正在加载隐私政策</button>
-
-          <button
-            wx:elif="{{!policyReady}}"
-            class="primary-action"
-            disabled="{{true}}"
-          >暂不可登录</button>
-
-          <button
-            wx:elif="{{!agreed}}"
+            wx:if="{{!agreed}}"
             class="primary-action"
             hover-class="primary-action--pressed"
             bindtap="onAgreementRequired"
@@ -88,19 +75,13 @@
                 value="agree"
                 checked="{{agreed}}"
                 color="#B72B22"
-                disabled="{{!policyReady}}"
               />
               <view class="agreement__copy">
                 <text>已阅读并同意</text>
-                <text class="agreement__link" catchtap="onPrivacyTap">《{{policyTitle}}》</text>
+                <text class="agreement__link" catchtap="onPrivacyTap">{{privacyContractName}}</text>
               </view>
             </label>
           </checkbox-group>
-
-          <view wx:if="{{policyErrorText}}" class="policy-error">
-            <text>{{policyErrorText}}</text>
-            <button bindtap="onPolicyRetry">重新加载</button>
-          </view>
         </view>
 
         <button class="skip-action" bindtap="onSkipTap">暂不登录</button>

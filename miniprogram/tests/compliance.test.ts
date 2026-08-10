@@ -93,18 +93,20 @@ test("小程序注册公开合规页并从我的页面提供免登录设置入�
   assert.match(profileLogic, /kind === "public-route"[\s\S]{0,180}wx\.navigateTo/);
 });
 
-test("登录页匿名加载当前政策，勾选点击后才携带修订与环境换取会话", () => {
+test("小程序隐私入口使用微信原生只读指引且登录不依赖后台政策", () => {
   const loginLogic = readFileSync(resolve(sourceRoot, "pages/auth/login/login.ts"), "utf8");
   const loginTemplate = readFileSync(resolve(sourceRoot, "pages/auth/login/login.wxml"), "utf8");
   const sessionLogic = readFileSync(resolve(sourceRoot, "services/session.ts"), "utf8");
+  const settingsLogic = readFileSync(resolve(sourceRoot, "pages/account/settings/settings.ts"), "utf8");
+  const settingsTemplate = readFileSync(resolve(sourceRoot, "pages/account/settings/settings.wxml"), "utf8");
 
-  assert.match(loginLogic, /getCurrentLegalDocument\("PRIVACY_POLICY"\)/);
-  assert.match(loginLogic, /policyReady: false/);
-  assert.match(loginLogic, /if \(!this\.data\.policyReady \|\| !this\.data\.policyVersion\)/);
-  assert.match(loginLogic, /prepareWechatLogin\(\{[\s\S]{0,260}privacyPolicyVersion: this\.data\.policyVersion[\s\S]{0,160}privacyPolicyAccepted: true[\s\S]{0,160}miniProgramEnv: APP_ENV_VERSION/);
-  assert.match(loginTemplate, /disabled="\{\{!policyReady\}\}"/);
-  assert.match(loginTemplate, /bindtap="onPolicyRetry"/);
-  assert.match(sessionLogic, /privacyPolicyVersion,/);
-  assert.match(sessionLogic, /privacyPolicyAccepted: consent\.privacyPolicyAccepted/);
-  assert.match(sessionLogic, /miniProgramEnv: consent\.miniProgramEnv/);
+  assert.match(loginLogic, /wx\.getPrivacySetting\(/);
+  assert.match(loginLogic, /wx\.openPrivacyContract\(/);
+  assert.match(loginTemplate, /catchtap="onPrivacyTap">\{\{privacyContractName\}\}/);
+  assert.doesNotMatch(loginLogic, /getCurrentLegalDocument|policyVersion|policyReady/);
+  assert.doesNotMatch(loginTemplate, /onPolicyRetry|policyErrorText|policyLoading/);
+  assert.match(sessionLogic, /data: \{ code \}/);
+  assert.doesNotMatch(sessionLogic, /privacyPolicyVersion|privacyPolicyAccepted|miniProgramEnv/);
+  assert.match(settingsLogic, /key === "privacy"[\s\S]{0,120}wx\.openPrivacyContract\(/);
+  assert.match(settingsTemplate, /隐私保护指引由微信小程序平台只读展示/);
 });

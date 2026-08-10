@@ -35,7 +35,7 @@ test("公开内容页启用微信原生好友与朋友圈分享入口", () => {
   });
 });
 
-test("登录页保持单一界面且仅新用户由手机号能力触发官方隐私授权", () => {
+test("登录页展示微信原生隐私指引，勾选后预加载且点击按钮才提交登录", () => {
   const loginLogic = readFileSync(
     resolve(sourceRoot, "pages/auth/login/login.ts"),
     "utf8"
@@ -73,15 +73,16 @@ test("登录页保持单一界面且仅新用户由手机号能力触发官方�
     loginLogic.indexOf("onUnload()")
   );
   assert.doesNotMatch(onLoadSource, /prepareLogin\(\)|prepareWechatLogin\(\)/);
-  assert.match(
-    loginLogic,
-    /prepareWechatLogin\(\{[\s\S]{0,520}privacyPolicyAccepted: true[\s\S]{0,180}miniProgramEnv: APP_ENV_VERSION/
-  );
+  assert.match(onLoadSource, /loadPrivacyContractName\(\)/);
+  assert.match(loginLogic, /wx\.getPrivacySetting\(/);
+  assert.match(loginLogic, /wx\.openPrivacyContract\(/);
+  assert.match(loginTemplate, /\{\{privacyContractName\}\}/);
+  assert.match(loginLogic, /prepareWechatLogin\(\)/);
   assert.match(loginLogic, /commitPreparedWechatLogin\(pending\)/);
   assert.doesNotMatch(loginLogic, /loginWithWechat\(\)/);
-  assert.doesNotMatch(
+  assert.match(
     loginLogic,
-    /onAgreementChange[\s\S]{0,180}this\.prepareLogin\(\)/
+    /onAgreementChange[\s\S]{0,260}if \(agreed\)[\s\S]{0,120}this\.prepareLogin\(\)/
   );
   assert.doesNotMatch(loginLogic, /initializing/);
   assert.match(loginLogic, /loginPrepared/);

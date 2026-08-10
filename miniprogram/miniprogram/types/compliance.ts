@@ -34,9 +34,3 @@ export interface MerchantPublicationResponse {
   publishedAt?: string;
   updatedAt?: string;
 }
-
-export interface PrivacyPolicyConsent extends WechatMiniprogram.IAnyObject {
-  privacyPolicyVersion: string;
-  privacyPolicyAccepted: true;
-  miniProgramEnv: "develop" | "trial" | "release";
-}

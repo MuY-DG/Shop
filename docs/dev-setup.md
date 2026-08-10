@@ -152,14 +152,17 @@ mock result is not evidence that the production WeChat order accepted shipment d
 
 ### V88 Runtime Environment And Legal Publication
 
-The backend production profile forces `SHOP_PRIVACY_CONSENT_REQUIRED=true`. Before a
-production login can succeed, publish the reviewed current privacy policy and make the
-Mini Program send its exact version, explicit acceptance, and one of `develop`, `trial`,
-or `release`. User creation, consent evidence, and session issuance preserve that order.
+Mini Program privacy disclosure is owned by the WeChat Mini Program platform. The login
+page reads the platform contract name with `wx.getPrivacySetting`, opens the read-only
+contract with `wx.openPrivacyContract`, and does not send a backend legal-document version
+to `/app/auth/login`. Login preloading starts only after the user checks the agreement.
+The production profile therefore keeps `shop.compliance.privacy-consent-required=false`.
 
 No merchant qualification or legal document is seeded. Use the admin compliance pages
 to create, preview, and publish immutable revisions only after real data and managed
-license images have been verified. The anonymous read routes are:
+license images have been verified. Backend privacy revisions may be retained as independent
+business records, but the Mini Program privacy entry does not use them. The anonymous read
+routes are:
 
 ```text
 GET /app/compliance/merchant

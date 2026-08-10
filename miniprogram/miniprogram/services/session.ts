@@ -7,7 +7,6 @@ import type {
   PhoneAuthorizeRequest,
   RefreshTokenRequest
 } from "../types/auth";
-import type { PrivacyPolicyConsent } from "../types/compliance";
 import type { RawHttpResult } from "../utils/http";
 import { ApiError, isApiError } from "../utils/api-error";
 import { rawRequest } from "../utils/http";
@@ -289,45 +288,12 @@ function getLoginCode(): Promise<string> {
   });
 }
 
-function loginRequest(
-  code: string,
-  consent: PrivacyPolicyConsent
-): AppLoginRequest {
-  if (!consent) {
-    throw new ApiError({
-      kind: "PROTOCOL",
-      message: "登录前必须确认当前隐私政策"
-    });
-  }
-  const privacyPolicyVersion = consent.privacyPolicyVersion.trim();
-  if (
-    !privacyPolicyVersion
-    || consent.privacyPolicyAccepted !== true
-    || !["develop", "trial", "release"].includes(consent.miniProgramEnv)
-  ) {
-    throw new ApiError({
-      kind: "PROTOCOL",
-      message: "隐私政策确认信息不完整"
-    });
-  }
-  return {
-    code,
-    privacyPolicyVersion,
-    privacyPolicyAccepted: consent.privacyPolicyAccepted,
-    miniProgramEnv: consent.miniProgramEnv
-  };
-}
-
-async function exchangeLogin(
-  consent: PrivacyPolicyConsent
-): Promise<AppSessionResponse> {
-  // 在调用 wx.login 前先校验同意信息，避免无效请求也获取微信登录凭证。
-  loginRequest("pending", consent);
+async function exchangeLogin(): Promise<AppSessionResponse> {
   const code = await getLoginCode();
   const result = await rawRequest<AppSessionResponse, AppLoginRequest>({
     url: API_ENDPOINTS.auth.login,
     method: "POST",
-    data: loginRequest(code, consent)
+    data: { code }
   });
   return unwrapSessionResult(result);
 }
@@ -366,10 +332,7 @@ async function revokeAccessToken(accessToken: string): Promise<void> {
   }
 }
 
-async function performRenewal(
-  preferRefresh: boolean,
-  consent?: PrivacyPolicyConsent
-): Promise<SessionState> {
+async function performRenewal(preferRefresh: boolean): Promise<SessionState> {
   let startedEpoch = authEpoch;
   if (preferRefresh) {
     if (!state.refreshToken) {
@@ -389,25 +352,16 @@ async function performRenewal(
       throw loginRequiredError("登录状态已失效，请重新登录");
     }
   }
-  if (!consent) {
-    throw new ApiError({
-      kind: "PROTOCOL",
-      message: "登录前必须确认当前隐私政策"
-    });
-  }
-  const loggedIn = await exchangeLogin(consent);
+  const loggedIn = await exchangeLogin();
   return commitSession(loggedIn, startedEpoch);
 }
 
-function renewSession(
-  preferRefresh: boolean,
-  consent?: PrivacyPolicyConsent
-): Promise<SessionState> {
+function renewSession(preferRefresh: boolean): Promise<SessionState> {
   if (renewalFlight) {
     return renewalFlight;
   }
   let currentFlight: Promise<SessionState>;
-  currentFlight = performRenewal(preferRefresh, consent).finally(() => {
+  currentFlight = performRenewal(preferRefresh).finally(() => {
     if (renewalFlight === currentFlight) {
       renewalFlight = null;
     }
@@ -478,19 +432,15 @@ export async function ensureSession(): Promise<SessionState> {
   throw loginRequiredError();
 }
 
-export function loginWithWechat(
-  consent: PrivacyPolicyConsent
-): Promise<SessionState> {
+export function loginWithWechat(): Promise<SessionState> {
   restoreSession();
-  return renewSession(false, consent);
+  return renewSession(false);
 }
 
-export async function prepareWechatLogin(
-  consent: PrivacyPolicyConsent
-): Promise<PreparedWechatLogin> {
+export async function prepareWechatLogin(): Promise<PreparedWechatLogin> {
   restoreSession();
   const startedEpoch = authEpoch;
-  const response = await exchangeLogin(consent);
+  const response = await exchangeLogin();
   const prepared: PreparedWechatLogin = {
     user: { ...response.user }
   };

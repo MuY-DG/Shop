@@ -18,9 +18,6 @@ export interface AppSessionResponse {
 
 export interface AppLoginRequest extends WechatMiniprogram.IAnyObject {
   code: string;
-  privacyPolicyVersion?: string;
-  privacyPolicyAccepted?: boolean;
-  miniProgramEnv?: "develop" | "trial" | "release";
 }
 
 export interface PhoneAuthorizeRequest extends WechatMiniprogram.IAnyObject {

@@ -11,7 +11,7 @@ server:
 
 shop:
   compliance:
-    privacy-consent-required: true # 正式环境必须校验并留存用户实际勾选的当前隐私政策版本。
+    privacy-consent-required: false # 登录使用微信小程序平台隐私保护指引，不再依赖后台自建隐私政策版本。
 
 logging:
   level:

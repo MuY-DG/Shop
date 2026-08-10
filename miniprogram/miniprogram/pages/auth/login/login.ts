@@ -1,6 +1,4 @@
 import { createBrandLogoView } from "../../../config/brand-logo";
-import { APP_ENV_VERSION } from "../../../config/app-config";
-import { buildLegalDocumentUrl } from "../../../features/compliance";
 import {
   isTabRoute,
   needsPhoneAuthorization,
@@ -13,7 +11,6 @@ import {
   prepareWechatLogin,
   type PreparedWechatLogin
 } from "../../../services/session";
-import { getCurrentLegalDocument } from "../../../services/compliance";
 import { isApiError } from "../../../utils/api-error";
 
 interface LoginPageOptions {
@@ -23,8 +20,9 @@ interface LoginPageOptions {
 let redirectUrl = "";
 let pageDisposed = false;
 let latestLoginPreparation = 0;
-let latestPolicyRequest = 0;
 let preparedLogin: PreparedWechatLogin | null = null;
+
+const DEFAULT_PRIVACY_CONTRACT_NAME = "《MuYbaby隐私保护指引》";
 
 function errorMessage(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -36,14 +34,7 @@ function errorMessage(error: unknown, fallback: string): string {
 
 function showAgreementRequired(): void {
   wx.showToast({
-    title: "请先阅读并同意个人信息保护政策",
-    icon: "none"
-  });
-}
-
-function showPolicyUnavailable(): void {
-  wx.showToast({
-    title: "当前隐私政策尚不可用，请先重试加载",
+    title: "请先阅读并同意微信隐私保护指引",
     icon: "none"
   });
 }
@@ -55,11 +46,7 @@ Page({
     loading: false,
     loginPrepared: false,
     needsPhoneAuthorization: false,
-    policyLoading: true,
-    policyReady: false,
-    policyVersion: "",
-    policyTitle: "MuYbaby个人信息保护政策",
-    policyErrorText: ""
+    privacyContractName: DEFAULT_PRIVACY_CONTRACT_NAME
   },
 
   onLoad(options: LoginPageOptions) {
@@ -72,75 +59,48 @@ Page({
       loginPrepared: false,
       needsPhoneAuthorization: false,
       agreed: false,
-      policyLoading: true,
-      policyReady: false,
-      policyVersion: "",
-      policyErrorText: ""
+      privacyContractName: DEFAULT_PRIVACY_CONTRACT_NAME
     });
-    void this.loadPrivacyPolicy();
+    this.loadPrivacyContractName();
   },
 
   onUnload() {
     pageDisposed = true;
     latestLoginPreparation += 1;
-    latestPolicyRequest += 1;
     this.discardUnfinishedLogin();
   },
 
   onAgreementChange(event: WechatMiniprogram.CheckboxGroupChange) {
-    if (!this.data.policyReady) {
-      this.setData({ agreed: false });
-      showPolicyUnavailable();
+    const agreed = event.detail.value.includes("agree");
+    this.setData({ agreed });
+    if (agreed) {
+      void this.prepareLogin();
       return;
     }
-    this.setData({ agreed: event.detail.value.includes("agree") });
+    latestLoginPreparation += 1;
+    this.discardUnfinishedLogin();
   },
 
-  async loadPrivacyPolicy() {
-    const requestId = ++latestPolicyRequest;
-    this.setData({
-      policyLoading: true,
-      policyReady: false,
-      policyVersion: "",
-      policyErrorText: "",
-      agreed: false
+  loadPrivacyContractName() {
+    if (typeof wx.getPrivacySetting !== "function") {
+      return;
+    }
+    wx.getPrivacySetting({
+      success: (result) => {
+        const privacyContractName = result.privacyContractName?.trim();
+        if (!pageDisposed && privacyContractName) {
+          // 名称由微信小程序平台返回，通常已包含书名号。
+          this.setData({
+            privacyContractName
+          });
+        }
+      }
     });
-    try {
-      const document = await getCurrentLegalDocument("PRIVACY_POLICY");
-      if (!pageDisposed && requestId === latestPolicyRequest) {
-        this.setData({
-          policyLoading: false,
-          policyReady: true,
-          policyVersion: document.version,
-          policyTitle: document.title,
-          policyErrorText: ""
-        });
-      }
-    } catch (error) {
-      if (!pageDisposed && requestId === latestPolicyRequest) {
-        this.setData({
-          policyLoading: false,
-          policyReady: false,
-          policyVersion: "",
-          policyErrorText: errorMessage(error, "当前隐私政策加载失败")
-        });
-      }
-    }
-  },
-
-  onPolicyRetry() {
-    if (!this.data.policyLoading && !this.data.loading) {
-      void this.loadPrivacyPolicy();
-    }
   },
 
   async prepareLogin() {
     if (!this.data.agreed) {
       showAgreementRequired();
-      return;
-    }
-    if (!this.data.policyReady || !this.data.policyVersion) {
-      showPolicyUnavailable();
       return;
     }
     if (this.data.loading || this.data.loginPrepared) {
@@ -150,11 +110,7 @@ Page({
     const preparationId = ++latestLoginPreparation;
     this.setData({ loading: true });
     try {
-      const pending = await prepareWechatLogin({
-        privacyPolicyVersion: this.data.policyVersion,
-        privacyPolicyAccepted: true,
-        miniProgramEnv: APP_ENV_VERSION
-      });
+      const pending = await prepareWechatLogin();
       if (
         pageDisposed ||
         preparationId !== latestLoginPreparation
@@ -187,10 +143,6 @@ Page({
   onPrepareLoginTap() {
     if (!this.data.agreed) {
       showAgreementRequired();
-      return;
-    }
-    if (!this.data.policyReady || !this.data.policyVersion) {
-      showPolicyUnavailable();
       return;
     }
     void this.prepareLogin();
@@ -282,11 +234,14 @@ Page({
   },
 
   onPrivacyTap() {
-    if (!this.data.policyReady) {
-      showPolicyUnavailable();
-      return;
-    }
-    wx.navigateTo({ url: buildLegalDocumentUrl("PRIVACY_POLICY") });
+    wx.openPrivacyContract({
+      fail: () => {
+        wx.showToast({
+          title: "暂时无法打开微信隐私保护指引",
+          icon: "none"
+        });
+      }
+    });
   },
 
   onSkipTap() {

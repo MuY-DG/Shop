@@ -4,13 +4,6 @@ import {
 } from "../../../features/compliance";
 import type { LegalDocumentType } from "../../../types/compliance";
 
-type SettingsItemKey =
-  | "merchant"
-  | "privacy"
-  | "agreement"
-  | "afterSale"
-  | "accountRights";
-
 interface DatasetEvent {
   currentTarget: {
     dataset: {
@@ -19,11 +12,8 @@ interface DatasetEvent {
   };
 }
 
-const DOCUMENT_TYPES: Readonly<
-  Record<Exclude<SettingsItemKey, "merchant" | "accountRights">, LegalDocumentType>
-> =
+const DOCUMENT_TYPES: Readonly<Record<"agreement" | "afterSale", LegalDocumentType>> =
   Object.freeze({
-    privacy: "PRIVACY_POLICY",
     agreement: "USER_AGREEMENT",
     afterSale: "AFTER_SALE_POLICY"
   });
@@ -52,8 +42,8 @@ Page({
         items: [
           {
             key: "privacy",
-            label: "个人信息保护政策",
-            description: "查看当前生效版本"
+            label: "微信隐私保护指引",
+            description: "查看微信小程序平台当前指引（只读）"
           },
           {
             key: "agreement",
@@ -80,7 +70,15 @@ Page({
       wx.navigateTo({ url: "/pages/account/rights/rights" });
       return;
     }
-    if (key === "privacy" || key === "agreement" || key === "afterSale") {
+    if (key === "privacy") {
+      wx.openPrivacyContract({
+        fail: () => {
+          wx.showToast({ title: "暂时无法打开微信隐私保护指引", icon: "none" });
+        }
+      });
+      return;
+    }
+    if (key === "agreement" || key === "afterSale") {
       wx.navigateTo({ url: buildLegalDocumentUrl(DOCUMENT_TYPES[key]) });
     }
   }
