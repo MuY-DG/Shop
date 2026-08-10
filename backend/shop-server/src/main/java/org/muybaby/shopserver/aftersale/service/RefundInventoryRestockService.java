@@ -33,6 +33,29 @@ public class RefundInventoryRestockService {
         if (!restockRequired) {
             return;
         }
+        int flowVersion = jdbcClient.sql("""
+                        select asr.flow_version
+                        from refund_order ro
+                        join after_sale_request asr on asr.id = ro.after_sale_id
+                        where ro.id = :refundOrderId and ro.order_id = :orderId
+                        """)
+                .param("refundOrderId", refundOrderId)
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+        if (flowVersion >= 2) {
+            restockV2(refundOrderId, orderId, restockedAt);
+            return;
+        }
+        restockLegacy(refundOrderId, orderId, restockedAt);
+    }
+
+    private void restockLegacy(
+            long refundOrderId,
+            long orderId,
+            LocalDateTime restockedAt
+    ) {
         requireUnshippedOrder(orderId);
 
         List<OrderItemSnapshot> orderItems = jdbcClient.sql("""
@@ -135,6 +158,184 @@ public class RefundInventoryRestockService {
                     .param("confirmed", StockLockStatus.CONFIRMED.name())
                     .update();
             requireOne(updated);
+        }
+        markRefundRestocked(refundOrderId, restockedAt);
+    }
+
+    private void restockV2(long refundOrderId, long orderId, LocalDateTime restockedAt) {
+        List<V2RestockItem> items = jdbcClient.sql("""
+                        select asi.id as after_sale_item_id,
+                               asi.order_item_id,
+                               asi.sku_id,
+                               asi.restock_quantity
+                        from refund_order ro
+                        join after_sale_item asi on asi.after_sale_id = ro.after_sale_id
+                        where ro.id = :refundOrderId
+                          and ro.order_id = :orderId
+                          and asi.restock_quantity > 0
+                        order by asi.sku_id, asi.order_item_id
+                        """)
+                .param("refundOrderId", refundOrderId)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new V2RestockItem(
+                        rs.getLong("after_sale_item_id"),
+                        rs.getLong("order_item_id"),
+                        rs.getLong("sku_id"),
+                        rs.getInt("restock_quantity")))
+                .list();
+        if (items.isEmpty()) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+
+        Map<Long, Integer> expectedByOrderItem = new LinkedHashMap<>();
+        for (V2RestockItem item : items) {
+            if (item.quantity() <= 0
+                    || expectedByOrderItem.putIfAbsent(item.orderItemId(), item.quantity()) != null) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+        }
+        Map<Long, Integer> existingByOrderItem = new LinkedHashMap<>();
+        jdbcClient.sql("""
+                        select order_item_id, quantity
+                        from refund_inventory_restock_item
+                        where refund_order_id = :refundOrderId
+                        order by order_item_id
+                        for update
+                        """)
+                .param("refundOrderId", refundOrderId)
+                .query((rs, rowNum) -> Map.entry(
+                        rs.getLong("order_item_id"), rs.getInt("quantity")))
+                .list()
+                .forEach(entry -> existingByOrderItem.put(entry.getKey(), entry.getValue()));
+        if (!existingByOrderItem.isEmpty()) {
+            if (!existingByOrderItem.equals(expectedByOrderItem)) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            markRefundRestocked(refundOrderId, restockedAt);
+            return;
+        }
+
+        List<Long> orderItemIds = items.stream().map(V2RestockItem::orderItemId).toList();
+        List<V2StockLock> locks = jdbcClient.sql("""
+                        select id as stock_lock_id, order_item_id, sku_id, quantity,
+                               status, restocked_quantity
+                        from stock_lock
+                        where order_id = :orderId and order_item_id in (:orderItemIds)
+                        order by sku_id, id
+                        for update
+                        """)
+                .param("orderId", orderId)
+                .param("orderItemIds", orderItemIds)
+                .query((rs, rowNum) -> new V2StockLock(
+                        rs.getLong("stock_lock_id"), rs.getLong("order_item_id"),
+                        rs.getLong("sku_id"), rs.getInt("quantity"),
+                        rs.getString("status"), rs.getInt("restocked_quantity")))
+                .list();
+        Map<Long, V2StockLock> lockByOrderItem = new LinkedHashMap<>();
+        for (V2StockLock lock : locks) {
+            if (lockByOrderItem.putIfAbsent(lock.orderItemId(), lock) != null) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+        }
+        if (lockByOrderItem.size() != items.size()) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+
+        Map<Long, Integer> quantityBySku = new TreeMap<>();
+        for (V2RestockItem item : items) {
+            V2StockLock lock = lockByOrderItem.get(item.orderItemId());
+            if (lock == null || lock.skuId() != item.skuId()
+                    || lock.restockedQuantity() < 0
+                    || lock.restockedQuantity() > lock.quantity()
+                    || item.quantity() > lock.quantity() - lock.restockedQuantity()
+                    || !(StockLockStatus.CONFIRMED.name().equals(lock.status())
+                    || StockLockStatus.PARTIALLY_RESTOCKED.name().equals(lock.status()))) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            quantityBySku.merge(item.skuId(), item.quantity(), Math::addExact);
+        }
+
+        for (Map.Entry<Long, Integer> entry : quantityBySku.entrySet()) {
+            long skuId = entry.getKey();
+            int quantity = entry.getValue();
+            int quantityBefore = jdbcClient.sql("""
+                            select stock_available from product_sku
+                            where id = :skuId for update
+                            """)
+                    .param("skuId", skuId)
+                    .query(Integer.class)
+                    .optional()
+                    .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+            int quantityAfter;
+            try {
+                quantityAfter = Math.addExact(quantityBefore, quantity);
+            } catch (ArithmeticException exception) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            requireOne(jdbcClient.sql("""
+                            update product_sku
+                            set stock_available = :quantityAfter, updated_at = :updatedAt
+                            where id = :skuId and stock_available = :quantityBefore
+                            """)
+                    .param("quantityAfter", quantityAfter)
+                    .param("updatedAt", restockedAt)
+                    .param("skuId", skuId)
+                    .param("quantityBefore", quantityBefore)
+                    .update());
+            insertStockLog(
+                    refundOrderId, orderId, skuId,
+                    quantityBefore, quantity, quantityAfter, restockedAt);
+        }
+
+        for (V2RestockItem item : items) {
+            V2StockLock lock = lockByOrderItem.get(item.orderItemId());
+            int restockedQuantity = Math.addExact(lock.restockedQuantity(), item.quantity());
+            String status = restockedQuantity == lock.quantity()
+                    ? StockLockStatus.RESTOCKED.name()
+                    : StockLockStatus.PARTIALLY_RESTOCKED.name();
+            requireOne(jdbcClient.sql("""
+                            update stock_lock
+                            set status = :status,
+                                restocked_quantity = :restockedQuantity,
+                                restock_refund_order_id = case
+                                    when :status = :fullyRestocked then :refundOrderId
+                                    else restock_refund_order_id end,
+                                restocked_at = case
+                                    when :status = :fullyRestocked then :restockedAt
+                                    else restocked_at end,
+                                updated_at = :restockedAt
+                            where id = :stockLockId
+                              and restocked_quantity = :previousRestockedQuantity
+                              and status in (:eligibleStatuses)
+                            """)
+                    .param("status", status)
+                    .param("restockedQuantity", restockedQuantity)
+                    .param("fullyRestocked", StockLockStatus.RESTOCKED.name())
+                    .param("refundOrderId", refundOrderId)
+                    .param("restockedAt", restockedAt)
+                    .param("stockLockId", lock.stockLockId())
+                    .param("previousRestockedQuantity", lock.restockedQuantity())
+                    .param("eligibleStatuses", List.of(
+                            StockLockStatus.CONFIRMED.name(),
+                            StockLockStatus.PARTIALLY_RESTOCKED.name()))
+                    .update());
+            requireOne(jdbcClient.sql("""
+                            insert into refund_inventory_restock_item (
+                                refund_order_id, after_sale_item_id, order_item_id,
+                                stock_lock_id, sku_id, quantity, restocked_at, created_at
+                            ) values (
+                                :refundOrderId, :afterSaleItemId, :orderItemId,
+                                :stockLockId, :skuId, :quantity, :restockedAt, :restockedAt
+                            )
+                            """)
+                    .param("refundOrderId", refundOrderId)
+                    .param("afterSaleItemId", item.afterSaleItemId())
+                    .param("orderItemId", item.orderItemId())
+                    .param("stockLockId", lock.stockLockId())
+                    .param("skuId", item.skuId())
+                    .param("quantity", item.quantity())
+                    .param("restockedAt", restockedAt)
+                    .update());
         }
         markRefundRestocked(refundOrderId, restockedAt);
     }
@@ -268,6 +469,24 @@ public class RefundInventoryRestockService {
             int quantity,
             String status,
             Long restockRefundOrderId
+    ) {
+    }
+
+    private record V2RestockItem(
+            long afterSaleItemId,
+            long orderItemId,
+            long skuId,
+            int quantity
+    ) {
+    }
+
+    private record V2StockLock(
+            long stockLockId,
+            long orderItemId,
+            long skuId,
+            int quantity,
+            String status,
+            int restockedQuantity
     ) {
     }
 }

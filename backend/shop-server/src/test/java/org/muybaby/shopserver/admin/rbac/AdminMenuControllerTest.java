@@ -59,7 +59,8 @@ class AdminMenuControllerTest {
                         "/development",
                         "/system",
                         "/compliance",
-                        "/account-rights"
+                        "/account-rights",
+                        "/finance"
                 )))
                 .andExpect(jsonPath("$.data[0].path").value("/operations"))
                 .andExpect(jsonPath("$.data[0].component").value("/index/index"))
@@ -172,7 +173,8 @@ class AdminMenuControllerTest {
                 )))
                 .andExpect(jsonPath("$.data[4].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "aftersale:read",
-                        "aftersale:audit"
+                        "aftersale:audit",
+                        "aftersale:return-address:write"
                 )))
                 .andExpect(jsonPath("$.data[4].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "logistics:express:config:read",
@@ -291,6 +293,18 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[9].children[3].component").value("/system/log"))
                 .andExpect(jsonPath("$.data[9].children[3].meta.authList[*].authMark", containsInAnyOrder(
                         "system:log:read"
+                )))
+                .andExpect(jsonPath("$.data[12].path").value("/finance"))
+                .andExpect(jsonPath("$.data[12].component").value("/index/index"))
+                .andExpect(jsonPath("$.data[12].children[*].path", contains("reconciliation")))
+                .andExpect(jsonPath("$.data[12].children[0].component")
+                        .value("/finance/reconciliation/index"))
+                .andExpect(jsonPath("$.data[12].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                        "finance:reconciliation:read",
+                        "finance:reconciliation:run",
+                        "finance:reconciliation:resolve",
+                        "finance:reconciliation:source-download",
+                        "finance:export"
                 )));
     }
 
@@ -318,7 +332,8 @@ class AdminMenuControllerTest {
                         "/system",
                         "/compliance",
                         "/guest",
-                        "/account-rights"
+                        "/account-rights",
+                        "/finance"
                 )));
     }
 

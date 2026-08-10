@@ -46,6 +46,7 @@
 </template>
 
 <script setup lang="ts">
+  import { ElTag } from 'element-plus'
   import { fetchGetMenuResourceCatalog } from '@/api/system-manage'
   import { useTableColumns } from '@/hooks/core/useTableColumns'
   import type { AppRouteRecord } from '@/types/router'

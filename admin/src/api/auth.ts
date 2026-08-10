@@ -14,6 +14,22 @@ export function fetchLogin(params: Api.Auth.LoginParams) {
   })
 }
 
+/** 查询管理员自助注册是否开放。失败时调用方必须按关闭处理。 */
+export function fetchAdminRegistrationAvailability() {
+  return request.get<Api.Auth.RegistrationAvailability>({
+    url: '/admin/auth/registration',
+    showErrorMessage: false
+  })
+}
+
+/** 注册一个仅绑定游客角色的后台账号。 */
+export function registerGuestAdmin(params: Api.Auth.RegistrationParams) {
+  return request.post<number>({
+    url: '/admin/auth/register',
+    data: params
+  })
+}
+
 /**
  * 获取用户信息
  * @returns 用户信息
@@ -25,6 +41,22 @@ export function fetchGetUserInfo() {
     // headers: {
     //   'X-Custom-Header': 'your-custom-value'
     // }
+  })
+}
+
+/** 更新当前管理员的真实基础资料。 */
+export function updateAdminProfile(params: Api.Auth.ProfileUpdateParams) {
+  return request.put<Api.Auth.UserInfo>({
+    url: '/admin/auth/profile',
+    data: params
+  })
+}
+
+/** 校验当前密码后修改密码；成功会使全部管理员会话失效。 */
+export function changeAdminPassword(params: Api.Auth.PasswordChangeParams) {
+  return request.put<void>({
+    url: '/admin/auth/password',
+    data: params
   })
 }
 

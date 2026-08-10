@@ -1,108 +1,36 @@
 <view class="apply-page">
-  <navigation-bar title="申请退款" back="{{true}}" color="#2E1D16" />
-
+  <navigation-bar title="申请售后" back="{{true}}" color="#2E1D16" />
   <view class="apply-content">
-    <view wx:if="{{!loaded && loading}}" class="apply-state">
-      <ui-state type="loading" title="正在读取订单" description="请稍候" />
-    </view>
-    <view wx:elif="{{!loaded && errorText}}" class="apply-state">
-      <ui-state type="error" title="订单加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
-    </view>
-
-    <block wx:elif="{{detail}}">
-      <view wx:if="{{blockedAfterSaleId}}" class="blocked-card" bindtap="onBlockedAfterSaleTap" aria-role="button">
-        <view>
-          <view class="blocked-card__title">该订单已有售后申请</view>
-          <view class="blocked-card__copy">请先查看当前申请的处理进度</view>
-        </view>
-        <text>查看 ›</text>
-      </view>
+    <view wx:if="{{!loaded && loading}}" class="apply-state"><ui-state type="loading" title="正在核对售后资格" description="请稍候" /></view>
+    <view wx:elif="{{!loaded && errorText}}" class="apply-state"><ui-state type="error" title="售后资格加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" /></view>
+    <block wx:elif="{{eligibility}}">
+      <view wx:if="{{blockedAfterSaleId}}" class="blocked-card" bindtap="onBlockedAfterSaleTap" aria-role="button"><view><view class="blocked-card__title">该订单已有进行中的售后</view><view class="blocked-card__copy">完成或取消当前申请后，才能再次申请</view></view><text>查看 ›</text></view>
       <view wx:elif="{{errorText}}" class="inline-error">{{errorText}}</view>
-
       <view class="apply-card order-card">
-        <view class="section-heading">退款订单</view>
-        <view class="order-card__number">订单号 {{detail.orderNo}}</view>
-        <view wx:for="{{detail.items}}" wx:key="orderItemId" class="order-item">
-          <view class="order-item__image-shell">
-            <image wx:if="{{item.hasImage}}" class="order-item__image" src="{{item.imageUrl}}" mode="aspectFill" />
-            <view wx:else class="order-item__fallback">灶</view>
-          </view>
-          <view class="order-item__body">
-            <view class="order-item__title">{{item.productTitle}}</view>
-            <view wx:if="{{item.specText}}" class="order-item__spec">{{item.specText}}</view>
-            <view class="order-item__price">{{item.unitPriceText}} × {{item.quantity}}</view>
-          </view>
+        <view class="section-heading">选择售后商品</view>
+        <view class="order-card__number">订单号 {{eligibility.orderNo}}</view>
+        <view wx:for="{{items}}" wx:key="orderItemId" class="order-item order-item--selectable">
+          <view class="item-check {{item.selected ? 'item-check--active' : ''}}" data-index="{{index}}" bindtap="onItemToggle">{{item.selected ? '✓' : ''}}</view>
+          <view class="order-item__image-shell"><image wx:if="{{item.image}}" class="order-item__image" src="{{item.image}}" mode="aspectFill" /><view wx:else class="order-item__fallback">灶</view></view>
+          <view class="order-item__body"><view class="order-item__title">{{item.productTitle}}</view><view wx:if="{{item.specText}}" class="order-item__spec">{{item.specText}}</view><view class="order-item__price">可售后 {{item.availableQuantity}} 件 · 分摊金额 {{item.amountText}}</view><view wx:if="{{item.selected}}" class="quantity-stepper"><button data-index="{{index}}" bindtap="onQuantityMinus" disabled="{{item.quantity <= 1}}">−</button><text>{{item.quantity}}</text><button data-index="{{index}}" bindtap="onQuantityPlus" disabled="{{item.quantity >= item.availableQuantity}}">＋</button></view></view>
         </view>
       </view>
-
       <view class="apply-card policy-card">
-        <view class="section-heading">售后方案</view>
-        <view class="policy-card__type">整单全额仅退款</view>
-        <view class="policy-card__copy">当前无需退回商品；审核通过后，将按订单实付金额原路退款。</view>
-        <view class="refund-amount">
-          <text>退款金额</text>
-          <text>{{detail.paidAmountText}}</text>
-        </view>
+        <view class="section-heading">选择售后方式</view>
+        <view class="type-options"><view wx:for="{{availableTypes}}" wx:key="value" class="type-option {{selectedType === item.value ? 'type-option--active' : ''}}" data-type="{{item.value}}" bindtap="onTypeTap">{{item.text}}</view></view>
+        <view class="policy-card__copy">退款金额由服务端按所选商品、数量和订单优惠分摊计算。</view>
+        <view class="refund-amount"><text>服务端报价</text><text>{{quoting ? '计算中…' : (quoteAmountText || '请选择商品')}}</text></view>
       </view>
-
       <view class="apply-card">
-        <view class="section-heading">退款原因</view>
-        <view class="reason-list">
-          <view
-            wx:for="{{reasons}}"
-            wx:key="*this"
-            class="reason-item {{selectedReason === item ? 'reason-item--active' : ''}}"
-            data-reason="{{item}}"
-            bindtap="onReasonTap"
-            aria-role="button"
-          >
-            <view class="reason-item__radio">{{selectedReason === item ? '✓' : ''}}</view>
-            <text>{{item}}</text>
-          </view>
-        </view>
-        <view class="field-label">补充说明（选填）</view>
-        <textarea
-          class="description-input"
-          value="{{description}}"
-          maxlength="500"
-          placeholder="请补充问题和诉求，最多 500 字"
-          show-confirm-bar="{{false}}"
-          bindinput="onDescriptionInput"
-        />
-        <view class="description-count">{{description.length}}/500</view>
+        <view class="section-heading">售后原因</view>
+        <view class="reason-list"><view wx:for="{{reasons}}" wx:key="*this" class="reason-item {{selectedReason === item ? 'reason-item--active' : ''}}" data-reason="{{item}}" bindtap="onReasonTap"><view class="reason-item__radio">{{selectedReason === item ? '✓' : ''}}</view><text>{{item}}</text></view></view>
+        <view class="field-label">补充说明（选填）</view><textarea class="description-input" value="{{description}}" maxlength="500" placeholder="请补充问题和诉求，最多 500 字" show-confirm-bar="{{false}}" bindinput="onDescriptionInput" /><view class="description-count">{{description.length}}/500</view>
       </view>
-
       <view class="apply-card">
-        <view class="evidence-heading">
-          <view>
-            <view class="section-heading">图片凭证（选填）</view>
-            <view class="evidence-copy">最多 3 张清晰图片，单张不超过 5MB</view>
-          </view>
-          <text>{{evidenceFiles.length}}/3</text>
-        </view>
-        <view class="evidence-grid">
-          <view wx:for="{{evidenceFiles}}" wx:key="fileId" class="evidence-item">
-            <image class="evidence-image" src="{{item.tempFilePath}}" mode="aspectFill" data-index="{{index}}" bindtap="onPreviewEvidenceTap" />
-            <view class="evidence-remove" data-index="{{index}}" bindtap="onRemoveEvidenceTap">×</view>
-          </view>
-          <button
-            wx:if="{{evidenceFiles.length < 3 && detail.canApplyAfterSale}}"
-            class="evidence-add"
-            loading="{{uploading}}"
-            disabled="{{uploading || submitting}}"
-            bindtap="onChooseEvidenceTap"
-          >
-            <text>＋</text>
-            <view>上传凭证</view>
-          </button>
-        </view>
+        <view class="evidence-heading"><view><view class="section-heading">图片凭证（选填）</view><view class="evidence-copy">最多 3 张清晰图片，单张不超过 5MB</view></view><text>{{evidenceFiles.length}}/3</text></view>
+        <view class="evidence-grid"><view wx:for="{{evidenceFiles}}" wx:key="fileId" class="evidence-item"><image class="evidence-image" src="{{item.tempFilePath}}" mode="aspectFill" data-index="{{index}}" bindtap="onPreviewEvidenceTap" /><view class="evidence-remove" data-index="{{index}}" bindtap="onRemoveEvidenceTap">×</view></view><button wx:if="{{evidenceFiles.length < 3 && !blockedAfterSaleId}}" class="evidence-add" loading="{{uploading}}" disabled="{{uploading || submitting}}" bindtap="onChooseEvidenceTap"><text>＋</text><view>上传凭证</view></button></view>
       </view>
     </block>
   </view>
-
-  <view wx:if="{{detail && detail.canApplyAfterSale}}" class="submit-bar">
-    <button class="submit-button" loading="{{submitting}}" disabled="{{submitting || uploading}}" bindtap="onSubmitTap">
-      {{uploading ? '正在上传凭证' : '提交退款申请'}}
-    </button>
-  </view>
+  <view wx:if="{{eligibility && !blockedAfterSaleId && availableTypes.length}}" class="submit-bar"><button class="submit-button" loading="{{submitting}}" disabled="{{submitting || uploading || quoting || !quote}}" bindtap="onSubmitTap">{{uploading ? '正在上传凭证' : quoting ? '正在计算报价' : '确认并提交售后'}}</button></view>
 </view>

@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.user.address.service;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.user.address.dto.AddressResponse;
 import org.muybaby.shopserver.user.address.dto.AddressUpsertRequest;
@@ -28,11 +29,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
+@Tag("integration")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AppAddressServiceMySqlConcurrencyTest {
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4.10")
             .withDatabaseName("address_concurrency")
             .withUsername("shop_test")
             .withPassword("shop_test");

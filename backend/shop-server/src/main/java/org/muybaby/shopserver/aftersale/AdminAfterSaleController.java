@@ -7,6 +7,8 @@ import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleStatusCountsResponse;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleSummaryResponse;
 import org.muybaby.shopserver.aftersale.dto.AdminRefundOperationRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminRefundOperationResponse;
+import org.muybaby.shopserver.aftersale.dto.AdminReturnInspectionRequest;
+import org.muybaby.shopserver.aftersale.dto.AdminReturnReceiveRequest;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.service.AdminAfterSaleService;
 import org.muybaby.shopserver.common.api.ApiResponse;
@@ -90,6 +92,26 @@ public class AdminAfterSaleController {
             @RequestBody AdminAfterSaleAuditRequest request
     ) {
         return ApiResponse.success(adminAfterSaleService.approve(principal, afterSaleId, request));
+    }
+
+    @PostMapping("/{afterSaleId}/return-received")
+    @PreAuthorize("hasAuthority('aftersale:audit')")
+    public ApiResponse<AfterSaleResponse> receiveReturn(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId,
+            @RequestBody(required = false) AdminReturnReceiveRequest request
+    ) {
+        return ApiResponse.success(adminAfterSaleService.receiveReturn(principal, afterSaleId, request));
+    }
+
+    @PostMapping("/{afterSaleId}/return-inspection")
+    @PreAuthorize("hasAuthority('aftersale:audit')")
+    public ApiResponse<AfterSaleResponse> inspectReturn(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId,
+            @RequestBody AdminReturnInspectionRequest request
+    ) {
+        return ApiResponse.success(adminAfterSaleService.inspectReturn(principal, afterSaleId, request));
     }
 
     @PostMapping("/{afterSaleId}/refund-retry")

@@ -465,6 +465,7 @@ public class AppOrderService {
                                payment_transaction_id,
                                merchant_trade_no,
                                paid_at,
+                               payment_expires_at,
                                close_reason,
                                closed_at,
                                created_at,
@@ -540,10 +541,14 @@ public class AppOrderService {
                 .list();
 
         PaymentOrderSnapshot paymentOrder = findLatestPaymentOrder(orderId);
+        LocalDateTime paymentExpiresAt = header.paymentExpiresAt();
+        if (paymentExpiresAt == null && paymentOrder != null) {
+            paymentExpiresAt = paymentOrder.expiresAt();
+        }
         Long paymentRemainingSeconds = null;
-        if (paymentOrder != null && paymentOrder.expiresAt() != null) {
+        if (paymentExpiresAt != null) {
             long remainingMillis = Duration.between(
-                    LocalDateTime.now(clock), paymentOrder.expiresAt()).toMillis();
+                    LocalDateTime.now(clock), paymentExpiresAt).toMillis();
             paymentRemainingSeconds = remainingMillis <= 0L
                     ? 0L
                     : (remainingMillis + 999L) / 1000L;
@@ -581,7 +586,7 @@ public class AppOrderService {
                 transactionId,
                 header.merchantTradeNo(),
                 paymentOrder == null ? null : paymentOrder.status(),
-                paymentOrder == null ? null : paymentOrder.expiresAt(),
+                paymentExpiresAt,
                 paymentRemainingSeconds,
                 outTradeNo,
                 transactionId,
@@ -1490,6 +1495,7 @@ public class AppOrderService {
                 rs.getString("payment_transaction_id"),
                 rs.getString("merchant_trade_no"),
                 rs.getObject("paid_at", LocalDateTime.class),
+                rs.getObject("payment_expires_at", LocalDateTime.class),
                 rs.getString("close_reason"),
                 rs.getObject("closed_at", LocalDateTime.class),
                 rs.getObject("created_at", LocalDateTime.class),
@@ -1892,6 +1898,7 @@ public class AppOrderService {
             String paymentTransactionId,
             String merchantTradeNo,
             LocalDateTime paidAt,
+            LocalDateTime paymentExpiresAt,
             String closeReason,
             LocalDateTime closedAt,
             LocalDateTime createdAt,

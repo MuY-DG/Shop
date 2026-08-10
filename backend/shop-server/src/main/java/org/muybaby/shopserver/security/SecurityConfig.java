@@ -43,6 +43,8 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/admin/auth/login",
                                 "/admin/auth/refresh",
+                                "/admin/auth/registration",
+                                "/admin/auth/register",
                                 "/app/auth/login",
                                 "/app/auth/refresh",
                                 "/app/health",

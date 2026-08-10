@@ -8,10 +8,12 @@ import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -157,6 +159,46 @@ class AfterSaleSchemaTest {
     }
 
     @Test
+    void afterSaleV2SchemaPersistsItemReturnAndRestockStateWithQuantityGuards() {
+        assertThat(AfterSaleStatus.valueOf("WAITING_RETURN"))
+                .isSameAs(AfterSaleStatus.WAITING_RETURN);
+        assertThat(StockLockStatus.valueOf("PARTIALLY_RESTOCKED"))
+                .isSameAs(StockLockStatus.PARTIALLY_RESTOCKED);
+        assertThat(OrderRefundStatus.valueOf("PARTIALLY_REFUNDED"))
+                .isSameAs(OrderRefundStatus.PARTIALLY_REFUNDED);
+
+        Integer tableCount = jdbcClient.sql("""
+                        select count(*) from information_schema.tables
+                        where lower(table_name) in (
+                            'after_sale_item', 'after_sale_return', 'after_sale_status_log',
+                            'merchant_return_address', 'refund_inventory_restock_item'
+                        )
+                        """)
+                .query(Integer.class)
+                .single();
+        assertThat(tableCount).isEqualTo(5);
+
+        assertThatThrownBy(() -> jdbcClient.sql("""
+                        insert into after_sale_item (
+                            after_sale_id, order_item_id, sku_id, order_quantity_snapshot,
+                            paid_amount_basis_cent, refunded_quantity_before,
+                            requested_quantity, requested_amount_cent, restock_quantity
+                        ) values (99101, 99102, 99103, 2, 1000, 1, 2, 1000, 0)
+                        """).update())
+                .isInstanceOf(DataAccessException.class);
+
+        assertThatThrownBy(() -> jdbcClient.sql("""
+                        insert into after_sale_item (
+                            after_sale_id, order_item_id, sku_id, order_quantity_snapshot,
+                            paid_amount_basis_cent, refunded_quantity_before,
+                            requested_quantity, requested_amount_cent,
+                            approved_quantity, approved_amount_cent, restock_quantity
+                        ) values (99111, 99112, 99113, 2, 1000, 0, 1, 500, 1, 600, 0)
+                        """).update())
+                .isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
     void tradeMenuContainsOrderAndAfterSaleWithoutChangingPermissionOwnership() {
         Integer tradeMenuCount = jdbcClient.sql("""
                         select count(*)
@@ -212,6 +254,6 @@ class AfterSaleSchemaTest {
         assertThat(childMenuCount).isEqualTo(2);
         assertThat(disabledLegacyParentCount).isEqualTo(2);
         assertThat(superRoleMenuCount).isEqualTo(3);
-        assertThat(permissionCount).isEqualTo(11);
+        assertThat(permissionCount).isEqualTo(12);
     }
 }

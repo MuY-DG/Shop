@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -25,9 +26,13 @@ public class AdminRbacService {
                         select id, username, password_hash, display_name, email, avatar, status,
                                max_sessions, auth_version, last_login_at, created_at, updated_at
                         from admin_user
-                        where username = :username and status = 'ENABLED'
+                        where (
+                            username_normalized = :usernameNormalized
+                            or (username_normalized is null and lower(username) = :usernameNormalized)
+                        )
+                          and status = 'ENABLED'
                         """)
-                .param("username", username)
+                .param("usernameNormalized", username.strip().toLowerCase(Locale.ROOT))
                 .query(this::mapAdminUser)
                 .optional();
     }

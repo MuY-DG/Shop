@@ -5,7 +5,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
@@ -25,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -57,6 +61,8 @@ class OrderAggregateCleanupServiceTest {
     private static final long SPU_ID = 9_870_021L;
     private static final long SKU_ID = 9_870_022L;
     private static final long USER_COUPON_ID = 9_870_023L;
+    private static final long FINANCE_BATCH_ID = 9_870_050L;
+    private static final long FINANCE_DIFFERENCE_ID = 9_870_051L;
     private static final LocalDateTime CUTOFF = LocalDateTime.of(2023, 1, 1, 0, 0);
 
     @Autowired
@@ -269,6 +275,117 @@ class OrderAggregateCleanupServiceTest {
         assertThat(jdbcClient.sql("select count(*) from order_archive_manifest where source_order_id = :orderId")
                 .param("orderId", ORDER_ID)
                 .query(Integer.class).single()).isZero();
+    }
+
+    @ParameterizedTest
+    @MethodSource("activeFinanceGuardCases")
+    void candidateGuardSkipsOrdersWithActiveFinanceDifferences(
+            String status,
+            FinanceDifferenceLink link
+    ) {
+        seedCompletedRefundedOrder();
+        insertFinanceBatch();
+        insertFinanceDifference(status, link);
+
+        assertThat(cleanupService.cleanupBatch(CUTOFF, 20, true, () -> true)).isZero();
+
+        assertThat(count("shop_order", "id", ORDER_ID)).isOne();
+        assertThat(jdbcClient.sql("""
+                        select count(*) from order_archive_manifest where source_order_id = :orderId
+                        """)
+                .param("orderId", ORDER_ID)
+                .query(Integer.class)
+                .single()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"OPEN", "INVESTIGATING"})
+    void transactionGuardSkipsAnOrderWhenActiveFinanceWorkAppearsAfterCandidateSelection(
+            String status
+    ) {
+        seedOrderOnly(ORDER_ID, "CLOSED");
+        insertFinanceBatch();
+        AtomicBoolean injected = new AtomicBoolean();
+        StorageProvider injectingProvider = new StorageProvider() {
+            @Override
+            public StoredObject put(
+                    String objectKey,
+                    String contentType,
+                    InputStream inputStream,
+                    long sizeBytes
+            ) {
+                return storageProvider.put(objectKey, contentType, inputStream, sizeBytes);
+            }
+
+            @Override
+            public StoredObject put(
+                    StorageObjectLocation location,
+                    String contentType,
+                    InputStream inputStream,
+                    long sizeBytes
+            ) {
+                StoredObject stored = storageProvider.put(location, contentType, inputStream, sizeBytes);
+                if (injected.compareAndSet(false, true)) {
+                    insertFinanceDifference(status, FinanceDifferenceLink.ORDER);
+                }
+                return stored;
+            }
+
+            @Override
+            public StoredObject open(String objectKey) {
+                return storageProvider.open(objectKey);
+            }
+
+            @Override
+            public void delete(String objectKey) {
+                storageProvider.delete(objectKey);
+            }
+        };
+        OrderAggregateCleanupService isolated = new OrderAggregateCleanupService(
+                jdbcClient, injectingProvider, storageConfigService, objectMapper, transactionTemplate);
+
+        assertThat(isolated.cleanupBatch(CUTOFF, 20, true, () -> true)).isZero();
+
+        assertThat(injected).isTrue();
+        assertThat(count("shop_order", "id", ORDER_ID)).isOne();
+        assertThat(count("finance_reconciliation_difference", "id", FINANCE_DIFFERENCE_ID)).isOne();
+        assertThat(jdbcClient.sql("""
+                        select count(*) from order_archive_manifest where source_order_id = :orderId
+                        """)
+                .param("orderId", ORDER_ID)
+                .query(Integer.class)
+                .single()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"RESOLVED", "AUTO_CLEARED"})
+    void closedFinanceDifferencesAllowPurgeAndRetainDetachedEvidence(String status) {
+        seedCompletedRefundedOrder();
+        insertFinanceBatch();
+        insertFinanceDifference(status, FinanceDifferenceLink.ALL);
+
+        assertThat(cleanupService.cleanupBatch(CUTOFF, 20, true, () -> true)).isOne();
+
+        assertThat(count("shop_order", "id", ORDER_ID)).isZero();
+        FinanceDifferenceEvidence evidence = jdbcClient.sql("""
+                        select status, order_id, payment_order_id, refund_order_id,
+                               provider_evidence, local_evidence
+                        from finance_reconciliation_difference
+                        where id = :differenceId
+                        """)
+                .param("differenceId", FINANCE_DIFFERENCE_ID)
+                .query((rs, rowNum) -> new FinanceDifferenceEvidence(
+                        rs.getString("status"),
+                        rs.getObject("order_id", Long.class),
+                        rs.getObject("payment_order_id", Long.class),
+                        rs.getObject("refund_order_id", Long.class),
+                        rs.getString("provider_evidence"),
+                        rs.getString("local_evidence")
+                ))
+                .single();
+        assertThat(evidence).isEqualTo(new FinanceDifferenceEvidence(
+                status, null, null, null,
+                "provider evidence retained", "local evidence retained"));
     }
 
     @Test
@@ -778,6 +895,52 @@ class OrderAggregateCleanupServiceTest {
                 .update();
     }
 
+    private static Stream<Arguments> activeFinanceGuardCases() {
+        return Stream.of("OPEN", "INVESTIGATING")
+                .flatMap(status -> Stream.of(
+                        Arguments.of(status, FinanceDifferenceLink.ORDER),
+                        Arguments.of(status, FinanceDifferenceLink.PAYMENT),
+                        Arguments.of(status, FinanceDifferenceLink.REFUND)
+                ));
+    }
+
+    private void insertFinanceBatch() {
+        jdbcClient.sql("""
+                        insert into finance_reconciliation_batch
+                            (id, mch_id, bill_date, bill_type, status, phase,
+                             requested_at, created_at, updated_at)
+                        values
+                            (:id, 'cleanup-mch', date '2020-01-01', 'TRADE_ALL',
+                             'DIFFERENCES', 'COMPLETE', :oldAt, :oldAt, :oldAt)
+                        """)
+                .param("id", FINANCE_BATCH_ID)
+                .param("oldAt", oldAt())
+                .update();
+    }
+
+    private void insertFinanceDifference(String status, FinanceDifferenceLink link) {
+        jdbcClient.sql("""
+                        insert into finance_reconciliation_difference
+                            (id, batch_id, diff_key, difference_type, severity, status,
+                             order_id, payment_order_id, refund_order_id,
+                             provider_evidence, local_evidence, created_at, updated_at)
+                        values
+                            (:id, :batchId, :diffKey, 'STATUS_MISMATCH', 'CRITICAL', :status,
+                             :orderId, :paymentId, :refundId,
+                             'provider evidence retained', 'local evidence retained',
+                             :oldAt, :oldAt)
+                        """)
+                .param("id", FINANCE_DIFFERENCE_ID)
+                .param("batchId", FINANCE_BATCH_ID)
+                .param("diffKey", "f".repeat(64))
+                .param("status", status)
+                .param("orderId", link.includesOrder() ? ORDER_ID : null)
+                .param("paymentId", link.includesPayment() ? PAYMENT_ID : null)
+                .param("refundId", link.includesRefund() ? 9_870_012L : null)
+                .param("oldAt", oldAt())
+                .update();
+    }
+
     private void insertWaybillAuditRows() {
         jdbcClient.sql("""
                         insert into order_electronic_waybill(
@@ -1024,6 +1187,19 @@ class OrderAggregateCleanupServiceTest {
     }
 
     private void cleanRows() {
+        jdbcClient.sql("""
+                        delete from finance_reconciliation_resolution_audit
+                        where batch_id = :batchId or difference_id = :differenceId
+                        """)
+                .param("batchId", FINANCE_BATCH_ID)
+                .param("differenceId", FINANCE_DIFFERENCE_ID)
+                .update();
+        jdbcClient.sql("delete from finance_reconciliation_difference where batch_id = :batchId")
+                .param("batchId", FINANCE_BATCH_ID).update();
+        jdbcClient.sql("delete from wechat_trade_bill_entry where batch_id = :batchId")
+                .param("batchId", FINANCE_BATCH_ID).update();
+        jdbcClient.sql("delete from finance_reconciliation_batch where id = :batchId")
+                .param("batchId", FINANCE_BATCH_ID).update();
         jdbcClient.sql("delete from purged_refund_identity where archive_manifest_id in (select id from order_archive_manifest where source_order_id = :orderId)")
                 .param("orderId", ORDER_ID).update();
         jdbcClient.sql("delete from purged_payment_identity where archive_manifest_id in (select id from order_archive_manifest where source_order_id = :orderId)")
@@ -1131,5 +1307,48 @@ class OrderAggregateCleanupServiceTest {
             Long contextId,
             LocalDateTime lastMessageAt
     ) {
+    }
+
+    private record FinanceDifferenceEvidence(
+            String status,
+            Long orderId,
+            Long paymentOrderId,
+            Long refundOrderId,
+            String providerEvidence,
+            String localEvidence
+    ) {
+    }
+
+    private enum FinanceDifferenceLink {
+        ORDER(true, false, false),
+        PAYMENT(false, true, false),
+        REFUND(false, false, true),
+        ALL(true, true, true);
+
+        private final boolean includesOrder;
+        private final boolean includesPayment;
+        private final boolean includesRefund;
+
+        FinanceDifferenceLink(
+                boolean includesOrder,
+                boolean includesPayment,
+                boolean includesRefund
+        ) {
+            this.includesOrder = includesOrder;
+            this.includesPayment = includesPayment;
+            this.includesRefund = includesRefund;
+        }
+
+        boolean includesOrder() {
+            return includesOrder;
+        }
+
+        boolean includesPayment() {
+            return includesPayment;
+        }
+
+        boolean includesRefund() {
+            return includesRefund;
+        }
     }
 }

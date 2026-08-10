@@ -80,12 +80,32 @@ declare namespace Api {
       expiresIn: number
     }
 
+    interface RegistrationAvailability {
+      enabled: boolean
+    }
+
+    interface RegistrationParams {
+      username: string
+      password: string
+    }
+
+    interface ProfileUpdateParams {
+      displayName: string
+      email: string
+    }
+
+    interface PasswordChangeParams {
+      currentPassword: string
+      newPassword: string
+    }
+
     /** 用户信息 */
     interface UserInfo {
       buttons: string[]
       roles: string[]
       userId: number
       userName: string
+      displayName: string
       email: string
       avatar?: string
     }
@@ -107,6 +127,11 @@ declare namespace Api {
   /** 系统管理类型 */
   namespace SystemManage {
     type AdminUserStatus = 'ENABLED' | 'DISABLED'
+
+    interface RegistrationSetting {
+      enabled: boolean
+      updatedAt: string
+    }
 
     /** 用户列表 */
     type UserList = Api.Common.PaginatedResponse<UserListItem>
@@ -1521,7 +1546,12 @@ declare namespace Api {
     type AfterSaleStatus =
       | 'REQUESTED'
       | 'APPROVED'
+      | 'WAITING_RETURN'
+      | 'RETURNING'
+      | 'WAITING_INSPECTION'
       | 'REJECTED'
+      | 'RETURN_REJECTED'
+      | 'CANCELLED'
       | 'REFUNDING'
       | 'REFUNDED'
       | 'REFUND_FAILED'
@@ -1594,6 +1624,11 @@ declare namespace Api {
       evidenceFileIds: number[]
       evidenceFiles?: EvidenceFile[]
       refundOrder?: RefundOrder | null
+      flowVersion: number
+      legacyFullOrder: boolean
+      items: AfterSaleItem[]
+      returnInfo?: AfterSaleReturn | null
+      allowedActions: string[]
     }
 
     interface OrderContext {
@@ -1647,6 +1682,79 @@ declare namespace Api {
     interface AuditPayload {
       approvedAmountCent?: number | null
       auditNote?: string
+      returnAddressId?: number | null
+      items?: AfterSaleItemApproval[]
+    }
+
+    interface AfterSaleItemApproval {
+      orderItemId: number
+      approvedQuantity: number
+    }
+
+    interface AfterSaleItem {
+      id: number
+      orderItemId: number
+      skuId: number
+      productTitle: string
+      specText?: string | null
+      image?: string | null
+      requestedQuantity: number
+      approvedQuantity?: number | null
+      requestedAmountCent: number
+      approvedAmountCent?: number | null
+      restockQuantity?: number | null
+    }
+
+    interface AfterSaleReturn {
+      returnAddressId?: number | null
+      contactName?: string | null
+      contactPhone?: string | null
+      province?: string | null
+      city?: string | null
+      district?: string | null
+      detailAddress?: string | null
+      deliveryCompanyCode?: string | null
+      deliveryCompanyName?: string | null
+      trackingNo?: string | null
+      returnDeadlineAt?: string | null
+      userShippedAt?: string | null
+      merchantReceivedAt?: string | null
+      inspectionResult?: string | null
+      inspectionNote?: string | null
+      inspectedAt?: string | null
+    }
+
+    interface ReturnAddress {
+      id: number
+      contactName: string
+      contactPhone: string
+      province: string
+      city: string
+      district: string
+      detailAddress: string
+      enabled: boolean
+      defaultAddress: boolean
+      version: number
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface ReturnAddressPayload {
+      contactName: string
+      contactPhone: string
+      province: string
+      city: string
+      district: string
+      detailAddress: string
+      enabled: boolean
+      defaultAddress: boolean
+      version?: number | null
+    }
+
+    interface ReturnInspectionPayload {
+      decision: 'ACCEPT' | 'REJECT'
+      note: string
+      items: Array<{ orderItemId: number; restockQuantity: number }>
     }
 
     interface RefundOperationPayload {
@@ -1712,6 +1820,161 @@ declare namespace Api {
       publishedAt?: string | null
       createdAt: string
       updatedAt: string
+    }
+  }
+
+  namespace FinanceReconciliation {
+    type Identifier = string
+    type BatchStatus =
+      | 'PENDING'
+      | 'RUNNING'
+      | 'RETRY_WAIT'
+      | 'BALANCED'
+      | 'DIFFERENCES'
+      | 'EMPTY'
+      | 'FAILED'
+    type BatchPhase = 'QUEUED' | 'DOWNLOAD' | 'VERIFY' | 'PARSE' | 'STORE' | 'COMPARE' | 'COMPLETE'
+    type EntryType = 'PAYMENT' | 'REFUND'
+    type DifferenceType =
+      | 'CHANNEL_ONLY'
+      | 'LOCAL_ONLY'
+      | 'AMOUNT_MISMATCH'
+      | 'IDENTITY_MISMATCH'
+      | 'STATUS_MISMATCH'
+      | 'DUPLICATE_CHANNEL_ROW'
+      | 'SOURCE_CHANGED'
+    type DifferenceStatus = 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'AUTO_CLEARED'
+    type DifferenceSeverity = 'INFO' | 'WARNING' | 'CRITICAL'
+
+    interface Batch {
+      id: Identifier
+      billDate: string
+      mchId: string
+      status: BatchStatus
+      phase: BatchPhase
+      providerHashVerified: boolean
+      contentSha256?: string | null
+      sourceAvailable: boolean
+      sourceSizeBytes?: number | null
+      totalRows: number
+      paymentRows: number
+      refundRows: number
+      differenceCount: number
+      openDifferenceCount: number
+      attemptCount: number
+      nextAttemptAt?: string | null
+      lastErrorCode?: string | null
+      lastErrorMessage?: string | null
+      requestedBy?: Identifier | null
+      requestedAt?: string | null
+      startedAt?: string | null
+      completedAt?: string | null
+      createdAt: string
+      updatedAt: string
+      version: number
+    }
+
+    interface BatchDetail extends Batch {
+      channelPaymentAmountCent: number
+      channelRefundAmountCent: number
+      localPaymentAmountCent: number
+      localRefundAmountCent: number
+    }
+
+    interface TradeBillEntry {
+      id: Identifier
+      batchId: Identifier
+      rowNo: number
+      entryType: EntryType
+      transactionId?: string | null
+      outTradeNo?: string | null
+      refundId?: string | null
+      outRefundNo?: string | null
+      occurredAt?: string | null
+      amountCent: number
+      currency: string
+      channelStatus?: string | null
+      rowDigest: string
+      createdAt: string
+    }
+
+    interface Difference {
+      id: Identifier
+      batchId: Identifier
+      diffKey: string
+      type: DifferenceType
+      severity: DifferenceSeverity
+      status: DifferenceStatus
+      transactionId?: string | null
+      outTradeNo?: string | null
+      refundId?: string | null
+      outRefundNo?: string | null
+      orderId?: Identifier | null
+      providerAmountCent?: number | null
+      localAmountCent?: number | null
+      providerStatus?: string | null
+      localStatus?: string | null
+      version: number
+      resolutionCode?: string | null
+      resolutionReason?: string | null
+      resolvedBy?: Identifier | null
+      resolvedAt?: string | null
+      createdAt: string
+      updatedAt: string
+      candidateContentSha256: string
+      candidateSizeBytes: number | null
+      candidateSourceAvailable: boolean
+    }
+
+    interface ResolutionAudit {
+      id: Identifier
+      differenceId: Identifier
+      fromStatus?: DifferenceStatus | null
+      toStatus: DifferenceStatus
+      action: string
+      resolutionCode?: string | null
+      reason: string
+      operatorId?: Identifier | null
+      createdAt: string
+    }
+
+    type BatchList = Api.Common.PaginatedResponse<Batch>
+    type EntryList = Api.Common.PaginatedResponse<TradeBillEntry>
+    type DifferenceList = Api.Common.PaginatedResponse<Difference>
+
+    type BatchSearchParams = Api.Common.CommonSearchParams &
+      Partial<{
+        billDateFrom: string
+        billDateTo: string
+        mchId: string
+        status: BatchStatus
+      }>
+    type EntrySearchParams = Api.Common.CommonSearchParams &
+      Partial<{ entryType: EntryType; keyword: string }>
+    type DifferenceSearchParams = Api.Common.CommonSearchParams &
+      Partial<{ status: DifferenceStatus; type: DifferenceType; keyword: string }>
+    type ExportParams = {
+      from: string
+      to: string
+      mchId?: string
+      batchStatus?: BatchStatus
+      differenceStatus?: DifferenceStatus
+      differenceType?: DifferenceType
+    }
+    interface RunForm {
+      billDate: string
+      mchId?: string
+    }
+    interface RetryForm {
+      version: number
+      reason: string
+    }
+    interface InvestigateForm {
+      version: number
+      reason: string
+    }
+    interface ResolveForm extends InvestigateForm {
+      resolutionCode: string
     }
   }
 

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
@@ -33,6 +34,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @Testcontainers
+@Tag("integration")
 class RedisTokenStoreIntegrationTest {
 
     private static final String GENERATION_ID = "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF";
@@ -41,7 +43,7 @@ class RedisTokenStoreIntegrationTest {
     private static final String CURRENT_GENERATION_ID = "33333333-3333-4333-8333-333333333333";
 
     @Container
-    private static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:latest"))
+    private static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7.4.9-alpine"))
             .withExposedPorts(6379);
 
     private LettuceConnectionFactory connectionFactory;

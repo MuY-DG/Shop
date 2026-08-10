@@ -114,7 +114,7 @@ axiosInstance.interceptors.response.use(
       }
       handleUnauthorizedError()
     }
-    return Promise.reject(handleError(error))
+    return handleError(error)
   }
 )
 

@@ -18,32 +18,23 @@
             @keyup.enter="handleSubmit"
             style="margin-top: 25px"
           >
-            <ElFormItem prop="account">
-              <ElSelect v-model="formData.account" @change="setupAccount">
-                <ElOption
-                  v-for="account in accounts"
-                  :key="account.key"
-                  :label="account.label"
-                  :value="account.key"
-                >
-                  <span>{{ account.label }}</span>
-                </ElOption>
-              </ElSelect>
-            </ElFormItem>
             <ElFormItem prop="username">
               <ElInput
                 class="custom-height"
                 :placeholder="$t('login.placeholder.username')"
                 v-model.trim="formData.username"
+                name="username"
+                autocomplete="username"
               />
             </ElFormItem>
             <ElFormItem prop="password">
               <ElInput
                 class="custom-height"
                 :placeholder="$t('login.placeholder.password')"
-                v-model.trim="formData.password"
+                v-model="formData.password"
                 type="password"
-                autocomplete="off"
+                name="password"
+                autocomplete="current-password"
                 show-password
               />
             </ElFormItem>
@@ -74,12 +65,9 @@
             </div>
 
             <div class="flex-cb mt-2 text-sm">
-              <ElCheckbox v-model="formData.rememberPassword">{{
+              <ElCheckbox v-model="formData.rememberAccount">{{
                 $t('login.rememberPwd')
               }}</ElCheckbox>
-              <RouterLink class="text-theme" :to="{ name: 'ForgetPassword' }">{{
-                $t('login.forgetPwd')
-              }}</RouterLink>
             </div>
 
             <div style="margin-top: 30px">
@@ -94,7 +82,7 @@
               </ElButton>
             </div>
 
-            <div class="mt-5 text-sm text-gray-600">
+            <div v-if="registrationEnabled" class="mt-5 text-sm text-gray-600">
               <span>{{ $t('login.noAccount') }}</span>
               <RouterLink class="text-theme" :to="{ name: 'Register' }">{{
                 $t('login.register')
@@ -112,9 +100,13 @@
   import { useUserStore } from '@/store/modules/user'
   import { useI18n } from 'vue-i18n'
   import { HttpError } from '@/utils/http/error'
-  import { fetchLogin } from '@/api/auth'
+  import { fetchAdminRegistrationAvailability, fetchLogin } from '@/api/auth'
   import { ElNotification, type FormInstance, type FormRules } from 'element-plus'
   import { useSettingStore } from '@/store/modules/setting'
+  import {
+    loadRememberedAdminAccount,
+    saveRememberedAdminAccount
+  } from '@/utils/remembered-admin-account'
 
   defineOptions({ name: 'Login' })
 
@@ -128,26 +120,6 @@
     formKey.value++
   })
 
-  type AccountKey = 'super'
-
-  export interface Account {
-    key: AccountKey
-    label: string
-    userName: string
-    password: string
-    roles: string[]
-  }
-
-  const accounts = computed<Account[]>(() => [
-    {
-      key: 'super',
-      label: t('login.roles.super'),
-      userName: 'Super',
-      password: '123456',
-      roles: ['R_SUPER']
-    }
-  ])
-
   const dragVerify = ref()
 
   const userStore = useUserStore()
@@ -160,11 +132,11 @@
   const formRef = ref<FormInstance>()
 
   const formData = reactive({
-    account: '',
     username: '',
     password: '',
-    rememberPassword: true
+    rememberAccount: false
   })
+  const registrationEnabled = ref(false)
 
   const rules = computed<FormRules>(() => ({
     username: [{ required: true, message: t('login.placeholder.username'), trigger: 'blur' }],
@@ -173,17 +145,18 @@
 
   const loading = ref(false)
 
-  onMounted(() => {
-    setupAccount('super')
-  })
+  onMounted(async () => {
+    const queryAccount = typeof route.query.account === 'string' ? route.query.account : ''
+    const rememberedAccount = loadRememberedAdminAccount()
+    formData.username = queryAccount || rememberedAccount
+    formData.rememberAccount = Boolean(rememberedAccount)
 
-  // 设置账号
-  const setupAccount = (key: AccountKey) => {
-    const selectedAccount = accounts.value.find((account: Account) => account.key === key)
-    formData.account = key
-    formData.username = selectedAccount?.userName ?? ''
-    formData.password = selectedAccount?.password ?? ''
-  }
+    try {
+      registrationEnabled.value = (await fetchAdminRegistrationAvailability()).enabled
+    } catch {
+      registrationEnabled.value = false
+    }
+  })
 
   // 登录
   const handleSubmit = async () => {
@@ -218,6 +191,7 @@
       // 存储 token 和登录状态
       userStore.setToken(token, refreshToken)
       userStore.setLoginStatus(true)
+      saveRememberedAdminAccount(username, formData.rememberAccount)
 
       // 登录成功处理
       showLoginSuccessNotice()
@@ -242,7 +216,7 @@
 
   // 重置拖拽验证
   const resetDragVerify = () => {
-    dragVerify.value.reset()
+    dragVerify.value?.reset()
   }
 
   // 登录成功提示
@@ -261,10 +235,4 @@
 
 <style scoped>
   @import './style.css';
-</style>
-
-<style lang="scss" scoped>
-  :deep(.el-select__wrapper) {
-    height: 40px !important;
-  }
 </style>

@@ -11,21 +11,29 @@ import {
   buildAfterSaleListUrl,
   buildAfterSaleView,
   canApplyAfterSale,
+  createAfterSaleRequestKey,
   isActiveAfterSale,
   positiveAfterSaleId
 } from "../miniprogram/features/after-sale";
 import { buildOrderDetailView } from "../miniprogram/features/order-center";
-import type { AfterSaleResponse, AfterSaleStatus } from "../miniprogram/types/after-sale";
+import type {
+  AfterSaleResponse,
+  AfterSaleStatus,
+  AfterSaleType
+} from "../miniprogram/types/after-sale";
 import type { AppOrderDetailResponse, OrderStatus } from "../miniprogram/types/order";
 
-function afterSale(status: AfterSaleStatus = "REQUESTED"): AfterSaleResponse {
+function afterSale(
+  status: AfterSaleStatus = "REQUESTED",
+  afterSaleType: AfterSaleType = "REFUND_ONLY"
+): AfterSaleResponse {
   return {
     id: 71,
     afterSaleNo: "AS2026072110000000000000000071",
     orderId: 101,
     orderNo: "ORD-101",
     userId: "9001",
-    afterSaleType: "REFUND_ONLY",
+    afterSaleType,
     status,
     reason: "商品存在问题",
     description: "包装破损",
@@ -58,7 +66,40 @@ function afterSale(status: AfterSaleStatus = "REQUESTED"): AfterSaleResponse {
           requestedAt: "2026-07-21T10:31:00Z",
           successAt: status === "REFUNDED" ? "2026-07-21T10:35:00Z" : undefined
         }
-      : undefined
+      : undefined,
+    flowVersion: 2,
+    legacyFullOrder: false,
+    items: [{
+      id: 91,
+      orderItemId: 201,
+      skuId: 301,
+      productTitle: "牛油火锅底料",
+      specText: "500g",
+      requestedQuantity: 1,
+      approvedQuantity: status === "REQUESTED" ? undefined : 1,
+      requestedAmountCent: 6980,
+      approvedAmountCent: status === "REQUESTED" ? undefined : 6980
+    }],
+    returnInfo: afterSaleType === "RETURN_REFUND"
+      ? {
+          contactName: "售后仓",
+          contactPhone: "13800000000",
+          province: "四川省",
+          city: "成都市",
+          district: "武侯区",
+          detailAddress: "仓储路 1 号",
+          deliveryCompanyCode: status === "RETURNING" ? "SF" : undefined,
+          deliveryCompanyName: status === "RETURNING" ? "顺丰速运" : undefined,
+          trackingNo: status === "RETURNING" ? "SF123" : undefined
+        }
+      : undefined,
+    allowedActions: status === "REQUESTED"
+      ? ["CANCEL"]
+      : status === "WAITING_RETURN"
+        ? ["CANCEL", "SUBMIT_RETURN_SHIPMENT"]
+        : status === "RETURNING"
+          ? ["UPDATE_RETURN_SHIPMENT"]
+          : []
   };
 }
 
@@ -97,13 +138,14 @@ function order(status: OrderStatus, latestAfterSale?: AfterSaleResponse): AppOrd
   };
 }
 
-test("售后状态生成稳定文案、进度和金额", () => {
+test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   const requested = buildAfterSaleView(afterSale("REQUESTED"));
   assert.equal(requested.statusText, "待商家审核");
   assert.equal(requested.statusTone, "warning");
   assert.deepEqual(requested.progressSteps.map((step) => step.state), ["done", "current", "pending"]);
   assert.equal(requested.requestedAmountText, "¥69.80");
   assert.equal(requested.evidenceCountText, "1 张");
+  assert.equal(requested.canCancel, true);
 
   const rejected = buildAfterSaleView(afterSale("REJECTED"));
   assert.equal(rejected.auditNote, "请补充清晰凭证");
@@ -115,15 +157,35 @@ test("售后状态生成稳定文案、进度和金额", () => {
   assert.equal(refunded.refundedAtText, "2026-07-21 10:35");
   assert.deepEqual(refunded.progressSteps.map((step) => step.state), ["done", "done", "done"]);
 
+  const waitingReturn = buildAfterSaleView(afterSale("WAITING_RETURN", "RETURN_REFUND"));
+  assert.equal(waitingReturn.statusText, "待寄回商品");
+  assert.equal(waitingReturn.canSubmitReturnShipment, true);
+  assert.equal(waitingReturn.returnAddressText, "售后仓 13800000000 四川省成都市武侯区仓储路 1 号");
+  assert.deepEqual(
+    waitingReturn.progressSteps.map((step) => step.state),
+    ["done", "done", "current", "pending", "pending"]
+  );
+
+  const returning = buildAfterSaleView(afterSale("RETURNING", "RETURN_REFUND"));
+  assert.equal(returning.canUpdateReturnShipment, true);
+  assert.equal(returning.returnShipmentText, "顺丰速运 SF123");
+
+  assert.equal(afterSaleStatusText("WAITING_INSPECTION"), "待商家验收");
+  assert.equal(afterSaleStatusText("RETURN_REJECTED"), "退货验收未通过");
+  assert.equal(afterSaleStatusText("CANCELLED"), "申请已取消");
+  assert.equal(afterSaleStatusText("APPROVED"), "审核已通过");
+
   assert.equal(afterSaleStatusText("REFUND_FAILED"), "退款处理异常");
 });
 
-test("整单退款资格阻止重复申请并允许被拒后重新申请", () => {
+test("进行中售后阻止重复申请并允许终态后重新申请", () => {
   assert.equal(canApplyAfterSale("PAID"), true);
   assert.equal(canApplyAfterSale("SHIPPED", afterSale("REQUESTED")), false);
   assert.equal(canApplyAfterSale("COMPLETED", afterSale("REFUND_FAILED")), false);
   assert.equal(canApplyAfterSale("COMPLETED", afterSale("REJECTED")), true);
   assert.equal(canApplyAfterSale("REFUNDED", afterSale("REFUNDED")), false);
+  assert.equal(isActiveAfterSale("WAITING_RETURN"), true);
+  assert.equal(isActiveAfterSale("WAITING_INSPECTION"), true);
   assert.equal(isActiveAfterSale("APPROVED"), true);
   assert.equal(isActiveAfterSale("REJECTED"), false);
 
@@ -142,27 +204,70 @@ test("整单退款资格阻止重复申请并允许被拒后重新申请", () =>
   assert.equal(retryOrder.afterSaleActionText, "重新申请售后");
 });
 
-test("售后申请固定为整单全额仅退款并规范用户输入", () => {
+test("同一申请意图在响应丢失后复用稳定幂等键", () => {
+  const key = createAfterSaleRequestKey(101, 1_800_000_000_000, "retry01");
+  assert.equal(key, "as-101-1800000000000-retry01");
+  assert.equal(createAfterSaleRequestKey(101, 1_800_000_000_000, "retry01"), key);
+  assert.throws(() => createAfterSaleRequestKey(0), /订单参数/);
+
+  const sourceRoot = resolve(process.cwd(), "miniprogram");
+  const applyLogic = readFileSync(
+    resolve(sourceRoot, "pages/after-sale/apply/apply.ts"),
+    "utf8"
+  );
+  assert.match(applyLogic, /requestKey:\s*createAfterSaleRequestKey\(orderId\)/);
+  assert.match(applyLogic, /requestKey:\s*this\.data\.requestKey/);
+  assert.doesNotMatch(applyLogic, /requestKey:\s*createAfterSaleRequestKey\(this\.data\.orderId\)/);
+  assert.ok(
+    applyLogic.indexOf("this.setData({ submitting: true })")
+      < applyLogic.indexOf("if (!await confirmSubmit")
+  );
+});
+
+test("售后申请使用服务端报价并支持按商品数量和退货退款", () => {
   assert.deepEqual(buildAfterSaleApplyPayload({
+    requestKey: "apply-101",
+    quote: {
+      orderId: 101,
+      afterSaleType: "RETURN_REFUND",
+      requestedAmountCent: 3490,
+      quoteDigest: "digest-101",
+      items: [{ orderItemId: 201, quantity: 1, requestedAmountCent: 3490 }]
+    },
+    items: [{ orderItemId: 201, quantity: 1 }],
     reason: "  商品存在问题  ",
-    requestedAmountCent: 6980,
     description: "  包装破损  ",
     evidenceFileIds: [801, 801, "802", -1]
   }), {
-    afterSaleType: "REFUND_ONLY",
+    requestKey: "apply-101",
+    quoteDigest: "digest-101",
+    afterSaleType: "RETURN_REFUND",
     reason: "商品存在问题",
-    requestedAmountCent: 6980,
+    requestedAmountCent: 3490,
     description: "包装破损",
-    evidenceFileIds: [801, 802]
+    evidenceFileIds: [801, 802],
+    items: [{ orderItemId: 201, quantity: 1 }]
   });
   assert.throws(() => buildAfterSaleApplyPayload({
+    requestKey: "apply-101",
+    quote: null,
+    items: [{ orderItemId: 201, quantity: 1 }],
     reason: "",
-    requestedAmountCent: 6980
+    description: ""
   }), /原因/);
   assert.throws(() => buildAfterSaleApplyPayload({
+    requestKey: "apply-101",
+    quote: {
+      orderId: 101,
+      afterSaleType: "REFUND_ONLY",
+      requestedAmountCent: 3490,
+      quoteDigest: "digest-101",
+      items: [{ orderItemId: 201, quantity: 1, requestedAmountCent: 3490 }]
+    },
+    items: [{ orderItemId: 201, quantity: 2 }],
     reason: "其他原因",
-    requestedAmountCent: 0
-  }), /金额/);
+    description: ""
+  }), /重新获取报价/);
 });
 
 test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
@@ -197,9 +302,17 @@ test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
 
   const profileLogic = readFileSync(resolve(sourceRoot, "pages/profile/profile.ts"), "utf8");
   const orderDetailTemplate = readFileSync(resolve(sourceRoot, "pages/order/detail/detail.wxml"), "utf8");
+  const serviceSource = readFileSync(resolve(sourceRoot, "services/after-sale.ts"), "utf8");
+  const detailSource = readFileSync(resolve(sourceRoot, "pages/after-sale/detail/detail.ts"), "utf8");
   assert.match(profileLogic, /退款售后/);
   assert.match(orderDetailTemplate, /onApplyAfterSaleTap/);
   assert.match(orderDetailTemplate, /onAfterSaleDetailTap/);
+  assert.match(serviceSource, /getAfterSaleEligibility/);
+  assert.match(serviceSource, /quoteAfterSale/);
+  assert.match(serviceSource, /cancelAfterSale/);
+  assert.match(serviceSource, /submitReturnShipment/);
+  assert.match(detailSource, /canSubmitReturnShipment/);
+  assert.match(detailSource, /canUpdateReturnShipment/);
 });
 
 test("小程序售后凭证使用选择器压缩结果并由云端统一处理", () => {
@@ -214,8 +327,8 @@ test("小程序售后凭证使用选择器压缩结果并由云端统一处理",
   );
 
   assert.match(applyLogic, /wx\.chooseMedia\(/);
-  assert.match(applyLogic, /sizeType:\s*\["compressed"\]/);
-  assert.doesNotMatch(applyLogic, /sizeType:\s*\["original"\]/);
+  assert.match(applyLogic, /sizeType:\s*\[["']compressed["']\]/);
+  assert.doesNotMatch(applyLogic, /sizeType:\s*\[["']original["']\]/);
   assert.doesNotMatch(applyLogic, /wx\.compressImage/);
   assert.match(applyTemplate, /最多 3 张清晰图片，单张不超过 5MB/);
 

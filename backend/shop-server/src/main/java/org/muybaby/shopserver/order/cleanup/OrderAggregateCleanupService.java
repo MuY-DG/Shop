@@ -264,6 +264,21 @@ public class OrderAggregateCleanupService {
                                 )
                           )
                           and not exists (
+                              select 1 from finance_reconciliation_difference finance_difference
+                              where finance_difference.status in ('OPEN', 'INVESTIGATING')
+                                and (
+                                    finance_difference.order_id = o.id
+                                    or finance_difference.payment_order_id in (
+                                        select guarded_payment.id from payment_order guarded_payment
+                                        where guarded_payment.order_id = o.id
+                                    )
+                                    or finance_difference.refund_order_id in (
+                                        select guarded_refund.id from refund_order guarded_refund
+                                        where guarded_refund.order_id = o.id
+                                    )
+                                )
+                          )
+                          and not exists (
                               select 1 from order_cleanup_failure cleanup_failure
                               where cleanup_failure.source_order_id = o.id
                                 and cleanup_failure.next_retry_at > current_timestamp
@@ -355,6 +370,21 @@ public class OrderAggregateCleanupService {
                                         select 1 from refund_order callback_refund
                                         where callback_refund.order_id = o.id
                                           and callback_refund.out_refund_no = callback_log.out_refund_no
+                                    )
+                                )
+                          )
+                          and not exists (
+                              select 1 from finance_reconciliation_difference finance_difference
+                              where finance_difference.status in ('OPEN', 'INVESTIGATING')
+                                and (
+                                    finance_difference.order_id = o.id
+                                    or finance_difference.payment_order_id in (
+                                        select guarded_payment.id from payment_order guarded_payment
+                                        where guarded_payment.order_id = o.id
+                                    )
+                                    or finance_difference.refund_order_id in (
+                                        select guarded_refund.id from refund_order guarded_refund
+                                        where guarded_refund.order_id = o.id
                                     )
                                 )
                           )
@@ -468,6 +498,27 @@ public class OrderAggregateCleanupService {
                 order by event.shipment_id, event.display_order, event.id
                 """, orderId));
         sections.put("after_sales", afterSales);
+        sections.put("after_sale_items", rows("""
+                select item.*
+                from after_sale_item item
+                join after_sale_request request on request.id = item.after_sale_id
+                where request.order_id = :orderId
+                order by item.id
+                """, orderId));
+        sections.put("after_sale_returns", rows("""
+                select return_entry.*
+                from after_sale_return return_entry
+                join after_sale_request request on request.id = return_entry.after_sale_id
+                where request.order_id = :orderId
+                order by return_entry.after_sale_id
+                """, orderId));
+        sections.put("after_sale_status_logs", rows("""
+                select status_log.*
+                from after_sale_status_log status_log
+                join after_sale_request request on request.id = status_log.after_sale_id
+                where request.order_id = :orderId
+                order by status_log.id
+                """, orderId));
         sections.put("after_sale_evidence", rows("""
                 select evidence.*
                 from after_sale_evidence evidence
@@ -476,6 +527,13 @@ public class OrderAggregateCleanupService {
                 order by evidence.id
                 """, orderId));
         sections.put("refunds", refunds);
+        sections.put("refund_inventory_restock_items", rows("""
+                select restock.*
+                from refund_inventory_restock_item restock
+                join refund_order refund on refund.id = restock.refund_order_id
+                where refund.order_id = :orderId
+                order by restock.id
+                """, orderId));
         sections.put("status_logs", rows(
                 "select * from order_status_log where order_id = :orderId order by id", orderId));
         sections.put("reviews", rows("""
@@ -621,10 +679,26 @@ public class OrderAggregateCleanupService {
         delete("delete from payment_attempt where order_id = :orderId", orderId);
         delete("delete from order_status_log where order_id = :orderId", orderId);
         delete("""
+                delete from refund_inventory_restock_item
+                where refund_order_id in (select id from refund_order where order_id = :orderId)
+                """, orderId);
+        delete("""
                 delete from after_sale_evidence
                 where after_sale_id in (select id from after_sale_request where order_id = :orderId)
                 """, orderId);
         delete("delete from refund_order where order_id = :orderId", orderId);
+        delete("""
+                delete from after_sale_status_log
+                where after_sale_id in (select id from after_sale_request where order_id = :orderId)
+                """, orderId);
+        delete("""
+                delete from after_sale_return
+                where after_sale_id in (select id from after_sale_request where order_id = :orderId)
+                """, orderId);
+        delete("""
+                delete from after_sale_item
+                where after_sale_id in (select id from after_sale_request where order_id = :orderId)
+                """, orderId);
         delete("delete from after_sale_request where order_id = :orderId", orderId);
         delete("""
                 delete from shipment_tracking_event
@@ -679,7 +753,35 @@ public class OrderAggregateCleanupService {
                 .param("orderId", orderId)
                 .query(Long.class)
                 .list();
+        jdbcClient.sql("""
+                        select restock.id
+                        from refund_inventory_restock_item restock
+                        join refund_order refund on refund.id = restock.refund_order_id
+                        where refund.order_id = :orderId
+                        order by restock.id for update
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
         jdbcClient.sql("select id from payment_order where order_id = :orderId order by id for update")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("""
+                        select finance_difference.id
+                        from finance_reconciliation_difference finance_difference
+                        where finance_difference.order_id = :orderId
+                           or finance_difference.payment_order_id in (
+                               select payment.id from payment_order payment
+                               where payment.order_id = :orderId
+                           )
+                           or finance_difference.refund_order_id in (
+                               select refund.id from refund_order refund
+                               where refund.order_id = :orderId
+                           )
+                        order by finance_difference.id
+                        for update
+                        """)
                 .param("orderId", orderId)
                 .query(Long.class)
                 .list();
@@ -776,6 +878,30 @@ public class OrderAggregateCleanupService {
 
     private void lockAfterSales(Long orderId) {
         jdbcClient.sql("select id from after_sale_request where order_id = :orderId order by id for update")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("""
+                        select item.id from after_sale_item item
+                        join after_sale_request request on request.id = item.after_sale_id
+                        where request.order_id = :orderId order by item.id for update
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("""
+                        select return_entry.after_sale_id from after_sale_return return_entry
+                        join after_sale_request request on request.id = return_entry.after_sale_id
+                        where request.order_id = :orderId order by return_entry.after_sale_id for update
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("""
+                        select status_log.id from after_sale_status_log status_log
+                        join after_sale_request request on request.id = status_log.after_sale_id
+                        where request.order_id = :orderId order by status_log.id for update
+                        """)
                 .param("orderId", orderId)
                 .query(Long.class)
                 .list();

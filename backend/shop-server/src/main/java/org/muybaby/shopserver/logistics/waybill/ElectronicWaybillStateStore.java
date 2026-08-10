@@ -74,9 +74,10 @@ public class ElectronicWaybillStateStore {
 
         List<ItemSnapshot> items = jdbcClient.sql("""
                         select id, product_title, product_subtitle,
-                               main_image, sku_image, display_image, spec_text, quantity
+                               main_image, sku_image, display_image, spec_text,
+                               quantity - refunded_quantity as quantity
                         from order_item
-                        where order_id = :orderId
+                        where order_id = :orderId and quantity > refunded_quantity
                         order by id
                         """)
                 .param("orderId", orderId)

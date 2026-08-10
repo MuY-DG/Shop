@@ -146,8 +146,7 @@
     },
     "sliderText": "Please slide to verify",
     "sliderSuccessText": "Verification successful",
-    "rememberPwd": "Remember password",
-    "forgetPwd": "Forgot password",
+    "rememberPwd": "Remember account",
     "btnText": "Login",
     "noAccount": "No account yet?",
     "register": "Register",
@@ -174,12 +173,14 @@
     "rule": {
       "confirmPasswordRequired": "Please enter your password again",
       "passwordMismatch": "The two passwords are inconsistent!",
-      "usernameLength": "The length is 3 to 20 characters",
-      "passwordLength": "The password length cannot be less than 6 digits",
-      "agreementRequired": "Please agree to the privacy policy"
+      "usernameLength": "The length must be 3 to 64 characters",
+      "usernamePattern": "Use letters, numbers, dots, underscores, or hyphens only",
+      "passwordLength": "The password must be at least 8 characters"
     },
-    "agreeText": "I agree",
-    "privacyPolicy": "Privacy policy",
+    "checkingAvailability": "Checking registration availability...",
+    "guestNotice": "New accounts are guests with access only to the system introduction and no administration permissions.",
+    "closedNotice": "Self-registration is currently disabled by the administrator.",
+    "successMessage": "Registration successful. Sign in with your new account.",
     "submitBtnText": "Register",
     "hasAccount": "Already have an account?",
     "toLogin": "To login"

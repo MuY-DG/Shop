@@ -39,7 +39,21 @@
     </ArtSearchBar>
 
     <ElCard class="art-table-card" :style="{ marginTop: '12px' }">
-      <ArtTableHeader v-model:columns="columnChecks" :loading="loading" @refresh="handleRefresh" />
+      <div class="aftersale-table-toolbar">
+        <ArtTableHeader
+          v-model:columns="columnChecks"
+          :loading="loading"
+          @refresh="handleRefresh"
+        />
+        <ElButton
+          v-if="hasAuth('aftersale:return-address:write')"
+          type="primary"
+          plain
+          @click="openReturnAddressManager"
+        >
+          退货地址维护
+        </ElButton>
+      </div>
 
       <ArtTable
         :loading="loading"
@@ -61,7 +75,7 @@
                   <ElDropdownItem command="records">售后记录</ElDropdownItem>
                   <ElDropdownItem command="order">查看关联订单</ElDropdownItem>
                   <template v-if="row.status === 'REQUESTED' && hasAuth('aftersale:audit')">
-                    <ElDropdownItem command="approve" divided>审核通过并退款</ElDropdownItem>
+                    <ElDropdownItem command="approve" divided>审核通过</ElDropdownItem>
                     <ElDropdownItem command="reject">审核拒绝</ElDropdownItem>
                   </template>
                 </ElDropdownMenu>
@@ -277,28 +291,24 @@
               <div class="detail-card__header">
                 <h3>
                   <ArtSvgIcon icon="ri:shopping-bag-3-line" />
-                  <span>商品信息</span>
+                  <span>本次售后商品</span>
                 </h3>
                 <span class="detail-card__count">
-                  共 {{ currentDetail.orderContext.itemCount }} 件商品
+                  共 {{ currentDetail.items?.length || 0 }} 个明细
                 </span>
               </div>
               <ElTable
-                v-if="currentDetail.orderContext.items.length"
-                :data="currentDetail.orderContext.items"
+                v-if="currentDetail.items?.length"
+                :data="currentDetail.items"
                 class="detail-products-table"
               >
                 <ElTableColumn label="商品信息" min-width="300">
                   <template #default="{ row }">
                     <div class="item-cell">
                       <ElImage
-                        :src="row.displayImage || row.skuImage || row.mainImage"
+                        :src="row.image"
                         fit="cover"
-                        :preview-src-list="
-                          row.displayImage || row.skuImage || row.mainImage
-                            ? [row.displayImage || row.skuImage || row.mainImage]
-                            : []
-                        "
+                        :preview-src-list="row.image ? [row.image] : []"
                         preview-teleported
                         class="item-cell__image"
                       >
@@ -310,40 +320,100 @@
                       </ElImage>
                       <div class="item-cell__content">
                         <div class="title">{{ formatText(row.productTitle) }}</div>
-                        <div class="subtitle">{{ row.productSubtitle || '暂无副标题' }}</div>
-                        <div class="subtitle">商品编码：{{ row.skuCode || '-' }}</div>
+                        <div class="subtitle">{{ row.specText || '默认规格' }}</div>
+                        <div class="subtitle">SKU ID：{{ row.skuId }}</div>
                       </div>
                     </div>
                   </template>
                 </ElTableColumn>
-                <ElTableColumn label="单价" width="116">
-                  <template #default="{ row }">{{ formatMoney(row.unitPriceCent) }}</template>
+                <ElTableColumn label="申请数量" width="100">
+                  <template #default="{ row }">{{ row.requestedQuantity }}</template>
                 </ElTableColumn>
-                <ElTableColumn prop="quantity" label="数量" width="82" />
-                <ElTableColumn label="规格" min-width="132">
-                  <template #default="{ row }">{{ row.specText || '-' }}</template>
+                <ElTableColumn label="批准数量" width="100">
+                  <template #default="{ row }">{{ formatText(row.approvedQuantity) }}</template>
                 </ElTableColumn>
-                <ElTableColumn label="小计" width="116" align="right">
+                <ElTableColumn label="申请金额" width="116" align="right">
                   <template #default="{ row }">
-                    <strong>{{ formatMoney(row.lineAmountCent) }}</strong>
+                    <strong>{{ formatMoney(row.requestedAmountCent) }}</strong>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="批准金额" width="116" align="right">
+                  <template #default="{ row }">
+                    {{ formatMoneyOrDash(row.approvedAmountCent) }}
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="验收入库" width="100" align="right">
+                  <template #default="{ row }">
+                    {{ row.restockQuantity ?? '-' }}
                   </template>
                 </ElTableColumn>
               </ElTable>
               <ElEmpty v-else description="暂无商品信息" :image-size="64" />
               <div class="product-summary">
-                <strong>本次为整单售后</strong>
+                <strong>{{
+                  currentDetail.legacyFullOrder ? '历史整单售后' : '按商品与数量售后'
+                }}</strong>
                 <div class="product-summary__amounts">
-                  <span>
-                    商品金额：{{ formatMoney(currentDetail.orderContext.productAmountCent) }}
-                  </span>
-                  <span>
-                    订单实付：{{ formatMoney(currentDetail.orderContext.paidAmountCent) }}
-                  </span>
                   <span class="product-summary__refund">
                     申请退款：<strong>{{ formatMoney(currentDetail.requestedAmountCent) }}</strong>
                   </span>
+                  <span v-if="currentDetail.approvedAmountCent != null">
+                    批准退款：<strong>{{ formatMoney(currentDetail.approvedAmountCent) }}</strong>
+                  </span>
                 </div>
               </div>
+            </section>
+
+            <section v-if="currentDetail.returnInfo" class="detail-card">
+              <div class="detail-card__header">
+                <h3>
+                  <ArtSvgIcon icon="ri:truck-line" />
+                  <span>退货与验收</span>
+                </h3>
+              </div>
+              <dl class="detail-facts detail-facts--basic">
+                <div class="detail-fact detail-fact--full">
+                  <dt>商家退货地址</dt>
+                  <dd>{{ returnAddressText(currentDetail.returnInfo) || '-' }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>寄回截止</dt>
+                  <dd>{{ formatDateTime(currentDetail.returnInfo.returnDeadlineAt) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>用户寄回</dt>
+                  <dd>{{ formatDateTime(currentDetail.returnInfo.userShippedAt) }}</dd>
+                </div>
+                <div class="detail-fact detail-fact--full">
+                  <dt>退货物流</dt>
+                  <dd>
+                    {{
+                      [
+                        currentDetail.returnInfo.deliveryCompanyName ||
+                          currentDetail.returnInfo.deliveryCompanyCode,
+                        currentDetail.returnInfo.trackingNo
+                      ]
+                        .filter(Boolean)
+                        .join(' / ') || '-'
+                    }}
+                  </dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>商家收货</dt>
+                  <dd>{{ formatDateTime(currentDetail.returnInfo.merchantReceivedAt) }}</dd>
+                </div>
+                <div class="detail-fact">
+                  <dt>验收结果</dt>
+                  <dd>{{ formatInspectionResult(currentDetail.returnInfo.inspectionResult) }}</dd>
+                </div>
+                <div
+                  v-if="currentDetail.returnInfo.inspectionNote"
+                  class="detail-fact detail-fact--full"
+                >
+                  <dt>验收说明</dt>
+                  <dd>{{ currentDetail.returnInfo.inspectionNote }}</dd>
+                </div>
+              </dl>
             </section>
 
             <section class="detail-card detail-card--evidence">
@@ -553,20 +623,36 @@
       <template #footer>
         <div class="drawer-footer">
           <ElButton @click="detailDrawerVisible = false">关闭</ElButton>
-          <template v-if="currentDetail?.status === 'REQUESTED'">
+          <template v-if="currentDetail">
             <ElButton
+              v-if="canAdminAction(currentDetail, 'APPROVE')"
               type="success"
-              v-auth="'aftersale:audit'"
               @click="openAuditDialog('approve', currentDetail)"
             >
-              审核通过并退款
+              审核通过
             </ElButton>
             <ElButton
+              v-if="canAdminAction(currentDetail, 'REJECT')"
               type="danger"
-              v-auth="'aftersale:audit'"
               @click="openAuditDialog('reject', currentDetail)"
             >
               审核拒绝
+            </ElButton>
+            <ElButton
+              v-if="canAdminAction(currentDetail, 'RECEIVE_RETURN')"
+              type="primary"
+              :loading="returnOperating"
+              @click="handleReceiveReturn"
+            >
+              确认收到退货
+            </ElButton>
+            <ElButton
+              v-if="canAdminAction(currentDetail, 'INSPECT_RETURN')"
+              type="success"
+              :loading="returnOperating"
+              @click="openInspectionDialog"
+            >
+              退货验收
             </ElButton>
           </template>
           <template v-if="currentDetail?.refundOrder && hasAuth('aftersale:audit')">
@@ -646,14 +732,18 @@
 
     <ElDialog
       v-model="auditDialogVisible"
-      :title="auditMode === 'approve' ? '审核通过并退款' : '审核拒绝'"
-      width="500px"
+      :title="auditMode === 'approve' ? '审核通过' : '审核拒绝'"
+      width="680px"
       align-center
     >
       <ElAlert
         v-if="auditMode === 'approve'"
-        title="当前按整单全额退款执行；审核通过后将立即向微信发起退款，金额不可修改。"
-        type="warning"
+        :title="
+          auditTarget?.afterSaleType === 'RETURN_REFUND'
+            ? '请确认批准数量并选择退货地址；通过后用户进入待寄回状态。'
+            : '请确认批准数量；退款金额由服务端按订单优惠分摊重新计算。'
+        "
+        type="info"
         :closable="false"
         show-icon
         class="audit-alert"
@@ -665,7 +755,7 @@
             disabled
           />
         </ElFormItem>
-        <ElFormItem v-if="auditMode === 'approve'" label="退款金额" prop="approvedAmountYuan">
+        <ElFormItem v-if="auditMode === 'approve'" label="申请金额">
           <ElInputNumber
             v-model="auditForm.approvedAmountYuan"
             :min="0.01"
@@ -675,6 +765,51 @@
             disabled
             style="width: 100%"
           />
+        </ElFormItem>
+        <ElFormItem v-if="auditMode === 'approve'" label="批准明细" prop="itemApprovals">
+          <div class="audit-item-list">
+            <div
+              v-for="(item, index) in auditTarget?.items || []"
+              :key="item.orderItemId"
+              class="audit-item"
+            >
+              <div class="audit-item__product">
+                <strong>{{ item.productTitle }}</strong>
+                <span>{{ item.specText || '默认规格' }}</span>
+                <span
+                  >申请 {{ item.requestedQuantity }} 件 /
+                  {{ formatMoney(item.requestedAmountCent) }}</span
+                >
+              </div>
+              <ElInputNumber
+                v-model="auditForm.itemApprovals[index].approvedQuantity"
+                :min="0"
+                :max="item.requestedQuantity"
+                :step="1"
+                :precision="0"
+                controls-position="right"
+              />
+            </div>
+          </div>
+        </ElFormItem>
+        <ElFormItem
+          v-if="auditMode === 'approve' && auditTarget?.afterSaleType === 'RETURN_REFUND'"
+          label="退货地址"
+          prop="returnAddressId"
+        >
+          <ElSelect
+            v-model="auditForm.returnAddressId"
+            placeholder="请选择启用的退货地址"
+            filterable
+            style="width: 100%"
+          >
+            <ElOption
+              v-for="address in enabledReturnAddresses"
+              :key="address.id"
+              :label="returnAddressText(address)"
+              :value="address.id"
+            />
+          </ElSelect>
         </ElFormItem>
         <ElFormItem
           :label="auditMode === 'approve' ? '退款原因（选填）' : '拒绝原因'"
@@ -686,9 +821,7 @@
             maxlength="255"
             show-word-limit
             :rows="4"
-            :placeholder="
-              auditMode === 'approve' ? '选填，填写后将在微信退款到账通知中显示' : '请输入拒绝原因'
-            "
+            :placeholder="auditMode === 'approve' ? '选填，记录本次审核说明' : '请输入拒绝原因'"
           />
         </ElFormItem>
       </ElForm>
@@ -701,10 +834,138 @@
             :loading="auditing"
             @click="submitAudit"
           >
-            {{ auditMode === 'approve' ? '确认并发起退款' : '确认拒绝' }}
+            {{ auditMode === 'approve' ? '确认审核通过' : '确认拒绝' }}
           </ElButton>
         </div>
       </template>
+    </ElDialog>
+
+    <ElDialog v-model="inspectionDialogVisible" title="退货验收" width="640px" align-center>
+      <ElAlert
+        title="验收通过后将按批准金额发起退款；回库数量可以小于批准退货数量。验收拒绝不会发起退款。"
+        type="info"
+        :closable="false"
+        show-icon
+        class="audit-alert"
+      />
+      <ElForm label-width="92px">
+        <ElFormItem label="验收结论">
+          <ElRadioGroup v-model="inspectionForm.decision">
+            <ElRadio value="ACCEPT">验收通过</ElRadio>
+            <ElRadio value="REJECT">验收拒绝</ElRadio>
+          </ElRadioGroup>
+        </ElFormItem>
+        <ElFormItem v-if="inspectionForm.decision === 'ACCEPT'" label="回库明细">
+          <div class="audit-item-list">
+            <div
+              v-for="(item, index) in inspectionItems"
+              :key="item.orderItemId"
+              class="audit-item"
+            >
+              <div class="audit-item__product">
+                <strong>{{ item.productTitle }}</strong>
+                <span>批准退回 {{ item.approvedQuantity }} 件</span>
+              </div>
+              <ElInputNumber
+                v-model="inspectionForm.items[index].restockQuantity"
+                :min="0"
+                :max="item.approvedQuantity"
+                :step="1"
+                :precision="0"
+                controls-position="right"
+              />
+            </div>
+          </div>
+        </ElFormItem>
+        <ElFormItem :label="inspectionForm.decision === 'REJECT' ? '拒收原因' : '验收说明'">
+          <ElInput
+            v-model="inspectionForm.note"
+            type="textarea"
+            maxlength="255"
+            show-word-limit
+            :rows="4"
+            :placeholder="inspectionForm.decision === 'REJECT' ? '拒收时必须填写原因' : '选填'"
+          />
+        </ElFormItem>
+      </ElForm>
+      <template #footer>
+        <ElButton @click="inspectionDialogVisible = false">取消</ElButton>
+        <ElButton
+          :type="inspectionForm.decision === 'ACCEPT' ? 'success' : 'danger'"
+          :loading="returnOperating"
+          @click="submitInspection"
+        >
+          确认验收
+        </ElButton>
+      </template>
+    </ElDialog>
+
+    <ElDialog v-model="returnAddressDialogVisible" title="商家退货地址" width="860px" align-center>
+      <div class="return-address-toolbar">
+        <span>审核退货退款时，只能选择启用的地址。</span>
+        <ElButton type="primary" @click="startCreateReturnAddress">新增地址</ElButton>
+      </div>
+      <ElTable v-loading="returnAddressLoading" :data="returnAddresses" max-height="360">
+        <ElTableColumn label="联系人" prop="contactName" width="100" />
+        <ElTableColumn label="电话" prop="contactPhone" width="140" />
+        <ElTableColumn label="地址" min-width="310">
+          <template #default="{ row }">{{ returnAddressText(row) }}</template>
+        </ElTableColumn>
+        <ElTableColumn label="状态" width="110">
+          <template #default="{ row }">
+            <ElTag :type="row.enabled ? 'success' : 'info'">{{
+              row.enabled ? '启用' : '停用'
+            }}</ElTag>
+            <ElTag v-if="row.defaultAddress" type="warning" class="address-default-tag">默认</ElTag>
+          </template>
+        </ElTableColumn>
+        <ElTableColumn label="操作" width="150" fixed="right">
+          <template #default="{ row }">
+            <ElButton link type="primary" @click="startEditReturnAddress(row)">编辑</ElButton>
+            <ElButton
+              v-if="row.enabled"
+              link
+              type="danger"
+              @click="handleDisableReturnAddress(row)"
+            >
+              停用
+            </ElButton>
+          </template>
+        </ElTableColumn>
+      </ElTable>
+      <ElForm v-if="returnAddressEditing" class="return-address-form" label-width="78px">
+        <ElRow :gutter="12">
+          <ElCol :span="8"
+            ><ElFormItem label="联系人"
+              ><ElInput v-model="returnAddressForm.contactName" /></ElFormItem
+          ></ElCol>
+          <ElCol :span="8"
+            ><ElFormItem label="电话"
+              ><ElInput v-model="returnAddressForm.contactPhone" /></ElFormItem
+          ></ElCol>
+          <ElCol :span="8"
+            ><ElFormItem label="省"><ElInput v-model="returnAddressForm.province" /></ElFormItem
+          ></ElCol>
+          <ElCol :span="8"
+            ><ElFormItem label="市"><ElInput v-model="returnAddressForm.city" /></ElFormItem
+          ></ElCol>
+          <ElCol :span="8"
+            ><ElFormItem label="区县"><ElInput v-model="returnAddressForm.district" /></ElFormItem
+          ></ElCol>
+          <ElCol :span="8"
+            ><ElFormItem label="详细地址"
+              ><ElInput v-model="returnAddressForm.detailAddress" /></ElFormItem
+          ></ElCol>
+        </ElRow>
+        <div class="return-address-form__footer">
+          <ElCheckbox v-model="returnAddressForm.enabled">启用</ElCheckbox>
+          <ElCheckbox v-model="returnAddressForm.defaultAddress">设为默认</ElCheckbox>
+          <ElButton @click="returnAddressEditing = false">取消编辑</ElButton>
+          <ElButton type="primary" :loading="returnAddressSaving" @click="saveReturnAddress"
+            >保存地址</ElButton
+          >
+        </div>
+      </ElForm>
     </ElDialog>
 
     <ElDialog
@@ -768,19 +1029,31 @@
   import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import {
     approveAfterSale,
+    createAfterSaleReturnAddress,
+    disableAfterSaleReturnAddress,
     fetchAfterSaleDetail,
     fetchAfterSaleEvidence,
     fetchAfterSaleRecords,
+    fetchAfterSaleReturnAddresses,
     fetchAfterSales,
     fetchAfterSaleStatusCounts,
+    inspectAfterSaleReturn,
     markRefundManualIntervention,
     queryRefundProvider,
+    receiveAfterSaleReturn,
     resubmitRefundProvider,
     retryClosedRefund,
-    rejectAfterSale
+    rejectAfterSale,
+    updateAfterSaleReturnAddress
   } from '@/api/aftersale'
   import { fetchOrderDetail } from '@/api/order'
   import { ElMessage, ElMessageBox, ElTag, type FormInstance, type FormRules } from 'element-plus'
+  import {
+    adminAfterSaleActions,
+    canManageReturnAddresses,
+    returnAddressText,
+    type AfterSaleAdminAction
+  } from './aftersale-workflow'
 
   defineOptions({ name: 'AfterSaleList' })
 
@@ -803,6 +1076,8 @@
   interface AuditForm {
     approvedAmountYuan: number
     auditNote: string
+    returnAddressId?: number
+    itemApprovals: Api.AfterSale.AfterSaleItemApproval[]
   }
 
   interface AuditTarget {
@@ -810,6 +1085,15 @@
     afterSaleNo: string
     orderNo: string
     requestedAmountCent: number
+    afterSaleType: string
+    flowVersion: number
+    items: Api.AfterSale.AfterSaleItem[]
+  }
+
+  interface InspectionForm {
+    decision: 'ACCEPT' | 'REJECT'
+    note: string
+    items: Array<{ orderItemId: number; restockQuantity: number }>
   }
 
   interface RefundOperationForm {
@@ -826,6 +1110,13 @@
   const auditing = ref(false)
   const refundOperationDialogVisible = ref(false)
   const refundOperating = ref(false)
+  const returnOperating = ref(false)
+  const inspectionDialogVisible = ref(false)
+  const returnAddressDialogVisible = ref(false)
+  const returnAddressLoading = ref(false)
+  const returnAddressSaving = ref(false)
+  const returnAddressEditing = ref(false)
+  const editingReturnAddressId = ref<number | null>(null)
   const recordsDrawerVisible = ref(false)
   const recordsLoading = ref(false)
   const currentDetail = ref<Api.AfterSale.Detail | null>(null)
@@ -841,6 +1132,7 @@
   const auditFormRef = ref<FormInstance>()
   const refundOperationFormRef = ref<FormInstance>()
   const refundOperationMode = ref<RefundOperationMode>('query')
+  const returnAddresses = ref<Api.AfterSale.ReturnAddress[]>([])
 
   const routeAfterSaleId = () => {
     const value = route.query.afterSaleId
@@ -887,8 +1179,39 @@
 
   const auditForm = reactive<AuditForm>({
     approvedAmountYuan: 0,
-    auditNote: ''
+    auditNote: '',
+    returnAddressId: undefined,
+    itemApprovals: []
   })
+
+  const inspectionForm = reactive<InspectionForm>({
+    decision: 'ACCEPT',
+    note: '',
+    items: []
+  })
+
+  const returnAddressForm = reactive<Api.AfterSale.ReturnAddressPayload>({
+    contactName: '',
+    contactPhone: '',
+    province: '',
+    city: '',
+    district: '',
+    detailAddress: '',
+    enabled: true,
+    defaultAddress: false,
+    version: null
+  })
+
+  const enabledReturnAddresses = computed(() =>
+    returnAddresses.value.filter((address) => address.enabled)
+  )
+  const inspectionItems = computed(() =>
+    (currentDetail.value?.items || []).map((item) => ({
+      orderItemId: item.orderItemId,
+      productTitle: item.productTitle,
+      approvedQuantity: item.approvedQuantity || 0
+    }))
+  )
 
   const refundOperationForm = reactive<RefundOperationForm>({ note: '' })
 
@@ -920,7 +1243,12 @@
   const statusMap: Record<string, { type: TagType; text: string; tone: StatusTone }> = {
     REQUESTED: { type: 'warning', text: '待审核', tone: 'pending' },
     APPROVED: { type: 'warning', text: '退款处理中', tone: 'refunding' },
+    WAITING_RETURN: { type: 'warning', text: '待用户寄回', tone: 'pending' },
+    RETURNING: { type: 'warning', text: '退货运输中', tone: 'refunding' },
+    WAITING_INSPECTION: { type: 'warning', text: '待验收', tone: 'pending' },
     REJECTED: { type: 'info', text: '已拒绝', tone: 'rejected' },
+    RETURN_REJECTED: { type: 'info', text: '验收拒绝', tone: 'rejected' },
+    CANCELLED: { type: 'info', text: '用户已取消', tone: 'rejected' },
     REFUNDING: { type: 'warning', text: '退款处理中', tone: 'refunding' },
     REFUNDED: { type: 'success', text: '已退款', tone: 'refunded' },
     REFUND_FAILED: { type: 'danger', text: '退款失败', tone: 'failed' }
@@ -940,6 +1268,19 @@
   const recordEventLabels: Record<string, string> = {
     AFTER_SALE_REQUESTED: '用户提交售后申请',
     AFTER_SALE_REJECTED: '管理员拒绝售后申请',
+    AFTER_SALE_CANCELLED: '用户取消售后申请',
+    AFTER_SALE_WAITING_RETURN: '审核通过，等待用户寄回',
+    AFTER_SALE_RETURN_SHIPPED: '用户提交退货物流',
+    AFTER_SALE_RETURN_SHIPMENT_UPDATED: '用户修正退货物流',
+    AFTER_SALE_RETURN_RECEIVED: '商家确认收到退货',
+    AFTER_SALE_RETURN_INSPECTION_ACCEPTED: '退货验收通过',
+    AFTER_SALE_RETURN_INSPECTION_REJECTED: '退货验收拒绝',
+    RETURN_AUTHORIZED: '审核通过，等待用户寄回',
+    RETURN_SHIPMENT_SUBMITTED: '用户提交退货物流',
+    RETURN_SHIPMENT_UPDATED: '用户修正退货物流',
+    RETURN_RECEIVED: '商家确认收到退货',
+    RETURN_INSPECTION_REJECTED: '退货验收拒绝',
+    RETURN_EXPIRED: '退货寄回超时',
     REFUND_STARTED: '审核通过并发起退款',
     REFUND_RECOVERY_RESUMED: '退款恢复处理中',
     REFUND_SUCCEEDED: '退款成功',
@@ -957,6 +1298,19 @@
   const recordStateLabels: Record<string, string> = {
     AFTER_SALE_REQUESTED: '待审核',
     AFTER_SALE_REJECTED: '已拒绝',
+    AFTER_SALE_CANCELLED: '已取消',
+    AFTER_SALE_WAITING_RETURN: '待寄回',
+    AFTER_SALE_RETURN_SHIPPED: '退货中',
+    AFTER_SALE_RETURN_SHIPMENT_UPDATED: '退货中',
+    AFTER_SALE_RETURN_RECEIVED: '待验收',
+    AFTER_SALE_RETURN_INSPECTION_ACCEPTED: '退款处理中',
+    AFTER_SALE_RETURN_INSPECTION_REJECTED: '验收拒绝',
+    RETURN_AUTHORIZED: '待寄回',
+    RETURN_SHIPMENT_SUBMITTED: '退货中',
+    RETURN_SHIPMENT_UPDATED: '退货中',
+    RETURN_RECEIVED: '待验收',
+    RETURN_INSPECTION_REJECTED: '验收拒绝',
+    RETURN_EXPIRED: '已取消',
     REFUND_STARTED: '退款处理中',
     REFUND_RECOVERY_RESUMED: '退款处理中',
     REFUND_SUCCEEDED: '已退款',
@@ -1050,6 +1404,35 @@
         trigger: 'change'
       }
     ],
+    itemApprovals: [
+      {
+        validator: (_rule, value, callback) => {
+          const items = Array.isArray(value) ? value : []
+          if (auditMode.value === 'approve' && !items.some((item) => item.approvedQuantity > 0)) {
+            callback(new Error('至少批准一件商品'))
+            return
+          }
+          callback()
+        },
+        trigger: 'change'
+      }
+    ],
+    returnAddressId: [
+      {
+        validator: (_rule, value, callback) => {
+          if (
+            auditMode.value === 'approve' &&
+            auditTarget.value?.afterSaleType === 'RETURN_REFUND' &&
+            !value
+          ) {
+            callback(new Error('请选择退货地址'))
+            return
+          }
+          callback()
+        },
+        trigger: 'change'
+      }
+    ],
     auditNote:
       auditMode.value === 'reject'
         ? [{ required: true, message: '请输入拒绝原因', trigger: 'blur' }]
@@ -1104,6 +1487,11 @@
   const formatStatus = (value?: string) => statusConfig(value).text
   const formatRefundStatus = (value?: string) => refundStatusConfig(value).text
   const formatAfterSaleType = (value?: string) => (value ? typeMap[value] || value : '-')
+  const formatInspectionResult = (value?: string | null) => {
+    if (value === 'ACCEPT' || value === 'ACCEPTED') return '验收通过'
+    if (value === 'REJECT' || value === 'REJECTED') return '验收拒绝'
+    return value || '-'
+  }
   const formatMediaKind = (value?: string) => {
     if (value === 'IMAGE') return '图片'
     if (value === 'VIDEO') return '视频'
@@ -1481,13 +1869,189 @@
     }
   })
 
-  const openAuditDialog = (mode: AuditMode, row: AuditTarget) => {
+  const canAdminAction = (
+    item: Pick<Api.AfterSale.Item, 'status' | 'allowedActions'>,
+    action: AfterSaleAdminAction
+  ) =>
+    adminAfterSaleActions({
+      status: item.status,
+      allowedActions: item.allowedActions,
+      canAudit: hasAuth('aftersale:audit')
+    }).includes(action)
+
+  const loadReturnAddresses = async () => {
+    returnAddressLoading.value = true
+    try {
+      returnAddresses.value = await fetchAfterSaleReturnAddresses()
+    } finally {
+      returnAddressLoading.value = false
+    }
+  }
+
+  const openAuditDialog = async (
+    mode: AuditMode,
+    row: Pick<Api.AfterSale.Summary, 'id' | 'afterSaleNo' | 'orderNo' | 'requestedAmountCent'> &
+      Partial<Pick<Api.AfterSale.Item, 'afterSaleType' | 'flowVersion' | 'items'>>
+  ) => {
     auditMode.value = mode
-    auditTarget.value = row
-    auditForm.approvedAmountYuan = (row.requestedAmountCent || 0) / 100
+    let detail: Api.AfterSale.Detail
+    try {
+      detail = row.items
+        ? (row as Api.AfterSale.Detail)
+        : await hydrateOrderContext(await fetchAfterSaleDetail(row.id))
+    } catch {
+      ElMessage.error('售后详情加载失败，请稍后重试')
+      return
+    }
+    auditTarget.value = {
+      id: detail.id,
+      afterSaleNo: detail.afterSaleNo,
+      orderNo: detail.orderNo,
+      requestedAmountCent: detail.requestedAmountCent,
+      afterSaleType: detail.afterSaleType,
+      flowVersion: detail.flowVersion,
+      items: detail.items || []
+    }
+    auditForm.approvedAmountYuan = (detail.requestedAmountCent || 0) / 100
     auditForm.auditNote = ''
+    auditForm.returnAddressId = undefined
+    auditForm.itemApprovals = (detail.items || []).map((item) => ({
+      orderItemId: item.orderItemId,
+      approvedQuantity: item.requestedQuantity
+    }))
+    if (mode === 'approve' && detail.afterSaleType === 'RETURN_REFUND') {
+      await loadReturnAddresses()
+      auditForm.returnAddressId =
+        enabledReturnAddresses.value.find((address) => address.defaultAddress)?.id ||
+        enabledReturnAddresses.value[0]?.id
+    }
     auditFormRef.value?.clearValidate()
     auditDialogVisible.value = true
+  }
+
+  const handleReceiveReturn = async () => {
+    const detail = currentDetail.value
+    if (!detail || !canAdminAction(detail, 'RECEIVE_RETURN')) return
+    await ElMessageBox.confirm(
+      '请先核对退货物流和实际包裹，确认已收到后将进入待验收状态。',
+      '确认收到退货',
+      { type: 'warning', confirmButtonText: '确认收货', cancelButtonText: '取消' }
+    )
+    returnOperating.value = true
+    try {
+      await receiveAfterSaleReturn(detail.id, '后台确认收到退货')
+      await refreshCurrentAfterSale(detail.id)
+    } finally {
+      returnOperating.value = false
+    }
+  }
+
+  const openInspectionDialog = () => {
+    const detail = currentDetail.value
+    if (!detail || !canAdminAction(detail, 'INSPECT_RETURN')) return
+    inspectionForm.decision = 'ACCEPT'
+    inspectionForm.note = ''
+    inspectionForm.items = detail.items.map((item) => ({
+      orderItemId: item.orderItemId,
+      restockQuantity: item.approvedQuantity || 0
+    }))
+    inspectionDialogVisible.value = true
+  }
+
+  const submitInspection = async () => {
+    const detail = currentDetail.value
+    if (!detail || !canAdminAction(detail, 'INSPECT_RETURN')) return
+    const note = inspectionForm.note.trim()
+    if (inspectionForm.decision === 'REJECT' && !note) {
+      ElMessage.warning('验收拒绝时必须填写原因')
+      return
+    }
+    await ElMessageBox.confirm(
+      inspectionForm.decision === 'ACCEPT'
+        ? '验收通过后将发起退款并按填写数量回库，是否继续？'
+        : '验收拒绝后不会发起退款，是否继续？',
+      '确认验收结果',
+      { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
+    )
+    returnOperating.value = true
+    try {
+      await inspectAfterSaleReturn(detail.id, {
+        decision: inspectionForm.decision,
+        note,
+        items: inspectionForm.items
+      })
+      inspectionDialogVisible.value = false
+      await refreshCurrentAfterSale(detail.id)
+    } finally {
+      returnOperating.value = false
+    }
+  }
+
+  const resetReturnAddressForm = (address?: Api.AfterSale.ReturnAddress) => {
+    editingReturnAddressId.value = address?.id || null
+    returnAddressForm.contactName = address?.contactName || ''
+    returnAddressForm.contactPhone = address?.contactPhone || ''
+    returnAddressForm.province = address?.province || ''
+    returnAddressForm.city = address?.city || ''
+    returnAddressForm.district = address?.district || ''
+    returnAddressForm.detailAddress = address?.detailAddress || ''
+    returnAddressForm.enabled = address?.enabled ?? true
+    returnAddressForm.defaultAddress = address?.defaultAddress ?? false
+    returnAddressForm.version = address?.version ?? null
+  }
+
+  const openReturnAddressManager = async () => {
+    if (!canManageReturnAddresses(hasAuth('aftersale:return-address:write'))) return
+    returnAddressDialogVisible.value = true
+    returnAddressEditing.value = false
+    await loadReturnAddresses()
+  }
+
+  const startCreateReturnAddress = () => {
+    resetReturnAddressForm()
+    returnAddressEditing.value = true
+  }
+
+  const startEditReturnAddress = (address: Api.AfterSale.ReturnAddress) => {
+    resetReturnAddressForm(address)
+    returnAddressEditing.value = true
+  }
+
+  const saveReturnAddress = async () => {
+    const required = [
+      returnAddressForm.contactName,
+      returnAddressForm.contactPhone,
+      returnAddressForm.province,
+      returnAddressForm.city,
+      returnAddressForm.district,
+      returnAddressForm.detailAddress
+    ]
+    if (required.some((value) => !value.trim())) {
+      ElMessage.warning('请完整填写联系人、电话和地址')
+      return
+    }
+    returnAddressSaving.value = true
+    try {
+      if (editingReturnAddressId.value) {
+        await updateAfterSaleReturnAddress(editingReturnAddressId.value, { ...returnAddressForm })
+      } else {
+        await createAfterSaleReturnAddress({ ...returnAddressForm })
+      }
+      returnAddressEditing.value = false
+      await loadReturnAddresses()
+    } finally {
+      returnAddressSaving.value = false
+    }
+  }
+
+  const handleDisableReturnAddress = async (address: Api.AfterSale.ReturnAddress) => {
+    await ElMessageBox.confirm(
+      `确定停用退货地址“${returnAddressText(address)}”吗？历史售后中的地址快照不受影响。`,
+      '停用退货地址',
+      { type: 'warning', confirmButtonText: '确认停用', cancelButtonText: '取消' }
+    )
+    await disableAfterSaleReturnAddress(address.id)
+    await loadReturnAddresses()
   }
 
   const canOperateRefund = (item?: Api.AfterSale.Item | null) =>
@@ -1590,8 +2154,8 @@
   const handleMoreCommand = (command: string | number | object, row: Api.AfterSale.Summary) => {
     if (command === 'records') void openRecords(row)
     if (command === 'order') openRelatedOrder(row.orderNo)
-    if (command === 'approve') openAuditDialog('approve', row)
-    if (command === 'reject') openAuditDialog('reject', row)
+    if (command === 'approve') void openAuditDialog('approve', row)
+    if (command === 'reject') void openAuditDialog('reject', row)
   }
 
   const submitAudit = async () => {
@@ -1603,12 +2167,18 @@
     const isApprove = auditMode.value === 'approve'
     await ElMessageBox.confirm(
       isApprove
-        ? `确定审核通过售后 ${target.afterSaleNo} 并立即发起退款吗？`
+        ? target.afterSaleType === 'RETURN_REFUND'
+          ? `确定审核通过售后 ${target.afterSaleNo} 并等待用户寄回商品吗？`
+          : `确定审核通过售后 ${target.afterSaleNo} 并按批准明细发起退款吗？`
         : `确定拒绝售后 ${target.afterSaleNo} 吗？`,
       '审核确认',
       {
         type: 'warning',
-        confirmButtonText: isApprove ? '确认并退款' : '确认拒绝',
+        confirmButtonText: isApprove
+          ? target.afterSaleType === 'RETURN_REFUND'
+            ? '确认通过并等待寄回'
+            : '确认并退款'
+          : '确认拒绝',
         cancelButtonText: '取消'
       }
     )
@@ -1617,8 +2187,11 @@
     try {
       if (isApprove) {
         await approveAfterSale(target.id, {
-          approvedAmountCent: target.requestedAmountCent,
-          auditNote
+          approvedAmountCent: target.flowVersion <= 1 ? target.requestedAmountCent : undefined,
+          auditNote,
+          returnAddressId:
+            target.afterSaleType === 'RETURN_REFUND' ? auditForm.returnAddressId : undefined,
+          items: auditForm.itemApprovals
         })
       } else {
         await rejectAfterSale(target.id, { auditNote })
@@ -1639,6 +2212,72 @@
 </script>
 
 <style scoped lang="scss">
+  .aftersale-table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .aftersale-table-toolbar :deep(.art-table-header) {
+    flex: 1;
+  }
+
+  .audit-item-list {
+    display: grid;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .audit-item {
+    display: flex;
+    padding: 10px 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .audit-item__product {
+    display: grid;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .audit-item__product span {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  .return-address-toolbar {
+    display: flex;
+    margin-bottom: 14px;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--el-text-color-secondary);
+  }
+
+  .address-default-tag {
+    margin-left: 4px;
+  }
+
+  .return-address-form {
+    margin-top: 18px;
+    padding: 16px 16px 4px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 10px;
+    background: var(--el-fill-color-lighter);
+  }
+
+  .return-address-form__footer {
+    display: flex;
+    padding-bottom: 12px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
   .aftersale-status-card {
     :deep(.el-card__body) {
       padding: 0 20px;

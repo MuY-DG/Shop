@@ -86,7 +86,8 @@ public class AppUserOverviewService {
                            from after_sale_request after_sale
                            where after_sale.user_id = :userId
                              and after_sale.status in (
-                               'REQUESTED', 'APPROVED', 'REFUNDING', 'REFUND_FAILED'
+                               'REQUESTED', 'APPROVED', 'WAITING_RETURN', 'RETURNING',
+                               'WAITING_INSPECTION', 'REFUNDING', 'REFUND_FAILED'
                              )) as active_after_sale_count,
                           (select coalesce(sum(conversation.app_unread_count), 0)
                            from customer_service_conversation conversation

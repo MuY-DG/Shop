@@ -10,6 +10,7 @@ platform="${SHOP_DEPLOY_PLATFORM:-linux/amd64}"
 transport="${SHOP_DEPLOY_TRANSPORT:-remote-build}"
 revision="$(git -C "$repository_dir" rev-parse --short=12 HEAD)"
 timestamp="$(date -u +%Y%m%d%H%M%S)"
+build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 release_image="shop-server:${revision}-${timestamp}"
 
 case "$transport" in
@@ -21,17 +22,29 @@ case "$transport" in
     ;;
 esac
 
-for command in ssh tar; do
+for command in git ssh tar; do
   command -v "$command" >/dev/null 2>&1 || {
     printf '缺少命令：%s\n' "$command" >&2
     exit 1
   }
 done
 
+if [[ -n "$(git -C "$repository_dir" status --porcelain --untracked-files=normal)" ]]; then
+  printf '工作区存在未提交改动，拒绝使用不准确的 Git SHA 部署。\n' >&2
+  printf '请先完成验证并提交本次发布范围，再重新执行部署。\n' >&2
+  exit 1
+fi
+
 "${script_dir}/validate-prod-env.sh"
+"${script_dir}/verify-flyway-migrations.sh"
+"${script_dir}/verify-test-layers.sh"
 
 if [[ "${SHOP_DEPLOY_SKIP_TESTS:-false}" != true ]]; then
+  printf '正在运行无 Docker 单元/H2 测试层（不包含 Testcontainers）。\n'
   (cd "$service_dir" && ./mvnw test)
+  printf '正在运行 Docker/Testcontainers 集成测试层。\n'
+  (cd "$service_dir" && ./mvnw -Pintegration verify)
+  "${script_dir}/assert-integration-test-results.sh" "${service_dir}/target/failsafe-reports"
 fi
 
 printf '正在通过 SSH 上传部署配置。\n'
@@ -81,6 +94,8 @@ case "$transport" in
         tar -xzf - -C \"\$build_dir\"
         sudo docker build \
           --platform '$platform' \
+          --build-arg 'SHOP_BUILD_GIT_SHA=$revision' \
+          --build-arg 'SHOP_BUILD_TIME=$build_time' \
           --tag '$release_image' \
           \"\$build_dir\"
       "
@@ -116,6 +131,8 @@ case "$transport" in
     printf '正在本机构建 %s（%s）。\n' "$release_image" "$platform"
     docker buildx build \
       --platform "$platform" \
+      --build-arg "SHOP_BUILD_GIT_SHA=$revision" \
+      --build-arg "SHOP_BUILD_TIME=$build_time" \
       --load \
       --tag "$release_image" \
       "$service_dir"
@@ -192,6 +209,7 @@ case "$transport" in
 esac
 
 printf '正在远程启动 MySQL、Redis 和生产后端。\n'
-ssh "$ssh_target" "sudo /opt/shop/shop-server/scripts/remote-deploy.sh '$release_image'"
+ssh "$ssh_target" \
+  "sudo /opt/shop/shop-server/scripts/remote-deploy.sh '$release_image' '$revision' '$build_time'"
 
 printf '部署完成：%s\n' "$release_image"

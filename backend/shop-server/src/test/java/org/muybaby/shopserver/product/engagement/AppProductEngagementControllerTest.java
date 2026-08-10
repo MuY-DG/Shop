@@ -3,6 +3,7 @@ package org.muybaby.shopserver.product.engagement;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
 import org.muybaby.shopserver.product.dto.AdminProductImageUpsertRequest;
@@ -42,6 +43,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @Testcontainers
+@Tag("integration")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AppProductEngagementControllerTest {
 

@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.order.cleanup;
 
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -14,12 +15,13 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers
+@Tag("integration")
 class OrderAggregateCleanupMySqlMigrationTest {
 
     private static final long ORDER_ID = 9_900_801L;
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4.10")
             .withDatabaseName("order_cleanup_migration")
             .withUsername("shop_test")
             .withPassword("shop_test")

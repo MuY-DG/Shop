@@ -108,6 +108,12 @@ export const API_ENDPOINTS = Object.freeze({
     list: "/app/after-sales",
     detail: (afterSaleId: number): string => `/app/after-sales/${afterSaleId}`,
     forOrder: (orderId: number): string => `/app/orders/${orderId}/after-sales`,
+    eligibility: (orderId: number): string =>
+      `/app/orders/${orderId}/after-sales/eligibility`,
+    quote: (orderId: number): string => `/app/orders/${orderId}/after-sales/quote`,
+    cancel: (afterSaleId: number): string => `/app/after-sales/${afterSaleId}/cancel`,
+    returnShipment: (afterSaleId: number): string =>
+      `/app/after-sales/${afterSaleId}/return-shipment`,
     evidence: (orderId: number): string => `/app/orders/${orderId}/after-sale-evidence`,
     evidenceUploads: (orderId: number): string =>
       `/app/orders/${orderId}/after-sale-evidence/upload-sessions`

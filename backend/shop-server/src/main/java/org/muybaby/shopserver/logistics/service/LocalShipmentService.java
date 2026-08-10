@@ -397,9 +397,9 @@ public class LocalShipmentService {
 
     private String buildItemDescription(long orderId) {
         List<OrderItemForShipment> items = jdbcClient.sql("""
-                        select product_title, quantity
+                        select product_title, quantity - refunded_quantity as quantity
                         from order_item
-                        where order_id = :orderId
+                        where order_id = :orderId and quantity > refunded_quantity
                         order by id
                         """)
                 .param("orderId", orderId)

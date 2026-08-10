@@ -6,6 +6,7 @@ import org.muybaby.shopserver.admin.log.service.AdminSystemLogRecorder;
 import org.muybaby.shopserver.admin.rbac.service.AdminRbacService;
 import org.muybaby.shopserver.aftersale.AppAfterSaleController;
 import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
+import org.muybaby.shopserver.aftersale.service.AppAfterSaleV2Service;
 import org.muybaby.shopserver.analytics.AppUserDailyActivityService;
 import org.muybaby.shopserver.auth.service.AppAuthService;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
@@ -96,6 +97,9 @@ class DirectUploadCancellationControllerTest {
 
     @MockitoBean
     private AppAfterSaleService appAfterSaleService;
+
+    @MockitoBean
+    private AppAfterSaleV2Service appAfterSaleV2Service;
 
     @MockitoBean
     private PathTokenKindResolver pathTokenKindResolver;

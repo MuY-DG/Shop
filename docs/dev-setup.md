@@ -63,14 +63,40 @@ cd backend/shop-server
 ./mvnw -Dtest=CouponSchemaTest,AdminCouponTemplateControllerTest,AppCouponControllerTest,CouponDiscountCalculatorTest test
 ```
 
-Full backend test suite:
+Docker-free backend unit/H2 layer:
 
 ```bash
 cd backend/shop-server
 ./mvnw test
 ```
 
-Expected result:
+This is the default fast layer. It intentionally excludes every JUnit 5 test tagged
+`integration`, so `BUILD SUCCESS` here does not claim that MySQL, Redis, Testcontainers,
+or database concurrency behavior was exercised.
+
+Docker/Testcontainers integration layer:
+
+```bash
+cd backend/shop-server
+docker info
+./mvnw -Pintegration verify
+./scripts/assert-integration-test-results.sh target/failsafe-reports
+./scripts/verify-test-layers.sh
+```
+
+The integration profile runs the tagged suite through Maven Failsafe against the pinned
+`mysql:8.4.10` and `redis:7.4.9-alpine` images. The report gate requires all current
+integration suites to produce XML results, a non-zero executed test count, and zero
+skipped tests. A missing Docker daemon is a failure, not an accepted skip.
+
+Flyway file naming, uniqueness, and continuous integer versions are checked separately:
+
+```bash
+cd backend/shop-server
+./scripts/verify-flyway-migrations.sh
+```
+
+Expected result for each executed layer:
 
 ```text
 BUILD SUCCESS
@@ -78,7 +104,7 @@ BUILD SUCCESS
 
 ## V85-V90 Focused Gates
 
-Run the focused backend slices from `backend/shop-server` before the full suite. These
+Run the focused backend slices from `backend/shop-server` before both test layers. These
 commands validate H2/Flyway and application behavior; they do not replace a disposable
 MySQL migration/concurrency run or any production-provider smoke check.
 
@@ -172,9 +198,11 @@ GET /app/compliance/documents/AFTER_SALE_POLICY/current
 ```
 
 The Mini Program resolves `develop`, `trial`, and `release` separately. The checked-in
-release API value intentionally remains unconfigured until a confirmed production HTTPS
-hostname is supplied; release rejects missing/placeholder, localhost, loopback,
-non-HTTPS, and `pay-dev` hosts and never falls back to development.
+release API is `https://api.muybaby6.icu`; release still rejects missing/placeholder,
+localhost, loopback, non-HTTPS, and `pay-dev` hosts and never falls back to development.
+The admin hostname is `https://admin.muybaby6.icu`. DNS and SAN TLS have been established,
+but every release must still recheck ingress, WeChat legal domains, callbacks, and a real
+device against the deployed Git SHA.
 
 ### V89 Product Publication
 

@@ -49,6 +49,57 @@ export function rejectAfterSale(afterSaleId: number, data: Api.AfterSale.AuditPa
   })
 }
 
+export function receiveAfterSaleReturn(afterSaleId: number, note = '') {
+  return request.post<Api.AfterSale.Item>({
+    url: `/admin/after-sales/${afterSaleId}/return-received`,
+    data: { note },
+    showSuccessMessage: true
+  })
+}
+
+export function inspectAfterSaleReturn(
+  afterSaleId: number,
+  data: Api.AfterSale.ReturnInspectionPayload
+) {
+  return request.post<Api.AfterSale.Item>({
+    url: `/admin/after-sales/${afterSaleId}/return-inspection`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function fetchAfterSaleReturnAddresses() {
+  return request.get<Api.AfterSale.ReturnAddress[]>({
+    url: '/admin/after-sale-return-addresses'
+  })
+}
+
+export function createAfterSaleReturnAddress(data: Api.AfterSale.ReturnAddressPayload) {
+  return request.post<Api.AfterSale.ReturnAddress>({
+    url: '/admin/after-sale-return-addresses',
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function updateAfterSaleReturnAddress(
+  addressId: number,
+  data: Api.AfterSale.ReturnAddressPayload
+) {
+  return request.put<Api.AfterSale.ReturnAddress>({
+    url: `/admin/after-sale-return-addresses/${addressId}`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function disableAfterSaleReturnAddress(addressId: number) {
+  return request.del<void>({
+    url: `/admin/after-sale-return-addresses/${addressId}`,
+    showSuccessMessage: true
+  })
+}
+
 export function retryClosedRefund(afterSaleId: number, data: Api.AfterSale.RefundOperationPayload) {
   return request.post<Api.AfterSale.Item>({
     url: `/admin/after-sales/${afterSaleId}/refund-retry`,

@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.logistics.service;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
@@ -49,6 +50,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
+@Tag("integration")
 @Import(ShipmentWorkflowMySqlConcurrencyTest.ProviderConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ShipmentWorkflowMySqlConcurrencyTest {

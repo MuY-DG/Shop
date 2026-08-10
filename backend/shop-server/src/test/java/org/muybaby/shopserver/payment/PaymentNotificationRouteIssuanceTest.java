@@ -499,7 +499,7 @@ class PaymentNotificationRouteIssuanceTest extends PaymentTestSupport {
     }
 
     @Test
-    void invalidRefundAmountAndNonClosedRetryRejectBeforeResolvingPaymentSecrets() throws Exception {
+    void excessiveRefundAmountAndNonClosedRetryRejectBeforeResolvingPaymentSecrets() throws Exception {
         seedEnabledPaymentConfig();
         RequestedAfterSale requested = requestedAfterSale("refund-ineligible-secret-user");
         String adminToken = adminLogin();
@@ -509,7 +509,7 @@ class PaymentNotificationRouteIssuanceTest extends PaymentTestSupport {
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"approvedAmountCent":6900,"auditNote":"金额不一致"}
+                                {"approvedAmountCent":6981,"auditNote":"金额超出申请"}
                                 """))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(paymentConfigResolver);

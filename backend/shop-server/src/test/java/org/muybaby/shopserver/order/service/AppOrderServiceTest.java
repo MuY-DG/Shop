@@ -29,6 +29,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -364,16 +365,46 @@ class AppOrderServiceTest {
         long userId = insertUser("detail-nullable");
         long orderId = insertDetailedOrder(userId, "CREATED", LocalDateTime.of(2026, 7, 9, 9, 0),
                 null, null, null, null, null);
+        LocalDateTime paymentExpiresAt = LocalDateTime.now(ZoneOffset.UTC).withNano(0).plusMinutes(15);
+        jdbcClient.sql("update shop_order set payment_expires_at = :paymentExpiresAt where id = :orderId")
+                .param("paymentExpiresAt", paymentExpiresAt)
+                .param("orderId", orderId)
+                .update();
 
         AppOrderDetailResponse detail = appOrderService.detail(appPrincipal(userId), orderId);
 
         assertThat(detail.paymentStatus()).isNull();
+        assertThat(detail.paymentExpiresAt()).isEqualTo(paymentExpiresAt);
+        assertThat(detail.paymentRemainingSeconds()).isBetween(895L, 900L);
         assertThat(detail.paidAt()).isNull();
         assertThat(detail.shipment()).isNull();
         assertThat(detail.latestAfterSale()).isNull();
         assertThat(detail.completedAt()).isNull();
         assertThat(detail.refundingAt()).isNull();
         assertThat(detail.refundedAt()).isNull();
+    }
+
+    @Test
+    void detailPrefersImmutableOrderDeadlineOverLegacyPaymentDeadline() {
+        long userId = insertUser("detail-order-payment-deadline");
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC).withNano(0);
+        LocalDateTime orderDeadline = now.plusMinutes(15);
+        long orderId = insertDetailedOrder(userId, "PAYING", now,
+                null, null, null, null, null);
+        jdbcClient.sql("update shop_order set payment_expires_at = :deadline where id = :orderId")
+                .param("deadline", orderDeadline)
+                .param("orderId", orderId)
+                .update();
+        insertPayment(orderId, "PAY-DEADLINE-" + orderId, "", "PAYING", null, now);
+        jdbcClient.sql("update payment_order set expires_at = :legacyDeadline where order_id = :orderId")
+                .param("legacyDeadline", now.plusHours(24))
+                .param("orderId", orderId)
+                .update();
+
+        AppOrderDetailResponse detail = appOrderService.detail(appPrincipal(userId), orderId);
+
+        assertThat(detail.paymentExpiresAt()).isEqualTo(orderDeadline);
+        assertThat(detail.paymentRemainingSeconds()).isBetween(895L, 900L);
     }
 
     @Test

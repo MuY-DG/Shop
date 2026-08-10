@@ -9,12 +9,36 @@
 
 import { h } from 'vue'
 
+export function resolveViewComponentCandidates(componentPath: string): [string, string] {
+  return [`../../views${componentPath}.vue`, `../../views${componentPath}/index.vue`]
+}
+
 export class ComponentLoader {
   private modules: Record<string, () => Promise<any>>
 
   constructor() {
-    // 动态导入 views 目录下所有 .vue 组件
-    this.modules = import.meta.glob('../../views/**/*.vue')
+    // 仅打包后端业务菜单会引用的视图，避免演示页面重新进入生产构建。
+    this.modules = import.meta.glob([
+      '../../views/account-rights/**/*.vue',
+      '../../views/aftersale/**/*.vue',
+      '../../views/compliance/**/*.vue',
+      '../../views/configuration/**/*.vue',
+      '../../views/content/**/*.vue',
+      '../../views/customer/**/*.vue',
+      '../../views/customer-service/**/*.vue',
+      '../../views/customer-service-management/**/*.vue',
+      '../../views/development/**/*.vue',
+      '../../views/finance/**/*.vue',
+      '../../views/guest/**/*.vue',
+      '../../views/index/**/*.vue',
+      '../../views/marketing/**/*.vue',
+      '../../views/operations/**/*.vue',
+      '../../views/order/**/*.vue',
+      '../../views/payment/**/*.vue',
+      '../../views/product/**/*.vue',
+      '../../views/storage/**/*.vue',
+      '../../views/system/**/*.vue'
+    ])
   }
 
   /**
@@ -26,8 +50,7 @@ export class ComponentLoader {
     }
 
     // 构建可能的路径
-    const fullPath = `../../views${componentPath}.vue`
-    const fullPathWithIndex = `../../views${componentPath}/index.vue`
+    const [fullPath, fullPathWithIndex] = resolveViewComponentCandidates(componentPath)
 
     // 先尝试直接路径，再尝试添加/index的路径
     const module = this.modules[fullPath] || this.modules[fullPathWithIndex]

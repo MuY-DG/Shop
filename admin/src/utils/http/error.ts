@@ -24,6 +24,7 @@
 import { AxiosError } from 'axios'
 import { ApiStatus } from './status'
 import { $t } from '@/locales'
+import { decodeErrorResponse } from './blob-error-response'
 
 // 错误响应接口
 export interface ErrorResponse {
@@ -124,7 +125,7 @@ const getErrorMessage = (status: number): string => {
  * @param error 错误对象
  * @returns 错误对象
  */
-export function handleError(error: AxiosError<ErrorResponse>): never {
+export async function handleError(error: AxiosError<ErrorResponse | Blob>): Promise<never> {
   // 处理取消的请求
   if (error.code === 'ERR_CANCELED') {
     console.warn('Request cancelled:', error.message)
@@ -133,7 +134,8 @@ export function handleError(error: AxiosError<ErrorResponse>): never {
 
   const statusCode = error.response?.status
   const responseData = error.response?.data
-  const errorMessage = responseData?.msg || error.message
+  const decodedResponse = await decodeErrorResponse(responseData)
+  const errorMessage = decodedResponse?.msg || error.message
   const requestConfig = error.config
 
   // 处理网络错误
@@ -144,9 +146,9 @@ export function handleError(error: AxiosError<ErrorResponse>): never {
     })
   }
 
-  if (typeof responseData?.code === 'number' && responseData.msg) {
-    throw new HttpError(responseData.msg, responseData.code, {
-      data: responseData,
+  if (decodedResponse) {
+    throw new HttpError(decodedResponse.msg, decodedResponse.code, {
+      data: decodedResponse,
       httpStatus: statusCode,
       url: requestConfig?.url,
       method: requestConfig?.method?.toUpperCase()

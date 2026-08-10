@@ -543,16 +543,16 @@ public class RefundRecoveryService {
     private void lockManualClaimParents(ManualClaimRoute route) {
         requireLock("""
                         select id
-                        from after_sale_request
-                        where id = :id
-                        for update
-                        """, route.afterSaleId());
-        requireLock("""
-                        select id
                         from shop_order
                         where id = :id
                         for update
                         """, route.orderId());
+        requireLock("""
+                        select id
+                        from after_sale_request
+                        where id = :id
+                        for update
+                        """, route.afterSaleId());
         requireLock("""
                         select id
                         from payment_order

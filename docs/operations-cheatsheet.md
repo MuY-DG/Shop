@@ -28,15 +28,21 @@ cd backend/shop-server
 ./mvnw -Dtest=具体测试类名 test
 ```
 
-正式发布前运行完整测试：
+正式发布前分别运行无 Docker 层和 Testcontainers 层：
 
 ```bash
 cd backend/shop-server
+# 仅单元/H2，明确排除 integration 标签
 ./mvnw test
+
+# 必须有 Docker，执行 MySQL/Redis 集成测试
+./mvnw -Pintegration verify
+./scripts/assert-integration-test-results.sh target/failsafe-reports
+./scripts/verify-test-layers.sh
 ```
 
-测试源码位于 `backend/shop-server/src/test/java`，测试报告位于
-`backend/shop-server/target/surefire-reports`。
+测试源码位于 `backend/shop-server/src/test/java`。默认报告在 `target/surefire-reports`，
+集成报告在 `target/failsafe-reports`。不得用第一条命令的结果代替完整后端门禁。
 
 ## Git
 
@@ -95,8 +101,11 @@ backend/shop-server/scripts/deploy-prod.sh txcloud
 公网健康检查：
 
 ```bash
-curl --fail https://pay-dev.muybaby6.icu/actuator/health
+curl --fail https://api.muybaby6.icu/actuator/health
+curl --fail https://api.muybaby6.icu/actuator/info
 ```
+
+`/actuator/info` 应只包含 `gitSha`、`buildTime`、`version` 和 `flywayVersion`。
 
 查看全部容器：
 

@@ -3,6 +3,7 @@ package org.muybaby.shopserver.aftersale.service;
 import org.muybaby.shopserver.aftersale.AdminAfterSaleStatusGroup;
 import org.muybaby.shopserver.aftersale.AfterSaleStatus;
 import org.muybaby.shopserver.aftersale.AfterSaleType;
+import org.muybaby.shopserver.aftersale.OrderRefundStatus;
 import org.muybaby.shopserver.aftersale.RefundOrderStatus;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleAuditRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleDetailResponse;
@@ -11,6 +12,8 @@ import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleStatusCountsResponse;
 import org.muybaby.shopserver.aftersale.dto.AdminAfterSaleSummaryResponse;
 import org.muybaby.shopserver.aftersale.dto.AdminRefundOperationRequest;
 import org.muybaby.shopserver.aftersale.dto.AdminRefundOperationResponse;
+import org.muybaby.shopserver.aftersale.dto.AdminReturnInspectionRequest;
+import org.muybaby.shopserver.aftersale.dto.AdminReturnReceiveRequest;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleEvidenceFileResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.dto.RefundOrderResponse;
@@ -90,6 +93,9 @@ public class AdminAfterSaleService {
     private final OrderStatusLogService orderStatusLogService;
     private final AfterSaleOrderContextQueryService orderContextQueryService;
     private final RefundRecoveryService refundRecoveryService;
+    private final AfterSaleV2WorkflowService afterSaleV2WorkflowService;
+    private final AfterSaleV2ReadService afterSaleV2ReadService;
+    private final AfterSaleStatusLogService afterSaleStatusLogService;
 
     public AdminAfterSaleService(
             JdbcClient jdbcClient,
@@ -100,7 +106,10 @@ public class AdminAfterSaleService {
             PlatformTransactionManager transactionManager,
             OrderStatusLogService orderStatusLogService,
             AfterSaleOrderContextQueryService orderContextQueryService,
-            RefundRecoveryService refundRecoveryService
+            RefundRecoveryService refundRecoveryService,
+            AfterSaleV2WorkflowService afterSaleV2WorkflowService,
+            AfterSaleV2ReadService afterSaleV2ReadService,
+            AfterSaleStatusLogService afterSaleStatusLogService
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentConfigResolver = paymentConfigResolver;
@@ -117,6 +126,9 @@ public class AdminAfterSaleService {
         this.orderStatusLogService = orderStatusLogService;
         this.orderContextQueryService = orderContextQueryService;
         this.refundRecoveryService = refundRecoveryService;
+        this.afterSaleV2WorkflowService = afterSaleV2WorkflowService;
+        this.afterSaleV2ReadService = afterSaleV2ReadService;
+        this.afterSaleStatusLogService = afterSaleStatusLogService;
     }
 
     public PageResult<AdminAfterSaleSummaryResponse> page(
@@ -374,23 +386,30 @@ public class AdminAfterSaleService {
     @Transactional
     public AfterSaleResponse reject(AuthenticatedPrincipal principal, Long afterSaleId, AdminAfterSaleAuditRequest request) {
         Long adminUserId = requireAdminUser(principal);
+        Long routeOrderId = jdbcClient.sql("select order_id from after_sale_request where id = :id")
+                .param("id", afterSaleId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        OrderRefundRow order = findOrderForUpdate(routeOrderId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         AfterSaleAuditRow afterSale = findAfterSaleForUpdate(afterSaleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-        if (!AUDITABLE_STATUSES.contains(afterSale.status())) {
+        if (!order.orderId().equals(afterSale.orderId())
+                || !AUDITABLE_STATUSES.contains(afterSale.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-        OrderRefundRow order = findOrderForUpdate(afterSale.orderId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         String auditNote = requireAuditNote(request == null ? null : request.auditNote());
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
-        jdbcClient.sql("""
+        requireUpdated(jdbcClient.sql("""
                         update after_sale_request
                         set status = :status,
                             audit_note = :auditNote,
                             reviewed_by = :reviewedBy,
                             reviewed_at = :reviewedAt,
+                            version = version + 1,
                             updated_at = :updatedAt
-                        where id = :afterSaleId
+                        where id = :afterSaleId and status = :expectedStatus
                         """)
                 .param("status", AfterSaleStatus.REJECTED.name())
                 .param("auditNote", auditNote)
@@ -398,7 +417,14 @@ public class AdminAfterSaleService {
                 .param("reviewedAt", now)
                 .param("updatedAt", now)
                 .param("afterSaleId", afterSaleId)
-                .update();
+                .param("expectedStatus", AfterSaleStatus.REQUESTED.name())
+                .update());
+        if (afterSale.flowVersion() >= 2) {
+            afterSaleStatusLogService.record(
+                    afterSaleId, afterSale.status(), AfterSaleStatus.REJECTED.name(),
+                    "AFTER_SALE_REJECTED", "ADMIN", adminUserId,
+                    "售后审核拒绝：" + auditNote, now);
+        }
         orderStatusLogService.record(
                 order.orderId(), afterSaleId, order.status(), order.status(),
                 "AFTER_SALE_REJECTED", "ADMIN", adminUserId,
@@ -409,10 +435,54 @@ public class AdminAfterSaleService {
 
     public AfterSaleResponse approve(AuthenticatedPrincipal principal, Long afterSaleId, AdminAfterSaleAuditRequest request) {
         Long adminUserId = requireAdminUser(principal);
-        long approvedAmountCent = requireApprovedAmount(request == null ? null : request.approvedAmountCent());
+        if (afterSaleV2WorkflowService.isV2(afterSaleId)
+                && AfterSaleType.RETURN_REFUND.name().equals(afterSaleV2WorkflowService.type(afterSaleId))) {
+            afterSaleV2WorkflowService.approveReturn(adminUserId, afterSaleId, request);
+            return requireResponse(afterSaleId);
+        }
+        long approvedAmountCent = afterSaleV2WorkflowService.isV2(afterSaleId)
+                ? afterSaleV2WorkflowService.previewApproval(afterSaleId, request).approvedAmountCent()
+                : requireApprovedAmount(request == null ? null : request.approvedAmountCent());
         String auditNote = normalizeAuditNote(request == null ? null : request.auditNote());
         AfterSaleResponse response = withoutTransaction.execute(status -> approveOutsideTransaction(
-                adminUserId, afterSaleId, approvedAmountCent, auditNote));
+                adminUserId, afterSaleId, approvedAmountCent, auditNote, request, null));
+        if (response == null) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return response;
+    }
+
+    public AfterSaleResponse receiveReturn(
+            AuthenticatedPrincipal principal,
+            Long afterSaleId,
+            AdminReturnReceiveRequest request
+    ) {
+        Long adminUserId = requireAdminUser(principal);
+        afterSaleV2WorkflowService.receiveReturn(
+                adminUserId, afterSaleId, request == null ? null : request.note());
+        return requireResponse(afterSaleId);
+    }
+
+    public AfterSaleResponse inspectReturn(
+            AuthenticatedPrincipal principal,
+            Long afterSaleId,
+            AdminReturnInspectionRequest request
+    ) {
+        Long adminUserId = requireAdminUser(principal);
+        String decision = request == null || request.decision() == null
+                ? "" : request.decision().trim().toUpperCase(Locale.ROOT);
+        if ("REJECT".equals(decision) || "REJECTED".equals(decision)) {
+            afterSaleV2WorkflowService.rejectInspection(
+                    adminUserId, afterSaleId, request == null ? null : request.note());
+            return requireResponse(afterSaleId);
+        }
+        if (!"ACCEPT".equals(decision) && !"ACCEPTED".equals(decision)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        long approvedAmountCent = requireExistingApprovedAmount(afterSaleId);
+        AfterSaleResponse response = withoutTransaction.execute(status -> approveOutsideTransaction(
+                adminUserId, afterSaleId, approvedAmountCent,
+                normalizeAuditNote(request.note()), null, request));
         if (response == null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
@@ -469,7 +539,10 @@ public class AdminAfterSaleService {
                     && !RefundOrderStatus.FAILED.name().equals(target.refundStatus()))
                     || (!AfterSaleStatus.REFUNDING.name().equals(target.afterSaleStatus())
                     && !AfterSaleStatus.REFUND_FAILED.name().equals(target.afterSaleStatus()))
-                    || !OrderStatus.REFUNDING.name().equals(target.orderStatus())
+                    || (target.flowVersion() < 2
+                    ? !OrderStatus.REFUNDING.name().equals(target.orderStatus())
+                    : !(REFUNDABLE_ORDER_STATUSES.contains(target.orderStatus())
+                    || OrderStatus.REFUNDING.name().equals(target.orderStatus())))
                     || "CLOSED".equals(target.callbackStatus())
                     || refundRecoveryService.isRecoveryClaimActive(
                     target.recoveryClaimToken(), target.recoveryClaimedAt())) {
@@ -519,6 +592,7 @@ public class AdminAfterSaleService {
                     int afterSaleRows = jdbcClient.sql("""
                                     update after_sale_request
                                     set status = :status,
+                                        version = version + 1,
                                         updated_at = :updatedAt
                                     where id = :afterSaleId
                                       and status = :expectedStatus
@@ -530,6 +604,34 @@ public class AdminAfterSaleService {
                             .update();
                     if (afterSaleRows != 1) {
                         throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+                    }
+                    if (target.flowVersion() >= 2) {
+                        requireUpdated(jdbcClient.sql("""
+                                        update shop_order
+                                        set refund_status = :refundStatus, updated_at = :now
+                                        where id = :orderId and status = :orderStatus
+                                        """)
+                                .param("refundStatus", OrderRefundStatus.REFUND_FAILED.name())
+                                .param("now", now)
+                                .param("orderId", target.orderId())
+                                .param("orderStatus", target.orderStatus())
+                                .update());
+                        afterSaleStatusLogService.record(
+                                afterSaleId, AfterSaleStatus.REFUNDING.name(),
+                                AfterSaleStatus.REFUND_FAILED.name(),
+                                "REFUND_MANUAL_INTERVENTION", "ADMIN", adminUserId,
+                                auditDescription("人工介入退款", note), now);
+                    } else {
+                        requireUpdated(jdbcClient.sql("""
+                                        update shop_order
+                                        set refund_status = :refundStatus, updated_at = :now
+                                        where id = :orderId and status = :orderStatus
+                                        """)
+                                .param("refundStatus", OrderRefundStatus.REFUND_FAILED.name())
+                                .param("now", now)
+                                .param("orderId", target.orderId())
+                                .param("orderStatus", OrderStatus.REFUNDING.name())
+                                .update());
                     }
                 }
             }
@@ -654,13 +756,16 @@ public class AdminAfterSaleService {
             Long adminUserId,
             Long afterSaleId,
             long approvedAmountCent,
-            String auditNote
+            String auditNote,
+            AdminAfterSaleAuditRequest auditRequest,
+            AdminReturnInspectionRequest inspectionRequest
     ) {
         RefundProviderPreflight providerPreflight = preflightRefundProvider(
                 afterSaleId, RefundPreflightMode.APPROVE, approvedAmountCent);
         PreparedRefundRequest refundContext = refundStateTransaction.execute(status ->
                 prepareRefundRequest(
-                        adminUserId, afterSaleId, approvedAmountCent, auditNote, providerPreflight));
+                        adminUserId, afterSaleId, approvedAmountCent, auditNote,
+                        auditRequest, inspectionRequest, providerPreflight));
         if (refundContext == null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
@@ -695,11 +800,15 @@ public class AdminAfterSaleService {
                                po.payment_config_fingerprint,
                                po.amount_cent as payment_amount_cent,
                                asr.status as after_sale_status,
+                               asr.flow_version,
+                               asr.after_sale_type,
                                asr.requested_amount_cent,
                                asr.approved_amount_cent,
                                o.id as order_id,
                                o.status as order_status,
                                o.paid_amount_cent,
+                               o.refund_status as order_refund_status,
+                               o.refunded_amount_cent,
                                ro.id as latest_refund_id,
                                ro.order_id as latest_refund_order_id,
                                ro.payment_order_id as latest_refund_payment_order_id,
@@ -728,11 +837,15 @@ public class AdminAfterSaleService {
                         rs.getString("payment_config_fingerprint"),
                         rs.getLong("payment_amount_cent"),
                         rs.getString("after_sale_status"),
+                        rs.getInt("flow_version"),
+                        rs.getString("after_sale_type"),
                         rs.getLong("requested_amount_cent"),
                         rs.getObject("approved_amount_cent", Long.class),
                         rs.getLong("order_id"),
                         rs.getString("order_status"),
                         rs.getLong("paid_amount_cent"),
+                        rs.getString("order_refund_status"),
+                        rs.getLong("refunded_amount_cent"),
                         rs.getObject("latest_refund_id", Long.class),
                         rs.getObject("latest_refund_order_id", Long.class),
                         rs.getObject("latest_refund_payment_order_id", Long.class),
@@ -758,6 +871,10 @@ public class AdminAfterSaleService {
             RefundPaymentIdentity identity,
             Long approvedAmountCent
     ) {
+        if (identity.flowVersion() >= 2) {
+            requireEligibleV2RefundPreflight(mode, identity, approvedAmountCent);
+            return;
+        }
         if (mode == RefundPreflightMode.APPROVE) {
             if (!AUDITABLE_STATUSES.contains(identity.afterSaleStatus())
                     || !REFUNDABLE_ORDER_STATUSES.contains(identity.orderStatus())
@@ -792,6 +909,54 @@ public class AdminAfterSaleService {
         }
     }
 
+    private void requireEligibleV2RefundPreflight(
+            RefundPreflightMode mode,
+            RefundPaymentIdentity identity,
+            Long approvedAmountCent
+    ) {
+        boolean eligibleOrderStatus = REFUNDABLE_ORDER_STATUSES.contains(identity.orderStatus())
+                || mode == RefundPreflightMode.CLOSED_RETRY
+                && OrderStatus.REFUNDING.name().equals(identity.orderStatus());
+        if (!eligibleOrderStatus
+                || identity.paymentAmountCent() != identity.paidAmountCent()
+                || identity.refundedAmountCent() < 0
+                || identity.refundedAmountCent() > identity.paidAmountCent()) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        if (mode == RefundPreflightMode.APPROVE) {
+            boolean expectedState = AfterSaleType.REFUND_ONLY.name().equals(identity.afterSaleType())
+                    ? AfterSaleStatus.REQUESTED.name().equals(identity.afterSaleStatus())
+                    : AfterSaleType.RETURN_REFUND.name().equals(identity.afterSaleType())
+                    && AfterSaleStatus.WAITING_INSPECTION.name().equals(identity.afterSaleStatus());
+            long remainingAmountCent = identity.paidAmountCent() - identity.refundedAmountCent();
+            if (!expectedState
+                    || identity.latestRefundId() != null
+                    || approvedAmountCent == null
+                    || approvedAmountCent <= 0
+                    || approvedAmountCent > identity.requestedAmountCent()
+                    || approvedAmountCent > remainingAmountCent) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            return;
+        }
+        long remainingAmountCent = identity.paidAmountCent() - identity.refundedAmountCent();
+        if (!AfterSaleStatus.REFUND_FAILED.name().equals(identity.afterSaleStatus())
+                || identity.latestRefundId() == null
+                || identity.latestRefundId() <= 0
+                || !identity.orderId().equals(identity.latestRefundOrderId())
+                || !identity.paymentOrderId().equals(identity.latestRefundPaymentOrderId())
+                || !RefundOrderStatus.FAILED.name().equals(identity.latestRefundStatus())
+                || !"CLOSED".equals(identity.latestRefundCallbackStatus())
+                || identity.latestRefundAmountCent() == null
+                || identity.latestRefundAmountCent() <= 0
+                || identity.latestRefundAmountCent() > remainingAmountCent
+                || !identity.latestRefundAmountCent().equals(identity.afterSaleApprovedAmountCent())
+                || refundRecoveryService.isRecoveryClaimActive(
+                identity.recoveryClaimToken(), identity.recoveryClaimedAt())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
     private void requireMatchingPreflight(
             PaymentOrderRow payment,
             RefundProviderPreflight providerPreflight
@@ -810,25 +975,39 @@ public class AdminAfterSaleService {
             Long afterSaleId,
             long approvedAmountCent,
             String auditNote,
+            AdminAfterSaleAuditRequest auditRequest,
+            AdminReturnInspectionRequest inspectionRequest,
             RefundProviderPreflight providerPreflight
     ) {
+        OrderRefundRow order = findOrderForUpdate(providerPreflight.identity().orderId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         AfterSaleAuditRow afterSale = findAfterSaleForUpdate(afterSaleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-        if (!AUDITABLE_STATUSES.contains(afterSale.status())) {
+        if (!order.orderId().equals(afterSale.orderId())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-        if (approvedAmountCent > afterSale.requestedAmountCent()) {
+        boolean v2 = afterSale.flowVersion() >= 2;
+        boolean expectedAfterSaleStatus = v2
+                ? (AfterSaleType.REFUND_ONLY.name().equals(afterSale.afterSaleType())
+                && AfterSaleStatus.REQUESTED.name().equals(afterSale.status()))
+                || (AfterSaleType.RETURN_REFUND.name().equals(afterSale.afterSaleType())
+                && AfterSaleStatus.WAITING_INSPECTION.name().equals(afterSale.status()))
+                : AUDITABLE_STATUSES.contains(afterSale.status());
+        if (!expectedAfterSaleStatus) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        if (approvedAmountCent <= 0 || approvedAmountCent > afterSale.requestedAmountCent()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-
-        OrderRefundRow order = findOrderForUpdate(afterSale.orderId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         if (!REFUNDABLE_ORDER_STATUSES.contains(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-        if (approvedAmountCent != afterSale.requestedAmountCent()
-                || approvedAmountCent != order.paidAmountCent()) {
+        if (!v2 && (approvedAmountCent != afterSale.requestedAmountCent()
+                || approvedAmountCent != order.paidAmountCent())) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (v2 && hasProcessingRefund(order.orderId())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         PaymentOrderRow payment = findPaidPaymentForUpdate(order.orderId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
@@ -839,12 +1018,44 @@ public class AdminAfterSaleService {
         rejectIfRefundOrderExists(afterSaleId);
 
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        boolean restockRequired;
+        if (v2) {
+            AfterSaleV2WorkflowService.ApprovalPlan plan;
+            if (AfterSaleType.RETURN_REFUND.name().equals(afterSale.afterSaleType())) {
+                plan = afterSaleV2WorkflowService.applyInspectionAcceptanceLocked(
+                        afterSaleId,
+                        inspectionRequest == null ? null : inspectionRequest.items(),
+                        inspectionRequest == null ? auditNote : inspectionRequest.note(),
+                        adminUserId,
+                        now);
+            } else {
+                boolean unshipped = OrderStatus.PAID.name().equals(order.status())
+                        && order.shippedAt() == null
+                        && !shipmentExists(order.orderId());
+                plan = afterSaleV2WorkflowService.applyRefundOnlyApprovalLocked(
+                        afterSaleId, auditRequest, unshipped, now);
+            }
+            if (plan.approvedAmountCent() != approvedAmountCent) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            long refundedAfter;
+            try {
+                refundedAfter = Math.addExact(order.refundedAmountCent(), approvedAmountCent);
+            } catch (ArithmeticException exception) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            if (refundedAfter > order.paidAmountCent()) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            restockRequired = hasRestockItems(afterSaleId);
+        } else {
+            restockRequired = OrderStatus.PAID.name().equals(order.status())
+                    && order.shippedAt() == null
+                    && !shipmentExists(order.orderId());
+        }
         String outRefundNo = nextRefundNo(now);
         String notificationRouteToken = providerPreflight.notificationRouteToken();
         String providerReason = WechatRefundRequest.providerSafeReason(auditNote);
-        boolean restockRequired = OrderStatus.PAID.name().equals(order.status())
-                && order.shippedAt() == null
-                && !shipmentExists(order.orderId());
 
         jdbcClient.sql("""
                         insert into refund_order
@@ -881,15 +1092,17 @@ public class AdminAfterSaleService {
                 .param("outRefundNo", outRefundNo)
                 .query(Long.class)
                 .single();
-        jdbcClient.sql("""
+        int afterSaleRows = jdbcClient.sql("""
                         update after_sale_request
                         set status = :status,
                             approved_amount_cent = :approvedAmountCent,
                             audit_note = :auditNote,
                             reviewed_by = :reviewedBy,
                             reviewed_at = :reviewedAt,
+                            version = version + 1,
                             updated_at = :updatedAt
                         where id = :afterSaleId
+                          and status = :expectedStatus
                         """)
                 .param("status", AfterSaleStatus.REFUNDING.name())
                 .param("approvedAmountCent", approvedAmountCent)
@@ -898,24 +1111,64 @@ public class AdminAfterSaleService {
                 .param("reviewedAt", now)
                 .param("updatedAt", now)
                 .param("afterSaleId", afterSaleId)
+                .param("expectedStatus", afterSale.status())
                 .update();
-        jdbcClient.sql("""
-                        update shop_order
-                        set status = :status,
-                            refunding_at = :refundingAt,
-                            updated_at = :updatedAt
-                        where id = :orderId
-                        """)
-                .param("status", OrderStatus.REFUNDING.name())
-                .param("refundingAt", now)
-                .param("updatedAt", now)
-                .param("orderId", order.orderId())
-                .update();
-        orderStatusLogService.record(
-                order.orderId(), afterSaleId, order.status(), OrderStatus.REFUNDING.name(),
-                "REFUND_STARTED", "ADMIN", adminUserId,
-                "售后审核通过，开始退款", now
-        );
+        requireUpdated(afterSaleRows);
+        if (v2) {
+            long refundedAfter = order.refundedAmountCent() + approvedAmountCent;
+            boolean fullyRefunding = refundedAfter == order.paidAmountCent();
+            String refundStatus = fullyRefunding
+                    ? OrderRefundStatus.FULL_REFUNDING.name()
+                    : OrderRefundStatus.PARTIAL_REFUNDING.name();
+            String targetOrderStatus = fullyRefunding
+                    ? OrderStatus.REFUNDING.name() : order.status();
+            int orderRows = jdbcClient.sql("""
+                            update shop_order
+                            set status = :targetOrderStatus,
+                                refund_status = :refundStatus,
+                                refunding_at = coalesce(refunding_at, :refundingAt),
+                                updated_at = :updatedAt
+                            where id = :orderId
+                              and status = :expectedOrderStatus
+                              and refunded_amount_cent = :refundedAmountCent
+                            """)
+                    .param("targetOrderStatus", targetOrderStatus)
+                    .param("refundStatus", refundStatus)
+                    .param("refundingAt", now)
+                    .param("updatedAt", now)
+                    .param("orderId", order.orderId())
+                    .param("expectedOrderStatus", order.status())
+                    .param("refundedAmountCent", order.refundedAmountCent())
+                    .update();
+            requireUpdated(orderRows);
+            afterSaleStatusLogService.record(
+                    afterSaleId, afterSale.status(), AfterSaleStatus.REFUNDING.name(),
+                    "REFUND_STARTED", "ADMIN", adminUserId,
+                    "售后审核通过，开始退款", now);
+            orderStatusLogService.record(
+                    order.orderId(), afterSaleId, order.status(), targetOrderStatus,
+                    "REFUND_STARTED", "ADMIN", adminUserId,
+                    "售后审核通过，开始退款", now);
+        } else {
+            jdbcClient.sql("""
+                            update shop_order
+                            set status = :status,
+                                refund_status = :refundStatus,
+                                refunding_at = :refundingAt,
+                                updated_at = :updatedAt
+                            where id = :orderId
+                            """)
+                    .param("status", OrderStatus.REFUNDING.name())
+                    .param("refundStatus", OrderRefundStatus.FULL_REFUNDING.name())
+                    .param("refundingAt", now)
+                    .param("updatedAt", now)
+                    .param("orderId", order.orderId())
+                    .update();
+            orderStatusLogService.record(
+                    order.orderId(), afterSaleId, order.status(), OrderStatus.REFUNDING.name(),
+                    "REFUND_STARTED", "ADMIN", adminUserId,
+                    "售后审核通过，开始退款", now);
+        }
         return new PreparedRefundRequest(
                 refundOrderId,
                 providerPreflight.config(),
@@ -935,15 +1188,18 @@ public class AdminAfterSaleService {
             String operationNote,
             RefundProviderPreflight providerPreflight
     ) {
+        OrderRefundRow order = findOrderForUpdate(providerPreflight.identity().orderId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         AfterSaleAuditRow afterSale = findAfterSaleForUpdate(afterSaleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-        if (!AfterSaleStatus.REFUND_FAILED.name().equals(afterSale.status())) {
+        if (!order.orderId().equals(afterSale.orderId())
+                || !AfterSaleStatus.REFUND_FAILED.name().equals(afterSale.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-
-        OrderRefundRow order = findOrderForUpdate(afterSale.orderId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
-        if (!OrderStatus.REFUNDING.name().equals(order.status())) {
+        boolean v2 = afterSale.flowVersion() >= 2;
+        if (v2 ? !(REFUNDABLE_ORDER_STATUSES.contains(order.status())
+                || OrderStatus.REFUNDING.name().equals(order.status()))
+                : !OrderStatus.REFUNDING.name().equals(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
 
@@ -956,18 +1212,22 @@ public class AdminAfterSaleService {
 
         RefundRetrySource source = findLatestRefundForUpdate(afterSaleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
-        if (!RefundOrderStatus.FAILED.name().equals(source.status())
+        boolean commonInvalid = !RefundOrderStatus.FAILED.name().equals(source.status())
                 || !"CLOSED".equals(source.callbackStatus())
                 || refundRecoveryService.isRecoveryClaimActive(
                 source.recoveryClaimToken(), source.recoveryClaimedAt())
                 || !order.orderId().equals(source.orderId())
                 || !payment.id().equals(source.paymentOrderId())
                 || source.refundAmountCent() <= 0
-                || source.refundAmountCent() != order.paidAmountCent()
-                || source.refundAmountCent() != payment.amountCent()
-                || source.refundAmountCent() != afterSale.requestedAmountCent()
                 || afterSale.approvedAmountCent() == null
-                || source.refundAmountCent() != afterSale.approvedAmountCent()) {
+                || source.refundAmountCent() != afterSale.approvedAmountCent();
+        boolean amountInvalid = v2
+                ? payment.amountCent() != order.paidAmountCent()
+                || source.refundAmountCent() > order.paidAmountCent() - order.refundedAmountCent()
+                : source.refundAmountCent() != order.paidAmountCent()
+                || source.refundAmountCent() != payment.amountCent()
+                || source.refundAmountCent() != afterSale.requestedAmountCent();
+        if (commonInvalid || amountInvalid) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
 
@@ -1017,6 +1277,7 @@ public class AdminAfterSaleService {
         int updated = jdbcClient.sql("""
                         update after_sale_request
                         set status = :status,
+                            version = version + 1,
                             updated_at = :updatedAt
                         where id = :afterSaleId
                           and status = :expectedStatus
@@ -1026,18 +1287,47 @@ public class AdminAfterSaleService {
                 .param("afterSaleId", afterSaleId)
                 .param("expectedStatus", AfterSaleStatus.REFUND_FAILED.name())
                 .update();
-        if (updated != 1) {
-            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        requireUpdated(updated);
+        String logDescription = auditDescription(
+                "渠道退款关闭后新单重试：旧退款=" + source.refundOrderId()
+                        + "/" + source.outRefundNo()
+                        + "，新退款=" + refundOrderId + "/" + outRefundNo,
+                operationNote);
+        if (v2) {
+            long refundAfter = order.refundedAmountCent() + source.refundAmountCent();
+            String refundStatus = refundAfter == order.paidAmountCent()
+                    ? OrderRefundStatus.FULL_REFUNDING.name()
+                    : OrderRefundStatus.PARTIAL_REFUNDING.name();
+            requireUpdated(jdbcClient.sql("""
+                            update shop_order
+                            set refund_status = :refundStatus, updated_at = :now
+                            where id = :orderId
+                              and refunded_amount_cent = :refundedAmountCent
+                            """)
+                    .param("refundStatus", refundStatus)
+                    .param("now", now)
+                    .param("orderId", order.orderId())
+                    .param("refundedAmountCent", order.refundedAmountCent())
+                    .update());
+            afterSaleStatusLogService.record(
+                    afterSaleId, AfterSaleStatus.REFUND_FAILED.name(), AfterSaleStatus.REFUNDING.name(),
+                    "REFUND_RETRIED", "ADMIN", adminUserId, logDescription, now);
+        } else {
+            requireUpdated(jdbcClient.sql("""
+                            update shop_order
+                            set refund_status = :refundStatus, updated_at = :now
+                            where id = :orderId and status = :orderStatus
+                            """)
+                    .param("refundStatus", OrderRefundStatus.FULL_REFUNDING.name())
+                    .param("now", now)
+                    .param("orderId", order.orderId())
+                    .param("orderStatus", OrderStatus.REFUNDING.name())
+                    .update());
         }
         orderStatusLogService.record(
-                order.orderId(), afterSaleId, OrderStatus.REFUNDING.name(), OrderStatus.REFUNDING.name(),
+                order.orderId(), afterSaleId, order.status(), order.status(),
                 "REFUND_RETRIED", "ADMIN", adminUserId,
-                auditDescription(
-                        "渠道退款关闭后新单重试：旧退款=" + source.refundOrderId()
-                                + "/" + source.outRefundNo()
-                                + "，新退款=" + refundOrderId + "/" + outRefundNo,
-                        operationNote),
-                now
+                logDescription, now
         );
 
         return new PreparedRefundRequest(
@@ -1234,6 +1524,7 @@ public class AdminAfterSaleService {
                                ro.recovery_claim_token,
                                ro.recovery_claimed_at,
                                asr.status as after_sale_status,
+                               asr.flow_version,
                                o.status as order_status
                         from refund_order ro
                         join after_sale_request asr on asr.id = ro.after_sale_id
@@ -1258,10 +1549,18 @@ public class AdminAfterSaleService {
             Long afterSaleId,
             Long refundOrderId
     ) {
+        Long orderId = jdbcClient.sql("select order_id from after_sale_request where id = :id")
+                .param("id", afterSaleId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+        OrderRefundRow order = findOrderForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         AfterSaleAuditRow afterSale = findAfterSaleForUpdate(afterSaleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
-        OrderRefundRow order = findOrderForUpdate(afterSale.orderId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+        if (!order.orderId().equals(afterSale.orderId())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
         return jdbcClient.sql("""
                         select ro.id,
                                ro.after_sale_id,
@@ -1294,6 +1593,7 @@ public class AdminAfterSaleService {
                         rs.getString("recovery_claim_token"),
                         rs.getObject("recovery_claimed_at", LocalDateTime.class),
                         afterSale.status(),
+                        afterSale.flowVersion(),
                         order.status()
                 ))
                 .optional()
@@ -1310,6 +1610,7 @@ public class AdminAfterSaleService {
                 rs.getString("recovery_claim_token"),
                 rs.getObject("recovery_claimed_at", LocalDateTime.class),
                 rs.getString("after_sale_status"),
+                rs.getInt("flow_version"),
                 rs.getString("order_status")
         );
     }
@@ -1340,6 +1641,8 @@ public class AdminAfterSaleService {
                         select asr.id,
                                asr.after_sale_no,
                                asr.order_id,
+                               asr.after_sale_type,
+                               asr.flow_version,
                                asr.status,
                                asr.reason,
                                asr.requested_amount_cent,
@@ -1359,6 +1662,8 @@ public class AdminAfterSaleService {
                         select id as order_id,
                                status,
                                paid_amount_cent,
+                               refund_status,
+                               refunded_amount_cent,
                                shipped_at
                         from shop_order
                         where id = :orderId
@@ -1440,6 +1745,54 @@ public class AdminAfterSaleService {
                 .single() > 0L;
     }
 
+    private boolean hasProcessingRefund(Long orderId) {
+        return jdbcClient.sql("""
+                        select count(*) from refund_order
+                        where order_id = :orderId and status = :status
+                        """)
+                .param("orderId", orderId)
+                .param("status", RefundOrderStatus.PROCESSING.name())
+                .query(Long.class)
+                .single() > 0L;
+    }
+
+    private boolean hasRestockItems(Long afterSaleId) {
+        return jdbcClient.sql("""
+                        select count(*) from after_sale_item
+                        where after_sale_id = :afterSaleId and restock_quantity > 0
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query(Long.class)
+                .single() > 0L;
+    }
+
+    private long requireExistingApprovedAmount(Long afterSaleId) {
+        Long amount = jdbcClient.sql("""
+                        select approved_amount_cent
+                        from after_sale_request
+                        where id = :afterSaleId
+                          and flow_version >= 2
+                          and after_sale_type = :afterSaleType
+                          and status = :status
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .param("afterSaleType", AfterSaleType.RETURN_REFUND.name())
+                .param("status", AfterSaleStatus.WAITING_INSPECTION.name())
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+        if (amount <= 0) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return amount;
+    }
+
+    private void requireUpdated(int rows) {
+        if (rows != 1) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
     private AfterSaleResponse requireResponse(Long afterSaleId) {
         AfterSaleRow row = jdbcClient.sql("""
                         select asr.id,
@@ -1467,7 +1820,7 @@ public class AdminAfterSaleService {
                 .query(this::mapAfterSale)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-        return toResponse(row);
+        return afterSaleV2ReadService.decorate(toResponse(row));
     }
 
     private AfterSaleResponse toResponse(AfterSaleRow row) {
@@ -1626,6 +1979,8 @@ public class AdminAfterSaleService {
         return new AfterSaleAuditRow(
                 rs.getLong("id"),
                 rs.getLong("order_id"),
+                rs.getString("after_sale_type"),
+                rs.getInt("flow_version"),
                 rs.getString("status"),
                 rs.getString("reason"),
                 rs.getLong("requested_amount_cent"),
@@ -1639,6 +1994,8 @@ public class AdminAfterSaleService {
                 rs.getLong("order_id"),
                 rs.getString("status"),
                 rs.getLong("paid_amount_cent"),
+                rs.getString("refund_status"),
+                rs.getLong("refunded_amount_cent"),
                 rs.getObject("shipped_at", LocalDateTime.class)
         );
     }
@@ -1761,6 +2118,8 @@ public class AdminAfterSaleService {
     private record AfterSaleAuditRow(
             Long id,
             Long orderId,
+            String afterSaleType,
+            int flowVersion,
             String status,
             String reason,
             long requestedAmountCent,
@@ -1773,6 +2132,8 @@ public class AdminAfterSaleService {
             Long orderId,
             String status,
             long paidAmountCent,
+            String refundStatus,
+            long refundedAmountCent,
             LocalDateTime shippedAt
     ) {
     }
@@ -1795,11 +2156,15 @@ public class AdminAfterSaleService {
             String paymentConfigFingerprint,
             long paymentAmountCent,
             String afterSaleStatus,
+            int flowVersion,
+            String afterSaleType,
             long requestedAmountCent,
             Long afterSaleApprovedAmountCent,
             Long orderId,
             String orderStatus,
             long paidAmountCent,
+            String orderRefundStatus,
+            long refundedAmountCent,
             Long latestRefundId,
             Long latestRefundOrderId,
             Long latestRefundPaymentOrderId,
@@ -1848,6 +2213,7 @@ public class AdminAfterSaleService {
             String recoveryClaimToken,
             LocalDateTime recoveryClaimedAt,
             String afterSaleStatus,
+            int flowVersion,
             String orderStatus
     ) {
     }

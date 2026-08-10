@@ -1,286 +1,313 @@
 import {
   AFTER_SALE_REASONS,
+  afterSaleTypeText,
   buildAfterSaleApplyPayload,
   buildAfterSaleDetailUrl,
+  createAfterSaleRequestKey,
   positiveAfterSaleId
-} from "../../../features/after-sale";
-import {
-  buildOrderDetailView,
-  positiveOrderId,
-  type OrderDetailView
-} from "../../../features/order-center";
+} from '../../../features/after-sale'
+import { positiveOrderId } from '../../../features/order-center'
+import { formatMoney } from '../../../features/product-catalog'
 import {
   applyAfterSale,
+  getAfterSaleEligibility,
+  quoteAfterSale,
   uploadAfterSaleEvidence
-} from "../../../services/after-sale";
-import { getOrderDetail } from "../../../services/order";
-import { isApiError } from "../../../utils/api-error";
+} from '../../../services/after-sale'
+import type {
+  AfterSaleEligibilityItem,
+  AfterSaleEligibilityResponse,
+  AfterSaleQuoteResponse,
+  AfterSaleType
+} from '../../../types/after-sale'
+import { isApiError } from '../../../utils/api-error'
 
-interface InputEvent {
-  detail: {
-    value: string;
-  };
-}
-
+interface InputEvent { detail: { value: string } }
 interface DatasetEvent {
-  currentTarget: {
-    dataset: {
-      index?: number | string;
-      reason?: string;
-      path?: string;
-    };
-  };
+  currentTarget: { dataset: { index?: number | string; reason?: string; type?: string } }
+}
+interface SelectedEvidence { fileId: number; tempFilePath: string; originalFilename: string; sizeBytes: number }
+interface LocalImage { tempFilePath: string; size: number }
+interface SelectableItem extends AfterSaleEligibilityItem {
+  selected: boolean
+  quantity: number
+  amountText: string
 }
 
-interface SelectedEvidence {
-  fileId: number;
-  tempFilePath: string;
-  originalFilename: string;
-  sizeBytes: number;
-}
-
-interface LocalImage {
-  tempFilePath: string;
-  size: number;
-}
-
-const MAX_EVIDENCE_COUNT = 3;
-const MAX_EVIDENCE_SIZE = 5 * 1024 * 1024;
-let latestOrderRequest = 0;
+const MAX_EVIDENCE_COUNT = 3
+const MAX_EVIDENCE_SIZE = 5 * 1024 * 1024
+let latestLoadRequest = 0
+let latestQuoteRequest = 0
 
 function actionError(error: unknown, fallback: string): string {
-  return isApiError(error)
-    ? error.message
-    : error instanceof Error
-      ? error.message
-      : fallback;
+  return isApiError(error) ? error.message : error instanceof Error ? error.message : fallback
 }
 
 function chooseEvidenceImages(count: number): Promise<LocalImage[]> {
   return new Promise((resolve, reject) => {
     wx.chooseMedia({
       count,
-      mediaType: ["image"],
-      sourceType: ["album", "camera"],
-      // 选择阶段先使用微信的高质量压缩结果，云端仍会统一生成 WebP 展示图。
-      sizeType: ["compressed"],
+      mediaType: ['image'],
+      sourceType: ['album', 'camera'],
+      sizeType: ['compressed'],
       success: (result) => resolve(result.tempFiles
-        .map((file) => ({
-          tempFilePath: file.tempFilePath,
-          size: Number(file.size) || 0
-        }))
+        .map((file) => ({ tempFilePath: file.tempFilePath, size: Number(file.size) || 0 }))
         .filter((file) => Boolean(file.tempFilePath))),
-      fail: (error) => {
-        if (error.errMsg.includes("cancel")) {
-          resolve([]);
-          return;
-        }
-        reject(new Error(error.errMsg || "选择图片失败"));
-      }
-    });
-  });
+      fail: (error) => error.errMsg.includes('cancel')
+        ? resolve([])
+        : reject(new Error(error.errMsg || '选择图片失败'))
+    })
+  })
 }
 
-function confirmSubmit(amountText: string): Promise<boolean> {
+function confirmSubmit(type: AfterSaleType, amountText: string): Promise<boolean> {
   return new Promise((resolve) => {
     wx.showModal({
-      title: "确认提交退款申请",
-      content: `商家审核通过后，将按订单实付金额 ${amountText} 原路退款。`,
-      confirmText: "确认提交",
-      confirmColor: "#B72B22",
+      title: '确认提交售后申请',
+      content: `${afterSaleTypeText(type)}的服务端报价为 ${amountText}。提交后，商家会按所选商品和数量审核。`,
+      confirmText: '确认提交',
+      confirmColor: '#B72B22',
       success: (result) => resolve(result.confirm),
       fail: () => resolve(false)
-    });
-  });
+    })
+  })
 }
 
 Page({
   data: {
     orderId: 0,
-    detail: null as OrderDetailView | null,
+    requestKey: '',
+    eligibility: null as AfterSaleEligibilityResponse | null,
+    items: [] as SelectableItem[],
+    availableTypes: [] as Array<{ value: AfterSaleType; text: string }>,
+    selectedType: 'REFUND_ONLY' as AfterSaleType,
+    quote: null as AfterSaleQuoteResponse | null,
+    quoteAmountText: '',
     reasons: AFTER_SALE_REASONS,
     selectedReason: AFTER_SALE_REASONS[0],
-    description: "",
+    description: '',
     evidenceFiles: [] as SelectedEvidence[],
     blockedAfterSaleId: 0,
     loading: true,
     loaded: false,
-    errorText: "",
+    errorText: '',
+    quoting: false,
     uploading: false,
     submitting: false
   },
 
   onLoad(query: Record<string, string | undefined>) {
-    const orderId = positiveOrderId(query.order_id);
+    const orderId = positiveOrderId(query.order_id)
     if (!orderId) {
-      this.setData({ loading: false, errorText: "订单参数无效" });
-      return;
+      this.setData({ loading: false, errorText: '订单参数无效' })
+      return
     }
-    this.setData({ orderId });
-    void this.loadOrder();
+    this.setData({ orderId, requestKey: createAfterSaleRequestKey(orderId) })
+    void this.loadEligibility()
   },
 
   onUnload() {
-    latestOrderRequest += 1;
+    latestLoadRequest += 1
+    latestQuoteRequest += 1
   },
 
-  onRetry() {
-    void this.loadOrder();
-  },
+  onRetry() { void this.loadEligibility() },
 
-  async loadOrder() {
-    if (!this.data.orderId) {
-      return;
-    }
-    const requestId = ++latestOrderRequest;
-    this.setData({ loading: true, errorText: "" });
+  async loadEligibility() {
+    const loadId = ++latestLoadRequest
+    this.setData({ loading: true, errorText: '' })
     try {
-      const detail = buildOrderDetailView(await getOrderDetail(this.data.orderId));
-      if (requestId !== latestOrderRequest) {
-        return;
-      }
-      const blockedAfterSaleId = !detail.canApplyAfterSale
-        ? positiveAfterSaleId(detail.latestAfterSaleView?.id)
-        : 0;
+      const eligibility = await getAfterSaleEligibility(this.data.orderId)
+      if (loadId !== latestLoadRequest) return
+      const blockedAfterSaleId = positiveAfterSaleId(eligibility.activeAfterSaleId)
+      const selectedType = eligibility.availableTypes[0] || 'REFUND_ONLY'
+      const items = eligibility.items.map((item) => ({
+        ...item,
+        selected: item.availableQuantity > 0,
+        quantity: item.availableQuantity,
+        amountText: `¥${formatMoney(item.paidAmountBasisCent)}`
+      }))
       this.setData({
-        detail,
+        eligibility,
+        items,
         blockedAfterSaleId,
+        selectedType,
+        availableTypes: eligibility.availableTypes.map((value) => ({
+          value,
+          text: afterSaleTypeText(value)
+        })),
         loading: false,
         loaded: true,
-        errorText: detail.canApplyAfterSale || blockedAfterSaleId
-          ? ""
-          : "当前订单状态暂不支持申请退款"
-      });
+        errorText: blockedAfterSaleId
+          ? ''
+          : eligibility.availableTypes.length
+            ? ''
+            : '当前订单暂无可申请售后的商品'
+      })
+      if (!blockedAfterSaleId && eligibility.availableTypes.length) await this.refreshQuote()
     } catch (error) {
-      if (requestId === latestOrderRequest) {
+      if (loadId === latestLoadRequest) {
         this.setData({
           loading: false,
-          loaded: this.data.detail !== null,
-          errorText: actionError(error, "订单加载失败，请稍后重试")
-        });
+          loaded: this.data.eligibility !== null,
+          errorText: actionError(error, '售后资格加载失败，请稍后重试')
+        })
       }
     }
+  },
+
+  selectedItems() {
+    return this.data.items
+      .filter((item) => item.selected && item.quantity > 0)
+      .map((item) => ({ orderItemId: item.orderItemId, quantity: item.quantity }))
+  },
+
+  async refreshQuote() {
+    const items = this.selectedItems()
+    if (!items.length) {
+      this.setData({ quote: null, quoteAmountText: '', quoting: false })
+      return
+    }
+    const quoteId = ++latestQuoteRequest
+    this.setData({ quoting: true, quote: null, quoteAmountText: '' })
+    try {
+      const quote = await quoteAfterSale(this.data.orderId, {
+        afterSaleType: this.data.selectedType,
+        items
+      })
+      if (quoteId !== latestQuoteRequest) return
+      this.setData({ quote, quoteAmountText: `¥${formatMoney(quote.requestedAmountCent)}` })
+    } catch (error) {
+      if (quoteId === latestQuoteRequest) {
+        wx.showToast({ title: actionError(error, '退款报价失败'), icon: 'none' })
+      }
+    } finally {
+      if (quoteId === latestQuoteRequest) this.setData({ quoting: false })
+    }
+  },
+
+  onTypeTap(event: DatasetEvent) {
+    const type = String(event.currentTarget.dataset.type || '') as AfterSaleType
+    if (!this.data.eligibility?.availableTypes.includes(type) || this.data.submitting) return
+    this.setData({ selectedType: type }, () => void this.refreshQuote())
+  },
+
+  onItemToggle(event: DatasetEvent) {
+    const index = Number(event.currentTarget.dataset.index)
+    const item = this.data.items[index]
+    if (!item || item.availableQuantity <= 0 || this.data.submitting) return
+    this.setData(
+      { [`items[${index}].selected`]: !item.selected },
+      () => void this.refreshQuote()
+    )
+  },
+
+  onQuantityMinus(event: DatasetEvent) {
+    const index = Number(event.currentTarget.dataset.index)
+    const item = this.data.items[index]
+    if (!item || !item.selected || item.quantity <= 1 || this.data.submitting) return
+    this.setData(
+      { [`items[${index}].quantity`]: item.quantity - 1 },
+      () => void this.refreshQuote()
+    )
+  },
+
+  onQuantityPlus(event: DatasetEvent) {
+    const index = Number(event.currentTarget.dataset.index)
+    const item = this.data.items[index]
+    if (!item || !item.selected || item.quantity >= item.availableQuantity || this.data.submitting) return
+    this.setData(
+      { [`items[${index}].quantity`]: item.quantity + 1 },
+      () => void this.refreshQuote()
+    )
   },
 
   onReasonTap(event: DatasetEvent) {
-    const reason = String(event.currentTarget.dataset.reason || "");
-    if (AFTER_SALE_REASONS.includes(reason) && !this.data.submitting) {
-      this.setData({ selectedReason: reason });
-    }
+    const reason = String(event.currentTarget.dataset.reason || '')
+    if (AFTER_SALE_REASONS.includes(reason) && !this.data.submitting) this.setData({ selectedReason: reason })
   },
 
-  onDescriptionInput(event: InputEvent) {
-    this.setData({ description: event.detail.value });
-  },
+  onDescriptionInput(event: InputEvent) { this.setData({ description: event.detail.value }) },
 
   async onChooseEvidenceTap() {
-    if (this.data.uploading || this.data.submitting || !this.data.detail?.canApplyAfterSale) {
-      return;
-    }
-    const remaining = MAX_EVIDENCE_COUNT - this.data.evidenceFiles.length;
-    if (remaining <= 0) {
-      wx.showToast({ title: "最多上传 3 张凭证", icon: "none" });
-      return;
-    }
+    if (this.data.uploading || this.data.submitting || this.data.blockedAfterSaleId) return
+    const remaining = MAX_EVIDENCE_COUNT - this.data.evidenceFiles.length
+    if (remaining <= 0) return
     try {
-      const selected = await chooseEvidenceImages(remaining);
-      const accepted = selected.filter((file) => file.size > 0 && file.size <= MAX_EVIDENCE_SIZE);
-      if (accepted.length < selected.length) {
-        wx.showToast({ title: "单张图片不能超过 5MB", icon: "none" });
-      }
-      if (!accepted.length) {
-        return;
-      }
-      this.setData({ uploading: true });
-      const evidenceFiles = this.data.evidenceFiles.slice();
+      const selected = await chooseEvidenceImages(remaining)
+      const accepted = selected.filter((file) => file.size > 0 && file.size <= MAX_EVIDENCE_SIZE)
+      if (accepted.length < selected.length) wx.showToast({ title: '单张图片不能超过 5MB', icon: 'none' })
+      if (!accepted.length) return
+      this.setData({ uploading: true })
+      const evidenceFiles = this.data.evidenceFiles.slice()
       for (const file of accepted) {
-        const uploaded = await uploadAfterSaleEvidence(this.data.orderId, file.tempFilePath);
+        const uploaded = await uploadAfterSaleEvidence(this.data.orderId, file.tempFilePath)
         evidenceFiles.push({
           fileId: uploaded.id,
           tempFilePath: file.tempFilePath,
           originalFilename: uploaded.originalFilename,
           sizeBytes: uploaded.sizeBytes
-        });
-        this.setData({ evidenceFiles });
+        })
+        this.setData({ evidenceFiles })
       }
     } catch (error) {
-      wx.showToast({
-        title: actionError(error, "凭证上传失败，请稍后重试"),
-        icon: "none"
-      });
+      wx.showToast({ title: actionError(error, '凭证上传失败，请稍后重试'), icon: 'none' })
     } finally {
-      this.setData({ uploading: false });
+      this.setData({ uploading: false })
     }
   },
 
   onPreviewEvidenceTap(event: DatasetEvent) {
-    const index = Number(event.currentTarget.dataset.index);
-    const current = this.data.evidenceFiles[index]?.tempFilePath;
-    if (!current) {
-      return;
-    }
-    wx.previewImage({
-      current,
-      urls: this.data.evidenceFiles.map((file) => file.tempFilePath)
-    });
+    const current = this.data.evidenceFiles[Number(event.currentTarget.dataset.index)]?.tempFilePath
+    if (current) wx.previewImage({ current, urls: this.data.evidenceFiles.map((file) => file.tempFilePath) })
   },
 
   onRemoveEvidenceTap(event: DatasetEvent) {
-    if (this.data.uploading || this.data.submitting) {
-      return;
-    }
-    const index = Number(event.currentTarget.dataset.index);
-    if (!Number.isSafeInteger(index) || index < 0 || index >= this.data.evidenceFiles.length) {
-      return;
-    }
-    const evidenceFiles = this.data.evidenceFiles.slice();
-    evidenceFiles.splice(index, 1);
-    this.setData({ evidenceFiles });
+    if (this.data.uploading || this.data.submitting) return
+    const index = Number(event.currentTarget.dataset.index)
+    if (!Number.isSafeInteger(index) || index < 0 || index >= this.data.evidenceFiles.length) return
+    const evidenceFiles = this.data.evidenceFiles.slice()
+    evidenceFiles.splice(index, 1)
+    this.setData({ evidenceFiles })
   },
 
   onBlockedAfterSaleTap() {
-    if (this.data.blockedAfterSaleId) {
-      wx.redirectTo({ url: buildAfterSaleDetailUrl(this.data.blockedAfterSaleId) });
-    }
+    if (this.data.blockedAfterSaleId) wx.redirectTo({ url: buildAfterSaleDetailUrl(this.data.blockedAfterSaleId) })
   },
 
   async onSubmitTap() {
-    const detail = this.data.detail;
-    if (
-      !detail?.canApplyAfterSale ||
-      this.data.uploading ||
-      this.data.submitting ||
-      !await confirmSubmit(detail.paidAmountText)
-    ) {
-      return;
+    if (!this.data.quote || this.data.quoting || this.data.uploading || this.data.submitting) return
+    this.setData({ submitting: true })
+    if (!await confirmSubmit(this.data.selectedType, this.data.quoteAmountText)) {
+      this.setData({ submitting: false })
+      return
     }
-    let payload;
+    let payload
     try {
       payload = buildAfterSaleApplyPayload({
+        requestKey: this.data.requestKey,
+        quote: this.data.quote,
+        items: this.selectedItems(),
         reason: this.data.selectedReason,
-        requestedAmountCent: detail.paidAmountCent,
         description: this.data.description,
         evidenceFileIds: this.data.evidenceFiles.map((file) => file.fileId)
-      });
+      })
     } catch (error) {
-      wx.showToast({ title: actionError(error, "申请内容不完整"), icon: "none" });
-      return;
+      this.setData({ submitting: false })
+      wx.showToast({ title: actionError(error, '申请内容不完整'), icon: 'none' })
+      return
     }
-    this.setData({ submitting: true });
     try {
-      const result = await applyAfterSale(this.data.orderId, payload);
-      wx.showToast({ title: "申请已提交", icon: "success" });
+      const result = await applyAfterSale(this.data.orderId, payload)
+      wx.showToast({ title: '申请已提交', icon: 'success' })
       wx.redirectTo({
         url: buildAfterSaleDetailUrl(result.id),
         fail: () => this.setData({ submitting: false })
-      });
+      })
     } catch (error) {
-      this.setData({ submitting: false });
-      wx.showToast({
-        title: actionError(error, "申请提交失败，请稍后重试"),
-        icon: "none"
-      });
-      await this.loadOrder();
+      this.setData({ submitting: false })
+      wx.showToast({ title: actionError(error, '申请提交失败，请稍后重试'), icon: 'none' })
+      await this.refreshQuote()
     }
   }
-});
+})

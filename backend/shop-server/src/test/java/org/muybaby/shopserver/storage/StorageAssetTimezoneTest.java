@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.storage;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.muybaby.shopserver.aftersale.dto.AppAfterSaleApplyRequest;
@@ -44,12 +45,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
+@Tag("integration")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @ResourceLock("jvm-default-time-zone")
 class StorageAssetTimezoneTest {
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4.10")
             .withDatabaseName("asset_timezone")
             .withUsername("shop_test")
             .withPassword("shop_test");

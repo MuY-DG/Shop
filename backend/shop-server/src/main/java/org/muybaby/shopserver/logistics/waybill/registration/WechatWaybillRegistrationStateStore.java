@@ -368,7 +368,7 @@ public class WechatWaybillRegistrationStateStore {
                                    ''
                                ) as goods_image_url
                         from order_item
-                        where order_id = :orderId
+                        where order_id = :orderId and quantity > refunded_quantity
                         order by id
                         """)
                 .param("orderId", orderId)

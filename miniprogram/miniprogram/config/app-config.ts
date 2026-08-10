@@ -13,8 +13,7 @@ export type MiniProgramEnvVersion = "develop" | "trial" | "release";
 
 const DEVELOPMENT_API_BASE_URL = "https://pay-dev.muybaby6.icu";
 
-// 正式域名尚未确认。保持为空，让 release 在启动时明确失败，禁止回退到开发环境。
-const RELEASE_API_BASE_URL = "";
+const RELEASE_API_BASE_URL = "https://api.muybaby6.icu";
 
 function runtimeConfig(
   stage: AppStage,

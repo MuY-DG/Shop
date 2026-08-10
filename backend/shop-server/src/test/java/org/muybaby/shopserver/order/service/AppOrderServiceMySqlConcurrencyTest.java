@@ -2,6 +2,7 @@ package org.muybaby.shopserver.order.service;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
@@ -57,6 +58,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
+@Tag("integration")
 @Import(AppOrderServiceMySqlConcurrencyTest.RaceConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class AppOrderServiceMySqlConcurrencyTest {
@@ -64,7 +66,7 @@ class AppOrderServiceMySqlConcurrencyTest {
     private static final AtomicLong SEQUENCE = new AtomicLong(86_000L);
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4.10")
             .withDatabaseName("order_idempotency")
             .withUsername("shop_test")
             .withPassword("shop_test");

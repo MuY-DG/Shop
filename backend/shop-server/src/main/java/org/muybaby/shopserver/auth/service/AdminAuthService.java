@@ -167,6 +167,7 @@ public class AdminAuthService {
         return new CurrentAdminUserResponse(
                 user.id(),
                 user.username(),
+                user.displayName(),
                 user.email(),
                 user.avatar(),
                 principal.roles(),

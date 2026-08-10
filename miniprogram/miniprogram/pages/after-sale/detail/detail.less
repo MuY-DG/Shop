@@ -103,6 +103,10 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.progress-list--5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .progress-step {
   min-width: 0;
   text-align: center;
@@ -272,6 +276,106 @@
   line-height: @line-height-base;
 }
 
+.sale-item {
+  display: flex;
+  padding: @space-4 0;
+  border-top: 1rpx solid @color-divider;
+  gap: @space-4;
+}
+
+.sale-item:first-of-type {
+  border-top: 0;
+}
+
+.sale-item image,
+.sale-item__fallback {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: @radius-md;
+  flex: none;
+  background: @color-surface-muted;
+}
+
+.sale-item__fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: @color-brand;
+}
+
+.sale-item__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.sale-item__title {
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  font-weight: 650;
+}
+
+.sale-item__spec,
+.sale-item__meta {
+  margin-top: @space-1;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+}
+
+.address-panel {
+  padding: @space-4;
+  border-radius: @radius-md;
+  background: @color-brand-soft;
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  line-height: @line-height-relaxed;
+}
+
+.address-panel__label {
+  margin-bottom: @space-2;
+  color: @color-brand;
+  font-weight: 700;
+}
+
+.address-panel__deadline {
+  margin-top: @space-2;
+  color: @color-warning-text;
+  font-size: @font-size-xs;
+}
+
+.shipment-field {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 82rpx;
+  margin-top: @space-3;
+  padding: 0 @space-4;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-md;
+  color: @color-text-primary;
+  background: @color-surface;
+  font-size: @font-size-sm;
+  line-height: 82rpx;
+}
+
+.shipment-field text {
+  float: right;
+  color: @color-text-placeholder;
+}
+
+button.shipment-submit {
+  height: 82rpx;
+  margin-top: @space-4;
+  border-radius: @radius-pill;
+  color: @color-text-inverse;
+  background: @color-brand;
+  font-size: @font-size-base;
+  font-weight: 700;
+  line-height: 82rpx;
+}
+
+button.shipment-submit::after {
+  border: 0;
+}
+
 .detail-actions {
   position: fixed;
   z-index: 30;
@@ -282,10 +386,12 @@
   border-top: 1rpx solid @color-border;
   background: fade(@color-surface, 98%);
   box-shadow: 0 -10rpx 30rpx rgba(68, 44, 32, 0.08);
+  display: flex;
+  gap: @space-3;
 }
 
 button.order-button {
-  width: 100%;
+  flex: 1;
   height: 82rpx;
   margin: 0;
   border: 1rpx solid @color-border;
@@ -295,6 +401,22 @@ button.order-button {
   font-size: @font-size-base;
   font-weight: 700;
   line-height: 82rpx;
+}
+
+button.cancel-button {
+  width: 220rpx;
+  height: 82rpx;
+  margin: 0;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-pill;
+  color: @color-text-secondary;
+  background: @color-surface;
+  font-size: @font-size-base;
+  line-height: 82rpx;
+}
+
+button.cancel-button::after {
+  border: 0;
 }
 
 button.order-button::after {

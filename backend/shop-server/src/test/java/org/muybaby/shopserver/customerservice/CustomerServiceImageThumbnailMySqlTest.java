@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.customerservice;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.MessageResponse;
@@ -29,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest
 @ActiveProfiles("test")
 @Testcontainers
+@Tag("integration")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class CustomerServiceImageThumbnailMySqlTest {
 
@@ -42,7 +44,7 @@ class CustomerServiceImageThumbnailMySqlTest {
     );
 
     @Container
-    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    private static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4.10")
             .withDatabaseName("customer_service_thumbnail")
             .withUsername("shop_test")
             .withPassword("shop_test");

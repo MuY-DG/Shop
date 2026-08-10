@@ -437,7 +437,7 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     }
 
     @Test
-    void adminCannotChangeTheFullOrderRefundAmount() throws Exception {
+    void adminRejectsAmountThatDoesNotMatchTheServerItemPlan() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin("after-sale-admin-full-amount-app");
         SeedPaidOrder order = seedPaidOrder(appUser, 6980L, "PAID", "wx-refund-admin-full-amount");

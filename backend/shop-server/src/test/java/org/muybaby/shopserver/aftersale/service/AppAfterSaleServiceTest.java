@@ -170,7 +170,7 @@ class AppAfterSaleServiceTest {
         int manyRecordQueries = sqlCounter.count();
 
         assertThat(many.records()).hasSize(6);
-        assertThat(singleRecordQueries).isEqualTo(4);
+        assertThat(singleRecordQueries).isEqualTo(7);
         assertThat(manyRecordQueries).isEqualTo(singleRecordQueries);
         assertThat(many.records())
                 .filteredOn(record -> record.id().equals(afterSaleId))

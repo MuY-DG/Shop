@@ -47,6 +47,21 @@ export function logoutAllAdminUserSessions(userId: number) {
   })
 }
 
+/** 仅超级管理员可读取后台自助注册开关。 */
+export function fetchAdminRegistrationSetting() {
+  return request.get<Api.SystemManage.RegistrationSetting>({
+    url: '/admin/system/registration'
+  })
+}
+
+/** 仅超级管理员可更新后台自助注册开关。 */
+export function updateAdminRegistrationSetting(enabled: boolean) {
+  return request.put<Api.SystemManage.RegistrationSetting>({
+    url: '/admin/system/registration',
+    data: { enabled }
+  })
+}
+
 // 获取角色列表
 export function fetchGetRoleList(params: Api.SystemManage.RoleSearchParams) {
   return request.get<Api.SystemManage.RoleList>({

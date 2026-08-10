@@ -36,15 +36,13 @@ test("体验版显式复用开发 API 但隔离会话存储", () => {
   assert.doesNotThrow(() => assertRuntimeConfig("trial", trial));
 });
 
-test("正式版未提供真实域名时 fail closed", () => {
+test("正式版使用独立生产 API 和会话命名空间", () => {
   const config = resolveRuntimeConfig("release");
 
   assert.equal(config.stage, "production");
-  assert.equal(config.apiBaseUrl, "");
-  assert.throws(
-    () => assertRuntimeConfig("release", config),
-    /正式版 API 域名尚未配置/
-  );
+  assert.equal(config.apiBaseUrl, "https://api.muybaby6.icu");
+  assert.equal(config.storageNamespace, "zaoxiangji:miniprogram:release:v1");
+  assert.doesNotThrow(() => assertRuntimeConfig("release", config));
 });
 
 test("正式版拒绝非 production、非 HTTPS 和开发域名", () => {

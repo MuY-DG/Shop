@@ -212,7 +212,7 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
         mockMvc.perform(post("/app/orders/{orderId}/after-sales", paidOrder.orderId())
                         .header("Authorization", "Bearer " + owner.token())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(applyBody("RETURN_REFUND", "需要退货退款", 6980L, "unsupported type", ownerEvidenceFileId)))
+                        .content(applyBody("EXCHANGE", "不支持换货", 6980L, "unsupported type", ownerEvidenceFileId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100400));
 
@@ -232,23 +232,34 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
     }
 
     @Test
-    void shippedOrderRejectsReturnRefundAndAllowsFullRefundOnly() throws Exception {
+    void shippedOrderAllowsReturnRefundAndRefundOnly() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("after-sale-app-shipped");
-        SeedPaidOrder order = seedPaidOrder(session, 8980L, "SHIPPED", "wx-refund-app-shipped");
-        long evidenceFileId = insertAppEvidenceFile(session.userId(), order.orderId());
+        SeedPaidOrder returnOrder = seedPaidOrder(
+                session, 8980L, "SHIPPED", "wx-return-refund-app-shipped");
+        SeedPaidOrder refundOnlyOrder = seedPaidOrder(
+                session, 7980L, "SHIPPED", "wx-refund-only-app-shipped");
+        long returnEvidenceFileId = insertAppEvidenceFile(
+                session.userId(), returnOrder.orderId());
+        long refundEvidenceFileId = insertAppEvidenceFile(
+                session.userId(), refundOnlyOrder.orderId());
 
-        mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
+        mockMvc.perform(post("/app/orders/{orderId}/after-sales", returnOrder.orderId())
                         .header("Authorization", "Bearer " + session.token())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(applyBody("RETURN_REFUND", "已发货退货退款", 8980L, "need return", evidenceFileId)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(100400));
+                        .content(applyBody(
+                                "RETURN_REFUND", "已发货退货退款", 8980L,
+                                "need return", returnEvidenceFileId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.afterSaleType").value("RETURN_REFUND"))
+                .andExpect(jsonPath("$.data.status").value("REQUESTED"));
 
-        mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
+        mockMvc.perform(post("/app/orders/{orderId}/after-sales", refundOnlyOrder.orderId())
                         .header("Authorization", "Bearer " + session.token())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(applyBody("REFUND_ONLY", "已发货整单退款", 8980L, "full refund only", evidenceFileId)))
+                        .content(applyBody(
+                                "REFUND_ONLY", "已发货仅退款", 7980L,
+                                "refund only", refundEvidenceFileId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.afterSaleType").value("REFUND_ONLY"))
                 .andExpect(jsonPath("$.data.status").value("REQUESTED"));

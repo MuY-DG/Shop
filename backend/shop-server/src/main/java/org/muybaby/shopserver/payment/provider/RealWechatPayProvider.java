@@ -289,14 +289,7 @@ public class RealWechatPayProvider implements WechatPayProvider {
     }
 
     private Config config(ResolvedPaymentConfig config) {
-        return new RSAPublicKeyConfig.Builder()
-                .merchantId(config.mchId())
-                .merchantSerialNumber(config.merchantSerialNo())
-                .privateKey(config.privateKeyPem())
-                .apiV3Key(config.apiV3Key())
-                .publicKeyId(config.wechatPublicKeyId())
-                .publicKey(config.wechatPublicKeyPem())
-                .build();
+        return WechatPaySdkConfigFactory.create(config);
     }
 
     private String nullToEmpty(String value) {

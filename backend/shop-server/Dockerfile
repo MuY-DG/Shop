@@ -5,19 +5,31 @@ FROM maven:3.9.11-eclipse-temurin-21 AS build
 
 WORKDIR /workspace
 
+ARG SHOP_BUILD_GIT_SHA=unknown
+ARG SHOP_BUILD_TIME=
+
 # Maven 仓库使用 BuildKit 缓存，后续构建可以复用已经下载的依赖。
 COPY pom.xml ./
 
 # 镜像构建只负责打包；完整测试应在构建镜像前单独执行。
 COPY src ./src
 RUN --mount=type=cache,target=/root/.m2 \
-    mvn --batch-mode -Dmaven.test.skip=true package \
+    mvn --batch-mode \
+        -Dshop.build.git-sha="${SHOP_BUILD_GIT_SHA}" \
+        ${SHOP_BUILD_TIME:+-Dproject.build.outputTimestamp="${SHOP_BUILD_TIME}"} \
+        -Dmaven.test.skip=true package \
     && cp target/shop-server-*.jar /workspace/application.jar \
     && java -Djarmode=tools -jar /workspace/application.jar \
         extract --layers --destination /workspace/extracted
 
 # 生产镜像只保留 JRE、健康检查工具和 Spring Boot 分层文件。
 FROM eclipse-temurin:21-jre-jammy AS runtime
+
+ARG SHOP_BUILD_GIT_SHA=unknown
+ARG SHOP_BUILD_TIME=
+
+LABEL org.opencontainers.image.revision="${SHOP_BUILD_GIT_SHA}" \
+      org.opencontainers.image.created="${SHOP_BUILD_TIME}"
 
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends curl \

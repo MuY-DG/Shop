@@ -131,20 +131,6 @@ public class RefundCallbackService {
                     || callbackIdentity.afterSaleId() == null) {
                 throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
             }
-            Long lockedAfterSaleId = jdbcClient.sql("""
-                            select id from after_sale_request
-                            where id = :afterSaleId and order_id = :orderId
-                            for update
-                            """)
-                    .param("afterSaleId", callbackIdentity.afterSaleId())
-                    .param("orderId", callbackIdentity.orderId())
-                    .query(Long.class)
-                    .optional()
-                    .orElse(null);
-            if (lockedAfterSaleId == null) {
-                requireMatchingPurgedRefund(notification);
-                return null;
-            }
             Long lockedOrderId = jdbcClient.sql("""
                             select id from shop_order
                             where id = :orderId
@@ -155,6 +141,20 @@ public class RefundCallbackService {
                     .optional()
                     .orElse(null);
             if (lockedOrderId == null) {
+                requireMatchingPurgedRefund(notification);
+                return null;
+            }
+            Long lockedAfterSaleId = jdbcClient.sql("""
+                            select id from after_sale_request
+                            where id = :afterSaleId and order_id = :orderId
+                            for update
+                            """)
+                    .param("afterSaleId", callbackIdentity.afterSaleId())
+                    .param("orderId", lockedOrderId)
+                    .query(Long.class)
+                    .optional()
+                    .orElse(null);
+            if (lockedAfterSaleId == null) {
                 requireMatchingPurgedRefund(notification);
                 return null;
             }

@@ -4,8 +4,19 @@
 
 ```bash
 cd backend/shop-server
+# Docker-free unit/H2 layer only; this deliberately excludes Testcontainers.
 ./mvnw test
+
+# Full MySQL/Redis integration evidence requires Docker and zero skipped tests.
+docker info
+./mvnw -Pintegration verify
+./scripts/assert-integration-test-results.sh target/failsafe-reports
+./scripts/verify-test-layers.sh
 ```
+
+Do not report the first command as the complete backend suite. It proves only the default
+unit/H2 layer; the second command and report assertion prove the separately tagged
+Testcontainers layer.
 
 Before running the backend, start local MySQL and create the dev database expected by the `dev` profile. The default credentials are `root` / `123456`; override them with `SHOP_DB_URL`, `SHOP_DB_USERNAME`, and `SHOP_DB_PASSWORD` when needed.
 

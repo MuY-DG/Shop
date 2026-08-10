@@ -5,9 +5,22 @@
     <ElCard class="art-table-card">
       <ArtTableHeader v-model:columns="columnChecks" :loading="loading" @refresh="refreshData">
         <template #left>
-          <ElButton v-auth="'system:user:create'" type="primary" @click="showDialog('add')">
-            新增用户
-          </ElButton>
+          <div class="flex items-center gap-3">
+            <ElButton v-auth="'system:user:create'" type="primary" @click="showDialog('add')">
+              新增用户
+            </ElButton>
+            <template v-if="canManageRegistration">
+              <span class="text-sm text-gray-500">游客自助注册</span>
+              <ElSwitch
+                :model-value="registrationEnabled"
+                :loading="registrationLoading"
+                inline-prompt
+                active-text="开"
+                inactive-text="关"
+                @change="handleRegistrationToggle"
+              />
+            </template>
+          </div>
         </template>
       </ArtTableHeader>
 
@@ -46,7 +59,13 @@
   import { useTable } from '@/hooks/core/useTable'
   import { useAuth } from '@/hooks/core/useAuth'
   import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
-  import { disableAdminUser, fetchGetUserList } from '@/api/system-manage'
+  import {
+    disableAdminUser,
+    fetchAdminRegistrationSetting,
+    fetchGetUserList,
+    updateAdminRegistrationSetting
+  } from '@/api/system-manage'
+  import { useUserStore } from '@/store/modules/user'
   import UserSearch from './modules/user-search.vue'
   import UserDialog from './modules/user-dialog.vue'
   import type { DialogType } from '@/types'
@@ -62,6 +81,10 @@
   const sessionDrawerVisible = ref(false)
   const sessionUser = ref<UserListItem>()
   const { hasAuth } = useAuth()
+  const userStore = useUserStore()
+  const canManageRegistration = computed(() => userStore.info.roles?.includes('R_SUPER') ?? false)
+  const registrationEnabled = ref(false)
+  const registrationLoading = ref(false)
   const canViewSessions = computed(
     () => hasAuth('system:user:session:read') || hasAuth('system:user:session:revoke')
   )
@@ -207,6 +230,41 @@
   const handleSearch = (params: Api.SystemManage.UserSearchParams) => {
     replaceSearchParams(params)
     getData()
+  }
+
+  onMounted(async () => {
+    if (!canManageRegistration.value) return
+    registrationLoading.value = true
+    try {
+      registrationEnabled.value = (await fetchAdminRegistrationSetting()).enabled
+    } finally {
+      registrationLoading.value = false
+    }
+  })
+
+  const handleRegistrationToggle = async (value: string | number | boolean) => {
+    const nextEnabled = value === true
+    try {
+      await ElMessageBox.confirm(
+        nextEnabled
+          ? '开启后，访问登录页的人可自助注册仅具游客权限的后台账号。'
+          : '关闭后，新的自助注册请求将立即被拒绝。',
+        nextEnabled ? '开启游客注册' : '关闭游客注册',
+        {
+          confirmButtonText: '确认',
+          cancelButtonText: '取消',
+          type: nextEnabled ? 'warning' : 'info'
+        }
+      )
+      registrationLoading.value = true
+      const setting = await updateAdminRegistrationSetting(nextEnabled)
+      registrationEnabled.value = setting.enabled
+      ElMessage.success(setting.enabled ? '游客自助注册已开启' : '游客自助注册已关闭')
+    } catch (error) {
+      if (error !== 'cancel' && error !== 'close') throw error
+    } finally {
+      registrationLoading.value = false
+    }
   }
 
   const showDialog = (type: DialogType, row?: UserListItem) => {

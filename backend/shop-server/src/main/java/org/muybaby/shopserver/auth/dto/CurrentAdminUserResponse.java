@@ -5,6 +5,7 @@ import java.util.List;
 public record CurrentAdminUserResponse(
         Long userId,
         String userName,
+        String displayName,
         String email,
         String avatar,
         List<String> roles,

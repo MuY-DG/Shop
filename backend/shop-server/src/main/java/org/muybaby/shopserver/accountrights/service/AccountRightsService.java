@@ -371,7 +371,9 @@ public class AccountRightsService {
                 select count(*)
                 from after_sale_request after_sale
                 where after_sale.user_id = :userId
-                  and after_sale.status not in ('REJECTED', 'REFUNDED')
+                  and after_sale.status not in (
+                      'REJECTED', 'RETURN_REJECTED', 'CANCELLED', 'REFUNDED'
+                  )
                 """, userId) > 0
                 || count("""
                 select count(*)
@@ -390,9 +392,9 @@ public class AccountRightsService {
     private void lockCommerceRows(Long userId) {
         jdbcClient.sql("""
                         select id
-                        from after_sale_request
+                        from shop_order
                         where user_id = :userId
-                          and status not in ('REJECTED', 'REFUNDED')
+                          and status not in ('CLOSED', 'COMPLETED', 'REFUNDED')
                         order by id
                         for update
                         """)
@@ -401,9 +403,11 @@ public class AccountRightsService {
                 .list();
         jdbcClient.sql("""
                         select id
-                        from shop_order
+                        from after_sale_request
                         where user_id = :userId
-                          and status not in ('CLOSED', 'COMPLETED', 'REFUNDED')
+                          and status not in (
+                              'REJECTED', 'RETURN_REJECTED', 'CANCELLED', 'REFUNDED'
+                          )
                         order by id
                         for update
                         """)

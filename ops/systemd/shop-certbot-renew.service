@@ -1,0 +1,11 @@
+[Unit]
+Description=Renew Shop production TLS certificates
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/1panel/apps/openresty/openresty
+ExecStart=/usr/bin/docker run --rm --pull=missing -v /opt/1panel/www/certbot:/etc/letsencrypt -v /opt/1panel/apps/openresty/openresty/root:/var/www/certbot certbot/certbot@sha256:34ee91d2f43008eb78a007d22f23ed4b2eaa9a454cb27ca2c042b49527a695b4 renew --webroot --webroot-path /var/www/certbot --quiet
+ExecStartPost=/usr/bin/docker compose -f docker-compose.yml exec -T openresty openresty -s reload

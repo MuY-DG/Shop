@@ -16,6 +16,9 @@ public class AfterSaleFulfillmentPolicy {
     private static final List<String> BLOCKING_STATUSES = List.of(
             AfterSaleStatus.REQUESTED.name(),
             AfterSaleStatus.APPROVED.name(),
+            AfterSaleStatus.WAITING_RETURN.name(),
+            AfterSaleStatus.RETURNING.name(),
+            AfterSaleStatus.WAITING_INSPECTION.name(),
             AfterSaleStatus.REFUNDING.name(),
             AfterSaleStatus.REFUND_FAILED.name()
     );
@@ -31,6 +34,7 @@ public class AfterSaleFulfillmentPolicy {
     }
 
     public Optional<BlockingAfterSale> findBlocking(long orderId) {
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         return jdbcClient.sql("""
                         select id,
                                after_sale_no,
@@ -41,11 +45,16 @@ public class AfterSaleFulfillmentPolicy {
                         from after_sale_request
                         where order_id = :orderId
                           and status in (:statuses)
+                          and (status <> :waitingReturnStatus
+                               or return_deadline_at is null
+                               or return_deadline_at > :now)
                         order by created_at desc, id desc
                         limit 1
                         """)
                 .param("orderId", orderId)
                 .param("statuses", BLOCKING_STATUSES)
+                .param("waitingReturnStatus", AfterSaleStatus.WAITING_RETURN.name())
+                .param("now", now)
                 .query((rs, rowNum) -> new BlockingAfterSale(
                         rs.getLong("id"),
                         rs.getString("after_sale_no"),

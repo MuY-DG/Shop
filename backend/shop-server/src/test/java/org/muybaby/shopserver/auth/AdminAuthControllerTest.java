@@ -90,6 +90,7 @@ class AdminAuthControllerTest {
                 .andExpect(jsonPath("$.data.userId").isNumber())
                 .andExpect(jsonPath("$.data.userId").value(1))
                 .andExpect(jsonPath("$.data.userName").value("Super"))
+                .andExpect(jsonPath("$.data.displayName").value("Super Admin"))
                 .andExpect(jsonPath("$.data.roles", containsInAnyOrder("R_SUPER")))
                 .andExpect(jsonPath("$.data.buttons", containsInAnyOrder(
                         "system:menu:read",
@@ -158,6 +159,7 @@ class AdminAuthControllerTest {
                         "storage:config:write",
                         "aftersale:read",
                         "aftersale:audit",
+                        "aftersale:return-address:write",
                         "asset:upload",
                         "asset:read",
                         "asset:delete",
@@ -187,6 +189,11 @@ class AdminAuthControllerTest {
                         "compliance:document:write",
                         "account-rights:read",
                         "account-rights:manage",
+                        "finance:reconciliation:read",
+                        "finance:reconciliation:run",
+                        "finance:reconciliation:resolve",
+                        "finance:reconciliation:source-download",
+                        "finance:export",
                         "system:user:read",
                         "system:user:create",
                         "system:user:update",

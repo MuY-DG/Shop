@@ -113,7 +113,7 @@ export default ({ mode }: { mode: string }) => {
         threshold: 10240, // 只有大小大于该值的资源会被处理 10240B = 10KB
         deleteOriginFile: false // 压缩后是否删除原文件
       }),
-      vueDevTools()
+      ...(mode === 'production' ? [] : [vueDevTools()])
       // 打包分析
       // visualizer({
       //   open: true,
@@ -129,11 +129,6 @@ export default ({ mode }: { mode: string }) => {
         'echarts/charts',
         'echarts/components',
         'echarts/renderers',
-        'xlsx',
-        'xgplayer',
-        'crypto-js',
-        'file-saver',
-        'vue-img-cutter',
         'element-plus/es',
         'element-plus/es/components/*/style/css',
         'element-plus/es/components/*/style/index'

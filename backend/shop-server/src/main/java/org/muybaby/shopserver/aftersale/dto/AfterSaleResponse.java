@@ -25,6 +25,40 @@ public record AfterSaleResponse(
         LocalDateTime createdAt,
         List<Long> evidenceFileIds,
         List<AfterSaleEvidenceFileResponse> evidenceFiles,
-        RefundOrderResponse refundOrder
+        RefundOrderResponse refundOrder,
+        Integer flowVersion,
+        Boolean legacyFullOrder,
+        List<AfterSaleItemResponse> items,
+        AfterSaleReturnResponse returnInfo,
+        List<String> allowedActions
 ) {
+    public AfterSaleResponse(
+            Long id,
+            String afterSaleNo,
+            Long orderId,
+            String orderNo,
+            Long userId,
+            String userNickname,
+            String afterSaleType,
+            String status,
+            String reason,
+            String description,
+            Long requestedAmountCent,
+            Long approvedAmountCent,
+            String auditNote,
+            Long reviewedBy,
+            LocalDateTime reviewedAt,
+            LocalDateTime createdAt,
+            List<Long> evidenceFileIds,
+            List<AfterSaleEvidenceFileResponse> evidenceFiles,
+            RefundOrderResponse refundOrder
+    ) {
+        this(
+                id, afterSaleNo, orderId, orderNo, userId, userNickname,
+                afterSaleType, status, reason, description,
+                requestedAmountCent, approvedAmountCent, auditNote,
+                reviewedBy, reviewedAt, createdAt,
+                evidenceFileIds, evidenceFiles, refundOrder,
+                1, true, List.of(), null, List.of());
+    }
 }

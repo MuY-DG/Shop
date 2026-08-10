@@ -4,5 +4,6 @@ public enum StockLockStatus {
     LOCKED,
     RELEASED,
     CONFIRMED,
+    PARTIALLY_RESTOCKED,
     RESTOCKED
 }

@@ -25,7 +25,12 @@ public record AdminAfterSaleDetailResponse(
         List<Long> evidenceFileIds,
         List<AfterSaleEvidenceFileResponse> evidenceFiles,
         RefundOrderResponse refundOrder,
-        AfterSaleOrderContextResponse orderContext
+        AfterSaleOrderContextResponse orderContext,
+        Integer flowVersion,
+        Boolean legacyFullOrder,
+        List<AfterSaleItemResponse> items,
+        AfterSaleReturnResponse returnInfo,
+        List<String> allowedActions
 ) {
 
     public static AdminAfterSaleDetailResponse from(
@@ -52,7 +57,12 @@ public record AdminAfterSaleDetailResponse(
                 afterSale.evidenceFileIds(),
                 afterSale.evidenceFiles(),
                 afterSale.refundOrder(),
-                orderContext
+                orderContext,
+                afterSale.flowVersion(),
+                afterSale.legacyFullOrder(),
+                afterSale.items(),
+                afterSale.returnInfo(),
+                afterSale.allowedActions()
         );
     }
 }

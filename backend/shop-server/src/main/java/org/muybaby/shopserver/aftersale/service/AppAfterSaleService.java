@@ -62,6 +62,9 @@ public class AppAfterSaleService {
     private static final Set<String> ACTIVE_STATUSES = Set.of(
             AfterSaleStatus.REQUESTED.name(),
             AfterSaleStatus.APPROVED.name(),
+            AfterSaleStatus.WAITING_RETURN.name(),
+            AfterSaleStatus.RETURNING.name(),
+            AfterSaleStatus.WAITING_INSPECTION.name(),
             AfterSaleStatus.REFUNDING.name(),
             AfterSaleStatus.REFUND_FAILED.name()
     );
@@ -77,6 +80,7 @@ public class AppAfterSaleService {
     private final StorageUsageService storageUsageService;
     private final OrderStatusLogService orderStatusLogService;
     private final AppUserService appUserService;
+    private final AfterSaleV2ReadService afterSaleV2ReadService;
 
     public AppAfterSaleService(
             JdbcClient jdbcClient,
@@ -85,7 +89,8 @@ public class AppAfterSaleService {
             DirectUploadService directUploadService,
             StorageUsageService storageUsageService,
             OrderStatusLogService orderStatusLogService,
-            AppUserService appUserService
+            AppUserService appUserService,
+            AfterSaleV2ReadService afterSaleV2ReadService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -94,6 +99,7 @@ public class AppAfterSaleService {
         this.storageUsageService = storageUsageService;
         this.orderStatusLogService = orderStatusLogService;
         this.appUserService = appUserService;
+        this.afterSaleV2ReadService = afterSaleV2ReadService;
     }
 
     public StorageAssetResponse uploadEvidence(
@@ -601,12 +607,13 @@ public class AppAfterSaleService {
                 .toList();
         EvidenceBatch evidenceBatch = evidenceBatch(afterSaleIds);
         Map<Long, RefundOrderResponse> refundsByAfterSaleId = refundOrders(afterSaleIds);
-        return rows.stream()
-                .map(row -> toResponse(row, evidenceBatch, refundsByAfterSaleId))
+        List<AfterSaleResponse> bases = rows.stream()
+                .map(row -> toBaseResponse(row, evidenceBatch, refundsByAfterSaleId))
                 .toList();
+        return afterSaleV2ReadService.decorateAll(bases);
     }
 
-    private AfterSaleResponse toResponse(
+    private AfterSaleResponse toBaseResponse(
             AfterSaleRow row,
             EvidenceBatch evidenceBatch,
             Map<Long, RefundOrderResponse> refundsByAfterSaleId

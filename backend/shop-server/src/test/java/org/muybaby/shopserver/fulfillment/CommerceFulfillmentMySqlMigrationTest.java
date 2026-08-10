@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.fulfillment;
 
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.Granularity;
 import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.ReportQuery;
@@ -30,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.muybaby.shopserver.support.MigrationTestSupport.latestMigrationVersion;
 
 @Testcontainers
+@Tag("integration")
 class CommerceFulfillmentMySqlMigrationTest {
 
     @Container
@@ -346,7 +348,7 @@ class CommerceFulfillmentMySqlMigrationTest {
     }
 
     private static MySQLContainer<?> mysql(String databaseName) {
-        return new MySQLContainer<>("mysql:8.0")
+        return new MySQLContainer<>("mysql:8.4.10")
                 .withDatabaseName(databaseName)
                 .withUsername("shop_test")
                 .withPassword("shop_test")

@@ -66,9 +66,14 @@ public abstract class PaymentTestSupport {
 
     private void clearSeededPaymentFlowState() {
         jdbcClient.sql("delete from storage_asset_usage").update();
+        jdbcClient.sql("delete from refund_inventory_restock_item").update();
         jdbcClient.sql("delete from refund_order").update();
         jdbcClient.sql("delete from after_sale_evidence").update();
+        jdbcClient.sql("delete from after_sale_status_log").update();
+        jdbcClient.sql("delete from after_sale_return").update();
+        jdbcClient.sql("delete from after_sale_item").update();
         jdbcClient.sql("delete from after_sale_request").update();
+        jdbcClient.sql("delete from merchant_return_address").update();
         jdbcClient.sql("delete from payment_callback_log").update();
         jdbcClient.sql("delete from order_shipment").update();
         jdbcClient.sql("delete from payment_attempt").update();

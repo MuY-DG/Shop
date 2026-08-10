@@ -15,6 +15,7 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.common.time.TimePolicy;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -33,6 +34,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -125,24 +127,29 @@ public class AdminManagementService {
         int maxSessions = normalizeMaxSessions(request.maxSessions(), 0);
 
         KeyHolder keyHolder = new GeneratedKeyHolder();
-        namedParameterJdbcTemplate.update("""
-                        INSERT INTO admin_user
-                            (username, password_hash, display_name, email, avatar, status,
-                             max_sessions, created_at, updated_at)
-                        VALUES
-                            (:username, :passwordHash, :displayName, :email, :avatar, 'ENABLED',
-                             :maxSessions, :now, :now)
-                        """,
-                new MapSqlParameterSource()
-                        .addValue("username", username)
-                        .addValue("passwordHash", passwordEncoder.encode(request.password()))
-                        .addValue("displayName", request.displayName().trim())
-                        .addValue("email", request.email().trim())
-                        .addValue("avatar", normalize(request.avatar()))
-                        .addValue("maxSessions", maxSessions)
-                        .addValue("now", LocalDateTime.now(java.time.ZoneOffset.UTC)),
-                keyHolder,
-                new String[]{"id"});
+        try {
+            namedParameterJdbcTemplate.update("""
+                            INSERT INTO admin_user
+                                (username, username_normalized, password_hash, display_name, email,
+                                 avatar, status, max_sessions, created_at, updated_at)
+                            VALUES
+                                (:username, :usernameNormalized, :passwordHash, :displayName, :email,
+                                 :avatar, 'ENABLED', :maxSessions, :now, :now)
+                            """,
+                    new MapSqlParameterSource()
+                            .addValue("username", username)
+                            .addValue("usernameNormalized", username.toLowerCase(Locale.ROOT))
+                            .addValue("passwordHash", passwordEncoder.encode(request.password()))
+                            .addValue("displayName", request.displayName().trim())
+                            .addValue("email", request.email().trim())
+                            .addValue("avatar", normalize(request.avatar()))
+                            .addValue("maxSessions", maxSessions)
+                            .addValue("now", LocalDateTime.now(java.time.ZoneOffset.UTC)),
+                    keyHolder,
+                    new String[]{"id"});
+        } catch (DuplicateKeyException ex) {
+            throw new BusinessException(ErrorCode.ADMIN_USERNAME_CONFLICT);
+        }
         Long userId = requireGeneratedId(keyHolder);
         replaceUserRoles(userId, roleIds);
         return userId;
@@ -400,6 +407,7 @@ public class AdminManagementService {
         List<Long> permissionIds = distinctIds(request.permissionIds());
         requireIdsExist("admin_menu", menuIds, ErrorCode.ADMIN_ROLE_UNAVAILABLE);
         requireIdsExist("admin_permission", permissionIds, ErrorCode.ADMIN_ROLE_UNAVAILABLE);
+        requireSafeGuestGrants(roleId, menuIds, permissionIds);
         validateRoleGrantConsistency(menuIds, permissionIds);
 
         jdbcClient.sql("DELETE FROM admin_role_menu WHERE role_id = :roleId")
@@ -464,6 +472,21 @@ public class AdminManagementService {
         );
         if (permissionsWithOwningMenus == null || permissionsWithOwningMenus != permissionIds.size()) {
             throw new BusinessException(ErrorCode.ADMIN_ROLE_GRANT_INVALID);
+        }
+    }
+
+    private void requireSafeGuestGrants(
+            Long roleId,
+            List<Long> menuIds,
+            List<Long> permissionIds
+    ) {
+        String roleCode = jdbcClient.sql("SELECT code FROM admin_role WHERE id = :roleId")
+                .param("roleId", roleId)
+                .query(String.class)
+                .single();
+        if ("R_GUEST".equals(roleCode)
+                && (!menuIds.equals(List.of(860L)) || !permissionIds.isEmpty())) {
+            throw new BusinessException(ErrorCode.PERMISSION_DENIED);
         }
     }
 
@@ -622,9 +645,10 @@ public class AdminManagementService {
         long excluded = excludedUserId == null ? -1L : excludedUserId;
         return jdbcClient.sql("""
                         SELECT COUNT(*) FROM admin_user
-                        WHERE LOWER(username) = LOWER(:username) AND id <> :excluded
+                        WHERE COALESCE(username_normalized, LOWER(username)) = :usernameNormalized
+                          AND id <> :excluded
                         """)
-                .param("username", username)
+                .param("usernameNormalized", username.toLowerCase(Locale.ROOT))
                 .param("excluded", excluded)
                 .query(Long.class)
                 .single() > 0;

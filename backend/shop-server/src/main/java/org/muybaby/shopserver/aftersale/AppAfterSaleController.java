@@ -1,8 +1,13 @@
 package org.muybaby.shopserver.aftersale;
 
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
+import org.muybaby.shopserver.aftersale.dto.AfterSaleEligibilityResponse;
+import org.muybaby.shopserver.aftersale.dto.AfterSaleQuoteResponse;
 import org.muybaby.shopserver.aftersale.dto.AppAfterSaleApplyRequest;
+import org.muybaby.shopserver.aftersale.dto.AppAfterSaleQuoteRequest;
+import org.muybaby.shopserver.aftersale.dto.AppReturnShipmentRequest;
 import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
+import org.muybaby.shopserver.aftersale.service.AppAfterSaleV2Service;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
@@ -17,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -26,9 +32,14 @@ import java.util.List;
 public class AppAfterSaleController {
 
     private final AppAfterSaleService appAfterSaleService;
+    private final AppAfterSaleV2Service appAfterSaleV2Service;
 
-    public AppAfterSaleController(AppAfterSaleService appAfterSaleService) {
+    public AppAfterSaleController(
+            AppAfterSaleService appAfterSaleService,
+            AppAfterSaleV2Service appAfterSaleV2Service
+    ) {
         this.appAfterSaleService = appAfterSaleService;
+        this.appAfterSaleV2Service = appAfterSaleV2Service;
     }
 
     @PostMapping("/app/orders/{orderId}/after-sales")
@@ -37,7 +48,42 @@ public class AppAfterSaleController {
             @PathVariable Long orderId,
             @RequestBody AppAfterSaleApplyRequest request
     ) {
-        return ApiResponse.success(appAfterSaleService.apply(principal, orderId, request));
+        return ApiResponse.success(appAfterSaleV2Service.apply(principal, orderId, request));
+    }
+
+    @GetMapping("/app/orders/{orderId}/after-sales/eligibility")
+    public ApiResponse<AfterSaleEligibilityResponse> eligibility(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId
+    ) {
+        return ApiResponse.success(appAfterSaleV2Service.eligibility(principal, orderId));
+    }
+
+    @PostMapping("/app/orders/{orderId}/after-sales/quote")
+    public ApiResponse<AfterSaleQuoteResponse> quote(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @RequestBody AppAfterSaleQuoteRequest request
+    ) {
+        return ApiResponse.success(appAfterSaleV2Service.quote(principal, orderId, request));
+    }
+
+    @PostMapping("/app/after-sales/{afterSaleId}/cancel")
+    public ApiResponse<AfterSaleResponse> cancel(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId
+    ) {
+        return ApiResponse.success(appAfterSaleV2Service.cancel(principal, afterSaleId));
+    }
+
+    @PutMapping("/app/after-sales/{afterSaleId}/return-shipment")
+    public ApiResponse<AfterSaleResponse> submitReturnShipment(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId,
+            @RequestBody AppReturnShipmentRequest request
+    ) {
+        return ApiResponse.success(
+                appAfterSaleV2Service.submitReturnShipment(principal, afterSaleId, request));
     }
 
     @PostMapping("/app/orders/{orderId}/after-sale-evidence")

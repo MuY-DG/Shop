@@ -35,6 +35,148 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
     private RefundCallbackService refundCallbackService;
 
     @Test
+    void twoItemQuantityRefundsAccumulateAndRestockEachUnitExactlyOnce() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-partial-quantity-app");
+        SeedPaidOrder order = seedPaidOrder(
+                appUser, 6980L, "PAID", "wx-refund-partial-quantity");
+        long orderItemId = jdbcClient.sql("select id from order_item where order_id = :orderId")
+                .param("orderId", order.orderId())
+                .query(Long.class)
+                .single();
+        String adminToken = adminLogin();
+
+        String firstApply = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
+                        .header("Authorization", "Bearer " + appUser.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "requestKey":"partial-quantity-1",
+                                  "afterSaleType":"REFUND_ONLY",
+                                  "reason":"部分退款第一件",
+                                  "requestedAmountCent":3490,
+                                  "items":[{"orderItemId":%d,"quantity":1}]
+                                }
+                                """.formatted(orderItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.requestedAmountCent").value(3490))
+                .andReturn().getResponse().getContentAsString();
+        long firstAfterSaleId = objectMapper.readTree(firstApply).path("data").path("id").asLong();
+        mockMvc.perform(post("/admin/after-sales/{id}/approve", firstAfterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"auditNote":"同意退第一件",
+                                 "items":[{"orderItemId":%d,"approvedQuantity":1}]}
+                                """.formatted(orderItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REFUNDING"));
+        String firstRefundNo = jdbcClient.sql("""
+                        select out_refund_no from refund_order where after_sale_id = :id
+                        """)
+                .param("id", firstAfterSaleId)
+                .query(String.class)
+                .single();
+        assertThat(jdbcClient.sql("""
+                        select concat(status, '|', refund_status, '|', refunded_amount_cent)
+                        from shop_order where id = :id
+                        """)
+                .param("id", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("PAID|PARTIAL_REFUNDING|0");
+
+        String firstCallback = refundNotifyBody(
+                "notify-partial-quantity-1", "REFUND.SUCCESS", order.outTradeNo(),
+                firstRefundNo, "wx-partial-quantity-1", "SUCCESS", 3490L, 6980L);
+        postRefundNotify(firstCallback, "mock-valid-signature").andExpect(status().isOk());
+        postRefundNotify(firstCallback, "mock-valid-signature").andExpect(status().isOk());
+
+        assertThat(jdbcClient.sql("""
+                        select concat(status, '|', refund_status, '|', refunded_amount_cent)
+                        from shop_order where id = :id
+                        """)
+                .param("id", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("PAID|PARTIALLY_REFUNDED|3490");
+        assertThat(jdbcClient.sql("""
+                        select concat(refunded_quantity, '|', status, '|', restocked_quantity)
+                        from order_item item
+                        join stock_lock lock_entry on lock_entry.order_item_id = item.id
+                        where item.id = :itemId
+                        """)
+                .param("itemId", orderItemId)
+                .query(String.class)
+                .single()).isEqualTo("1|PARTIALLY_RESTOCKED|1");
+
+        String secondApply = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
+                        .header("Authorization", "Bearer " + appUser.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "requestKey":"partial-quantity-2",
+                                  "afterSaleType":"REFUND_ONLY",
+                                  "reason":"部分退款第二件",
+                                  "requestedAmountCent":3490,
+                                  "items":[{"orderItemId":%d,"quantity":1}]
+                                }
+                                """.formatted(orderItemId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long secondAfterSaleId = objectMapper.readTree(secondApply).path("data").path("id").asLong();
+        mockMvc.perform(post("/admin/after-sales/{id}/approve", secondAfterSaleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"auditNote":"同意退第二件",
+                                 "items":[{"orderItemId":%d,"approvedQuantity":1}]}
+                                """.formatted(orderItemId)))
+                .andExpect(status().isOk());
+        String secondRefundNo = jdbcClient.sql("""
+                        select out_refund_no from refund_order where after_sale_id = :id
+                        """)
+                .param("id", secondAfterSaleId)
+                .query(String.class)
+                .single();
+        postRefundNotify(refundNotifyBody(
+                        "notify-partial-quantity-2", "REFUND.SUCCESS", order.outTradeNo(),
+                        secondRefundNo, "wx-partial-quantity-2", "SUCCESS", 3490L, 6980L),
+                "mock-valid-signature").andExpect(status().isOk());
+
+        assertThat(jdbcClient.sql("""
+                        select concat(status, '|', refund_status, '|', refunded_amount_cent)
+                        from shop_order where id = :id
+                        """)
+                .param("id", order.orderId())
+                .query(String.class)
+                .single()).isEqualTo("REFUNDED|FULLY_REFUNDED|6980");
+        assertThat(jdbcClient.sql("""
+                        select concat(refunded_quantity, '|', status, '|', restocked_quantity)
+                        from order_item item
+                        join stock_lock lock_entry on lock_entry.order_item_id = item.id
+                        where item.id = :itemId
+                        """)
+                .param("itemId", orderItemId)
+                .query(String.class)
+                .single()).isEqualTo("2|RESTOCKED|2");
+        assertThat(jdbcClient.sql("""
+                        select coalesce(sum(quantity), 0)
+                        from refund_inventory_restock_item
+                        where order_item_id = :itemId
+                        """)
+                .param("itemId", orderItemId)
+                .query(Long.class)
+                .single()).isEqualTo(2L);
+        assertThat(jdbcClient.sql("""
+                        select sku.stock_available from product_sku sku
+                        join order_item item on item.sku_id = sku.id
+                        where item.id = :itemId
+                        """)
+                .param("itemId", orderItemId)
+                .query(Integer.class)
+                .single()).isEqualTo(10);
+    }
+
+    @Test
     void successfulRefundNotificationFinalizesRefundAndDuplicateNotificationIsIdempotent() throws Exception {
         ApprovedRefund approved = approveRefund("after-sale-refund-success", 6980L, 6980L);
         String body = refundNotifyBody(

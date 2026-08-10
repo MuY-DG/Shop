@@ -243,9 +243,15 @@ sudo SHOP_BACKUP_RETENTION_DAYS=30 /opt/shop/shop-server/scripts/backup-mysql.sh
 
 ```bash
 curl --fail http://127.0.0.1:8080/actuator/health
-curl --fail https://pay-dev.muybaby6.icu/actuator/health
+curl --fail http://127.0.0.1:8080/actuator/info
+curl --fail https://api.muybaby6.icu/actuator/health
+curl --fail https://api.muybaby6.icu/actuator/info
 sudo docker compose -f /opt/shop/shop-server/compose.prod.yaml ps
 ```
+
+`/actuator/info` 只允许出现 `gitSha`、`buildTime`、`version` 和
+`flywayVersion`。标准部署脚本会在切换后核对 Git SHA 与 UTC 构建时间，
+不一致时触发回滚。
 
 每次部署都会保留形如 `shop-server:<git-sha>-<timestamp>` 的镜像。需要回滚时，将已验证
 旧镜像重新标记为 `shop-server:local`，然后只重建应用容器：
