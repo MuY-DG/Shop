@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
+import static org.muybaby.shopserver.support.ProductComplianceTestSupport.markNonFood;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -334,6 +335,7 @@ class AppCouponControllerTest {
                 List.of(new AdminProductImageUpsertRequest("https://example.test/coupon-gallery.jpg", null)),
                 List.of(new AdminSkuUpsertRequest(null, skuCode, "{\"规格\":\"300g\"}", "300g", priceCent, originalPriceCent, stock, 300, "https://example.test/coupon-sku.jpg", null, skuStatus, 1))
         ));
+        markNonFood(jdbcClient, spuId);
         adminProductService.publishSpu(spuId);
         return jdbcClient.sql("select id from product_sku where sku_code = :skuCode")
                 .param("skuCode", skuCode)

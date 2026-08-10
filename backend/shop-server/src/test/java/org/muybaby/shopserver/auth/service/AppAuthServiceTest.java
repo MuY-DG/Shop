@@ -16,12 +16,14 @@ import org.muybaby.shopserver.auth.token.TokenProperties;
 import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.compliance.service.LegalDocumentService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.user.entity.AppUser;
 import org.muybaby.shopserver.user.service.AppUserService;
 import org.muybaby.shopserver.wechat.WechatCodeSession;
 import org.muybaby.shopserver.wechat.WechatMiniProgramClient;
 import org.muybaby.shopserver.wechat.WechatPhoneInfo;
+import org.springframework.transaction.support.TransactionOperations;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -59,6 +61,46 @@ class AppAuthServiceTest {
 
         assertThat(profile.openidMasked()).isEqualTo("a****c");
         assertThat(profile.nickname()).isEqualTo("测试用户");
+        verify(fixture.legalDocumentService()).recordPrivacyConsent(1L, null, null, null);
+    }
+
+    @Test
+    void loginRecordsTheAcceptedPrivacyRevisionBeforeIssuingTokens() {
+        Fixture fixture = fixture();
+        WechatCodeSession codeSession = new WechatCodeSession("openid", null, "session-key");
+        AppUser user = appUser(8L, "openid", null, false);
+        when(fixture.wechatClient().code2Session("accepted-code")).thenReturn(codeSession);
+        when(fixture.appUserService().upsertByOpenid(codeSession)).thenReturn(user);
+        when(fixture.opaqueTokenService().issue(any(), any()))
+                .thenReturn(new TokenPair("app_token", "apr_token", 604800));
+
+        fixture.service().login(new AppLoginRequest(
+                "accepted-code", "2026.08.1", true, "release"));
+
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(
+                fixture.appUserService(), fixture.legalDocumentService(), fixture.opaqueTokenService());
+        inOrder.verify(fixture.appUserService()).upsertByOpenid(codeSession);
+        inOrder.verify(fixture.legalDocumentService()).recordPrivacyConsent(
+                8L, "2026.08.1", true, "release");
+        inOrder.verify(fixture.opaqueTokenService()).issue(any(), any());
+    }
+
+    @Test
+    void loginDoesNotIssueTokensWhenPrivacyConsentCannotBeRecorded() {
+        Fixture fixture = fixture();
+        WechatCodeSession codeSession = new WechatCodeSession("openid", null, "session-key");
+        when(fixture.wechatClient().code2Session("rejected-code")).thenReturn(codeSession);
+        when(fixture.appUserService().upsertByOpenid(codeSession))
+                .thenReturn(appUser(9L, "openid", null, false));
+        org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.VALIDATION_FAILED))
+                .when(fixture.legalDocumentService())
+                .recordPrivacyConsent(9L, "stale", true, "release");
+
+        assertThatThrownBy(() -> fixture.service().login(new AppLoginRequest(
+                "rejected-code", "stale", true, "release")))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
+        verifyNoInteractions(fixture.opaqueTokenService());
     }
 
     @Test
@@ -150,6 +192,27 @@ class AppAuthServiceTest {
     }
 
     @Test
+    void refreshRejectsAConsumedSessionWhenAppAuthVersionHasChanged() {
+        Fixture fixture = fixture();
+        TokenSession oldSession = TokenSession.app(
+                "family-versioned",
+                7L,
+                "old-mask",
+                4L,
+                Instant.parse("2026-07-09T00:00:00Z")
+        );
+        when(fixture.opaqueTokenService().consumeRefreshToken("apr_old", TokenKind.APP))
+                .thenReturn(oldSession);
+        when(fixture.appUserService().requireEnabledUser(7L))
+                .thenReturn(appUser(7L, "current-openid", null, false, "测试用户", 5L));
+
+        assertAuthenticationRequired(
+                () -> fixture.service().refresh(new RefreshTokenRequest("apr_old")));
+        verify(fixture.opaqueTokenService()).consumeRefreshToken("apr_old", TokenKind.APP);
+        verifyNoInteractionsAfterRefreshValidation(fixture);
+    }
+
+    @Test
     void logoutAfterRefreshConsumptionPreventsTokenResurrection() throws Exception {
         Clock clock = Clock.fixed(Instant.parse("2026-07-09T00:00:00Z"), ZoneOffset.UTC);
         InMemoryTokenStore tokenStore = new InMemoryTokenStore(clock);
@@ -167,7 +230,9 @@ class AppAuthServiceTest {
                 mock(WechatMiniProgramClient.class),
                 appUserService,
                 tokenService,
-                new AppUserProfileMapper()
+                new AppUserProfileMapper(),
+                mock(LegalDocumentService.class),
+                TransactionOperations.withoutTransaction()
         );
         TokenSession loginSession = TokenSession.app(7L, "openid", clock.instant());
         TokenPair loginPair = tokenService.issue(TokenKind.APP, loginSession);
@@ -287,13 +352,16 @@ class AppAuthServiceTest {
         WechatMiniProgramClient wechatClient = mock(WechatMiniProgramClient.class);
         AppUserService appUserService = mock(AppUserService.class);
         OpaqueTokenService opaqueTokenService = mock(OpaqueTokenService.class);
+        LegalDocumentService legalDocumentService = mock(LegalDocumentService.class);
         AppAuthService service = new AppAuthService(
                 wechatClient,
                 appUserService,
                 opaqueTokenService,
-                new AppUserProfileMapper()
+                new AppUserProfileMapper(),
+                legalDocumentService,
+                TransactionOperations.withoutTransaction()
         );
-        return new Fixture(wechatClient, appUserService, opaqueTokenService, service);
+        return new Fixture(wechatClient, appUserService, opaqueTokenService, legalDocumentService, service);
     }
 
     private AuthenticatedPrincipal appPrincipal(String sessionId, long userId) {
@@ -311,17 +379,34 @@ class AppAuthServiceTest {
             Boolean phoneAuthorized,
             String nickname
     ) {
+        return appUser(id, openid, phoneNumber, phoneAuthorized, nickname, 0L);
+    }
+
+    private AppUser appUser(
+            Long id,
+            String openid,
+            String phoneNumber,
+            Boolean phoneAuthorized,
+            String nickname,
+            long authVersion
+    ) {
         LocalDateTime now = LocalDateTime.now();
         return new AppUser(
                 id, openid, null, nickname, null, phoneNumber, "86", phoneAuthorized,
-                "ENABLED", now, now, now
+                "ENABLED", now, now, now, authVersion, null
         );
+    }
+
+    private void verifyNoInteractionsAfterRefreshValidation(Fixture fixture) {
+        org.mockito.Mockito.verify(fixture.opaqueTokenService(), org.mockito.Mockito.never())
+                .issue(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     private record Fixture(
             WechatMiniProgramClient wechatClient,
             AppUserService appUserService,
             OpaqueTokenService opaqueTokenService,
+            LegalDocumentService legalDocumentService,
             AppAuthService service
     ) {
     }

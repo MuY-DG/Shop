@@ -85,6 +85,115 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
     }
 
     @Test
+    void shippedOrderRefundDoesNotRestockSellableInventory() throws Exception {
+        ApprovedRefund approved = approveRefund(
+                "after-sale-refund-shipped", 6980L, 6980L, "SHIPPED");
+
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-shipped",
+                        "REFUND.SUCCESS",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-shipped",
+                        "SUCCESS",
+                        6980L,
+                        6980L
+                ), "mock-valid-signature")
+                .andExpect(status().isOk());
+
+        assertThat(jdbcClient.sql("""
+                        select count(*) from refund_order
+                        where out_refund_no = :outRefundNo
+                          and status = 'SUCCESS'
+                          and restock_required = false
+                          and restocked_at is null
+                        """)
+                .param("outRefundNo", approved.outRefundNo())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select status from stock_lock where order_id = :orderId")
+                .param("orderId", approved.orderId())
+                .query(String.class)
+                .single()).isEqualTo("CONFIRMED");
+        assertThat(jdbcClient.sql("""
+                        select sku.stock_available
+                        from product_sku sku
+                        join stock_lock lock_entry on lock_entry.sku_id = sku.id
+                        where lock_entry.order_id = :orderId
+                        """)
+                .param("orderId", approved.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(8);
+        assertThat(jdbcClient.sql("""
+                        select count(*) from stock_log
+                        where order_id = :orderId and change_type = 'REFUND_RESTOCK'
+                        """)
+                .param("orderId", approved.orderId())
+                .query(Integer.class)
+                .single()).isZero();
+    }
+
+    @Test
+    void incompleteConfirmedLockMappingRollsBackRefundSuccessAndInventoryMutation() throws Exception {
+        ApprovedRefund approved = approveRefund(
+                "after-sale-refund-invalid-lock-map", 6980L, 6980L);
+        jdbcClient.sql("""
+                        update stock_lock
+                        set quantity = quantity - 1
+                        where order_id = :orderId
+                        """)
+                .param("orderId", approved.orderId())
+                .update();
+
+        postRefundNotify(refundNotifyBody(
+                        "notify-refund-invalid-lock-map",
+                        "REFUND.SUCCESS",
+                        approved.outTradeNo(),
+                        approved.outRefundNo(),
+                        "wx-refund-invalid-lock-map",
+                        "SUCCESS",
+                        6980L,
+                        6980L
+                ), "mock-valid-signature")
+                .andExpect(status().isBadRequest());
+
+        assertThat(jdbcClient.sql("""
+                        select count(*) from refund_order
+                        where out_refund_no = :outRefundNo
+                          and status = 'PROCESSING'
+                          and restock_required = true
+                          and restocked_at is null
+                        """)
+                .param("outRefundNo", approved.outRefundNo())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", approved.orderId())
+                .query(String.class)
+                .single()).isEqualTo("REFUNDING");
+        assertThat(jdbcClient.sql("select status from stock_lock where order_id = :orderId")
+                .param("orderId", approved.orderId())
+                .query(String.class)
+                .single()).isEqualTo("CONFIRMED");
+        assertThat(jdbcClient.sql("""
+                        select sku.stock_available
+                        from product_sku sku
+                        join stock_lock stock_lock_entry on stock_lock_entry.sku_id = sku.id
+                        where stock_lock_entry.order_id = :orderId
+                        """)
+                .param("orderId", approved.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(8);
+        assertThat(jdbcClient.sql("""
+                        select count(*) from stock_log
+                        where order_id = :orderId and change_type = 'REFUND_RESTOCK'
+                        """)
+                .param("orderId", approved.orderId())
+                .query(Integer.class)
+                .single()).isZero();
+    }
+
+    @Test
     void refundCallbackFallsBackToOriginalPaymentConfigurationAfterRotation() throws Exception {
         ApprovedRefund approved = approveRefund("after-sale-refund-old-config", 6980L, 6980L);
         switchToClonedPaymentConfig(91002L);
@@ -471,9 +580,18 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
     }
 
     private ApprovedRefund approveRefund(String code, long paidAmountCent, long approvedAmountCent) throws Exception {
+        return approveRefund(code, paidAmountCent, approvedAmountCent, "PAID");
+    }
+
+    private ApprovedRefund approveRefund(
+            String code,
+            long paidAmountCent,
+            long approvedAmountCent,
+            String orderStatus
+    ) throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession appUser = appLogin(code + "-app");
-        SeedPaidOrder order = seedPaidOrder(appUser, paidAmountCent, "PAID", "wx-refund-" + code);
+        SeedPaidOrder order = seedPaidOrder(appUser, paidAmountCent, orderStatus, "wx-refund-" + code);
         long evidenceFileId = insertAppEvidenceFile(appUser.userId(), order.orderId());
         String applyResponse = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
                         .header("Authorization", "Bearer " + appUser.token())
@@ -564,6 +682,8 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                           and refund_id = :refundId
                           and callback_status = 'SUCCESS'
                           and success_at is not null
+                          and restock_required = true
+                          and restocked_at is not null
                           and callback_digest <> ''
                         """)
                 .param("outRefundNo", approved.outRefundNo())
@@ -578,6 +698,41 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                 .param("orderId", approved.orderId())
                 .query(String.class)
                 .single()).isEqualTo("REFUNDED");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from stock_lock
+                        where order_id = :orderId
+                          and status = 'RESTOCKED'
+                          and restock_refund_order_id = (
+                            select id from refund_order where out_refund_no = :outRefundNo
+                          )
+                          and restocked_at is not null
+                        """)
+                .param("orderId", approved.orderId())
+                .param("outRefundNo", approved.outRefundNo())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("""
+                        select sku.stock_available
+                        from product_sku sku
+                        join stock_lock lock_entry on lock_entry.sku_id = sku.id
+                        where lock_entry.order_id = :orderId
+                        """)
+                .param("orderId", approved.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(10);
+        assertThat(jdbcClient.sql("""
+                        select count(*) from stock_log
+                        where order_id = :orderId
+                          and change_type = 'REFUND_RESTOCK'
+                          and refund_order_id = (
+                            select id from refund_order where out_refund_no = :outRefundNo
+                          )
+                        """)
+                .param("orderId", approved.orderId())
+                .param("outRefundNo", approved.outRefundNo())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
     }
 
     private int callbackLogCount(String outRefundNo, String status) {

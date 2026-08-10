@@ -262,6 +262,44 @@
 
       </view>
 
+      <view wx:if="{{detail.foodDisclosure}}" class="detail-card food-disclosure">
+        <view class="section-heading">
+          <text class="section-heading__title">食品标签与生产信息</text>
+          <text class="food-disclosure__badge">食品</text>
+        </view>
+        <view class="food-disclosure__rows">
+          <view class="food-disclosure__row"><text>食品名称</text><text>{{detail.foodDisclosure.foodName}}</text></view>
+          <view class="food-disclosure__row"><text>配料表</text><text>{{detail.foodDisclosure.ingredients}}</text></view>
+          <view wx:if="{{detail.foodDisclosure.allergenInformation}}" class="food-disclosure__row"><text>过敏原信息</text><text>{{detail.foodDisclosure.allergenInformation}}</text></view>
+          <view class="food-disclosure__row"><text>净含量</text><text>{{selectedNetContentText || '请在规格中查看'}}</text></view>
+          <view class="food-disclosure__row"><text>贮存条件</text><text>{{detail.foodDisclosure.storageConditions}}</text></view>
+          <view class="food-disclosure__row"><text>保质期说明</text><text>{{detail.foodDisclosure.shelfLifeDescription}}</text></view>
+          <view class="food-disclosure__row"><text>生产者</text><text>{{detail.foodDisclosure.manufacturerName}}</text></view>
+          <view class="food-disclosure__row"><text>生产地址</text><text>{{detail.foodDisclosure.manufacturerAddress}}</text></view>
+          <view class="food-disclosure__row"><text>生产许可证</text><text>{{detail.foodDisclosure.productionLicenseNumber}}</text></view>
+          <view class="food-disclosure__row"><text>产地</text><text>{{detail.foodDisclosure.origin}}</text></view>
+          <view class="food-disclosure__row"><text>批次与日期</text><text>{{detail.foodDisclosure.variableProductionNotice}}</text></view>
+          <view wx:if="{{detail.foodDisclosure.consumerNotice}}" class="food-disclosure__row"><text>消费提示</text><text>{{detail.foodDisclosure.consumerNotice}}</text></view>
+        </view>
+        <view class="food-labels">
+          <text class="food-labels__title">食品标签原图</text>
+          <scroll-view class="food-labels__scroll" scroll-x="{{true}}" show-scrollbar="{{false}}">
+            <view class="food-labels__track">
+              <image
+                wx:for="{{detail.foodDisclosure.labelAssets}}"
+                wx:key="fileId"
+                class="food-labels__image"
+                src="{{item.url}}"
+                mode="aspectFill"
+                data-food-label-url="{{item.url}}"
+                bindtap="onFoodLabelPreview"
+                aria-label="查看食品标签原图 {{index + 1}}"
+              />
+            </view>
+          </scroll-view>
+        </view>
+      </view>
+
       <view wx:if="{{detail.detailHtml}}" class="detail-card rich-detail">
         <view class="section-heading">
           <text class="section-heading__title">商品详情</text>

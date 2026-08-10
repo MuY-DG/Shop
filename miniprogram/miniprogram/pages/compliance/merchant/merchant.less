@@ -1,0 +1,116 @@
+@import "../../../styles/tokens.less";
+
+.merchant-page {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  flex-direction: column;
+  background: @color-page;
+}
+.merchant-scroll {
+  height: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.merchant-state {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.merchant-content {
+  box-sizing: border-box;
+  padding: @space-5 @page-gutter calc(@space-12 + env(safe-area-inset-bottom));
+}
+
+.merchant-card {
+  padding: @space-5;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-lg;
+  background: @color-surface;
+  box-shadow: @shadow-card;
+}
+
+.merchant-card + .merchant-card {
+  margin-top: @space-5;
+}
+
+.merchant-card__title {
+  margin-bottom: @space-4;
+  color: @color-text-primary;
+  font-size: @font-size-lg;
+  font-weight: 700;
+}
+
+.merchant-field {
+  display: flex;
+  padding: @space-3 0;
+  align-items: flex-start;
+  gap: @space-5;
+}
+
+.merchant-field + .merchant-field {
+  border-top: 1rpx solid @color-border;
+}
+
+.merchant-field--action {
+  transition: opacity @duration-fast @ease-standard;
+}
+
+.merchant-field--pressed {
+  opacity: 0.6;
+}
+
+.merchant-field__label {
+  width: 190rpx;
+  flex: none;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  line-height: 1.65;
+}
+
+.merchant-field__value {
+  min-width: 0;
+  flex: 1;
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  line-height: 1.65;
+  text-align: right;
+  word-break: break-all;
+}
+
+.merchant-field__value--code {
+  font-family: @font-family-commerce-price;
+  letter-spacing: 1rpx;
+}
+
+.merchant-field__value--link {
+  color: @color-brand;
+}
+
+.license-image {
+  display: block;
+  width: 100%;
+  min-height: 260rpx;
+  border-radius: @radius-md;
+  background: @color-page;
+}
+
+.license-tip,
+.publication-note {
+  color: @color-text-placeholder;
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.license-tip {
+  margin-top: @space-3;
+}
+
+.publication-note {
+  margin-top: @space-6;
+  line-height: 1.6;
+}

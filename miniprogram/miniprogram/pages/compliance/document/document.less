@@ -1,0 +1,71 @@
+@import "../../../styles/tokens.less";
+
+.legal-document-page {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  flex-direction: column;
+  background: @color-page;
+}
+.legal-document-scroll {
+  height: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.legal-document-state {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+}
+
+.legal-document-content {
+  box-sizing: border-box;
+  padding: @space-5 @page-gutter calc(@space-12 + env(safe-area-inset-bottom));
+}
+
+.legal-document-card {
+  padding: @space-6;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-lg;
+  background: @color-surface;
+  box-shadow: @shadow-card;
+}
+
+.legal-document-title {
+  color: @color-text-primary;
+  font-family: "Songti SC", "STSong", @font-family-base;
+  font-size: 38rpx;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.legal-document-meta {
+  display: flex;
+  margin-top: @space-4;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  justify-content: center;
+  gap: @space-5;
+}
+
+.legal-document-body {
+  display: block;
+  margin-top: @space-6;
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  line-height: 1.9;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.legal-document-note {
+  margin-top: @space-5;
+  color: @color-text-placeholder;
+  font-size: 22rpx;
+  line-height: 1.6;
+  text-align: center;
+}

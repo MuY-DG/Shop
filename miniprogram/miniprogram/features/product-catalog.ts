@@ -4,6 +4,7 @@ import type {
   ProductCategory,
   ProductDetail,
   ProductFilterGroup,
+  ProductFoodDisclosure,
   ProductListItem,
   ProductListQuery,
   ProductListSort,
@@ -129,6 +130,77 @@ interface PriceParts {
 
 function cleanText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function normalizeProductFoodDisclosure(
+  value: unknown
+): ProductFoodDisclosure | undefined {
+  if (!isRecord(value) || value.complianceType !== "FOOD") {
+    return undefined;
+  }
+  const foodName = cleanText(value.foodName);
+  const ingredients = cleanText(value.ingredients);
+  const storageConditions = cleanText(value.storageConditions);
+  const shelfLifeDescription = cleanText(value.shelfLifeDescription);
+  const manufacturerName = cleanText(value.manufacturerName);
+  const manufacturerAddress = cleanText(value.manufacturerAddress);
+  const productionLicenseNumber = cleanText(value.productionLicenseNumber);
+  const origin = cleanText(value.origin);
+  const variableProductionNotice = cleanText(value.variableProductionNotice);
+  const labelAssets = (Array.isArray(value.labelAssets) ? value.labelAssets : [])
+    .map((asset, index) => {
+      if (!isRecord(asset)) {
+        return undefined;
+      }
+      const url = cleanText(asset.url);
+      const fileId = typeof asset.fileId === "number" || typeof asset.fileId === "string"
+        ? asset.fileId
+        : "";
+      return url && fileId !== ""
+        ? {
+            fileId,
+            url,
+            sortOrder: Number.isSafeInteger(asset.sortOrder) && Number(asset.sortOrder) >= 0
+              ? Number(asset.sortOrder)
+              : index
+          }
+        : undefined;
+    })
+    .filter((asset): asset is NonNullable<typeof asset> => Boolean(asset))
+    .sort((left, right) => left.sortOrder - right.sortOrder);
+  if (
+    !foodName
+    || !ingredients
+    || !storageConditions
+    || !shelfLifeDescription
+    || !manufacturerName
+    || !manufacturerAddress
+    || !productionLicenseNumber
+    || !origin
+    || !variableProductionNotice
+    || !labelAssets.length
+  ) {
+    return undefined;
+  }
+  return {
+    complianceType: "FOOD",
+    foodName,
+    ingredients,
+    allergenInformation: cleanText(value.allergenInformation) || undefined,
+    storageConditions,
+    shelfLifeDescription,
+    manufacturerName,
+    manufacturerAddress,
+    productionLicenseNumber,
+    origin,
+    consumerNotice: cleanText(value.consumerNotice) || undefined,
+    variableProductionNotice,
+    labelAssets
+  };
 }
 
 const INTERNAL_SINGLE_SPEC_TEXTS = new Set(["默认规格", "默认"]);

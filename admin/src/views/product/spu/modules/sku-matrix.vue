@@ -155,6 +155,18 @@
         </template>
       </ElTableColumn>
 
+      <ElTableColumn label="净含量（食品必填）" width="180">
+        <template #default="{ row, $index }">
+          <ElInput
+            :model-value="row.netContentText"
+            maxlength="120"
+            placeholder="按真实标签填写"
+            :disabled="disabled"
+            @update:model-value="updateRow($index, { netContentText: $event })"
+          />
+        </template>
+      </ElTableColumn>
+
       <ElTableColumn label="重量（g）" width="140">
         <template #default="{ row, $index }">
           <ElInputNumber

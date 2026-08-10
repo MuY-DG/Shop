@@ -9,6 +9,7 @@ import org.muybaby.shopserver.admin.rbac.service.AdminRbacService;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenSession;
+import org.muybaby.shopserver.user.service.AppUserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -27,15 +28,18 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
     private final PathTokenKindResolver pathTokenKindResolver;
     private final OpaqueTokenService opaqueTokenService;
     private final AdminRbacService adminRbacService;
+    private final AppUserService appUserService;
 
     public TokenAuthenticationFilter(
             PathTokenKindResolver pathTokenKindResolver,
             OpaqueTokenService opaqueTokenService,
-            AdminRbacService adminRbacService
+            AdminRbacService adminRbacService,
+            AppUserService appUserService
     ) {
         this.pathTokenKindResolver = pathTokenKindResolver;
         this.opaqueTokenService = opaqueTokenService;
         this.adminRbacService = adminRbacService;
+        this.appUserService = appUserService;
     }
 
     @Override
@@ -49,7 +53,7 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                 String token = bearerToken(request);
                 if (token != null) {
                     Optional<TokenSession> session = opaqueTokenService.lookupAccessToken(token, requiredKind.get())
-                            .flatMap(this::withLiveAdminAuthorization);
+                            .flatMap(this::withLiveAuthorization);
                     if (session.isPresent()) {
                         touchAdminSessionBestEffort(session.get());
                         SecurityContextHolder.getContext().setAuthentication(new TokenAuthentication(session.get()));
@@ -76,9 +80,11 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
         }
     }
 
-    private Optional<TokenSession> withLiveAdminAuthorization(TokenSession storedSession) {
-        if (storedSession.kind() != TokenKind.ADMIN) {
-            return Optional.of(storedSession);
+    private Optional<TokenSession> withLiveAuthorization(TokenSession storedSession) {
+        if (storedSession.kind() == TokenKind.APP) {
+            return appUserService.findEnabledSessionState(storedSession.subjectId())
+                    .filter(state -> storedSession.authVersion() == state.authVersion())
+                    .map(state -> storedSession);
         }
 
         return adminRbacService.findEnabledAuthorizationByUserId(storedSession.subjectId())

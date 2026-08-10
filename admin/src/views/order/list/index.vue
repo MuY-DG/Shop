@@ -599,7 +599,10 @@
                     </div>
                   </dl>
                 </ElCollapseItem>
-                <ElCollapseItem title="微信物流数据（query_trace / getPath）" name="wechat-tracking">
+                <ElCollapseItem
+                  title="微信物流数据（query_trace / getPath）"
+                  name="wechat-tracking"
+                >
                   <div v-loading="trackingLoading" class="tracking-diagnostics">
                     <div class="tracking-diagnostics__toolbar">
                       <span>摘要状态与详细轨迹独立同步，刷新不会改变订单状态。</span>
@@ -687,7 +690,9 @@
                             :timestamp="formatTrackingActionTime(item.actionTime)"
                             :type="index === 0 ? 'primary' : undefined"
                           >
-                            <div class="tracking-diagnostics__message">{{ item.actionMessage }}</div>
+                            <div class="tracking-diagnostics__message">{{
+                              item.actionMessage
+                            }}</div>
                             <div class="tracking-diagnostics__action-type">
                               动作类型：{{ item.actionType }}
                             </div>

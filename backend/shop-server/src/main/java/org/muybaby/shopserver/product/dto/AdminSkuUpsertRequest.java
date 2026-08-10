@@ -35,6 +35,9 @@ public class AdminSkuUpsertRequest {
     @Min(0)
     private Integer weightGram;
 
+    @Size(max = 64)
+    private String netContentText;
+
     @Min(0)
     private Long costPriceCent;
 
@@ -70,6 +73,8 @@ public class AdminSkuUpsertRequest {
     private boolean lowStockThresholdSpecified;
 
     private boolean wholesaleTiersSpecified;
+
+    private boolean netContentTextSpecified;
 
     public AdminSkuUpsertRequest() {
     }
@@ -300,6 +305,15 @@ public class AdminSkuUpsertRequest {
         this.weightGram = weightGram;
     }
 
+    public String netContentText() {
+        return netContentText;
+    }
+
+    public void setNetContentText(String netContentText) {
+        this.netContentText = netContentText;
+        this.netContentTextSpecified = true;
+    }
+
     public Long costPriceCent() {
         return costPriceCent;
     }
@@ -407,5 +421,9 @@ public class AdminSkuUpsertRequest {
 
     public boolean wholesaleTiersSpecified() {
         return wholesaleTiersSpecified;
+    }
+
+    public boolean netContentTextSpecified() {
+        return netContentTextSpecified;
     }
 }

@@ -102,10 +102,29 @@ public record TokenSession(
     }
 
     public static TokenSession app(Long userId, String openidMasked, Instant issuedAt) {
-        return app(UUID.randomUUID().toString(), userId, openidMasked, issuedAt);
+        return app(userId, openidMasked, 0L, issuedAt);
+    }
+
+    public static TokenSession app(
+            Long userId,
+            String openidMasked,
+            long authVersion,
+            Instant issuedAt
+    ) {
+        return app(UUID.randomUUID().toString(), userId, openidMasked, authVersion, issuedAt);
     }
 
     public static TokenSession app(String sessionId, Long userId, String openidMasked, Instant issuedAt) {
+        return app(sessionId, userId, openidMasked, 0L, issuedAt);
+    }
+
+    public static TokenSession app(
+            String sessionId,
+            Long userId,
+            String openidMasked,
+            long authVersion,
+            Instant issuedAt
+    ) {
         return new TokenSession(
                 sessionId,
                 UUID.randomUUID().toString(),
@@ -114,7 +133,7 @@ public record TokenSession(
                 openidMasked,
                 List.of(),
                 List.of(),
-                0L,
+                authVersion,
                 issuedAt
         );
     }

@@ -117,6 +117,7 @@ class CommerceFulfillmentSchemaTest {
                 WechatProviderMode.UNKNOWN
         );
         assertThat(WechatShippingUploadStatus.values()).containsExactly(
+                WechatShippingUploadStatus.PENDING,
                 WechatShippingUploadStatus.SKIPPED,
                 WechatShippingUploadStatus.UPLOADING,
                 WechatShippingUploadStatus.UPLOADED,

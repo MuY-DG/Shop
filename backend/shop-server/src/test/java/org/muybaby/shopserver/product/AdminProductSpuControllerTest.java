@@ -23,6 +23,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.startsWith;
 import static org.muybaby.shopserver.support.AdminTokenTestSupport.issueAdminToken;
+import static org.muybaby.shopserver.support.ProductComplianceTestSupport.markNonFood;
 import static org.muybaby.shopserver.support.TestHashSupport.sha256;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -114,6 +115,7 @@ class AdminProductSpuControllerTest {
                 .getResponse()
                 .getContentAsString();
         long spuId = objectMapper.readTree(createResponse).path("data").asLong();
+        markNonFood(jdbcClient, spuId);
 
         mockMvc.perform(post("/admin/product/spus/" + spuId + "/publish")
                         .header("Authorization", "Bearer " + token))

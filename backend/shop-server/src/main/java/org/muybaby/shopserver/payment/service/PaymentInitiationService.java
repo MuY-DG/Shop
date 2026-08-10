@@ -4,6 +4,7 @@ import com.wechat.pay.java.core.RSAPublicKeyConfig;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.service.OrderPaymentDeadlinePolicy;
 import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.payment.PaymentInitiationProperties;
 import org.muybaby.shopserver.payment.PaymentProperties;
@@ -39,8 +40,6 @@ public class PaymentInitiationService {
     private static final String CURRENCY_CNY = "CNY";
     private static final String OPERATOR_TYPE_APP = "APP";
     private static final String PAYMENT_DESCRIPTION = "MuYbaby商城订单";
-    private static final int DEFAULT_PAYMENT_EXPIRE_MINUTES = 24 * 60;
-
     private final JdbcClient jdbcClient;
     private final PaymentProperties paymentProperties;
     private final PaymentInitiationProperties initiationProperties;
@@ -49,6 +48,7 @@ public class PaymentInitiationService {
     private final WechatPayProvider wechatPayProvider;
     private final OrderStatusLogService orderStatusLogService;
     private final PaymentAttemptService paymentAttemptService;
+    private final OrderPaymentDeadlinePolicy orderPaymentDeadlinePolicy;
     private final Clock clock;
     private final TransactionTemplate requiresNewTransaction;
     private final TransactionTemplate withoutTransaction;
@@ -62,6 +62,7 @@ public class PaymentInitiationService {
             WechatPayProvider wechatPayProvider,
             OrderStatusLogService orderStatusLogService,
             PaymentAttemptService paymentAttemptService,
+            OrderPaymentDeadlinePolicy orderPaymentDeadlinePolicy,
             Clock clock,
             PlatformTransactionManager transactionManager
     ) {
@@ -73,6 +74,7 @@ public class PaymentInitiationService {
         this.wechatPayProvider = wechatPayProvider;
         this.orderStatusLogService = orderStatusLogService;
         this.paymentAttemptService = paymentAttemptService;
+        this.orderPaymentDeadlinePolicy = orderPaymentDeadlinePolicy;
         this.clock = clock;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -260,7 +262,12 @@ public class PaymentInitiationService {
     ) {
         String payerOpenid = findOpenid(userId);
         String outTradeNo = outTradeNo(order);
-        LocalDateTime expiresAt = claimedAt.plusMinutes(expireMinutes());
+        LocalDateTime expiresAt = order.paymentExpiresAt() == null
+                ? orderPaymentDeadlinePolicy.deadlineFrom(claimedAt)
+                : order.paymentExpiresAt();
+        if (!expiresAt.isAfter(claimedAt)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
         String notificationRouteToken = paymentNotificationRouteService.issueToken();
         // Validate the exact callback URL before persisting a payment that would otherwise be
         // permanently bound to an unusable immutable configuration.
@@ -316,11 +323,15 @@ public class PaymentInitiationService {
                         update shop_order
                         set status = 'PAYING',
                             merchant_trade_no = :outTradeNo,
+                            payment_expires_at = coalesce(payment_expires_at, :expiresAt),
+                            created_timeout_claim_token = null,
+                            created_timeout_claimed_at = null,
                             updated_at = :updatedAt
                         where id = :orderId
                           and status = 'CREATED'
                         """)
                 .param("outTradeNo", outTradeNo)
+                .param("expiresAt", expiresAt)
                 .param("updatedAt", claimedAt)
                 .param("orderId", order.orderId())
                 .update();
@@ -430,7 +441,8 @@ public class PaymentInitiationService {
                         select id as order_id,
                                order_no,
                                status,
-                               payable_amount_cent
+                               payable_amount_cent,
+                               payment_expires_at
                         from shop_order
                         where id = :orderId
                           and user_id = :userId
@@ -531,6 +543,8 @@ public class PaymentInitiationService {
                 || !outTradeNo(order).equals(payment.outTradeNo())
                 || !StringUtils.hasText(payment.payerOpenid())
                 || payment.expiresAt() == null
+                || (order.paymentExpiresAt() != null
+                    && !order.paymentExpiresAt().equals(payment.expiresAt()))
                 || !(expectedDigest.equals(payment.requestDigest())
                     || isLegacyCompletedPaymentDigest(payment))) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
@@ -680,12 +694,6 @@ public class PaymentInitiationService {
         return candidate.length() <= 32 ? candidate : "PAY" + order.orderId();
     }
 
-    private int expireMinutes() {
-        return paymentProperties.expireMinutes() == null || paymentProperties.expireMinutes() < 1
-                ? DEFAULT_PAYMENT_EXPIRE_MINUTES
-                : paymentProperties.expireMinutes();
-    }
-
     private LocalDateTime now() {
         return LocalDateTime.now(clock).withNano(0);
     }
@@ -734,7 +742,8 @@ public class PaymentInitiationService {
                 rs.getLong("order_id"),
                 rs.getString("order_no"),
                 rs.getString("status"),
-                rs.getLong("payable_amount_cent")
+                rs.getLong("payable_amount_cent"),
+                rs.getObject("payment_expires_at", LocalDateTime.class)
         );
     }
 
@@ -808,7 +817,13 @@ public class PaymentInitiationService {
     ) {
     }
 
-    private record OrderInitiationRow(Long orderId, String orderNo, String status, long payableAmountCent) {
+    private record OrderInitiationRow(
+            Long orderId,
+            String orderNo,
+            String status,
+            long payableAmountCent,
+            LocalDateTime paymentExpiresAt
+    ) {
     }
 
     private record PaymentInitiationRow(

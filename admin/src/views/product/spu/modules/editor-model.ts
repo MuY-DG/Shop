@@ -36,6 +36,7 @@ export interface ProductEditorSku {
   lowStockThreshold: number
   weightGram: number | null
   volumeCubicMeter: number | null
+  netContentText: string
   image: string
   imageFileId: number | null
   status: ProductSkuStatus
@@ -44,6 +45,30 @@ export interface ProductEditorSku {
   specValueKeys: string[]
   wholesaleTiers: ProductEditorWholesaleTier[]
   sortOrder: number
+}
+
+export type ProductComplianceType = 'UNCLASSIFIED' | 'FOOD' | 'NON_FOOD'
+
+export interface ProductEditorFoodLabelAsset {
+  fileId: number | null
+  url: string
+  sortOrder: number
+}
+
+export interface ProductEditorFoodDisclosure {
+  complianceType: ProductComplianceType
+  foodName: string
+  ingredients: string
+  allergenInformation: string
+  storageConditions: string
+  shelfLifeDescription: string
+  manufacturerName: string
+  manufacturerAddress: string
+  productionLicenseNumber: string
+  origin: string
+  consumerNotice: string
+  variableProductionNotice: string
+  labelAssets: ProductEditorFoodLabelAsset[]
 }
 
 export interface ProductEditorWholesaleTier {
@@ -73,6 +98,7 @@ export interface ProductEditorForm {
   guaranteeServiceIds: number[]
   couponTemplateIds: number[]
   parameterValues: Api.Product.SpuParameterValue[]
+  foodDisclosure: ProductEditorFoodDisclosure
 }
 
 export interface ProductEditorGuaranteeService {
@@ -152,7 +178,22 @@ export const createDefaultForm = (): ProductEditorForm => ({
   specGroups: [],
   guaranteeServiceIds: [],
   couponTemplateIds: [],
-  parameterValues: []
+  parameterValues: [],
+  foodDisclosure: {
+    complianceType: 'UNCLASSIFIED',
+    foodName: '',
+    ingredients: '',
+    allergenInformation: '',
+    storageConditions: '',
+    shelfLifeDescription: '',
+    manufacturerName: '',
+    manufacturerAddress: '',
+    productionLicenseNumber: '',
+    origin: '',
+    consumerNotice: '',
+    variableProductionNotice: '',
+    labelAssets: []
+  }
 })
 
 export const parseSellingPoints = (value: string): string[] =>

@@ -43,6 +43,15 @@ public class AdminShipmentController {
         return ApiResponse.success(adminShipmentService.retryWechatUpload(principal, orderId));
     }
 
+    @PostMapping("/{orderId}/shipping/reconcile-wechat-upload")
+    @PreAuthorize("hasAuthority('order:shipping:retry')")
+    public ApiResponse<OrderShipmentResponse> reconcileWechatUpload(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId
+    ) {
+        return ApiResponse.success(adminShipmentService.reconcileWechatUpload(principal, orderId));
+    }
+
     @PostMapping("/{orderId}/shipping/retry-waybill-registration")
     @PreAuthorize("hasAuthority('order:shipping:registration:retry')")
     public ApiResponse<OrderShipmentResponse> retryWaybillRegistration(

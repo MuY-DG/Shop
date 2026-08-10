@@ -13,6 +13,18 @@ export const API_ENDPOINTS = Object.freeze({
   },
   home: "/app/home",
   contact: "/app/contact",
+  compliance: {
+    merchant: "/app/compliance/merchant",
+    currentDocument: (type: string): string =>
+      `/app/compliance/documents/${type}/current`
+  },
+  accountRights: {
+    list: "/app/account-rights/requests",
+    detail: (requestId: string): string =>
+      `/app/account-rights/requests/${requestId}`,
+    withdraw: (requestId: string): string =>
+      `/app/account-rights/requests/${requestId}/withdraw`
+  },
   realtime: {
     ticket: "/app/realtime/tickets"
   },

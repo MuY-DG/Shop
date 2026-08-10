@@ -33,10 +33,17 @@
 
         <view class="login-actions">
           <button
-            wx:if="{{initializing}}"
+            wx:if="{{policyLoading}}"
+            class="primary-action"
+            loading="{{true}}"
+            disabled="{{true}}"
+          >正在加载隐私政策</button>
+
+          <button
+            wx:elif="{{!policyReady}}"
             class="primary-action"
             disabled="{{true}}"
-          >微信一键登录</button>
+          >暂不可登录</button>
 
           <button
             wx:elif="{{!agreed}}"
@@ -81,13 +88,19 @@
                 value="agree"
                 checked="{{agreed}}"
                 color="#B72B22"
+                disabled="{{!policyReady}}"
               />
               <view class="agreement__copy">
                 <text>已阅读并同意</text>
-                <text class="agreement__link" catchtap="onPrivacyTap">《MuYbaby个人信息保护政策》</text>
+                <text class="agreement__link" catchtap="onPrivacyTap">《{{policyTitle}}》</text>
               </view>
             </label>
           </checkbox-group>
+
+          <view wx:if="{{policyErrorText}}" class="policy-error">
+            <text>{{policyErrorText}}</text>
+            <button bindtap="onPolicyRetry">重新加载</button>
+          </view>
         </view>
 
         <button class="skip-action" bindtap="onSkipTap">暂不登录</button>
@@ -95,7 +108,4 @@
     </scroll-view>
   </view>
 
-  <view wx:if="{{initializing}}" class="login-loading-layer" aria-label="正在加载">
-    <view class="login-loading-spinner"></view>
-  </view>
 </view>

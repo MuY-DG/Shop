@@ -20,4 +20,11 @@ public interface WechatShippingProvider {
                 "WeChat receipt status query is unavailable"
         );
     }
+
+    default WechatShippingOrderQueryResult queryShippingOrder(String transactionId) {
+        return WechatShippingOrderQueryResult.unavailable(
+                "SHIPPING_ORDER_QUERY_UNSUPPORTED",
+                "WeChat shipping order query is unavailable"
+        );
+    }
 }

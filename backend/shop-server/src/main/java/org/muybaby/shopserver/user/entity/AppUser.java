@@ -17,6 +17,28 @@ public record AppUser(
         String status,
         LocalDateTime lastLoginAt,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        long authVersion,
+        LocalDateTime cancelledAt
 ) {
+
+    public AppUser(
+            Long id,
+            String openid,
+            String unionid,
+            String nickname,
+            String avatarUrl,
+            String phoneNumber,
+            String phoneCountryCode,
+            Boolean phoneAuthorized,
+            String status,
+            LocalDateTime lastLoginAt,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
+        this(
+                id, openid, unionid, nickname, avatarUrl, phoneNumber, phoneCountryCode,
+                phoneAuthorized, status, lastLoginAt, createdAt, updatedAt, 0L, null
+        );
+    }
 }

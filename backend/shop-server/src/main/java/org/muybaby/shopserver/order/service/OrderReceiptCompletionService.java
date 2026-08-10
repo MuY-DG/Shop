@@ -5,6 +5,8 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
+import org.muybaby.shopserver.logistics.WechatProviderMode;
+import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +50,30 @@ public class OrderReceiptCompletionService {
         LocalDateTime completedAt = complete(
                 order.orderId(), OPERATOR_TYPE_APP, userId,
                 "ORDER_COMPLETED", "用户确认收货"
+        );
+        return new OrderReceiptResponse(
+                order.orderId(), OrderStatus.COMPLETED.name(), completedAt
+        );
+    }
+
+    @Transactional
+    public OrderReceiptResponse completeForUserWithLocalFallback(Long userId, Long orderId) {
+        ReceiptOrder order = lockOwnedVisibleOrder(userId, orderId);
+        if (OrderStatus.COMPLETED.name().equals(order.status())) {
+            return response(order);
+        }
+        if (!OrderStatus.SHIPPED.name().equals(order.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        afterSaleFulfillmentPolicy.rejectIfBlocked(order.orderId());
+        ReceiptShipment shipment = lockShipment(order.orderId());
+        if (shipment == null || !shipment.permitsLocalFallback()) {
+            throw new BusinessException(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
+        }
+        LocalDateTime completedAt = complete(
+                order.orderId(), OPERATOR_TYPE_APP, userId,
+                "ORDER_COMPLETED_LOCAL_FALLBACK",
+                "用户确认收货（微信发货未上传，本地兜底）"
         );
         return new OrderReceiptResponse(
                 order.orderId(), OrderStatus.COMPLETED.name(), completedAt
@@ -111,6 +137,38 @@ public class OrderReceiptCompletionService {
                 .orElse(null);
     }
 
+    private ReceiptShipment lockShipment(Long orderId) {
+        return jdbcClient.sql("""
+                        select wechat_provider_mode, wechat_upload_status
+                        from order_shipment
+                        where order_id = :orderId
+                        for update
+                        """)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new ReceiptShipment(
+                        providerMode(rs.getString("wechat_provider_mode")),
+                        uploadStatus(rs.getString("wechat_upload_status"))
+                ))
+                .optional()
+                .orElse(null);
+    }
+
+    private WechatProviderMode providerMode(String value) {
+        try {
+            return WechatProviderMode.valueOf(value);
+        } catch (RuntimeException ex) {
+            return WechatProviderMode.UNKNOWN;
+        }
+    }
+
+    private WechatShippingUploadStatus uploadStatus(String value) {
+        try {
+            return WechatShippingUploadStatus.valueOf(value);
+        } catch (RuntimeException ex) {
+            return WechatShippingUploadStatus.UNKNOWN;
+        }
+    }
+
     private LocalDateTime complete(
             Long orderId,
             String operatorType,
@@ -153,5 +211,20 @@ public class OrderReceiptCompletionService {
             String status,
             LocalDateTime completedAt
     ) {
+    }
+
+    private record ReceiptShipment(
+            WechatProviderMode providerMode,
+            WechatShippingUploadStatus uploadStatus
+    ) {
+        boolean permitsLocalFallback() {
+            if (providerMode != WechatProviderMode.REAL) {
+                return true;
+            }
+            return uploadStatus == WechatShippingUploadStatus.PENDING
+                    || uploadStatus == WechatShippingUploadStatus.SKIPPED
+                    || uploadStatus == WechatShippingUploadStatus.FAILED
+                    || uploadStatus == WechatShippingUploadStatus.UNAVAILABLE;
+        }
     }
 }

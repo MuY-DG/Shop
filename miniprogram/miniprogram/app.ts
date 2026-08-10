@@ -1,7 +1,7 @@
 import {
   APP_CONFIG,
-  assertRuntimeConfig,
-  type MiniProgramEnvVersion
+  APP_ENV_VERSION,
+  assertRuntimeConfig
 } from "./config/app-config";
 import {
   onSessionExpired,
@@ -11,21 +11,13 @@ import { handleWechatReceiptAppShow } from "./features/wechat-order-receipt";
 import { replaceWithExpiredSessionLogin } from "./utils/login-navigation";
 import { getAppLayoutMetrics } from "./utils/system";
 
-function getEnvVersion(): MiniProgramEnvVersion {
-  try {
-    return wx.getAccountInfoSync().miniProgram.envVersion;
-  } catch {
-    return "develop";
-  }
-}
-
 App<IAppOption>({
   globalData: {
     config: APP_CONFIG,
     layout: getAppLayoutMetrics()
   },
   onLaunch() {
-    assertRuntimeConfig(getEnvVersion());
+    assertRuntimeConfig(APP_ENV_VERSION, APP_CONFIG);
     restoreSession();
     onSessionExpired(() => {
       replaceWithExpiredSessionLogin();

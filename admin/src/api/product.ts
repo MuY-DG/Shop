@@ -47,6 +47,20 @@ export function fetchProductSpuDetail(spuId: number) {
   })
 }
 
+export function fetchProductFoodDisclosure(spuId: number) {
+  return request.get<Api.Product.FoodDisclosure>({
+    url: `/admin/product/spus/${spuId}/food-disclosure`
+  })
+}
+
+export function replaceProductFoodDisclosure(spuId: number, data: Api.Product.FoodDisclosure) {
+  return request.put<Api.Product.FoodDisclosure>({
+    url: `/admin/product/spus/${spuId}/food-disclosure`,
+    data,
+    showSuccessMessage: false
+  })
+}
+
 export function createProductSpu(data: Api.Product.SpuForm) {
   return request.post<number>({
     url: '/admin/product/spus',

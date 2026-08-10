@@ -16,11 +16,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,17 +54,20 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
     private final ObjectMapper objectMapper;
     private final WechatAccessTokenProvider accessTokenProvider;
     private final WechatMiniProgramProperties properties;
+    private final int maxResponseBytes;
 
     public RealWechatShippingProvider(
-            RestClient.Builder restClientBuilder,
+            @Qualifier(WechatShippingHttpConfiguration.REST_CLIENT_BEAN_NAME) RestClient restClient,
             ObjectMapper objectMapper,
             WechatAccessTokenProvider accessTokenProvider,
-            WechatMiniProgramProperties properties
+            WechatMiniProgramProperties properties,
+            WechatShippingHttpProperties httpProperties
     ) {
-        this.restClient = restClientBuilder.build();
+        this.restClient = restClient;
         this.objectMapper = objectMapper;
         this.accessTokenProvider = accessTokenProvider;
         this.properties = properties;
+        this.maxResponseBytes = httpProperties.maxResponseBytes();
     }
 
     @Override
@@ -110,12 +115,7 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         }
 
         try {
-            String responseBody = restClient.post()
-                    .uri(UPLOAD_URL, accessToken)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(String.class);
+            String responseBody = postJson(UPLOAD_URL, accessToken, body);
             WechatShippingUploadResult result = parseUploadResponse(responseBody);
             logUploadResult(request.orderId(), result);
             return result;
@@ -145,12 +145,9 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         }
 
         try {
-            String responseBody = restClient.post()
-                    .uri(CAPABILITY_URL, accessTokenProvider.getAccessToken())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(String.class);
+            String responseBody = postJson(
+                    CAPABILITY_URL, accessTokenProvider.getAccessToken(), body
+            );
             WechatShippingCapabilityResult result = parseCapabilityResponse(responseBody);
             log.info(
                     "WeChat shipping capability completed: state={}, errorCode={}",
@@ -166,8 +163,31 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
 
     @Override
     public WechatReceiptQueryResult queryReceiptStatus(String transactionId) {
+        WechatShippingOrderQueryResult orderResult = queryShippingOrder(transactionId);
+        WechatReceiptQueryResult result;
+        if (orderResult.status() == WechatShippingOrderQueryStatus.UNAVAILABLE) {
+            result = WechatReceiptQueryResult.unavailable(
+                    orderResult.errorCode(), orderResult.errorMessage()
+            );
+        } else if (orderResult.orderState() != null
+                && CONFIRMED_ORDER_STATES.contains(orderResult.orderState())) {
+            result = WechatReceiptQueryResult.confirmed(orderResult.orderState());
+        } else if (orderResult.orderState() != null
+                && NOT_CONFIRMED_ORDER_STATES.contains(orderResult.orderState())) {
+            result = WechatReceiptQueryResult.notConfirmed(orderResult.orderState());
+        } else {
+            result = WechatReceiptQueryResult.unknown(
+                    orderResult.errorCode(), "WeChat receipt status could not be confirmed"
+            );
+        }
+        logReceiptResult(result, null);
+        return result;
+    }
+
+    @Override
+    public WechatShippingOrderQueryResult queryShippingOrder(String transactionId) {
         if (!StringUtils.hasText(transactionId)) {
-            return WechatReceiptQueryResult.unavailable(
+            return WechatShippingOrderQueryResult.unavailable(
                     MISSING_TRANSACTION_ID, MISSING_TRANSACTION_ID_MESSAGE
             );
         }
@@ -176,8 +196,8 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         try {
             body = objectMapper.writeValueAsString(new ReceiptQueryRequest(transactionId));
         } catch (JsonProcessingException ex) {
-            WechatReceiptQueryResult result = unknownReceiptResponse("PAYLOAD_ERROR");
-            logReceiptResult(result, ex);
+            WechatShippingOrderQueryResult result = unknownShippingOrderResponse("PAYLOAD_ERROR");
+            logShippingOrderResult(result, ex);
             return result;
         }
 
@@ -185,33 +205,30 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         try {
             accessToken = accessTokenProvider.getAccessToken();
         } catch (RuntimeException ex) {
-            WechatReceiptQueryResult result = receiptAccessTokenUnavailable();
-            logReceiptResult(result, ex);
+            WechatShippingOrderQueryResult result = shippingOrderAccessTokenUnavailable();
+            logShippingOrderResult(result, ex);
             return result;
         }
         if (!StringUtils.hasText(accessToken)) {
-            WechatReceiptQueryResult result = receiptAccessTokenUnavailable();
-            logReceiptResult(result, null);
+            WechatShippingOrderQueryResult result = shippingOrderAccessTokenUnavailable();
+            logShippingOrderResult(result, null);
             return result;
         }
 
         try {
-            String responseBody = restClient.post()
-                    .uri(ORDER_QUERY_URL, accessToken)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
-                    .retrieve()
-                    .body(String.class);
-            WechatReceiptQueryResult result = parseReceiptResponse(responseBody, transactionId);
-            logReceiptResult(result, null);
+            String responseBody = postJson(ORDER_QUERY_URL, accessToken, body);
+            WechatShippingOrderQueryResult result = parseShippingOrderResponse(
+                    responseBody, transactionId
+            );
+            logShippingOrderResult(result, null);
             return result;
         } catch (RestClientException ex) {
-            WechatReceiptQueryResult result = ambiguousReceiptRequest();
-            logReceiptResult(result, ex);
+            WechatShippingOrderQueryResult result = ambiguousShippingOrderRequest();
+            logShippingOrderResult(result, ex);
             return result;
         } catch (RuntimeException ex) {
-            WechatReceiptQueryResult result = ambiguousReceiptRequest();
-            logReceiptResult(result, ex);
+            WechatShippingOrderQueryResult result = ambiguousShippingOrderRequest();
+            logShippingOrderResult(result, ex);
             return result;
         }
     }
@@ -219,12 +236,9 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
     @Override
     public List<WechatDeliveryCompanyResult> getDeliveryCompanies() {
         try {
-            String responseBody = restClient.post()
-                    .uri(DELIVERY_LIST_URL, accessTokenProvider.getAccessToken())
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body("{}")
-                    .retrieve()
-                    .body(String.class);
+            String responseBody = postJson(
+                    DELIVERY_LIST_URL, accessTokenProvider.getAccessToken(), "{}"
+            );
             DeliveryListResponse response = readDeliveryListResponse(responseBody);
             if (response.errcode() != 0) {
                 log.warn(
@@ -261,19 +275,22 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         }
     }
 
-    private WechatReceiptQueryResult parseReceiptResponse(String body, String expectedTransactionId) {
+    private WechatShippingOrderQueryResult parseShippingOrderResponse(
+            String body,
+            String expectedTransactionId
+    ) {
         try {
             JsonNode response = readResponseObject(body);
             Integer errcode = strictErrcode(response);
             if (errcode == null) {
-                return unknownReceiptResponse("AMBIGUOUS_RESPONSE");
+                return unknownShippingOrderResponse("AMBIGUOUS_RESPONSE");
             }
             if (errcode != 0) {
-                return unknownReceiptResponse(safeErrorCode(errcode));
+                return unknownShippingOrderResponse(safeErrorCode(errcode));
             }
             JsonNode order = response == null ? null : response.get("order");
             if (order == null || !order.isObject()) {
-                return unknownReceiptResponse("AMBIGUOUS_RESPONSE");
+                return unknownShippingOrderResponse("AMBIGUOUS_RESPONSE");
             }
             JsonNode returnedTransactionId = order.get("transaction_id");
             JsonNode orderState = order.get("order_state");
@@ -283,19 +300,77 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
                     || orderState == null
                     || !orderState.isIntegralNumber()
                     || !orderState.canConvertToInt()) {
-                return unknownReceiptResponse("ORDER_MISMATCH");
+                return unknownShippingOrderResponse("ORDER_MISMATCH");
             }
             int state = orderState.intValue();
-            if (CONFIRMED_ORDER_STATES.contains(state)) {
-                return WechatReceiptQueryResult.confirmed(state);
+            WechatShippingSummary shipping = parseShippingSummary(order.get("shipping"));
+            if (state == 1 && (shipping == null || !shipping.finishShipping())) {
+                return WechatShippingOrderQueryResult.notUploaded(expectedTransactionId, state);
             }
-            if (NOT_CONFIRMED_ORDER_STATES.contains(state)) {
-                return WechatReceiptQueryResult.notConfirmed(state);
+            if (Set.of(2, 3, 4, 6).contains(state)
+                    && shipping != null
+                    && shipping.finishShipping()) {
+                return WechatShippingOrderQueryResult.uploaded(
+                        expectedTransactionId, state, shipping
+                );
             }
-            return unknownReceiptResponse("UNKNOWN_ORDER_STATE");
+            return WechatShippingOrderQueryResult.unknown(
+                    expectedTransactionId,
+                    state,
+                    shipping,
+                    state == 5 ? "REMOTE_ORDER_REFUNDED" : "SHIPPING_FACTS_AMBIGUOUS",
+                    "WeChat shipping state could not be confirmed"
+            );
         } catch (JsonProcessingException | IllegalArgumentException ex) {
-            return unknownReceiptResponse("AMBIGUOUS_RESPONSE");
+            return unknownShippingOrderResponse("AMBIGUOUS_RESPONSE");
         }
+    }
+
+    private WechatShippingSummary parseShippingSummary(JsonNode shippingNode) {
+        if (shippingNode == null || !shippingNode.isObject()) {
+            return null;
+        }
+        JsonNode logisticsTypeNode = shippingNode.get("logistics_type");
+        JsonNode deliveryModeNode = shippingNode.get("delivery_mode");
+        JsonNode finishNode = shippingNode.get("finish_shipping");
+        JsonNode shippingListNode = shippingNode.get("shipping_list");
+        if (logisticsTypeNode == null
+                || !logisticsTypeNode.isIntegralNumber()
+                || !logisticsTypeNode.canConvertToInt()
+                || deliveryModeNode == null
+                || !deliveryModeNode.isIntegralNumber()
+                || !deliveryModeNode.canConvertToInt()
+                || finishNode == null
+                || !finishNode.isBoolean()
+                || shippingListNode == null
+                || !shippingListNode.isArray()) {
+            return null;
+        }
+        LogisticsType logisticsType = LogisticsType.fromValue(logisticsTypeNode.intValue());
+        org.muybaby.shopserver.logistics.DeliveryMode deliveryMode =
+                org.muybaby.shopserver.logistics.DeliveryMode.fromValue(deliveryModeNode.intValue());
+        List<WechatShippingFact> facts = new ArrayList<>();
+        for (JsonNode item : shippingListNode) {
+            if (item == null || !item.isObject()) {
+                return null;
+            }
+            facts.add(new WechatShippingFact(
+                    textualOrNull(item.get("tracking_no")),
+                    textualOrNull(item.get("express_company"))
+            ));
+        }
+        return new WechatShippingSummary(
+                logisticsType,
+                deliveryMode,
+                finishNode.booleanValue(),
+                facts
+        );
+    }
+
+    private String textualOrNull(JsonNode node) {
+        return node != null && node.isTextual() && StringUtils.hasText(node.textValue())
+                ? node.textValue().trim()
+                : null;
     }
 
     private WechatShippingUploadResult validateUpload(WechatShippingUploadRequest request) {
@@ -445,6 +520,15 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         return response != null && response.isObject() ? response : null;
     }
 
+    private String postJson(String url, String accessToken, String body) {
+        return restClient.post()
+                .uri(url, accessToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .exchange((request, response) ->
+                        WechatShippingResponseBodyReader.readJson(response, maxResponseBytes));
+    }
+
     private Integer strictErrcode(JsonNode response) {
         if (response == null) {
             return null;
@@ -490,19 +574,19 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         );
     }
 
-    private WechatReceiptQueryResult receiptAccessTokenUnavailable() {
-        return WechatReceiptQueryResult.unavailable(
-                "ACCESS_TOKEN_UNAVAILABLE", "WeChat receipt status is unavailable"
+    private WechatShippingOrderQueryResult shippingOrderAccessTokenUnavailable() {
+        return WechatShippingOrderQueryResult.unavailable(
+                "ACCESS_TOKEN_UNAVAILABLE", "WeChat shipping order status is unavailable"
         );
     }
 
-    private WechatReceiptQueryResult ambiguousReceiptRequest() {
-        return unknownReceiptResponse("REQUEST_AMBIGUOUS");
+    private WechatShippingOrderQueryResult ambiguousShippingOrderRequest() {
+        return unknownShippingOrderResponse("REQUEST_AMBIGUOUS");
     }
 
-    private WechatReceiptQueryResult unknownReceiptResponse(String errorCode) {
-        return WechatReceiptQueryResult.unknown(
-                errorCode, "WeChat receipt status could not be confirmed"
+    private WechatShippingOrderQueryResult unknownShippingOrderResponse(String errorCode) {
+        return WechatShippingOrderQueryResult.unknown(
+                errorCode, "WeChat shipping order status could not be confirmed"
         );
     }
 
@@ -530,6 +614,32 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         }
         log.info(
                 "WeChat receipt status query completed: status={}, orderState={}, errorCode={}",
+                result.status(), result.orderState(), result.errorCode()
+        );
+    }
+
+    private void logShippingOrderResult(
+            WechatShippingOrderQueryResult result,
+            Exception exception
+    ) {
+        if (exception != null) {
+            log.warn(
+                    "WeChat shipping order query failed safely: status={}, orderState={}, errorCode={}, exception={}",
+                    result.status(), result.orderState(), result.errorCode(),
+                    exception.getClass().getSimpleName()
+            );
+            return;
+        }
+        if (result.status() == WechatShippingOrderQueryStatus.UPLOADED
+                || result.status() == WechatShippingOrderQueryStatus.NOT_UPLOADED) {
+            log.info(
+                    "WeChat shipping order query completed: status={}, orderState={}, errorCode={}",
+                    result.status(), result.orderState(), result.errorCode()
+            );
+            return;
+        }
+        log.warn(
+                "WeChat shipping order query completed: status={}, orderState={}, errorCode={}",
                 result.status(), result.orderState(), result.errorCode()
         );
     }

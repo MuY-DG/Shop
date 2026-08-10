@@ -50,6 +50,7 @@ import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.muybaby.shopserver.user.address.service.AppAddressService;
 import org.muybaby.shopserver.user.address.service.OwnedAddress;
+import org.muybaby.shopserver.user.service.AppUserService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -100,6 +101,8 @@ public class AppOrderService {
     private final WechatShippingProvider wechatShippingProvider;
     private final OrderStatusLogService orderStatusLogService;
     private final OrderReceiptCompletionService orderReceiptCompletionService;
+    private final OrderPaymentDeadlinePolicy orderPaymentDeadlinePolicy;
+    private final AppUserService appUserService;
     private final Clock clock;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
@@ -115,6 +118,8 @@ public class AppOrderService {
             WechatShippingProvider wechatShippingProvider,
             OrderStatusLogService orderStatusLogService,
             OrderReceiptCompletionService orderReceiptCompletionService,
+            OrderPaymentDeadlinePolicy orderPaymentDeadlinePolicy,
+            AppUserService appUserService,
             Clock clock
     ) {
         this.jdbcClient = jdbcClient;
@@ -128,6 +133,8 @@ public class AppOrderService {
         this.wechatShippingProvider = wechatShippingProvider;
         this.orderStatusLogService = orderStatusLogService;
         this.orderReceiptCompletionService = orderReceiptCompletionService;
+        this.orderPaymentDeadlinePolicy = orderPaymentDeadlinePolicy;
+        this.appUserService = appUserService;
         this.clock = clock;
     }
 
@@ -145,6 +152,7 @@ public class AppOrderService {
     @Transactional
     public OrderSubmitResponse submit(AuthenticatedPrincipal principal, AppOrderSubmitRequest request) {
         Long userId = requireAppUser(principal);
+        appUserService.requireEnabledUserForUpdate(userId);
         CheckoutRequest checkoutRequest = CheckoutRequest.from(request);
         checkoutSelectionService.validate(checkoutRequest);
         validateSubmitRequest(request, checkoutRequest);
@@ -161,6 +169,7 @@ public class AppOrderService {
         }
 
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        LocalDateTime paymentExpiresAt = orderPaymentDeadlinePolicy.deadlineFrom(now);
         String orderNo = nextOrderNo(now);
         Long orderId;
         try {
@@ -173,6 +182,7 @@ public class AppOrderService {
                     analyticsVisitorId,
                     analyticsSessionId,
                     analyticsEntryScene,
+                    paymentExpiresAt,
                     now
             );
         } catch (DuplicateKeyException ex) {
@@ -799,6 +809,18 @@ public class AppOrderService {
         }
         afterSaleFulfillmentPolicy.rejectIfBlocked(verificationOrder.orderId());
 
+        ReceiptShipmentPolicy shipmentPolicy = findReceiptShipmentPolicy(
+                verificationOrder.orderId()
+        );
+        if (shipmentPolicy != null && shipmentPolicy.permitsLocalFallback()) {
+            return orderReceiptCompletionService.completeForUserWithLocalFallback(
+                    userId, verificationOrder.orderId()
+            );
+        }
+        if (shipmentPolicy != null && shipmentPolicy.ambiguous()) {
+            throw new BusinessException(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
+        }
+
         PaymentOrderSnapshot latestPayment = findLatestPaymentOrder(verificationOrder.orderId());
         String transactionId = nonBlank(
                 latestPayment == null ? null : latestPayment.transactionId(),
@@ -808,6 +830,21 @@ public class AppOrderService {
 
         return orderReceiptCompletionService.completeForUser(
                 userId, verificationOrder.orderId());
+    }
+
+    private ReceiptShipmentPolicy findReceiptShipmentPolicy(long orderId) {
+        return jdbcClient.sql("""
+                        select wechat_provider_mode, wechat_upload_status
+                        from order_shipment
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new ReceiptShipmentPolicy(
+                        providerMode(rs.getString("wechat_provider_mode")),
+                        uploadStatus(rs.getString("wechat_upload_status"))
+                ))
+                .optional()
+                .orElse(null);
     }
 
     private void verifyWechatReceipt(String transactionId) {
@@ -964,6 +1001,7 @@ public class AppOrderService {
             String analyticsVisitorId,
             String analyticsSessionId,
             String analyticsEntryScene,
+            LocalDateTime paymentExpiresAt,
             LocalDateTime now
     ) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
@@ -971,12 +1009,12 @@ public class AppOrderService {
                         insert into shop_order (
                             order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             analytics_visitor_id, analytics_session_id, analytics_entry_scene,
-                            created_at, updated_at
+                            payment_expires_at, created_at, updated_at
                         )
                         values (
                             :orderNo, :userId, :status, :source, :idempotencyKey, :checkoutRequestDigest,
                             :analyticsVisitorId, :analyticsSessionId, :analyticsEntryScene,
-                            :createdAt, :updatedAt
+                            :paymentExpiresAt, :createdAt, :updatedAt
                         )
                         """,
                 new MapSqlParameterSource()
@@ -989,6 +1027,7 @@ public class AppOrderService {
                         .addValue("analyticsVisitorId", analyticsVisitorId)
                         .addValue("analyticsSessionId", analyticsSessionId)
                         .addValue("analyticsEntryScene", analyticsEntryScene)
+                        .addValue("paymentExpiresAt", paymentExpiresAt)
                         .addValue("createdAt", now)
                         .addValue("updatedAt", now),
                 keyHolder,
@@ -1644,6 +1683,7 @@ public class AppOrderService {
             return "WeChat has accepted the shipping information";
         }
         return switch (status) {
+            case PENDING -> "Shipping information is queued for platform upload";
             case SKIPPED -> "Shipping information is pending platform upload";
             case UPLOADING -> "Shipping information is being uploaded";
             case FAILED -> "Shipping information has not been uploaded yet";
@@ -1651,6 +1691,27 @@ public class AppOrderService {
             case UNKNOWN -> "Platform upload status is being confirmed";
             case UPLOADED -> "Shipping information was saved locally";
         };
+    }
+
+    private record ReceiptShipmentPolicy(
+            WechatProviderMode providerMode,
+            WechatShippingUploadStatus uploadStatus
+    ) {
+        boolean permitsLocalFallback() {
+            if (providerMode != WechatProviderMode.REAL) {
+                return true;
+            }
+            return uploadStatus == WechatShippingUploadStatus.PENDING
+                    || uploadStatus == WechatShippingUploadStatus.SKIPPED
+                    || uploadStatus == WechatShippingUploadStatus.FAILED
+                    || uploadStatus == WechatShippingUploadStatus.UNAVAILABLE;
+        }
+
+        boolean ambiguous() {
+            return providerMode == WechatProviderMode.REAL
+                    && (uploadStatus == WechatShippingUploadStatus.UPLOADING
+                    || uploadStatus == WechatShippingUploadStatus.UNKNOWN);
+        }
     }
 
     private UserCouponRow mapUserCoupon(ResultSet rs, int rowNum) throws SQLException {

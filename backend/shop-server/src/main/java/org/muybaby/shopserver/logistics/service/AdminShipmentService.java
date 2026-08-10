@@ -64,6 +64,14 @@ public class AdminShipmentService {
         return localShipmentService.getForAdmin(orderId);
     }
 
+    public OrderShipmentResponse reconcileWechatUpload(
+            AuthenticatedPrincipal principal,
+            Long orderId
+    ) {
+        uploadCoordinator.reconcile(principal, orderId);
+        return localShipmentService.getForAdmin(orderId);
+    }
+
     public OrderShipmentResponse retryWaybillRegistration(
             AuthenticatedPrincipal principal,
             Long orderId

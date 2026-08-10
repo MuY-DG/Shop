@@ -122,10 +122,33 @@ export interface ProductSku {
   saleState: ProductSaleState;
   maxPurchaseQuantity?: number;
   weightGram?: number;
+  netContentText?: string;
   image?: string;
   imageFileId?: number;
   status: ProductSkuStatus;
   wholesaleTiers: WholesaleTier[];
+}
+
+export interface ProductFoodLabelAsset {
+  fileId: string | number;
+  url: string;
+  sortOrder: number;
+}
+
+export interface ProductFoodDisclosure {
+  complianceType: "FOOD";
+  foodName: string;
+  ingredients: string;
+  allergenInformation?: string;
+  storageConditions: string;
+  shelfLifeDescription: string;
+  manufacturerName: string;
+  manufacturerAddress: string;
+  productionLicenseNumber: string;
+  origin: string;
+  consumerNotice?: string;
+  variableProductionNotice: string;
+  labelAssets: ProductFoodLabelAsset[];
 }
 
 export interface ProductDetail {
@@ -140,6 +163,7 @@ export interface ProductDetail {
   salesCount: number;
   saleState: ProductSaleState;
   sellingPoints: string[];
+  foodDisclosure?: ProductFoodDisclosure;
   detailHtml?: string;
   images: ProductImage[];
   skus: ProductSku[];

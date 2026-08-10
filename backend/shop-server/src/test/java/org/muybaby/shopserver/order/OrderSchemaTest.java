@@ -88,4 +88,32 @@ class OrderSchemaTest {
         assertThat(permissionCount).isEqualTo(2);
         assertThat(displayImageFileId).isEqualTo(7002L);
     }
+
+    @Test
+    void createdOrdersHaveAClaimablePaymentDeadline() {
+        Integer columnCount = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where lower(table_name) = 'shop_order'
+                          and lower(column_name) in (
+                            'payment_expires_at',
+                            'created_timeout_claim_token',
+                            'created_timeout_claimed_at',
+                            'created_timeout_attempts'
+                          )
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer indexCount = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.indexes
+                        where lower(table_name) = 'shop_order'
+                          and lower(index_name) = 'idx_shop_order_created_timeout'
+                        """)
+                .query(Integer.class)
+                .single();
+
+        assertThat(columnCount).isEqualTo(4);
+        assertThat(indexCount).isEqualTo(1);
+    }
 }

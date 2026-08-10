@@ -181,6 +181,34 @@ class SecurityConfigTest {
     }
 
     @Test
+    void appAccessTokenRequiresLiveEnabledStatusAndMatchingAuthVersion() throws Exception {
+        String oldToken = appToken();
+
+        jdbcClient.sql("update app_user set auth_version = auth_version + 1 where id = 2")
+                .update();
+        mockMvc.perform(get("/app/probe")
+                        .header("Authorization", "Bearer " + oldToken))
+                .andExpect(status().isUnauthorized());
+
+        long currentVersion = jdbcClient.sql("select auth_version from app_user where id = 2")
+                .query(Long.class)
+                .single();
+        String currentToken = opaqueTokenService.issue(
+                TokenKind.APP,
+                TokenSession.app(2L, "openid***", currentVersion, Instant.now())
+        ).accessToken();
+        mockMvc.perform(get("/app/probe")
+                        .header("Authorization", "Bearer " + currentToken))
+                .andExpect(status().isOk());
+
+        jdbcClient.sql("update app_user set status = 'CANCELLED' where id = 2")
+                .update();
+        mockMvc.perform(get("/app/probe")
+                        .header("Authorization", "Bearer " + currentToken))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void wrongKindTokenIsUnauthorizedForOppositeNamespace() throws Exception {
         String adminToken = adminToken(List.of("R_SUPER"), List.of("product:read"));
         String appToken = appToken();
@@ -276,7 +304,23 @@ class SecurityConfigTest {
     }
 
     private String appToken() {
-        TokenSession session = TokenSession.app(2L, "openid***", Instant.now());
+        int updated = jdbcClient.sql("""
+                        update app_user
+                        set openid = 'security-app-user-2',
+                            status = 'ENABLED',
+                            auth_version = 0,
+                            cancelled_at = null
+                        where id = 2
+                        """)
+                .update();
+        if (updated == 0) {
+            jdbcClient.sql("""
+                            insert into app_user(id, openid, status, auth_version)
+                            values(2, 'security-app-user-2', 'ENABLED', 0)
+                            """)
+                    .update();
+        }
+        TokenSession session = TokenSession.app(2L, "openid***", 0L, Instant.now());
         return opaqueTokenService.issue(TokenKind.APP, session).accessToken();
     }
 

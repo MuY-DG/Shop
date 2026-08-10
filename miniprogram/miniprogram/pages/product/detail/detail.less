@@ -89,6 +89,19 @@
   box-shadow: none;
 }
 
+.food-disclosure { padding: 28rpx 24rpx 30rpx; }
+.food-disclosure .section-heading { display: flex; align-items: center; justify-content: space-between; }
+.food-disclosure__badge { padding: 5rpx 14rpx; color: #17663a; font-size: 22rpx; border-radius: @radius-pill; background: #eaf8ef; }
+.food-disclosure__rows { margin-top: 12rpx; }
+.food-disclosure__row { display: grid; grid-template-columns: 156rpx minmax(0, 1fr); gap: 18rpx; padding: 15rpx 0; border-bottom: 1rpx solid @color-border; font-size: @font-size-sm; line-height: 1.65; }
+.food-disclosure__row text:first-child { color: @color-text-muted; }
+.food-disclosure__row text:last-child { min-width: 0; color: @color-text-primary; word-break: break-all; }
+.food-labels { margin-top: 24rpx; }
+.food-labels__title { color: @color-text-primary; font-size: @font-size-sm; font-weight: 650; }
+.food-labels__scroll { width: 100%; margin-top: 14rpx; white-space: nowrap; }
+.food-labels__track { display: inline-flex; gap: 14rpx; }
+.food-labels__image { width: 210rpx; height: 210rpx; flex: none; border-radius: @radius-md; background: @color-page; }
+
 .commerce-card {
   display: flex;
   margin-top: 14rpx;

@@ -65,6 +65,15 @@
               @update:model-value="updateSingleSku({ specText: $event })"
             />
           </ElFormItem>
+          <ElFormItem class="single-sku-form__display-text" label="净含量（食品必填）">
+            <ElInput
+              :model-value="singleSku.netContentText"
+              maxlength="120"
+              placeholder="按真实标签填写，例如 500g"
+              :disabled="disabled"
+              @update:model-value="updateSingleSku({ netContentText: $event })"
+            />
+          </ElFormItem>
           <ElFormItem class="single-sku-form__money" label="售价（元）" required>
             <ElInputNumber
               :model-value="centToYuan(singleSku.priceCent)"

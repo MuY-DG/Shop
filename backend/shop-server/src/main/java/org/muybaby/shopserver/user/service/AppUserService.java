@@ -96,6 +96,31 @@ public class AppUserService {
         return findEnabledById(userId).orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
     }
 
+    public Optional<AppUserSessionState> findEnabledSessionState(Long userId) {
+        return jdbcClient.sql("""
+                        SELECT id, auth_version
+                        FROM app_user
+                        WHERE id = :id AND status = :status
+                        """)
+                .param("id", userId)
+                .param("status", ENABLED_STATUS)
+                .query((rs, rowNum) -> new AppUserSessionState(
+                        rs.getLong("id"),
+                        rs.getLong("auth_version")
+                ))
+                .optional();
+    }
+
+    public AppUser requireEnabledUserForUpdate(Long userId) {
+        return findEnabledByIdForUpdate(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.AUTHENTICATION_REQUIRED));
+    }
+
+    public AppUser requireUserForUpdate(Long userId) {
+        return findByIdForUpdate(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.APP_USER_UNAVAILABLE));
+    }
+
     public AppUser updateNickname(Long userId, String nickname) {
         String normalizedNickname = normalizeNickname(nickname);
         int updatedRows = jdbcClient.sql("""
@@ -143,7 +168,7 @@ public class AppUserService {
     private Optional<AppUser> findByOpenid(String openid) {
         return jdbcClient.sql("""
                         SELECT id, openid, unionid, nickname, avatar_url, phone_number, phone_country_code, phone_authorized,
-                               status, last_login_at, created_at, updated_at
+                               status, last_login_at, created_at, updated_at, auth_version, cancelled_at
                         FROM app_user
                         WHERE openid = :openid
                         """)
@@ -155,7 +180,7 @@ public class AppUserService {
     private Optional<AppUser> findById(Long userId) {
         return jdbcClient.sql("""
                         SELECT id, openid, unionid, nickname, avatar_url, phone_number, phone_country_code, phone_authorized,
-                               status, last_login_at, created_at, updated_at
+                               status, last_login_at, created_at, updated_at, auth_version, cancelled_at
                         FROM app_user
                         WHERE id = :id
                         """)
@@ -171,13 +196,26 @@ public class AppUserService {
     private Optional<AppUser> findEnabledByIdForUpdate(Long userId) {
         return jdbcClient.sql("""
                         SELECT id, openid, unionid, nickname, avatar_url, phone_number, phone_country_code, phone_authorized,
-                               status, last_login_at, created_at, updated_at
+                               status, last_login_at, created_at, updated_at, auth_version, cancelled_at
                         FROM app_user
                         WHERE id = :id AND status = :status
                         FOR UPDATE
                         """)
                 .param("id", userId)
                 .param("status", ENABLED_STATUS)
+                .query(this::mapRow)
+                .optional();
+    }
+
+    private Optional<AppUser> findByIdForUpdate(Long userId) {
+        return jdbcClient.sql("""
+                        SELECT id, openid, unionid, nickname, avatar_url, phone_number, phone_country_code, phone_authorized,
+                               status, last_login_at, created_at, updated_at, auth_version, cancelled_at
+                        FROM app_user
+                        WHERE id = :id
+                        FOR UPDATE
+                        """)
+                .param("id", userId)
                 .query(this::mapRow)
                 .optional();
     }
@@ -212,8 +250,13 @@ public class AppUserService {
                 rs.getString("status"),
                 rs.getObject("last_login_at", LocalDateTime.class),
                 rs.getObject("created_at", LocalDateTime.class),
-                rs.getObject("updated_at", LocalDateTime.class)
+                rs.getObject("updated_at", LocalDateTime.class),
+                rs.getLong("auth_version"),
+                rs.getObject("cancelled_at", LocalDateTime.class)
         );
+    }
+
+    public record AppUserSessionState(Long userId, long authVersion) {
     }
 
     private String normalizeNickname(String nickname) {

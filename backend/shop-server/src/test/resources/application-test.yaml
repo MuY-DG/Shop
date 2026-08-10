@@ -55,6 +55,9 @@ shop:
       mock-enabled: true
     shipping:
       upload-enabled: false
+      delivery:
+        enabled: false
+        claim-timeout: 10m
       receipt-reconciliation:
         enabled: false
   pay:

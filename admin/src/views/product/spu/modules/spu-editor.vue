@@ -49,16 +49,29 @@
           <ProductParameterTab ref="parameterTabRef" v-model="formData" :disabled="submitting" />
         </ElTabPane>
 
+        <ElTabPane name="foodCompliance">
+          <template #label>
+            <span class="tab-label"><b>4</b> 食品合规</span>
+          </template>
+          <ProductFoodComplianceTab
+            ref="foodComplianceTabRef"
+            v-model="formData.foodDisclosure"
+            :skus="formData.skus"
+            :disabled="submitting || currentStatus === 'ON_SALE'"
+            :locked-on-sale="currentStatus === 'ON_SALE'"
+          />
+        </ElTabPane>
+
         <ElTabPane name="detail">
           <template #label>
-            <span class="tab-label"><b>4</b> 商品详细</span>
+            <span class="tab-label"><b>5</b> 商品详细</span>
           </template>
           <ProductDetailTab ref="detailTabRef" v-model="formData" :disabled="submitting" />
         </ElTabPane>
 
         <ElTabPane name="other">
           <template #label>
-            <span class="tab-label"><b>5</b> 其他设置</span>
+            <span class="tab-label"><b>6</b> 其他设置</span>
           </template>
           <ProductOtherSettingsTab
             ref="otherTabRef"
@@ -113,8 +126,10 @@
   import {
     bindProductSpuCoupons,
     createProductSpu,
+    fetchProductFoodDisclosure,
     fetchProductSpuDetail,
     fetchProductSpuParameterValues,
+    replaceProductFoodDisclosure,
     replaceProductSpuParameterValues,
     updateProductSpu
   } from '@/api/product'
@@ -122,6 +137,7 @@
   import ProductInfoTab from './product-info-tab.vue'
   import ProductSpecificationTab from './product-specification-tab.vue'
   import ProductDetailTab from './product-detail-tab.vue'
+  import ProductFoodComplianceTab from './product-food-compliance-tab.vue'
   import ProductParameterTab from './product-parameter-tab.vue'
   import ProductOtherSettingsTab from './product-other-settings-tab.vue'
   import type {
@@ -132,6 +148,7 @@
     ProductSkuStatus
   } from './editor-model'
   import { createDefaultForm } from './editor-model'
+  import { createDefaultFoodDisclosure, normalizeFoodDisclosureForSave } from './food-compliance'
   import {
     buildCombinationKey,
     createEditorKey,
@@ -197,7 +214,7 @@
   const emit = defineEmits<Emits>()
   const { hasAuth } = useAuth()
 
-  const tabs = ['info', 'specification', 'parameter', 'detail', 'other'] as const
+  const tabs = ['info', 'specification', 'parameter', 'foodCompliance', 'detail', 'other'] as const
   type TabName = (typeof tabs)[number]
 
   const activeTab = ref<TabName>('info')
@@ -213,6 +230,7 @@
   const infoTabRef = ref<ValidatableTab>()
   const specificationTabRef = ref<ValidatableTab>()
   const detailTabRef = ref<ValidatableTab>()
+  const foodComplianceTabRef = ref<ValidatableTab>()
   const parameterTabRef = ref<ValidatableTab>()
   const otherTabRef = ref<ValidatableTab>()
 
@@ -236,6 +254,7 @@
     infoTabRef.value,
     specificationTabRef.value,
     parameterTabRef.value,
+    foodComplianceTabRef.value,
     detailTabRef.value,
     otherTabRef.value
   ])
@@ -313,6 +332,7 @@
     lowStockThreshold: sku.lowStockThreshold ?? 10,
     weightGram: sku.weightGram ?? null,
     volumeCubicMeter: sku.volumeCubicMeter ?? null,
+    netContentText: sku.netContentText || '',
     image: sku.image || '',
     imageFileId: sku.imageFileId ?? null,
     status: (sku.status || 'ENABLED') as ProductSkuStatus,
@@ -340,7 +360,7 @@
       }))
     }))
 
-  const fillForm = (detail?: ProductDetail) => {
+  const fillForm = (detail?: ProductDetail, foodDisclosure?: Api.Product.FoodDisclosure | null) => {
     if (!detail) {
       const empty = createDefaultForm()
       empty.skus = [createEmptySku()]
@@ -383,6 +403,7 @@
       detail.mainImageFileId ?? null
     )
 
+    const resolvedFoodDisclosure = foodDisclosure || createDefaultFoodDisclosure()
     formData.value = {
       categoryId: detail.categoryId,
       title: detail.title || '',
@@ -407,7 +428,16 @@
       specGroups,
       guaranteeServiceIds: detail.guaranteeServiceIds || [],
       couponTemplateIds: detail.couponTemplateIds || [],
-      parameterValues: detail.parameterValues || []
+      parameterValues: detail.parameterValues || [],
+      foodDisclosure: {
+        ...createDefaultFoodDisclosure(),
+        ...resolvedFoodDisclosure,
+        labelAssets: (resolvedFoodDisclosure.labelAssets || []).map((asset, index) => ({
+          fileId: asset.fileId,
+          url: asset.url || '',
+          sortOrder: asset.sortOrder ?? index
+        }))
+      }
     }
     currentStatus.value = detail.status
   }
@@ -428,13 +458,14 @@
       if (!props.spuId) {
         fillForm()
       } else {
-        const [detailResponse, parameterValues] = await Promise.all([
+        const [detailResponse, parameterValues, foodDisclosure] = await Promise.all([
           fetchProductSpuDetail(props.spuId),
-          fetchProductSpuParameterValues(props.spuId)
+          fetchProductSpuParameterValues(props.spuId),
+          fetchProductFoodDisclosure(props.spuId)
         ])
         const detail = { ...detailResponse, parameterValues } as ProductDetail
         if (sequence !== loadSequence.value) return
-        fillForm(detail)
+        fillForm(detail, foodDisclosure)
       }
       await rememberSavedState()
     } finally {
@@ -482,6 +513,7 @@
       lowStockThreshold: sku.lowStockThreshold,
       weightGram: sku.weightGram,
       volumeCubicMeter: sku.volumeCubicMeter,
+      netContentText: sku.netContentText.trim(),
       image: sku.image.trim(),
       imageFileId: sku.imageFileId,
       status: form.specType === 'SINGLE' ? 'ENABLED' : sku.status,
@@ -553,6 +585,12 @@
       await replaceProductSpuParameterValues(localSpuId.value, {
         values: formData.value.parameterValues
       })
+      if (currentStatus.value !== 'ON_SALE') {
+        await replaceProductFoodDisclosure(
+          localSpuId.value,
+          normalizeFoodDisclosureForSave(formData.value.foodDisclosure)
+        )
+      }
       await rememberSavedState()
       if (returnToListAfterSave) {
         ElMessage.success('商品已保存，正在返回商品列表')

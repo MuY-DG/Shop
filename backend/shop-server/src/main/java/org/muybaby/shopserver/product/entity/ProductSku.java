@@ -21,6 +21,7 @@ public record ProductSku(
         Integer stockAvailable,
         Integer lowStockThreshold,
         Integer weightGram,
+        String netContentText,
         BigDecimal volumeCubicMeter,
         String image,
         Long imageFileId,

@@ -19,6 +19,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.not;
+import static org.muybaby.shopserver.support.ProductComplianceTestSupport.markNonFood;
 import static org.muybaby.shopserver.support.TestHashSupport.sha256;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -63,6 +64,7 @@ class AppProductControllerTest {
                 List.of(new AdminProductImageUpsertRequest(galleryFile.publicUrl(), galleryFile.id())),
                 List.of(new AdminSkuUpsertRequest(null, "APP-SKU-1", "{\"口味\":\"牛油\"}", "牛油", 3990L, 4990L, 9, 300, skuFile.publicUrl(), skuFile.id(), "ENABLED", 1))
         ));
+        markNonFood(jdbcClient, spuId);
         adminProductService.publishSpu(spuId);
 
         String categoryResponse = mockMvc.perform(get("/app/product/categories"))
@@ -164,6 +166,7 @@ class AppProductControllerTest {
         );
         bindGuaranteeService(spuId, hiddenServiceId, 0);
         bindGuaranteeService(spuId, visibleServiceId, 7);
+        markNonFood(jdbcClient, spuId);
         adminProductService.publishSpu(spuId);
 
         mockMvc.perform(get("/app/product/spus/" + spuId))
@@ -198,6 +201,7 @@ class AppProductControllerTest {
                 List.of(new AdminProductImageUpsertRequest("https://example.test/disabled-gallery.jpg", null)),
                 List.of(new AdminSkuUpsertRequest(null, "EDGE-SKU-1", "{\"规格\":\"大份\"}", "大份", 5990L, 6990L, 4, 400, "https://example.test/edge-sku.jpg", null, "ENABLED", 1))
         ));
+        markNonFood(jdbcClient, hiddenSkuSpuId);
         adminProductService.publishSpu(hiddenSkuSpuId);
         // The admin write path now rejects disabling the last enabled SKU of an on-sale product.
         // Keep this read-side regression by simulating legacy data that predates that invariant.
@@ -220,6 +224,7 @@ class AppProductControllerTest {
                         new AdminSkuUpsertRequest(null, "MIX-SKU-2", "{\"规格\":\"大份\"}", "大份", 8990L, 9990L, 8, 500, "https://example.test/mix-2.jpg", null, "DISABLED", 2)
                 )
         ));
+        markNonFood(jdbcClient, mixedSkuSpuId);
         adminProductService.publishSpu(mixedSkuSpuId);
 
         mockMvc.perform(get("/app/product/spus")
@@ -267,6 +272,7 @@ class AppProductControllerTest {
                 List.of(new AdminProductImageUpsertRequest("https://example.test/hidden-gallery.jpg", null)),
                 List.of(new AdminSkuUpsertRequest(null, "HIDDEN-CAT-SKU", "{}", "默认", 2990L, 3990L, 3, 200, "", null, "ENABLED", 1))
         ));
+        markNonFood(jdbcClient, spuId);
         adminProductService.publishSpu(spuId);
         adminProductService.updateCategory(categoryId, new AdminCategoryRequest(0L, "Disabled After Publish", "", null, 3, "DISABLED"));
 

@@ -16,6 +16,7 @@ public record AppSpuDetailResponse(
         Long salesCount,
         ProductSaleState saleState,
         List<String> sellingPoints,
+        ProductFoodDisclosureResponse foodDisclosure,
         String detailHtml,
         List<ProductImageResponse> images,
         List<AppSkuResponse> skus,

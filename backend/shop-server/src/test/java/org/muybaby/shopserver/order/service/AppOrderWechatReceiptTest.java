@@ -2,10 +2,13 @@ package org.muybaby.shopserver.order.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
+import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.provider.WechatReceiptQueryResult;
 import org.muybaby.shopserver.logistics.provider.WechatShippingProvider;
 import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
@@ -29,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.Mockito.never;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -55,6 +59,8 @@ class AppOrderWechatReceiptTest {
         reset(wechatShippingProvider);
         when(wechatShippingProvider.mode()).thenReturn(WechatProviderMode.REAL);
         jdbcClient.sql("delete from after_sale_request").update();
+        jdbcClient.sql("delete from order_status_log").update();
+        jdbcClient.sql("delete from order_shipment").update();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from shop_order").update();
         jdbcClient.sql("delete from app_user").update();
@@ -64,6 +70,7 @@ class AppOrderWechatReceiptTest {
     void confirmedWechatOrderCompletesOwnedLocalOrderUsingStoredTransactionId() {
         long userId = insertUser();
         long orderId = insertOrder(userId, "SHIPPED", TRANSACTION_ID);
+        insertShipment(orderId, WechatProviderMode.REAL, WechatShippingUploadStatus.UPLOADED);
         when(wechatShippingProvider.queryReceiptStatus(TRANSACTION_ID))
                 .thenReturn(WechatReceiptQueryResult.confirmed(3));
 
@@ -73,6 +80,66 @@ class AppOrderWechatReceiptTest {
         assertThat(response.completedAt()).isNotNull();
         assertThat(orderStatus(orderId)).isEqualTo("COMPLETED");
         verify(wechatShippingProvider).queryReceiptStatus(TRANSACTION_ID);
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = WechatShippingUploadStatus.class,
+            names = {"PENDING", "SKIPPED", "FAILED", "UNAVAILABLE"}
+    )
+    void knownNotUploadedStatesUseAuditedLocalFallback(
+            WechatShippingUploadStatus uploadStatus
+    ) {
+        long userId = insertUser();
+        long orderId = insertOrder(userId, "SHIPPED", TRANSACTION_ID);
+        insertShipment(orderId, WechatProviderMode.REAL, uploadStatus);
+
+        OrderReceiptResponse response = appOrderService.confirmReceipt(
+                principal(userId), orderId
+        );
+
+        assertThat(response.status()).isEqualTo("COMPLETED");
+        assertThat(orderStatus(orderId)).isEqualTo("COMPLETED");
+        assertThat(lastStatusEvent(orderId)).isEqualTo("ORDER_COMPLETED_LOCAL_FALLBACK");
+        verify(wechatShippingProvider, never()).queryReceiptStatus(anyString());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = WechatProviderMode.class, names = {"MOCK", "DISABLED", "UNKNOWN"})
+    void nonRealShipmentModesUseAuditedLocalFallbackEvenForAmbiguousLocalStatus(
+            WechatProviderMode providerMode
+    ) {
+        long userId = insertUser();
+        long orderId = insertOrder(userId, "SHIPPED", TRANSACTION_ID);
+        insertShipment(orderId, providerMode, WechatShippingUploadStatus.UNKNOWN);
+
+        OrderReceiptResponse response = appOrderService.confirmReceipt(
+                principal(userId), orderId
+        );
+
+        assertThat(response.status()).isEqualTo("COMPLETED");
+        assertThat(lastStatusEvent(orderId)).isEqualTo("ORDER_COMPLETED_LOCAL_FALLBACK");
+        verify(wechatShippingProvider, never()).queryReceiptStatus(anyString());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = WechatShippingUploadStatus.class, names = {"UPLOADING", "UNKNOWN"})
+    void realAmbiguousUploadStatesBlockLocalReceiptWithoutProviderQuery(
+            WechatShippingUploadStatus uploadStatus
+    ) {
+        long userId = insertUser();
+        long orderId = insertOrder(userId, "SHIPPED", TRANSACTION_ID);
+        insertShipment(orderId, WechatProviderMode.REAL, uploadStatus);
+
+        BusinessException exception = catchThrowableOfType(
+                () -> appOrderService.confirmReceipt(principal(userId), orderId),
+                BusinessException.class
+        );
+
+        assertThat(exception).isNotNull();
+        assertThat(exception.errorCode()).isEqualTo(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
+        assertThat(orderStatus(orderId)).isEqualTo("SHIPPED");
+        verify(wechatShippingProvider, never()).queryReceiptStatus(anyString());
     }
 
     @Test
@@ -227,6 +294,53 @@ class AppOrderWechatReceiptTest {
                 .param("now", now)
                 .update();
         return orderId;
+    }
+
+    private void insertShipment(
+            long orderId,
+            WechatProviderMode providerMode,
+            WechatShippingUploadStatus uploadStatus
+    ) {
+        LocalDateTime now = LocalDateTime.now();
+        jdbcClient.sql("""
+                        insert into order_shipment
+                            (order_id, logistics_type, delivery_mode, item_desc,
+                             express_company_name, tracking_no, shipment_note, status,
+                             wechat_provider_mode, wechat_upload_status,
+                             wechat_error_code, wechat_error_message, retry_count,
+                             shipped_at, wechat_uploaded_at, created_at, updated_at)
+                        values
+                            (:orderId, 3, 1, 'Receipt fallback item',
+                             null, null, '', 'SHIPPED',
+                             :providerMode, :uploadStatus,
+                             '', '', 0,
+                             :shippedAt, :uploadedAt, :createdAt, :createdAt)
+                        """)
+                .param("orderId", orderId)
+                .param("providerMode", providerMode.name())
+                .param("uploadStatus", uploadStatus.name())
+                .param("shippedAt", now.minusHours(1))
+                .param(
+                        "uploadedAt",
+                        uploadStatus == WechatShippingUploadStatus.UPLOADED
+                                ? now.minusHours(1)
+                                : null
+                )
+                .param("createdAt", now.minusHours(1))
+                .update();
+    }
+
+    private String lastStatusEvent(long orderId) {
+        return jdbcClient.sql("""
+                        select event_type
+                        from order_status_log
+                        where order_id = :orderId
+                        order by id desc
+                        limit 1
+                        """)
+                .param("orderId", orderId)
+                .query(String.class)
+                .single();
     }
 
     private String orderStatus(long orderId) {

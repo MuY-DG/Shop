@@ -71,8 +71,14 @@ test('maps log types, levels, and results to stable labels and tag tones', () =>
   assert.equal(logResultTone('FAILURE'), 'danger')
 })
 
-test('formats list and detail values without inventing request content', () => {
-  assert.equal(formatLogDateTime('2026-07-26T10:20:30Z'), '2026-07-26 10:20:30')
+test('formats list and detail values in the browser timezone without inventing request content', () => {
+  const instant = new Date('2026-07-26T10:20:30Z')
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const expectedLocalTime = `${instant.getFullYear()}-${pad(instant.getMonth() + 1)}-${pad(
+    instant.getDate()
+  )} ${pad(instant.getHours())}:${pad(instant.getMinutes())}:${pad(instant.getSeconds())}`
+
+  assert.equal(formatLogDateTime('2026-07-26T10:20:30Z'), expectedLocalTime)
   assert.equal(formatLogDateTime(undefined), '-')
   assert.equal(formatLogDuration(0), '0 ms')
   assert.equal(formatLogDuration(-1), '-')

@@ -653,6 +653,15 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .matches("^RF\\d{14}[0-9A-Z]{14}$")
                 .hasSizeLessThanOrEqualTo(64);
         assertThat(rows.get(1).status()).isEqualTo("PROCESSING");
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from refund_order
+                        where after_sale_id = :afterSaleId
+                          and restock_required = true
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
 
         ArgumentCaptor<ResolvedPaymentConfig> configCaptor = ArgumentCaptor.forClass(ResolvedPaymentConfig.class);
         ArgumentCaptor<WechatRefundRequest> requestCaptor = ArgumentCaptor.forClass(WechatRefundRequest.class);

@@ -9,6 +9,10 @@ spring:
 server:
   address: ${SERVER_ADDRESS:127.0.0.1} # 直接运行 JAR 时只监听本机；Docker 内由 Compose 覆盖为 0.0.0.0。
 
+shop:
+  compliance:
+    privacy-consent-required: true # 正式环境必须校验并留存用户实际勾选的当前隐私政策版本。
+
 logging:
   level:
     org.muybaby.shopserver.logistics.provider.RealWechatShippingProvider: warn # 生产仅保留微信发货提供方的异常日志，隐藏高频正常查询过程。

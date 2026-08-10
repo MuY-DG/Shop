@@ -117,7 +117,7 @@ class AppOrderServiceMySqlConcurrencyTest {
         Fixture fixture = fixture("MYSQL-SAME", true, 2);
         AppOrderSubmitRequest request = cartRequest(
                 fixture.cartItemId(), fixture.addressId(), fixture.userCouponId(), "mysql-same-key");
-        raceProbe.armInitialReadBarrier();
+        raceProbe.armUserGateBarrier();
 
         List<Attempt> attempts = runRacing(
                 () -> attempt(fixture.userId(), request),
@@ -195,7 +195,7 @@ class AppOrderServiceMySqlConcurrencyTest {
         long cartA = insertCartItem(userId, skuA, 1);
         long cartB = insertCartItem(userId, skuB, 3);
         long couponId = insertCoupon(userId, "MySQL Different Coupon", 500L);
-        raceProbe.armInitialReadBarrier();
+        raceProbe.armUserGateBarrier();
 
         List<Attempt> attempts = runRacing(
                 () -> attempt(userId, cartRequest(cartA, addressId, couponId, "mysql-different-key")),
@@ -218,7 +218,7 @@ class AppOrderServiceMySqlConcurrencyTest {
     }
 
     @Test
-    void waitingInsertTakesOwnershipWhenFirstTransactionRollsBackBeforeSelectionCompletes() throws Exception {
+    void waitingUserGateTakesOwnershipWhenFirstTransactionRollsBackBeforeSelectionCompletes() throws Exception {
         Fixture fixture = fixture("MYSQL-ROLLBACK", false, 2);
         AppOrderSubmitRequest request = cartRequest(
                 fixture.cartItemId(), fixture.addressId(), null, "mysql-rollback-key");
@@ -291,14 +291,16 @@ class AppOrderServiceMySqlConcurrencyTest {
 
     @Test
     void distinctOrdersForSameSkuWriteContinuousStockLogChain() throws Exception {
-        long userId = insertUser("mysql-stock-chain");
-        long addressId = insertAddress(userId, "Stock Chain");
+        long firstUserId = insertUser("mysql-stock-chain-a");
+        long secondUserId = insertUser("mysql-stock-chain-b");
+        long firstAddressId = insertAddress(firstUserId, "Stock Chain A");
+        long secondAddressId = insertAddress(secondUserId, "Stock Chain B");
         long skuId = insertSku("MYSQL-STOCK-CHAIN", 12);
         raceProbe.armInitialReadBarrier();
 
         List<Attempt> attempts = runRacing(
-                () -> attempt(userId, directRequest(skuId, 2, addressId, "mysql-stock-chain-a")),
-                () -> attempt(userId, directRequest(skuId, 2, addressId, "mysql-stock-chain-b"))
+                () -> attempt(firstUserId, directRequest(skuId, 2, firstAddressId, "mysql-stock-chain-a")),
+                () -> attempt(secondUserId, directRequest(skuId, 2, secondAddressId, "mysql-stock-chain-b"))
         );
 
         assertThat(attempts).allSatisfy(attempt -> {
@@ -502,8 +504,9 @@ class AppOrderServiceMySqlConcurrencyTest {
         long categoryId = jdbcClient.sql("select max(id) from product_category").query(Long.class).single();
         jdbcClient.sql("""
                         insert into product_spu
-                            (category_id, title, subtitle, main_image, selling_points, detail_html, sort_order, status)
-                        values (:categoryId, :title, '', '', '', '', 1, 'ON_SALE')
+                            (category_id, title, subtitle, main_image, selling_points, detail_html,
+                             compliance_type, sort_order, status)
+                        values (:categoryId, :title, '', '', '', '', 'NON_FOOD', 1, 'ON_SALE')
                         """)
                 .param("categoryId", categoryId).param("title", "MySQL Product " + suffix).update();
         long spuId = jdbcClient.sql("select max(id) from product_spu").query(Long.class).single();
@@ -593,6 +596,7 @@ class AppOrderServiceMySqlConcurrencyTest {
 
         private enum Mode {
             NONE,
+            USER_GATE_BARRIER,
             INITIAL_READ_BARRIER,
             ROLLBACK_TAKEOVER,
             CART_QUANTITY_REFRESH,
@@ -600,15 +604,21 @@ class AppOrderServiceMySqlConcurrencyTest {
         }
 
         private volatile Mode mode = Mode.NONE;
+        private volatile CyclicBarrier userGateBarrier = new CyclicBarrier(2);
         private volatile CyclicBarrier initialReadBarrier = new CyclicBarrier(2);
         private volatile CountDownLatch ownerAtSelection = new CountDownLatch(0);
-        private volatile CountDownLatch waiterInsertAttempted = new CountDownLatch(0);
+        private volatile CountDownLatch waiterUserGateAttempted = new CountDownLatch(0);
         private volatile CountDownLatch cartLockAttempted = new CountDownLatch(0);
         private volatile CountDownLatch cartLockReleased = new CountDownLatch(0);
         private volatile CountDownLatch adminSpuLocked = new CountDownLatch(0);
         private volatile CountDownLatch adminSpuReleased = new CountDownLatch(0);
         private volatile CountDownLatch checkoutProductLockReached = new CountDownLatch(0);
         private final AtomicBoolean ownerFailureInjected = new AtomicBoolean();
+
+        void armUserGateBarrier() {
+            userGateBarrier = new CyclicBarrier(2);
+            mode = Mode.USER_GATE_BARRIER;
+        }
 
         void armInitialReadBarrier() {
             initialReadBarrier = new CyclicBarrier(2);
@@ -617,7 +627,7 @@ class AppOrderServiceMySqlConcurrencyTest {
 
         void armRollbackTakeover() {
             ownerAtSelection = new CountDownLatch(1);
-            waiterInsertAttempted = new CountDownLatch(1);
+            waiterUserGateAttempted = new CountDownLatch(1);
             ownerFailureInjected.set(false);
             mode = Mode.ROLLBACK_TAKEOVER;
         }
@@ -637,11 +647,13 @@ class AppOrderServiceMySqlConcurrencyTest {
 
         void reset() {
             mode = Mode.NONE;
+            userGateBarrier.reset();
+            initialReadBarrier.reset();
             if (ownerAtSelection.getCount() > 0) {
                 ownerAtSelection.countDown();
             }
-            if (waiterInsertAttempted.getCount() > 0) {
-                waiterInsertAttempted.countDown();
+            if (waiterUserGateAttempted.getCount() > 0) {
+                waiterUserGateAttempted.countDown();
             }
             releaseCartLock();
             releaseAdminSpuLock();
@@ -686,10 +698,14 @@ class AppOrderServiceMySqlConcurrencyTest {
         Object execute(PreparedStatement statement, String sql, java.lang.reflect.Method method, Object[] args)
                 throws Throwable {
             String normalized = sql.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+            boolean enabledAppUserLock = isEnabledAppUserLock(normalized);
+            if (mode == Mode.USER_GATE_BARRIER && enabledAppUserLock) {
+                userGateBarrier.await(15, TimeUnit.SECONDS);
+            }
             if (mode == Mode.ROLLBACK_TAKEOVER
                     && Thread.currentThread().getName().equals("rollback-waiter")
-                    && normalized.startsWith("insert into shop_order")) {
-                waiterInsertAttempted.countDown();
+                    && enabledAppUserLock) {
+                waiterUserGateAttempted.countDown();
             }
             if (mode == Mode.ROLLBACK_TAKEOVER
                     && Thread.currentThread().getName().equals("rollback-owner")
@@ -697,8 +713,8 @@ class AppOrderServiceMySqlConcurrencyTest {
                     && normalized.contains("from cart_item")
                     && ownerFailureInjected.compareAndSet(false, true)) {
                 ownerAtSelection.countDown();
-                if (!waiterInsertAttempted.await(15, TimeUnit.SECONDS)) {
-                    throw new TimeoutException("Waiter did not attempt ownership insert");
+                if (!waiterUserGateAttempted.await(15, TimeUnit.SECONDS)) {
+                    throw new TimeoutException("Waiter did not attempt the app-user gate");
                 }
                 throw new SQLException("Injected selection failure after ownership insert");
             }
@@ -752,7 +768,14 @@ class AppOrderServiceMySqlConcurrencyTest {
                     && !normalized.contains("for update")) {
                 initialReadBarrier.await(15, TimeUnit.SECONDS);
             }
+
             return result;
+        }
+
+        private boolean isEnabledAppUserLock(String sql) {
+            return sql.contains("from app_user")
+                    && sql.contains("where id = ? and status = ?")
+                    && sql.contains("for update");
         }
     }
 

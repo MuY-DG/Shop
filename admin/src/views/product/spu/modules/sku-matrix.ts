@@ -40,6 +40,7 @@ export const createEmptySku = (overrides: Partial<ProductEditorSku> = {}): Produ
   lowStockThreshold: 10,
   weightGram: null,
   volumeCubicMeter: null,
+  netContentText: '',
   image: '',
   imageFileId: null,
   status: 'ENABLED',

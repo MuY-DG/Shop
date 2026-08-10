@@ -107,7 +107,7 @@ class StorageAssetTimezoneTest {
 
         jdbcClient.sql("""
                         insert into app_user (id, openid, status)
-                        values (:userId, 'timezone-openid', 'ACTIVE')
+                        values (:userId, 'timezone-openid', 'ENABLED')
                         """)
                 .param("userId", APP_USER_ID)
                 .update();

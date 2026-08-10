@@ -842,16 +842,21 @@ public class AdminAfterSaleService {
         String outRefundNo = nextRefundNo(now);
         String notificationRouteToken = providerPreflight.notificationRouteToken();
         String providerReason = WechatRefundRequest.providerSafeReason(auditNote);
+        boolean restockRequired = OrderStatus.PAID.name().equals(order.status())
+                && order.shippedAt() == null
+                && !shipmentExists(order.orderId());
 
         jdbcClient.sql("""
                         insert into refund_order
                             (after_sale_id, order_id, payment_order_id, notification_route_token,
                              out_refund_no, refund_id, provider_reason,
-                             refund_amount_cent, status, callback_status, requested_at, created_at, updated_at)
+                             refund_amount_cent, status, callback_status, restock_required,
+                             requested_at, created_at, updated_at)
                         values
                             (:afterSaleId, :orderId, :paymentOrderId, :notificationRouteToken,
                              :outRefundNo, :refundId, :providerReason,
-                             :refundAmountCent, :status, :callbackStatus, :requestedAt, :createdAt, :updatedAt)
+                             :refundAmountCent, :status, :callbackStatus, :restockRequired,
+                             :requestedAt, :createdAt, :updatedAt)
                         """)
                 .param("afterSaleId", afterSaleId)
                 .param("orderId", order.orderId())
@@ -863,6 +868,7 @@ public class AdminAfterSaleService {
                 .param("refundAmountCent", approvedAmountCent)
                 .param("status", RefundOrderStatus.PROCESSING.name())
                 .param("callbackStatus", RefundOrderStatus.PROCESSING.name())
+                .param("restockRequired", restockRequired)
                 .param("requestedAt", now)
                 .param("createdAt", now)
                 .param("updatedAt", now)
@@ -978,11 +984,13 @@ public class AdminAfterSaleService {
                         insert into refund_order
                             (after_sale_id, order_id, payment_order_id, notification_route_token,
                              out_refund_no, refund_id, provider_reason,
-                             refund_amount_cent, status, callback_status, requested_at, created_at, updated_at)
+                             refund_amount_cent, status, callback_status, restock_required,
+                             requested_at, created_at, updated_at)
                         values
                             (:afterSaleId, :orderId, :paymentOrderId, :notificationRouteToken,
                              :outRefundNo, '', :providerReason,
-                             :refundAmountCent, :status, :callbackStatus, :requestedAt, :createdAt, :updatedAt)
+                             :refundAmountCent, :status, :callbackStatus, :restockRequired,
+                             :requestedAt, :createdAt, :updatedAt)
                         """)
                 .param("afterSaleId", afterSaleId)
                 .param("orderId", order.orderId())
@@ -993,6 +1001,7 @@ public class AdminAfterSaleService {
                 .param("refundAmountCent", source.refundAmountCent())
                 .param("status", RefundOrderStatus.PROCESSING.name())
                 .param("callbackStatus", RefundOrderStatus.PROCESSING.name())
+                .param("restockRequired", source.restockRequired())
                 .param("requestedAt", now)
                 .param("createdAt", now)
                 .param("updatedAt", now)
@@ -1349,7 +1358,8 @@ public class AdminAfterSaleService {
         return jdbcClient.sql("""
                         select id as order_id,
                                status,
-                               paid_amount_cent
+                               paid_amount_cent,
+                               shipped_at
                         from shop_order
                         where id = :orderId
                         for update
@@ -1391,6 +1401,7 @@ public class AdminAfterSaleService {
                                refund_amount_cent,
                                status,
                                callback_status,
+                               restock_required,
                                recovery_claim_token,
                                recovery_claimed_at
                         from refund_order
@@ -1420,6 +1431,13 @@ public class AdminAfterSaleService {
         if (existingId != null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+    }
+
+    private boolean shipmentExists(Long orderId) {
+        return jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .single() > 0L;
     }
 
     private AfterSaleResponse requireResponse(Long afterSaleId) {
@@ -1620,7 +1638,8 @@ public class AdminAfterSaleService {
         return new OrderRefundRow(
                 rs.getLong("order_id"),
                 rs.getString("status"),
-                rs.getLong("paid_amount_cent")
+                rs.getLong("paid_amount_cent"),
+                rs.getObject("shipped_at", LocalDateTime.class)
         );
     }
 
@@ -1647,6 +1666,7 @@ public class AdminAfterSaleService {
                 rs.getLong("refund_amount_cent"),
                 rs.getString("status"),
                 rs.getString("callback_status"),
+                rs.getBoolean("restock_required"),
                 rs.getString("recovery_claim_token"),
                 rs.getObject("recovery_claimed_at", LocalDateTime.class)
         );
@@ -1749,7 +1769,12 @@ public class AdminAfterSaleService {
     ) {
     }
 
-    private record OrderRefundRow(Long orderId, String status, long paidAmountCent) {
+    private record OrderRefundRow(
+            Long orderId,
+            String status,
+            long paidAmountCent,
+            LocalDateTime shippedAt
+    ) {
     }
 
     private record PaymentOrderRow(
@@ -1808,6 +1833,7 @@ public class AdminAfterSaleService {
             long refundAmountCent,
             String status,
             String callbackStatus,
+            boolean restockRequired,
             String recoveryClaimToken,
             LocalDateTime recoveryClaimedAt
     ) {

@@ -3,6 +3,7 @@ import {
   accountNavigationPath
 } from "../../features/account-center";
 import { normalizeContactPhone } from "../../features/contact";
+import { COMPLIANCE_ROUTES } from "../../features/compliance";
 import { buildOrderListUrl, parseOrderStatusGroup } from "../../features/order-center";
 import {
   guestProfileOverviewDisplay,
@@ -126,6 +127,12 @@ function serviceItems(display: ProfileOverviewDisplay) {
       iconPath: "/assets/icons/service-phone.svg",
       path: "",
       kind: "phone"
+    },
+    {
+      label: "关于与协议",
+      iconPath: "/assets/icons/verified-user-outline-rounded.svg",
+      path: COMPLIANCE_ROUTES.settings,
+      kind: "public-route"
     }
   ];
 }
@@ -288,6 +295,13 @@ Page({
   onServiceItemTap(event: DatasetEvent) {
     if (event.currentTarget.dataset.kind === "phone") {
       void this.onContactPhoneTap();
+      return;
+    }
+    if (event.currentTarget.dataset.kind === "public-route") {
+      const path = event.currentTarget.dataset.path;
+      if (path === COMPLIANCE_ROUTES.settings) {
+        wx.navigateTo({ url: path });
+      }
       return;
     }
     this.onAccountServiceTap(event);

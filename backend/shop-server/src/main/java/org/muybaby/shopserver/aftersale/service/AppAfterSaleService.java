@@ -24,6 +24,7 @@ import org.muybaby.shopserver.storage.StorageUploadProfile;
 import org.muybaby.shopserver.storage.service.DirectUploadService;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
+import org.muybaby.shopserver.user.service.AppUserService;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -75,6 +76,7 @@ public class AppAfterSaleService {
     private final DirectUploadService directUploadService;
     private final StorageUsageService storageUsageService;
     private final OrderStatusLogService orderStatusLogService;
+    private final AppUserService appUserService;
 
     public AppAfterSaleService(
             JdbcClient jdbcClient,
@@ -82,7 +84,8 @@ public class AppAfterSaleService {
             StorageService storageService,
             DirectUploadService directUploadService,
             StorageUsageService storageUsageService,
-            OrderStatusLogService orderStatusLogService
+            OrderStatusLogService orderStatusLogService,
+            AppUserService appUserService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -90,6 +93,7 @@ public class AppAfterSaleService {
         this.directUploadService = directUploadService;
         this.storageUsageService = storageUsageService;
         this.orderStatusLogService = orderStatusLogService;
+        this.appUserService = appUserService;
     }
 
     public StorageAssetResponse uploadEvidence(
@@ -163,6 +167,7 @@ public class AppAfterSaleService {
     @Transactional
     public AfterSaleResponse apply(AuthenticatedPrincipal principal, Long orderId, AppAfterSaleApplyRequest request) {
         Long userId = requireAppUser(principal);
+        appUserService.requireEnabledUserForUpdate(userId);
         AfterSaleType type = parseType(request == null ? null : request.afterSaleType());
         if (type != AfterSaleType.REFUND_ONLY) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);

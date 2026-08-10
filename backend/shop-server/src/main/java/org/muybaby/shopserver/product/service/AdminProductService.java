@@ -76,6 +76,7 @@ public class AdminProductService {
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final ProductParameterService productParameterService;
+    private final ProductFoodComplianceService productFoodComplianceService;
 
     public AdminProductService(
             JdbcClient jdbcClient,
@@ -83,7 +84,8 @@ public class AdminProductService {
             StorageUsageService storageUsageService,
             ObjectMapper objectMapper,
             ApplicationEventPublisher eventPublisher,
-            ProductParameterService productParameterService
+            ProductParameterService productParameterService,
+            ProductFoodComplianceService productFoodComplianceService
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -91,6 +93,7 @@ public class AdminProductService {
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
         this.productParameterService = productParameterService;
+        this.productFoodComplianceService = productFoodComplianceService;
     }
 
     @Transactional
@@ -334,6 +337,13 @@ public class AdminProductService {
         upsertSkuRows(spuId, normalizedRequest, existingSkusById, specValuesByKey, operatorType, operatorId);
         replaceProductAssociations(spuId, normalizedRequest);
         syncSpuFileUsages(spuId, normalizedRequest);
+        if (remainsOnSale) {
+            List<ProductSku> enabledSkus = findSkusBySpuId(spuId).stream()
+                    .filter(sku -> sku.deletedAt() == null)
+                    .filter(sku -> SkuStatus.ENABLED.name().equals(sku.status()))
+                    .toList();
+            productFoodComplianceService.requirePublishable(spuId, enabledSkus);
+        }
     }
 
     @Transactional
@@ -349,6 +359,9 @@ public class AdminProductService {
         List<ProductSku> enabledSkus = activeSkus.stream()
                 .filter(sku -> SkuStatus.ENABLED.name().equals(sku.status()) && sku.priceCent() != null && sku.priceCent() > 0)
                 .toList();
+        List<ProductSku> enabledComplianceSkus = activeSkus.stream()
+                .filter(sku -> SkuStatus.ENABLED.name().equals(sku.status()))
+                .toList();
         long defaultSkuCount = enabledSkus.stream().filter(sku -> Boolean.TRUE.equals(sku.defaultSelected())).count();
         boolean specValid = ProductSpecType.SINGLE.name().equals(spu.specType())
                 ? activeSkus.size() == 1
@@ -362,6 +375,7 @@ public class AdminProductService {
                 || !productParameterService.requiredValuesComplete(spuId, spu.categoryId())) {
             throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
         }
+        productFoodComplianceService.requirePublishable(spuId, enabledComplianceSkus);
         int updatedRows = jdbcClient.sql("""
                         UPDATE product_spu
                         SET status = :status, updated_at = :updatedAt
@@ -481,6 +495,7 @@ public class AdminProductService {
                             virtual_sales = 0,
                             selling_points = '',
                             detail_html = '',
+                            compliance_type = 'UNCLASSIFIED',
                             display_badge_text = '',
                             display_badge_tone = 'NEUTRAL',
                             sort_order = 0,
@@ -859,6 +874,7 @@ public class AdminProductService {
         jdbcClient.sql("delete from user_product_browse_history where spu_id = :spuId")
                 .param("spuId", spuId)
                 .update();
+        productFoodComplianceService.purge(spuId);
     }
 
     private void tombstoneSkus(List<ProductSku> skus, LocalDateTime purgedAt) {
@@ -872,6 +888,7 @@ public class AdminProductService {
                                 cost_price_cent = null,
                                 stock_available = 0,
                                 weight_gram = null,
+                                net_content_text = '',
                                 volume_cubic_meter = null,
                                 image = '',
                                 image_file_id = null,
@@ -1300,6 +1317,9 @@ public class AdminProductService {
         Integer lowStockThreshold = !request.lowStockThresholdSpecified() && existingSku != null
                 ? existingSku.lowStockThreshold()
                 : request.lowStockThreshold();
+        String netContentText = !request.netContentTextSpecified() && existingSku != null
+                ? existingSku.netContentText()
+                : request.netContentText();
         List<AdminWholesaleTierUpsertRequest> wholesaleTiers = !request.wholesaleTiersSpecified() && existingSku != null
                 ? findWholesaleTierRequests(existingSku.id())
                 : normalizeWholesaleTiers(request.wholesaleTiers());
@@ -1327,6 +1347,7 @@ public class AdminProductService {
                 request.volumeCubicMeterSpecified()
         );
         normalized.setLowStockThreshold(lowStockThreshold == null ? 10 : lowStockThreshold);
+        normalized.setNetContentText(defaultString(netContentText).trim());
         normalized.setWholesaleTiers(wholesaleTiers);
         return normalized;
     }
@@ -1339,6 +1360,7 @@ public class AdminProductService {
                 preserveSpecValueKeys ? findSkuSpecValueKeys(sku.id()) : List.of(), false, false, false, false
         );
         request.setLowStockThreshold(sku.lowStockThreshold());
+        request.setNetContentText(sku.netContentText());
         request.setWholesaleTiers(findWholesaleTierRequests(sku.id()));
         return request;
     }
@@ -1483,12 +1505,12 @@ public class AdminProductService {
                         INSERT INTO product_sku (
                             spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
                             cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
-                            image, image_file_id, status, is_default, combination_key, sort_order
+                            net_content_text, image, image_file_id, status, is_default, combination_key, sort_order
                         )
                         VALUES (
                             :spuId, :skuCode, :specJson, :specText, :priceCent, :originalPriceCent,
                             :costPriceCent, :stockAvailable, :lowStockThreshold, :weightGram, :volumeCubicMeter,
-                            :image, :imageFileId, :status, :isDefault, :combinationKey, :sortOrder
+                            :netContentText, :image, :imageFileId, :status, :isDefault, :combinationKey, :sortOrder
                         )
                         """,
                 new MapSqlParameterSource()
@@ -1503,6 +1525,7 @@ public class AdminProductService {
                         .addValue("lowStockThreshold", request.lowStockThreshold())
                         .addValue("weightGram", request.weightGram())
                         .addValue("volumeCubicMeter", request.volumeCubicMeter())
+                        .addValue("netContentText", defaultString(request.netContentText()))
                         .addValue("image", snapshot.image())
                         .addValue("imageFileId", snapshot.imageFileId())
                         .addValue("status", status)
@@ -1533,6 +1556,7 @@ public class AdminProductService {
                             low_stock_threshold = :lowStockThreshold,
                             weight_gram = :weightGram,
                             volume_cubic_meter = :volumeCubicMeter,
+                            net_content_text = :netContentText,
                             image = :image,
                             image_file_id = :imageFileId,
                             status = :status,
@@ -1553,6 +1577,7 @@ public class AdminProductService {
                 .param("lowStockThreshold", request.lowStockThreshold())
                 .param("weightGram", request.weightGram())
                 .param("volumeCubicMeter", request.volumeCubicMeter())
+                .param("netContentText", defaultString(request.netContentText()))
                 .param("image", snapshot.image())
                 .param("imageFileId", snapshot.imageFileId())
                 .param("status", requireSkuStatus(request.status()).name())
@@ -2258,6 +2283,7 @@ public class AdminProductService {
                     || sku.stockAvailable() == null || sku.stockAvailable() < 0
                     || (sku.costPriceCent() != null && sku.costPriceCent() < 0)
                     || (sku.weightGram() != null && sku.weightGram() < 0)
+                    || defaultString(sku.netContentText()).trim().length() > 64
                     || (sku.volumeCubicMeter() != null && sku.volumeCubicMeter().signum() < 0)) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
@@ -2655,7 +2681,7 @@ public class AdminProductService {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
                                cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
-                               image, image_file_id, status, is_default, combination_key, sort_order,
+                               net_content_text, image, image_file_id, status, is_default, combination_key, sort_order,
                                deleted_at, created_at, updated_at
                         FROM product_sku
                         WHERE spu_id = :spuId
@@ -2670,7 +2696,7 @@ public class AdminProductService {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
                                cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
-                               image, image_file_id, status, is_default, combination_key, sort_order,
+                               net_content_text, image, image_file_id, status, is_default, combination_key, sort_order,
                                deleted_at, created_at, updated_at
                         FROM product_sku
                         WHERE spu_id = :spuId
@@ -2686,7 +2712,7 @@ public class AdminProductService {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
                                cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
-                               image, image_file_id, status, is_default, combination_key, sort_order,
+                               net_content_text, image, image_file_id, status, is_default, combination_key, sort_order,
                                deleted_at, created_at, updated_at
                         FROM product_sku
                         WHERE id = :skuId
@@ -2707,7 +2733,7 @@ public class AdminProductService {
         return jdbcClient.sql("""
                         SELECT id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
                                cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
-                               image, image_file_id, status, is_default, combination_key, sort_order,
+                               net_content_text, image, image_file_id, status, is_default, combination_key, sort_order,
                                deleted_at, created_at, updated_at
                         FROM product_sku
                         WHERE id = :skuId AND deleted_at IS NULL
@@ -2826,6 +2852,7 @@ public class AdminProductService {
                 rs.getInt("stock_available"),
                 rs.getInt("low_stock_threshold"),
                 rs.getObject("weight_gram", Integer.class),
+                rs.getString("net_content_text"),
                 rs.getBigDecimal("volume_cubic_meter"),
                 rs.getString("image"),
                 rs.getObject("image_file_id", Long.class),

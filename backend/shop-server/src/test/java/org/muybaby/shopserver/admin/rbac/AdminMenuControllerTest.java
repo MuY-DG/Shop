@@ -57,7 +57,9 @@ class AdminMenuControllerTest {
                         "/customer-service-management",
                         "/decoration",
                         "/development",
-                        "/system"
+                        "/system",
+                        "/compliance",
+                        "/account-rights"
                 )))
                 .andExpect(jsonPath("$.data[0].path").value("/operations"))
                 .andExpect(jsonPath("$.data[0].component").value("/index/index"))
@@ -314,7 +316,9 @@ class AdminMenuControllerTest {
                         "/decoration",
                         "/development",
                         "/system",
-                        "/guest"
+                        "/compliance",
+                        "/guest",
+                        "/account-rights"
                 )));
     }
 

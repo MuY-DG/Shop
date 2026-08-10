@@ -9,7 +9,7 @@ const conversationSource = readFileSync(
 
 test('ending a conversation returns the workspace to its empty initial state', () => {
   const closeHandler = conversationSource.match(
-    /const handleClose = async \(\) => \{[\s\S]*?\n  \}\n\n  const openOrderDialog/
+    /const handleClose = async \(\) => \{[\s\S]*?\n {2}\}\n\n {2}const openOrderDialog/
   )?.[0]
 
   assert.ok(closeHandler)
@@ -20,8 +20,5 @@ test('ending a conversation returns the workspace to its empty initial state', (
   assert.match(closeHandler, /selectedConversationId\.value = null/)
   assert.match(closeHandler, /currentDetail\.value = null/)
   assert.match(closeHandler, /messageDraft\.value = ''/)
-  assert.doesNotMatch(
-    closeHandler,
-    /currentDetail\.value = await closeCustomerServiceConversation/
-  )
+  assert.doesNotMatch(closeHandler, /currentDetail\.value = await closeCustomerServiceConversation/)
 })

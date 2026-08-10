@@ -1,4 +1,6 @@
 import { createBrandLogoView } from "../../../config/brand-logo";
+import { APP_ENV_VERSION } from "../../../config/app-config";
+import { buildLegalDocumentUrl } from "../../../features/compliance";
 import {
   isTabRoute,
   needsPhoneAuthorization,
@@ -11,6 +13,7 @@ import {
   prepareWechatLogin,
   type PreparedWechatLogin
 } from "../../../services/session";
+import { getCurrentLegalDocument } from "../../../services/compliance";
 import { isApiError } from "../../../utils/api-error";
 
 interface LoginPageOptions {
@@ -20,6 +23,7 @@ interface LoginPageOptions {
 let redirectUrl = "";
 let pageDisposed = false;
 let latestLoginPreparation = 0;
+let latestPolicyRequest = 0;
 let preparedLogin: PreparedWechatLogin | null = null;
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -37,14 +41,25 @@ function showAgreementRequired(): void {
   });
 }
 
+function showPolicyUnavailable(): void {
+  wx.showToast({
+    title: "当前隐私政策尚不可用，请先重试加载",
+    icon: "none"
+  });
+}
+
 Page({
   data: {
     brandLogo: createBrandLogoView(176, 156),
     agreed: false,
-    initializing: true,
     loading: false,
     loginPrepared: false,
-    needsPhoneAuthorization: false
+    needsPhoneAuthorization: false,
+    policyLoading: true,
+    policyReady: false,
+    policyVersion: "",
+    policyTitle: "MuYbaby个人信息保护政策",
+    policyErrorText: ""
   },
 
   onLoad(options: LoginPageOptions) {
@@ -52,21 +67,82 @@ Page({
     pageDisposed = false;
     preparedLogin = null;
     latestLoginPreparation += 1;
-    this.setData({ initializing: true });
-    void this.prepareLogin();
+    this.setData({
+      loading: false,
+      loginPrepared: false,
+      needsPhoneAuthorization: false,
+      agreed: false,
+      policyLoading: true,
+      policyReady: false,
+      policyVersion: "",
+      policyErrorText: ""
+    });
+    void this.loadPrivacyPolicy();
   },
 
   onUnload() {
     pageDisposed = true;
     latestLoginPreparation += 1;
+    latestPolicyRequest += 1;
     this.discardUnfinishedLogin();
   },
 
   onAgreementChange(event: WechatMiniprogram.CheckboxGroupChange) {
+    if (!this.data.policyReady) {
+      this.setData({ agreed: false });
+      showPolicyUnavailable();
+      return;
+    }
     this.setData({ agreed: event.detail.value.includes("agree") });
   },
 
+  async loadPrivacyPolicy() {
+    const requestId = ++latestPolicyRequest;
+    this.setData({
+      policyLoading: true,
+      policyReady: false,
+      policyVersion: "",
+      policyErrorText: "",
+      agreed: false
+    });
+    try {
+      const document = await getCurrentLegalDocument("PRIVACY_POLICY");
+      if (!pageDisposed && requestId === latestPolicyRequest) {
+        this.setData({
+          policyLoading: false,
+          policyReady: true,
+          policyVersion: document.version,
+          policyTitle: document.title,
+          policyErrorText: ""
+        });
+      }
+    } catch (error) {
+      if (!pageDisposed && requestId === latestPolicyRequest) {
+        this.setData({
+          policyLoading: false,
+          policyReady: false,
+          policyVersion: "",
+          policyErrorText: errorMessage(error, "当前隐私政策加载失败")
+        });
+      }
+    }
+  },
+
+  onPolicyRetry() {
+    if (!this.data.policyLoading && !this.data.loading) {
+      void this.loadPrivacyPolicy();
+    }
+  },
+
   async prepareLogin() {
+    if (!this.data.agreed) {
+      showAgreementRequired();
+      return;
+    }
+    if (!this.data.policyReady || !this.data.policyVersion) {
+      showPolicyUnavailable();
+      return;
+    }
     if (this.data.loading || this.data.loginPrepared) {
       return;
     }
@@ -74,7 +150,11 @@ Page({
     const preparationId = ++latestLoginPreparation;
     this.setData({ loading: true });
     try {
-      const pending = await prepareWechatLogin();
+      const pending = await prepareWechatLogin({
+        privacyPolicyVersion: this.data.policyVersion,
+        privacyPolicyAccepted: true,
+        miniProgramEnv: APP_ENV_VERSION
+      });
       if (
         pageDisposed ||
         preparationId !== latestLoginPreparation
@@ -85,7 +165,6 @@ Page({
       preparedLogin = pending;
       const needsPhone = needsPhoneAuthorization(pending.user);
       this.setData({
-        initializing: false,
         loading: false,
         loginPrepared: true,
         needsPhoneAuthorization: needsPhone
@@ -93,7 +172,6 @@ Page({
     } catch (error) {
       if (!pageDisposed && preparationId === latestLoginPreparation) {
         this.setData({
-          initializing: false,
           loading: false,
           loginPrepared: false,
           needsPhoneAuthorization: false
@@ -109,6 +187,10 @@ Page({
   onPrepareLoginTap() {
     if (!this.data.agreed) {
       showAgreementRequired();
+      return;
+    }
+    if (!this.data.policyReady || !this.data.policyVersion) {
+      showPolicyUnavailable();
       return;
     }
     void this.prepareLogin();
@@ -200,16 +282,11 @@ Page({
   },
 
   onPrivacyTap() {
-    wx.openPrivacyContract({
-      fail: () => {
-        wx.showModal({
-          title: "个人信息保护政策",
-          content: "我们仅在提供账户、订单与售后服务所必需的范围内处理您的信息，具体以小程序隐私保护指引为准。",
-          showCancel: false,
-          confirmColor: "#B72B22"
-        });
-      }
-    });
+    if (!this.data.policyReady) {
+      showPolicyUnavailable();
+      return;
+    }
+    wx.navigateTo({ url: buildLegalDocumentUrl("PRIVACY_POLICY") });
   },
 
   onSkipTap() {

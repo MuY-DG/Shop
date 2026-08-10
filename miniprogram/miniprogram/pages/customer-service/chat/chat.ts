@@ -14,6 +14,7 @@ import {
   shouldShowCustomerServiceCommonQuestions,
   type CustomerServiceEntryContext
 } from "../../../features/customer-service";
+import { buildOrderDetailUrl } from "../../../features/order-center";
 import { getCartItems } from "../../../services/cart";
 import {
   downloadCustomerServiceImage,
@@ -2624,7 +2625,7 @@ Page({
   onOrderCardTap(event: DatasetEvent) {
     const orderId = positiveId(event.currentTarget.dataset.id);
     if (orderId) {
-      wx.navigateTo({ url: `/pages/order/detail/detail?id=${orderId}` });
+      wx.navigateTo({ url: buildOrderDetailUrl(orderId) });
     }
   },
 

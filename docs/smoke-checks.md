@@ -39,6 +39,13 @@ For real mini program phone authorization, the backend should not log `stableTok
 
 This is a real local smoke check for product catalog. It uses the local backend and local database path. In the `test` profile, WeChat login is still backed by the mock WeChat mini program client described in `docs/dev-setup.md`; product catalog requests are not mocked.
 
+`V89` creates every historical and new product as `UNCLASSIFIED` until an operator
+classifies it. The product examples in this document are deliberately non-food kitchen
+goods and explicitly set `NON_FOOD` before publication. Never apply that classification
+to a real food merely to pass the gate: a real `FOOD` product needs its verified
+structured facts, managed label images, SKU net content, and a current published merchant
+food qualification.
+
 Start backend:
 
 ```bash
@@ -67,7 +74,7 @@ CATEGORY_ID=$(
   curl -s -X POST http://localhost:8080/admin/product/categories \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d '{"parentId":0,"name":"牛油锅底","icon":"","sortOrder":10,"status":"ENABLED"}' \
+    -d '{"parentId":0,"name":"厨房隔热用品","icon":"","sortOrder":10,"status":"ENABLED"}' \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
 ```
@@ -79,14 +86,25 @@ SPU_ID=$(
   curl -s -X POST http://localhost:8080/admin/product/spus \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"重庆牛油火锅底料\",\"subtitle\":\"厚重牛油香\",\"mainImage\":\"https://example.test/hotpot-main.jpg\",\"sellingPoints\":\"牛油浓香,手工炒制\",\"detailHtml\":\"<p>适合3-5人火锅。</p>\",\"sortOrder\":10,\"images\":[\"https://example.test/hotpot-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"HY-NY-300G\",\"specJson\":\"{\\\"口味\\\":\\\"牛油\\\",\\\"重量\\\":\\\"300g\\\"}\",\"specText\":\"牛油 / 300g\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":100,\"weightGram\":300,\"image\":\"https://example.test/hotpot-sku-300.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
+    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"耐热硅胶锅垫\",\"subtitle\":\"桌面隔热防滑\",\"mainImage\":\"https://example.test/kitchen-mat-main.jpg\",\"sellingPoints\":\"隔热防滑,便于清洁\",\"detailHtml\":\"<p>非食品商品目录 smoke 夹具。</p>\",\"sortOrder\":10,\"images\":[\"https://example.test/kitchen-mat-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"KITCHEN-MAT-GRAY\",\"specJson\":\"{\\\"颜色\\\":\\\"灰色\\\",\\\"尺寸\\\":\\\"18cm\\\"}\",\"specText\":\"灰色 / 18cm\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":100,\"weightGram\":300,\"image\":\"https://example.test/kitchen-mat-gray.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
 ```
 
-Publish SPU:
+Verify the default `UNCLASSIFIED` product is blocked, classify this truthful non-food
+fixture, and then publish it:
 
 ```bash
+curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log("UNCLASSIFIED blocked"); });'
+
+curl -s -X PUT "http://localhost:8080/admin/product/spus/${SPU_ID}/food-disclosure" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"complianceType":"NON_FOOD","labelAssets":[]}' \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.complianceType !== "NON_FOOD") process.exit(1); console.log(body.data.complianceType); });'
+
 curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
@@ -120,12 +138,176 @@ curl -s "http://localhost:8080/app/product/spus/${SPU_ID}" \
 Expected result:
 
 ```text
+UNCLASSIFIED blocked
+NON_FOOD
 success
-重庆牛油火锅底料
-HY-NY-300G
+耐热硅胶锅垫
+KITCHEN-MAT-GRAY
 success
 Product unavailable
 ```
+
+## Compliance And Account-Rights Smoke Checks
+
+These checks cover the safe local portions of `V88` through `V90`. Run them only
+against a disposable database using the `test`-profile backend command above. They
+intentionally do not publish invented merchant facts or legal text, do not classify a
+food as non-food, and do not complete an account cancellation.
+
+Create local tokens:
+
+```bash
+ADMIN_TOKEN=$(
+  curl -s -X POST http://localhost:8080/admin/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"userName":"Super","password":"123456"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+
+APP_TOKEN=$(
+  curl -s -X POST http://localhost:8080/app/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{"code":"rights-smoke-user"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
+)
+```
+
+### V88 Merchant And Legal Publication
+
+On a clean test database, the anonymous routes must return success with no current
+publication. A migration must never create fake public merchant or policy data:
+
+```bash
+for endpoint in \
+  /app/compliance/merchant \
+  /app/compliance/documents/PRIVACY_POLICY/current \
+  /app/compliance/documents/USER_AGREEMENT/current \
+  /app/compliance/documents/AFTER_SALE_POLICY/current
+do
+  curl -s "http://localhost:8080${endpoint}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200 || body.data != null) process.exit(1); console.log("no fake publication"); });'
+done
+```
+
+The authenticated histories must also be empty on that clean database:
+
+```bash
+curl -s http://localhost:8080/admin/compliance/merchant \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200 || !Array.isArray(body.data) || body.data.length !== 0) process.exit(1); console.log("empty admin history"); });'
+
+for type in PRIVACY_POLICY USER_AGREEMENT AFTER_SALE_POLICY
+do
+  curl -s "http://localhost:8080/admin/compliance/documents/${type}" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200 || !Array.isArray(body.data) || body.data.length !== 0) process.exit(1); console.log("empty admin history"); });'
+done
+```
+
+Placeholder/incomplete rejection and immutable publication history are covered by the
+focused `ComplianceControllerTest`. Publishing through a smoke command is intentionally
+omitted until the merchant supplies reviewed text, real entity/contact data, active
+managed license images, and actual validity dates. Verify the anonymous routes again only
+after that controlled real publication.
+
+### V89 Product Classification Gate
+
+The Product Catalog smoke above is the executable `V89` gate: it proves the default
+`UNCLASSIFIED` state cannot publish, then explicitly classifies a genuinely non-food
+fixture as `NON_FOOD`. For an upgraded database, also run this read-only report:
+
+```sql
+select id, title, status, compliance_type
+from product_spu
+where deleted_at is null
+  and status = 'ON_SALE'
+  and compliance_type = 'UNCLASSIFIED'
+order by id;
+```
+
+The required production result is zero rows. `V89` deliberately does not invent a
+classification or automatically unpublish historical rows. Before traffic is enabled,
+an operator must verify each returned product and either save its truthful classification
+and disclosure or take it off sale. A `FOOD` smoke needs the real package label and
+qualification data for that product; this document provides no fake food payload.
+
+### V90 User And Admin Workflow
+
+Exercise submit, detail, list, and withdraw with the non-destructive access/copy request:
+
+```bash
+RIGHTS_REQUEST_ID=$(
+  curl -s -X POST http://localhost:8080/app/account-rights/requests \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d '{"requestType":"ACCESS_COPY","requestNote":"本地 smoke：验证提交、查询与撤回"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "PENDING") process.exit(1); console.log(body.data.id); });'
+)
+
+RIGHTS_VERSION=$(
+  curl -s "http://localhost:8080/app/account-rights/requests/${RIGHTS_REQUEST_ID}" \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.request.status !== "PENDING" || body.data.audits[0].action !== "SUBMITTED") process.exit(1); console.log(body.data.request.version); });'
+)
+
+curl -s http://localhost:8080/app/account-rights/requests \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const found = body.data.some(item => String(item.id) === process.argv[1]); if (!found) process.exit(1); console.log("request listed"); });' "${RIGHTS_REQUEST_ID}"
+
+curl -s -X POST "http://localhost:8080/app/account-rights/requests/${RIGHTS_REQUEST_ID}/withdraw" \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"version\":${RIGHTS_VERSION}}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "WITHDRAWN") process.exit(1); console.log(body.data.status); });'
+```
+
+Exercise an operator review and rejection. The explanations below state only what this
+disposable smoke did; they are not production retention decisions:
+
+```bash
+REVIEW_REQUEST_ID=$(
+  curl -s -X POST http://localhost:8080/app/account-rights/requests \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d '{"requestType":"CORRECTION","requestNote":"本地 smoke：验证后台受理与驳回"}' \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.id));'
+)
+
+REVIEW_VERSION=$(
+  curl -s "http://localhost:8080/app/account-rights/requests/${REVIEW_REQUEST_ID}" \
+    -H "Authorization: Bearer ${APP_TOKEN}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.request.version));'
+)
+
+REVIEWED_VERSION=$(
+  curl -s -X POST "http://localhost:8080/admin/account-rights/requests/${REVIEW_REQUEST_ID}/review" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+    -H 'Content-Type: application/json' \
+    -d "{\"version\":${REVIEW_VERSION},\"reason\":\"本地 smoke：开始核对测试申请\",\"retentionExplanation\":\"本地 smoke 未执行真实数据导出、修改或法定保留判断\",\"retainedDataCategories\":[]}" \
+  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "IN_REVIEW") process.exit(1); console.log(body.data.version); });'
+)
+
+curl -s -X POST "http://localhost:8080/admin/account-rights/requests/${REVIEW_REQUEST_ID}/reject" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"version\":${REVIEWED_VERSION},\"reason\":\"本地 smoke：结束测试申请\",\"retentionExplanation\":\"本地 smoke 未形成任何真实处理或保留结论\",\"retainedDataCategories\":[]}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "REJECTED") process.exit(1); console.log(body.data.status); });'
+```
+
+Expected result includes:
+
+```text
+no fake publication
+empty admin history
+request listed
+WITHDRAWN
+REJECTED
+```
+
+Do not turn this into a cancellation-completion smoke on a merchant or production user.
+Cancellation needs a fresh one-time WeChat code for the same account, an active-business
+obligation review, a documented retention decision, and a disposable dedicated real
+test account. Completion intentionally invalidates sessions and changes stored identity.
 
 ## Cart Smoke Checks
 
@@ -170,7 +352,7 @@ CATEGORY_ID=$(
   curl -s -X POST http://localhost:8080/admin/product/categories \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d '{"parentId":0,"name":"购物车牛油锅底","icon":"","sortOrder":20,"status":"ENABLED"}' \
+    -d '{"parentId":0,"name":"购物车厨房用品","icon":"","sortOrder":20,"status":"ENABLED"}' \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
 ```
@@ -182,7 +364,7 @@ SPU_ID=$(
   curl -s -X POST http://localhost:8080/admin/product/spus \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"购物车重庆牛油火锅底料\",\"subtitle\":\"厚重牛油香\",\"mainImage\":\"https://example.test/cart-main.jpg\",\"sellingPoints\":\"牛油浓香,手工炒制\",\"detailHtml\":\"<p>适合3-5人火锅。</p>\",\"sortOrder\":20,\"images\":[\"https://example.test/cart-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"CART-HY-NY-300G\",\"specJson\":\"{\\\"口味\\\":\\\"牛油\\\",\\\"重量\\\":\\\"300g\\\"}\",\"specText\":\"牛油 / 300g\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":100,\"weightGram\":300,\"image\":\"https://example.test/cart-sku-300.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
+    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"购物车耐热硅胶锅垫\",\"subtitle\":\"购物车链路联调\",\"mainImage\":\"https://example.test/cart-mat-main.jpg\",\"sellingPoints\":\"隔热防滑,购物车联调\",\"detailHtml\":\"<p>非食品购物车 smoke 夹具。</p>\",\"sortOrder\":20,\"images\":[\"https://example.test/cart-mat-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"CART-MAT-GRAY\",\"specJson\":\"{\\\"颜色\\\":\\\"灰色\\\",\\\"尺寸\\\":\\\"18cm\\\"}\",\"specText\":\"灰色 / 18cm\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":100,\"weightGram\":300,\"image\":\"https://example.test/cart-mat-gray.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
 ```
@@ -190,6 +372,12 @@ SPU_ID=$(
 Publish SPU:
 
 ```bash
+curl -s -X PUT "http://localhost:8080/admin/product/spus/${SPU_ID}/food-disclosure" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"complianceType":"NON_FOOD","labelAssets":[]}' \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.complianceType !== "NON_FOOD") process.exit(1); console.log(body.data.complianceType); });'
+
 curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code !== 200) process.exit(1); console.log(body.msg); });'
@@ -263,8 +451,9 @@ curl -s http://localhost:8080/app/cart/items \
 Expected result:
 
 ```text
+NON_FOOD
 success
-购物车重庆牛油火锅底料 2 7980
+购物车耐热硅胶锅垫 2 7980
 3
 success
 1
@@ -361,7 +550,7 @@ CATEGORY_ID=$(
   curl -s -X POST http://localhost:8080/admin/product/categories \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d '{"parentId":0,"name":"优惠券锅底分类","icon":"","sortOrder":30,"status":"ENABLED"}' \
+    -d '{"parentId":0,"name":"优惠券厨房用品","icon":"","sortOrder":30,"status":"ENABLED"}' \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
 
@@ -369,9 +558,15 @@ SPU_ID=$(
   curl -s -X POST http://localhost:8080/admin/product/spus \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"购物车优惠券测试锅底\",\"subtitle\":\"满减券联调\",\"mainImage\":\"https://example.test/coupon-main.jpg\",\"sellingPoints\":\"优惠联调,实时计算\",\"detailHtml\":\"<p>用于优惠券可用列表联调。</p>\",\"sortOrder\":30,\"images\":[\"https://example.test/coupon-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"COUPON-HY-001\",\"specJson\":\"{\\\"口味\\\":\\\"牛油\\\",\\\"重量\\\":\\\"300g\\\"}\",\"specText\":\"牛油 / 300g\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":100,\"weightGram\":300,\"image\":\"https://example.test/coupon-sku-300.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
+    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"优惠券测试耐热锅垫\",\"subtitle\":\"满减券联调\",\"mainImage\":\"https://example.test/coupon-mat-main.jpg\",\"sellingPoints\":\"优惠联调,实时计算\",\"detailHtml\":\"<p>非食品优惠券可用列表 smoke 夹具。</p>\",\"sortOrder\":30,\"images\":[\"https://example.test/coupon-mat-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"COUPON-MAT-001\",\"specJson\":\"{\\\"颜色\\\":\\\"灰色\\\",\\\"尺寸\\\":\\\"18cm\\\"}\",\"specText\":\"灰色 / 18cm\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":100,\"weightGram\":300,\"image\":\"https://example.test/coupon-mat-gray.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
+
+curl -s -X PUT "http://localhost:8080/admin/product/spus/${SPU_ID}/food-disclosure" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"complianceType":"NON_FOOD","labelAssets":[]}' \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.complianceType !== "NON_FOOD") process.exit(1); console.log(body.data.complianceType); });'
 
 curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
@@ -412,6 +607,8 @@ Expected result:
 success
 新人无门槛券
 CLAIMED
+NON_FOOD
+success
 500
 ```
 
@@ -460,7 +657,7 @@ CATEGORY_ID=$(
   curl -s -X POST http://localhost:8080/admin/product/categories \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d '{"parentId":0,"name":"订单锅底分类","icon":"","sortOrder":40,"status":"ENABLED"}' \
+    -d '{"parentId":0,"name":"订单厨房用品","icon":"","sortOrder":40,"status":"ENABLED"}' \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
 ```
@@ -468,7 +665,7 @@ CATEGORY_ID=$(
 Create SPU/SKU with deterministic SKU code and stock, then publish:
 
 ```bash
-ORDER_SKU_CODE=ORDER-HY-NY-300G
+ORDER_SKU_CODE=ORDER-MAT-GRAY
 ORDER_START_STOCK=100
 ORDER_QUANTITY=1
 
@@ -476,9 +673,15 @@ SPU_ID=$(
   curl -s -X POST http://localhost:8080/admin/product/spus \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"订单重庆牛油火锅底料\",\"subtitle\":\"订单链路联调\",\"mainImage\":\"https://example.test/order-main.jpg\",\"sellingPoints\":\"订单联调,库存锁定\",\"detailHtml\":\"<p>用于订单真实本地 smoke。</p>\",\"sortOrder\":40,\"images\":[\"https://example.test/order-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"${ORDER_SKU_CODE}\",\"specJson\":\"{\\\"口味\\\":\\\"牛油\\\",\\\"重量\\\":\\\"300g\\\"}\",\"specText\":\"牛油 / 300g\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":${ORDER_START_STOCK},\"weightGram\":300,\"image\":\"https://example.test/order-sku-300.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
+    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"订单耐热硅胶锅垫\",\"subtitle\":\"订单链路联调\",\"mainImage\":\"https://example.test/order-mat-main.jpg\",\"sellingPoints\":\"订单联调,库存锁定\",\"detailHtml\":\"<p>非食品订单链路 smoke 夹具。</p>\",\"sortOrder\":40,\"images\":[\"https://example.test/order-mat-gallery-1.jpg\"],\"skus\":[{\"skuCode\":\"${ORDER_SKU_CODE}\",\"specJson\":\"{\\\"颜色\\\":\\\"灰色\\\",\\\"尺寸\\\":\\\"18cm\\\"}\",\"specText\":\"灰色 / 18cm\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":${ORDER_START_STOCK},\"weightGram\":300,\"image\":\"https://example.test/order-mat-gray.jpg\",\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
+
+curl -s -X PUT "http://localhost:8080/admin/product/spus/${SPU_ID}/food-disclosure" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"complianceType":"NON_FOOD","labelAssets":[]}' \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.complianceType !== "NON_FOOD") process.exit(1); console.log(body.data.complianceType); });'
 
 curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
@@ -698,8 +901,9 @@ curl -s http://localhost:8080/app/coupons/mine \
 Expected result includes:
 
 ```text
+NON_FOOD
 success
-ORDER-HY-NY-300G
+ORDER-MAT-GRAY
 500
 CREATED
 duplicate
@@ -926,9 +1130,15 @@ SPU_ID=$(
   curl -s -X POST http://localhost:8080/admin/product/spus \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"素材库牛油火锅底料\",\"subtitle\":\"上传主图 smoke\",\"mainImage\":\"${PRODUCT_IMAGE_URL}\",\"mainImageFileId\":${PRODUCT_FILE_ID},\"sellingPoints\":\"素材库,本地上传\",\"detailHtml\":\"<p><img src=\\\"${PRODUCT_IMAGE_URL}\\\" /></p>\",\"sortOrder\":90,\"images\":[{\"url\":\"${PRODUCT_IMAGE_URL}\",\"fileId\":${PRODUCT_FILE_ID}}],\"skus\":[{\"skuCode\":\"FILE-SMOKE-300G\",\"specJson\":\"{\\\"规格\\\":\\\"300g\\\"}\",\"specText\":\"300g\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":20,\"weightGram\":300,\"image\":\"${PRODUCT_IMAGE_URL}\",\"imageFileId\":${PRODUCT_FILE_ID},\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
+    -d "{\"categoryId\":${CATEGORY_ID},\"title\":\"素材库耐热硅胶锅垫\",\"subtitle\":\"上传主图 smoke\",\"mainImage\":\"${PRODUCT_IMAGE_URL}\",\"mainImageFileId\":${PRODUCT_FILE_ID},\"sellingPoints\":\"素材库,本地上传\",\"detailHtml\":\"<p><img src=\\\"${PRODUCT_IMAGE_URL}\\\" /></p>\",\"sortOrder\":90,\"images\":[{\"url\":\"${PRODUCT_IMAGE_URL}\",\"fileId\":${PRODUCT_FILE_ID}}],\"skus\":[{\"skuCode\":\"FILE-SMOKE-MAT\",\"specJson\":\"{\\\"颜色\\\":\\\"灰色\\\"}\",\"specText\":\"灰色\",\"priceCent\":3990,\"originalPriceCent\":4990,\"stockAvailable\":20,\"weightGram\":300,\"image\":\"${PRODUCT_IMAGE_URL}\",\"imageFileId\":${PRODUCT_FILE_ID},\"status\":\"ENABLED\",\"sortOrder\":1}]}" \
   | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data));'
 )
+
+curl -s -X PUT "http://localhost:8080/admin/product/spus/${SPU_ID}/food-disclosure" \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"complianceType":"NON_FOOD","labelAssets":[]}' \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.complianceType !== "NON_FOOD") process.exit(1); console.log(body.data.complianceType); });'
 
 curl -s -X POST "http://localhost:8080/admin/product/spus/${SPU_ID}/publish" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
@@ -1045,7 +1255,7 @@ Recommended backend checks:
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest='AppPaymentControllerTest,PaymentCallbackServiceTest,PaymentNotificationRouteIssuanceTest,PaymentNotificationRouteRejectionTest,PaymentNotificationConfigSelectorRouteTest,PaymentNotificationRouteServiceTest,PaymentTimeoutCloseServiceTest,PaymentSchemaTest,PaymentConfigResolverTest,AdminPaymentConfigControllerTest,AesGcmPaymentSecretCipherTest,PaymentSecretRotationServiceTest' test
+./mvnw -Dtest='AppPaymentControllerTest,PaymentCallbackServiceTest,PaymentNotificationRouteIssuanceTest,PaymentNotificationRouteRejectionTest,PaymentNotificationConfigSelectorRouteTest,PaymentNotificationRouteServiceTest,PaymentTimeoutCloseServiceTest,CreatedOrderTimeoutCloseServiceTest,CreatedOrderTimeoutCloseSchedulerTest,PaymentInitiationServiceTest,OrderSchemaTest,PaymentSchemaTest,PaymentConfigResolverTest,AdminPaymentConfigControllerTest,AesGcmPaymentSecretCipherTest,PaymentSecretRotationServiceTest' test
 ```
 
 Optional local endpoint smoke can reuse the existing Order Smoke Checks setup: start the backend with the `test` profile, create product/cart/coupon/order data through the real local backend APIs, then call:
@@ -1070,11 +1280,13 @@ The current local runtime does not expose a public test-only endpoint that marks
 Automated verification points:
 
 - `POST /app/orders/{orderId}/pay` creates or reuses one active mock payment and returns JSAPI payment params.
+- A submitted order stores `payment_expires_at`; the payment row inherits that exact value and a later pay request cannot extend it.
 - Mock callback or mock sync finalizes a paid order as `PAID`.
 - Paid finalization changes `stock_lock.status` to `CONFIRMED`.
 - Paid finalization changes a locked coupon to `USED`.
 - Timeout close changes the unpaid payment/order to `CLOSED`.
 - Timeout close releases stock locks and returns the coupon to `CLAIMED`.
+- An expired `CREATED` order with no payment row is leased, closed, and releases stock/coupon exactly once. A fresh lease, a non-expired deadline, or any payment row prevents that path from releasing inventory.
 
 ## Real WeChat Payment Local Smoke Checklist
 
@@ -1127,7 +1339,7 @@ Automated shipment checks use backend tests and mock or mocked HTTP providers; t
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest='AdminShipmentControllerTest,ShipmentSchemaTest,WechatShippingProviderTest,WechatReceiptReconciliationServiceTest,WechatReceiptReconciliationSchedulerTest' test
+./mvnw -Dtest='AdminShipmentControllerTest,ShipmentSchemaTest,WechatShippingProviderTest,WechatShippingUploadCoordinatorTest,WechatShippingUploadRecoveryTest,WechatShippingDeliverySchedulerTest,WechatReceiptReconciliationServiceTest,WechatReceiptReconciliationSchedulerTest,AppOrderWechatReceiptTest' test
 ```
 
 Local skipped path:
@@ -1142,11 +1354,21 @@ Local skipped path:
 Real upload enabled path:
 
 - Set `SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=true`.
+- Keep `SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED=true` so the durable scheduler, not only the immediate request, owns eventual delivery.
 - Use a real paid order with `payment_transaction_id`, payer `openid`, and real WeChat mini program credentials so the backend can obtain an access token internally.
 - Admin ships the order through `POST /admin/orders/{orderId}/ship`.
-- Verify shipment `wechatUploadStatus` becomes `UPLOADED`, or `FAILED` with a safe `wechatErrorCode` and `wechatErrorMessage`.
-- If upload fails, retry through `POST /admin/orders/{orderId}/shipping/retry-wechat-upload` and verify `retryCount` increments without creating a duplicate shipment row.
+- Verify the committed shipment can start at `PENDING`; a successful claimed delivery becomes `UPLOADED` without creating a duplicate shipment row. `UNAVAILABLE` uses bounded backoff, while deterministic rejection becomes operator-owned `FAILED`.
+- A network-ambiguous outcome becomes `UNKNOWN`. Call `POST /admin/orders/{orderId}/shipping/reconcile-wechat-upload` and verify it queries WeChat facts instead of blindly uploading again. Only matching order/shipment facts may become `UPLOADED`; spaced definitive not-uploaded observations may return it to `PENDING`.
+- After correcting a deterministic failure, use `POST /admin/orders/{orderId}/shipping/retry-wechat-upload`. Verify the existing shipment is reused and total attempt count advances without a second local shipment or duplicate provider fact.
+- Verify a stale claim can be reclaimed and a terminal update with an old claim token cannot overwrite the winning state.
 - Confirm logs include only safe error summaries and never print access tokens.
+
+Receipt status matrix:
+
+- `REAL + UPLOADED`: WeChat remains authoritative; local manual receipt does not pretend to replace it.
+- `UPLOADING/UNKNOWN`: local receipt is blocked while the provider outcome is ambiguous.
+- `PENDING/SKIPPED/FAILED/UNAVAILABLE`, or a non-real provider: audited local receipt is allowed and its status log identifies the local fallback.
+- Test each row with the focused automated tests. Exercise the real `UPLOADED` row with one actual WeChat order; mock/test-profile results are not production proof.
 
 ### Electronic Waybill And Mini Program Logistics
 
@@ -1262,6 +1484,9 @@ curl -s "http://localhost:8080/admin/assets/${AFTER_SALE_EVIDENCE_ID}" \
 - Admin rejects one request through `POST /admin/after-sales/{afterSaleId}/reject` and verifies status `REJECTED` while the order remains paid or shipped.
 - Admin approves one request through `POST /admin/after-sales/{afterSaleId}/approve` with `approvedAmountCent`; with the mock provider, verify the after-sale moves to `REFUNDING` and `refund_order.status` starts as `PROCESSING`.
 - Backend mock refund callback tests verify successful callback transitions to after-sale `REFUNDED`, refund order `SUCCESS`, and order `REFUNDED`.
+- For a paid-unshipped order without an `order_shipment`, verify `refund_order.restock_required = TRUE`, `restocked_at` is populated, every confirmed lock becomes `RESTOCKED`, the SKU stock returns exactly once, and one `REFUND_RESTOCK` log exists per affected SKU. Replay the same success callback and verify neither stock nor log count changes.
+- For a shipped or completed order, verify `restock_required = FALSE`, the confirmed locks and sellable stock are unchanged, and no `REFUND_RESTOCK` log is written.
+- Before production rollout, execute the read-only historical reports and post-deployment invariant queries in [transaction-reconciliation.md](transaction-reconciliation.md). A historical successful refund is never automatic evidence that inventory should be made sellable again.
 
 Real local WeChat refund smoke:
 

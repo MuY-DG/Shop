@@ -24,6 +24,7 @@ import java.math.BigDecimal;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.muybaby.shopserver.support.ProductComplianceTestSupport.markNonFood;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -171,6 +172,7 @@ class AdminProductServiceTest {
                         1, 100, "", null, "ENABLED", 1
                 ))
         ));
+        markNonFood(jdbcClient, spuId);
         adminProductService.publishSpu(spuId);
 
         assertThatThrownBy(() -> adminProductService.updateSpu(spuId, new AdminSpuUpsertRequest(

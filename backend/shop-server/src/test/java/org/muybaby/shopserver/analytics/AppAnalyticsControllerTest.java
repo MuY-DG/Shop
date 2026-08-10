@@ -54,6 +54,22 @@ class AppAnalyticsControllerTest {
         jdbcClient.sql("delete from app_user_daily_activity where user_id = :userId")
                 .param("userId", USER_ID)
                 .update();
+        int updated = jdbcClient.sql("""
+                        update app_user
+                        set status = 'ENABLED', auth_version = 0, cancelled_at = null
+                        where id = :userId
+                        """)
+                .param("userId", USER_ID)
+                .update();
+        if (updated == 0) {
+            jdbcClient.sql("""
+                            insert into app_user(id, openid, status)
+                            values(:userId, :openid, 'ENABLED')
+                            """)
+                    .param("userId", USER_ID)
+                    .param("openid", "analytics-app-user-" + USER_ID)
+                    .update();
+        }
     }
 
     @Test
@@ -210,7 +226,7 @@ class AppAnalyticsControllerTest {
     private String appToken() {
         return opaqueTokenService.issue(
                 TokenKind.APP,
-                TokenSession.app(USER_ID, "openid***", Instant.now()))
+                TokenSession.app(USER_ID, "openid***", 0L, Instant.now()))
                 .accessToken();
     }
 

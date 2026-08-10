@@ -37,10 +37,16 @@ public class AppProductService {
 
     private final JdbcClient jdbcClient;
     private final ProductParameterService productParameterService;
+    private final ProductFoodComplianceService productFoodComplianceService;
 
-    public AppProductService(JdbcClient jdbcClient, ProductParameterService productParameterService) {
+    public AppProductService(
+            JdbcClient jdbcClient,
+            ProductParameterService productParameterService,
+            ProductFoodComplianceService productFoodComplianceService
+    ) {
         this.jdbcClient = jdbcClient;
         this.productParameterService = productParameterService;
+        this.productFoodComplianceService = productFoodComplianceService;
     }
 
     public List<AppCategoryResponse> categories() {
@@ -196,7 +202,7 @@ public class AppProductService {
 
         List<AppSkuRow> skuRows = jdbcClient.sql("""
                         SELECT id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                               stock_available, weight_gram, image, image_file_id, status
+                               stock_available, weight_gram, net_content_text, image, image_file_id, status
                         FROM product_sku
                         WHERE spu_id = :spuId
                           AND status = :status
@@ -212,7 +218,7 @@ public class AppProductService {
                 .map(sku -> new AppSkuResponse(
                         sku.id(), sku.skuCode(), sku.specJson(), sku.specText(), sku.priceCent(),
                         sku.originalPriceCent(), saleState(sku.stockAvailable()),
-                        Math.min(sku.stockAvailable(), 999), sku.weightGram(), sku.image(),
+                        Math.min(sku.stockAvailable(), 999), sku.weightGram(), sku.netContentText(), sku.image(),
                         sku.imageFileId(), sku.status(),
                         wholesaleTiersBySkuId.getOrDefault(sku.id(), List.of())
                 ))
@@ -234,6 +240,7 @@ public class AppProductService {
                 spu.salesCount(),
                 saleState,
                 splitSellingPoints(spu.sellingPoints()),
+                productFoodComplianceService.publicDisclosure(spuId),
                 spu.detailHtml(),
                 images,
                 skus,
@@ -344,6 +351,7 @@ public class AppProductService {
                 rs.getLong("original_price_cent"),
                 rs.getInt("stock_available"),
                 rs.getObject("weight_gram", Integer.class),
+                rs.getString("net_content_text"),
                 rs.getString("image"),
                 rs.getObject("image_file_id", Long.class),
                 rs.getString("status")
@@ -505,6 +513,7 @@ public class AppProductService {
             Long originalPriceCent,
             Integer stockAvailable,
             Integer weightGram,
+            String netContentText,
             String image,
             Long imageFileId,
             String status

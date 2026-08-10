@@ -1,0 +1,44 @@
+<view class="legal-document-page">
+  <navigation-bar title="{{pageTitle}}" back="{{true}}" color="#2E1D16" />
+
+  <view wx:if="{{loading}}" class="legal-document-state">
+    <ui-state type="loading" title="正在加载{{pageTitle}}" description="请稍候" />
+  </view>
+  <view wx:elif="{{errorText}}" class="legal-document-state">
+    <ui-state
+      type="error"
+      title="{{pageTitle}}暂不可用"
+      description="{{errorText}}"
+      action-text="重新加载"
+      bindaction="onRetry"
+    />
+  </view>
+
+  <scroll-view
+    wx:else
+    class="legal-document-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{true}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+  >
+    <view class="legal-document-content">
+      <view class="legal-document-card">
+        <view class="legal-document-title">{{document.title}}</view>
+        <view class="legal-document-meta">
+          <text>版本 {{document.version}}</text>
+          <text wx:if="{{document.effectiveAtText}}">生效日期 {{document.effectiveAtText}}</text>
+        </view>
+        <text
+          class="legal-document-body"
+          user-select="{{true}}"
+          decode="{{true}}"
+        >{{document.content}}</text>
+      </view>
+      <view wx:if="{{document.publishedAtText}}" class="legal-document-note">
+        当前版本发布于 {{document.publishedAtText}}
+      </view>
+    </view>
+  </scroll-view>
+</view>

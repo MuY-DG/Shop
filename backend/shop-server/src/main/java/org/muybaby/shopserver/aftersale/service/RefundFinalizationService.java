@@ -28,15 +28,18 @@ public class RefundFinalizationService {
     private final JdbcClient jdbcClient;
     private final OrderStatusLogService orderStatusLogService;
     private final PaymentConfigIdentityValidator paymentConfigIdentityValidator;
+    private final RefundInventoryRestockService refundInventoryRestockService;
 
     public RefundFinalizationService(
             JdbcClient jdbcClient,
             OrderStatusLogService orderStatusLogService,
-            PaymentConfigIdentityValidator paymentConfigIdentityValidator
+            PaymentConfigIdentityValidator paymentConfigIdentityValidator,
+            RefundInventoryRestockService refundInventoryRestockService
     ) {
         this.jdbcClient = jdbcClient;
         this.orderStatusLogService = orderStatusLogService;
         this.paymentConfigIdentityValidator = paymentConfigIdentityValidator;
+        this.refundInventoryRestockService = refundInventoryRestockService;
     }
 
     @Transactional
@@ -170,6 +173,8 @@ public class RefundFinalizationService {
                                ro.refund_amount_cent,
                                ro.status,
                                ro.callback_status,
+                               ro.restock_required,
+                               ro.restocked_at,
                                ro.recovery_claim_token,
                                po.payment_config_id,
                                po.payment_config_fingerprint,
@@ -296,6 +301,8 @@ public class RefundFinalizationService {
     ) {
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         LocalDateTime successAt = providerState.successAt() == null ? now : providerState.successAt();
+        refundInventoryRestockService.restockIfRequired(
+                refund.id(), refund.orderId(), refund.restockRequired(), now);
         int refundRows = jdbcClient.sql("""
                         update refund_order
                         set status = :status,
@@ -465,6 +472,8 @@ public class RefundFinalizationService {
                 rs.getLong("refund_amount_cent"),
                 rs.getString("status"),
                 rs.getString("callback_status"),
+                rs.getBoolean("restock_required"),
+                rs.getObject("restocked_at", LocalDateTime.class),
                 rs.getString("recovery_claim_token"),
                 rs.getObject("payment_config_id", Long.class),
                 rs.getString("payment_config_fingerprint"),
@@ -498,6 +507,8 @@ public class RefundFinalizationService {
             long refundAmountCent,
             String status,
             String callbackStatus,
+            boolean restockRequired,
+            LocalDateTime restockedAt,
             String recoveryClaimToken,
             Long paymentConfigId,
             String paymentConfigFingerprint,

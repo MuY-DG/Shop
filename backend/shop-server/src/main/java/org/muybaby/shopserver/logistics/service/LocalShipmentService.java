@@ -97,6 +97,7 @@ public class LocalShipmentService {
                                 shipment_source, electronic_waybill_id,
                                 status, wechat_provider_mode, wechat_upload_status,
                                 wechat_error_code, wechat_error_message, retry_count,
+                                wechat_upload_next_action_at,
                                 shipped_at, created_at, updated_at)
                             values (
                                 :orderId, :logisticsType, :deliveryMode, :itemDesc,
@@ -104,7 +105,8 @@ public class LocalShipmentService {
                                 :consignorContact, :receiverContact, :shipmentNote,
                                 :shipmentSource, null,
                                 :status, :providerMode, :uploadStatus,
-                                '', '', 0, :shippedAt, :createdAt, :updatedAt)
+                                '', '', 0, :nextActionAt,
+                                :shippedAt, :createdAt, :updatedAt)
                             """)
                     .param("orderId", orderId)
                     .param("logisticsType", shipment.logisticsType().value())
@@ -119,7 +121,8 @@ public class LocalShipmentService {
                     .param("shipmentSource", ShipmentSource.MANUAL.name())
                     .param("status", ShipmentStatus.SHIPPED.name())
                     .param("providerMode", initialProviderMode.name())
-                    .param("uploadStatus", WechatShippingUploadStatus.SKIPPED.name())
+                    .param("uploadStatus", initialUploadStatus().name())
+                    .param("nextActionAt", initialNextActionAt(now))
                     .param("shippedAt", now)
                     .param("createdAt", now)
                     .param("updatedAt", now)
@@ -202,6 +205,7 @@ public class LocalShipmentService {
                                 shipment_source, electronic_waybill_id,
                                 status, wechat_provider_mode, wechat_upload_status,
                                 wechat_error_code, wechat_error_message, retry_count,
+                                wechat_upload_next_action_at,
                                 shipped_at, created_at, updated_at)
                             values (
                                 :orderId, :logisticsType, :deliveryMode, :itemDesc,
@@ -209,7 +213,8 @@ public class LocalShipmentService {
                                 :consignorContact, :receiverContact, '',
                                 :shipmentSource, :electronicWaybillId,
                                 :status, :providerMode, :uploadStatus,
-                                '', '', 0, :shippedAt, :createdAt, :updatedAt)
+                                '', '', 0, :nextActionAt,
+                                :shippedAt, :createdAt, :updatedAt)
                             """)
                     .param("orderId", orderId)
                     .param("logisticsType", LogisticsType.EXPRESS.value())
@@ -224,7 +229,8 @@ public class LocalShipmentService {
                     .param("electronicWaybillId", waybillRecordId)
                     .param("status", ShipmentStatus.SHIPPED.name())
                     .param("providerMode", initialProviderMode.name())
-                    .param("uploadStatus", WechatShippingUploadStatus.SKIPPED.name())
+                    .param("uploadStatus", initialUploadStatus().name())
+                    .param("nextActionAt", initialNextActionAt(now))
                     .param("shippedAt", now)
                     .param("createdAt", now)
                     .param("updatedAt", now)
@@ -503,6 +509,16 @@ public class LocalShipmentService {
         } catch (RuntimeException ex) {
             return WechatProviderMode.UNKNOWN;
         }
+    }
+
+    private WechatShippingUploadStatus initialUploadStatus() {
+        return shippingProperties.isUploadEnabled()
+                ? WechatShippingUploadStatus.PENDING
+                : WechatShippingUploadStatus.SKIPPED;
+    }
+
+    private LocalDateTime initialNextActionAt(LocalDateTime now) {
+        return shippingProperties.isUploadEnabled() ? now : null;
     }
 
     private OrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {

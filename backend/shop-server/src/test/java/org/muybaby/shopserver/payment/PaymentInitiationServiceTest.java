@@ -61,6 +61,67 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
     private PaymentConfigResolver paymentConfigResolver;
 
     @Test
+    void paymentInheritsTheOrderDeadlineAndCannotExtendAnExpiredOrder() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-order-deadline-user");
+        SeedOrder active = seedCreatedOrder(session.userId(), 6980L, false);
+        LocalDateTime fixedDeadline = LocalDateTime.now().plusMinutes(30).withNano(0);
+        jdbcClient.sql("""
+                        update shop_order
+                        set payment_expires_at = :deadline,
+                            created_timeout_claim_token = 'superseded-created-claim',
+                            created_timeout_claimed_at = timestampadd(MINUTE, -10, current_timestamp)
+                        where id = :orderId
+                        """)
+                .param("deadline", fixedDeadline)
+                .param("orderId", active.orderId())
+                .update();
+
+        paymentInitiationService.initiate(session.userId(), active.orderId());
+
+        LocalDateTime paymentDeadline = jdbcClient.sql("""
+                        select expires_at from payment_order where order_id = :orderId
+                        """)
+                .param("orderId", active.orderId())
+                .query(LocalDateTime.class)
+                .single();
+        assertThat(paymentDeadline).isEqualTo(fixedDeadline);
+        assertThat(jdbcClient.sql("""
+                        select count(*) from shop_order
+                        where id = :orderId
+                          and created_timeout_claim_token is null
+                          and created_timeout_claimed_at is null
+                        """)
+                .param("orderId", active.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+
+        jdbcClient.sql("update shop_order set payment_expires_at = :deadline where id = :orderId")
+                .param("deadline", fixedDeadline.plusMinutes(1))
+                .param("orderId", active.orderId())
+                .update();
+        assertThatThrownBy(() -> paymentInitiationService.initiate(session.userId(), active.orderId()))
+                .isInstanceOf(BusinessException.class);
+
+        SeedOrder expired = seedCreatedOrder(session.userId(), 2100L, false);
+        jdbcClient.sql("""
+                        update shop_order
+                        set payment_expires_at = timestampadd(SECOND, -1, current_timestamp)
+                        where id = :orderId
+                        """)
+                .param("orderId", expired.orderId())
+                .update();
+
+        assertThatThrownBy(() -> paymentInitiationService.initiate(session.userId(), expired.orderId()))
+                .isInstanceOf(BusinessException.class);
+        assertThat(jdbcClient.sql("select count(*) from payment_order where order_id = :orderId")
+                .param("orderId", expired.orderId())
+                .query(Integer.class)
+                .single()).isZero();
+        assertThat(orderStatus(expired.orderId())).isEqualTo("CREATED");
+    }
+
+    @Test
     void providerRunsOutsideTransactionAndFailureRetriesTheExactPersistedRequest() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-initiation-retry-user");
@@ -309,6 +370,42 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
         assertThat(transactionProbeWechatPayProvider.requests().get(1))
                 .isEqualTo(transactionProbeWechatPayProvider.requests().get(0));
         assertThat(transactionProbeWechatPayProvider.transactionObservedDuringPrepay()).isFalse();
+    }
+
+    @Test
+    void expiredOrderDeadlinePreventsReclaimingAnOrphanedPreparingPayment() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-initiation-expired-orphan-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, false);
+        transactionProbeWechatPayProvider.crashAfterNextProviderSuccess();
+
+        assertThatThrownBy(() -> paymentInitiationService.initiate(session.userId(), order.orderId()))
+                .isInstanceOf(SimulatedProcessCrash.class);
+        assertThat(transactionProbeWechatPayProvider.requests()).hasSize(1);
+
+        LocalDateTime expiredAt = LocalDateTime.now().minusMinutes(1).withNano(0);
+        jdbcClient.sql("""
+                        update payment_order
+                        set expires_at = :expiredAt,
+                            prepay_claimed_at = timestampadd(MINUTE, -10, current_timestamp)
+                        where order_id = :orderId
+                        """)
+                .param("expiredAt", expiredAt)
+                .param("orderId", order.orderId())
+                .update();
+        jdbcClient.sql("""
+                        update shop_order
+                        set payment_expires_at = :expiredAt
+                        where id = :orderId
+                        """)
+                .param("expiredAt", expiredAt)
+                .param("orderId", order.orderId())
+                .update();
+
+        assertThatThrownBy(() -> paymentInitiationService.initiate(session.userId(), order.orderId()))
+                .isInstanceOf(BusinessException.class);
+        assertThat(transactionProbeWechatPayProvider.requests()).hasSize(1);
+        assertThat(preparationSnapshot(order.orderId()).prepayAttempts()).isEqualTo(1);
     }
 
     private PaymentPreparationSnapshot preparationSnapshot(long orderId) {

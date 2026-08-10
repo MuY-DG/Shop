@@ -18,33 +18,6 @@ page {
   flex-direction: column;
 }
 
-.login-loading-layer {
-  position: fixed;
-  z-index: 20;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.login-loading-spinner {
-  width: 36rpx;
-  height: 36rpx;
-  border: 4rpx solid fade(@color-brand, 18%);
-  border-top-color: @color-brand;
-  border-radius: 50%;
-  animation: login-spinner 0.8s linear infinite;
-}
-
-@keyframes login-spinner {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .login-main {
   min-height: 0;
   flex: 1;
@@ -172,6 +145,37 @@ button.primary-action[disabled] {
 
 .agreement__link {
   color: @color-brand;
+}
+
+.policy-error {
+  display: flex;
+  margin-top: @space-4;
+  padding: @space-3 @space-4;
+  border-radius: @radius-md;
+  align-items: center;
+  color: @color-danger;
+  background: fade(@color-danger, 8%);
+  font-size: @font-size-xs;
+  line-height: 1.5;
+  gap: @space-3;
+}
+
+.policy-error text {
+  min-width: 0;
+  flex: 1;
+}
+
+.policy-error button {
+  margin: 0;
+  padding: 0;
+  color: @color-brand;
+  background: transparent;
+  font-size: @font-size-xs;
+  line-height: 1.5;
+}
+
+.policy-error button::after {
+  border: 0;
 }
 
 button.skip-action {

@@ -12,10 +12,7 @@ export function formatTrackingSyncStatus(status: Api.Order.TrackingSyncStatus): 
   return TRACKING_SYNC_STATUS_TEXT[status] || '未知状态'
 }
 
-export function formatTrackingSourceError(
-  code?: string | null,
-  message?: string | null
-): string {
+export function formatTrackingSourceError(code?: string | null, message?: string | null): string {
   const normalizedCode = code?.trim() || ''
   const normalizedMessage = message?.trim() || ''
   if (!normalizedCode && !normalizedMessage) return '-'

@@ -38,6 +38,21 @@ test("客服入口只携带合法商品或订单上下文", () => {
   );
 });
 
+test("客服订单卡复用订单中心路由并传递 order_id", () => {
+  const pageSource = readFileSync(
+    resolve(sourceRoot, "pages/customer-service/chat/chat.ts"),
+    "utf8"
+  );
+  const orderCardTapSource = pageSource.slice(
+    pageSource.indexOf("onOrderCardTap("),
+    pageSource.indexOf("onProductCardTap(")
+  );
+
+  assert.match(pageSource, /import \{ buildOrderDetailUrl \} from "\.\.\/\.\.\/\.\.\/features\/order-center"/);
+  assert.match(orderCardTapSource, /buildOrderDetailUrl\(orderId\)/);
+  assert.doesNotMatch(orderCardTapSource, /detail\?id=/);
+});
+
 test("客服图片下载只允许服务端持久化后的消息 ID", () => {
   assert.equal(isPersistedCustomerServiceMessageId(1), true);
   assert.equal(isPersistedCustomerServiceMessageId(Number.MAX_SAFE_INTEGER), true);

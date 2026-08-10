@@ -3,6 +3,8 @@ package org.muybaby.shopserver.aftersale;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.StockLockStatus;
+import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,6 +25,8 @@ class AfterSaleSchemaTest {
         assertThat(OrderStatus.valueOf("REFUNDING").name()).isEqualTo("REFUNDING");
         assertThat(StorageFileUsageType.valueOf("AFTER_SALE_EVIDENCE")).isSameAs(StorageFileUsageType.AFTER_SALE_EVIDENCE);
         assertThat(ErrorCode.valueOf("WECHAT_REFUND_FAILED")).isSameAs(ErrorCode.WECHAT_REFUND_FAILED);
+        assertThat(StockLockStatus.valueOf("RESTOCKED")).isSameAs(StockLockStatus.RESTOCKED);
+        assertThat(StockChangeType.valueOf("REFUND_RESTOCK")).isSameAs(StockChangeType.REFUND_RESTOCK);
 
         jdbcClient.sql("""
                         insert into shop_order
@@ -109,6 +113,47 @@ class AfterSaleSchemaTest {
                 .single();
 
         assertThat(refundCount).isEqualTo(1);
+    }
+
+    @Test
+    void refundRestockStateIsPersistedAndUniquelyAudited() {
+        Integer refundColumns = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where lower(table_name) = 'refund_order'
+                          and lower(column_name) in ('restock_required', 'restocked_at')
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer stockLockColumns = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where lower(table_name) = 'stock_lock'
+                          and lower(column_name) in ('restock_refund_order_id', 'restocked_at')
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer stockLogColumns = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where lower(table_name) = 'stock_log'
+                          and lower(column_name) = 'refund_order_id'
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer uniqueIndexCount = jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.indexes
+                        where lower(table_name) = 'stock_log'
+                          and lower(index_name) = 'uk_stock_log_refund_sku_change'
+                        """)
+                .query(Integer.class)
+                .single();
+
+        assertThat(refundColumns).isEqualTo(2);
+        assertThat(stockLockColumns).isEqualTo(2);
+        assertThat(stockLogColumns).isEqualTo(1);
+        assertThat(uniqueIndexCount).isEqualTo(1);
     }
 
     @Test

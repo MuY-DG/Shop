@@ -164,7 +164,7 @@ public class ProductReadMapper {
         List<AdminSkuResponse> skus = jdbcClient.sql("""
                         select id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
                                cost_price_cent, stock_available, low_stock_threshold, weight_gram, volume_cubic_meter,
-                               image, image_file_id, status, is_default, combination_key, sort_order
+                               net_content_text, image, image_file_id, status, is_default, combination_key, sort_order
                         from product_sku
                         where spu_id = :spuId and deleted_at is null
                         order by sort_order asc, id asc
@@ -178,7 +178,7 @@ public class ProductReadMapper {
                 .map(sku -> new AdminSkuResponse(
                         sku.id(), sku.skuCode(), sku.specJson(), sku.specText(), sku.priceCent(),
                         sku.originalPriceCent(), sku.costPriceCent(), sku.stockAvailable(), sku.lowStockThreshold(), sku.weightGram(),
-                        sku.volumeCubicMeter(), sku.image(), sku.imageFileId(), sku.status(),
+                        sku.netContentText(), sku.volumeCubicMeter(), sku.image(), sku.imageFileId(), sku.status(),
                         sku.defaultSelected(), sku.combinationKey(),
                         specValueKeysBySkuId.getOrDefault(sku.id(), List.of()),
                         wholesaleTiersBySkuId.getOrDefault(sku.id(), List.of()), sku.sortOrder()
@@ -364,6 +364,7 @@ public class ProductReadMapper {
                 rs.getInt("stock_available"),
                 rs.getInt("low_stock_threshold"),
                 rs.getObject("weight_gram", Integer.class),
+                rs.getString("net_content_text"),
                 rs.getBigDecimal("volume_cubic_meter"),
                 rs.getString("image"),
                 rs.getObject("image_file_id", Long.class),

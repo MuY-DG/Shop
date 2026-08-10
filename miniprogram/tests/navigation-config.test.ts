@@ -69,7 +69,8 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
       "pages/product",
       "pages/customer-service",
       "pages/order",
-      "pages/after-sale"
+      "pages/after-sale",
+      "pages/compliance"
     ]
   );
   assert.deepEqual(
@@ -107,6 +108,7 @@ test("除登录页外所有页面主体统一引用 @color-page 背景变量", (
     ["pages/cart/cart.less", "cart-page"],
     ["pages/profile/profile.less", "profile-page"],
     ["pages/account/profile/profile.less", "user-profile-page"],
+    ["pages/account/settings/settings.less", "settings-page"],
     ["styles/account-products.less", "account-page"],
     ["pages/account/address/list/list.less", "address-page"],
     ["pages/account/address/edit/edit.less", "address-edit-page"],
@@ -123,7 +125,9 @@ test("除登录页外所有页面主体统一引用 @color-page 背景变量", (
     ["pages/order/modify/modify.less", "modify-page"],
     ["pages/after-sale/apply/apply.less", "apply-page"],
     ["pages/after-sale/list/list.less", "after-sale-list-page"],
-    ["pages/after-sale/detail/detail.less", "after-sale-detail-page"]
+    ["pages/after-sale/detail/detail.less", "after-sale-detail-page"],
+    ["pages/compliance/merchant/merchant.less", "merchant-page"],
+    ["pages/compliance/document/document.less", "legal-document-page"]
   ] as const;
 
   const tokens = readFileSync(resolve(sourceRoot, "styles/tokens.less"), "utf8");

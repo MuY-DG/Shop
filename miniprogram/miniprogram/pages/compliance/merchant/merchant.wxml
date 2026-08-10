@@ -1,0 +1,114 @@
+<view class="merchant-page">
+  <navigation-bar title="商家经营资质" back="{{true}}" color="#2E1D16" />
+
+  <view wx:if="{{loading}}" class="merchant-state">
+    <ui-state type="loading" title="正在加载商家资质" description="请稍候" />
+  </view>
+  <view wx:elif="{{errorText}}" class="merchant-state">
+    <ui-state
+      type="error"
+      title="商家资质暂不可用"
+      description="{{errorText}}"
+      action-text="重新加载"
+      bindaction="onRetry"
+    />
+  </view>
+
+  <scroll-view
+    wx:else
+    class="merchant-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{true}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+  >
+    <view class="merchant-content">
+      <view class="merchant-card merchant-card--identity">
+        <view class="merchant-card__title">经营主体</view>
+        <view class="merchant-field">
+          <text class="merchant-field__label">主体名称</text>
+          <text class="merchant-field__value" user-select="{{true}}">{{publication.legalName}}</text>
+        </view>
+        <view class="merchant-field">
+          <text class="merchant-field__label">主体类型</text>
+          <text class="merchant-field__value">{{publication.entityType}}</text>
+        </view>
+        <view class="merchant-field">
+          <text class="merchant-field__label">统一社会信用代码</text>
+          <text class="merchant-field__value merchant-field__value--code" user-select="{{true}}">{{publication.unifiedSocialCreditCode}}</text>
+        </view>
+        <view class="merchant-field">
+          <text class="merchant-field__label">经营地址</text>
+          <text class="merchant-field__value" user-select="{{true}}">{{publication.businessAddress}}</text>
+        </view>
+      </view>
+
+      <view class="merchant-card">
+        <view class="merchant-card__title">联系与投诉</view>
+        <view
+          class="merchant-field merchant-field--action"
+          data-phone="{{publication.customerServicePhone}}"
+          bindtap="onPhoneTap"
+          hover-class="merchant-field--pressed"
+          aria-role="button"
+        >
+          <text class="merchant-field__label">客服电话</text>
+          <text class="merchant-field__value merchant-field__value--link">{{publication.customerServicePhone}}</text>
+        </view>
+        <view
+          class="merchant-field merchant-field--action"
+          data-phone="{{publication.complaintPhone}}"
+          bindtap="onPhoneTap"
+          hover-class="merchant-field--pressed"
+          aria-role="button"
+        >
+          <text class="merchant-field__label">投诉电话</text>
+          <text class="merchant-field__value merchant-field__value--link">{{publication.complaintPhone}}</text>
+        </view>
+      </view>
+
+      <view class="merchant-card">
+        <view class="merchant-card__title">营业执照</view>
+        <image
+          class="license-image"
+          src="{{publication.businessLicenseUrl}}"
+          mode="widthFix"
+          data-kind="business"
+          bindtap="onLicenseTap"
+          aria-label="查看营业执照大图"
+        />
+        <view class="license-tip">点击图片可查看原图</view>
+      </view>
+
+      <view class="merchant-card">
+        <view class="merchant-card__title">食品经营资质</view>
+        <view class="merchant-field">
+          <text class="merchant-field__label">资质类型</text>
+          <text class="merchant-field__value">{{publication.foodQualificationType}}</text>
+        </view>
+        <view class="merchant-field">
+          <text class="merchant-field__label">证照编号</text>
+          <text class="merchant-field__value merchant-field__value--code" user-select="{{true}}">{{publication.foodQualificationNumber}}</text>
+        </view>
+        <view class="merchant-field">
+          <text class="merchant-field__label">有效期</text>
+          <text class="merchant-field__value">{{publication.foodQualificationValidity}}</text>
+        </view>
+        <image
+          class="license-image"
+          src="{{publication.foodQualificationUrl}}"
+          mode="widthFix"
+          data-kind="food"
+          bindtap="onLicenseTap"
+          aria-label="查看食品经营资质大图"
+        />
+        <view class="license-tip">点击图片可查看原图</view>
+      </view>
+
+      <view wx:if="{{publication.publishedAtText}}" class="publication-note">
+        当前公开修订 {{publication.revisionNo}}，发布于 {{publication.publishedAtText}}
+      </view>
+    </view>
+  </scroll-view>
+</view>

@@ -228,6 +228,7 @@ declare namespace Api {
     type FreightChargeMode = 'FREE' | 'FIXED'
     type FreightTemplateStatus = 'ENABLED' | 'DISABLED'
     type ProductReviewStatus = 'PUBLISHED' | 'HIDDEN'
+    type ProductComplianceType = 'UNCLASSIFIED' | 'FOOD' | 'NON_FOOD'
 
     interface Category {
       id: number
@@ -316,6 +317,7 @@ declare namespace Api {
       lowStockThreshold: number
       weightGram?: number | null
       volumeCubicMeter?: number | null
+      netContentText?: string
       image: string
       imageFileId?: number | null
       status: SkuStatus
@@ -415,6 +417,28 @@ declare namespace Api {
       skus: Sku[]
       specGroups: SpecGroupForm[]
       guaranteeServiceIds: number[]
+    }
+
+    interface FoodLabelAsset {
+      fileId: number | null
+      url: string
+      sortOrder: number
+    }
+
+    interface FoodDisclosure {
+      complianceType: ProductComplianceType
+      foodName: string
+      ingredients: string
+      allergenInformation: string
+      storageConditions: string
+      shelfLifeDescription: string
+      manufacturerName: string
+      manufacturerAddress: string
+      productionLicenseNumber: string
+      origin: string
+      consumerNotice: string
+      variableProductionNotice: string
+      labelAssets: FoodLabelAsset[]
     }
 
     interface ProductParameterOption {
@@ -1635,6 +1659,133 @@ declare namespace Api {
       providerStatus: string
       resubmitted: boolean
       afterSale: Item
+    }
+  }
+
+  namespace Compliance {
+    type Identifier = string | number
+    type PublicationStatus = 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED'
+    type LegalDocumentType = 'PRIVACY_POLICY' | 'USER_AGREEMENT' | 'AFTER_SALE_POLICY'
+
+    interface MerchantPublicationDraft {
+      legalName: string
+      entityType: string
+      unifiedSocialCreditCode: string
+      businessAddress: string
+      customerServicePhone: string
+      complaintPhone: string
+      businessLicenseAssetId: number | null
+      foodQualificationType: string
+      foodQualificationNumber: string
+      foodQualificationAssetId: number | null
+      foodQualificationValidFrom: string | null
+      foodQualificationValidUntil: string | null
+    }
+
+    interface MerchantPublication extends MerchantPublicationDraft {
+      id: Identifier
+      revisionNo: number
+      status: PublicationStatus
+      businessLicenseUrl: string
+      foodQualificationUrl: string
+      createdBy: Identifier
+      publishedBy?: Identifier | null
+      publishedAt?: string | null
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface LegalDocumentDraft {
+      version: string
+      title: string
+      content: string
+      effectiveAt?: string | null
+    }
+
+    interface LegalDocument extends LegalDocumentDraft {
+      id: Identifier
+      documentType: LegalDocumentType
+      contentSha256: string
+      status: PublicationStatus
+      createdBy: Identifier
+      publishedBy?: Identifier | null
+      publishedAt?: string | null
+      createdAt: string
+      updatedAt: string
+    }
+  }
+
+  namespace AccountRights {
+    type Identifier = string | number
+    type RequestType =
+      | 'ACCOUNT_CANCELLATION'
+      | 'PERSONAL_INFORMATION_DELETION'
+      | 'ACCESS_COPY'
+      | 'CORRECTION'
+    type RequestStatus =
+      | 'PENDING'
+      | 'IN_REVIEW'
+      | 'APPROVED'
+      | 'REJECTED'
+      | 'WITHDRAWN'
+      | 'COMPLETED'
+    type AdminAction = 'review' | 'reject' | 'approve' | 'complete'
+
+    interface RequestItem {
+      id: Identifier
+      userId: Identifier
+      userNickname: string
+      userStatus: string
+      requestType: RequestType
+      status: RequestStatus
+      requestNote?: string | null
+      identityVerifiedAt?: string | null
+      reviewReason?: string | null
+      retentionExplanation?: string | null
+      retainedDataCategories: string[]
+      reviewedBy?: Identifier | null
+      reviewedAt?: string | null
+      approvedAt?: string | null
+      rejectedAt?: string | null
+      withdrawnAt?: string | null
+      completedAt?: string | null
+      version: number
+      createdAt: string
+      updatedAt: string
+    }
+
+    interface AuditItem {
+      id: Identifier
+      action: string
+      actorType: string
+      actorId?: Identifier | null
+      fromStatus?: RequestStatus | null
+      toStatus: RequestStatus
+      reason?: string | null
+      retentionExplanation?: string | null
+      retainedDataCategories: string[]
+      createdAt: string
+    }
+
+    interface RequestDetail {
+      request: RequestItem
+      audits: AuditItem[]
+    }
+
+    type RequestList = Api.Common.PaginatedResponse<RequestItem>
+
+    type SearchParams = Api.Common.CommonSearchParams &
+      Partial<{
+        userId: Identifier
+        requestType: RequestType
+        status: RequestStatus
+      }>
+
+    interface ActionForm {
+      version: number
+      reason: string
+      retentionExplanation: string
+      retainedDataCategories: string[]
     }
   }
 }

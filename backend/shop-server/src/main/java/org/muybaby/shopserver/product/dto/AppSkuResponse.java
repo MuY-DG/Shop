@@ -14,6 +14,7 @@ public record AppSkuResponse(
         ProductSaleState saleState,
         Integer maxPurchaseQuantity,
         Integer weightGram,
+        String netContentText,
         String image,
         Long imageFileId,
         String status,

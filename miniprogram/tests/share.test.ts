@@ -67,24 +67,51 @@ test("登录页保持单一界面且仅新用户由手机号能力触发官方�
   assert.doesNotMatch(loginTemplate, /首次使用，请再次点击/);
   assert.doesNotMatch(loginTemplate, /老用户直接登录，新用户首次授权手机号/);
   assert.doesNotMatch(loginTemplate, /class="login-initializing"/);
-  assert.match(
-    loginTemplate,
-    /wx:if="\{\{initializing\}\}" class="login-loading-layer"[\s\S]*class="login-loading-spinner"/
+  assert.doesNotMatch(loginTemplate, /login-loading-layer|login-loading-spinner/);
+  const onLoadSource = loginLogic.slice(
+    loginLogic.indexOf("onLoad("),
+    loginLogic.indexOf("onUnload()")
   );
-  assert.match(loginLogic, /onLoad[\s\S]*this\.prepareLogin\(\)/);
-  assert.match(loginLogic, /prepareWechatLogin\(\)/);
+  assert.doesNotMatch(onLoadSource, /prepareLogin\(\)|prepareWechatLogin\(\)/);
+  assert.match(
+    loginLogic,
+    /prepareWechatLogin\(\{[\s\S]{0,520}privacyPolicyAccepted: true[\s\S]{0,180}miniProgramEnv: APP_ENV_VERSION/
+  );
   assert.match(loginLogic, /commitPreparedWechatLogin\(pending\)/);
   assert.doesNotMatch(loginLogic, /loginWithWechat\(\)/);
   assert.doesNotMatch(
     loginLogic,
     /onAgreementChange[\s\S]{0,180}this\.prepareLogin\(\)/
   );
-  assert.match(loginLogic, /initializing: true/);
-  assert.match(loginLogic, /initializing: false/);
+  assert.doesNotMatch(loginLogic, /initializing/);
   assert.match(loginLogic, /loginPrepared/);
   assert.doesNotMatch(loginLogic, /wx\.requirePrivacyAuthorize/);
   assert.match(
     loginLogic,
+    /async prepareLogin\(\) \{\s*if \(!this\.data\.agreed\) \{\s*showAgreementRequired\(\);\s*return;\s*\}/
+  );
+  assert.match(
+    loginLogic,
+    /onPrepareLoginTap\(\)[\s\S]{0,220}if \(!this\.data\.agreed\)[\s\S]{0,180}this\.prepareLogin\(\)/
+  );
+  assert.match(
+    loginLogic,
     /onLoginTap[\s\S]{0,800}commitPreparedWechatLogin\(pending\)[\s\S]{0,160}this\.completeLogin\("登录成功"\)/
+  );
+});
+
+test("我的页面保留金牌会员头像框、皇冠、文字和登录态条件", () => {
+  const profileTemplate = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.wxml"),
+    "utf8"
+  );
+
+  assert.match(
+    profileTemplate,
+    /<image\s+wx:if="\{\{loggedIn\}\}"\s+class="member-card__avatar-frame"[\s\S]*?src="\/assets\/images\/member-avatar-frame-v\.png"/
+  );
+  assert.match(
+    profileTemplate,
+    /<view wx:if="\{\{loggedIn\}\}" class="member-card__member-badge" aria-label="金牌会员">[\s\S]*?src="\/assets\/icons\/member-crown\.svg"[\s\S]*?<text>金牌会员<\/text>/
   );
 });

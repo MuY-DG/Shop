@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -76,7 +77,7 @@ public class OrderCloseService {
                                status
                         from stock_lock
                         where order_id = :orderId
-                        order by id asc
+                        order by sku_id asc, id asc
                         for update
                         """)
                 .param("orderId", orderId)
@@ -128,6 +129,8 @@ public class OrderCloseService {
 
         List<LockedStockRow> lockedStocks = orderItems.stream()
                 .map(orderItem -> lockedStockByOrderItemId.get(orderItem.orderItemId()))
+                .sorted(Comparator.comparing(LockedStockRow::skuId)
+                        .thenComparing(LockedStockRow::stockLockId))
                 .toList();
 
         if (lockedStocks.size() != orderItems.size()) {
@@ -215,6 +218,8 @@ public class OrderCloseService {
                         set status = :status,
                             close_reason = :closeReason,
                             closed_at = :closedAt,
+                            created_timeout_claim_token = null,
+                            created_timeout_claimed_at = null,
                             updated_at = :updatedAt
                         where id = :orderId
                           and status = :expectedStatus

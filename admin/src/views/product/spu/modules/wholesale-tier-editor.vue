@@ -36,12 +36,7 @@
     </div>
 
     <div v-else class="empty-hint">未启用批发价，按常规售价结算。</div>
-    <ElButton
-      type="primary"
-      plain
-      :disabled="disabled || modelValue.length >= 5"
-      @click="addTier"
-    >
+    <ElButton type="primary" plain :disabled="disabled || modelValue.length >= 5" @click="addTier">
       + 添加阶梯
     </ElButton>
   </div>

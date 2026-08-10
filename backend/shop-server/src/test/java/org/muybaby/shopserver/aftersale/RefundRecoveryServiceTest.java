@@ -73,6 +73,8 @@ class RefundRecoveryServiceTest extends PaymentTestSupport {
                           and recovery_claim_token is null
                           and recovery_claimed_at is null
                           and recovery_attempts = 1
+                          and restock_required = true
+                          and restocked_at is not null
                         """)
                 .param("outRefundNo", approved.outRefundNo())
                 .param("successAt", successAt)
@@ -80,6 +82,35 @@ class RefundRecoveryServiceTest extends PaymentTestSupport {
                 .single()).isEqualTo(1);
         assertThat(statusOf("after_sale_request", approved.afterSaleId())).isEqualTo("REFUNDED");
         assertThat(statusOf("shop_order", approved.orderId())).isEqualTo("REFUNDED");
+        assertThat(jdbcClient.sql("""
+                        select count(*) from stock_lock
+                        where order_id = :orderId
+                          and status = 'RESTOCKED'
+                          and restock_refund_order_id = :refundOrderId
+                          and restocked_at is not null
+                        """)
+                .param("orderId", approved.orderId())
+                .param("refundOrderId", approved.refundOrderId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("""
+                        select stock_available
+                        from product_sku sku
+                        join stock_lock stock_lock_entry on stock_lock_entry.sku_id = sku.id
+                        where stock_lock_entry.order_id = :orderId
+                        """)
+                .param("orderId", approved.orderId())
+                .query(Integer.class)
+                .single()).isEqualTo(10);
+        assertThat(jdbcClient.sql("""
+                        select count(*) from stock_log
+                        where refund_order_id = :refundOrderId
+                          and change_type = 'REFUND_RESTOCK'
+                        """)
+                .param("refundOrderId", approved.refundOrderId())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(refundRecoveryService.recoverPendingRefunds(10)).isZero();
         assertThat(mockWechatPayProvider.queriedOutRefundNos()).containsExactly(approved.outRefundNo());
         ArgumentCaptor<ResolvedPaymentConfig> configCaptor = ArgumentCaptor.forClass(ResolvedPaymentConfig.class);
         verify(refundProvider).queryRefund(configCaptor.capture(),

@@ -41,7 +41,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -52,6 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
+import static org.muybaby.shopserver.support.ProductComplianceTestSupport.markNonFood;
 import static org.muybaby.shopserver.support.TestHashSupport.sha256;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -318,6 +318,16 @@ class AppOrderControllerTest {
                 .param("orderId", orderId)
                 .query(Integer.class)
                 .single();
+        Integer paymentDeadlineCount = jdbcClient.sql("""
+                        select count(*)
+                        from shop_order
+                        where id = :orderId
+                          and payment_expires_at is not null
+                          and payment_expires_at > created_at
+                        """)
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single();
         Map<String, Object> receiverSnapshot = jdbcClient.sql("""
                         select receiver_name, receiver_phone, receiver_address,
                                receiver_province, receiver_city, receiver_district,
@@ -373,6 +383,7 @@ class AppOrderControllerTest {
         assertThat(orderItemCount).isEqualTo(1);
         assertThat(operatingSnapshotCount).isEqualTo(1);
         assertThat(attributionCount).isEqualTo(1);
+        assertThat(paymentDeadlineCount).isEqualTo(1);
         assertThat(receiverSnapshot.get("RECEIVER_NAME")).isEqualTo("收货人-submit");
         assertThat(receiverSnapshot.get("RECEIVER_PHONE")).isEqualTo("13800138000");
         assertThat(receiverSnapshot.get("RECEIVER_ADDRESS")).isEqualTo("北京市朝阳区火锅路-submit号");
@@ -1322,6 +1333,7 @@ class AppOrderControllerTest {
                 List.of(new AdminProductImageUpsertRequest("https://example.test/order-gallery.jpg", null)),
                 List.of(new AdminSkuUpsertRequest(null, skuCode, "{\"规格\":\"300g\"}", "300g", priceCent, originalPriceCent, stock, 300, skuImageUrl, skuImageFileId, skuStatus, 1))
         ));
+        markNonFood(jdbcClient, spuId);
         adminProductService.publishSpu(spuId);
         Long skuId = jdbcClient.sql("select id from product_sku where sku_code = :skuCode")
                 .param("skuCode", skuCode)
@@ -1514,17 +1526,15 @@ class AppOrderControllerTest {
     static class IdempotencyRaceProbe {
 
         private final AtomicBoolean armed = new AtomicBoolean(false);
-        private final AtomicInteger existingOrderReadCount = new AtomicInteger();
         private final AtomicBoolean losingSubmitPaused = new AtomicBoolean(false);
-        private volatile CyclicBarrier existingOrderBarrier = new CyclicBarrier(2);
+        private volatile CountDownLatch winnerGateAcquired = new CountDownLatch(0);
         private volatile CountDownLatch winnerCommitted = new CountDownLatch(0);
         private volatile String losingThreadName;
 
         void arm(String losingThreadName) {
             this.losingThreadName = losingThreadName;
-            this.existingOrderReadCount.set(0);
             this.losingSubmitPaused.set(false);
-            this.existingOrderBarrier = new CyclicBarrier(2);
+            this.winnerGateAcquired = new CountDownLatch(1);
             this.winnerCommitted = new CountDownLatch(1);
             this.armed.set(true);
         }
@@ -1535,6 +1545,7 @@ class AppOrderControllerTest {
 
         void reset() {
             this.armed.set(false);
+            this.winnerGateAcquired.countDown();
             this.winnerCommitted.countDown();
         }
 
@@ -1543,11 +1554,10 @@ class AppOrderControllerTest {
                 return;
             }
             String normalized = normalizeSql(sql);
-            if (isExistingOrderLookup(normalized)) {
-                int currentCount = existingOrderReadCount.incrementAndGet();
-                if (currentCount <= 2) {
-                    awaitBarrier(existingOrderBarrier);
-                }
+            if (isEnabledAppUserLock(normalized)
+                    && losingThreadName != null
+                    && losingThreadName.equals(Thread.currentThread().getName())) {
+                awaitLatch(winnerGateAcquired);
                 return;
             }
             if ((isCartSelection(normalized) || isOrderOwnershipInsert(normalized))
@@ -1558,10 +1568,22 @@ class AppOrderControllerTest {
             }
         }
 
-        private boolean isExistingOrderLookup(String sql) {
-            return sql.contains("select id as order_id")
-                    && sql.contains("from shop_order")
-                    && sql.contains("idempotency_key");
+        void afterStatement(String sql) {
+            if (!armed.get()) {
+                return;
+            }
+            String normalized = normalizeSql(sql);
+            if (isEnabledAppUserLock(normalized)
+                    && (losingThreadName == null
+                    || !losingThreadName.equals(Thread.currentThread().getName()))) {
+                winnerGateAcquired.countDown();
+            }
+        }
+
+        private boolean isEnabledAppUserLock(String sql) {
+            return sql.contains("from app_user")
+                    && sql.contains("where id = ? and status = ?")
+                    && sql.contains("for update");
         }
 
         private boolean isCartSelection(String sql) {
@@ -1575,14 +1597,6 @@ class AppOrderControllerTest {
 
         private String normalizeSql(String sql) {
             return sql.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
-        }
-
-        private void awaitBarrier(CyclicBarrier barrier) {
-            try {
-                barrier.await(30, TimeUnit.SECONDS);
-            } catch (Exception ex) {
-                throw new IllegalStateException("Failed to synchronize idempotency lookup race", ex);
-            }
         }
 
         private void awaitLatch(CountDownLatch latch) {
@@ -1647,7 +1661,11 @@ class AppOrderControllerTest {
                     if (method.getName().startsWith("execute")) {
                         idempotencyRaceProbe.beforeStatement(sql);
                     }
-                    return method.invoke(preparedStatement, args);
+                    Object result = method.invoke(preparedStatement, args);
+                    if (method.getName().startsWith("execute")) {
+                        idempotencyRaceProbe.afterStatement(sql);
+                    }
+                    return result;
                 } catch (InvocationTargetException ex) {
                     throw ex.getTargetException();
                 }

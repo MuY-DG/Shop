@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.Base64;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.muybaby.shopserver.support.ProductComplianceTestSupport.markNonFood;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -676,6 +677,7 @@ class AppProductEngagementControllerTest {
                         "https://example.test/engagement-sku.jpg", null, "ENABLED", 1
                 ))
         ));
+        markNonFood(jdbcClient, spuId);
         adminProductService.publishSpu(spuId);
         Long skuId = jdbcClient.sql("SELECT id FROM product_sku WHERE spu_id = :spuId")
                 .param("spuId", spuId)

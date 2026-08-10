@@ -11,6 +11,7 @@ import {
   displaySpecText,
   findDefaultSku,
   formatMoney,
+  normalizeProductFoodDisclosure,
   parsePositiveId,
   resolvePurchaseSelection,
   resolveSkuSpecificationSelection,
@@ -78,6 +79,7 @@ interface DatasetEvent {
       reviewSpecText?: string;
       imageUrl?: string;
       reviewId?: number | string;
+      foodLabelUrl?: string;
     };
   };
 }
@@ -258,6 +260,7 @@ Page({
     specificationImageMode: "list" as "list" | "image",
     ...EMPTY_SELECTION,
     selectedSkuName: "",
+    selectedNetContentText: "",
     purchaseImageUrl: "",
     guaranteeSummary: "",
     freightSummary: "",
@@ -381,6 +384,7 @@ Page({
           ? detail.salesCount
           : 0,
         sellingPoints: Array.isArray(detail.sellingPoints) ? detail.sellingPoints : [],
+        foodDisclosure: normalizeProductFoodDisclosure(detail.foodDisclosure),
         images: Array.isArray(detail.images) ? detail.images : [],
         skus: Array.isArray(detail.skus) ? detail.skus : [],
         parameters: Array.isArray(detail.parameters) ? detail.parameters : [],
@@ -406,6 +410,7 @@ Page({
         specificationImageMode: "list",
         ...selection,
         selectedSkuName: displaySpecText(selectedSku?.specText),
+        selectedNetContentText: cleanText(selectedSku?.netContentText),
         purchaseImageUrl: cleanText(selectedSku?.image) || cleanText(normalizedDetail.mainImage),
         guaranteeSummary: guaranteeSummary(normalizedDetail),
         freightSummary: freight.summary,
@@ -441,6 +446,7 @@ Page({
         specificationImageMode: "list",
         ...EMPTY_SELECTION,
         guaranteeSummary: "",
+        selectedNetContentText: "",
         freightSummary: "",
         freightChargeText: "",
         wholesaleSummary: "",
@@ -465,6 +471,16 @@ Page({
         loaded: false,
         errorText: detailErrorMessage(error)
       });
+    }
+  },
+
+  onFoodLabelPreview(event: DatasetEvent) {
+    const current = cleanText(event.currentTarget.dataset.foodLabelUrl);
+    const urls = this.data.detail?.foodDisclosure?.labelAssets
+      .map((asset) => cleanText(asset.url))
+      .filter(Boolean) ?? [];
+    if (current && urls.includes(current)) {
+      wx.previewImage({ current, urls });
     }
   },
 
@@ -1051,6 +1067,7 @@ Page({
           )
         : [],
       selectedSkuName: displaySpecText(sku.specText),
+      selectedNetContentText: cleanText(sku.netContentText),
       purchaseImageUrl: cleanText(sku.image) || cleanText(fallbackImage),
       wholesaleSummary: wholesaleSummary(selection.wholesaleTiers)
     });

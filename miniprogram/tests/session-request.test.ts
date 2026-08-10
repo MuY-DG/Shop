@@ -18,10 +18,12 @@ import {
 } from "../miniprogram/services/session";
 import type { ApiResponse } from "../miniprogram/types/api";
 import type { AppSessionResponse } from "../miniprogram/types/auth";
+import type { PrivacyPolicyConsent } from "../miniprogram/types/compliance";
 import { isApiError } from "../miniprogram/utils/api-error";
 import { request } from "../miniprogram/utils/request";
 import { uploadFile as uploadAuthenticatedFile } from "../miniprogram/utils/upload";
 import { getHome } from "../miniprogram/services/home";
+import { getCurrentLegalDocument } from "../miniprogram/services/compliance";
 import {
   saveAvatar,
   updateMyProfile
@@ -83,6 +85,12 @@ const storage = new Map<string, unknown>();
 const pendingRequests: FakeRequestCall[] = [];
 const pendingUploads: FakeUploadCall[] = [];
 let loginCallCount = 0;
+
+const TEST_PRIVACY_CONSENT: PrivacyPolicyConsent = {
+  privacyPolicyVersion: "2026.08.09",
+  privacyPolicyAccepted: true,
+  miniProgramEnv: "develop"
+};
 
 const wxMock = {
   getStorageSync(key: string): unknown {
@@ -216,7 +224,7 @@ async function flushTasks(): Promise<void> {
 }
 
 async function establishSession(suffix: string): Promise<void> {
-  const login = loginWithWechat();
+  const login = loginWithWechat(TEST_PRIVACY_CONSENT);
   await flushTasks();
   respond(
     takeRequest("/app/auth/login"),
@@ -235,8 +243,8 @@ beforeEach(() => {
 });
 
 test("并发主动登录只交换一次微信 code", async () => {
-  const first = loginWithWechat();
-  const second = loginWithWechat();
+  const first = loginWithWechat(TEST_PRIVACY_CONSENT);
+  const second = loginWithWechat(TEST_PRIVACY_CONSENT);
   await flushTasks();
 
   assert.equal(loginCallCount, 1);
@@ -253,7 +261,7 @@ test("并发主动登录只交换一次微信 code", async () => {
 });
 
 test("登录预加载不会提交会话，用户确认后才持久化", async () => {
-  const preparing = prepareWechatLogin();
+  const preparing = prepareWechatLogin(TEST_PRIVACY_CONSENT);
   await flushTasks();
   respond(
     takeRequest("/app/auth/login"),
@@ -272,8 +280,90 @@ test("登录预加载不会提交会话，用户确认后才持久化", async ()
   assert.equal(storage.size, 1);
 });
 
+test("登录预加载携带用户同意的政策修订与小程序环境", async () => {
+  const preparing = prepareWechatLogin({
+    privacyPolicyVersion: "2026.08.09",
+    privacyPolicyAccepted: true,
+    miniProgramEnv: "develop"
+  });
+  await flushTasks();
+  const loginCall = takeRequest("/app/auth/login");
+  assert.deepEqual(loginCall.data, {
+    code: "wx-code-1",
+    privacyPolicyVersion: "2026.08.09",
+    privacyPolicyAccepted: true,
+    miniProgramEnv: "develop"
+  });
+  respond(
+    loginCall,
+    200,
+    { code: 200, msg: "success", data: sessionResponse("consented") }
+  );
+  const prepared = await preparing;
+  assert.equal(prepared.user.userId, "consented");
+  assert.equal(getSessionState().accessToken, "");
+});
+
+test("政策确认信息无效时不会调用 wx.login", async () => {
+  await assert.rejects(
+    prepareWechatLogin({
+      privacyPolicyVersion: " ",
+      privacyPolicyAccepted: true,
+      miniProgramEnv: "develop"
+    }),
+    (error: unknown) => isApiError(error) && error.kind === "PROTOCOL"
+  );
+  assert.equal(loginCallCount, 0);
+  assert.equal(pendingRequests.length, 0);
+});
+
+test("当前隐私政策匿名加载且拒绝非已发布修订", async () => {
+  const loading = getCurrentLegalDocument("PRIVACY_POLICY");
+  await flushTasks();
+  const policyCall = takeRequest(
+    "/app/compliance/documents/PRIVACY_POLICY/current"
+  );
+  assert.equal(policyCall.header?.Authorization, undefined);
+  respond(policyCall, 200, {
+    code: 200,
+    msg: "success",
+    data: {
+      id: "1001",
+      documentType: "PRIVACY_POLICY",
+      version: "2026.08.09",
+      title: "MuYbaby个人信息保护政策",
+      content: "我们依法保护个人信息。",
+      contentSha256: "a".repeat(64),
+      status: "PUBLISHED"
+    }
+  });
+  assert.equal((await loading).version, "2026.08.09");
+
+  const rejecting = getCurrentLegalDocument("PRIVACY_POLICY");
+  await flushTasks();
+  const draftCall = takeRequest(
+    "/app/compliance/documents/PRIVACY_POLICY/current"
+  );
+  respond(draftCall, 200, {
+    code: 200,
+    msg: "success",
+    data: {
+      id: "1002",
+      documentType: "PRIVACY_POLICY",
+      version: "draft",
+      title: "草稿",
+      content: "尚未发布",
+      contentSha256: "b".repeat(64),
+      status: "DRAFT"
+    }
+  });
+  await assert.rejects(rejecting, (error: unknown) => (
+    isApiError(error) && error.kind === "PROTOCOL"
+  ));
+});
+
 test("未确认的登录可以撤销且不会改变全局会话", async () => {
-  const preparing = prepareWechatLogin();
+  const preparing = prepareWechatLogin(TEST_PRIVACY_CONSENT);
   await flushTasks();
   respond(
     takeRequest("/app/auth/login"),
@@ -294,7 +384,7 @@ test("未确认的登录可以撤销且不会改变全局会话", async () => {
 });
 
 test("新用户手机号授权在待确认会话中完成，授权后再提交", async () => {
-  const preparing = prepareWechatLogin();
+  const preparing = prepareWechatLogin(TEST_PRIVACY_CONSENT);
   await flushTasks();
   respond(
     takeRequest("/app/auth/login"),
@@ -370,7 +460,7 @@ test("退出后的旧 401 不会触发重新登录", async () => {
 });
 
 test("无 token 的延迟 401 不会取消进行中的新登录", async () => {
-  const login = loginWithWechat();
+  const login = loginWithWechat(TEST_PRIVACY_CONSENT);
   await flushTasks();
   const loginCall = takeRequest("/app/auth/login");
 
@@ -391,7 +481,7 @@ test("退出立即清理本地态且不覆盖随后建立的新会话", async ()
   const logoutCall = takeRequest("/app/auth/logout");
   assert.equal(getSessionState().accessToken, "");
 
-  const newLogin = loginWithWechat();
+  const newLogin = loginWithWechat(TEST_PRIVACY_CONSENT);
   await flushTasks();
   respond(
     takeRequest("/app/auth/login"),

@@ -21,7 +21,9 @@
         "address/edit/edit",
         "coupon/coupon",
         "favorites/favorites",
-        "history/history"
+        "history/history",
+        "settings/settings",
+        "rights/rights"
       ]
     },
     {
@@ -56,6 +58,13 @@
         "apply/apply",
         "list/list",
         "detail/detail"
+      ]
+    },
+    {
+      "root": "pages/compliance",
+      "pages": [
+        "merchant/merchant",
+        "document/document"
       ]
     }
   ],

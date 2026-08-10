@@ -1,0 +1,49 @@
+<view class="settings-page">
+  <navigation-bar
+    title="关于与协议"
+    back="{{true}}"
+    round-back="{{true}}"
+    show-divider="{{false}}"
+    color="#2E1D16"
+  />
+
+  <scroll-view
+    class="settings-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{true}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+  >
+    <view class="settings-content">
+      <view wx:for="{{sections}}" wx:key="title" class="settings-section">
+        <view class="settings-section__title">{{item.title}}</view>
+        <view class="settings-card">
+          <view
+            wx:for="{{item.items}}"
+            wx:for-item="entry"
+            wx:key="key"
+            class="settings-row"
+            data-key="{{entry.key}}"
+            bindtap="onItemTap"
+            hover-class="settings-row--pressed"
+            aria-role="button"
+            aria-label="{{entry.label}}，{{entry.description}}"
+          >
+            <view class="settings-row__body">
+              <view class="settings-row__label">{{entry.label}}</view>
+              <view class="settings-row__description">{{entry.description}}</view>
+            </view>
+            <image
+              class="settings-row__chevron"
+              src="/assets/icons/chevron-right-light.svg"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
+          </view>
+        </view>
+      </view>
+      <view class="settings-note">页面仅展示后台当前已发布的正式版本；未发布时不会显示占位或虚构信息。</view>
+    </view>
+  </scroll-view>
+</view>

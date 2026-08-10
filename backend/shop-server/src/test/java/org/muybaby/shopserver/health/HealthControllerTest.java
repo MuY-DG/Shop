@@ -7,6 +7,7 @@ import org.muybaby.shopserver.analytics.AppUserDailyActivityService;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.security.PathTokenKindResolver;
 import org.muybaby.shopserver.security.web.ClientIpResolver;
+import org.muybaby.shopserver.user.service.AppUserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -33,6 +34,9 @@ class HealthControllerTest {
 
     @MockitoBean
     private AdminRbacService adminRbacService;
+
+    @MockitoBean
+    private AppUserService appUserService;
 
     @MockitoBean
     private AppUserDailyActivityService appUserDailyActivityService;

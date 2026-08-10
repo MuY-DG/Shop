@@ -173,7 +173,10 @@ public class GlobalExceptionHandler {
             case PERMISSION_DENIED -> HttpStatus.FORBIDDEN;
             case DATA_CLEANUP_CONFIG_CONFLICT,
                  WECHAT_EXPRESS_CONFIG_CONFLICT,
-                 WECHAT_WAYBILL_CONFLICT -> HttpStatus.CONFLICT;
+                 WECHAT_WAYBILL_CONFLICT,
+                 ACCOUNT_RIGHTS_REQUEST_CONFLICT,
+                 ACCOUNT_RIGHTS_STATE_CONFLICT,
+                 ACCOUNT_CANCELLATION_ACTIVE_OBLIGATIONS -> HttpStatus.CONFLICT;
             case ADMIN_LOGIN_RATE_LIMITED, ANALYTICS_RATE_LIMITED,
                  APP_USER_AVATAR_RATE_LIMITED,
                  STORAGE_DIRECT_UPLOAD_RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;

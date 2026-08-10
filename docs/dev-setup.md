@@ -76,6 +76,134 @@ Expected result:
 BUILD SUCCESS
 ```
 
+## V85-V90 Focused Gates
+
+Run the focused backend slices from `backend/shop-server` before the full suite. These
+commands validate H2/Flyway and application behavior; they do not replace a disposable
+MySQL migration/concurrency run or any production-provider smoke check.
+
+```bash
+# V85 fixed order deadline and timeout close
+./mvnw -Dtest='OrderSchemaTest,CreatedOrderTimeoutCloseServiceTest,CreatedOrderTimeoutCloseSchedulerTest,PaymentInitiationServiceTest' test
+
+# V86 verified refund finalization and inventory disposition
+./mvnw -Dtest='AfterSaleSchemaTest,RefundCallbackServiceTest,RefundRecoveryServiceTest' test
+
+# V87 recoverable WeChat shipment delivery and truthful receipt behavior
+./mvnw -Dtest='ShipmentSchemaTest,WechatShippingUploadCoordinatorTest,WechatShippingUploadRecoveryTest,WechatShippingDeliverySchedulerTest,WechatReceiptReconciliationServiceTest,AppOrderWechatReceiptTest' test
+
+# V88 immutable merchant/legal publication and exact privacy consent
+./mvnw -Dtest='ComplianceControllerTest' test
+
+# V89 product food disclosure and publication gate
+./mvnw -Dtest='ProductFoodComplianceSchemaTest,ProductFoodComplianceServiceTest,ProductFoodComplianceControllerTest' test
+
+# V90 account-rights state, authorization, and active-obligation gate
+./mvnw -Dtest='AccountRightsSchemaTest,AccountRightsControllerTest,AccountRightsObligationServiceTest' test
+```
+
+Cross-surface gates:
+
+```bash
+cd admin
+pnpm check
+pnpm build
+
+cd ../miniprogram
+pnpm check
+```
+
+The Mini Program gate includes runtime environment, explicit privacy-consent ordering,
+customer-service order routing, public compliance rendering, food disclosure,
+account-rights, and the source contract that preserves the current profile V frame,
+crown, `金牌会员` text, member-card assets, and logged-in display condition.
+
+## V87-V90 Runtime And Publication Controls
+
+### V87 WeChat Shipment Delivery
+
+`SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false` is the safe default. When it is enabled for
+a verified real Mini Program and paid order, local shipment creation writes durable
+delivery work; the immediate provider call is only an optimization. Configure bounded
+delivery and reconciliation explicitly:
+
+```properties
+SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
+SHOP_WECHAT_SHIPPING_HTTP_CONNECT_TIMEOUT=3s
+SHOP_WECHAT_SHIPPING_HTTP_READ_TIMEOUT=15s
+SHOP_WECHAT_SHIPPING_HTTP_MAX_RESPONSE_SIZE=1MB
+SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED=true
+SHOP_WECHAT_SHIPPING_DELIVERY_DELAY=15s
+SHOP_WECHAT_SHIPPING_DELIVERY_BATCH_SIZE=50
+SHOP_WECHAT_SHIPPING_DELIVERY_CLAIM_TIMEOUT=1m
+SHOP_WECHAT_SHIPPING_DELIVERY_MAX_ATTEMPTS=8
+SHOP_WECHAT_SHIPPING_DELIVERY_RETRY_BACKOFF=30s
+SHOP_WECHAT_SHIPPING_DELIVERY_MAX_RETRY_BACKOFF=30m
+SHOP_WECHAT_SHIPPING_UNKNOWN_RECHECK_INTERVAL=1m
+SHOP_WECHAT_SHIPPING_UNKNOWN_NOT_UPLOADED_CONFIRMATIONS=2
+SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=true
+```
+
+Do not blindly retry `UNKNOWN`: reconcile provider identity and shipment facts first.
+`FAILED` remains an operator decision. `REAL + UPLOADED` keeps WeChat as receipt
+authority; an ambiguous `UPLOADING/UNKNOWN` blocks local receipt, while audited local
+confirmation is available for states that are truthfully not uploaded. A test-profile or
+mock result is not evidence that the production WeChat order accepted shipment data.
+
+### V88 Runtime Environment And Legal Publication
+
+The backend production profile forces `SHOP_PRIVACY_CONSENT_REQUIRED=true`. Before a
+production login can succeed, publish the reviewed current privacy policy and make the
+Mini Program send its exact version, explicit acceptance, and one of `develop`, `trial`,
+or `release`. User creation, consent evidence, and session issuance preserve that order.
+
+No merchant qualification or legal document is seeded. Use the admin compliance pages
+to create, preview, and publish immutable revisions only after real data and managed
+license images have been verified. The anonymous read routes are:
+
+```text
+GET /app/compliance/merchant
+GET /app/compliance/documents/PRIVACY_POLICY/current
+GET /app/compliance/documents/USER_AGREEMENT/current
+GET /app/compliance/documents/AFTER_SALE_POLICY/current
+```
+
+The Mini Program resolves `develop`, `trial`, and `release` separately. The checked-in
+release API value intentionally remains unconfigured until a confirmed production HTTPS
+hostname is supplied; release rejects missing/placeholder, localhost, loopback,
+non-HTTPS, and `pay-dev` hosts and never falls back to development.
+
+### V89 Product Publication
+
+Every migrated product starts as `UNCLASSIFIED`. New publication is blocked until an
+operator records `NON_FOOD` for a genuinely non-food item or `FOOD` with verified
+structured facts, managed label images, truthful net content on every enabled SKU, and a
+current published merchant food qualification. Rich-text detail is supplemental and does
+not satisfy the gate.
+
+`V89` does not invent classifications and does not automatically take historical
+`ON_SALE + UNCLASSIFIED` rows off sale. Run the read-only report in
+[smoke-checks.md](smoke-checks.md#v89-product-classification-gate) and resolve every row
+before enabling production traffic. Never copy the document's non-food fixture
+classification onto a real food.
+
+### V90 Account Rights
+
+Users can submit, inspect, and withdraw rights requests under
+`/app/account-rights/requests`; authorized operators handle them under
+`/admin/account-rights/requests`. Every admin transition requires the current version, a
+nonblank reason, and a nonblank retention explanation; the retained-data category list
+may be empty only when the operator truthfully declares that no category is retained.
+
+Account cancellation additionally requires a fresh WeChat code bound to the same user
+and cannot complete while active orders, payments, refunds, or after-sales exist.
+Completion invalidates access and refresh sessions and minimally anonymizes optional
+identity data while preserving required transaction/audit records. Assign a real owner,
+review SLA, escalation route, and reviewed retention rules before release; automated
+tests cannot decide those merchant/legal obligations.
+
+The complete external release gate is [production-release-checklist.md](production-release-checklist.md).
+
 ## Seeded Administrator Safety
 
 The historical `Super / 123456` account is enabled only by the `dev` and `test` profiles for local smoke checks. The default/production profile disables that known credential during Flyway migration `V36` and replaces its hash unless the password was already rotated.
@@ -95,9 +223,13 @@ Administrator login protection is enabled by default and uses Redis in non-test 
 
 Spring's container-level forwarded-header rewriting is disabled so the application has one IP trust model. Configure every real reverse proxy or load balancer network in `SHOP_TRUSTED_PROXY_CIDRS`; the edge proxy must replace or safely append `X-Forwarded-For`. Do not trust broad application or cluster networks merely for convenience.
 
-Expired `PREPARING` and `PAYING` payment orders are scanned every 60 seconds by default. A fresh prepay lease is never stolen. The scanner queries WeChat first, confirms a remotely paid order, and only closes an unpaid order; a provider-side `CLOSED` result completes an interrupted local close. The operational controls are `SHOP_PAY_TIMEOUT_SCAN_ENABLED`, `SHOP_PAY_TIMEOUT_SCAN_DELAY`, `SHOP_PAY_TIMEOUT_SCAN_BATCH_SIZE`, and `SHOP_PAY_TIMEOUT_SCAN_CLAIM_TIMEOUT`.
+Every new order snapshots one immutable payment deadline at submission. The default is 15 minutes (`SHOP_PAY_EXPIRE_MINUTES` remains an explicit override), and payment initiation inherits that exact timestamp instead of extending the buyer's window. Expired `CREATED` orders without any payment row and expired `PREPARING`/`PAYING` payment orders are scanned every 60 seconds by default. Both paths use leased claims; the `CREATED` path refuses to release an anomalous order that already has payment evidence, while the payment path queries WeChat first and only closes a verified unpaid order. The operational controls are `SHOP_PAY_TIMEOUT_SCAN_ENABLED`, `SHOP_PAY_TIMEOUT_SCAN_DELAY`, `SHOP_PAY_TIMEOUT_SCAN_BATCH_SIZE`, and `SHOP_PAY_TIMEOUT_SCAN_CLAIM_TIMEOUT`.
+
+`V85` intentionally leaves historical `CREATED` deadlines null. Before any one-time assignment, run the read-only classification and invariant queries in [transaction-reconciliation.md](transaction-reconciliation.md); never bulk-close or blindly backfill historical orders.
 
 Refunds left in `PROCESSING` are reconciled with WeChat after one minute by default. Configure this with `SHOP_REFUND_RECOVERY_ENABLED`, `SHOP_REFUND_RECOVERY_DELAY`, `SHOP_REFUND_RECOVERY_BATCH_SIZE`, `SHOP_REFUND_RECOVERY_MIN_AGE`, and `SHOP_REFUND_RECOVERY_CLAIM_TIMEOUT`.
+
+When a refund is prepared for a `PAID` order that has neither `shipped_at` nor an `order_shipment`, `V86` snapshots an immutable restock requirement. A verified successful refund then restores each confirmed SKU quantity, transitions the order's stock locks to `RESTOCKED`, writes one unique `REFUND_RESTOCK` log per SKU, and finalizes refund/after-sale/order state in one transaction. Shipped and completed refunds never increase sellable inventory. Historical successful refunds remain report-only; use [transaction-reconciliation.md](transaction-reconciliation.md) and never auto-restock them.
 
 A refund that WeChat definitively closes is not resubmitted under the old merchant refund number. After resolving the cause (for example, recharging the merchant account), an administrator with `aftersale:audit` can call `POST /admin/after-sales/{afterSaleId}/refund-retry` with `{"note":"..."}`. The note is mandatory and stored in the operator audit trail. The endpoint accepts only the latest `FAILED/CLOSED` attempt without an active recovery lease, safely clears an expired orphan lease by its token, preserves the old attempt, creates a new merchant refund number, and leaves an indeterminate provider response in `PROCESSING/REQUEST_UNKNOWN` for the recovery job. A callback or query can finalize only the latest refund attempt for that after-sale record.
 

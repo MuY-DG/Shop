@@ -12,6 +12,7 @@ import org.muybaby.shopserver.logistics.provider.MockWechatShippingProvider;
 import org.muybaby.shopserver.logistics.provider.RealWechatShippingProvider;
 import org.muybaby.shopserver.logistics.provider.WechatDeliveryCompanyResult;
 import org.muybaby.shopserver.logistics.provider.WechatShippingItem;
+import org.muybaby.shopserver.logistics.provider.WechatShippingOrderQueryStatus;
 import org.muybaby.shopserver.logistics.provider.WechatShippingUploadRequest;
 import org.muybaby.shopserver.wechat.WechatAccessTokenProvider;
 import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
@@ -24,6 +25,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.RequestMatcher;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.util.unit.DataSize;
 
 import java.net.URI;
 import java.util.List;
@@ -354,6 +356,75 @@ class WechatShippingProviderTest {
     }
 
     @Test
+    void shippingOrderQueryRetainsOnlyComparableShippingFacts() {
+        ProviderFixture uploadedFixture = fixture();
+        uploadedFixture.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
+                .andRespond(withSuccess("""
+                        {
+                          "errcode": 0,
+                          "order": {
+                            "transaction_id": "4200000000000000001",
+                            "order_state": 2,
+                            "shipping": {
+                              "logistics_type": 1,
+                              "delivery_mode": 1,
+                              "finish_shipping": true,
+                              "shipping_list": [
+                                {"tracking_no":"SF1234567890","express_company":"SF","item_desc":"must-not-escape"}
+                              ]
+                            }
+                          }
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        var uploaded = uploadedFixture.provider()
+                .queryShippingOrder("4200000000000000001");
+
+        assertThat(uploaded.status()).isEqualTo(WechatShippingOrderQueryStatus.UPLOADED);
+        assertThat(uploaded.transactionId()).isEqualTo("4200000000000000001");
+        assertThat(uploaded.orderState()).isEqualTo(2);
+        assertThat(uploaded.shipping().logisticsType()).isEqualTo(LogisticsType.EXPRESS);
+        assertThat(uploaded.shipping().deliveryMode()).isEqualTo(DeliveryMode.UNIFIED);
+        assertThat(uploaded.shipping().finishShipping()).isTrue();
+        assertThat(uploaded.shipping().shippingList()).singleElement().satisfies(item -> {
+            assertThat(item.trackingNo()).isEqualTo(TRACKING_NO);
+            assertThat(item.expressCompany()).isEqualTo("SF");
+        });
+        uploadedFixture.server().verify();
+
+        ProviderFixture notUploadedFixture = fixture();
+        notUploadedFixture.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
+                .andRespond(withSuccess("""
+                        {"errcode":0,"order":{
+                          "transaction_id":"4200000000000000001","order_state":1
+                        }}
+                        """, MediaType.APPLICATION_JSON));
+
+        var notUploaded = notUploadedFixture.provider()
+                .queryShippingOrder("4200000000000000001");
+
+        assertThat(notUploaded.status()).isEqualTo(WechatShippingOrderQueryStatus.NOT_UPLOADED);
+        assertThat(notUploaded.transactionId()).isEqualTo("4200000000000000001");
+        assertThat(notUploaded.orderState()).isEqualTo(1);
+        assertThat(notUploaded.shipping()).isNull();
+        notUploadedFixture.server().verify();
+    }
+
+    @Test
+    void oversizedShippingResponseFailsClosedAsUnknown(CapturedOutput output) {
+        ProviderFixture fixture = fixture(() -> ACCESS_TOKEN, DataSize.ofBytes(64));
+        fixture.server().expect(once(), safeEndpoint("/wxa/sec/order/get_order"))
+                .andRespond(withSuccess("x".repeat(65), MediaType.APPLICATION_JSON));
+
+        var result = fixture.provider().queryShippingOrder("4200000000000000001");
+
+        assertThat(result.status()).isEqualTo(WechatShippingOrderQueryStatus.UNKNOWN);
+        assertThat(result.errorCode()).isEqualTo("REQUEST_AMBIGUOUS");
+        assertSafeLogs(output, "status=UNKNOWN", "ResponseTooLargeException");
+        fixture.server().verify();
+    }
+
+    @Test
     void capabilityUsesOfficialEndpointAndConfiguredAppId() throws Exception {
         ProviderFixture fixture = fixture();
         AtomicReference<JsonNode> capturedBody = new AtomicReference<>();
@@ -515,7 +586,7 @@ class WechatShippingProviderTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = WechatShippingUploadStatus.class, names = {"SKIPPED", "UPLOADING"})
+    @EnumSource(value = WechatShippingUploadStatus.class, names = {"PENDING", "SKIPPED", "UPLOADING"})
     void providerResultRejectsStatusesOutsideItsPublicContract(WechatShippingUploadStatus status) {
         assertThatThrownBy(() -> new org.muybaby.shopserver.logistics.provider.WechatShippingUploadResult(
                 status, "INVALID", "invalid provider result"
@@ -527,13 +598,25 @@ class WechatShippingProviderTest {
     }
 
     private ProviderFixture fixture(WechatAccessTokenProvider accessTokenProvider) {
+        return fixture(accessTokenProvider, DataSize.ofMegabytes(1));
+    }
+
+    private ProviderFixture fixture(
+            WechatAccessTokenProvider accessTokenProvider,
+            DataSize maxResponseSize
+    ) {
         RestClient.Builder restClientBuilder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(restClientBuilder).build();
         RealWechatShippingProvider provider = new RealWechatShippingProvider(
-                restClientBuilder,
+                restClientBuilder.build(),
                 objectMapper,
                 accessTokenProvider,
-                new WechatMiniProgramProperties(APP_ID, "configured-secret", false)
+                new WechatMiniProgramProperties(APP_ID, "configured-secret", false),
+                new org.muybaby.shopserver.logistics.provider.WechatShippingHttpProperties(
+                        java.time.Duration.ofSeconds(3),
+                        java.time.Duration.ofSeconds(15),
+                        maxResponseSize
+                )
         );
         return new ProviderFixture(server, provider);
     }

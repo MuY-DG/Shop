@@ -10,6 +10,7 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.logistics.LogisticsType;
+import org.muybaby.shopserver.logistics.DeliveryMode;
 import org.muybaby.shopserver.logistics.ShippingProperties;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingCapabilityState;
@@ -19,6 +20,9 @@ import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
 import org.muybaby.shopserver.logistics.provider.WechatDeliveryCompanyResult;
 import org.muybaby.shopserver.logistics.provider.WechatShippingCapabilityResult;
 import org.muybaby.shopserver.logistics.provider.WechatShippingProvider;
+import org.muybaby.shopserver.logistics.provider.WechatShippingFact;
+import org.muybaby.shopserver.logistics.provider.WechatShippingOrderQueryResult;
+import org.muybaby.shopserver.logistics.provider.WechatShippingSummary;
 import org.muybaby.shopserver.logistics.provider.WechatShippingUploadRequest;
 import org.muybaby.shopserver.logistics.provider.WechatShippingUploadResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
@@ -410,19 +414,42 @@ class WechatShippingUploadCoordinatorTest {
     }
 
     @Test
-    void enabledSkippedOperatorRetryClaimsAndIncrementsExactlyOnce() {
+    void scheduledDeliveryClaimsPendingWithoutOperatorRetryIncrement() {
         long orderId = insertPaidOrder(true);
         OrderShipmentResponse local = localShipmentService.create(
-                ADMIN, orderId, request(LogisticsType.PICKUP, "enabled skipped", null)
+                ADMIN, orderId, request(LogisticsType.PICKUP, "scheduled pending", null)
         );
-        assertThat(local.wechatUploadStatus()).isEqualTo(WechatShippingUploadStatus.SKIPPED);
+        assertThat(local.wechatUploadStatus()).isEqualTo(WechatShippingUploadStatus.PENDING);
 
-        coordinator.retry(ADMIN, orderId);
+        assertThat(coordinator.deliverDue(10)).isEqualTo(1);
 
         OrderShipmentResponse result = localShipmentService.getForAdmin(orderId);
         assertThat(result.wechatUploadStatus()).isEqualTo(WechatShippingUploadStatus.UPLOADED);
-        assertThat(result.retryCount()).isEqualTo(1);
+        assertThat(result.retryCount()).isZero();
         assertThat(provider.uploadRequests).hasSize(1);
+    }
+
+    @Test
+    void scheduledDeliveryStopsAfterConfiguredMaximumAttempts() {
+        long orderId = insertPaidOrder(true);
+        OrderShipmentResponse local = localShipmentService.create(
+                ADMIN, orderId, request(LogisticsType.PICKUP, "bounded retry", null)
+        );
+        jdbcClient.sql("""
+                        update order_shipment
+                        set wechat_upload_status = 'UNAVAILABLE',
+                            wechat_upload_attempt_count = 8,
+                            wechat_upload_next_action_at = :due
+                        where id = :shipmentId
+                        """)
+                .param("due", LocalDateTime.now().minusMinutes(1))
+                .param("shipmentId", local.shipmentId())
+                .update();
+
+        assertThat(coordinator.deliverDue(10)).isZero();
+        assertThat(provider.uploadRequests).isEmpty();
+        assertThat(localShipmentService.getForAdmin(orderId).wechatUploadStatus())
+                .isEqualTo(WechatShippingUploadStatus.UNAVAILABLE);
     }
 
     @Test
@@ -560,7 +587,7 @@ class WechatShippingUploadCoordinatorTest {
         );
         doThrow(new IllegalStateException(sensitiveFailure("terminal-fallback", orderId, "fallback")))
                 .when(stateStore)
-                .writeTerminal(anyLong(), any(), any(), any(), any(), any(), any());
+                .writeTerminal(any(), any(), any(), any(), any(), any(), any());
 
         coordinator.attemptInitial(local.shipmentId());
 
@@ -582,7 +609,7 @@ class WechatShippingUploadCoordinatorTest {
         );
         doThrow(new IllegalStateException(
                 sensitiveFailure("reconstruction", orderId, "reconstruction")
-        )).when(stateStore).prepareAttempt(local.shipmentId(), WechatProviderMode.REAL);
+        )).when(stateStore).prepareAttempt(any(), any());
 
         coordinator.attemptInitial(local.shipmentId());
 
@@ -609,7 +636,10 @@ class WechatShippingUploadCoordinatorTest {
             Future<?> attempt = executor.submit(() -> coordinator.attemptInitial(local.shipmentId()));
             assertThat(provider.uploadEntered.await(10, TimeUnit.SECONDS)).isTrue();
             jdbcClient.sql("""
-                            update order_shipment set last_attempt_at=:old where id=:id
+                            update order_shipment
+                            set wechat_upload_claimed_at=:old,
+                                last_attempt_at=:old
+                            where id=:id
                             """)
                     .param("old", LocalDateTime.now().minusMinutes(11))
                     .param("id", local.shipmentId())
@@ -630,6 +660,129 @@ class WechatShippingUploadCoordinatorTest {
         assertThat(output.getAll()).doesNotContain(
                 "shipmentId=" + local.shipmentId() + ", mode=REAL, status=UPLOADED"
         );
+    }
+
+    @Test
+    void staleUploadClaimIsTokenFencedFromOverwritingRecovery() {
+        long orderId = insertPaidOrder(true);
+        OrderShipmentResponse local = localShipmentService.create(
+                ADMIN, orderId, request(LogisticsType.PICKUP, "token fence", null)
+        );
+        WechatShippingUploadStateStore.UploadClaim staleClaim = stateStore.claimInitial(
+                local.shipmentId(), LocalDateTime.now()
+        ).orElseThrow();
+        jdbcClient.sql("""
+                        update order_shipment
+                        set wechat_upload_claimed_at = :staleAt
+                        where id = :shipmentId
+                        """)
+                .param("staleAt", LocalDateTime.now().minusMinutes(11))
+                .param("shipmentId", local.shipmentId())
+                .update();
+
+        assertThat(stateStore.reconcileStaleByShipment(
+                local.shipmentId(), LocalDateTime.now()
+        )).isTrue();
+        assertThat(stateStore.writeTerminal(
+                staleClaim,
+                WechatProviderMode.REAL,
+                WechatShippingUploadStatus.UPLOADED,
+                "",
+                "",
+                LocalDateTime.now(),
+                LocalDateTime.now()
+        )).isFalse();
+
+        OrderShipmentResponse result = localShipmentService.getForAdmin(orderId);
+        assertThat(result.wechatUploadStatus()).isEqualTo(WechatShippingUploadStatus.UNKNOWN);
+        assertThat(result.wechatUploadedAt()).isNull();
+    }
+
+    @Test
+    void unknownReconciliationMarksUploadedOnlyWhenRemoteShippingFactsMatch() {
+        long orderId = insertPaidOrder(true);
+        OrderShipmentResponse local = createUnknownShipment(
+                orderId, LogisticsType.EXPRESS, "matching unknown"
+        );
+        provider.orderQueryResult = WechatShippingOrderQueryResult.uploaded(
+                "wx-" + orderId,
+                2,
+                new WechatShippingSummary(
+                        LogisticsType.EXPRESS,
+                        DeliveryMode.UNIFIED,
+                        true,
+                        List.of(new WechatShippingFact("SF" + orderId, "SF"))
+                )
+        );
+
+        coordinator.reconcile(ADMIN, orderId);
+
+        OrderShipmentResponse result = localShipmentService.getForAdmin(orderId);
+        assertThat(result.wechatUploadStatus()).isEqualTo(WechatShippingUploadStatus.UPLOADED);
+        assertThat(result.wechatUploadedAt()).isNotNull();
+        assertThat(provider.uploadRequests).hasSize(1);
+        assertThat(provider.orderQueryTransactionIds).containsExactly("wx-" + orderId);
+        assertThat(provider.transactionActiveDuringOrderQuery).isFalse();
+        assertThat(result.shipmentId()).isEqualTo(local.shipmentId());
+    }
+
+    @Test
+    void unknownReconciliationKeepsMismatchUnknownAndNeverBlindlyReuploads() {
+        long orderId = insertPaidOrder(true);
+        createUnknownShipment(orderId, LogisticsType.EXPRESS, "mismatched unknown");
+        provider.orderQueryResult = WechatShippingOrderQueryResult.uploaded(
+                "wx-" + orderId,
+                2,
+                new WechatShippingSummary(
+                        LogisticsType.EXPRESS,
+                        DeliveryMode.UNIFIED,
+                        true,
+                        List.of(new WechatShippingFact("different-tracking", "SF"))
+                )
+        );
+
+        coordinator.reconcile(ADMIN, orderId);
+
+        OrderShipmentResponse result = localShipmentService.getForAdmin(orderId);
+        assertThat(result.wechatUploadStatus()).isEqualTo(WechatShippingUploadStatus.UNKNOWN);
+        assertThat(result.wechatErrorCode()).isEqualTo("REMOTE_SHIPPING_MISMATCH");
+        assertThat(provider.uploadRequests).hasSize(1);
+        assertThat(provider.orderQueryTransactionIds).containsExactly("wx-" + orderId);
+    }
+
+    @Test
+    void definitiveNotUploadedRequiresSpacedObservationsBeforePending() {
+        long orderId = insertPaidOrder(true);
+        OrderShipmentResponse local = createUnknownShipment(
+                orderId, LogisticsType.PICKUP, "not uploaded unknown"
+        );
+        provider.orderQueryResult = WechatShippingOrderQueryResult.notUploaded(
+                "wx-" + orderId, 1
+        );
+
+        coordinator.reconcile(ADMIN, orderId);
+        assertUnknownObservation(local.shipmentId(), 1);
+
+        coordinator.reconcile(ADMIN, orderId);
+        assertUnknownObservation(local.shipmentId(), 1);
+
+        jdbcClient.sql("""
+                        update order_shipment
+                        set wechat_upload_last_reconciled_at = :old,
+                            wechat_upload_next_action_at = :old
+                        where id = :shipmentId
+                        """)
+                .param("old", LocalDateTime.now().minusMinutes(2))
+                .param("shipmentId", local.shipmentId())
+                .update();
+
+        assertThat(coordinator.reconcileDueUnknown(10)).isEqualTo(1);
+
+        var row = uploadDeliveryEvidence(local.shipmentId());
+        assertThat(row.get("wechat_upload_status")).isEqualTo("PENDING");
+        assertThat(row.get("wechat_upload_not_uploaded_observations")).isEqualTo(2);
+        assertThat(provider.uploadRequests).hasSize(1);
+        assertThat(provider.orderQueryTransactionIds).hasSize(3);
     }
 
     @Test
@@ -662,6 +815,45 @@ class WechatShippingUploadCoordinatorTest {
         assertDiagnosticChannelsDoNotLeak(output, result,
                 token, openid, "wx-" + orderId, phone, tracking, itemDesc,
                 "Authorization: Bearer", "shipping_list", "transaction_id");
+    }
+
+    private OrderShipmentResponse createUnknownShipment(
+            long orderId,
+            LogisticsType logisticsType,
+            String itemDesc
+    ) {
+        provider.uploadFailure = new IllegalStateException("ambiguous dispatch");
+        OrderShipmentResponse local = localShipmentService.create(
+                ADMIN, orderId, request(logisticsType, itemDesc, null)
+        );
+        coordinator.attemptInitial(local.shipmentId());
+        provider.uploadFailure = null;
+        assertThat(localShipmentService.getForAdmin(orderId).wechatUploadStatus())
+                .isEqualTo(WechatShippingUploadStatus.UNKNOWN);
+        return local;
+    }
+
+    private void assertUnknownObservation(long shipmentId, int expectedObservations) {
+        var row = uploadDeliveryEvidence(shipmentId);
+        assertThat(row.get("wechat_upload_status")).isEqualTo("UNKNOWN");
+        assertThat(row.get("wechat_upload_not_uploaded_observations"))
+                .isEqualTo(expectedObservations);
+        assertThat(row.get("wechat_upload_claim_token")).isNull();
+    }
+
+    private java.util.Map<String, Object> uploadDeliveryEvidence(long shipmentId) {
+        return jdbcClient.sql("""
+                        select wechat_upload_status,
+                               wechat_upload_claim_token,
+                               wechat_upload_not_uploaded_observations,
+                               wechat_upload_last_reconciled_at,
+                               wechat_upload_next_action_at
+                        from order_shipment
+                        where id = :shipmentId
+                        """)
+                .param("shipmentId", shipmentId)
+                .query()
+                .singleRow();
     }
 
     private AdminShipOrderRequest request(LogisticsType type, String itemDesc, String note) {
@@ -771,15 +963,21 @@ class WechatShippingUploadCoordinatorTest {
 
         private final JdbcClient jdbcClient;
         private final List<WechatShippingUploadRequest> uploadRequests = new CopyOnWriteArrayList<>();
+        private final List<String> orderQueryTransactionIds = new CopyOnWriteArrayList<>();
         private WechatProviderMode mode = WechatProviderMode.REAL;
         private WechatShippingCapabilityResult capabilityResult = WechatShippingCapabilityResult.available();
         private WechatShippingUploadResult uploadResult = WechatShippingUploadResult.uploaded();
         private RuntimeException capabilityFailure;
         private RuntimeException uploadFailure;
+        private WechatShippingOrderQueryResult orderQueryResult =
+                WechatShippingOrderQueryResult.unknown(
+                        "QUERY_NOT_CONFIGURED", "Shipping query is not configured"
+                );
         private int capabilityCalls;
         private boolean transactionActiveDuringCapability;
         private boolean transactionActiveDuringUpload;
         private boolean transactionActiveDuringMode;
+        private boolean transactionActiveDuringOrderQuery;
         private boolean sawCommittedShippedOrder;
         private boolean sawCommittedShipment;
         private CountDownLatch uploadEntered = new CountDownLatch(0);
@@ -791,15 +989,20 @@ class WechatShippingUploadCoordinatorTest {
 
         void reset() {
             uploadRequests.clear();
+            orderQueryTransactionIds.clear();
             mode = WechatProviderMode.REAL;
             capabilityResult = WechatShippingCapabilityResult.available();
             uploadResult = WechatShippingUploadResult.uploaded();
             capabilityFailure = null;
             uploadFailure = null;
+            orderQueryResult = WechatShippingOrderQueryResult.unknown(
+                    "QUERY_NOT_CONFIGURED", "Shipping query is not configured"
+            );
             capabilityCalls = 0;
             transactionActiveDuringCapability = false;
             transactionActiveDuringUpload = false;
             transactionActiveDuringMode = false;
+            transactionActiveDuringOrderQuery = false;
             sawCommittedShippedOrder = false;
             sawCommittedShipment = false;
             uploadEntered = new CountDownLatch(0);
@@ -850,6 +1053,14 @@ class WechatShippingUploadCoordinatorTest {
                 throw capabilityFailure;
             }
             return capabilityResult;
+        }
+
+        @Override
+        public WechatShippingOrderQueryResult queryShippingOrder(String transactionId) {
+            transactionActiveDuringOrderQuery =
+                    TransactionSynchronizationManager.isActualTransactionActive();
+            orderQueryTransactionIds.add(transactionId);
+            return orderQueryResult;
         }
 
         @Override

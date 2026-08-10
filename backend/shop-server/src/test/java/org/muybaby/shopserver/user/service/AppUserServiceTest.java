@@ -161,6 +161,21 @@ class AppUserServiceTest {
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.AUTHENTICATION_REQUIRED));
     }
 
+    @Test
+    void liveSessionStateRequiresEnabledUserAndReturnsAuthVersion() {
+        AppUserService appUserService = new AppUserService(jdbcClient);
+        insertAppUser(9109L, "session-state-openid", "ENABLED");
+        jdbcClient.sql("update app_user set auth_version = 7 where id = 9109")
+                .update();
+
+        assertThat(appUserService.findEnabledSessionState(9109L))
+                .contains(new AppUserService.AppUserSessionState(9109L, 7L));
+
+        jdbcClient.sql("update app_user set status = 'CANCELLED' where id = 9109")
+                .update();
+        assertThat(appUserService.findEnabledSessionState(9109L)).isEmpty();
+    }
+
     private JdbcClient jdbcClientThatCreatesDuplicateBeforeInsert() {
         AtomicBoolean duplicateCreated = new AtomicBoolean(false);
         return (JdbcClient) Proxy.newProxyInstance(
