@@ -98,6 +98,16 @@
                     <groupId>commons-logging</groupId>
                     <artifactId>commons-logging</artifactId>
                 </exclusion>
+                <!--
+                    COS' optional KMS client still brings Okio 1.x. It exports the
+                    same okio.* classes as the Okio 3 runtime required by
+                    wechatpay-java/OkHttp 4 and can therefore break SDK class
+                    initialization depending on fat-jar classpath order.
+                -->
+                <exclusion>
+                    <groupId>com.squareup.okio</groupId>
+                    <artifactId>okio</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
