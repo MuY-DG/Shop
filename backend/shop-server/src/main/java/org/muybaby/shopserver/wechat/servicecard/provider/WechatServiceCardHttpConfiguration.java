@@ -6,6 +6,7 @@ import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
 import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.net.http.HttpClient;
@@ -30,10 +31,15 @@ public class WechatServiceCardHttpConfiguration {
         ClientHttpRequestFactorySettings settings = baseSettings.withTimeouts(
                 properties.connectTimeout(), properties.readTimeout()
         );
-        return sharedBuilder.clone()
-                .requestFactory(ClientHttpRequestFactoryBuilder.jdk()
+        // WeChat rejects chunked JSON POST bodies with HTTP 412. Buffering is bounded by the
+        // service-card payload limit and restores an explicit Content-Length header.
+        BufferingClientHttpRequestFactory requestFactory = new BufferingClientHttpRequestFactory(
+                ClientHttpRequestFactoryBuilder.jdk()
                         .withHttpClientCustomizer(builder -> builder.version(HttpClient.Version.HTTP_1_1))
-                        .build(settings))
+                        .build(settings)
+        );
+        return sharedBuilder.clone()
+                .requestFactory(requestFactory)
                 .build();
     }
 }

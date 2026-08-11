@@ -2,6 +2,7 @@ package org.muybaby.shopserver.wechat.servicecard.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardProperties;
 import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardPropertiesTest;
@@ -9,6 +10,7 @@ import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -17,6 +19,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -207,19 +211,63 @@ class RealWechatServiceCardProviderTest {
     }
 
     @Test
-    void serviceCardHttpClientIsPinnedToHttp11() {
+    void serviceCardHttpClientBuffersRequestsAndIsPinnedToHttp11() {
         WechatServiceCardHttpConfiguration configuration = new WechatServiceCardHttpConfiguration();
         RestClient restClient = configuration.wechatServiceCardRestClient(
                 RestClient.builder(), ClientHttpRequestFactorySettings.defaults(), properties()
         );
         Object requestFactory = ReflectionTestUtils.getField(restClient, "clientRequestFactory");
 
-        assertThat(requestFactory).isInstanceOf(JdkClientHttpRequestFactory.class);
+        assertThat(requestFactory).isInstanceOf(BufferingClientHttpRequestFactory.class);
+        Object delegate = ((BufferingClientHttpRequestFactory) requestFactory).getDelegate();
+        assertThat(delegate).isInstanceOf(JdkClientHttpRequestFactory.class);
         HttpClient httpClient = (HttpClient) ReflectionTestUtils.getField(
-                requestFactory, "httpClient"
+                delegate, "httpClient"
         );
         assertThat(httpClient).isNotNull();
         assertThat(httpClient.version()).isEqualTo(HttpClient.Version.HTTP_1_1);
+    }
+
+    @Test
+    void serviceCardHttpClientSendsContentLengthInsteadOfChunkedEncoding() throws Exception {
+        AtomicReference<String> contentLength = new AtomicReference<>();
+        AtomicReference<String> transferEncoding = new AtomicReference<>();
+        HttpServer server = HttpServer.create(
+                new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0
+        );
+        server.createContext("/wechat", exchange -> {
+            contentLength.set(exchange.getRequestHeaders().getFirst("Content-Length"));
+            transferEncoding.set(exchange.getRequestHeaders().getFirst("Transfer-Encoding"));
+            exchange.getRequestBody().readAllBytes();
+            byte[] response = "{\"errcode\":0}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", MediaType.APPLICATION_JSON_VALUE);
+            exchange.sendResponseHeaders(HttpStatus.OK.value(), response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            WechatServiceCardHttpConfiguration configuration =
+                    new WechatServiceCardHttpConfiguration();
+            RestClient restClient = configuration.wechatServiceCardRestClient(
+                    RestClient.builder(), ClientHttpRequestFactorySettings.defaults(), properties()
+            );
+
+            String response = restClient.post()
+                    .uri("http://" + InetAddress.getLoopbackAddress().getHostAddress()
+                            + ":" + server.getAddress().getPort() + "/wechat")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(objectMapper.createObjectNode().put("notify_type", 2001))
+                    .retrieve()
+                    .body(String.class);
+
+            assertThat(response).isEqualTo("{\"errcode\":0}");
+            assertThat(contentLength.get()).isNotBlank();
+            assertThat(Integer.parseInt(contentLength.get())).isPositive();
+            assertThat(transferEncoding.get()).isNull();
+        } finally {
+            server.stop(0);
+        }
     }
 
     @Test
