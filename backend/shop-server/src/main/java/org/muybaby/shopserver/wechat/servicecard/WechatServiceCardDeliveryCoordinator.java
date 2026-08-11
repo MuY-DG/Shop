@@ -246,9 +246,13 @@ public class WechatServiceCardDeliveryCoordinator {
         if (code != null) {
             return "WECHAT_" + code;
         }
+        if (message != null && message.startsWith("WeChat set_user_notify transport failed:")) {
+            return "SET_TRANSPORT_OUTCOME_UNKNOWN";
+        }
         return switch (message == null ? "" : message) {
             case "WeChat access token is unavailable" -> "ACCESS_TOKEN_UNAVAILABLE";
             case "WeChat set_user_notify outcome is unknown" -> "SET_TRANSPORT_OUTCOME_UNKNOWN";
+            case "WeChat set_user_notify HTTP response is unavailable" -> "SET_HTTP_RESPONSE_UNKNOWN";
             case "WeChat set_user_notify response is invalid" -> "SET_RESPONSE_INVALID";
             default -> outcomeUnknown ? "PROVIDER_OUTCOME_UNKNOWN" : "PROVIDER_UNAVAILABLE";
         };

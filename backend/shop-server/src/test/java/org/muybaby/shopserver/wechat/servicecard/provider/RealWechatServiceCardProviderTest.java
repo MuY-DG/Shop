@@ -5,13 +5,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardProperties;
 import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardPropertiesTest;
+import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.client.RequestMatcher;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
+import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
@@ -19,6 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.client.ExpectedCount.once;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class RealWechatServiceCardProviderTest {
@@ -102,6 +109,120 @@ class RealWechatServiceCardProviderTest {
     }
 
     @Test
+    void nonSuccessHttpStatusStillParsesWechatErrorBody() {
+        Fixture set = fixture();
+        set.server().expect(once(), request -> { })
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"errcode\":85435,\"errmsg\":\"raw payload details\"}"));
+
+        WechatServiceCardSetResult setResult = set.provider().setUserNotify(
+                new WechatServiceCardSetRequest(
+                        "openid", "tx",
+                        "{\"cur_status\":4,\"wxa_path_query\":\"pages/order/detail/detail?order_id=1\"}",
+                        null
+                )
+        );
+
+        assertThat(setResult.outcome()).isEqualTo(WechatServiceCardSetResult.Outcome.REJECTED);
+        assertThat(setResult.errorCode()).isEqualTo(85435);
+        assertThat(setResult.errorMessage()).doesNotContain("raw payload details");
+        set.server().verify();
+
+        Fixture query = fixture();
+        query.server().expect(once(), request -> { })
+                .andRespond(withStatus(HttpStatus.BAD_REQUEST)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"errcode\":85437,\"errmsg\":\"raw payment details\"}"));
+
+        WechatServiceCardQueryResult queryResult = query.provider().getUserNotify(
+                new WechatServiceCardQueryRequest("openid", "tx")
+        );
+
+        assertThat(queryResult.outcome()).isEqualTo(WechatServiceCardQueryResult.Outcome.NOT_FOUND);
+        assertThat(queryResult.errorCode()).isEqualTo(85437);
+        assertThat(queryResult.errorMessage()).doesNotContain("raw payment details");
+        query.server().verify();
+    }
+
+    @Test
+    void unreadableNonSuccessHttpResponseKeepsSetAmbiguousAndQueryRetryable() {
+        Fixture set = fixture();
+        set.server().expect(once(), request -> { })
+                .andRespond(withStatus(HttpStatus.BAD_GATEWAY)
+                        .contentType(MediaType.TEXT_HTML)
+                        .body("<html>upstream unavailable</html>"));
+
+        WechatServiceCardSetResult setResult = set.provider().setUserNotify(
+                new WechatServiceCardSetRequest(
+                        "openid", "tx",
+                        "{\"cur_status\":4,\"wxa_path_query\":\"pages/order/detail/detail?order_id=1\"}",
+                        null
+                )
+        );
+
+        assertThat(setResult.outcome()).isEqualTo(WechatServiceCardSetResult.Outcome.UNKNOWN);
+        assertThat(setResult.errorMessage())
+                .isEqualTo("WeChat set_user_notify HTTP response is unavailable");
+        set.server().verify();
+
+        Fixture query = fixture();
+        query.server().expect(once(), request -> { })
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE)
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .body("upstream unavailable"));
+
+        WechatServiceCardQueryResult queryResult = query.provider().getUserNotify(
+                new WechatServiceCardQueryRequest("openid", "tx")
+        );
+
+        assertThat(queryResult.outcome()).isEqualTo(WechatServiceCardQueryResult.Outcome.RETRYABLE);
+        assertThat(queryResult.errorMessage())
+                .isEqualTo("WeChat get_user_notify HTTP response is unavailable");
+        query.server().verify();
+    }
+
+    @Test
+    void transportFailureUsesSafeActionableCategory() {
+        RestClient restClient = RestClient.builder()
+                .requestFactory((uri, httpMethod) -> {
+                    throw new IOException(
+                            "Received RST_STREAM: internal error access-token openid"
+                    );
+                })
+                .build();
+        WechatServiceCardProperties properties = properties();
+        RealWechatServiceCardProvider provider = new RealWechatServiceCardProvider(
+                restClient, objectMapper, () -> "access-token", properties
+        );
+
+        WechatServiceCardQueryResult result = provider.getUserNotify(
+                new WechatServiceCardQueryRequest("openid", "tx")
+        );
+
+        assertThat(result.outcome()).isEqualTo(WechatServiceCardQueryResult.Outcome.RETRYABLE);
+        assertThat(result.errorMessage())
+                .isEqualTo("WeChat get_user_notify transport failed: HTTP2_STREAM_RESET")
+                .doesNotContain("access-token", "openid");
+    }
+
+    @Test
+    void serviceCardHttpClientIsPinnedToHttp11() {
+        WechatServiceCardHttpConfiguration configuration = new WechatServiceCardHttpConfiguration();
+        RestClient restClient = configuration.wechatServiceCardRestClient(
+                RestClient.builder(), ClientHttpRequestFactorySettings.defaults(), properties()
+        );
+        Object requestFactory = ReflectionTestUtils.getField(restClient, "clientRequestFactory");
+
+        assertThat(requestFactory).isInstanceOf(JdkClientHttpRequestFactory.class);
+        HttpClient httpClient = (HttpClient) ReflectionTestUtils.getField(
+                requestFactory, "httpClient"
+        );
+        assertThat(httpClient).isNotNull();
+        assertThat(httpClient.version()).isEqualTo(HttpClient.Version.HTTP_1_1);
+    }
+
+    @Test
     void paymentCheckAcceptsExactUint32MaximumAndRejectsOutsideRangeBeforeHttp() {
         Fixture maximum = fixture();
         maximum.server().expect(once(), request -> { })
@@ -142,13 +263,17 @@ class RealWechatServiceCardProviderTest {
     private Fixture fixture() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        WechatServiceCardProperties properties = WechatServiceCardPropertiesTest.properties(
-                Duration.ofMinutes(1), Duration.ofHours(6)
-        );
+        WechatServiceCardProperties properties = properties();
         RealWechatServiceCardProvider provider = new RealWechatServiceCardProvider(
                 builder.build(), objectMapper, () -> "access-token", properties
         );
         return new Fixture(provider, server);
+    }
+
+    private WechatServiceCardProperties properties() {
+        return WechatServiceCardPropertiesTest.properties(
+                Duration.ofMinutes(1), Duration.ofHours(6)
+        );
     }
 
     private RequestMatcher capture(AtomicReference<JsonNode> captured) {

@@ -218,6 +218,47 @@ class WechatServiceCardDeliveryCoordinatorTest {
     }
 
     @Test
+    void categorizedSetTransportResultKeepsUnknownSemantics() {
+        DeliveryClaim claim = claim(
+                WechatServiceCardDeliveryState.SENDING, 2, "{}",
+                NOW_LOCAL.minusMinutes(1), null, null
+        );
+        duePending(claim);
+        when(provider.setUserNotify(any(WechatServiceCardSetRequest.class)))
+                .thenReturn(WechatServiceCardSetResult.unknown(
+                        null, "WeChat set_user_notify transport failed: CONNECTION_RESET"
+                ));
+
+        assertThat(coordinator.deliverDue()).isOne();
+
+        verify(store).markUnknown(
+                claim, "SET_TRANSPORT_OUTCOME_UNKNOWN",
+                "WeChat set_user_notify transport failed: CONNECTION_RESET"
+        );
+        verify(store, never()).markRetry(any(), any(), any());
+    }
+
+    @Test
+    void unreadableSetHttpResponseKeepsUnknownSemantics() {
+        DeliveryClaim claim = claim(
+                WechatServiceCardDeliveryState.SENDING, 2, "{}",
+                NOW_LOCAL.minusMinutes(1), null, null
+        );
+        duePending(claim);
+        when(provider.setUserNotify(any(WechatServiceCardSetRequest.class)))
+                .thenReturn(WechatServiceCardSetResult.unknown(
+                        null, "WeChat set_user_notify HTTP response is unavailable"
+                ));
+
+        assertThat(coordinator.deliverDue()).isOne();
+
+        verify(store).markUnknown(
+                claim, "SET_HTTP_RESPONSE_UNKNOWN",
+                "WeChat set_user_notify HTTP response is unavailable"
+        );
+    }
+
+    @Test
     void refusalAfterClaimButBeforeProviderPreflightPerformsNoProviderIo() {
         DeliveryClaim claim = claim(
                 WechatServiceCardDeliveryState.SENDING, 2, "{}",

@@ -988,9 +988,15 @@ public class WechatServiceCardDeliveryStore {
         if (providerCode != null) {
             return "WECHAT_" + providerCode;
         }
+        if (providerMessage != null
+                && providerMessage.startsWith("WeChat get_user_notify transport failed:")) {
+            return "QUERY_TRANSPORT_UNAVAILABLE";
+        }
         return switch (providerMessage == null ? "" : providerMessage) {
             case "WeChat access token is unavailable" -> "ACCESS_TOKEN_UNAVAILABLE";
             case "WeChat get_user_notify is unavailable" -> "QUERY_TRANSPORT_UNAVAILABLE";
+            case "WeChat get_user_notify HTTP response is unavailable" ->
+                    "QUERY_HTTP_RESPONSE_UNAVAILABLE";
             case "WeChat get_user_notify response is invalid" -> "QUERY_RESPONSE_INVALID";
             case "WeChat notify_info is invalid" -> "QUERY_NOTIFY_INFO_INVALID";
             case "WeChat code_state is invalid" -> "QUERY_CODE_STATE_INVALID";

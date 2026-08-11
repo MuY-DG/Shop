@@ -15,12 +15,21 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 
+import javax.net.ssl.SSLException;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.ConnectException;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
+import java.net.http.HttpConnectTimeoutException;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Locale;
 import java.util.Set;
 
 @Component
@@ -81,20 +90,44 @@ public class RealWechatServiceCardProvider implements WechatServiceCardProvider 
             log.warn("WeChat 2001 access token unavailable: exception={}", ex.getClass().getSimpleName());
             return WechatServiceCardSetResult.retryable(null, "WeChat access token is unavailable");
         }
-        String response;
+        ProviderHttpResponse response;
         try {
             response = post(SET_URL, accessToken, payload);
         } catch (RuntimeException ex) {
-            log.warn("WeChat 2001 set outcome unknown: exception={}", exceptionChain(ex));
-            return WechatServiceCardSetResult.unknown(null, "WeChat set_user_notify outcome is unknown");
+            String category = transportCategory(ex);
+            log.warn(
+                    "WeChat 2001 set outcome unknown: category={}, exception={}",
+                    category, exceptionChain(ex)
+            );
+            return WechatServiceCardSetResult.unknown(
+                    null, "WeChat set_user_notify transport failed: " + category
+            );
         }
-        JsonNode body = parseResponse(response);
+        JsonNode body = parseResponse(response.body());
         if (body == null || !body.isObject() || !intNode(body.path("errcode"))) {
+            if (!response.successful()) {
+                log.warn(
+                        "WeChat 2001 set returned an unreadable HTTP response: status={}",
+                        response.statusCode()
+                );
+                return WechatServiceCardSetResult.unknown(
+                        null, "WeChat set_user_notify HTTP response is unavailable"
+                );
+            }
             return WechatServiceCardSetResult.unknown(null, "WeChat set_user_notify response is invalid");
         }
         int code = body.path("errcode").intValue();
         String message = safeMessage(code);
         if (code == 0) {
+            if (!response.successful()) {
+                log.warn(
+                        "WeChat 2001 set returned errcode 0 with a non-success HTTP status: status={}",
+                        response.statusCode()
+                );
+                return WechatServiceCardSetResult.unknown(
+                        null, "WeChat set_user_notify HTTP response is unavailable"
+                );
+            }
             return WechatServiceCardSetResult.applied();
         }
         if (AMBIGUOUS_SET_CODES.contains(code)) {
@@ -128,19 +161,43 @@ public class RealWechatServiceCardProvider implements WechatServiceCardProvider 
         } catch (RuntimeException ex) {
             return WechatServiceCardQueryResult.retryable(null, "WeChat access token is unavailable");
         }
-        String response;
+        ProviderHttpResponse response;
         try {
             response = post(GET_URL, accessToken, payload);
         } catch (RuntimeException ex) {
-            log.warn("WeChat 2001 query unavailable: exception={}", exceptionChain(ex));
-            return WechatServiceCardQueryResult.retryable(null, "WeChat get_user_notify is unavailable");
+            String category = transportCategory(ex);
+            log.warn(
+                    "WeChat 2001 query unavailable: category={}, exception={}",
+                    category, exceptionChain(ex)
+            );
+            return WechatServiceCardQueryResult.retryable(
+                    null, "WeChat get_user_notify transport failed: " + category
+            );
         }
-        JsonNode body = parseResponse(response);
+        JsonNode body = parseResponse(response.body());
         if (body == null || !body.isObject() || !intNode(body.path("errcode"))) {
+            if (!response.successful()) {
+                log.warn(
+                        "WeChat 2001 query returned an unreadable HTTP response: status={}",
+                        response.statusCode()
+                );
+                return WechatServiceCardQueryResult.retryable(
+                        null, "WeChat get_user_notify HTTP response is unavailable"
+                );
+            }
             return WechatServiceCardQueryResult.retryable(null, "WeChat get_user_notify response is invalid");
         }
         int code = body.path("errcode").intValue();
         String message = safeMessage(code);
+        if (code == 0 && !response.successful()) {
+            log.warn(
+                    "WeChat 2001 query returned errcode 0 with a non-success HTTP status: status={}",
+                    response.statusCode()
+            );
+            return WechatServiceCardQueryResult.retryable(
+                    null, "WeChat get_user_notify HTTP response is unavailable"
+            );
+        }
         if (code != 0) {
             if (code == 85437) {
                 return WechatServiceCardQueryResult.notFound(code, message);
@@ -201,17 +258,14 @@ public class RealWechatServiceCardProvider implements WechatServiceCardProvider 
         );
     }
 
-    private String post(String url, String accessToken, JsonNode body) {
+    private ProviderHttpResponse post(String url, String accessToken, JsonNode body) {
         return restClient.post()
                 .uri(url, required(accessToken, "accessToken"))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
-                .exchange((request, response) -> {
-                    if (!response.getStatusCode().is2xxSuccessful()) {
-                        throw new IOException("WeChat returned a non-success HTTP status");
-                    }
-                    return readBounded(response.getBody());
-                });
+                .exchange((request, response) -> new ProviderHttpResponse(
+                        response.getStatusCode().value(), readBounded(response.getBody())
+                ));
     }
 
     private String readBounded(InputStream input) throws IOException {
@@ -334,6 +388,56 @@ public class RealWechatServiceCardProvider implements WechatServiceCardProvider 
         return exception.getClass().getSimpleName() + "/" + root.getClass().getSimpleName();
     }
 
+    private static String transportCategory(Throwable exception) {
+        for (Throwable current = exception; current != null; current = current.getCause()) {
+            if (current instanceof HttpConnectTimeoutException) {
+                return "CONNECT_TIMEOUT";
+            }
+            if (current instanceof HttpTimeoutException || current instanceof SocketTimeoutException) {
+                return "READ_TIMEOUT";
+            }
+            if (current instanceof UnknownHostException) {
+                return "DNS_FAILURE";
+            }
+            if (current instanceof ConnectException) {
+                return "CONNECT_FAILURE";
+            }
+            if (current instanceof SSLException) {
+                return "TLS_FAILURE";
+            }
+            if (current instanceof EOFException) {
+                return "EARLY_EOF";
+            }
+            String message = current.getMessage();
+            if (message != null) {
+                String normalized = message.toLowerCase(Locale.ROOT);
+                if (normalized.contains("rst_stream")) {
+                    return "HTTP2_STREAM_RESET";
+                }
+                if (normalized.contains("goaway")) {
+                    return "HTTP2_GOAWAY";
+                }
+                if (normalized.contains("connection reset")) {
+                    return "CONNECTION_RESET";
+                }
+                if (normalized.contains("header parser received no bytes")) {
+                    return "EARLY_EOF";
+                }
+                if (normalized.contains("response exceeds configured limit")) {
+                    return "RESPONSE_TOO_LARGE";
+                }
+            }
+            if (current instanceof SocketException) {
+                return "SOCKET_FAILURE";
+            }
+        }
+        Throwable root = exception;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        return root instanceof IOException ? "IO_FAILURE" : "CLIENT_FAILURE";
+    }
+
     private static String safeMessage(int code) {
         return switch (code) {
             case 0 -> "";
@@ -356,5 +460,11 @@ public class RealWechatServiceCardProvider implements WechatServiceCardProvider 
             case 85462 -> "Mini Program service-card capability is not authorized";
             default -> "WeChat service-card request was rejected";
         };
+    }
+
+    private record ProviderHttpResponse(int statusCode, String body) {
+        private boolean successful() {
+            return statusCode >= 200 && statusCode < 300;
+        }
     }
 }

@@ -249,6 +249,52 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
     }
 
     @Test
+    void categorizedTransportQueryFailureKeepsItsSafeCategory() {
+        CardFixture card = seedCard(null, null);
+        long deliveryId = insertDelivery(
+                card.cardId(), 1, 2, "UNKNOWN", "{}", 1, 0
+        );
+        DeliveryClaim claim = store.claim(
+                deliveryId, WechatServiceCardDeliveryState.UNKNOWN
+        ).orElseThrow();
+
+        store.applyQueryResult(
+                claim, WechatServiceCardQueryResult.retryable(
+                        null, "WeChat get_user_notify transport failed: CONNECTION_RESET"
+                )
+        );
+
+        DeliveryRow row = deliveryRow(deliveryId);
+        assertThat(row.state()).isEqualTo("UNKNOWN");
+        assertThat(row.errorCode()).isEqualTo("QUERY_TRANSPORT_UNAVAILABLE");
+        assertThat(row.errorMessage())
+                .isEqualTo("WeChat get_user_notify transport failed: CONNECTION_RESET");
+    }
+
+    @Test
+    void unreadableQueryHttpResponseGetsItsOwnDiagnosticCode() {
+        CardFixture card = seedCard(null, null);
+        long deliveryId = insertDelivery(
+                card.cardId(), 1, 2, "UNKNOWN", "{}", 1, 0
+        );
+        DeliveryClaim claim = store.claim(
+                deliveryId, WechatServiceCardDeliveryState.UNKNOWN
+        ).orElseThrow();
+
+        store.applyQueryResult(
+                claim, WechatServiceCardQueryResult.retryable(
+                        null, "WeChat get_user_notify HTTP response is unavailable"
+                )
+        );
+
+        DeliveryRow row = deliveryRow(deliveryId);
+        assertThat(row.state()).isEqualTo("UNKNOWN");
+        assertThat(row.errorCode()).isEqualTo("QUERY_HTTP_RESPONSE_UNAVAILABLE");
+        assertThat(row.errorMessage())
+                .isEqualTo("WeChat get_user_notify HTTP response is unavailable");
+    }
+
+    @Test
     void pendingIntentBeyondConfiguredAttemptCountStillClaimsAndUsesCappedBackoff() {
         CardFixture card = seedCard(null, null);
         long deliveryId = insertDelivery(

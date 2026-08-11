@@ -8,6 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestClient;
 
+import java.net.http.HttpClient;
+
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(
         prefix = "shop.wechat.mini-program",
@@ -22,7 +24,6 @@ public class WechatServiceCardHttpConfiguration {
     @Bean(name = REST_CLIENT_BEAN_NAME)
     RestClient wechatServiceCardRestClient(
             RestClient.Builder sharedBuilder,
-            ClientHttpRequestFactoryBuilder<?> requestFactoryBuilder,
             ClientHttpRequestFactorySettings baseSettings,
             WechatServiceCardProperties properties
     ) {
@@ -30,7 +31,9 @@ public class WechatServiceCardHttpConfiguration {
                 properties.connectTimeout(), properties.readTimeout()
         );
         return sharedBuilder.clone()
-                .requestFactory(requestFactoryBuilder.build(settings))
+                .requestFactory(ClientHttpRequestFactoryBuilder.jdk()
+                        .withHttpClientCustomizer(builder -> builder.version(HttpClient.Version.HTTP_1_1))
+                        .build(settings))
                 .build();
     }
 }
