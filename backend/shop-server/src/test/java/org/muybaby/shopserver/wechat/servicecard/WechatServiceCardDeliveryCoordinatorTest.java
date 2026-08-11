@@ -2,7 +2,6 @@ package org.muybaby.shopserver.wechat.servicecard;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
 import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardDeliveryStore.DeliveryClaim;
 import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardProvider;
 import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardQueryRequest;
@@ -36,6 +35,7 @@ class WechatServiceCardDeliveryCoordinatorTest {
     private WechatServiceCardDeliveryStore store;
     private WechatServiceCardPayloadFactory payloadFactory;
     private WechatServiceCardProvider provider;
+    private WechatServiceCardRuntimeSettingService runtimeSettingService;
     private WechatServiceCardDeliveryCoordinator coordinator;
 
     @BeforeEach
@@ -43,9 +43,10 @@ class WechatServiceCardDeliveryCoordinatorTest {
         store = mock(WechatServiceCardDeliveryStore.class);
         payloadFactory = mock(WechatServiceCardPayloadFactory.class);
         provider = mock(WechatServiceCardProvider.class);
+        runtimeSettingService = mock(WechatServiceCardRuntimeSettingService.class);
+        when(runtimeSettingService.workerReadyFailClosed()).thenReturn(true);
         coordinator = new WechatServiceCardDeliveryCoordinator(
-                readyProperties(), store, payloadFactory, provider,
-                credentials(),
+                readyProperties(), runtimeSettingService, store, payloadFactory, provider,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
@@ -112,8 +113,7 @@ class WechatServiceCardDeliveryCoordinatorTest {
         store = mock(WechatServiceCardDeliveryStore.class);
         provider = mock(WechatServiceCardProvider.class);
         coordinator = new WechatServiceCardDeliveryCoordinator(
-                readyProperties(), store, payloadFactory, provider,
-                credentials(),
+                readyProperties(), runtimeSettingService, store, payloadFactory, provider,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
         DeliveryClaim future = claim(
@@ -147,8 +147,7 @@ class WechatServiceCardDeliveryCoordinatorTest {
         store = mock(WechatServiceCardDeliveryStore.class);
         provider = mock(WechatServiceCardProvider.class);
         coordinator = new WechatServiceCardDeliveryCoordinator(
-                readyProperties(), store, payloadFactory, provider,
-                credentials(),
+                readyProperties(), runtimeSettingService, store, payloadFactory, provider,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
         DeliveryClaim expired = claim(
@@ -233,10 +232,10 @@ class WechatServiceCardDeliveryCoordinatorTest {
     }
 
     @Test
-    void missingMiniProgramCredentialsPreventsDueLookupAndClaim() {
+    void runtimeNotReadyPreventsDueLookupAndClaim() {
+        when(runtimeSettingService.workerReadyFailClosed()).thenReturn(false);
         coordinator = new WechatServiceCardDeliveryCoordinator(
-                readyProperties(), store, payloadFactory, provider,
-                new WechatMiniProgramProperties("", "", false),
+                readyProperties(), runtimeSettingService, store, payloadFactory, provider,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
 
@@ -244,6 +243,38 @@ class WechatServiceCardDeliveryCoordinatorTest {
         assertThat(coordinator.reconcileDue()).isZero();
 
         verifyNoInteractions(store, payloadFactory, provider);
+    }
+
+    @Test
+    void runtimeDisableBeforeClaimStopsTheBatch() {
+        DeliveryClaim claim = claim(
+                WechatServiceCardDeliveryState.SENDING, 2, "{}",
+                NOW_LOCAL.minusMinutes(1), null, null
+        );
+        when(store.dueIds(WechatServiceCardDeliveryState.PENDING, NOW_LOCAL, 50))
+                .thenReturn(List.of(claim.deliveryId()));
+        when(runtimeSettingService.workerReadyFailClosed()).thenReturn(true, false);
+
+        assertThat(coordinator.deliverDue()).isZero();
+
+        verify(store, never()).claim(claim.deliveryId(), WechatServiceCardDeliveryState.PENDING);
+        verifyNoInteractions(provider);
+    }
+
+    @Test
+    void runtimeDisableImmediatelyBeforeProviderCallReleasesClaim() {
+        DeliveryClaim claim = claim(
+                WechatServiceCardDeliveryState.SENDING, 2, "{}",
+                NOW_LOCAL.minusMinutes(1), null, null
+        );
+        duePending(claim);
+        when(runtimeSettingService.workerReadyFailClosed())
+                .thenReturn(true, true, true, false);
+
+        assertThat(coordinator.deliverDue()).isOne();
+
+        verify(store).releaseWithoutProviderCall(claim);
+        verifyNoInteractions(provider);
     }
 
     private void duePending(DeliveryClaim claim) {
@@ -288,9 +319,4 @@ class WechatServiceCardDeliveryCoordinatorTest {
         );
     }
 
-    private WechatMiniProgramProperties credentials() {
-        return new WechatMiniProgramProperties(
-                "wx-service-card-test", "mini-program-secret", false
-        );
-    }
 }

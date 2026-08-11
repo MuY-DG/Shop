@@ -59,10 +59,12 @@ ops/deploy-admin.sh txcloud
 The script creates an immutable release directory and switches the public
 `index` symlink. It deliberately does not delete older releases.
 
-Deploying the placeholder does not enable V94. Keep capture, worker, and
-callback off for the first backend rollout; then configure and verify the
-account callback, enable capture while the worker stays off, and only then
-enable the worker for one controlled real payment within WeChat's 24-hour
+Deploying the placeholder does not enable V94. Production already has the
+account callback enabled and its Safe+JSON GET handshake verified; a V95 rollout
+must not replace or expose that environment-only Token/AES material. Capture and
+worker remain disabled until an operator uses **开发配置 → 微信服务动态** to save a database-backed
+capture-only revision, inspect candidates and the durable queue, and only then
+save a later revision that enables the worker for one controlled real payment within WeChat's 24-hour
 activation window. The 30-day update window, callback receipt, and WeChat-side
 display remain external acceptance evidence; a healthy edge or successful SPA
 deployment does not prove message delivery.

@@ -267,6 +267,47 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
     }
 
     @Test
+    void runtimeReleaseDoesNotReviveAClaimAfterTheCardWasBlocked() {
+        CardFixture card = seedCard(null, null);
+        long deliveryId = insertDelivery(card.cardId(), 1, 2, "PENDING", "{}", 0, 0);
+        DeliveryClaim claim = store.claim(
+                deliveryId, WechatServiceCardDeliveryState.PENDING
+        ).orElseThrow();
+
+        store.blockUserRefused(card.cardId());
+
+        assertThat(store.releaseWithoutProviderCall(claim)).isTrue();
+        assertThat(deliveryState(deliveryId)).isEqualTo("SKIPPED");
+        assertThat(deliveryAttempts(deliveryId))
+                .isEqualTo(new DeliveryAttempts(0, 0, "USER_REFUSED"));
+    }
+
+    @Test
+    void runtimeReleaseRestoresOriginalStateAndRollsBackOnlyTheClaimCounter() {
+        CardFixture setCard = seedCard(null, null);
+        long pending = insertDelivery(setCard.cardId(), 1, 2, "PENDING", "{}", 0, 0);
+        DeliveryClaim setClaim = store.claim(
+                pending, WechatServiceCardDeliveryState.PENDING
+        ).orElseThrow();
+
+        assertThat(store.releaseWithoutProviderCall(setClaim)).isTrue();
+        assertThat(deliveryState(pending)).isEqualTo("PENDING");
+        assertThat(deliveryAttempts(pending))
+                .isEqualTo(new DeliveryAttempts(0, 0, ""));
+
+        CardFixture queryCard = seedCard(2, LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
+        long unknown = insertDelivery(queryCard.cardId(), 1, 4, "UNKNOWN", null, 3, 2);
+        DeliveryClaim queryClaim = store.claim(
+                unknown, WechatServiceCardDeliveryState.UNKNOWN
+        ).orElseThrow();
+
+        assertThat(store.releaseWithoutProviderCall(queryClaim)).isTrue();
+        assertThat(deliveryState(unknown)).isEqualTo("UNKNOWN");
+        assertThat(deliveryAttempts(unknown))
+                .isEqualTo(new DeliveryAttempts(3, 2, ""));
+    }
+
+    @Test
     void staleInFlightClaimOnBlockedCardRecoversToSkippedNotUnknown() {
         CardFixture card = seedCard(null, null);
         long deliveryId = insertClaimedDelivery(card.cardId(), 1, 2, "SENDING");
@@ -515,6 +556,20 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
                 .single();
     }
 
+    private DeliveryAttempts deliveryAttempts(long deliveryId) {
+        return jdbcClient.sql("""
+                        select attempt_count, reconcile_attempt_count, provider_error_code
+                        from wechat_service_card_delivery where id = :id
+                        """)
+                .param("id", deliveryId)
+                .query((rs, rowNum) -> new DeliveryAttempts(
+                        rs.getInt("attempt_count"),
+                        rs.getInt("reconcile_attempt_count"),
+                        rs.getString("provider_error_code")
+                ))
+                .single();
+    }
+
     private record CardFixture(long cardId) {
     }
 
@@ -527,5 +582,12 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
     }
 
     private record CardBlock(boolean blocked, String reason, boolean hasBlockedAt) {
+    }
+
+    private record DeliveryAttempts(
+            int setAttempts,
+            int reconciliationAttempts,
+            String errorCode
+    ) {
     }
 }

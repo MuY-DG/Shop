@@ -63,6 +63,7 @@ public enum ErrorCode {
     WECHAT_WAYBILL_REGISTRATION_UNAVAILABLE(600005, "物流查询暂不可用，请稍后重试"),
     WECHAT_WAYBILL_CONFLICT(600006, "电子面单状态已变化，请刷新后重试"),
     WECHAT_WAYBILL_UNAVAILABLE(600007, "微信电子面单服务暂不可用，请稍后重试"),
+    WECHAT_SERVICE_CARD_RUNTIME_CONFLICT(600008, "微信服务动态运行配置已被其他管理员修改，请刷新后重试"),
     WECHAT_REFUND_FAILED(700001, "WeChat refund failed"),
     STORAGE_FILE_UNAVAILABLE(800001, "Storage file unavailable"),
     STORAGE_UPLOAD_POLICY_REJECTED(800002, "Storage upload policy rejected"),

@@ -172,6 +172,7 @@ public class GlobalExceptionHandler {
             case AUTHENTICATION_REQUIRED -> HttpStatus.UNAUTHORIZED;
             case PERMISSION_DENIED, ADMIN_REGISTRATION_DISABLED -> HttpStatus.FORBIDDEN;
             case DATA_CLEANUP_CONFIG_CONFLICT,
+                 WECHAT_SERVICE_CARD_RUNTIME_CONFLICT,
                  WECHAT_EXPRESS_CONFIG_CONFLICT,
                  WECHAT_WAYBILL_CONFLICT,
                  ACCOUNT_RIGHTS_REQUEST_CONFLICT,

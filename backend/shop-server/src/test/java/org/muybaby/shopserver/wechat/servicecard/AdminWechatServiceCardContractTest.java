@@ -9,13 +9,17 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardDeliveryQuery;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardDeliveryResponse;
+import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardRuntimeUpdateRequest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
 import java.time.Duration;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +38,7 @@ class AdminWechatServiceCardContractTest {
         AdminWechatServiceCardDeliveryResponse response =
                 new AdminWechatServiceCardDeliveryResponse(
                         LARGE_ID, LARGE_ID - 1, LARGE_ID - 2,
+                        "202608100001",
                         1, 2, "UNKNOWN", true, "USER_REFUSED",
                         LocalDateTime.of(2026, 8, 10, 11, 30),
                         3, 4, 1,
@@ -65,23 +70,32 @@ class AdminWechatServiceCardContractTest {
     }
 
     @Test
-    void bothAdminReadEndpointsRequireOrderReadAuthority() throws Exception {
+    void endpointsUseDedicatedReadAndRuntimeWriteAuthorities() throws Exception {
         Method status = AdminWechatServiceCardController.class.getMethod("status");
         Method deliveries = AdminWechatServiceCardController.class.getMethod(
                 "deliveries", AdminWechatServiceCardDeliveryQuery.class
         );
+        Method updateRuntime = AdminWechatServiceCardController.class.getMethod(
+                "updateRuntime",
+                org.muybaby.shopserver.security.AuthenticatedPrincipal.class,
+                AdminWechatServiceCardRuntimeUpdateRequest.class
+        );
 
         assertThat(status.getAnnotation(PreAuthorize.class).value())
-                .isEqualTo("hasAuthority('order:read')");
+                .isEqualTo("hasAuthority('wechat-service-card:read')");
         assertThat(deliveries.getAnnotation(PreAuthorize.class).value())
-                .isEqualTo("hasAuthority('order:read')");
+                .isEqualTo("hasAuthority('wechat-service-card:read')");
+        assertThat(updateRuntime.getAnnotation(PreAuthorize.class).value())
+                .isEqualTo("hasAuthority('wechat-service-card:runtime:write')");
     }
 
     @Test
     void invalidPaginationOrderAndStateFailAsBusinessValidationBeforeSql() {
         WechatServiceCardAdminReadService service = new WechatServiceCardAdminReadService(
                 mock(JdbcClient.class), disabledProperties(),
-                new WechatMiniProgramProperties("app-id", "secret", false)
+                new WechatMiniProgramProperties("app-id", "secret", false),
+                mock(WechatServiceCardRuntimeSettingService.class),
+                Clock.fixed(Instant.parse("2026-08-10T12:00:00Z"), ZoneOffset.UTC)
         );
 
         assertValidation(() -> service.deliveries(
@@ -96,6 +110,21 @@ class AdminWechatServiceCardContractTest {
         assertValidation(() -> service.deliveries(
                 new AdminWechatServiceCardDeliveryQuery(1L, 20L, null, "SENT")
         ));
+    }
+
+    @Test
+    void runtimeUpdateRequestRejectsUnknownSecretFields() {
+        ObjectMapper mapper = new ObjectMapper();
+        assertThatThrownBy(() -> mapper.readValue("""
+                        {
+                          "captureEnabled": false,
+                          "workerEnabled": false,
+                          "version": 0,
+                          "reason": "emergency shutdown",
+                          "callbackToken": "must-not-be-accepted"
+                        }
+                        """, AdminWechatServiceCardRuntimeUpdateRequest.class))
+                .isInstanceOf(com.fasterxml.jackson.databind.JsonMappingException.class);
     }
 
     private void assertValidation(Runnable action) {

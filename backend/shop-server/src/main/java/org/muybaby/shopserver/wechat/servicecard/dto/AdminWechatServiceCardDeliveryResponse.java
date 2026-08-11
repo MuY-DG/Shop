@@ -8,6 +8,7 @@ public record AdminWechatServiceCardDeliveryResponse(
         @JsonStringId Long id,
         @JsonStringId Long cardId,
         @JsonStringId Long orderId,
+        String orderNo,
         int sequenceNo,
         int targetStatus,
         String state,

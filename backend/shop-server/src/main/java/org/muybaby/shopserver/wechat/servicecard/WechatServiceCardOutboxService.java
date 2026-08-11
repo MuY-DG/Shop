@@ -29,20 +29,24 @@ public class WechatServiceCardOutboxService {
 
     private final JdbcClient jdbcClient;
     private final WechatServiceCardProperties properties;
+    private final WechatServiceCardRuntimeSettingService runtimeSettingService;
     private final WechatServiceCardPayloadFactory payloadFactory;
 
     public WechatServiceCardOutboxService(
             JdbcClient jdbcClient,
             WechatServiceCardProperties properties,
+            WechatServiceCardRuntimeSettingService runtimeSettingService,
             WechatServiceCardPayloadFactory payloadFactory
     ) {
         this.jdbcClient = jdbcClient;
         this.properties = properties;
+        this.runtimeSettingService = runtimeSettingService;
         this.payloadFactory = payloadFactory;
     }
 
     public void onOrderFact(long orderId, LocalDateTime eventTime) {
-        if (!properties.enabled() || !properties.imageConfigurationReady()) {
+        if (!runtimeSettingService.captureEnabledFailSoft()
+                || !properties.imageConfigurationReady()) {
             return;
         }
         OrderFact order = lockOrder(orderId);

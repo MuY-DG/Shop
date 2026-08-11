@@ -14,6 +14,7 @@ expected_suites=(
   org.muybaby.shopserver.storage.StorageAssetTimezoneTest
   org.muybaby.shopserver.user.address.service.AppAddressServiceMySqlConcurrencyTest
   org.muybaby.shopserver.wechat.servicecard.WechatServiceCardMySqlMigrationTest
+  org.muybaby.shopserver.wechat.servicecard.WechatServiceCardRuntimeMySqlConcurrencyTest
 )
 
 if [[ ! -d "$report_dir" ]]; then

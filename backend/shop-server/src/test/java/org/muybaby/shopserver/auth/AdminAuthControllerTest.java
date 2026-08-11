@@ -134,6 +134,8 @@ class AdminAuthControllerTest {
                         "order:waybill:test",
                         "order:shipping:registration:retry",
                         "order:shipping:tracking:sync",
+                        "wechat-service-card:read",
+                        "wechat-service-card:runtime:write",
                         "logistics:express:config:read",
                         "logistics:express:config:write",
                         "customer-service:conversation:read",

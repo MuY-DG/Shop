@@ -11,6 +11,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Set;
@@ -21,35 +24,47 @@ public class WechatServiceCardAdminReadService {
     private final JdbcClient jdbcClient;
     private final WechatServiceCardProperties properties;
     private final WechatMiniProgramProperties miniProgramProperties;
+    private final WechatServiceCardRuntimeSettingService runtimeSettingService;
+    private final Clock clock;
 
     public WechatServiceCardAdminReadService(
             JdbcClient jdbcClient,
             WechatServiceCardProperties properties,
-            WechatMiniProgramProperties miniProgramProperties
+            WechatMiniProgramProperties miniProgramProperties,
+            WechatServiceCardRuntimeSettingService runtimeSettingService,
+            Clock clock
     ) {
         this.jdbcClient = jdbcClient;
         this.properties = properties;
         this.miniProgramProperties = miniProgramProperties;
+        this.runtimeSettingService = runtimeSettingService;
+        this.clock = clock;
     }
 
     public AdminWechatServiceCardStatusResponse status() {
+        WechatServiceCardRuntimeSettingService.RuntimeSetting runtime =
+                runtimeSettingService.current();
         boolean imageReady = properties.imageConfigurationReady();
         boolean templateConfigured = properties.templateConfigurationReady();
         boolean credentialsReady = StringUtils.hasText(miniProgramProperties.appId())
                 && StringUtils.hasText(miniProgramProperties.appSecret());
-        boolean captureReady = properties.enabled() && imageReady;
-        boolean workerReady = captureReady && properties.workerEnabled()
-                && templateConfigured && credentialsReady;
+        boolean callbackReady = runtimeSettingService.callbackReady();
+        boolean captureReady = runtime.captureEnabled() && imageReady;
+        boolean workerReady = captureReady && runtime.workerEnabled()
+                && templateConfigured && credentialsReady && callbackReady;
+        RepairEligibility repairEligibility = repairEligibility();
         return new AdminWechatServiceCardStatusResponse(
-                properties.enabled(), properties.workerEnabled(), captureReady,
+                runtime.captureEnabled(), runtime.workerEnabled(), runtime.persisted(),
+                runtime.version(), runtime.defaultCaptureEnabled(), runtime.defaultWorkerEnabled(),
+                runtime.reason(), runtime.updatedBy(), runtime.updatedAt(), captureReady,
                 templateConfigured, imageReady, credentialsReady, workerReady,
                 properties.callback().enabled(),
-                properties.callback().secureReady()
-                        && StringUtils.hasText(miniProgramProperties.appId()),
+                callbackReady,
                 cardCount(true),
                 deliveryCount("PENDING"), deliveryCount("SENDING"),
                 deliveryCount("UNKNOWN") + deliveryCount("RECONCILING"),
-                deliveryCount("FAILED")
+                deliveryCount("FAILED"), repairEligibility.count(),
+                repairEligibility.earliestPaidAt(), repairEligibility.latestPaidAt()
         );
     }
 
@@ -84,7 +99,7 @@ public class WechatServiceCardAdminReadService {
             throw validation();
         }
         var records = jdbcClient.sql("""
-                        select delivery.id, delivery.card_id, card.order_id,
+                        select delivery.id, delivery.card_id, card.order_id, order_entry.order_no,
                                delivery.sequence_no, delivery.target_status, delivery.state,
                                card.send_blocked, card.send_block_reason, card.send_blocked_at,
                                delivery.attempt_count, delivery.reconcile_attempt_count,
@@ -96,6 +111,7 @@ public class WechatServiceCardAdminReadService {
                                delivery.created_at, delivery.updated_at
                         from wechat_service_card_delivery delivery
                         join wechat_service_card card on card.id = delivery.card_id
+                        join shop_order order_entry on order_entry.id = card.order_id
                         where (:orderId is null or card.order_id = :orderId)
                           and (:state = '' or delivery.state = :state)
                         order by delivery.id desc
@@ -107,6 +123,7 @@ public class WechatServiceCardAdminReadService {
                 .param("offset", offset)
                 .query((rs, rowNum) -> new AdminWechatServiceCardDeliveryResponse(
                         rs.getLong("id"), rs.getLong("card_id"), rs.getLong("order_id"),
+                        rs.getString("order_no"),
                         rs.getInt("sequence_no"), rs.getInt("target_status"), rs.getString("state"),
                         rs.getBoolean("send_blocked"), rs.getString("send_block_reason"),
                         rs.getObject("send_blocked_at", LocalDateTime.class),
@@ -154,7 +171,60 @@ public class WechatServiceCardAdminReadService {
                 .single();
     }
 
+    private RepairEligibility repairEligibility() {
+        LocalDateTime now = LocalDateTime.now(clock).withNano(0);
+        return jdbcClient.sql("""
+                        select count(*) as eligible_count,
+                               min(payment.paid_at) as earliest_paid_at,
+                               max(payment.paid_at) as latest_paid_at
+                        from payment_order payment
+                        join shop_order order_entry on order_entry.id = payment.order_id
+                        left join wechat_service_card card on card.order_id = payment.order_id
+                        where payment.status = 'PAID'
+                          and payment.transaction_id <> ''
+                          and payment.payer_openid <> ''
+                          and payment.paid_at is not null
+                          and payment.paid_at <= :now
+                          and (
+                              (card.id is null and payment.paid_at >= :activationEarliest)
+                              or (
+                                  card.id is not null
+                                  and card.terminal = false
+                                  and card.send_blocked = false
+                                  and (
+                                      (card.activated_at is null
+                                          and payment.paid_at >= :activationEarliest)
+                                      or (card.remote_code_expire_at is not null
+                                          and card.remote_code_expire_at >= :now)
+                                      or (card.remote_code_expire_at is null
+                                          and card.activated_at >= :updateEarliest)
+                                  )
+                              )
+                          )
+                        """)
+                .param("activationEarliest", now.minusHours(24))
+                .param("updateEarliest", now.minusDays(30))
+                .param("now", now)
+                .query(this::mapRepairEligibility)
+                .single();
+    }
+
+    private RepairEligibility mapRepairEligibility(ResultSet rs, int rowNum) throws SQLException {
+        return new RepairEligibility(
+                rs.getLong("eligible_count"),
+                rs.getObject("earliest_paid_at", LocalDateTime.class),
+                rs.getObject("latest_paid_at", LocalDateTime.class)
+        );
+    }
+
     private BusinessException validation() {
         return new BusinessException(ErrorCode.VALIDATION_FAILED);
+    }
+
+    private record RepairEligibility(
+            long count,
+            LocalDateTime earliestPaidAt,
+            LocalDateTime latestPaidAt
+    ) {
     }
 }

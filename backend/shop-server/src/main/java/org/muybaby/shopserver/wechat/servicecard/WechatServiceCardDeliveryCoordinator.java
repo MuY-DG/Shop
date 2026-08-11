@@ -6,7 +6,6 @@ import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardQuery
 import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardQueryResult;
 import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardSetRequest;
 import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardSetResult;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,25 +21,25 @@ public class WechatServiceCardDeliveryCoordinator {
     private static final Logger log = LoggerFactory.getLogger(WechatServiceCardDeliveryCoordinator.class);
 
     private final WechatServiceCardProperties properties;
+    private final WechatServiceCardRuntimeSettingService runtimeSettingService;
     private final WechatServiceCardDeliveryStore store;
     private final WechatServiceCardPayloadFactory payloadFactory;
     private final WechatServiceCardProvider provider;
-    private final WechatMiniProgramProperties miniProgramProperties;
     private final Clock clock;
 
     public WechatServiceCardDeliveryCoordinator(
             WechatServiceCardProperties properties,
+            WechatServiceCardRuntimeSettingService runtimeSettingService,
             WechatServiceCardDeliveryStore store,
             WechatServiceCardPayloadFactory payloadFactory,
             WechatServiceCardProvider provider,
-            WechatMiniProgramProperties miniProgramProperties,
             Clock clock
     ) {
         this.properties = properties;
+        this.runtimeSettingService = runtimeSettingService;
         this.store = store;
         this.payloadFactory = payloadFactory;
         this.provider = provider;
-        this.miniProgramProperties = miniProgramProperties;
         this.clock = clock;
     }
 
@@ -52,6 +51,9 @@ public class WechatServiceCardDeliveryCoordinator {
         LocalDateTime now = now();
         for (Long id : store.dueIds(
                 WechatServiceCardDeliveryState.PENDING, now, properties.batchSize())) {
+            if (!workerReady()) {
+                break;
+            }
             Optional<DeliveryClaim> claim = store.claim(id, WechatServiceCardDeliveryState.PENDING);
             if (claim.isPresent()) {
                 executeSet(claim.get());
@@ -69,6 +71,9 @@ public class WechatServiceCardDeliveryCoordinator {
         LocalDateTime now = now();
         for (Long id : store.dueIds(
                 WechatServiceCardDeliveryState.UNKNOWN, now, properties.batchSize())) {
+            if (!workerReady()) {
+                break;
+            }
             Optional<DeliveryClaim> claim = store.claim(id, WechatServiceCardDeliveryState.UNKNOWN);
             if (claim.isPresent()) {
                 executeQuery(claim.get());
@@ -79,6 +84,10 @@ public class WechatServiceCardDeliveryCoordinator {
     }
 
     private void executeSet(DeliveryClaim claim) {
+        if (!workerReady()) {
+            store.releaseWithoutProviderCall(claim);
+            return;
+        }
         if (store.settleFromKnownRemote(claim)) {
             return;
         }
@@ -110,6 +119,10 @@ public class WechatServiceCardDeliveryCoordinator {
             }
         }
         if (!store.prepareProviderCall(claim)) {
+            return;
+        }
+        if (!workerReady()) {
+            store.releaseWithoutProviderCall(claim);
             return;
         }
         WechatServiceCardSetResult result;
@@ -148,6 +161,10 @@ public class WechatServiceCardDeliveryCoordinator {
     }
 
     private void executeQuery(DeliveryClaim claim) {
+        if (!workerReady()) {
+            store.releaseWithoutProviderCall(claim);
+            return;
+        }
         if (!validProviderIdentity(claim)) {
             store.markFailed(
                     claim, "PAYMENT_IDENTITY_INVALID",
@@ -168,6 +185,10 @@ public class WechatServiceCardDeliveryCoordinator {
             return;
         }
         if (!store.prepareProviderCall(claim)) {
+            return;
+        }
+        if (!workerReady()) {
+            store.releaseWithoutProviderCall(claim);
             return;
         }
         WechatServiceCardQueryResult result;
@@ -206,12 +227,7 @@ public class WechatServiceCardDeliveryCoordinator {
     }
 
     private boolean workerReady() {
-        return properties.enabled()
-                && properties.workerEnabled()
-                && properties.templateConfigurationReady()
-                && properties.imageConfigurationReady()
-                && StringUtils.hasText(miniProgramProperties.appId())
-                && StringUtils.hasText(miniProgramProperties.appSecret());
+        return runtimeSettingService.workerReadyFailClosed();
     }
 
     private static String providerCode(Integer code) {

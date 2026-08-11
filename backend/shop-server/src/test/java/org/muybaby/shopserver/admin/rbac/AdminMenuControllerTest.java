@@ -247,7 +247,8 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[8].children[*].path", contains(
                         "storage",
                         "payment",
-                        "data-cleanup"
+                        "data-cleanup",
+                        "wechat-service-card"
                 )))
                 .andExpect(jsonPath("$.data[8].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "storage:config:read",
@@ -261,6 +262,12 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[8].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "data-cleanup:config:read",
                         "data-cleanup:config:write"
+                )))
+                .andExpect(jsonPath("$.data[8].children[3].component")
+                        .value("/configuration/wechat-service-card"))
+                .andExpect(jsonPath("$.data[8].children[3].meta.authList[*].authMark", containsInAnyOrder(
+                        "wechat-service-card:read",
+                        "wechat-service-card:runtime:write"
                 )))
                 .andExpect(jsonPath("$.data[9].path").value("/system"))
                 .andExpect(jsonPath("$.data[9].children[*].path", contains(

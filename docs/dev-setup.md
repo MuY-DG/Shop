@@ -102,7 +102,7 @@ Expected result for each executed layer:
 BUILD SUCCESS
 ```
 
-## V85-V94 Focused Gates
+## V85-V95 Focused Gates
 
 Run the focused backend slices from `backend/shop-server` before both test layers. These
 commands validate H2/Flyway and application behavior; they do not replace a disposable
@@ -127,7 +127,7 @@ MySQL migration/concurrency run or any production-provider smoke check.
 # V90 account-rights state, authorization, and active-obligation gate
 ./mvnw -Dtest='AccountRightsSchemaTest,AccountRightsControllerTest,AccountRightsObligationServiceTest' test
 
-# V94 WeChat 2001 service-card schema, state machine, provider, outbox, worker and callback
+# V94-V95 WeChat 2001 service-card delivery and Admin runtime control
 ./mvnw -Dtest='*WechatServiceCard*Test' test
 ```
 
@@ -147,7 +147,7 @@ customer-service order routing, public compliance rendering, food disclosure,
 account-rights, and the source contract that preserves the current profile V frame,
 crown, `金牌会员` text, member-card assets, and logged-in display condition.
 
-## V87-V94 Runtime And Publication Controls
+## V87-V95 Runtime And Publication Controls
 
 ### V87 WeChat Shipment Delivery
 
@@ -236,7 +236,7 @@ identity data while preserving required transaction/audit records. Assign a real
 review SLA, escalation route, and reviewed retention rules before release; automated
 tests cannot decide those merchant/legal obligations.
 
-### V94 WeChat 2001 Shopping Service Dynamic
+### V94-V95 WeChat 2001 Shopping Service Dynamic
 
 V94 implements only the new WeChat `notify_type=2001` **购物（实体物流）服务动态**.
 It is not the traditional `wx.requestSubscribeMessage` flow, does not send a private
@@ -245,8 +245,11 @@ template ID in `set_user_notify`, and requires no new Mini Program page or conse
 record ID only for readiness/audit. The provider sends the payment's immutable WeChat
 `transaction_id` as `notify_code`; it never substitutes the merchant order number.
 
-The capture, outbound worker, and result callback switches are independent and all default
-to `false`:
+The deployment values below are safe defaults. V95 adds a database-backed runtime override
+for Capture and Worker, exposed only through Admin **开发配置 → 微信服务动态**. Once an
+override exists, it survives restarts and takes precedence over the two deployment defaults.
+Callback remains environment-only because its Token/AES material must never enter the database
+or Admin API.
 
 ```properties
 SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED=false
@@ -301,17 +304,38 @@ plaintext, and Mini Program AppID. The asynchronous event is a send-failure diag
 it does not prove successful delivery and must not overwrite an already confirmed remote
 state. `get_user_notify` reconciliation remains the provider-state evidence.
 
-Use this three-stage release order; do not enable all three switches at once:
+V95 Admin runtime endpoints are:
 
-1. Deploy V94 and the Admin placeholder with capture, worker, and callback disabled. Verify
+```text
+GET /admin/wechat-service-cards/status
+GET /admin/wechat-service-cards/deliveries
+PUT /admin/wechat-service-cards/runtime
+```
+
+Read operations require `wechat-service-card:read`; changing the runtime override requires
+`wechat-service-card:runtime:write`. The PUT body is
+`{captureEnabled, workerEnabled, version, reason}`. It uses CAS, records the before/after values,
+operator, reason and revision in an append-only audit table, rejects unknown fields, and never
+accepts callback credentials. Enabling is deliberately staged: a disabled installation must
+first save `capture=true, worker=false`, inspect the Repair Scanner candidates and durable queue,
+then save a later revision with `worker=true`. Readiness failures block only enabling; an operator
+can always perform an emergency disable. No application restart is required.
+
+For a first-time installation, use this three-stage release order; do not enable all three
+switches at once. Current production has already completed the Safe+JSON GET handshake, so a
+V95 rollout must preserve the environment-only Callback credentials and follow the current-state
+runbook in `ops/README.md` instead of regenerating them.
+
+1. Deploy V94-V95 and the Admin placeholder with capture, worker, and callback disabled. Verify
    Flyway, readiness configuration, Admin asset bytes, and that no outbound request occurs.
 2. Supply a newly generated Token/AES key, enable only the callback, configure SAFE+JSON in
    the WeChat console, and complete the public GET handshake. Before enabling capture, list
    every complete paid payment from the preceding 24 hours that has no card: the repair
-   scanner will enqueue those real payments as well as new events. Then enable capture while
-   the worker remains off, create a controlled new paid order, and inspect all durable cards
+   scanner will enqueue those real payments as well as new events. In Admin, save a capture-only
+   revision while the worker remains off, create a controlled new paid order, and inspect all durable cards
    and ordered delivery intents without sending them.
-3. Enable the worker only after the queue, AppID identity, immutable payment facts, image,
+3. In Admin, enable the worker in a later revision only after the queue, AppID identity,
+   immutable payment facts, image,
    callback, and monitoring are ready and no unintended repaired card remains eligible for
    outbound work. Activate one controlled real payment within 24 hours of its WeChat payment
    time, then verify shipped/signed/after-sale transitions and active `get_user_notify`

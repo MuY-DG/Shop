@@ -65,6 +65,103 @@ public class WechatServiceCardDeliveryStore {
         return Optional.ofNullable(claim);
     }
 
+    /**
+     * Restores the exact pre-claim state when the runtime worker gate closes before provider I/O.
+     * Claiming alone is not an attempt, so the corresponding counter is rolled back as well.
+     */
+    public boolean releaseWithoutProviderCall(DeliveryClaim claim) {
+        if (claim == null) {
+            return false;
+        }
+        boolean setClaim = claim.claimedState() == WechatServiceCardDeliveryState.SENDING;
+        boolean queryClaim = claim.claimedState() == WechatServiceCardDeliveryState.RECONCILING;
+        if (!setClaim && !queryClaim) {
+            return false;
+        }
+        return Boolean.TRUE.equals(transaction.execute(status ->
+                releaseWithoutProviderCallInTransaction(claim, setClaim)
+        ));
+    }
+
+    private boolean releaseWithoutProviderCallInTransaction(
+            DeliveryClaim claim,
+            boolean setClaim
+    ) {
+        // Use the established card -> delivery lock order. A concurrent refusal callback can
+        // otherwise block the card while this method revives its claimed row as pending.
+        if (!lockClaim(claim)) {
+            return false;
+        }
+        Boolean sendBlocked = jdbcClient.sql(
+                        "select send_blocked from wechat_service_card where id = :cardId")
+                .param("cardId", claim.cardId())
+                .query(Boolean.class)
+                .optional()
+                .orElse(null);
+        WechatServiceCardDeliveryState restored = setClaim
+                ? WechatServiceCardDeliveryState.PENDING
+                : WechatServiceCardDeliveryState.UNKNOWN;
+        LocalDateTime now = now();
+        if (Boolean.TRUE.equals(sendBlocked)) {
+            return jdbcClient.sql("""
+                            update wechat_service_card_delivery
+                            set state = 'SKIPPED',
+                                claim_token = null,
+                                claimed_at = null,
+                                next_action_at = null,
+                                attempt_count = case
+                                    when :setClaim and attempt_count > 0 then attempt_count - 1
+                                    else attempt_count
+                                end,
+                                reconcile_attempt_count = case
+                                    when :setClaim then reconcile_attempt_count
+                                    when reconcile_attempt_count > 0 then reconcile_attempt_count - 1
+                                    else reconcile_attempt_count
+                                end,
+                                provider_error_code = 'USER_REFUSED',
+                                provider_error_message = 'The user refused this WeChat service card',
+                                updated_at = :updatedAt
+                            where id = :deliveryId
+                              and state = :claimedState
+                              and claim_token = :claimToken
+                            """)
+                    .param("setClaim", setClaim)
+                    .param("updatedAt", now)
+                    .param("deliveryId", claim.deliveryId())
+                    .param("claimedState", claim.claimedState().name())
+                    .param("claimToken", claim.claimToken())
+                    .update() == 1;
+        }
+        return jdbcClient.sql("""
+                        update wechat_service_card_delivery
+                        set state = :restoredState,
+                            claim_token = null,
+                            claimed_at = null,
+                            next_action_at = :nextActionAt,
+                            attempt_count = case
+                                when :setClaim and attempt_count > 0 then attempt_count - 1
+                                else attempt_count
+                            end,
+                            reconcile_attempt_count = case
+                                when :setClaim then reconcile_attempt_count
+                                when reconcile_attempt_count > 0 then reconcile_attempt_count - 1
+                                else reconcile_attempt_count
+                            end,
+                            updated_at = :updatedAt
+                        where id = :deliveryId
+                          and state = :claimedState
+                          and claim_token = :claimToken
+                        """)
+                .param("restoredState", restored.name())
+                .param("nextActionAt", now)
+                .param("setClaim", setClaim)
+                .param("updatedAt", now)
+                .param("deliveryId", claim.deliveryId())
+                .param("claimedState", claim.claimedState().name())
+                .param("claimToken", claim.claimToken())
+                .update() == 1;
+    }
+
     private DeliveryClaim claimInTransaction(long deliveryId, WechatServiceCardDeliveryState expected) {
         Long cardId = jdbcClient.sql("""
                         select card_id from wechat_service_card_delivery where id = :deliveryId

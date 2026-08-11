@@ -14,6 +14,9 @@
 - 后台发货、微信发货可靠投递、物流轨迹和电子面单。
 - V94 微信新版 `notify_type=2001` “购物（实体物流）服务动态”：交易状态意图可靠
   入库、顺序外呼、未知结果主动对账和 SAFE+JSON 失败回调审计。
+- V95 Admin “微信服务动态”运维页：数据库运行时 Capture/Worker 开关、两阶段开启、
+  CAS 防覆盖、append-only 变更审计、修复候选与投递队列只读诊断；Callback 密钥仍只在
+  服务器环境中维护，不返回前端。
 - 售后 V2：商品/数量级申请与审批、服务端退款金额计算、部分/累计退款、仅退款、
   退货退款、商家退货地址、用户退货物流、商家验收/拒收和退货超时关闭。
 - 历史整单 V1 售后数据及在途退款回调兼容。
@@ -36,12 +39,12 @@
 `./mvnw test` 绿色只能声明单元/H2 层通过，不得书写为“后端全部测试通过”。
 发布候选版必须同时保存两层结果。GitHub Actions 已经把两层分开为独立作业。
 
-2026-08-10 本轮 V94 发布候选已记录的默认单元/H2 层为 1236 项，
-Docker/Testcontainers 集成层为 54 项，两层均为 0 failures / 0 errors /
-0 skipped，分别用时 4 分 55 秒和 3 分 18 秒。V94 聚焦测试 81 项通过；
-Failsafe 10 个必需套件共 54 项且零跳过，分层门禁确认 9 类 MySQL 8.4.10 和
-1 类 Redis 7.4.9-alpine Testcontainers 套件都实际执行。Flyway V1-V94 共
-94 个版本连续且无重复；同期 Admin `pnpm check` 159 项、生产构建和
+2026-08-10 本轮 V95 发布候选已记录的默认单元/H2 层为 1254 项，
+Docker/Testcontainers 集成层为 56 项，两层均为 0 failures / 0 errors /
+0 skipped，分别用时 4 分钟和 3 分 42 秒。V95 聚焦测试 49 项通过；
+Failsafe 11 个必需套件共 56 项且零跳过，分层门禁确认 10 类 MySQL 8.4.10 和
+1 类 Redis 7.4.9-alpine Testcontainers 套件都实际执行。Flyway V1-V95 共
+95 个版本连续且无重复；同期 Admin `pnpm check` 167 项、生产构建和
 `git diff --check` 均通过。
 
 ## 发布识别
@@ -61,7 +64,7 @@ flywayVersion
 ## 仍未由自动化证明的事项
 
 - 真实微信登录、支付、售后 V2 部分/累计退款及退款回调、发货信息、物流插件和电子面单打印。
-- V92-V94 在生产 MySQL 实际存量数据上的升级、锁竞争与回滚/恢复演练；Testcontainers
+- V92-V95 在生产 MySQL 实际存量数据上的升级、锁竞争与回滚/恢复演练；Testcontainers
   的 MySQL 8.4.10 通过不能替代生产环境发布验证。
 - `api.muybaby6.icu` / `admin.muybaby6.icu` 的 DNS 与 SAN TLS 基线已建立，小程序
   `request`、`uploadFile`、`downloadFile` 合法域名已在微信公众平台配置；每次发布仍需
@@ -72,8 +75,9 @@ flywayVersion
   也不证明结算或银行到账。
 - V93 首版单商户单日账单默认最多 50,000 行；明细与新差异采用分块 SQL 写入，但整批
   证据发布仍是一个数据库事务，不应被描述为已完成 staging/分段提交架构。
-- V94 代码实现不等于已生产启用：账号级 `/wechat/mini/message` SAFE+JSON 推送配置、
-  支付后 24 小时内的真实激活、30 天更新窗口、失败回调和微信客户端展示尚需外部验收。
+- V94/V95 代码实现和 Admin 开关不等于已完成生产送达验收：生产账号已完成
+  `/wechat/mini/message` SAFE+JSON 配置和 GET 握手，但支付后 24 小时内的真实激活、
+  30 天更新窗口、失败事件 POST 回调和微信客户端展示仍需外部验收。
   它不是传统 `wx.requestSubscribeMessage` 订阅消息；支付成功、客服回复、低库存等其他通知
   仍未实现真实模板授权、用户同意和送达验收。
 - 发票、采购入库、盘点、多包裹和多仓仍属后续能力。
