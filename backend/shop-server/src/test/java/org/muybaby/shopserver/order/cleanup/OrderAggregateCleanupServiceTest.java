@@ -63,6 +63,9 @@ class OrderAggregateCleanupServiceTest {
     private static final long USER_COUPON_ID = 9_870_023L;
     private static final long FINANCE_BATCH_ID = 9_870_050L;
     private static final long FINANCE_DIFFERENCE_ID = 9_870_051L;
+    private static final long SERVICE_CARD_ID = 9_870_060L;
+    private static final long SERVICE_CARD_DELIVERY_ID = 9_870_061L;
+    private static final long SERVICE_CARD_CALLBACK_ID = 9_870_062L;
     private static final LocalDateTime CUTOFF = LocalDateTime.of(2023, 1, 1, 0, 0);
 
     @Autowired
@@ -275,6 +278,73 @@ class OrderAggregateCleanupServiceTest {
         assertThat(jdbcClient.sql("select count(*) from order_archive_manifest where source_order_id = :orderId")
                 .param("orderId", ORDER_ID)
                 .query(Integer.class).single()).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"PENDING", "SENDING", "UNKNOWN", "RECONCILING"})
+    void safelySkipsOrdersWithActiveWechatServiceCardDelivery(String deliveryState) {
+        seedOrderOnly(ORDER_ID, "CLOSED");
+        insertPayment("PAID");
+        insertServiceCardDelivery(deliveryState);
+
+        assertThat(cleanupService.cleanupBatch(CUTOFF, 20, true, () -> true)).isZero();
+
+        assertThat(count("shop_order", "id", ORDER_ID)).isOne();
+        assertThat(count("wechat_service_card", "id", SERVICE_CARD_ID)).isOne();
+        assertThat(count(
+                "wechat_service_card_delivery", "id", SERVICE_CARD_DELIVERY_ID
+        )).isOne();
+        assertThat(jdbcClient.sql("""
+                        select count(*) from order_archive_manifest
+                        where source_order_id = :orderId
+                        """)
+                .param("orderId", ORDER_ID)
+                .query(Integer.class)
+                .single()).isZero();
+    }
+
+    @Test
+    void archivesThenDeletesTerminalWechatServiceCardRowsInForeignKeyOrder() throws Exception {
+        seedOrderOnly(ORDER_ID, "CLOSED");
+        insertPayment("PAID");
+        insertServiceCardDelivery("SUCCEEDED");
+        jdbcClient.sql("""
+                        insert into wechat_service_card_callback_log
+                            (id, event_digest, card_id, delivery_id, card_status,
+                             fail_ret, fail_message, matched, received_at, created_at)
+                        values
+                            (:id, :digest, :cardId, :deliveryId, 2,
+                             -1004, 'The user rejected service-card message delivery',
+                             true, :oldAt, :oldAt)
+                        """)
+                .param("id", SERVICE_CARD_CALLBACK_ID)
+                .param("digest", "e".repeat(64))
+                .param("cardId", SERVICE_CARD_ID)
+                .param("deliveryId", SERVICE_CARD_DELIVERY_ID)
+                .param("oldAt", oldAt())
+                .update();
+
+        assertThat(cleanupService.cleanupBatch(CUTOFF, 20, true, () -> true)).isOne();
+
+        assertThat(count("wechat_service_card_callback_log", "id", SERVICE_CARD_CALLBACK_ID))
+                .isZero();
+        assertThat(count("wechat_service_card_delivery", "id", SERVICE_CARD_DELIVERY_ID))
+                .isZero();
+        assertThat(count("wechat_service_card", "id", SERVICE_CARD_ID)).isZero();
+        String objectKey = jdbcClient.sql("""
+                        select object_key from order_archive_manifest
+                        where source_order_id = :orderId
+                        """)
+                .param("orderId", ORDER_ID)
+                .query(String.class)
+                .single();
+        assertThat(archiveJson(storageProvider.open(objectKey).inputStream()))
+                .contains("\"wechat_service_cards\"")
+                .contains("\"wechat_service_card_deliveries\"")
+                .contains("\"wechat_service_card_callbacks\"")
+                .contains(Long.toString(SERVICE_CARD_ID))
+                .contains(Long.toString(SERVICE_CARD_DELIVERY_ID))
+                .contains(Long.toString(SERVICE_CARD_CALLBACK_ID));
     }
 
     @ParameterizedTest
@@ -895,6 +965,49 @@ class OrderAggregateCleanupServiceTest {
                 .update();
     }
 
+    private void insertServiceCardDelivery(String deliveryState) {
+        String claimToken = switch (deliveryState) {
+            case "SENDING", "RECONCILING" -> "cleanup-service-card-claim";
+            default -> null;
+        };
+        LocalDateTime claimedAt = claimToken == null ? null : oldAt();
+        jdbcClient.sql("""
+                        insert into wechat_service_card
+                            (id, order_id, payment_order_id, notify_code_digest,
+                             account_template_record_id, remote_status, activated_at,
+                             created_at, updated_at)
+                        values
+                            (:id, :orderId, :paymentId, :digest,
+                             'template-record', 2, :oldAt, :oldAt, :oldAt)
+                        """)
+                .param("id", SERVICE_CARD_ID)
+                .param("orderId", ORDER_ID)
+                .param("paymentId", PAYMENT_ID)
+                .param("digest", "d".repeat(64))
+                .param("oldAt", oldAt())
+                .update();
+        jdbcClient.sql("""
+                        insert into wechat_service_card_delivery
+                            (id, card_id, sequence_no, target_status, content_json, check_json,
+                             state, attempt_count, reconcile_attempt_count,
+                             claim_token, claimed_at, next_action_at, applied_at,
+                             created_at, updated_at)
+                        values
+                            (:id, :cardId, 1, 2, '{"cur_status":2}', '{"pay_amount":1000}',
+                             :state, 1, 0,
+                             :claimToken, :claimedAt, :oldAt, :appliedAt,
+                             :oldAt, :oldAt)
+                        """)
+                .param("id", SERVICE_CARD_DELIVERY_ID)
+                .param("cardId", SERVICE_CARD_ID)
+                .param("state", deliveryState)
+                .param("claimToken", claimToken)
+                .param("claimedAt", claimedAt)
+                .param("appliedAt", "SUCCEEDED".equals(deliveryState) ? oldAt() : null)
+                .param("oldAt", oldAt())
+                .update();
+    }
+
     private static Stream<Arguments> activeFinanceGuardCases() {
         return Stream.of("OPEN", "INVESTIGATING")
                 .flatMap(status -> Stream.of(
@@ -1227,6 +1340,12 @@ class OrderAggregateCleanupServiceTest {
                 .param("reviewId", REVIEW_ID).update();
         jdbcClient.sql("delete from payment_attempt where order_id = :orderId")
                 .param("orderId", ORDER_ID).update();
+        jdbcClient.sql("delete from wechat_service_card_callback_log where card_id = :cardId")
+                .param("cardId", SERVICE_CARD_ID).update();
+        jdbcClient.sql("delete from wechat_service_card_delivery where card_id = :cardId")
+                .param("cardId", SERVICE_CARD_ID).update();
+        jdbcClient.sql("delete from wechat_service_card where id = :cardId")
+                .param("cardId", SERVICE_CARD_ID).update();
         jdbcClient.sql("delete from refund_order where order_id = :orderId")
                 .param("orderId", ORDER_ID).update();
         jdbcClient.sql("delete from after_sale_request where order_id = :orderId")

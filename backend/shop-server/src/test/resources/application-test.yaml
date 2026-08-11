@@ -60,6 +60,11 @@ shop:
         claim-timeout: 10m
       receipt-reconciliation:
         enabled: false
+    service-card-2001:
+      enabled: false
+      worker-enabled: false
+      callback:
+        enabled: false
   pay:
     enabled: true
     mock-enabled: true

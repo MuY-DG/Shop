@@ -36,6 +36,24 @@ class WechatShippingUploadRecoveryTest {
 
     @BeforeEach
     void clearShipments() {
+        jdbcClient.sql("""
+                        delete from wechat_service_card_callback_log
+                        where card_id in (
+                            select id from wechat_service_card
+                            where order_id in (select id from shop_order)
+                        )
+                        """).update();
+        jdbcClient.sql("""
+                        delete from wechat_service_card_delivery
+                        where card_id in (
+                            select id from wechat_service_card
+                            where order_id in (select id from shop_order)
+                        )
+                        """).update();
+        jdbcClient.sql("""
+                        delete from wechat_service_card
+                        where order_id in (select id from shop_order)
+                        """).update();
         jdbcClient.sql("delete from order_shipment").update();
         jdbcClient.sql("delete from shop_order").update();
         jdbcClient.sql("delete from app_user").update();

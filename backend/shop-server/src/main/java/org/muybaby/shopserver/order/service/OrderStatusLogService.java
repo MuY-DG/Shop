@@ -1,5 +1,8 @@
 package org.muybaby.shopserver.order.service;
 
+import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardOutboxHook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -10,10 +13,17 @@ import java.time.LocalDateTime;
 @Service
 public class OrderStatusLogService {
 
-    private final JdbcClient jdbcClient;
+    private static final Logger log = LoggerFactory.getLogger(OrderStatusLogService.class);
 
-    public OrderStatusLogService(JdbcClient jdbcClient) {
+    private final JdbcClient jdbcClient;
+    private final WechatServiceCardOutboxHook serviceCardOutboxHook;
+
+    public OrderStatusLogService(
+            JdbcClient jdbcClient,
+            WechatServiceCardOutboxHook serviceCardOutboxHook
+    ) {
         this.jdbcClient = jdbcClient;
+        this.serviceCardOutboxHook = serviceCardOutboxHook;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -63,5 +73,18 @@ public class OrderStatusLogService {
                 .param("description", description == null ? "" : description)
                 .param("createdAt", createdAt == null ? LocalDateTime.now(java.time.ZoneOffset.UTC) : createdAt)
                 .update();
+        try {
+            serviceCardOutboxHook.onOrderFact(
+                    orderId,
+                    createdAt == null ? LocalDateTime.now(java.time.ZoneOffset.UTC) : createdAt
+            );
+        } catch (RuntimeException ex) {
+            // Service-card delivery is a non-critical side effect. Its configuration or payload
+            // must never make the commerce state transition fail.
+            log.warn(
+                    "Unable to enqueue WeChat 2001 service-card fact: orderId={}, eventType={}, type={}",
+                    orderId, eventType, ex.getClass().getSimpleName()
+            );
+        }
     }
 }

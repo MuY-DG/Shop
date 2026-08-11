@@ -119,6 +119,31 @@ shop: # 商城项目自定义业务配置的统一入口。
       app-id: ${WECHAT_MINI_PROGRAM_APP_ID:} # 从环境变量读取小程序 AppID。
       app-secret: ${WECHAT_MINI_PROGRAM_APP_SECRET:} # 从环境变量读取小程序 AppSecret。
       mock-enabled: false # 基础配置强制关闭小程序模拟模式。
+    service-card-2001: # 新版“购物（实体物流）服务动态”，不使用传统订阅消息接口。
+      enabled: ${SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED:false} # 只控制事务内可靠意图采集，默认关闭。
+      worker-enabled: ${SHOP_WECHAT_SERVICE_CARD_WORKER_ENABLED:false} # 独立控制 set/get 外呼，便于先验收队列再放量。
+      account-template-record-id: ${SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID:} # 仅用于开通就绪度，绝不发送给 setUserNotify。
+      fallback-product-image: ${SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE:https://admin.muybaby6.icu/wechat/service-card-placeholder.png} # 商家自有、无防盗链的固定 HTTPS 占位图。
+      prefer-order-snapshot-images: false # 当前商品 COS 图依赖 Referer，服务动态默认不使用它。
+      allowed-image-hosts: ${SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS:admin.muybaby6.icu} # 仅允许明确批准且无临时签名的公开图片域名。
+      delay: ${SHOP_WECHAT_SERVICE_CARD_DELAY:15s}
+      batch-size: ${SHOP_WECHAT_SERVICE_CARD_BATCH_SIZE:50}
+      claim-timeout: ${SHOP_WECHAT_SERVICE_CARD_CLAIM_TIMEOUT:2m}
+      max-attempts: ${SHOP_WECHAT_SERVICE_CARD_MAX_SET_ATTEMPTS:8}
+      retry-backoff: ${SHOP_WECHAT_SERVICE_CARD_RETRY_BACKOFF:1m}
+      max-retry-backoff: ${SHOP_WECHAT_SERVICE_CARD_MAX_RETRY_BACKOFF:30m}
+      unknown-recheck-interval: ${SHOP_WECHAT_SERVICE_CARD_UNKNOWN_RECHECK:1m}
+      max-unknown-recheck-interval: ${SHOP_WECHAT_SERVICE_CARD_MAX_UNKNOWN_RECHECK:6h}
+      not-applied-confirmations: ${SHOP_WECHAT_SERVICE_CARD_NOT_APPLIED_CONFIRMATIONS:2}
+      connect-timeout: ${SHOP_WECHAT_SERVICE_CARD_CONNECT_TIMEOUT:3s}
+      read-timeout: ${SHOP_WECHAT_SERVICE_CARD_READ_TIMEOUT:15s}
+      max-response-size: ${SHOP_WECHAT_SERVICE_CARD_MAX_RESPONSE_SIZE:1MB}
+      max-payload-size: ${SHOP_WECHAT_SERVICE_CARD_MAX_PAYLOAD_SIZE:64KB}
+      callback: # 微信消息推送 SAFE+JSON 结果回调，独立于核心 set/get 链路。
+        enabled: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_ENABLED:false}
+        token: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN:}
+        encoding-aes-key: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY:}
+        max-timestamp-skew: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_MAX_SKEW:5m}
     express: # 微信物流助手与电子面单接口的独立 HTTP 安全边界。
       http:
         connect-timeout: ${SHOP_WECHAT_EXPRESS_HTTP_CONNECT_TIMEOUT:3s} # 建立微信 API 连接最多等待 3 秒。

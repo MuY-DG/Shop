@@ -102,7 +102,7 @@ Expected result for each executed layer:
 BUILD SUCCESS
 ```
 
-## V85-V90 Focused Gates
+## V85-V94 Focused Gates
 
 Run the focused backend slices from `backend/shop-server` before both test layers. These
 commands validate H2/Flyway and application behavior; they do not replace a disposable
@@ -126,6 +126,9 @@ MySQL migration/concurrency run or any production-provider smoke check.
 
 # V90 account-rights state, authorization, and active-obligation gate
 ./mvnw -Dtest='AccountRightsSchemaTest,AccountRightsControllerTest,AccountRightsObligationServiceTest' test
+
+# V94 WeChat 2001 service-card schema, state machine, provider, outbox, worker and callback
+./mvnw -Dtest='*WechatServiceCard*Test' test
 ```
 
 Cross-surface gates:
@@ -144,7 +147,7 @@ customer-service order routing, public compliance rendering, food disclosure,
 account-rights, and the source contract that preserves the current profile V frame,
 crown, `金牌会员` text, member-card assets, and logged-in display condition.
 
-## V87-V90 Runtime And Publication Controls
+## V87-V94 Runtime And Publication Controls
 
 ### V87 WeChat Shipment Delivery
 
@@ -232,6 +235,93 @@ Completion invalidates access and refresh sessions and minimally anonymizes opti
 identity data while preserving required transaction/audit records. Assign a real owner,
 review SLA, escalation route, and reviewed retention rules before release; automated
 tests cannot decide those merchant/legal obligations.
+
+### V94 WeChat 2001 Shopping Service Dynamic
+
+V94 implements only the new WeChat `notify_type=2001` **购物（实体物流）服务动态**.
+It is not the traditional `wx.requestSubscribeMessage` flow, does not send a private
+template ID in `set_user_notify`, and requires no new Mini Program page or consent call.
+`SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID` stores the account's existing template
+record ID only for readiness/audit. The provider sends the payment's immutable WeChat
+`transaction_id` as `notify_code`; it never substitutes the merchant order number.
+
+The capture, outbound worker, and result callback switches are independent and all default
+to `false`:
+
+```properties
+SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED=false
+SHOP_WECHAT_SERVICE_CARD_WORKER_ENABLED=false
+SHOP_WECHAT_SERVICE_CARD_CALLBACK_ENABLED=false
+
+SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID=<account-template-record-id>
+SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE=https://admin.muybaby6.icu/wechat/service-card-placeholder.png
+SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS=admin.muybaby6.icu
+
+SHOP_WECHAT_SERVICE_CARD_DELAY=15s
+SHOP_WECHAT_SERVICE_CARD_BATCH_SIZE=50
+SHOP_WECHAT_SERVICE_CARD_CLAIM_TIMEOUT=2m
+SHOP_WECHAT_SERVICE_CARD_MAX_SET_ATTEMPTS=8
+SHOP_WECHAT_SERVICE_CARD_RETRY_BACKOFF=1m
+SHOP_WECHAT_SERVICE_CARD_MAX_RETRY_BACKOFF=30m
+SHOP_WECHAT_SERVICE_CARD_UNKNOWN_RECHECK=1m
+SHOP_WECHAT_SERVICE_CARD_MAX_UNKNOWN_RECHECK=6h
+SHOP_WECHAT_SERVICE_CARD_NOT_APPLIED_CONFIRMATIONS=2
+SHOP_WECHAT_SERVICE_CARD_CONNECT_TIMEOUT=3s
+SHOP_WECHAT_SERVICE_CARD_READ_TIMEOUT=15s
+SHOP_WECHAT_SERVICE_CARD_MAX_RESPONSE_SIZE=1MB
+SHOP_WECHAT_SERVICE_CARD_MAX_PAYLOAD_SIZE=64KB
+
+SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN=<wechat-message-push-token>
+SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY=<43-character-encoding-aes-key>
+SHOP_WECHAT_SERVICE_CARD_CALLBACK_MAX_SKEW=5m
+```
+
+The checked-in common configuration deliberately keeps
+`shop.wechat.service-card-2001.prefer-order-snapshot-images=false`: current product COS
+images require a Referer and are not safe service-card image inputs. The fallback is the
+merchant-owned Admin static file `admin/public/wechat/service-card-placeholder.png`.
+Before enabling outbound calls, an unauthenticated, no-Referer request to the URL above
+must return `200`, `image/png`, and actual PNG bytes. Only explicitly allowlisted public
+HTTPS image hosts without credentials, query strings, fragments, or temporary signatures
+may be used.
+
+Configure the Mini Program account's single message-push endpoint as follows; this is an
+account-level setting, not a payment callback URL:
+
+```text
+URL: https://api.muybaby6.icu/wechat/mini/message
+Message encryption: Safe mode
+Data format: JSON
+Token: exactly SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN
+EncodingAESKey: exactly SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY
+```
+
+The endpoint validates the GET handshake, `msg_signature`, timestamp window, AES-CBC
+plaintext, and Mini Program AppID. The asynchronous event is a send-failure diagnostic;
+it does not prove successful delivery and must not overwrite an already confirmed remote
+state. `get_user_notify` reconciliation remains the provider-state evidence.
+
+Use this three-stage release order; do not enable all three switches at once:
+
+1. Deploy V94 and the Admin placeholder with capture, worker, and callback disabled. Verify
+   Flyway, readiness configuration, Admin asset bytes, and that no outbound request occurs.
+2. Supply a newly generated Token/AES key, enable only the callback, configure SAFE+JSON in
+   the WeChat console, and complete the public GET handshake. Before enabling capture, list
+   every complete paid payment from the preceding 24 hours that has no card: the repair
+   scanner will enqueue those real payments as well as new events. Then enable capture while
+   the worker remains off, create a controlled new paid order, and inspect all durable cards
+   and ordered delivery intents without sending them.
+3. Enable the worker only after the queue, AppID identity, immutable payment facts, image,
+   callback, and monitoring are ready and no unintended repaired card remains eligible for
+   outbound work. Activate one controlled real payment within 24 hours of its WeChat payment
+   time, then verify shipped/signed/after-sale transitions and active `get_user_notify`
+   reconciliation. Updates are allowed only during the provider's 30-day window; expired
+   rows must remain truthful instead of being force-sent.
+
+The 24-hour activation window belongs to WeChat 2001 and is separate from the Shop order's
+15-minute payment deadline. Automated/mock tests cannot prove the account template is live,
+the callback setting is accepted, WeChat displays the card, or a real failure callback is
+delivered. Preserve those as explicit external release evidence.
 
 The complete external release gate is [production-release-checklist.md](production-release-checklist.md).
 
@@ -325,6 +415,14 @@ The configured callback bases must be complete public HTTPS paths with no query,
 `WECHAT_PAY_CONFIG_SOURCE=AUTO` is the startup/default source: it uses complete environment credentials first and otherwise falls back to the enabled database payment config. Use `ENV` when the active profile's environment-file values should be mandatory, or `DB` when payment credentials are managed through `/admin/pay/configs`.
 
 The `开发配置 -> 支付配置` menu has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from the active profile's environment file. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
+
+Current production operational decision (recorded 2026-08-10): new payment preparation
+uses runtime source `ENV`, and its payment/refund callback bases use
+`api.muybaby6.icu`. The existing DB configuration and `pay-dev.muybaby6.icu` route are
+retained only for legacy payment/refund callback compatibility during the provider retry
+window. `pay-dev` is not the release Mini Program API and must not be selected for new
+payments. Verify the source and immutable snapshot on the first new real payment after each
+release; do not infer it from the enabled DB candidate alone.
 
 For DB config, upload the required merchant private key and WeChat Pay public key, plus the optional merchant certificate, only through the payment-owned `/admin/pay/configs/secret-files` endpoint. Updating a config with a null merchant-certificate ID explicitly clears that optional reference; the old secret enters its 24-hour release window after its final active reference is removed. These secret assets never appear in the reusable asset library.
 

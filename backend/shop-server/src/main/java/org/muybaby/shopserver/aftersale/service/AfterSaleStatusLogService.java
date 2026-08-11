@@ -1,19 +1,32 @@
 package org.muybaby.shopserver.aftersale.service;
 
+import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardOutboxHook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
 @Service
 public class AfterSaleStatusLogService {
 
-    private final JdbcClient jdbcClient;
+    private static final Logger log = LoggerFactory.getLogger(AfterSaleStatusLogService.class);
 
-    public AfterSaleStatusLogService(JdbcClient jdbcClient) {
+    private final JdbcClient jdbcClient;
+    private final WechatServiceCardOutboxHook serviceCardOutboxHook;
+
+    public AfterSaleStatusLogService(
+            JdbcClient jdbcClient,
+            WechatServiceCardOutboxHook serviceCardOutboxHook
+    ) {
         this.jdbcClient = jdbcClient;
+        this.serviceCardOutboxHook = serviceCardOutboxHook;
     }
 
+    @Transactional(propagation = Propagation.MANDATORY)
     public void record(
             long afterSaleId,
             String fromStatus,
@@ -24,6 +37,8 @@ public class AfterSaleStatusLogService {
             String description,
             LocalDateTime createdAt
     ) {
+        LocalDateTime occurredAt = createdAt == null
+                ? LocalDateTime.now(java.time.ZoneOffset.UTC) : createdAt;
         jdbcClient.sql("""
                         insert into after_sale_status_log (
                             after_sale_id, from_status, to_status, event_type,
@@ -40,8 +55,16 @@ public class AfterSaleStatusLogService {
                 .param("operatorType", operatorType)
                 .param("operatorId", operatorId)
                 .param("description", truncate(description))
-                .param("createdAt", createdAt)
+                .param("createdAt", occurredAt)
                 .update();
+        try {
+            serviceCardOutboxHook.onAfterSaleFact(afterSaleId, occurredAt);
+        } catch (RuntimeException ex) {
+            log.warn(
+                    "Unable to enqueue WeChat 2001 after-sale fact: afterSaleId={}, eventType={}, type={}",
+                    afterSaleId, eventType, ex.getClass().getSimpleName()
+            );
+        }
     }
 
     private String empty(String value) {
