@@ -451,10 +451,7 @@ public class WechatServiceCardDeliveryStore {
             if (!lockClaim(claim)) {
                 return;
             }
-            finishDelivery(
-                    claim, WechatServiceCardDeliveryState.FAILED,
-                    errorCode, errorMessage, null, null
-            );
+            finishFailedAndSkipSuffix(claim, errorCode, errorMessage, now());
         });
     }
 
@@ -489,7 +486,13 @@ public class WechatServiceCardDeliveryStore {
             return;
         }
         if (result.outcome() == WechatServiceCardQueryResult.Outcome.RETRYABLE) {
-            markUnknown(claim, "QUERY_UNAVAILABLE", "Provider reconciliation is unavailable");
+            markUnknown(
+                    claim,
+                    queryErrorCode(result.errorCode(), result.errorMessage()),
+                    diagnosticMessage(
+                            result.errorMessage(), "Provider reconciliation is unavailable"
+                    )
+            );
             return;
         }
         if (result.outcome() == WechatServiceCardQueryResult.Outcome.REJECTED) {
@@ -497,6 +500,56 @@ public class WechatServiceCardDeliveryStore {
             return;
         }
         transaction.executeWithoutResult(status -> applyQueryInTransaction(claim, result));
+    }
+
+    private void skipQueuedSuffixAfterFailure(
+            long cardId,
+            long failedDeliveryId,
+            LocalDateTime now
+    ) {
+        Integer failedSequence = jdbcClient.sql("""
+                        select sequence_no
+                        from wechat_service_card_delivery
+                        where id = :deliveryId and card_id = :cardId
+                        """)
+                .param("deliveryId", failedDeliveryId)
+                .param("cardId", cardId)
+                .query(Integer.class)
+                .single();
+        jdbcClient.sql("""
+                        update wechat_service_card_delivery
+                        set state = 'SKIPPED',
+                            claim_token = null,
+                            claimed_at = null,
+                            next_action_at = null,
+                            provider_error_code = 'PREDECESSOR_FAILED',
+                            provider_error_message = 'An earlier WeChat service-card update failed',
+                            updated_at = :updatedAt
+                        where card_id = :cardId
+                          and id <> :failedDeliveryId
+                          and sequence_no > :failedSequence
+                          and state in ('PENDING', 'SENDING', 'UNKNOWN', 'RECONCILING')
+                        """)
+                .param("updatedAt", now)
+                .param("cardId", cardId)
+                .param("failedDeliveryId", failedDeliveryId)
+                .param("failedSequence", failedSequence)
+                .update();
+    }
+
+    private void finishFailedAndSkipSuffix(
+            DeliveryClaim claim,
+            String errorCode,
+            String errorMessage,
+            LocalDateTime now
+    ) {
+        int updated = finishDelivery(
+                claim, WechatServiceCardDeliveryState.FAILED,
+                errorCode, errorMessage, null, null
+        );
+        if (updated == 1) {
+            skipQueuedSuffixAfterFailure(claim.cardId(), claim.deliveryId(), now);
+        }
     }
 
     private void applyQueryInTransaction(
@@ -535,12 +588,14 @@ public class WechatServiceCardDeliveryStore {
             String message = result.codeState() == 10
                     ? "The user rejected the WeChat service card"
                     : "WeChat marked the notification code for manual review";
-            finishDelivery(
+            int updated = finishDelivery(
                     claim, WechatServiceCardDeliveryState.FAILED,
                     code, message, null, null
             );
             if (result.codeState() == 10) {
                 blockUserRefusedInTransaction(claim.cardId(), now);
+            } else if (updated == 1) {
+                skipQueuedSuffixAfterFailure(claim.cardId(), claim.deliveryId(), now);
             }
             return;
         }
@@ -608,9 +663,11 @@ public class WechatServiceCardDeliveryStore {
                 );
                 return;
             }
-            finishDelivery(
-                    claim, WechatServiceCardDeliveryState.FAILED,
-                    "REMOTE_STATE_CONFLICT", "Remote service-card state conflicts with the outbox", null, null
+            finishFailedAndSkipSuffix(
+                    claim,
+                    "REMOTE_STATE_CONFLICT",
+                    "Remote service-card state conflicts with the outbox",
+                    now
             );
             return;
         }
@@ -925,6 +982,27 @@ public class WechatServiceCardDeliveryStore {
             case 40003, 85436 -> "IDENTITY_REJECTED";
             default -> "PROVIDER_REJECTED";
         };
+    }
+
+    private static String queryErrorCode(Integer providerCode, String providerMessage) {
+        if (providerCode != null) {
+            return "WECHAT_" + providerCode;
+        }
+        return switch (providerMessage == null ? "" : providerMessage) {
+            case "WeChat access token is unavailable" -> "ACCESS_TOKEN_UNAVAILABLE";
+            case "WeChat get_user_notify is unavailable" -> "QUERY_TRANSPORT_UNAVAILABLE";
+            case "WeChat get_user_notify response is invalid" -> "QUERY_RESPONSE_INVALID";
+            case "WeChat notify_info is invalid" -> "QUERY_NOTIFY_INFO_INVALID";
+            case "WeChat code_state is invalid" -> "QUERY_CODE_STATE_INVALID";
+            case "WeChat content_json is invalid" -> "QUERY_CONTENT_INVALID";
+            case "WeChat content_json status is invalid" -> "QUERY_STATUS_INVALID";
+            case "WeChat code_expire_time is invalid" -> "QUERY_EXPIRY_INVALID";
+            default -> "QUERY_UNAVAILABLE";
+        };
+    }
+
+    private static String diagnosticMessage(String providerMessage, String fallback) {
+        return providerMessage == null || providerMessage.isBlank() ? fallback : providerMessage;
     }
 
     private static String terminalErrorMessage(Integer providerCode) {

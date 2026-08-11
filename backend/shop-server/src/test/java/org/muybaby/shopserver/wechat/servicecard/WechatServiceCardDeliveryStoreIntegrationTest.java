@@ -74,6 +74,39 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
     }
 
     @Test
+    void terminalFailureSkipsEveryQueuedSuffixInsteadOfLeavingItBlockedForever() {
+        CardFixture failedCard = seedCard(null, null);
+        long activation = insertDelivery(
+                failedCard.cardId(), 1, 2, "PENDING", "{}", 0, 0
+        );
+        long shipped = insertDelivery(
+                failedCard.cardId(), 2, 4, "PENDING", null, 0, 0
+        );
+        long signed = insertDelivery(
+                failedCard.cardId(), 3, 6, "UNKNOWN", null, 1, 2
+        );
+        CardFixture unaffectedCard = seedCard(null, null);
+        long unaffected = insertDelivery(
+                unaffectedCard.cardId(), 1, 2, "PENDING", "{}", 0, 0
+        );
+        DeliveryClaim claim = store.claim(
+                activation, WechatServiceCardDeliveryState.PENDING
+        ).orElseThrow();
+
+        store.markFailed(
+                claim, "ACTIVATION_WINDOW_EXPIRED",
+                "The WeChat service-card activation window expired"
+        );
+
+        assertThat(deliveryStates(failedCard.cardId()))
+                .containsExactly("FAILED", "SKIPPED", "SKIPPED");
+        assertThat(deliveryRow(shipped).errorCode()).isEqualTo("PREDECESSOR_FAILED");
+        assertThat(deliveryRow(signed).errorCode()).isEqualTo("PREDECESSOR_FAILED");
+        assertThat(deliveryRow(shipped).nextActionAt()).isNull();
+        assertThat(deliveryState(unaffected)).isEqualTo("PENDING");
+    }
+
+    @Test
     void staleClaimTokenCannotOverwriteANewerWorkerClaimOrCardState() {
         CardFixture card = seedCard(null, null);
         long deliveryId = insertDelivery(card.cardId(), 1, 2, "PENDING", "{}", 0, 0);
@@ -179,15 +212,40 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
         LocalDateTime before = LocalDateTime.now(ZoneOffset.UTC);
 
         store.applyQueryResult(
-                claim, WechatServiceCardQueryResult.retryable(-1, "temporary")
+                claim, WechatServiceCardQueryResult.retryable(
+                        85431, "WeChat service is temporarily unavailable"
+                )
         );
 
         DeliveryRow row = deliveryRow(deliveryId);
         assertThat(row.state()).isEqualTo("UNKNOWN");
-        assertThat(row.errorCode()).isEqualTo("QUERY_UNAVAILABLE");
+        assertThat(row.errorCode()).isEqualTo("WECHAT_85431");
+        assertThat(row.errorMessage()).isEqualTo("WeChat service is temporarily unavailable");
         assertThat(row.nextActionAt())
                 .isAfter(before.plusMinutes(7))
                 .isBefore(before.plusMinutes(10));
+    }
+
+    @Test
+    void transportQueryFailureKeepsASpecificSafeDiagnostic() {
+        CardFixture card = seedCard(null, null);
+        long deliveryId = insertDelivery(
+                card.cardId(), 1, 2, "UNKNOWN", "{}", 1, 0
+        );
+        DeliveryClaim claim = store.claim(
+                deliveryId, WechatServiceCardDeliveryState.UNKNOWN
+        ).orElseThrow();
+
+        store.applyQueryResult(
+                claim, WechatServiceCardQueryResult.retryable(
+                        null, "WeChat get_user_notify is unavailable"
+                )
+        );
+
+        DeliveryRow row = deliveryRow(deliveryId);
+        assertThat(row.state()).isEqualTo("UNKNOWN");
+        assertThat(row.errorCode()).isEqualTo("QUERY_TRANSPORT_UNAVAILABLE");
+        assertThat(row.errorMessage()).isEqualTo("WeChat get_user_notify is unavailable");
     }
 
     @Test
@@ -247,6 +305,30 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
                 WechatServiceCardDeliveryState.PENDING,
                 LocalDateTime.now(ZoneOffset.UTC).plusMinutes(1), 10
         )).contains(unaffectedDelivery).doesNotContain(suffix);
+    }
+
+    @Test
+    void queryRiskStateFailsCurrentIntentAndSkipsItsQueuedSuffix() {
+        CardFixture card = seedCard(
+                2, LocalDateTime.now(ZoneOffset.UTC).minusDays(1)
+        );
+        long current = insertDelivery(
+                card.cardId(), 1, 4, "UNKNOWN", null, 1, 0
+        );
+        long suffix = insertDelivery(
+                card.cardId(), 2, 6, "PENDING", null, 0, 0
+        );
+        DeliveryClaim claim = store.claim(
+                current, WechatServiceCardDeliveryState.UNKNOWN
+        ).orElseThrow();
+
+        store.applyQueryResult(claim, WechatServiceCardQueryResult.found(
+                2, 1, Instant.now().plusSeconds(3600)
+        ));
+
+        assertThat(deliveryState(current)).isEqualTo("FAILED");
+        assertThat(deliveryState(suffix)).isEqualTo("SKIPPED");
+        assertThat(deliveryRow(suffix).errorCode()).isEqualTo("PREDECESSOR_FAILED");
     }
 
     @Test
@@ -544,13 +626,14 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
     private DeliveryRow deliveryRow(long deliveryId) {
         return jdbcClient.sql("""
                         select state, not_applied_observations, provider_error_code,
-                               next_action_at
+                               provider_error_message, next_action_at
                         from wechat_service_card_delivery where id = :id
                         """)
                 .param("id", deliveryId)
                 .query((rs, rowNum) -> new DeliveryRow(
                         rs.getString("state"), rs.getInt("not_applied_observations"),
                         rs.getString("provider_error_code"),
+                        rs.getString("provider_error_message"),
                         rs.getObject("next_action_at", LocalDateTime.class)
                 ))
                 .single();
@@ -577,6 +660,7 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
             String state,
             int observations,
             String errorCode,
+            String errorMessage,
             LocalDateTime nextActionAt
     ) {
     }

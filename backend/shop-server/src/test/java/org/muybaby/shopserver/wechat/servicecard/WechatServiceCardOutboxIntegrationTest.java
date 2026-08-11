@@ -165,6 +165,26 @@ class WechatServiceCardOutboxIntegrationTest {
     }
 
     @Test
+    void repairDoesNotCreateAnActivationAfterTheWechatTwentyFourHourWindow() {
+        long orderId = paidOrder(true, "PAID");
+        LocalDateTime eventTime = now();
+        jdbcClient.sql("""
+                        update payment_order
+                        set paid_at = :paidAt, updated_at = :paidAt
+                        where order_id = :orderId
+                        """)
+                .param("paidAt", eventTime.minusHours(25))
+                .param("orderId", orderId)
+                .update();
+
+        repairUnit.repair(orderId, eventTime);
+        repairUnit.repair(orderId, eventTime.plusMinutes(5));
+
+        assertThat(cardCount(orderId)).isZero();
+        assertThat(targets(orderId)).isEmpty();
+    }
+
+    @Test
     void activationPayloadUsesSnapshotFieldsSafePathsAndJsonCheck() throws Exception {
         long orderId = paidOrder(true, "PAID");
         transactionTemplate.executeWithoutResult(status -> outboxHook.onOrderFact(orderId, now()));

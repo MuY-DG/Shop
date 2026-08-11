@@ -28,7 +28,7 @@ class WechatServiceCardMySqlMigrationTest {
             .withUrlParam("serverTimezone", "UTC");
 
     @Test
-    void v94AppliesOnProductionMySqlAndEnforcesNamedConstraints() {
+    void serviceCardMigrationsApplyOnProductionMySqlAndCleanupFailedSuffixes() {
         Flyway.configure()
                 .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
                 .target("94")
@@ -115,5 +115,35 @@ class WechatServiceCardMySqlMigrationTest {
                             (9499999, 1, 2, '{}', 'PENDING')
                         """).update())
                 .isInstanceOf(DataAccessException.class);
+
+        jdbcClient.sql("""
+                        insert into wechat_service_card_delivery
+                            (id, card_id, sequence_no, target_status, content_json, check_json,
+                             state, provider_error_code)
+                        values
+                            (9490004, 9490003, 1, 2, '{}', '{}',
+                             'FAILED', 'ACTIVATION_WINDOW_EXPIRED'),
+                            (9490005, 9490003, 2, 4, '{}', null, 'PENDING', '')
+                        """).update();
+
+        Flyway.configure()
+                .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
+                .placeholders(Map.of(
+                        "seed_super_status", "DISABLED",
+                        "seed_super_password_hash",
+                        "$2y$10$VtYIL778Ftr75pHOJ3dV0efoMsPK20vZncmZ/vB6tkYj3aW9fqT.i"
+                ))
+                .load()
+                .migrate();
+
+        assertThat(jdbcClient.sql("""
+                        select state
+                        from wechat_service_card_delivery
+                        where id = 9490005
+                          and provider_error_code = 'PREDECESSOR_FAILED'
+                          and next_action_at is null
+                        """)
+                .query(String.class)
+                .single()).isEqualTo("SKIPPED");
     }
 }

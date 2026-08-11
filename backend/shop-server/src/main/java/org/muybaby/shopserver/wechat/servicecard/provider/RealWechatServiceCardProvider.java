@@ -85,7 +85,7 @@ public class RealWechatServiceCardProvider implements WechatServiceCardProvider 
         try {
             response = post(SET_URL, accessToken, payload);
         } catch (RuntimeException ex) {
-            log.warn("WeChat 2001 set outcome unknown: exception={}", ex.getClass().getSimpleName());
+            log.warn("WeChat 2001 set outcome unknown: exception={}", exceptionChain(ex));
             return WechatServiceCardSetResult.unknown(null, "WeChat set_user_notify outcome is unknown");
         }
         JsonNode body = parseResponse(response);
@@ -132,6 +132,7 @@ public class RealWechatServiceCardProvider implements WechatServiceCardProvider 
         try {
             response = post(GET_URL, accessToken, payload);
         } catch (RuntimeException ex) {
+            log.warn("WeChat 2001 query unavailable: exception={}", exceptionChain(ex));
             return WechatServiceCardQueryResult.retryable(null, "WeChat get_user_notify is unavailable");
         }
         JsonNode body = parseResponse(response);
@@ -320,6 +321,17 @@ public class RealWechatServiceCardProvider implements WechatServiceCardProvider 
             throw new IllegalArgumentException(name + " is required");
         }
         return value.trim();
+    }
+
+    private static String exceptionChain(Throwable exception) {
+        Throwable root = exception;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        if (root == exception) {
+            return exception.getClass().getSimpleName();
+        }
+        return exception.getClass().getSimpleName() + "/" + root.getClass().getSimpleName();
     }
 
     private static String safeMessage(int code) {

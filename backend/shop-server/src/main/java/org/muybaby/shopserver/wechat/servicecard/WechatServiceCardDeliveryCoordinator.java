@@ -133,8 +133,8 @@ public class WechatServiceCardDeliveryCoordinator {
             ));
         } catch (RuntimeException ex) {
             log.warn(
-                    "WeChat 2001 provider result unknown: deliveryId={}, type={}",
-                    claim.deliveryId(), ex.getClass().getSimpleName()
+                    "WeChat 2001 provider result unknown: deliveryId={}, exception={}",
+                    claim.deliveryId(), exceptionChain(ex)
             );
             store.markUnknown(
                     claim, "PROVIDER_OUTCOME_UNKNOWN",
@@ -149,10 +149,18 @@ public class WechatServiceCardDeliveryCoordinator {
         switch (result.outcome()) {
             case APPLIED -> store.markApplied(claim, null, null);
             case RETRYABLE -> store.markRetry(
-                    claim, providerCode(result.errorCode()), "Provider was unavailable before the request started"
+                    claim,
+                    setErrorCode(result.errorCode(), result.errorMessage(), false),
+                    diagnosticMessage(
+                            result.errorMessage(), "Provider was unavailable before the request started"
+                    )
             );
             case UNKNOWN -> store.markUnknown(
-                    claim, providerCode(result.errorCode()), "Provider attempt outcome requires reconciliation"
+                    claim,
+                    setErrorCode(result.errorCode(), result.errorMessage(), true),
+                    diagnosticMessage(
+                            result.errorMessage(), "Provider attempt outcome requires reconciliation"
+                    )
             );
             case REJECTED -> store.markFailed(
                     claim, terminalCode(result.errorCode()), terminalMessage(result.errorCode())
@@ -197,6 +205,10 @@ public class WechatServiceCardDeliveryCoordinator {
                     claim.payerOpenid(), claim.transactionId()
             ));
         } catch (RuntimeException ex) {
+            log.warn(
+                    "WeChat 2001 query unavailable: deliveryId={}, exception={}",
+                    claim.deliveryId(), exceptionChain(ex)
+            );
             result = WechatServiceCardQueryResult.retryable(
                     null, "Provider reconciliation is unavailable"
             );
@@ -230,8 +242,31 @@ public class WechatServiceCardDeliveryCoordinator {
         return runtimeSettingService.workerReadyFailClosed();
     }
 
-    private static String providerCode(Integer code) {
-        return code == null ? "PROVIDER_UNAVAILABLE" : "WECHAT_" + code;
+    private static String setErrorCode(Integer code, String message, boolean outcomeUnknown) {
+        if (code != null) {
+            return "WECHAT_" + code;
+        }
+        return switch (message == null ? "" : message) {
+            case "WeChat access token is unavailable" -> "ACCESS_TOKEN_UNAVAILABLE";
+            case "WeChat set_user_notify outcome is unknown" -> "SET_TRANSPORT_OUTCOME_UNKNOWN";
+            case "WeChat set_user_notify response is invalid" -> "SET_RESPONSE_INVALID";
+            default -> outcomeUnknown ? "PROVIDER_OUTCOME_UNKNOWN" : "PROVIDER_UNAVAILABLE";
+        };
+    }
+
+    private static String diagnosticMessage(String providerMessage, String fallback) {
+        return providerMessage == null || providerMessage.isBlank() ? fallback : providerMessage;
+    }
+
+    private static String exceptionChain(Throwable exception) {
+        Throwable root = exception;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        if (root == exception) {
+            return exception.getClass().getSimpleName();
+        }
+        return exception.getClass().getSimpleName() + "/" + root.getClass().getSimpleName();
     }
 
     private static String terminalCode(Integer code) {

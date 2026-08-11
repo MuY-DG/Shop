@@ -59,6 +59,13 @@ public class WechatServiceCardOutboxService {
         }
         Card card = lockCard(orderId);
         if (card == null) {
+            if (!activationWindowOpen(payment.paidAt(), eventTime)) {
+                log.info(
+                        "Skip WeChat 2001 activation outside the 24-hour window: orderId={}",
+                        orderId
+                );
+                return;
+            }
             card = createCard(orderId, payment, eventTime);
             enqueue(card, orderId, payment, WechatServiceCardStatus.WAITING_SHIPMENT, true, eventTime);
             card = card.withLast(WechatServiceCardStatus.WAITING_SHIPMENT);
@@ -116,6 +123,15 @@ public class WechatServiceCardOutboxService {
         if (base != null && base != last && base.canFollow(last)) {
             enqueue(card, orderId, payment, base, false, eventTime);
         }
+    }
+
+    private static boolean activationWindowOpen(
+            LocalDateTime paidAt,
+            LocalDateTime eventTime
+    ) {
+        return paidAt != null && eventTime != null
+                && !paidAt.isAfter(eventTime)
+                && !paidAt.plusHours(24).isBefore(eventTime);
     }
 
     private Card enterAfterSale(

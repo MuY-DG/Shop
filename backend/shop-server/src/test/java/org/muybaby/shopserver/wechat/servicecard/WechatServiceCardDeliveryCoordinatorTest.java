@@ -197,6 +197,27 @@ class WechatServiceCardDeliveryCoordinatorTest {
     }
 
     @Test
+    void ambiguousSetTransportResultKeepsItsSpecificSafeDiagnostic() {
+        DeliveryClaim claim = claim(
+                WechatServiceCardDeliveryState.SENDING, 2, "{}",
+                NOW_LOCAL.minusMinutes(1), null, null
+        );
+        duePending(claim);
+        when(provider.setUserNotify(any(WechatServiceCardSetRequest.class)))
+                .thenReturn(WechatServiceCardSetResult.unknown(
+                        null, "WeChat set_user_notify outcome is unknown"
+                ));
+
+        assertThat(coordinator.deliverDue()).isOne();
+
+        verify(store).markUnknown(
+                claim, "SET_TRANSPORT_OUTCOME_UNKNOWN",
+                "WeChat set_user_notify outcome is unknown"
+        );
+        verify(store, never()).markRetry(any(), any(), any());
+    }
+
+    @Test
     void refusalAfterClaimButBeforeProviderPreflightPerformsNoProviderIo() {
         DeliveryClaim claim = claim(
                 WechatServiceCardDeliveryState.SENDING, 2, "{}",
