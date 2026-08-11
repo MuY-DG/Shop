@@ -177,15 +177,16 @@ public record WechatServiceCardProperties(
         }
 
         public boolean secureReady() {
-            int tokenLength = token == null ? 0 : token.trim().length();
-            if (!enabled || tokenLength < 3 || tokenLength > 32
-                    || !StringUtils.hasText(encodingAesKey)
-                    || encodingAesKey.trim().length() != 43) {
+            String normalizedToken = token == null ? "" : token.trim();
+            String normalizedAesKey = encodingAesKey == null ? "" : encodingAesKey.trim();
+            if (!enabled
+                    || !normalizedToken.matches("[A-Za-z0-9]{3,32}")
+                    || !normalizedAesKey.matches("[A-Za-z0-9]{43}")) {
                 return false;
             }
             try {
                 return java.util.Base64.getDecoder()
-                        .decode(encodingAesKey.trim() + "=").length == 32;
+                        .decode(normalizedAesKey + "=").length == 32;
             } catch (IllegalArgumentException ex) {
                 return false;
             }

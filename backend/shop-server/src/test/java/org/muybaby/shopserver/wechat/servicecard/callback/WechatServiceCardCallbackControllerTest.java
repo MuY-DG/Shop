@@ -33,7 +33,7 @@ import static org.mockito.Mockito.verify;
 class WechatServiceCardCallbackControllerTest {
 
     private static final String APP_ID = "wx-service-card-test";
-    private static final String TOKEN = "callback-token";
+    private static final String TOKEN = "CallbackToken2026";
     private static final Instant NOW = Instant.parse("2026-08-10T12:00:00Z");
 
     private byte[] aesKey;
@@ -43,12 +43,8 @@ class WechatServiceCardCallbackControllerTest {
 
     @BeforeEach
     void setUp() {
-        aesKey = new byte[32];
-        for (int index = 0; index < aesKey.length; index++) {
-            aesKey[index] = (byte) (index + 1);
-        }
-        encodingAesKey = Base64.getEncoder().encodeToString(aesKey)
-                .substring(0, 43);
+        encodingAesKey = "A".repeat(43);
+        aesKey = Base64.getDecoder().decode(encodingAesKey + "=");
         WechatServiceCardProperties properties = properties();
         WechatServiceCardCallbackCrypto crypto = new WechatServiceCardCallbackCrypto(
                 properties, new WechatMiniProgramProperties(APP_ID, "secret", false)

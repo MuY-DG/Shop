@@ -374,7 +374,8 @@ V94 的激活条件是支付后 24 小时内，激活后更新窗口是 30 天�
       数据格式选 **JSON**。不使用 `pay-dev`、支付回调路径或临时 URL。
 - [ ] 在忽略且权限受控的生产配置中写入
       `SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN` 和
-      `SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY`，再开启 callback；Token/AESKey 不进仓库、数据库、
+      `SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY`，且两者严格使用微信后台允许的纯字母数字字符，
+      再开启 callback；Token/AESKey 不进仓库、数据库、
       普通日志、截图或发布证据。
 - [ ] 保持 capture/worker 关闭，使用微信后台完成 GET 验证接入；从公网确认签名、
       时间窗口和 `echostr` 处理正常，但不在证据中保存完整查询参数。

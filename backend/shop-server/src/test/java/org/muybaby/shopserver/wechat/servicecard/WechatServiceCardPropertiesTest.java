@@ -42,6 +42,23 @@ public class WechatServiceCardPropertiesTest {
         )).isFalse();
     }
 
+    @Test
+    void callbackCredentialsRequireWechatAlphanumericCharacterSet() {
+        var valid = new WechatServiceCardProperties.Callback(
+                true, "Token2026", "A".repeat(43), Duration.ofMinutes(5)
+        );
+        var invalidToken = new WechatServiceCardProperties.Callback(
+                true, "token-with-dash", "A".repeat(43), Duration.ofMinutes(5)
+        );
+        var invalidAesKey = new WechatServiceCardProperties.Callback(
+                true, "Token2026", "A".repeat(20) + "/" + "A".repeat(22), Duration.ofMinutes(5)
+        );
+
+        assertThat(valid.secureReady()).isTrue();
+        assertThat(invalidToken.secureReady()).isFalse();
+        assertThat(invalidAesKey.secureReady()).isFalse();
+    }
+
     public static WechatServiceCardProperties properties(Duration unknown, Duration maxUnknown) {
         return new WechatServiceCardProperties(
                 true, true, "template-record",
