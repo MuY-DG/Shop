@@ -21,8 +21,6 @@ test("商品现价统一使用圆润、紧凑的比例数字", () => {
   const priceSurfaceStyles = [
     "components/product-card/product-card.less",
     "components/product-summary/product-summary.less",
-    "components/sku-selector/sku-selector.less",
-    "components/wholesale-pricing/wholesale-pricing.less",
     "styles/account-products.less",
     "pages/account/history/history.less",
     "pages/cart/cart.less",

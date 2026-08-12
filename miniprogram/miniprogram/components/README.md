@@ -5,15 +5,14 @@
 ## 通用 UI
 
 - `navigation-bar`：自定义顶部导航
-- `ui-button`、`ui-card`、`ui-state`、`ui-tag`：基础视觉组件
+- `ui-button`、`ui-state`：基础视觉组件
 
 ## 商品与首页业务组件
 
 - `product-card`：首页和目录共用的商品卡片
 - `catalog-browser`：分类、搜索、分页和目录状态；分类 Tab 与分类列表页复用
 - `home-banner`、`home-category-grid`、`home-product-section`：首页区块
-- `product-gallery`、`product-summary`、`product-parameters`：详情展示
-- `sku-selector`、`wholesale-pricing`、`quantity-stepper`：详情选择与价格联动
+- `product-gallery`、`product-summary`：详情展示
 
 ## 维护规则
 

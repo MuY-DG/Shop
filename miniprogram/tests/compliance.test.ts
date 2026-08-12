@@ -73,10 +73,10 @@ test("商家资质视图不伪造缺失字段并保留证照有效期", () => {
 
 test("小程序注册公开合规页并从我的页面提供免登录设置入口", () => {
   const appConfig = JSON.parse(readFileSync(resolve(sourceRoot, "app.json"), "utf8")) as {
-    subPackages?: Array<{ root: string; pages: string[] }>;
+    pages: string[];
   };
-  const compliancePackage = appConfig.subPackages?.find(({ root }) => root === "pages/compliance");
-  assert.deepEqual(compliancePackage?.pages, ["merchant/merchant", "document/document"]);
+  assert.ok(appConfig.pages.includes("pages/compliance/merchant/merchant"));
+  assert.ok(appConfig.pages.includes("pages/compliance/document/document"));
 
   [
     "pages/account/settings/settings",

@@ -61,18 +61,8 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
   assert.equal(appConfig.tabBar?.color, "#000000");
   assert.equal(appConfig.tabBar?.selectedColor, "#FF172B");
   assert.equal(appConfig.lazyCodeLoading, "requiredComponents");
-  assert.deepEqual(
-    appConfig.subPackages?.map(({ root }) => root),
-    [
-      "pages/auth",
-      "pages/account",
-      "pages/product",
-      "pages/customer-service",
-      "pages/order",
-      "pages/after-sale",
-      "pages/compliance"
-    ]
-  );
+  assert.equal(appConfig.subPackages, undefined);
+  assert.equal(appConfig.pages.length, 30);
   assert.deepEqual(
     appConfig.tabBar?.list?.map((item) => [item.pagePath, item.text]),
     expectedTabs
@@ -649,7 +639,7 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   assert.match(profileLogic, /customerService/);
   assert.match(profileLogic, /accountNavigationPath/);
   assert.match(profileLogic, /profile-default-avatar\.png/);
-  assert.match(profileTemplate, /profile-watercolor-background\.png/);
+  assert.match(profileTemplate, /profile-watercolor-background\.jpg/);
   assert.match(profileTemplate, /<navigation-bar[\s\S]*?background="transparent"/);
   assert.match(profileTemplate, /class="member-card__avatar-frame"/);
   assert.match(profileTemplate, /src="\/assets\/images\/member-avatar-frame-v\.png"/);
@@ -657,9 +647,22 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
     existsSync(resolve(sourceRoot, "assets/images/profile-default-avatar.png")),
     true
   );
+  const defaultAvatar = readFileSync(resolve(sourceRoot, "assets/images/profile-default-avatar.png"));
+  assert.equal(defaultAvatar.subarray(1, 4).toString("ascii"), "PNG");
+  assert.equal(defaultAvatar.readUInt32BE(16), 256);
+  assert.equal(defaultAvatar.readUInt32BE(20), 256);
+  assert.ok(defaultAvatar.byteLength <= 32 * 1024);
+  const avatarFrame = readFileSync(resolve(sourceRoot, "assets/images/member-avatar-frame-v.png"));
+  assert.equal(avatarFrame.subarray(1, 4).toString("ascii"), "PNG");
+  assert.equal(avatarFrame.readUInt32BE(16), 512);
+  assert.equal(avatarFrame.readUInt32BE(20), 512);
+  assert.ok(avatarFrame.byteLength <= 64 * 1024);
   assert.equal(
-    existsSync(resolve(sourceRoot, "assets/images/profile-watercolor-background.png")),
+    existsSync(resolve(sourceRoot, "assets/images/profile-watercolor-background.jpg")),
     true
+  );
+  assert.ok(
+    readFileSync(resolve(sourceRoot, "assets/images/profile-watercolor-background.jpg")).byteLength <= 200 * 1024
   );
 });
 
@@ -1541,18 +1544,28 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   });
   assert.match(createdTemplate, /支付成功/);
   assert.match(createdTemplate, /支付金额/);
-  assert.match(createdTemplate, /payment-success-background\.png/);
+  assert.match(createdTemplate, /payment-success-background\.jpg/);
   assert.match(createdTemplate, /payment-success-check\.png/);
   assert.equal(
-    existsSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-background.png")),
+    existsSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-background.jpg")),
     true
+  );
+  assert.ok(
+    readFileSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-background.jpg")).byteLength <= 200 * 1024
   );
   assert.equal(
     existsSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-check.png")),
     true
   );
+  const successCheck = readFileSync(
+    resolve(sourceRoot, "pages/order/assets/images/payment-success-check.png")
+  );
+  assert.equal(successCheck.subarray(1, 4).toString("ascii"), "PNG");
+  assert.equal(successCheck.readUInt32BE(16), 512);
+  assert.equal(successCheck.readUInt32BE(20), 512);
+  assert.ok(successCheck.byteLength <= 64 * 1024);
   assert.equal(
-    existsSync(resolve(sourceRoot, "assets/images/payment-success-background.png")),
+    existsSync(resolve(sourceRoot, "assets/images/payment-success-background.jpg")),
     false
   );
   assert.equal(

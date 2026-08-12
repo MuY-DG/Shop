@@ -1,7 +1,7 @@
 <view class="profile-page">
   <image
     class="profile-page__background"
-    src="/assets/images/profile-watercolor-background.png"
+    src="/assets/images/profile-watercolor-background.jpg"
     mode="aspectFill"
     aria-hidden="true"
   />

@@ -1,7 +1,7 @@
 <view class="created-page">
   <image
     class="created-background"
-    src="../assets/images/payment-success-background.png"
+    src="../assets/images/payment-success-background.jpg"
     mode="aspectFill"
     aria-hidden="true"
   />
