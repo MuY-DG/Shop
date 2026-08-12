@@ -211,8 +211,8 @@ shop: # 商城项目自定义业务配置的统一入口。
     expire-minutes: ${SHOP_PAY_EXPIRE_MINUTES:15} # 订单提交时固化支付截止时间，默认 15 分钟且后续发起支付不得延长。
   finance:
     reconciliation: # 微信支付交易账单对账；本阶段不包含资金账单或银行流水对账。
-      worker-enabled: ${SHOP_FINANCE_RECONCILIATION_WORKER_ENABLED:false} # 默认关闭真实账单网络访问，显式启用后才处理手工批次。
-      daily-enabled: ${SHOP_FINANCE_RECONCILIATION_DAILY_ENABLED:false} # 默认不创建每日 D-1 批次。
+      worker-enabled: ${SHOP_FINANCE_RECONCILIATION_WORKER_ENABLED:false} # 仅作为尚无 V97 数据库覆盖记录时的部署默认值。
+      daily-enabled: ${SHOP_FINANCE_RECONCILIATION_DAILY_ENABLED:false} # 仅作为尚无 V97 数据库覆盖记录时的部署默认值。
       daily-cron: ${SHOP_FINANCE_RECONCILIATION_DAILY_CRON:0 30 10 * * *} # 北京时间 10:30，避开微信昨日账单生成窗口。
       worker-delay: ${SHOP_FINANCE_RECONCILIATION_WORKER_DELAY:30s}
       claim-timeout: ${SHOP_FINANCE_RECONCILIATION_CLAIM_TIMEOUT:15m}

@@ -311,7 +311,8 @@ class AdminMenuControllerTest {
                         "finance:reconciliation:run",
                         "finance:reconciliation:resolve",
                         "finance:reconciliation:source-download",
-                        "finance:export"
+                        "finance:export",
+                        "finance:reconciliation:runtime:write"
                 )));
     }
 

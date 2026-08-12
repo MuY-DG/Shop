@@ -2,6 +2,20 @@ import request from '@/utils/http'
 
 const baseUrl = '/admin/finance/reconciliation'
 
+export function fetchReconciliationRuntime() {
+  return request.get<Api.FinanceReconciliation.RuntimeStatus>({
+    url: `${baseUrl}/runtime`
+  })
+}
+
+export function updateReconciliationRuntime(data: Api.FinanceReconciliation.RuntimeUpdate) {
+  return request.put<Api.FinanceReconciliation.RuntimeStatus>({
+    url: `${baseUrl}/runtime`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
 export function fetchReconciliationBatches(params: Api.FinanceReconciliation.BatchSearchParams) {
   return request.get<Api.FinanceReconciliation.BatchList>({
     url: `${baseUrl}/batches`,

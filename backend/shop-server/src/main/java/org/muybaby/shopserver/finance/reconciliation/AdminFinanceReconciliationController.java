@@ -5,6 +5,8 @@ import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.finance.reconciliation.dto.AdminFinanceReconciliationRuntimeResponse;
+import org.muybaby.shopserver.finance.reconciliation.dto.AdminFinanceReconciliationRuntimeUpdateRequest;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminReconciliationBatchDetailResponse;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminReconciliationBatchQuery;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminReconciliationBatchResponse;
@@ -18,6 +20,7 @@ import org.muybaby.shopserver.finance.reconciliation.dto.AdminReconciliationReso
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminReconciliationRetryRequest;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminReconciliationRunRequest;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminTradeBillEntryResponse;
+import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliationAdminRuntimeService;
 import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliationCommandService;
 import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliationExportService;
 import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliationReadService;
@@ -37,6 +40,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -58,19 +62,37 @@ public class AdminFinanceReconciliationController {
     private final FinanceReconciliationExportService exportService;
     private final FinanceTradeBillStorage storage;
     private final FinanceReconciliationProperties properties;
+    private final FinanceReconciliationAdminRuntimeService runtimeService;
 
     public AdminFinanceReconciliationController(
             FinanceReconciliationReadService readService,
             FinanceReconciliationCommandService commandService,
             FinanceReconciliationExportService exportService,
             FinanceTradeBillStorage storage,
-            FinanceReconciliationProperties properties
+            FinanceReconciliationProperties properties,
+            FinanceReconciliationAdminRuntimeService runtimeService
     ) {
         this.readService = readService;
         this.commandService = commandService;
         this.exportService = exportService;
         this.storage = storage;
         this.properties = properties;
+        this.runtimeService = runtimeService;
+    }
+
+    @GetMapping("/runtime")
+    @PreAuthorize("hasAuthority('finance:reconciliation:read')")
+    public ApiResponse<AdminFinanceReconciliationRuntimeResponse> runtime() {
+        return ApiResponse.success(runtimeService.status());
+    }
+
+    @PutMapping("/runtime")
+    @PreAuthorize("hasAuthority('finance:reconciliation:runtime:write')")
+    public ApiResponse<AdminFinanceReconciliationRuntimeResponse> updateRuntime(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @Valid @RequestBody AdminFinanceReconciliationRuntimeUpdateRequest request
+    ) {
+        return ApiResponse.success(runtimeService.update(request, principal.subjectId()));
     }
 
     @GetMapping("/batches")

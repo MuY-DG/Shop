@@ -8,6 +8,161 @@
       show-icon
     />
 
+    <ElCard v-loading="runtimeLoading" shadow="never" class="runtime-card">
+      <template #header>
+        <div class="runtime-header">
+          <div>
+            <h1>财务对账运行控制</h1>
+            <p>开关保存到数据库并即时生效；部署环境默认值只用于尚无数据库覆盖记录时。</p>
+          </div>
+          <div class="runtime-header__actions">
+            <ElButton :disabled="runtimeLoading || runtimeSaving" @click="loadRuntime">
+              刷新状态
+            </ElButton>
+            <ElButton
+              v-auth="'finance:reconciliation:runtime:write'"
+              type="primary"
+              :disabled="!runtimeDirty || Boolean(runtimeValidation) || !canWriteRuntime"
+              :loading="runtimeSaving"
+              @click="openRuntimeConfirmation"
+            >
+              保存运行开关
+            </ElButton>
+          </div>
+        </div>
+      </template>
+
+      <template v-if="runtimeStatus">
+        <div class="runtime-grid">
+          <section class="runtime-item runtime-item--danger">
+            <div class="runtime-item__heading">
+              <div>
+                <h2>对账处理器</h2>
+                <p>允许人工补跑，并领取批次下载真实微信交易账单进行比较。</p>
+              </div>
+              <ElSwitch
+                :model-value="runtimeDraft.workerEnabled"
+                :disabled="runtimeInteractionDisabled"
+                inline-prompt
+                active-text="开"
+                inactive-text="关"
+                aria-label="财务对账处理器开关"
+                @update:model-value="handleRuntimeWorkerChange"
+              />
+            </div>
+            <div class="runtime-item__tags">
+              <ElTag :type="runtimeStatus.workerEnabled ? 'danger' : 'info'">
+                当前{{ runtimeStatus.workerEnabled ? '已开启' : '已关闭' }}
+              </ElTag>
+              <ElTag :type="runtimeStatus.workerReady ? 'success' : 'warning'" effect="plain">
+                {{ runtimeStatus.workerReady ? '处理器已就绪' : '处理器未就绪' }}
+              </ElTag>
+            </div>
+            <p>关闭后不再领取新批次；已经运行中的单个批次会安全完成。</p>
+          </section>
+
+          <section class="runtime-item">
+            <div class="runtime-item__heading">
+              <div>
+                <h2>每日自动对账</h2>
+                <p>每天北京时间 10:30 创建前一天的交易账单对账批次。</p>
+              </div>
+              <ElSwitch
+                :model-value="runtimeDraft.dailyEnabled"
+                :disabled="runtimeInteractionDisabled"
+                inline-prompt
+                active-text="开"
+                inactive-text="关"
+                aria-label="财务每日自动对账开关"
+                @update:model-value="handleRuntimeDailyChange"
+              />
+            </div>
+            <div class="runtime-item__tags">
+              <ElTag :type="runtimeStatus.dailyEnabled ? 'success' : 'info'">
+                当前{{ runtimeStatus.dailyEnabled ? '已开启' : '已关闭' }}
+              </ElTag>
+              <ElTag :type="runtimeStatus.dailyReady ? 'success' : 'warning'" effect="plain">
+                {{ runtimeStatus.dailyReady ? '每日任务已就绪' : '每日任务未就绪' }}
+              </ElTag>
+            </div>
+            <p>必须先单独开启处理器并完成真实账单验收，下一次变更才能开启。</p>
+          </section>
+        </div>
+
+        <ElAlert
+          v-if="runtimeValidation"
+          class="runtime-validation"
+          :title="runtimeValidation"
+          type="warning"
+          :closable="false"
+          show-icon
+        />
+
+        <div class="readiness-grid">
+          <div class="readiness-item">
+            <span>微信支付对账凭据</span>
+            <ElTag
+              :type="runtimeStatus.paymentCredentialsReady ? 'success' : 'danger'"
+              size="small"
+              effect="plain"
+            >
+              {{ runtimeStatus.paymentCredentialsReady ? '就绪' : '未就绪' }}
+            </ElTag>
+          </div>
+          <div class="readiness-item">
+            <span>私有 COS 账单存储</span>
+            <ElTag
+              :type="runtimeStatus.privateStorageReady ? 'success' : 'danger'"
+              size="small"
+              effect="plain"
+            >
+              {{ runtimeStatus.privateStorageReady ? '就绪' : '未就绪' }}
+            </ElTag>
+          </div>
+        </div>
+
+        <ElDescriptions :column="3" border class="runtime-meta">
+          <ElDescriptionsItem label="运行配置来源">
+            {{ runtimeStatus.runtimePersisted ? '数据库运行覆盖' : '部署环境默认值' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="配置版本">{{ runtimeStatus.version }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="部署默认值">
+            处理器 {{ enabledText(runtimeStatus.defaultWorkerEnabled) }} / 每日任务
+            {{ enabledText(runtimeStatus.defaultDailyEnabled) }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="最近修改人">
+            {{ runtimeStatus.updatedBy ? `管理员 #${runtimeStatus.updatedBy}` : '-' }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="最近修改时间">
+            {{ formatTime(runtimeStatus.updatedAt) }}
+          </ElDescriptionsItem>
+          <ElDescriptionsItem label="修改原因">
+            {{ runtimeStatus.reason || '-' }}
+          </ElDescriptionsItem>
+        </ElDescriptions>
+
+        <div class="runtime-metrics">
+          <span
+            >待执行 <strong>{{ runtimeStatus.pendingBatches }}</strong></span
+          >
+          <span
+            >执行中 <strong>{{ runtimeStatus.runningBatches }}</strong></span
+          >
+          <span
+            >等待重试 <strong>{{ runtimeStatus.retryWaitBatches }}</strong></span
+          >
+          <span
+            >失败 <strong>{{ runtimeStatus.failedBatches }}</strong></span
+          >
+          <span
+            >开放差异 <strong>{{ runtimeStatus.openDifferences }}</strong></span
+          >
+        </div>
+      </template>
+
+      <ElEmpty v-else-if="!runtimeLoading" description="未能读取财务对账运行状态" />
+    </ElCard>
+
     <ElCard shadow="never">
       <div class="filters">
         <ElDatePicker
@@ -32,7 +187,12 @@
         <ElButton @click="reset">重置</ElButton>
         <span class="filters__spacer" />
         <ElButton v-auth="'finance:export'" @click="exportCsv">导出 CSV</ElButton>
-        <ElButton v-auth="'finance:reconciliation:run'" type="primary" @click="openRun">
+        <ElButton
+          v-auth="'finance:reconciliation:run'"
+          type="primary"
+          :disabled="runtimeStatus?.workerEnabled !== true"
+          @click="openRun"
+        >
           人工补跑
         </ElButton>
       </div>
@@ -86,6 +246,7 @@
               v-auth="'finance:reconciliation:run'"
               link
               type="warning"
+              :disabled="runtimeStatus?.workerEnabled !== true"
               @click="retryBatch(row)"
             >
               重新取证
@@ -392,6 +553,56 @@
       </ElTimeline>
       <ElEmpty v-else description="暂无处理轨迹" />
     </ElDialog>
+
+    <ElDialog
+      v-model="runtimeConfirmationVisible"
+      :title="runtimeConfirmation?.title || '确认运行开关变更'"
+      width="580px"
+      destroy-on-close
+    >
+      <template v-if="runtimeConfirmation">
+        <ElAlert
+          :title="runtimeConfirmation.message"
+          :type="runtimeConfirmation.tone"
+          :closable="false"
+          show-icon
+        />
+        <ElForm label-position="top" class="runtime-confirmation-form">
+          <ElFormItem label="变更原因（会写入审计记录）" required>
+            <ElInput
+              v-model="runtimeConfirmationForm.reason"
+              type="textarea"
+              :rows="3"
+              maxlength="200"
+              show-word-limit
+              placeholder="说明本次开启或关闭的真实原因、验收范围和责任边界"
+            />
+            <div v-if="runtimeReasonError" class="form-error">{{ runtimeReasonError }}</div>
+          </ElFormItem>
+          <ElFormItem :label="`输入“${runtimeConfirmation.phrase}”继续`" required>
+            <ElInput
+              v-model="runtimeConfirmationForm.phrase"
+              autocomplete="off"
+              :placeholder="runtimeConfirmation.phrase"
+            />
+            <div v-if="runtimePhraseError" class="form-error">{{ runtimePhraseError }}</div>
+          </ElFormItem>
+        </ElForm>
+      </template>
+      <template #footer>
+        <ElButton :disabled="runtimeSaving" @click="runtimeConfirmationVisible = false">
+          取消
+        </ElButton>
+        <ElButton
+          :type="runtimeConfirmation?.tone === 'error' ? 'danger' : 'warning'"
+          :disabled="Boolean(runtimeReasonError || runtimePhraseError)"
+          :loading="runtimeSaving"
+          @click="submitRuntimeUpdate"
+        >
+          确认并保存
+        </ElButton>
+      </template>
+    </ElDialog>
   </div>
 </template>
 
@@ -407,11 +618,14 @@
     fetchReconciliationDifferenceAudits,
     fetchReconciliationDifferences,
     fetchReconciliationEntries,
+    fetchReconciliationRuntime,
     investigateReconciliationDifference,
     resolveReconciliationDifference,
     retryReconciliationBatch,
-    runReconciliation
+    runReconciliation,
+    updateReconciliationRuntime
   } from '@/api/finance-reconciliation'
+  import { useAuth } from '@/hooks/core/useAuth'
   import { isHttpError } from '@/utils/http/error'
   import {
     auditActionLabel,
@@ -427,16 +641,25 @@
     differenceStatusTone,
     differenceTypeLabel,
     differenceTypeOptions,
+    financeRuntimeChanged,
+    financeRuntimeConfirmation as buildFinanceRuntimeConfirmation,
+    financeRuntimeDraft as buildFinanceRuntimeDraft,
     formatCentAmount,
     isBillDateWithinLookback,
     isInclusiveDateRangeWithinDays,
+    validateFinanceRuntimeDraft,
+    validateFinanceRuntimePhrase,
+    validateFinanceRuntimeReason,
     validateReason,
-    validateResolution
+    validateResolution,
+    type FinanceRuntimeConfirmation,
+    type FinanceRuntimeDraft
   } from './reconciliation-state'
 
   defineOptions({ name: 'FinanceReconciliation' })
 
   type DifferenceAction = 'investigate' | 'resolve'
+  const { hasAuth } = useAuth()
   const formatBusinessDate = (value: Date) =>
     new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Shanghai',
@@ -458,6 +681,13 @@
     status?: Api.FinanceReconciliation.BatchStatus
   }>({ mchId: '' })
   const page = reactive({ current: 1, size: 20, total: 0 })
+  const runtimeStatus = ref<Api.FinanceReconciliation.RuntimeStatus | null>(null)
+  const runtimeLoading = ref(false)
+  const runtimeSaving = ref(false)
+  const runtimeDraft = reactive<FinanceRuntimeDraft>({ workerEnabled: false, dailyEnabled: false })
+  const runtimeConfirmationVisible = ref(false)
+  const runtimeConfirmation = ref<FinanceRuntimeConfirmation | null>(null)
+  const runtimeConfirmationForm = reactive({ reason: '', phrase: '' })
 
   const detailVisible = ref(false)
   const detail = ref<Api.FinanceReconciliation.BatchDetail | null>(null)
@@ -490,6 +720,27 @@
   const actionTitle = computed(() =>
     differenceAction.value === 'resolve' ? '记录差异解决结论' : '开始调查差异'
   )
+  const canWriteRuntime = computed(() => hasAuth('finance:reconciliation:runtime:write'))
+  const runtimeDirty = computed(() =>
+    Boolean(runtimeStatus.value && financeRuntimeChanged(runtimeStatus.value, runtimeDraft))
+  )
+  const runtimeValidation = computed(() =>
+    runtimeStatus.value ? validateFinanceRuntimeDraft(runtimeStatus.value, runtimeDraft) : null
+  )
+  const runtimeInteractionDisabled = computed(
+    () => runtimeLoading.value || runtimeSaving.value || !canWriteRuntime.value
+  )
+  const runtimeReasonError = computed(() =>
+    validateFinanceRuntimeReason(runtimeConfirmationForm.reason)
+  )
+  const runtimePhraseError = computed(() =>
+    runtimeConfirmation.value
+      ? validateFinanceRuntimePhrase(
+          runtimeConfirmationForm.phrase,
+          runtimeConfirmation.value.phrase
+        )
+      : '缺少确认上下文'
+  )
 
   const isFutureBusinessDate = (value: Date) => formatBusinessDate(value) > businessDate()
   const isRunDateDisabled = (value: Date) =>
@@ -497,6 +748,7 @@
   const isRevisionConflict = (error: unknown) => isHttpError(error) && error.httpStatus === 409
 
   const formatTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : '-')
+  const enabledText = (enabled: boolean) => (enabled ? '开启' : '关闭')
   const formatBytes = (value?: number | null) => {
     if (value == null) return '-'
     if (value < 1024) return `${value} B`
@@ -522,6 +774,70 @@
       Object.assign(page, { current: result.current, size: result.size, total: result.total })
     } finally {
       loading.value = false
+    }
+  }
+
+  const applyRuntimeStatus = (value: Api.FinanceReconciliation.RuntimeStatus) => {
+    runtimeStatus.value = value
+    Object.assign(runtimeDraft, buildFinanceRuntimeDraft(value))
+  }
+
+  const loadRuntime = async () => {
+    runtimeLoading.value = true
+    try {
+      applyRuntimeStatus(await fetchReconciliationRuntime())
+    } finally {
+      runtimeLoading.value = false
+    }
+  }
+
+  const handleRuntimeWorkerChange = (value: string | number | boolean) => {
+    runtimeDraft.workerEnabled = Boolean(value)
+    if (!runtimeDraft.workerEnabled) runtimeDraft.dailyEnabled = false
+  }
+
+  const handleRuntimeDailyChange = (value: string | number | boolean) => {
+    runtimeDraft.dailyEnabled = Boolean(value)
+  }
+
+  const openRuntimeConfirmation = () => {
+    if (!runtimeStatus.value || !runtimeDirty.value || runtimeValidation.value) return
+    runtimeConfirmation.value = buildFinanceRuntimeConfirmation(runtimeStatus.value, runtimeDraft)
+    runtimeConfirmationForm.reason = ''
+    runtimeConfirmationForm.phrase = ''
+    runtimeConfirmationVisible.value = true
+  }
+
+  const submitRuntimeUpdate = async () => {
+    if (
+      !runtimeStatus.value ||
+      !runtimeConfirmation.value ||
+      runtimeReasonError.value ||
+      runtimePhraseError.value
+    ) {
+      return
+    }
+    runtimeSaving.value = true
+    try {
+      const updated = await updateReconciliationRuntime({
+        workerEnabled: runtimeDraft.workerEnabled,
+        dailyEnabled: runtimeDraft.dailyEnabled,
+        version: runtimeStatus.value.version,
+        reason: runtimeConfirmationForm.reason.trim()
+      })
+      applyRuntimeStatus(updated)
+      runtimeConfirmationVisible.value = false
+      await loadRows()
+    } catch (error) {
+      if (isRevisionConflict(error)) {
+        runtimeConfirmationVisible.value = false
+        ElMessage.warning('运行配置已被其他管理员修改，已刷新为最新状态')
+        await loadRuntime()
+        return
+      }
+      throw error
+    } finally {
+      runtimeSaving.value = false
     }
   }
 
@@ -750,13 +1066,97 @@
     saveBlob(blob, `wechat-reconciliation-${dateRange[0]}-${dateRange[1]}.csv`)
   }
 
-  onMounted(loadRows)
+  onMounted(() => Promise.all([loadRuntime(), loadRows()]))
 </script>
 
 <style scoped lang="scss">
   .finance-reconciliation-page {
     display: grid;
     gap: 16px;
+  }
+
+  .runtime-card h1,
+  .runtime-card h2,
+  .runtime-card p {
+    margin: 0;
+  }
+
+  .runtime-header,
+  .runtime-item__heading {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .runtime-header p,
+  .runtime-item p {
+    margin-top: 6px;
+    color: var(--el-text-color-secondary);
+  }
+
+  .runtime-header__actions,
+  .runtime-item__tags {
+    display: flex;
+    gap: 8px;
+  }
+
+  .runtime-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .runtime-item {
+    padding: 16px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+  }
+
+  .runtime-item--danger {
+    border-color: var(--el-color-danger-light-7);
+  }
+
+  .runtime-item__tags {
+    margin-top: 14px;
+  }
+
+  .runtime-validation,
+  .runtime-meta,
+  .readiness-grid,
+  .runtime-metrics {
+    margin-top: 16px;
+  }
+
+  .readiness-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .readiness-item,
+  .runtime-metrics span {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
+  }
+
+  .runtime-metrics {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .runtime-confirmation-form {
+    margin-top: 16px;
+  }
+
+  .form-error {
+    color: var(--el-color-danger);
   }
 
   .filters {
@@ -811,6 +1211,17 @@
 
     .filters__spacer {
       display: none;
+    }
+
+    .runtime-header,
+    .runtime-item__heading {
+      flex-direction: column;
+    }
+
+    .runtime-grid,
+    .readiness-grid,
+    .runtime-metrics {
+      grid-template-columns: 1fr;
     }
   }
 </style>

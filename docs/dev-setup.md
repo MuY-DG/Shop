@@ -102,7 +102,7 @@ Expected result for each executed layer:
 BUILD SUCCESS
 ```
 
-## V85-V95 Focused Gates
+## V85-V97 Focused Gates
 
 Run the focused backend slices from `backend/shop-server` before both test layers. These
 commands validate H2/Flyway and application behavior; they do not replace a disposable
@@ -127,6 +127,9 @@ MySQL migration/concurrency run or any production-provider smoke check.
 # V90 account-rights state, authorization, and active-obligation gate
 ./mvnw -Dtest='AccountRightsSchemaTest,AccountRightsControllerTest,AccountRightsObligationServiceTest' test
 
+# V93 and V97 WeChat trade-bill reconciliation and Admin runtime control
+./mvnw -Dtest='*FinanceReconciliation*Test,AdminFinanceReconciliationControllerTest' test
+
 # V94-V95 WeChat 2001 service-card delivery and Admin runtime control
 ./mvnw -Dtest='*WechatServiceCard*Test' test
 ```
@@ -147,7 +150,7 @@ customer-service order routing, public compliance rendering, food disclosure,
 account-rights, and the source contract that preserves the current profile V frame,
 crown, `金牌会员` text, member-card assets, and logged-in display condition.
 
-## V87-V95 Runtime And Publication Controls
+## V87-V97 Runtime And Publication Controls
 
 ### V87 WeChat Shipment Delivery
 
@@ -235,6 +238,34 @@ Completion invalidates access and refresh sessions and minimally anonymizes opti
 identity data while preserving required transaction/audit records. Assign a real owner,
 review SLA, escalation route, and reviewed retention rules before release; automated
 tests cannot decide those merchant/legal obligations.
+
+### V93/V97 WeChat Trade-Bill Reconciliation
+
+V93 downloads only the WeChat `ALL` trade bill and compares it with local payment and refund
+facts. V97 keeps the worker and daily scheduler installed, but gates each execution through a
+versioned database runtime override exposed on Admin **财务管理 → 财务对账**. The deployment
+properties below are fallback defaults only until the first database override is saved:
+
+```properties
+SHOP_FINANCE_RECONCILIATION_WORKER_ENABLED=false
+SHOP_FINANCE_RECONCILIATION_DAILY_ENABLED=false
+SHOP_FINANCE_RECONCILIATION_DAILY_CRON=0 30 10 * * *
+```
+
+Runtime endpoints are:
+
+```text
+GET /admin/finance/reconciliation/runtime
+PUT /admin/finance/reconciliation/runtime
+```
+
+Reading requires `finance:reconciliation:read`; changing the override requires
+`finance:reconciliation:runtime:write`, which V97 grants only to Super. The PUT body is
+`{workerEnabled, dailyEnabled, version, reason}`. Changes use CAS and an append-only audit.
+Enabling checks usable payment reconciliation credentials and configured private COS storage;
+readiness failures never block emergency shutdown. Enable the worker alone, manually verify a
+real bill, then enable daily scheduling in a later revision. No restart or deployment is required
+for later switch changes.
 
 ### V94-V95 WeChat 2001 Shopping Service Dynamic
 

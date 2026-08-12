@@ -1,21 +1,20 @@
 package org.muybaby.shopserver.finance.reconciliation.service;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
-@ConditionalOnProperty(
-        prefix = "shop.finance.reconciliation",
-        name = "worker-enabled",
-        havingValue = "true"
-)
 public class TradeReconciliationWorker {
 
     private final TradeReconciliationProcessor processor;
+    private final FinanceReconciliationRuntimeSettingService runtimeSettingService;
 
-    public TradeReconciliationWorker(TradeReconciliationProcessor processor) {
+    public TradeReconciliationWorker(
+            TradeReconciliationProcessor processor,
+            FinanceReconciliationRuntimeSettingService runtimeSettingService
+    ) {
         this.processor = processor;
+        this.runtimeSettingService = runtimeSettingService;
     }
 
     @Scheduled(
@@ -23,6 +22,9 @@ public class TradeReconciliationWorker {
             initialDelayString = "${shop.finance.reconciliation.worker-delay:30s}"
     )
     public void processPendingBatch() {
+        if (!runtimeSettingService.workerEnabledFailClosed()) {
+            return;
+        }
         processor.processNext();
     }
 }

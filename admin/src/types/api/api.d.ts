@@ -1846,6 +1846,34 @@ declare namespace Api {
     type DifferenceStatus = 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'AUTO_CLEARED'
     type DifferenceSeverity = 'INFO' | 'WARNING' | 'CRITICAL'
 
+    interface RuntimeStatus {
+      workerEnabled: boolean
+      dailyEnabled: boolean
+      runtimePersisted: boolean
+      version: number
+      defaultWorkerEnabled: boolean
+      defaultDailyEnabled: boolean
+      reason: string
+      updatedBy: Identifier | null
+      updatedAt: string | null
+      paymentCredentialsReady: boolean
+      privateStorageReady: boolean
+      workerReady: boolean
+      dailyReady: boolean
+      pendingBatches: number
+      runningBatches: number
+      retryWaitBatches: number
+      failedBatches: number
+      openDifferences: number
+    }
+
+    interface RuntimeUpdate {
+      workerEnabled: boolean
+      dailyEnabled: boolean
+      version: number
+      reason: string
+    }
+
     interface Batch {
       id: Identifier
       billDate: string

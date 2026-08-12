@@ -31,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.muybaby.shopserver.support.AdminTokenTestSupport.issueAdminToken;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -55,6 +56,50 @@ class AdminFinanceReconciliationControllerTest {
 
     @Autowired
     private OpaqueTokenService opaqueTokenService;
+
+    @Test
+    void runtimeReadAndWriteUseSeparateAuthoritiesAndPersistAudit() throws Exception {
+        String readToken = issueAdminToken(
+                jdbcClient, opaqueTokenService, List.of("finance:reconciliation:read"));
+        String writeToken = issueAdminToken(
+                jdbcClient, opaqueTokenService,
+                List.of("finance:reconciliation:runtime:write"));
+
+        mockMvc.perform(get("/admin/finance/reconciliation/runtime")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.workerEnabled").value(false))
+                .andExpect(jsonPath("$.data.runtimePersisted").value(false))
+                .andExpect(jsonPath("$.data.version").value(0));
+
+        mockMvc.perform(put("/admin/finance/reconciliation/runtime")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + readToken)
+                        .contentType("application/json")
+                        .content("""
+                                {"workerEnabled":false,"dailyEnabled":false,
+                                 "version":0,"reason":"read cannot write"}
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(put("/admin/finance/reconciliation/runtime")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + writeToken)
+                        .contentType("application/json")
+                        .content("""
+                                {"workerEnabled":false,"dailyEnabled":false,
+                                 "version":0,"reason":"initial safe override"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtimePersisted").value(true))
+                .andExpect(jsonPath("$.data.version").value(1))
+                .andExpect(jsonPath("$.data.updatedBy").isString());
+
+        assertThat(jdbcClient.sql("""
+                        select count(*) from finance_reconciliation_runtime_audit
+                        where revision = 1 and change_reason = 'initial safe override'
+                        """)
+                .query(Long.class)
+                .single()).isOne();
+    }
 
     @Test
     void readPermissionReturnsBigintIdsAsJsonStringsButCannotDownloadSource() throws Exception {

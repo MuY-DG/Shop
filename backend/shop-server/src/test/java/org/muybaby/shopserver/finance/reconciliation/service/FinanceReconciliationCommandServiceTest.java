@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -175,6 +176,10 @@ class FinanceReconciliationCommandServiceTest {
         FinanceReconciliationProperties properties = new FinanceReconciliationProperties(
                 true, false, null, null, null, null, null,
                 0, 0, null, 0, 0, 0, 0);
+        FinanceReconciliationRuntimeSettingService runtime = mock(
+                FinanceReconciliationRuntimeSettingService.class
+        );
+        when(runtime.workerEnabledFailClosed()).thenReturn(true);
         Clock clock = Clock.fixed(Instant.parse("2026-08-10T12:00:00Z"), ZoneOffset.UTC);
         return new FinanceReconciliationCommandService(
                 jdbcClient,
@@ -182,6 +187,7 @@ class FinanceReconciliationCommandServiceTest {
                 mock(ReconciliationCredentialCatalog.class),
                 readService,
                 properties,
+                runtime,
                 clock
         );
     }

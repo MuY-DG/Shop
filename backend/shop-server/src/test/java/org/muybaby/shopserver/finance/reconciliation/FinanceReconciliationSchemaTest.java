@@ -70,7 +70,51 @@ class FinanceReconciliationSchemaTest {
     }
 
     @Test
-    void migrationSeedsFinanceMenuAndFivePermissionsOnlyForSuper() {
+    void runtimeMigrationCreatesSingletonAuditAndDedicatedSuperPermission() {
+        assertThat(jdbcClient.sql("""
+                        select count(*) from information_schema.tables
+                        where lower(table_name) in (
+                            'finance_reconciliation_runtime_setting',
+                            'finance_reconciliation_runtime_audit'
+                        )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*) from information_schema.table_constraints
+                        where lower(constraint_name) in (
+                            'chk_finance_reconciliation_runtime_singleton',
+                            'chk_finance_reconciliation_runtime_daily',
+                            'uk_finance_reconciliation_runtime_audit_revision'
+                        )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(3);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_role_permission role_permission
+                        join admin_role role_item on role_item.id = role_permission.role_id
+                        join admin_permission permission_item
+                          on permission_item.id = role_permission.permission_id
+                        where permission_item.auth_mark =
+                              'finance:reconciliation:runtime:write'
+                          and role_item.code = 'R_SUPER'
+                        """)
+                .query(Integer.class)
+                .single()).isOne();
+
+        assertThatThrownBy(() -> jdbcClient.sql("""
+                        insert into finance_reconciliation_runtime_setting
+                            (id, worker_enabled, daily_enabled, revision, change_reason)
+                        values (1, false, true, 1, 'invalid')
+                        """)
+                .update()).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void migrationSeedsFinanceMenuAndSixPermissionsOnlyForSuper() {
         assertThat(jdbcClient.sql("""
                         select count(*) from admin_menu
                         where (id = 920 and path = '/finance' and component = '/index/index')
@@ -84,17 +128,17 @@ class FinanceReconciliationSchemaTest {
                         select count(*)
                         from admin_role_permission role_permission
                         join admin_role role_item on role_item.id = role_permission.role_id
-                        where role_permission.permission_id between 21001 and 21005
+                        where role_permission.permission_id between 21001 and 21006
                           and role_item.code = 'R_SUPER'
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(5);
+                .single()).isEqualTo(6);
 
         assertThat(jdbcClient.sql("""
                         select count(*)
                         from admin_role_permission role_permission
                         join admin_role role_item on role_item.id = role_permission.role_id
-                        where role_permission.permission_id between 21001 and 21005
+                        where role_permission.permission_id between 21001 and 21006
                           and role_item.code <> 'R_SUPER'
                         """)
                 .query(Integer.class)

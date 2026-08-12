@@ -196,6 +196,7 @@ class AdminAuthControllerTest {
                         "finance:reconciliation:resolve",
                         "finance:reconciliation:source-download",
                         "finance:export",
+                        "finance:reconciliation:runtime:write",
                         "system:user:read",
                         "system:user:create",
                         "system:user:update",

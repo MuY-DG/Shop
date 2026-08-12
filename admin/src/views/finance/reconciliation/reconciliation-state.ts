@@ -88,6 +88,87 @@ export const canResolveDifference = (status: Api.FinanceReconciliation.Differenc
 export const canRetryBatch = (status: Api.FinanceReconciliation.BatchStatus) =>
   status !== 'PENDING' && status !== 'RUNNING'
 
+export interface FinanceRuntimeDraft {
+  workerEnabled: boolean
+  dailyEnabled: boolean
+}
+
+export interface FinanceRuntimeConfirmation {
+  title: string
+  message: string
+  phrase: string
+  tone: 'warning' | 'error'
+}
+
+export const financeRuntimeDraft = (
+  status: Api.FinanceReconciliation.RuntimeStatus
+): FinanceRuntimeDraft => ({
+  workerEnabled: status.workerEnabled,
+  dailyEnabled: status.dailyEnabled
+})
+
+export const financeRuntimeChanged = (
+  status: Api.FinanceReconciliation.RuntimeStatus,
+  draft: FinanceRuntimeDraft
+) => status.workerEnabled !== draft.workerEnabled || status.dailyEnabled !== draft.dailyEnabled
+
+export const validateFinanceRuntimeDraft = (
+  status: Api.FinanceReconciliation.RuntimeStatus,
+  draft: FinanceRuntimeDraft
+): string | null => {
+  const enablingWorker = !status.workerEnabled && draft.workerEnabled
+  const enablingDaily = !status.dailyEnabled && draft.dailyEnabled
+  if (draft.dailyEnabled && !draft.workerEnabled) return '每日自动对账依赖对账处理器'
+  if (enablingWorker && !status.paymentCredentialsReady) return '微信支付对账凭据未就绪'
+  if (enablingWorker && !status.privateStorageReady) return '私有 COS 存储未就绪'
+  if (enablingDaily && !status.paymentCredentialsReady) return '微信支付对账凭据未就绪'
+  if (enablingDaily && !status.privateStorageReady) return '私有 COS 存储未就绪'
+  if (enablingDaily && !status.workerEnabled) {
+    return '必须先单独开启并验收对账处理器，下一次变更才能开启每日自动对账'
+  }
+  return null
+}
+
+export const validateFinanceRuntimeReason = (value: string): string | null => {
+  const reason = value.trim()
+  if (reason.length < 2) return '请输入至少 2 个字符的真实变更原因'
+  if (reason.length > 200) return '变更原因不能超过 200 个字符'
+  return null
+}
+
+export const financeRuntimeConfirmation = (
+  status: Api.FinanceReconciliation.RuntimeStatus,
+  draft: FinanceRuntimeDraft
+): FinanceRuntimeConfirmation => {
+  const enablingWorker = !status.workerEnabled && draft.workerEnabled
+  const enablingDaily = !status.dailyEnabled && draft.dailyEnabled
+  const disablingWorker = status.workerEnabled && !draft.workerEnabled
+  const disablingDaily = status.dailyEnabled && !draft.dailyEnabled
+  const changes: string[] = []
+  if (enablingWorker) {
+    changes.push(
+      `开启处理器后会访问微信并处理待执行批次${status.pendingBatches > 0 ? `（当前 ${status.pendingBatches} 个）` : ''}`
+    )
+  }
+  if (enablingDaily) changes.push('开启每日自动对账后，将在北京时间 10:30 创建前一天批次')
+  if (disablingDaily) changes.push('关闭每日自动对账后，不再创建新的每日批次')
+  if (disablingWorker) changes.push('关闭处理器后，不再领取新批次；已运行的单个批次安全完成')
+  const highRisk = enablingWorker || enablingDaily
+  return {
+    title: highRisk ? '确认开启真实财务对账' : '确认运行开关变更',
+    message: changes.join('；') || '运行开关没有变化',
+    phrase: enablingDaily
+      ? '确认开启每日对账'
+      : enablingWorker
+        ? '确认开启对账处理器'
+        : '确认保存运行变更',
+    tone: highRisk ? 'error' : 'warning'
+  }
+}
+
+export const validateFinanceRuntimePhrase = (value: string, phrase: string): string | null =>
+  value.trim() === phrase ? null : `请输入“${phrase}”`
+
 export const formatCentAmount = (value?: number | null) =>
   value == null ? '-' : `¥${(value / 100).toFixed(2)}`
 

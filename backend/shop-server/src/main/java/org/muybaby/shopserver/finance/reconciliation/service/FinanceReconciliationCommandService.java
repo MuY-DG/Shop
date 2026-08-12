@@ -33,6 +33,7 @@ public class FinanceReconciliationCommandService {
     private final ReconciliationCredentialCatalog credentialCatalog;
     private final FinanceReconciliationReadService readService;
     private final FinanceReconciliationProperties properties;
+    private final FinanceReconciliationRuntimeSettingService runtimeSettingService;
     private final Clock clock;
 
     public FinanceReconciliationCommandService(
@@ -41,6 +42,7 @@ public class FinanceReconciliationCommandService {
             ReconciliationCredentialCatalog credentialCatalog,
             FinanceReconciliationReadService readService,
             FinanceReconciliationProperties properties,
+            FinanceReconciliationRuntimeSettingService runtimeSettingService,
             Clock clock
     ) {
         this.jdbcClient = jdbcClient;
@@ -48,6 +50,7 @@ public class FinanceReconciliationCommandService {
         this.credentialCatalog = credentialCatalog;
         this.readService = readService;
         this.properties = properties;
+        this.runtimeSettingService = runtimeSettingService;
         this.clock = clock;
     }
 
@@ -81,7 +84,7 @@ public class FinanceReconciliationCommandService {
     }
 
     public List<AdminReconciliationBatchResponse> requestDaily(LocalDate billDate) {
-        if (!properties.workerEnabled()) {
+        if (!runtimeSettingService.workerEnabledFailClosed()) {
             return List.of();
         }
         validateBillDate(billDate);
@@ -456,7 +459,7 @@ public class FinanceReconciliationCommandService {
     }
 
     private void requireWorkerEnabled() {
-        if (!properties.workerEnabled()) {
+        if (!runtimeSettingService.workerEnabledFailClosed()) {
             throw new BusinessException(ErrorCode.FINANCE_RECONCILIATION_DISABLED);
         }
     }

@@ -36,6 +36,7 @@ public enum ErrorCode {
     FINANCE_RECONCILIATION_CONFLICT(130003, "财务对账状态已变化，请刷新后重试"),
     FINANCE_RECONCILIATION_SOURCE_UNAVAILABLE(130004, "原始交易账单暂不可用"),
     FINANCE_EXPORT_LIMIT_EXCEEDED(130005, "财务导出范围或行数超过限制"),
+    FINANCE_RECONCILIATION_RUNTIME_CONFLICT(130006, "财务对账运行配置已被其他管理员修改，请刷新后重试"),
     PRODUCT_CATEGORY_UNAVAILABLE(200000, "商品分类不存在或当前不可用"),
     PRODUCT_UNAVAILABLE(200001, "Product unavailable"),
     SKU_UNAVAILABLE(200002, "SKU unavailable"),
