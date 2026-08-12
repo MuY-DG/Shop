@@ -1547,11 +1547,11 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(createdTemplate, /payment-success-background\.jpg/);
   assert.match(createdTemplate, /payment-success-check\.png/);
   assert.equal(
-    existsSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-background.jpg")),
+    existsSync(resolve(sourceRoot, "assets/images/payment-success-background.jpg")),
     true
   );
   assert.ok(
-    readFileSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-background.jpg")).byteLength <= 200 * 1024
+    readFileSync(resolve(sourceRoot, "assets/images/payment-success-background.jpg")).byteLength <= 200 * 1024
   );
   assert.equal(
     existsSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-check.png")),
@@ -1565,7 +1565,7 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.equal(successCheck.readUInt32BE(20), 512);
   assert.ok(successCheck.byteLength <= 64 * 1024);
   assert.equal(
-    existsSync(resolve(sourceRoot, "assets/images/payment-success-background.jpg")),
+    existsSync(resolve(sourceRoot, "pages/order/assets/images/payment-success-background.jpg")),
     false
   );
   assert.equal(
