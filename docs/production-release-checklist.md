@@ -1,7 +1,7 @@
 # Shop 生产发布检查清单
 
-**适用范围：** 包含 Flyway `V85` 至 `V95` 的商家自营电商版本
-**最后更新：** 2026-08-10
+**适用范围：** 包含 Flyway `V85` 至 `V97` 的商家自营电商版本
+**最后更新：** 2026-08-12
 
 本清单是发布门禁，不是“示例配置”。每一项只有在真实环境执行并保存证据后才能
 勾选。正式 API `api.muybaby6.icu` 与后台 `admin.muybaby6.icu` 已建立 DNS 和 SAN TLS
@@ -53,7 +53,8 @@ docker info
 
 cd ../../admin
 pnpm check
-pnpm build
+CI=true pnpm build
+pnpm check:generated-imports
 
 cd ../miniprogram
 pnpm check
@@ -68,7 +69,7 @@ git status --short --branch
       必需套件都实际执行。Docker 不可用必须直接判定此层失败。
 - [ ] 一次性 MySQL 8.4.10 执行完整迁移和并发敏感测试；H2 通过不能替代
       MySQL 的锁、索引、唯一约束与 Flyway 兼容性验证。
-- [ ] Admin `check`、生产构建以及 Mini Program `check` 全部通过。
+- [ ] Admin `check`、生产构建、生成元数据一致性以及 Mini Program `check` 全部通过。
 - [ ] V93 账单摘要校验、CSV 边界、金额/业务号匹配、重复执行幂等、租约接管、差异
       状态机、RBAC、导出防公式注入和订单清理保护测试全部实际执行；不得用 mock
       账单通过替代真实商户账单发布验收。
@@ -82,7 +83,7 @@ git status --short --branch
       证照原图、数据库导出、用户数据或构建临时文件。
 - [ ] Mini Program 源码契约和真机均确认 `金牌会员` 展示不变量没有变化。
 
-V85-V95 的聚焦命令见 [dev-setup.md](dev-setup.md#v85-v95-focused-gates)；V93 还必须
+V85-V97 的聚焦命令见 [dev-setup.md](dev-setup.md#v85-v97-focused-gates)；V93/V97 还必须
 满足本清单第 10 节，V94-V95 还必须满足第 11 节。安全本地接口步骤见
 [smoke-checks.md](smoke-checks.md#compliance-and-account-rights-smoke-checks)。
 
@@ -92,12 +93,12 @@ V85-V95 的聚焦命令见 [dev-setup.md](dev-setup.md#v85-v95-focused-gates)；
 
 - [ ] 使用与生产相同 MySQL 大版本和字符集，将最新生产备份恢复到隔离数据库；严禁
       对生产库或开发者持久库执行 `Flyway clean`。
-- [ ] 在隔离库启动候选版本，让 Flyway 从当前版本依次执行到 `V95`，保存迁移耗时、
+- [ ] 在隔离库启动候选版本，让 Flyway 从当前版本依次执行到 `V97`，保存迁移耗时、
       警告和 `flyway_schema_history`。
 - [ ] 演练库通过 V85/V86 对账、V87 发货状态报告、V89 在售分类报告、V91 管理员注册
       默认关闭、V92 售后 V2 数据不变量、V93 财务表/RBAC/订单清理保护、V94 服务
-      动态外键/唯一性/检查约束和订单清理档案、V95 运行开关/CAS 审计/RBAC 菜单不变量。
-- [ ] 确认 `V85` 至 `V95` 文件未修改任何已在目标环境执行过的旧迁移校验和。
+      动态外键/唯一性/检查约束和订单清理档案、V95/V97 运行开关/CAS 审计/RBAC 菜单不变量。
+- [ ] 确认 `V85` 至 `V97` 文件未修改任何已在目标环境执行过的旧迁移校验和。
 - [ ] 评估 V89 的维护窗口工作量：历史在售商品会成为 `UNCLASSIFIED`，但迁移不会
       自动下架；恢复流量前必须逐一处理。
 
@@ -129,8 +130,8 @@ order by installed_rank;
 
 ### 3.3 回滚决策
 
-- [ ] 发布前确认旧应用是否经过验证可以读取 `V95` 结构；未经验证不得只切旧镜像。
-- [ ] 不编写临时反向 SQL 删除 V85-V95 列、表或数据，也不执行 `Flyway clean`。
+- [ ] 发布前确认旧应用是否经过验证可以读取 `V97` 结构；未经验证不得只切旧镜像。
+- [ ] 不编写临时反向 SQL 删除 V85-V97 列、表或数据，也不执行 `Flyway clean`。
 - [ ] 若候选应用失败但数据库结构向后兼容，优先保留数据库并回到已验证兼容镜像，或
       向前修复。
 - [ ] 若必须恢复迁移前数据库，继续阻断所有写入，恢复已验证备份，并同步恢复匹配的

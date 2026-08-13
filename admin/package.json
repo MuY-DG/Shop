@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite --open",
     "build": "vue-tsc --noEmit && vite build",
+    "check:generated-imports": "git diff --exit-code -- .auto-import.json src/types/import/auto-imports.d.ts src/types/import/components.d.ts",
     "typecheck": "vue-tsc --noEmit",
     "test": "node scripts/run-tests.mjs",
     "check": "pnpm typecheck && pnpm lint && pnpm test",

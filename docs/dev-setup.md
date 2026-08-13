@@ -139,7 +139,8 @@ Cross-surface gates:
 ```bash
 cd admin
 pnpm check
-pnpm build
+CI=true pnpm build
+pnpm check:generated-imports
 
 cd ../miniprogram
 pnpm check
@@ -717,11 +718,15 @@ For real local coupon smoke, follow `docs/smoke-checks.md#coupon-smoke-checks`.
 
 ```bash
 cd admin
-pnpm install
-pnpm build
+pnpm install --frozen-lockfile
+pnpm check
+CI=true pnpm build
+pnpm check:generated-imports
 ```
 
-Expected result: Vite production build completes without TypeScript or bundling errors.
+Expected result: type checking, lint, tests, and the Vite production build pass, and rebuilding
+does not change the committed auto-import declarations or ESLint globals metadata. A clean clone
+must not depend on a previous Vite dev-server run.
 
 ## Mini Program Checks
 

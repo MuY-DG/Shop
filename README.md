@@ -40,25 +40,23 @@ cd backend/shop-server
 `./mvnw test` 绿色只代表默认单元/H2 层，不代表 MySQL/Redis 集成层已执行。
 GitHub Actions 会分别执行两层，并要求集成测试套件全部出现且零跳过。
 
-2026-08-10 本轮 V95 发布候选已记录的默认单元/H2 层为 1254 项，Docker/Testcontainers
-集成层为 56 项，两层均为零失败、零错误、零跳过，分别用时 4 分钟和 3 分 42 秒。
-V95 聚焦测试 49 项通过；Failsafe 11 个必需套件共 56 项、零跳过，测试分层门禁确认
-10 类 MySQL 8.4.10 与 1 类 Redis 7.4.9-alpine Testcontainers 套件全部执行。Flyway
-V1-V95 共 95 个版本连续且无重复；Admin `pnpm check` 167 项和生产构建、
-`git diff --check` 均通过。任何自动化结果都不代替真实微信商户回调、
-交易账单、2001 服务动态或生产 MySQL 实际数据升级验证。
+2026-08-12 当前 V97 基线已在 GitHub Actions 实际执行：后端默认单元/H2 层、
+MySQL/Redis Testcontainers 集成层和小程序门禁均通过。Flyway V1-V97 共 97 个版本连续
+且无重复。Admin 的自动导入声明和 ESLint globals 元数据纳入版本库；CI 会在生产构建后
+校验生成结果无差异，保证全新 clone 不依赖预先启动 Vite。任何自动化结果都不代替真实
+微信商户回调、交易账单、2001 服务动态或生产 MySQL 实际数据升级验证。
 
 其他检查：
 
 ```bash
-cd admin && pnpm check && CI=true pnpm build
+cd admin && pnpm check && CI=true pnpm build && pnpm check:generated-imports
 cd ../miniprogram && pnpm check
 ```
 
 CI 还会校验 Flyway 版本连续性，并在 Pull Request 中拒绝新引入的高危依赖漏洞。
-当前本地仓库尚未配置 Git remote，因此 `.github/workflows/ci.yml` 只是已落地的门禁配置；
-必须先建立 GitHub 仓库、推送并启用 dependency graph，才会真正执行。依赖审查拒绝
-新增高危漏洞，不等于已对历史依赖做过一次性清零。
+GitHub 远程仓库和 `.github/workflows/ci.yml` 已实际启用；仍需在仓库规则中把必需作业
+设置为默认分支合并门禁。依赖审查只在 Pull Request 拒绝新增高危漏洞，不等于已对
+历史依赖做过一次性清零。
 
 ## 版本识别
 

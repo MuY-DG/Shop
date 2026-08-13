@@ -89,6 +89,9 @@ jobs:
         env:
           CI: "true"
         run: pnpm build
+      - name: Verify generated import metadata is current
+        working-directory: admin
+        run: pnpm check:generated-imports
 
   miniprogram:
     name: Mini Program check

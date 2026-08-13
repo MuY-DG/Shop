@@ -25,7 +25,7 @@ fi
 
 if [[ ! -f "${dist_dir}/index.html" ]]; then
   printf '未找到 Admin 构建产物：%s\n' "${dist_dir}/index.html" >&2
-  printf '请先在 admin 目录运行 pnpm check 和 pnpm build。\n' >&2
+  printf '请先在 admin 目录运行 pnpm check、CI=true pnpm build 和 pnpm check:generated-imports。\n' >&2
   exit 1
 fi
 

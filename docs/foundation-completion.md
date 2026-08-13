@@ -35,19 +35,17 @@
 | 集成报告 | `./scripts/assert-integration-test-results.sh target/failsafe-reports` | 当前必需套件全部出现，执行数非零，跳过数为零 |
 | 测试分层 | `./scripts/verify-test-layers.sh` | Testcontainers 必须带 `integration` 标签，不允许无 Docker 静默跳过，镜像版本固定 |
 | Flyway 静态 | `./scripts/verify-flyway-migrations.sh` | 文件命名合规、版本从 V1 连续且无重复 |
-| 管理后台 | `cd admin && pnpm check && CI=true pnpm build` | 类型、lint、测试和生产构建 |
+| 管理后台 | `cd admin && pnpm check && CI=true pnpm build && pnpm check:generated-imports` | 类型、lint、测试、生产构建和生成元数据一致性 |
 | 小程序 | `cd miniprogram && pnpm check` | 运行时与测试类型检查、行为测试 |
 
 `./mvnw test` 绿色只能声明单元/H2 层通过，不得书写为“后端全部测试通过”。
 发布候选版必须同时保存两层结果。GitHub Actions 已经把两层分开为独立作业。
 
-2026-08-10 本轮 V95 发布候选已记录的默认单元/H2 层为 1254 项，
-Docker/Testcontainers 集成层为 56 项，两层均为 0 failures / 0 errors /
-0 skipped，分别用时 4 分钟和 3 分 42 秒。V95 聚焦测试 49 项通过；
-Failsafe 11 个必需套件共 56 项且零跳过，分层门禁确认 10 类 MySQL 8.4.10 和
-1 类 Redis 7.4.9-alpine Testcontainers 套件都实际执行。Flyway V1-V95 共
-95 个版本连续且无重复；同期 Admin `pnpm check` 167 项、生产构建和
-`git diff --check` 均通过。
+2026-08-12 当前 V97 基线已在 GitHub Actions 实际执行：后端默认单元/H2 层、
+MySQL/Redis Testcontainers 集成层和小程序门禁均通过。Flyway V1-V97 共 97 个版本连续
+且无重复。Admin 的自动导入声明和 ESLint globals 元数据作为可重复构建输入纳入版本库；
+CI 在生产构建后校验生成结果无差异，避免本地已生成文件掩盖干净 clone 的类型或 lint
+失败。
 
 ## 发布识别
 
@@ -66,7 +64,7 @@ flywayVersion
 ## 仍未由自动化证明的事项
 
 - 真实微信登录、支付、售后 V2 部分/累计退款及退款回调、发货信息、物流插件和电子面单打印。
-- V92-V95 在生产 MySQL 实际存量数据上的升级、锁竞争与回滚/恢复演练；Testcontainers
+- V92-V97 在生产 MySQL 实际存量数据上的升级、锁竞争与回滚/恢复演练；Testcontainers
   的 MySQL 8.4.10 通过不能替代生产环境发布验证。
 - `api.muybaby6.icu` / `admin.muybaby6.icu` 的 DNS 与 SAN TLS 基线已建立，小程序
   `request`、`uploadFile`、`downloadFile` 合法域名已在微信公众平台配置；每次发布仍需
