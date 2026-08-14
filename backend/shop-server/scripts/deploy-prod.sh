@@ -60,8 +60,6 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
     stage_dir="$(mktemp -d /tmp/shop-deploy.XXXXXX)"
     tar -xzf - -C "$stage_dir"
     sudo install -d -o 10001 -g 10001 -m 750 /opt/shop/shop-server
-    # 仅兼容尚未导入数据库的旧支付 PEM；完成迁移后删除 secrets 目录处理。
-    sudo install -d -o 10001 -g 10001 -m 750 /opt/shop/shop-server/secrets
     sudo install -d -o root -g root -m 700 /opt/shop/shop-server/backups
     sudo install -o root -g root -m 644 "$stage_dir/compose.prod.yaml" /opt/shop/shop-server/compose.prod.yaml
     sudo install -o 10001 -g 10001 -m 600 "$stage_dir/.env.prod.local" /opt/shop/shop-server/.env.prod.local
@@ -69,8 +67,6 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
     sudo install -d -o root -g root -m 755 /opt/shop/shop-server/scripts
     sudo install -o root -g root -m 755 "$stage_dir/scripts/remote-deploy.sh" /opt/shop/shop-server/scripts/remote-deploy.sh
     sudo install -o root -g root -m 755 "$stage_dir/scripts/backup-mysql.sh" /opt/shop/shop-server/scripts/backup-mysql.sh
-    sudo find /opt/shop/shop-server/secrets -type f -exec chown 10001:10001 {} \;
-    sudo find /opt/shop/shop-server/secrets -type f -exec chmod 600 {} \;
   '
 
 case "$transport" in

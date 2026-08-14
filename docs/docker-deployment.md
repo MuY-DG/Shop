@@ -23,17 +23,16 @@ Spring Boot 通过隔离的 `data` 网络访问；`ops` 网络只负责 Docker �
 ## 文件分工
 
 - `compose.prod.yaml`：完整声明后端、MySQL、Redis、持久卷、健康检查和资源限制。
-- `.env.prod.local`：新部署只含数据库/Redis、可信代理、通用主加密密钥和首次引导值；
-  升级中的旧部署可暂存待导入的微信兼容值。
+- `.env.prod.local`：只含数据库/Redis、可信代理、通用主加密密钥和首次引导值。
 - `.env.infrastructure.local`：只给 MySQL/Redis 使用的基础设施密码。
-- `secrets/`：仅兼容尚未导入数据库的旧微信支付 PEM；完成迁移后移除。
+- `secrets/`：当前生产 Compose 不再挂载；只允许旧部署在第一阶段过渡版本中临时使用。
 - `backups/`：本机 MySQL 备份目录。
 - `scripts/deploy-prod.sh`：本地测试、精简源码上传、服务器缓存构建和远程切换的一条命令。
 - `scripts/backup-mysql.sh`：供 1Panel 计划任务调用的 MySQL 备份脚本。
 
-所有 `.env.*.local`、`secrets/` 和 `backups/` 均被 Git 忽略。对象存储及微信支付
-业务配置由后台数据库管理；新部署模板不保存 COS、微信平台或支付业务凭据。旧服务器
-环境文件中的微信变量只能作为迁移输入，数据库导入与历史订单核验完成前不要直接删除。
+所有 `.env.*.local`、历史 `secrets/` 和 `backups/` 均被 Git 忽略。对象存储、微信平台、
+支付和服务动态业务配置由后台数据库管理；生产校验会拒绝微信业务凭据或旧运行开关
+重新进入 `.env.prod.local`。
 
 ## 首次准备生产配置
 
@@ -64,13 +63,13 @@ cd /Users/muybaby/Project/Production/Shop/backend/shop-server
 技术默认值位于 `application.yaml`。校验脚本会拒绝仍含这些已移除变量的生产文件。
 
 `.env.prod.example` 不再列出 `WECHAT_MINI_PROGRAM_*`、`WECHAT_PAY_*` 或微信发货开关。
-新部署通过后台数据库配置这些业务值。旧 `.env.prod.local` 可暂时保留原值以完成迁移，
-但不得把真实值复制回 example、镜像或文档。
+新部署通过后台数据库配置这些业务值，真实值不得复制回 example、镜像或文档。
 
 ### 旧部署两阶段迁移
 
-第一阶段保持 `.env.prod.local` 的真实旧值和 `secrets/` 只读挂载不变。本阶段只部署和
-迁移，不代表已经操作生产数据库：
+未迁移的旧部署必须先使用仍保留 `.env.prod.local` 兼容值和 `secrets/` 只读挂载的
+V98-V101 过渡版本完成第一阶段；当前主 Compose 已进入第二阶段，不再提供 PEM 挂载。
+第一阶段只部署和迁移，不代表已经操作生产数据库：
 
 1. 发布包含 V98、V99、V100、V101 的版本，确认 Flyway 完成且应用仍可用旧 ENV/文件回退启动。
 2. 支付来源为 ENV 时，调用 `POST /admin/pay/configs/import-environment` 创建禁用的 DB
@@ -110,6 +109,10 @@ cd /Users/muybaby/Project/Production/Shop/backend/shop-server
    受控备份；不要删除 `SHOP_SECRET_ENCRYPTION_*` 主密钥环。
 3. 删除服务动态旧环境值前，确认 V101 配置 source 为 `DATABASE`、回调密钥 configured、
    handshake 与失败回调均通过，并保留满足回滚窗口的受控备份；不要输出密钥明文。
+
+当前主部署要求第二阶段已经完成：生产校验脚本拒绝上述 26 个 legacy key，Compose 不再
+挂载 `secrets/`。`.env.dev.local` 属于独立开发环境；只有开发数据库也完成相同迁移后才
+删除其微信业务值，生产迁移不能代替本地迁移。
 
 全新部署不执行 legacy import：先准备通用主密钥环，启动后直接在 Admin 创建微信平台和
 支付 DB 配置，再一次性创建完整的服务动态接入配置，最后保存服务动态/发货运行开关。

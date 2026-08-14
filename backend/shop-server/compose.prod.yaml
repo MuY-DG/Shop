@@ -130,11 +130,6 @@ services:
         source: ./.env.prod.local
         target: /opt/shop/shop-server/.env.prod.local
         read_only: true
-      # 仅兼容尚未导入数据库的旧支付配置；完成迁移后移除此只读挂载。
-      - type: bind
-        source: ./secrets
-        target: /opt/shop/shop-server/secrets
-        read_only: true
 
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/actuator/health"]
