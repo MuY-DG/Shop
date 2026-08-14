@@ -1233,6 +1233,7 @@ declare namespace Api {
     type DeliveryMode = 1
     type ShipmentStatus = 'SHIPPED'
     type WechatShippingUploadStatus =
+      | 'PENDING'
       | 'SKIPPED'
       | 'UPLOADING'
       | 'UPLOADED'

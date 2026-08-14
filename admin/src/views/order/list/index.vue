@@ -532,7 +532,7 @@
                       <dd>{{ formatShipmentModeDetail(currentDetail.shipment) }}</dd>
                     </div>
                     <div class="shipping-diagnostic">
-                      <dt>本地发货状态</dt>
+                      <dt>本地发货结果</dt>
                       <dd>
                         {{ formatLocalShipmentStatus(currentDetail.shipment.localShipmentStatus) }}
                       </dd>
@@ -1233,6 +1233,7 @@
     Api.Order.WechatShippingUploadStatus,
     { type: 'success' | 'warning' | 'info' | 'danger'; text: string }
   > = {
+    PENDING: { type: 'warning', text: '待上传' },
     SKIPPED: { type: 'info', text: '已跳过' },
     UPLOADING: { type: 'warning', text: '上传中' },
     UPLOADED: { type: 'success', text: '已上传' },

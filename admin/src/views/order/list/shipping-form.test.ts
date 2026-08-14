@@ -127,7 +127,7 @@ test('only REAL plus UPLOADED claims real WeChat platform acceptance', () => {
   )
   assert.match(shippingOutcomeMessage(shipment('MOCK', 'UNAVAILABLE')), /模拟环境/)
 
-  for (const status of ['SKIPPED', 'FAILED', 'UNAVAILABLE', 'UNKNOWN'] as const) {
+  for (const status of ['PENDING', 'SKIPPED', 'FAILED', 'UNAVAILABLE', 'UNKNOWN'] as const) {
     const message = shippingOutcomeMessage(shipment('REAL', status))
     assert.match(message, /本地发货成功/)
     assert.doesNotMatch(message, /真实微信发货信息已上传/)
@@ -139,6 +139,7 @@ test('only REAL plus UPLOADED claims real WeChat platform acceptance', () => {
 
   const providerModes: Api.Order.WechatProviderMode[] = ['REAL', 'MOCK', 'DISABLED', 'UNKNOWN']
   const uploadStatuses: Api.Order.WechatShippingUploadStatus[] = [
+    'PENDING',
     'SKIPPED',
     'UPLOADING',
     'UPLOADED',
@@ -160,7 +161,7 @@ test('only REAL plus UPLOADED claims real WeChat platform acceptance', () => {
 })
 
 test('allows retry only for FAILED, UNAVAILABLE, or an eligible SKIPPED state', () => {
-  for (const status of ['UPLOADING', 'UPLOADED', 'UNKNOWN'] as const) {
+  for (const status of ['PENDING', 'UPLOADING', 'UPLOADED', 'UNKNOWN'] as const) {
     assert.equal(canRetryWechatUpload(shipment('REAL', status)), false)
   }
   assert.equal(canRetryWechatUpload(shipment('REAL', 'FAILED')), true)

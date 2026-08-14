@@ -391,7 +391,7 @@ function statusHeadline(status: OrderStatus): string {
     case "PAID":
       return "正在出库";
     case "SHIPPED":
-      return "运输中";
+      return "等待收货";
     case "COMPLETED":
       return "已完成";
     case "CLOSED":

@@ -126,6 +126,7 @@ export function shippingOutcomeMessage(shipment: Api.Order.Shipment): string {
     return '本地发货成功，微信发货信息上传未启用'
   }
   const statusMessages: Record<Api.Order.WechatShippingUploadStatus, string> = {
+    PENDING: '微信平台等待上传',
     SKIPPED: '微信平台上传已跳过',
     UPLOADING: '微信平台上传处理中',
     UPLOADED: '微信平台回传已上传，但当前服务商状态无法确认为真实平台接受',

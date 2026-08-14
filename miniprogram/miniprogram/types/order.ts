@@ -86,6 +86,7 @@ export type DeliveryMode = 1;
 export type ShipmentSource = "MANUAL" | "WECHAT_WAYBILL";
 export type WechatShippingProviderMode = "REAL" | "MOCK" | "DISABLED" | "UNKNOWN";
 export type WechatShippingUploadStatus =
+  | "PENDING"
   | "SKIPPED"
   | "UPLOADING"
   | "UPLOADED"
