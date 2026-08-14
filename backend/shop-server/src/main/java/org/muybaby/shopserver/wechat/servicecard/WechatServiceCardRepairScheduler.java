@@ -2,6 +2,8 @@ package org.muybaby.shopserver.wechat.servicecard;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfig;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -18,6 +20,7 @@ public class WechatServiceCardRepairScheduler {
 
     private final JdbcClient jdbcClient;
     private final WechatServiceCardProperties properties;
+    private final WechatServiceCardConfigResolver configResolver;
     private final WechatServiceCardRuntimeSettingService runtimeSettingService;
     private final WechatServiceCardRepairUnit repairUnit;
     private final Clock clock;
@@ -26,12 +29,14 @@ public class WechatServiceCardRepairScheduler {
     public WechatServiceCardRepairScheduler(
             JdbcClient jdbcClient,
             WechatServiceCardProperties properties,
+            WechatServiceCardConfigResolver configResolver,
             WechatServiceCardRuntimeSettingService runtimeSettingService,
             WechatServiceCardRepairUnit repairUnit,
             Clock clock
     ) {
         this.jdbcClient = jdbcClient;
         this.properties = properties;
+        this.configResolver = configResolver;
         this.runtimeSettingService = runtimeSettingService;
         this.repairUnit = repairUnit;
         this.clock = clock;
@@ -43,7 +48,7 @@ public class WechatServiceCardRepairScheduler {
     )
     public void runOnce() {
         if (!runtimeSettingService.captureEnabledFailSoft()
-                || !properties.imageConfigurationReady()) {
+                || !imageConfigurationReady()) {
             return;
         }
         LocalDateTime now = LocalDateTime.now(clock).withNano(0);
@@ -92,7 +97,7 @@ public class WechatServiceCardRepairScheduler {
         }
         for (RepairCandidate candidate : candidates) {
             if (!runtimeSettingService.captureEnabledFailSoft()
-                    || !properties.imageConfigurationReady()) {
+                    || !imageConfigurationReady()) {
                 break;
             }
             paymentCursor.set(candidate.paymentId());
@@ -105,6 +110,12 @@ public class WechatServiceCardRepairScheduler {
                 );
             }
         }
+    }
+
+    private boolean imageConfigurationReady() {
+        return configResolver.resolveFailClosed()
+                .map(WechatServiceCardConfig::imageConfigurationReady)
+                .orElse(false);
     }
 
     private record RepairCandidate(long paymentId, long orderId) {

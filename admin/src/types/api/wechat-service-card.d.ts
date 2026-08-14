@@ -78,5 +78,34 @@ declare namespace Api {
       version: number
       reason: string
     }
+
+    interface Config {
+      configured: boolean
+      source: 'DATABASE' | 'ENVIRONMENT' | 'NONE'
+      accountTemplateRecordId: string
+      fallbackProductImage: string
+      allowedImageHosts: string[]
+      preferOrderSnapshotImages: boolean
+      callbackEnabled: boolean
+      callbackTokenMasked: string
+      callbackTokenConfigured: boolean
+      callbackEncodingAesKeyMasked: string
+      callbackEncodingAesKeyConfigured: boolean
+      legacyEnvironmentImportAvailable: boolean
+      version: number
+      updatedBy: Identifier | null
+      updatedAt: string | null
+    }
+
+    interface ConfigUpdate {
+      accountTemplateRecordId: string
+      fallbackProductImage: string
+      allowedImageHosts: string[]
+      preferOrderSnapshotImages: boolean
+      callbackEnabled: boolean
+      callbackToken: string
+      callbackEncodingAesKey: string
+      version: number
+    }
   }
 }

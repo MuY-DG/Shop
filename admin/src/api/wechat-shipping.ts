@@ -6,6 +6,20 @@ export function fetchWechatShippingCapability() {
   })
 }
 
+export function fetchWechatShippingRuntime() {
+  return request.get<Api.Order.WechatShippingRuntime>({
+    url: '/admin/wechat-shipping/runtime'
+  })
+}
+
+export function updateWechatShippingRuntime(data: Api.Order.WechatShippingRuntimeUpdate) {
+  return request.put<Api.Order.WechatShippingRuntime>({
+    url: '/admin/wechat-shipping/runtime',
+    data,
+    showErrorMessage: false
+  })
+}
+
 export function fetchWechatShippingCarriers() {
   return request.get<Api.Order.WechatDeliveryCompany[]>({
     url: '/admin/wechat-shipping/carriers'

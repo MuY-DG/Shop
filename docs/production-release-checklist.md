@@ -1,7 +1,7 @@
 # Shop 生产发布检查清单
 
-**适用范围：** 包含 Flyway `V85` 至 `V97` 的商家自营电商版本
-**最后更新：** 2026-08-12
+**适用范围：** 包含 Flyway `V85` 至 `V101` 的商家自营电商版本
+**最后更新：** 2026-08-14
 
 本清单是发布门禁，不是“示例配置”。每一项只有在真实环境执行并保存证据后才能
 勾选。正式 API `api.muybaby6.icu` 与后台 `admin.muybaby6.icu` 已建立 DNS 和 SAN TLS
@@ -260,13 +260,10 @@ order by id;
 
 ## 8. 微信发货可靠投递和收货（V87）
 
-首次迁移/切流建议先关闭外部发送和收货扫描：
-
-```properties
-SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
-SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED=false
-SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=false
-```
+首次迁移/切流先通过 `GET/PUT /admin/wechat-shipping/runtime` 将上传、可靠投递和收货
+对账三个数据库运行开关全部关闭。写入必须携带当前版本和变更原因，并确认
+`wechat_shipping_runtime_audit` 已记录审计。环境变量只允许作为尚无运行时记录时的旧部署
+默认值，不再写入新生产模板。
 
 - [ ] 迁移前导出 `order_shipment` 按 `wechat_provider_mode + wechat_upload_status` 的数量和
       具体非终态 ID。V87 会把遗留 `UPLOADING` 标为 `UNKNOWN`，并可能把真实/未知提供方
@@ -354,7 +351,7 @@ CSV 自动改写本地支付、退款、订单或库存终态。
 - [ ] 上述手工步骤、监控和失败告警均有证据后才启用每日调度；先观察 `RETRY_WAIT`、
       `FAILED`、开放差异和 COS/数据库增长，再决定是否持续开启。
 
-## 11. 微信 2001 购物（实体物流）服务动态（V94-V95）
+## 11. 微信 2001 购物（实体物流）服务动态（V94-V95/V101）
 
 V94 的激活条件是支付后 24 小时内，激活后更新窗口是 30 天。这两个是微信
 2001 的渠道时间，与 Shop 新订单固定的 15 分钟支付截止时间无关。只有真实微信
@@ -363,19 +360,18 @@ V94 的激活条件是支付后 24 小时内，激活后更新窗口是 30 天�
 
 ### 11.1 第一阶段：部署并保持采集/外呼关闭
 
-- [ ] 部署 V94-V95 后保持 `SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED=false`、
+- [ ] 部署 V94-V95/V101 后保持 `SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED=false`、
       `SHOP_WECHAT_SERVICE_CARD_WORKER_ENABLED=false`，且数据库没有开启覆盖值；确认迁移
       成功且没有 set/get 外呼。已有生产 Callback 保持已验证状态，不因 V95 发布轮换或暴露
       Token/AESKey；首次安装则在完成 11.2 前保持 Callback 关闭。
-- [ ] 在受控生产配置中设置 `SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID`，但仅用它判断账号
+- [ ] 在 Admin 服务动态接入配置中设置模板记录 ID，但仅用它判断账号
       已添加模板；通过请求审计确认 `set_user_notify` 不含 `priTmplId` 或该记录 ID。
 - [ ] 先发布 Admin 静态资产 `admin/public/wechat/service-card-placeholder.png`，然后以无认证、
       无 Referer 请求验证
       `https://admin.muybaby6.icu/wechat/service-card-placeholder.png` 返回 `200`/`image/png`
       且文件内容是 PNG；失败时不得开 Worker。
 - [ ] 保持订单快照图优先开关为 `false`，并确认
-      `SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE` 的 host 在
-      `SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS` 显式白名单中。当前带 Referer 防盗链的 COS
+      数据库兜底图片 URL 的 host 在同一配置的显式白名单中。当前带 Referer 防盗链的 COS
       商品图不能当作 2001 可用图片证据。
 
 ### 11.2 第二阶段：回调验证与只采集
@@ -383,12 +379,11 @@ V94 的激活条件是支付后 24 小时内，激活后更新窗口是 30 天�
 - [ ] 复核微信小程序后台唯一的账号级消息推送 URL：
       `https://api.muybaby6.icu/wechat/mini/message`；消息加密方式选 **安全模式**，
       数据格式选 **JSON**。不使用 `pay-dev`、支付回调路径或临时 URL。
-- [ ] 当前生产复核已有 GET 握手证据，不重新显示、复制或轮换已验证的 Token/AESKey。
-      只有首次安装或凭据确认泄露时，才在忽略且权限受控的生产配置中写入新的
-      `SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN` 和
-      `SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY`，且两者严格使用微信后台允许的纯字母数字字符，
-      再开启并重新握手；Token/AESKey 不进仓库、数据库、
-      普通日志、截图或发布证据。
+- [ ] 当前生产复核已有 GET 握手证据，不重新显示、复制或无故轮换已验证的 Token/AESKey。
+      旧部署通过 V101 显式 legacy import 等价迁移；首次安装或凭据确认泄露时，在 Admin
+      覆盖写入新值，且两者严格使用微信后台允许的纯字母数字字符，再开启并重新握手。
+      Token/AESKey 只以字段级 AAD 绑定的 AES-GCM 密文进入数据库，不进仓库、普通日志、
+      截图或发布证据；GET 只允许返回掩码和 configured 状态。
 - [ ] 保持 capture/worker 关闭；当前生产确认既有 GET 验证的签名、时间窗口和 `echostr`
       处理证据仍有效，首次安装则完成同等验证；证据中不保存完整查询参数。
 - [ ] 开 capture 前用只读查询列出过去 24 小时内身份完整、已支付且尚无卡片的全部
@@ -398,7 +393,7 @@ V94 的激活条件是支付后 24 小时内，激活后更新窗口是 30 天�
       均为就绪；确认页面不返回 Token/AESKey。使用独立 `wechat-service-card:runtime:write`
       权限、真实变更原因和当前 version 保存 `capture=true, worker=false`。不得从关闭状态
       一步同时开启 Capture 与 Worker。
-- [ ] 核对数据库 runtime setting 与 append-only audit 的 revision、before/after、operator、
+- [ ] 核对数据库接入配置与 runtime setting 两组 append-only audit 的 revision、before/after、operator、
       reason 一致；使用旧 version 的并发更新必须返回 409，不能覆盖新配置。
 - [ ] 回调接入验收后只开启 capture，worker 仍关闭。使用一笔切换后新建、运行来源
       为 `ENV` 的可控低金额真实支付，确认它与已批准的修复候选分别生成一张卡和
@@ -429,8 +424,16 @@ V94 的激活条件是支付后 24 小时内，激活后更新窗口是 30 天�
 
 ## 12. 基础设施和运维
 
-- [ ] 生产 profile 从受控 `.env.prod.local` 读取，文件权限、密钥挂载和 Redis/MySQL
-      密码符合 [docker-deployment.md](docker-deployment.md)；本地测试账号和已知密码未启用。
+- [ ] 按 [docker-deployment.md](docker-deployment.md) 的两阶段 runbook 升级：部署
+      V98/V99/V100/V101 时先保留真实 local/PEM；完成支付 ENV 导入、旧 file-id 回填、
+      微信平台与服务动态接入配置 ENV 导入、service-card/shipping 运行开关同值持久化和
+      真实/沙箱验证后，才进入清理阶段。
+- [ ] 新部署的 `.env.prod.local` 只含数据库/Redis、可信代理、通用主加密密钥和首次引导值。
+      升级中的旧文件可暂含尚未导入的兼容项，但必须为 `600` 且不进入镜像、日志或证据。
+- [ ] 删除支付路径/PEM 前，所有目标配置的 `legacySecretFilesPendingImport=false`、运行来源
+      已显式持久化为 `DB`，历史 ENV 支付有可解密快照且回调/回滚窗口已结束。服务动态
+      template/image/Callback 只有在 V101 source=DATABASE、握手/失败回调及回滚验证完成后
+      才能删除旧环境值。
 - [ ] Redis 可用；管理员登录保护、会话撤销和 app token auth-version 检查在故障模式下
       fail closed。
 - [ ] 支付/退款/发货 HTTP 连接、读取和响应体大小都有边界；日志只保留安全错误摘要。

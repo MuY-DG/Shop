@@ -21,4 +21,25 @@ public record PaymentProperties(
         String publicKeyPath,
         Integer expireMinutes
 ) {
+    @Override
+    public String toString() {
+        return "PaymentProperties[enabled=" + enabled
+                + ", mockEnabled=" + mockEnabled
+                + ", configSource=" + configSource
+                + ", appIdConfigured=" + hasText(appId)
+                + ", mchIdConfigured=" + hasText(mchId)
+                + ", merchantSerialNoConfigured=" + hasText(merchantSerialNo)
+                + ", privateKeyPathConfigured=" + hasText(privateKeyPath)
+                + ", apiV3KeyConfigured=" + hasText(apiV3Key)
+                + ", notifyUrlConfigured=" + hasText(notifyUrl)
+                + ", refundNotifyUrlConfigured=" + hasText(refundNotifyUrl)
+                + ", verifyMode=" + verifyMode
+                + ", publicKeyIdConfigured=" + hasText(publicKeyId)
+                + ", publicKeyPathConfigured=" + hasText(publicKeyPath)
+                + ", expireMinutes=" + expireMinutes + "]";
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
 }

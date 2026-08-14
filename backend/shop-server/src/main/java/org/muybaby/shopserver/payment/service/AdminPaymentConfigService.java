@@ -4,19 +4,21 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
+import org.muybaby.shopserver.payment.config.PaymentConfigMutationLock;
 import org.muybaby.shopserver.payment.config.PaymentConfigSource;
 import org.muybaby.shopserver.payment.config.PaymentConfigSourceSettingService;
 import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
+import org.muybaby.shopserver.payment.config.PaymentPemValidator;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigRequest;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigResponse;
+import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigStateResponse;
 import org.muybaby.shopserver.payment.dto.EnvironmentPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
-import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService.PaymentSecretSnapshot;
@@ -32,14 +34,14 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Supplier;
 
@@ -53,9 +55,11 @@ public class AdminPaymentConfigService {
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final PaymentConfigResolver paymentConfigResolver;
+    private final PaymentConfigMutationLock paymentConfigMutationLock;
     private final PaymentConfigSourceSettingService paymentConfigSourceSettingService;
     private final PaymentNotificationRouteService paymentNotificationRouteService;
     private final PaymentSecretCipher paymentSecretCipher;
+    private final PaymentPemValidator paymentPemValidator;
     private final PrivateStorageFileService privateStorageFileService;
     private final StorageUsageService storageUsageService;
     private final TransactionTemplate requiresNewTransaction;
@@ -65,9 +69,11 @@ public class AdminPaymentConfigService {
             JdbcClient jdbcClient,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             PaymentConfigResolver paymentConfigResolver,
+            PaymentConfigMutationLock paymentConfigMutationLock,
             PaymentConfigSourceSettingService paymentConfigSourceSettingService,
             PaymentNotificationRouteService paymentNotificationRouteService,
             PaymentSecretCipher paymentSecretCipher,
+            PaymentPemValidator paymentPemValidator,
             PrivateStorageFileService privateStorageFileService,
             StorageUsageService storageUsageService,
             PlatformTransactionManager transactionManager
@@ -75,9 +81,11 @@ public class AdminPaymentConfigService {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.paymentConfigResolver = paymentConfigResolver;
+        this.paymentConfigMutationLock = paymentConfigMutationLock;
         this.paymentConfigSourceSettingService = paymentConfigSourceSettingService;
         this.paymentNotificationRouteService = paymentNotificationRouteService;
         this.paymentSecretCipher = paymentSecretCipher;
+        this.paymentPemValidator = paymentPemValidator;
         this.privateStorageFileService = privateStorageFileService;
         this.storageUsageService = storageUsageService;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
@@ -86,8 +94,10 @@ public class AdminPaymentConfigService {
         this.withoutTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
     }
 
-    public EffectivePaymentConfigResponse effective() {
-        return toEffectiveResponse(paymentConfigResolver.resolve());
+    public EffectivePaymentConfigStateResponse effective() {
+        return paymentConfigResolver.resolveAvailable()
+                .map(config -> new EffectivePaymentConfigStateResponse(true, toEffectiveResponse(config)))
+                .orElseGet(() -> new EffectivePaymentConfigStateResponse(false, null));
     }
 
     public EnvironmentPaymentConfigResponse environment() {
@@ -113,11 +123,13 @@ public class AdminPaymentConfigService {
                 mask(config.mchId(), 2, 2),
                 mask(config.merchantSerialNo(), 3, 3),
                 StringUtils.hasText(config.apiV3Key()),
-                config.privateKeyFileId(),
-                config.merchantCertificateFileId(),
+                StringUtils.hasText(config.privateKeyPem()),
                 config.verifyMode().name(),
                 mask(config.wechatPublicKeyId(), 4, 4),
-                config.wechatPublicKeyFileId(),
+                StringUtils.hasText(config.wechatPublicKeyPem()),
+                config.privateKeyFileId() != null
+                        || config.merchantCertificateFileId() != null
+                        || config.wechatPublicKeyFileId() != null,
                 config.notifyUrl(),
                 config.refundNotifyUrl(),
                 config.enabled(),
@@ -143,10 +155,10 @@ public class AdminPaymentConfigService {
                     ? inspectStoredConfig(resolved.configId(), true, resolved)
                     : null;
             return requireTransactionResult(requiresNewTransaction.execute(status -> {
+                paymentConfigSourceSettingService.update(source);
                 if (storedConfig != null) {
                     revalidateStoredConfig(storedConfig, false);
                 }
-                paymentConfigSourceSettingService.update(source);
                 return paymentConfigSourceSettingService.current();
             }));
         });
@@ -158,15 +170,14 @@ public class AdminPaymentConfigService {
         long offset = (pageCurrent - 1) * pageSize;
 
         Long total = jdbcClient.sql("""
-                        select count(*)
-                        from payment_config
-                        where status = 'ACTIVE'
+                        select count(*) from payment_config where status = 'ACTIVE'
                         """)
                 .query(Long.class)
                 .single();
 
         List<AdminPaymentConfigResponse> records = jdbcClient.sql("""
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                               private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                                private_key_file_id, merchant_certificate_file_id, verify_mode,
                                wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                                enabled, status, created_at, updated_at
@@ -186,70 +197,107 @@ public class AdminPaymentConfigService {
     public AdminPaymentConfigResponse create(AdminPaymentConfigRequest request) {
         return outsideTransaction(() -> {
             ValidatedConfig validated = validateRequest(request, null);
-            List<Long> currentSecretIds = paymentSecretIds(validated);
-            List<PaymentSecretSnapshot> secretSnapshots =
-                    privateStorageFileService.inspectPaymentSecrets(currentSecretIds);
-            return requireTransactionResult(requiresNewTransaction.execute(status ->
-                    createInTransaction(validated, currentSecretIds, secretSnapshots)));
+            return requireTransactionResult(requiresNewTransaction.execute(status -> createInTransaction(validated)));
         });
     }
 
-    private AdminPaymentConfigResponse createInTransaction(
-            ValidatedConfig validated,
-            List<Long> currentSecretIds,
-            List<PaymentSecretSnapshot> secretSnapshots
-    ) {
-        privateStorageFileService.lockAndRevalidatePaymentSecrets(secretSnapshots, List.of());
+    public AdminPaymentConfigResponse importEnvironment() {
+        return outsideTransaction(() -> {
+            ResolvedPaymentConfig environment = paymentConfigResolver.resolve(PaymentConfigSource.ENV);
+            ValidatedConfig validated = new ValidatedConfig(
+                    requireText(environment.configName(), 80),
+                    requireText(environment.appId(), 64),
+                    requireText(environment.mchId(), 32),
+                    requireText(environment.merchantSerialNo(), 128),
+                    validateApiV3Key(environment.apiV3Key()),
+                    paymentPemValidator.validatePrivateKey(environment.privateKeyPem()),
+                    PaymentVerifyMode.PUBLIC_KEY,
+                    requireText(environment.wechatPublicKeyId(), 128),
+                    paymentPemValidator.validatePublicKey(environment.wechatPublicKeyPem()),
+                    requireText(environment.notifyUrl(), 255),
+                    requireText(environment.refundNotifyUrl(), 255)
+            );
+            requireNotificationRouteReady(environment);
+            return requireTransactionResult(requiresNewTransaction.execute(status -> {
+                paymentConfigMutationLock.acquire();
+                rejectEnvironmentImportConflict(validated);
+                return createInTransaction(validated);
+            }));
+        });
+    }
+
+    private void rejectEnvironmentImportConflict(ValidatedConfig config) {
+        Long conflicts = jdbcClient.sql("""
+                        select count(*)
+                        from payment_config
+                        where status = 'ACTIVE'
+                          and (config_name = :configName or (app_id = :appId and mch_id = :mchId))
+                        """)
+                .param("configName", config.configName())
+                .param("appId", config.appId())
+                .param("mchId", config.mchId())
+                .query(Long.class)
+                .single();
+        if (conflicts != null && conflicts > 0) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
+    private AdminPaymentConfigResponse createInTransaction(ValidatedConfig validated) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         namedParameterJdbcTemplate.update("""
                         insert into payment_config
                             (config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                              private_key_file_id, merchant_certificate_file_id, verify_mode,
                              wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                              enabled, status)
                         values
-                            (:configName, :appId, :mchId, :merchantSerialNo, :apiV3KeyCiphertext,
-                             :privateKeyFileId, :merchantCertificateFileId, :verifyMode,
-                             :wechatPublicKeyId, :wechatPublicKeyFileId, :notifyUrl, :refundNotifyUrl,
-                             false, 'ACTIVE')
+                            (:configName, :appId, :mchId, :merchantSerialNo, '', '', '',
+                             null, null, :verifyMode, :wechatPublicKeyId, null, :notifyUrl,
+                             :refundNotifyUrl, false, 'ACTIVE')
                         """,
                 new MapSqlParameterSource()
                         .addValue("configName", validated.configName())
                         .addValue("appId", validated.appId())
                         .addValue("mchId", validated.mchId())
                         .addValue("merchantSerialNo", validated.merchantSerialNo())
-                        .addValue("apiV3KeyCiphertext", "")
-                        .addValue("privateKeyFileId", validated.privateKeyFileId())
-                        .addValue("merchantCertificateFileId", validated.merchantCertificateFileId())
                         .addValue("verifyMode", validated.verifyMode().name())
                         .addValue("wechatPublicKeyId", validated.wechatPublicKeyId())
-                        .addValue("wechatPublicKeyFileId", validated.wechatPublicKeyFileId())
                         .addValue("notifyUrl", validated.notifyUrl())
                         .addValue("refundNotifyUrl", validated.refundNotifyUrl()),
                 keyHolder,
                 new String[]{"id"});
         Long configId = requireGeneratedId(keyHolder);
-        PaymentSecretCipher.EncryptedSecret encryptedApiV3Key = paymentSecretCipher.encrypt(
-                PaymentConfigResolver.apiV3KeyContext(configId), validated.apiV3Key());
+        EncryptedMaterial encrypted = encryptMaterial(
+                configId,
+                validated.apiV3Key(),
+                validated.privateKeyPem(),
+                validated.wechatPublicKeyPem()
+        );
         int encryptedRows = jdbcClient.sql("""
                         update payment_config
-                        set api_v3_key_ciphertext = :ciphertext,
+                        set api_v3_key_ciphertext = :apiV3KeyCiphertext,
+                            private_key_pem_ciphertext = :privateKeyPemCiphertext,
+                            wechat_public_key_pem_ciphertext = :publicKeyPemCiphertext,
                             secret_cipher_version = :cipherVersion,
                             secret_key_id = :keyId,
                             secret_revision = secret_revision + 1
                         where id = :configId
                           and api_v3_key_ciphertext = ''
+                          and private_key_pem_ciphertext = ''
+                          and wechat_public_key_pem_ciphertext = ''
                         """)
-                .param("ciphertext", encryptedApiV3Key.ciphertext())
-                .param("cipherVersion", encryptedApiV3Key.version())
-                .param("keyId", encryptedApiV3Key.keyId())
+                .param("apiV3KeyCiphertext", encrypted.apiV3Key().ciphertext())
+                .param("privateKeyPemCiphertext", encrypted.privateKeyPem().ciphertext())
+                .param("publicKeyPemCiphertext", encrypted.wechatPublicKeyPem().ciphertext())
+                .param("cipherVersion", encrypted.apiV3Key().version())
+                .param("keyId", encrypted.apiV3Key().keyId())
                 .param("configId", configId)
                 .update();
         if (encryptedRows != 1) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-        replaceProtectedUsages(configId, validated);
-        privateStorageFileService.reconcilePaymentSecretRetention(currentSecretIds, List.of());
         return requireConfig(configId);
     }
 
@@ -257,17 +305,30 @@ public class AdminPaymentConfigService {
         return outsideTransaction(() -> {
             PaymentConfigRow observed = requireConfigRow(configId, false);
             ValidatedConfig validated = validateRequest(request, observed);
-            List<Long> currentSecretIds = paymentSecretIds(validated);
+            ResolvedPaymentConfig resolved = paymentConfigResolver.resolveForPaymentConfigId(configId);
+            requireResolvedConfig(observed, resolved);
+
+            String apiV3Key = validated.apiV3Key() == null
+                    ? validateApiV3Key(resolved.apiV3Key())
+                    : validated.apiV3Key();
+            String privateKeyPem = validated.privateKeyPem() == null
+                    ? paymentPemValidator.validatePrivateKey(resolved.privateKeyPem())
+                    : validated.privateKeyPem();
+            String publicKeyPem = validated.wechatPublicKeyPem() == null
+                    ? paymentPemValidator.validatePublicKey(resolved.wechatPublicKeyPem())
+                    : validated.wechatPublicKeyPem();
             List<Long> previousSecretIds = paymentSecretIds(observed);
-            List<PaymentSecretSnapshot> secretSnapshots =
-                    privateStorageFileService.inspectPaymentSecrets(currentSecretIds);
+            List<PaymentSecretSnapshot> snapshots =
+                    privateStorageFileService.inspectPaymentSecrets(previousSecretIds);
             return requireTransactionResult(requiresNewTransaction.execute(status -> updateInTransaction(
                     configId,
                     observed,
                     validated,
-                    currentSecretIds,
+                    apiV3Key,
+                    privateKeyPem,
+                    publicKeyPem,
                     previousSecretIds,
-                    secretSnapshots
+                    snapshots
             )));
         });
     }
@@ -276,22 +337,17 @@ public class AdminPaymentConfigService {
             Long configId,
             PaymentConfigRow observed,
             ValidatedConfig validated,
-            List<Long> currentSecretIds,
+            String apiV3Key,
+            String privateKeyPem,
+            String publicKeyPem,
             List<Long> previousSecretIds,
-            List<PaymentSecretSnapshot> secretSnapshots
+            List<PaymentSecretSnapshot> snapshots
     ) {
-        privateStorageFileService.lockAndRevalidatePaymentSecrets(secretSnapshots, previousSecretIds);
+        privateStorageFileService.lockAndRevalidatePaymentSecrets(snapshots, previousSecretIds);
         PaymentConfigRow locked = requireConfigRow(configId, true);
         requireUnchangedConfig(observed, locked);
         rejectReferencedConfigMutation(configId);
-        boolean secretChanged = validated.apiV3Key() != null;
-        PaymentSecretCipher.EncryptedSecret encryptedApiV3Key = secretChanged
-                ? paymentSecretCipher.encrypt(
-                        PaymentConfigResolver.apiV3KeyContext(configId), validated.apiV3Key())
-                : new PaymentSecretCipher.EncryptedSecret(
-                        locked.apiV3KeyCiphertext(),
-                        locked.secretCipherVersion(),
-                        locked.secretKeyId());
+        EncryptedMaterial encrypted = encryptMaterial(configId, apiV3Key, privateKeyPem, publicKeyPem);
         int updatedRows = jdbcClient.sql("""
                         update payment_config
                         set config_name = :configName,
@@ -299,38 +355,33 @@ public class AdminPaymentConfigService {
                             mch_id = :mchId,
                             merchant_serial_no = :merchantSerialNo,
                             api_v3_key_ciphertext = :apiV3KeyCiphertext,
+                            private_key_pem_ciphertext = :privateKeyPemCiphertext,
+                            wechat_public_key_pem_ciphertext = :publicKeyPemCiphertext,
                             secret_cipher_version = :secretCipherVersion,
                             secret_key_id = :secretKeyId,
-                            secret_revision = secret_revision
-                                + case when :secretChanged then 1 else 0 end,
-                            secret_reencrypted_at = case
-                                when :secretChanged then null
-                                else secret_reencrypted_at
-                            end,
-                            private_key_file_id = :privateKeyFileId,
-                            merchant_certificate_file_id = :merchantCertificateFileId,
+                            secret_revision = secret_revision + 1,
+                            secret_reencrypted_at = null,
+                            private_key_file_id = null,
+                            merchant_certificate_file_id = null,
                             verify_mode = :verifyMode,
                             wechat_public_key_id = :wechatPublicKeyId,
-                            wechat_public_key_file_id = :wechatPublicKeyFileId,
+                            wechat_public_key_file_id = null,
                             notify_url = :notifyUrl,
                             refund_notify_url = :refundNotifyUrl,
                             updated_at = current_timestamp
-                        where id = :configId
-                          and status = 'ACTIVE'
+                        where id = :configId and status = 'ACTIVE'
                         """)
                 .param("configName", validated.configName())
                 .param("appId", validated.appId())
                 .param("mchId", validated.mchId())
                 .param("merchantSerialNo", validated.merchantSerialNo())
-                .param("apiV3KeyCiphertext", encryptedApiV3Key.ciphertext())
-                .param("secretCipherVersion", encryptedApiV3Key.version())
-                .param("secretKeyId", encryptedApiV3Key.keyId())
-                .param("secretChanged", secretChanged)
-                .param("privateKeyFileId", validated.privateKeyFileId())
-                .param("merchantCertificateFileId", validated.merchantCertificateFileId())
+                .param("apiV3KeyCiphertext", encrypted.apiV3Key().ciphertext())
+                .param("privateKeyPemCiphertext", encrypted.privateKeyPem().ciphertext())
+                .param("publicKeyPemCiphertext", encrypted.wechatPublicKeyPem().ciphertext())
+                .param("secretCipherVersion", encrypted.apiV3Key().version())
+                .param("secretKeyId", encrypted.apiV3Key().keyId())
                 .param("verifyMode", validated.verifyMode().name())
                 .param("wechatPublicKeyId", validated.wechatPublicKeyId())
-                .param("wechatPublicKeyFileId", validated.wechatPublicKeyFileId())
                 .param("notifyUrl", validated.notifyUrl())
                 .param("refundNotifyUrl", validated.refundNotifyUrl())
                 .param("configId", configId)
@@ -338,26 +389,98 @@ public class AdminPaymentConfigService {
         if (updatedRows != 1) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        replaceProtectedUsages(configId, validated);
-        privateStorageFileService.reconcilePaymentSecretRetention(currentSecretIds, previousSecretIds);
+        releaseLegacySecretFiles(configId, validated.configName(), previousSecretIds);
         return requireConfig(configId);
+    }
+
+    public AdminPaymentConfigResponse importLegacySecretFiles(Long configId) {
+        return outsideTransaction(() -> {
+            PaymentConfigRow observed = requireConfigRow(configId, false);
+            if (!legacySecretFilesPendingImport(observed)
+                    && StringUtils.hasText(observed.privateKeyPemCiphertext())
+                    && StringUtils.hasText(observed.wechatPublicKeyPemCiphertext())) {
+                return requireConfig(configId);
+            }
+            ResolvedPaymentConfig resolved = paymentConfigResolver.resolveForPaymentConfigId(configId);
+            requireResolvedConfig(observed, resolved);
+            validateApiV3Key(resolved.apiV3Key());
+            paymentPemValidator.validatePrivateKey(resolved.privateKeyPem());
+            paymentPemValidator.validatePublicKey(resolved.wechatPublicKeyPem());
+            List<Long> previousSecretIds = paymentSecretIds(observed);
+            List<PaymentSecretSnapshot> snapshots =
+                    privateStorageFileService.inspectPaymentSecrets(previousSecretIds);
+            return requireTransactionResult(requiresNewTransaction.execute(status -> importLegacyInTransaction(
+                    observed,
+                    resolved,
+                    previousSecretIds,
+                    snapshots
+            )));
+        });
+    }
+
+    private AdminPaymentConfigResponse importLegacyInTransaction(
+            PaymentConfigRow observed,
+            ResolvedPaymentConfig resolved,
+            List<Long> previousSecretIds,
+            List<PaymentSecretSnapshot> snapshots
+    ) {
+        privateStorageFileService.lockAndRevalidatePaymentSecrets(snapshots, previousSecretIds);
+        PaymentConfigRow locked = requireConfigRow(observed.id(), true);
+        requireUnchangedConfig(observed, locked);
+        EncryptedMaterial encrypted = encryptMaterial(
+                observed.id(),
+                resolved.apiV3Key(),
+                resolved.privateKeyPem(),
+                resolved.wechatPublicKeyPem()
+        );
+        int updatedRows = jdbcClient.sql("""
+                        update payment_config
+                        set api_v3_key_ciphertext = :apiV3KeyCiphertext,
+                            private_key_pem_ciphertext = :privateKeyPemCiphertext,
+                            wechat_public_key_pem_ciphertext = :publicKeyPemCiphertext,
+                            secret_cipher_version = :secretCipherVersion,
+                            secret_key_id = :secretKeyId,
+                            secret_revision = secret_revision + 1,
+                            secret_reencrypted_at = null,
+                            private_key_file_id = null,
+                            merchant_certificate_file_id = null,
+                            wechat_public_key_file_id = null,
+                            updated_at = current_timestamp
+                        where id = :configId and status = 'ACTIVE'
+                        """)
+                .param("apiV3KeyCiphertext", encrypted.apiV3Key().ciphertext())
+                .param("privateKeyPemCiphertext", encrypted.privateKeyPem().ciphertext())
+                .param("publicKeyPemCiphertext", encrypted.wechatPublicKeyPem().ciphertext())
+                .param("secretCipherVersion", encrypted.apiV3Key().version())
+                .param("secretKeyId", encrypted.apiV3Key().keyId())
+                .param("configId", observed.id())
+                .update();
+        if (updatedRows != 1) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        releaseLegacySecretFiles(observed.id(), observed.configName(), previousSecretIds);
+        return requireConfig(observed.id());
+    }
+
+    private void releaseLegacySecretFiles(Long configId, String configName, List<Long> previousSecretIds) {
+        storageUsageService.replaceOwnerUsages(
+                StorageUsageOwnerType.PAYMENT_CONFIG,
+                configId,
+                configName,
+                List.of()
+        );
+        privateStorageFileService.reconcilePaymentSecretRetention(List.of(), previousSecretIds);
     }
 
     private void rejectReferencedConfigMutation(Long configId) {
         boolean referenced = jdbcClient.sql("""
                         select count(*)
                         from (
-                            select id
-                            from payment_order
-                            where payment_config_id = :configId
+                            select id from payment_order where payment_config_id = :configId
                             union all
-                            select id
-                            from purged_payment_identity
-                            where payment_config_id = :configId
+                            select id from purged_payment_identity where payment_config_id = :configId
                             union all
-                            select id
-                            from purged_refund_identity
-                            where payment_config_id = :configId
+                            select id from purged_refund_identity where payment_config_id = :configId
                         ) referenced_payment_config
                         """)
                 .param("configId", configId)
@@ -376,26 +499,17 @@ public class AdminPaymentConfigService {
         });
     }
 
-    private AdminPaymentConfigResponse enableInTransaction(
-            Long configId,
-            StoredConfigSnapshot storedConfig
-    ) {
+    private AdminPaymentConfigResponse enableInTransaction(Long configId, StoredConfigSnapshot storedConfig) {
         revalidateStoredConfig(storedConfig, true);
         jdbcClient.sql("""
-                        update payment_config
-                        set enabled = false,
-                            updated_at = current_timestamp
-                        where status = 'ACTIVE'
-                          and id <> :configId
+                        update payment_config set enabled = false, updated_at = current_timestamp
+                        where status = 'ACTIVE' and id <> :configId
                         """)
                 .param("configId", configId)
                 .update();
         int updatedRows = jdbcClient.sql("""
-                        update payment_config
-                        set enabled = true,
-                            updated_at = current_timestamp
-                        where id = :configId
-                          and status = 'ACTIVE'
+                        update payment_config set enabled = true, updated_at = current_timestamp
+                        where id = :configId and status = 'ACTIVE'
                         """)
                 .param("configId", configId)
                 .update();
@@ -421,10 +535,10 @@ public class AdminPaymentConfigService {
         requireNotificationRouteReady(resolved);
         PaymentConfigRow confirmed = requireConfigRow(configId, false);
         requireUnchangedConfig(observed, confirmed);
-        List<PaymentSecretSnapshot> secretSnapshots = privateStorageFileService.inspectPaymentSecrets(
+        List<PaymentSecretSnapshot> snapshots = privateStorageFileService.inspectPaymentSecrets(
                 paymentSecretIds(confirmed)
         );
-        return new StoredConfigSnapshot(confirmed, secretSnapshots);
+        return new StoredConfigSnapshot(confirmed, snapshots);
     }
 
     private void revalidateStoredConfig(StoredConfigSnapshot storedConfig, boolean lockAllConfigs) {
@@ -438,11 +552,7 @@ public class AdminPaymentConfigService {
 
     private void lockActiveConfigsInOrder() {
         jdbcClient.sql("""
-                        select id
-                        from payment_config
-                        where status = 'ACTIVE'
-                        order by id
-                        for update
+                        select id from payment_config where status = 'ACTIVE' order by id for update
                         """)
                 .query(Long.class)
                 .list();
@@ -457,17 +567,96 @@ public class AdminPaymentConfigService {
                 && Objects.equals(row.appId(), resolved.appId())
                 && Objects.equals(row.mchId(), resolved.mchId())
                 && Objects.equals(row.merchantSerialNo(), resolved.merchantSerialNo())
-                && Objects.equals(decryptApiV3Key(row), resolved.apiV3Key())
+                && secretEquals(decryptMaterial(
+                        PaymentConfigResolver.apiV3KeyContext(row.id()), row.apiV3KeyCiphertext(), row),
+                        resolved.apiV3Key())
+                && secretEquals(readPrivateKey(row), resolved.privateKeyPem())
                 && row.verifyMode() == resolved.verifyMode()
                 && Objects.equals(row.wechatPublicKeyId(), resolved.wechatPublicKeyId())
-                && Objects.equals(row.privateKeyFileId(), resolved.privateKeyFileId())
-                && Objects.equals(row.merchantCertificateFileId(), resolved.merchantCertificateFileId())
-                && Objects.equals(row.wechatPublicKeyFileId(), resolved.wechatPublicKeyFileId())
+                && secretEquals(readPublicKey(row), resolved.wechatPublicKeyPem())
                 && Objects.equals(row.notifyUrl(), resolved.notifyUrl())
                 && Objects.equals(row.refundNotifyUrl(), resolved.refundNotifyUrl());
         if (!matches) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+    }
+
+    private String readPrivateKey(PaymentConfigRow row) {
+        if (StringUtils.hasText(row.privateKeyPemCiphertext())) {
+            return decryptMaterial(
+                    PaymentConfigResolver.privateKeyPemContext(row.id()), row.privateKeyPemCiphertext(), row);
+        }
+        if (row.privateKeyFileId() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return privateStorageFileService.readSecretText(row.privateKeyFileId());
+    }
+
+    private String readPublicKey(PaymentConfigRow row) {
+        if (StringUtils.hasText(row.wechatPublicKeyPemCiphertext())) {
+            return decryptMaterial(
+                    PaymentConfigResolver.wechatPublicKeyPemContext(row.id()),
+                    row.wechatPublicKeyPemCiphertext(),
+                    row
+            );
+        }
+        if (row.wechatPublicKeyFileId() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return privateStorageFileService.readSecretText(row.wechatPublicKeyFileId());
+    }
+
+    private String decryptMaterial(
+            PaymentSecretCipher.SecretContext context,
+            String ciphertext,
+            PaymentConfigRow row
+    ) {
+        try {
+            PaymentSecretCipher.DecryptedSecret decrypted = paymentSecretCipher.decrypt(context, ciphertext);
+            if (decrypted.version() != row.secretCipherVersion()
+                    || !decrypted.keyId().equals(nullToEmpty(row.secretKeyId()))) {
+                throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
+            }
+            return decrypted.plaintext();
+        } catch (RuntimeException ex) {
+            throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
+        }
+    }
+
+    private EncryptedMaterial encryptMaterial(
+            Long configId,
+            String apiV3Key,
+            String privateKeyPem,
+            String wechatPublicKeyPem
+    ) {
+        PaymentSecretCipher.EncryptedSecret encryptedApiV3Key = paymentSecretCipher.encrypt(
+                PaymentConfigResolver.apiV3KeyContext(configId), apiV3Key);
+        PaymentSecretCipher.EncryptedSecret encryptedPrivateKey = paymentSecretCipher.encrypt(
+                PaymentConfigResolver.privateKeyPemContext(configId), privateKeyPem);
+        PaymentSecretCipher.EncryptedSecret encryptedPublicKey = paymentSecretCipher.encrypt(
+                PaymentConfigResolver.wechatPublicKeyPemContext(configId), wechatPublicKeyPem);
+        requireSameEnvelope(encryptedApiV3Key, encryptedPrivateKey, encryptedPublicKey);
+        return new EncryptedMaterial(encryptedApiV3Key, encryptedPrivateKey, encryptedPublicKey);
+    }
+
+    private void requireSameEnvelope(PaymentSecretCipher.EncryptedSecret... secrets) {
+        if (secrets.length == 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        for (PaymentSecretCipher.EncryptedSecret secret : secrets) {
+            if (secret == null
+                    || secret.version() != secrets[0].version()
+                    || !Objects.equals(secret.keyId(), secrets[0].keyId())) {
+                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            }
+        }
+    }
+
+    private boolean secretEquals(String left, String right) {
+        return MessageDigest.isEqual(
+                nullToEmpty(left).getBytes(StandardCharsets.UTF_8),
+                nullToEmpty(right).getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     private void requireNotificationRouteReady(ResolvedPaymentConfig resolved) {
@@ -476,16 +665,6 @@ public class AdminPaymentConfigService {
         }
         paymentNotificationRouteService.validateRoutedBaseUrl(resolved.notifyUrl());
         paymentNotificationRouteService.validateRoutedBaseUrl(resolved.refundNotifyUrl());
-    }
-
-    private String decryptApiV3Key(PaymentConfigRow row) {
-        PaymentSecretCipher.DecryptedSecret decrypted = paymentSecretCipher.decrypt(
-                PaymentConfigResolver.apiV3KeyContext(row.id()), row.apiV3KeyCiphertext());
-        if (decrypted.version() != row.secretCipherVersion()
-                || !decrypted.keyId().equals(row.secretKeyId() == null ? "" : row.secretKeyId())) {
-            throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
-        }
-        return decrypted.plaintext();
     }
 
     private void requireUnchangedConfig(PaymentConfigRow observed, PaymentConfigRow current) {
@@ -510,89 +689,51 @@ public class AdminPaymentConfigService {
         String appId = requireTextOrExisting(request.appId(), 64, existing == null ? null : existing.appId());
         String mchId = requireTextOrExisting(request.mchId(), 32, existing == null ? null : existing.mchId());
         String merchantSerialNo = requireTextOrExisting(
-                request.merchantSerialNo(),
-                128,
-                existing == null ? null : existing.merchantSerialNo()
-        );
+                request.merchantSerialNo(), 128, existing == null ? null : existing.merchantSerialNo());
         String notifyUrl = requireText(request.notifyUrl(), 255);
         String refundNotifyUrl = requireText(request.refundNotifyUrl(), 255);
         paymentNotificationRouteService.validateRoutedBaseUrl(notifyUrl);
         paymentNotificationRouteService.validateRoutedBaseUrl(refundNotifyUrl);
         PaymentVerifyMode verifyMode = parseVerifyMode(request.verifyMode());
-        Long privateKeyFileId = requireFileId(request.privateKeyFileId());
-        Long merchantCertificateFileId = optionalFileId(request.merchantCertificateFileId());
-        String wechatPublicKeyId = textOrExisting(
-                request.wechatPublicKeyId(),
-                128,
-                existing == null ? null : existing.wechatPublicKeyId()
-        );
-        Long wechatPublicKeyFileId = optionalFileId(request.wechatPublicKeyFileId());
-
-        if (verifyMode == PaymentVerifyMode.PUBLIC_KEY) {
-            wechatPublicKeyId = requireText(wechatPublicKeyId, 128);
-            wechatPublicKeyFileId = requireFileId(wechatPublicKeyFileId);
-        }
+        String wechatPublicKeyId = requireTextOrExisting(
+                request.wechatPublicKeyId(), 128, existing == null ? null : existing.wechatPublicKeyId());
 
         String apiV3Key = trimToNull(request.apiV3Key());
-        if (apiV3Key == null) {
-            if (existing == null) {
-                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-            }
-        } else {
-            rejectMaskedPlaceholder(apiV3Key);
+        if (apiV3Key == null && existing == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (apiV3Key != null) {
+            apiV3Key = validateApiV3Key(apiV3Key);
+        }
+
+        String privateKeyPem = null;
+        if (StringUtils.hasText(request.privateKeyPem())) {
+            privateKeyPem = paymentPemValidator.validatePrivateKey(request.privateKeyPem());
+        } else if (existing == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        String publicKeyPem = null;
+        if (StringUtils.hasText(request.wechatPublicKeyPem())) {
+            publicKeyPem = paymentPemValidator.validatePublicKey(request.wechatPublicKeyPem());
+        } else if (existing == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
 
         return new ValidatedConfig(
-                configName,
-                appId,
-                mchId,
-                merchantSerialNo,
-                apiV3Key,
-                privateKeyFileId,
-                merchantCertificateFileId,
-                verifyMode,
-                wechatPublicKeyId,
-                wechatPublicKeyFileId,
-                notifyUrl,
-                refundNotifyUrl
-        );
-    }
-
-    private void replaceProtectedUsages(Long configId, ValidatedConfig validated) {
-        Map<Long, StorageUsageService.UsageAssignment> usagesByFileId = new LinkedHashMap<>();
-        addUsage(usagesByFileId, validated.privateKeyFileId(), 1);
-        addUsage(usagesByFileId, validated.merchantCertificateFileId(), 2);
-        addUsage(usagesByFileId, validated.wechatPublicKeyFileId(), 3);
-        storageUsageService.replaceOwnerUsages(
-                StorageUsageOwnerType.PAYMENT_CONFIG,
-                configId,
-                validated.configName(),
-                new ArrayList<>(usagesByFileId.values())
-        );
-    }
-
-    private void addUsage(Map<Long, StorageUsageService.UsageAssignment> usagesByFileId, Long fileId, int sortOrder) {
-        if (fileId == null || usagesByFileId.containsKey(fileId)) {
-            return;
-        }
-        usagesByFileId.put(fileId, new StorageUsageService.UsageAssignment(
-                fileId,
-                StorageFileUsageType.PAYMENT_CONFIG_CERT,
-                "",
-                sortOrder,
-                true
-        ));
+                configName, appId, mchId, merchantSerialNo, apiV3Key, privateKeyPem,
+                verifyMode, wechatPublicKeyId, publicKeyPem, notifyUrl, refundNotifyUrl);
     }
 
     private AdminPaymentConfigResponse requireConfig(Long configId) {
         return jdbcClient.sql("""
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                               private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                                private_key_file_id, merchant_certificate_file_id, verify_mode,
                                wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                                enabled, status, created_at, updated_at
                         from payment_config
-                        where id = :configId
-                          and status = 'ACTIVE'
+                        where id = :configId and status = 'ACTIVE'
                         """)
                 .param("configId", configId)
                 .query(this::mapResponse)
@@ -606,12 +747,12 @@ public class AdminPaymentConfigService {
         }
         return jdbcClient.sql("""
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                               private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                                private_key_file_id, merchant_certificate_file_id, verify_mode,
                                wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
-                               enabled, updated_at, secret_cipher_version, secret_key_id
+                               enabled, updated_at, secret_cipher_version, secret_key_id, secret_revision
                         from payment_config
-                        where id = :configId
-                          and status = 'ACTIVE'
+                        where id = :configId and status = 'ACTIVE'
                         """ + (forUpdate ? " for update" : ""))
                 .param("configId", configId)
                 .query((rs, rowNum) -> new PaymentConfigRow(
@@ -621,6 +762,8 @@ public class AdminPaymentConfigService {
                         rs.getString("mch_id"),
                         rs.getString("merchant_serial_no"),
                         rs.getString("api_v3_key_ciphertext"),
+                        rs.getString("private_key_pem_ciphertext"),
+                        rs.getString("wechat_public_key_pem_ciphertext"),
                         nullableLong(rs, "private_key_file_id"),
                         nullableLong(rs, "merchant_certificate_file_id"),
                         PaymentVerifyMode.valueOf(rs.getString("verify_mode")),
@@ -631,18 +774,11 @@ public class AdminPaymentConfigService {
                         rs.getBoolean("enabled"),
                         rs.getObject("updated_at", LocalDateTime.class),
                         rs.getInt("secret_cipher_version"),
-                        rs.getString("secret_key_id")
+                        rs.getString("secret_key_id"),
+                        rs.getLong("secret_revision")
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
-    }
-
-    private List<Long> paymentSecretIds(ValidatedConfig config) {
-        LinkedHashSet<Long> ids = new LinkedHashSet<>();
-        addIfPresent(ids, config.privateKeyFileId());
-        addIfPresent(ids, config.merchantCertificateFileId());
-        addIfPresent(ids, config.wechatPublicKeyFileId());
-        return new ArrayList<>(ids);
     }
 
     private List<Long> paymentSecretIds(PaymentConfigRow config) {
@@ -660,6 +796,9 @@ public class AdminPaymentConfigService {
     }
 
     private AdminPaymentConfigResponse mapResponse(ResultSet rs, int rowNum) throws SQLException {
+        Long privateKeyFileId = nullableLong(rs, "private_key_file_id");
+        Long merchantCertificateFileId = nullableLong(rs, "merchant_certificate_file_id");
+        Long publicKeyFileId = nullableLong(rs, "wechat_public_key_file_id");
         return new AdminPaymentConfigResponse(
                 rs.getLong("id"),
                 PaymentConfigSource.DB.name(),
@@ -668,11 +807,11 @@ public class AdminPaymentConfigService {
                 mask(rs.getString("mch_id"), 2, 2),
                 mask(rs.getString("merchant_serial_no"), 3, 3),
                 StringUtils.hasText(rs.getString("api_v3_key_ciphertext")),
-                nullableLong(rs, "private_key_file_id"),
-                nullableLong(rs, "merchant_certificate_file_id"),
+                StringUtils.hasText(rs.getString("private_key_pem_ciphertext")) || privateKeyFileId != null,
                 rs.getString("verify_mode"),
                 mask(rs.getString("wechat_public_key_id"), 4, 4),
-                nullableLong(rs, "wechat_public_key_file_id"),
+                StringUtils.hasText(rs.getString("wechat_public_key_pem_ciphertext")) || publicKeyFileId != null,
+                privateKeyFileId != null || merchantCertificateFileId != null || publicKeyFileId != null,
                 rs.getString("notify_url"),
                 rs.getString("refund_notify_url"),
                 rs.getBoolean("enabled"),
@@ -680,6 +819,12 @@ public class AdminPaymentConfigService {
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class)
         );
+    }
+
+    private boolean legacySecretFilesPendingImport(PaymentConfigRow row) {
+        return row.privateKeyFileId() != null
+                || row.merchantCertificateFileId() != null
+                || row.wechatPublicKeyFileId() != null;
     }
 
     private String requireText(String value, int maxLength) {
@@ -700,34 +845,21 @@ public class AdminPaymentConfigService {
         return required;
     }
 
-    private String textOrExisting(String value, int maxLength, String existingValue) {
-        String trimmed = trimToNull(value);
-        if (trimmed == null) {
-            return trimToEmpty(existingValue);
-        }
-        String required = requireText(trimmed, maxLength);
-        rejectMaskedPlaceholder(required);
-        return required;
-    }
-
-    private Long requireFileId(Long fileId) {
-        if (fileId == null || fileId <= 0) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        return fileId;
-    }
-
-    private Long optionalFileId(Long fileId) {
-        if (fileId != null && fileId <= 0) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        return fileId;
-    }
-
     private void rejectMaskedPlaceholder(String value) {
         if (value.contains("*")) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
+    }
+
+    private String validateApiV3Key(String value) {
+        String normalized = trimToNull(value);
+        if (normalized == null
+                || !normalized.equals(value)
+                || normalized.getBytes(StandardCharsets.UTF_8).length != 32) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        rejectMaskedPlaceholder(normalized);
+        return normalized;
     }
 
     private PaymentVerifyMode parseVerifyMode(String verifyMode) {
@@ -790,8 +922,8 @@ public class AdminPaymentConfigService {
         return value.trim();
     }
 
-    private String trimToEmpty(String value) {
-        return value == null ? "" : value.trim();
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private record PaymentConfigRow(
@@ -801,6 +933,8 @@ public class AdminPaymentConfigService {
             String mchId,
             String merchantSerialNo,
             String apiV3KeyCiphertext,
+            String privateKeyPemCiphertext,
+            String wechatPublicKeyPemCiphertext,
             Long privateKeyFileId,
             Long merchantCertificateFileId,
             PaymentVerifyMode verifyMode,
@@ -811,14 +945,12 @@ public class AdminPaymentConfigService {
             boolean enabled,
             LocalDateTime updatedAt,
             int secretCipherVersion,
-            String secretKeyId
+            String secretKeyId,
+            long secretRevision
     ) {
     }
 
-    private record StoredConfigSnapshot(
-            PaymentConfigRow config,
-            List<PaymentSecretSnapshot> secretSnapshots
-    ) {
+    private record StoredConfigSnapshot(PaymentConfigRow config, List<PaymentSecretSnapshot> secretSnapshots) {
     }
 
     private record ValidatedConfig(
@@ -827,13 +959,33 @@ public class AdminPaymentConfigService {
             String mchId,
             String merchantSerialNo,
             String apiV3Key,
-            Long privateKeyFileId,
-            Long merchantCertificateFileId,
+            String privateKeyPem,
             PaymentVerifyMode verifyMode,
             String wechatPublicKeyId,
-            Long wechatPublicKeyFileId,
+            String wechatPublicKeyPem,
             String notifyUrl,
             String refundNotifyUrl
+    ) {
+        @Override
+        public String toString() {
+            return "ValidatedConfig[configName=" + configName
+                    + ", appIdConfigured=" + StringUtils.hasText(appId)
+                    + ", mchIdConfigured=" + StringUtils.hasText(mchId)
+                    + ", merchantSerialNoConfigured=" + StringUtils.hasText(merchantSerialNo)
+                    + ", apiV3KeyConfigured=" + StringUtils.hasText(apiV3Key)
+                    + ", privateKeyPemConfigured=" + StringUtils.hasText(privateKeyPem)
+                    + ", verifyMode=" + verifyMode
+                    + ", wechatPublicKeyIdConfigured=" + StringUtils.hasText(wechatPublicKeyId)
+                    + ", wechatPublicKeyPemConfigured=" + StringUtils.hasText(wechatPublicKeyPem)
+                    + ", notifyUrlConfigured=" + StringUtils.hasText(notifyUrl)
+                    + ", refundNotifyUrlConfigured=" + StringUtils.hasText(refundNotifyUrl) + "]";
+        }
+    }
+
+    private record EncryptedMaterial(
+            PaymentSecretCipher.EncryptedSecret apiV3Key,
+            PaymentSecretCipher.EncryptedSecret privateKeyPem,
+            PaymentSecretCipher.EncryptedSecret wechatPublicKeyPem
     ) {
     }
 }

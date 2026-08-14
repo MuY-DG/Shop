@@ -2,6 +2,7 @@ package org.muybaby.shopserver.logistics;
 
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.logistics.service.WechatShippingDeliveryScheduler;
+import org.muybaby.shopserver.logistics.service.WechatShippingRuntimeSettingService;
 import org.muybaby.shopserver.logistics.service.WechatShippingUploadCoordinator;
 import org.muybaby.shopserver.logistics.service.WechatShippingUploadStateStore;
 import org.muybaby.shopserver.payment.config.PaymentTimeoutSchedulingConfiguration;
@@ -31,12 +32,17 @@ class WechatShippingDeliverySchedulerTest {
             .withUserConfiguration(SchedulerTestConfiguration.class);
 
     @Test
-    void disabledSwitchDoesNotRegisterScheduler() {
+    void schedulerStaysRegisteredWhenLegacyDefaultIsDisabled() {
         contextRunner
                 .withPropertyValues("shop.wechat.shipping.delivery.enabled=false")
                 .run(context -> {
-                    assertThat(context).doesNotHaveBean(WechatShippingDeliveryScheduler.class);
-                    assertThat(context.getBean(ScheduledTaskHolder.class).getScheduledTasks()).isEmpty();
+                    assertThat(context).hasSingleBean(WechatShippingDeliveryScheduler.class);
+                    assertThat(context.getBean(ScheduledTaskHolder.class).getScheduledTasks()).hasSize(1);
+
+                    context.getBean(WechatShippingDeliveryScheduler.class).runOnce();
+
+                    verify(context.getBean(WechatShippingUploadStateStore.class), never())
+                            .reconcileStaleBatch(any(LocalDateTime.class));
                 });
     }
 
@@ -77,6 +83,8 @@ class WechatShippingDeliverySchedulerTest {
                     WechatShippingUploadCoordinator coordinator = context.getBean(
                             WechatShippingUploadCoordinator.class
                     );
+                    when(context.getBean(WechatShippingRuntimeSettingService.class)
+                            .deliveryEnabledFailClosed()).thenReturn(true);
                     context.getBean(WechatShippingDeliveryScheduler.class).runOnce();
 
                     var ordered = inOrder(stateStore, coordinator);
@@ -127,6 +135,8 @@ class WechatShippingDeliverySchedulerTest {
                     WechatShippingUploadCoordinator coordinator = context.getBean(
                             WechatShippingUploadCoordinator.class
                     );
+                    when(context.getBean(WechatShippingRuntimeSettingService.class)
+                            .deliveryEnabledFailClosed()).thenReturn(true);
                     when(stateStore.reconcileStaleBatch(any(LocalDateTime.class)))
                             .thenThrow(new IllegalStateException("transient database failure"));
 
@@ -140,7 +150,6 @@ class WechatShippingDeliverySchedulerTest {
 
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties({
-            ShippingProperties.class,
             WechatShippingDeliveryProperties.class
     })
     @Import({
@@ -157,6 +166,11 @@ class WechatShippingDeliverySchedulerTest {
         @Bean
         WechatShippingUploadCoordinator coordinator() {
             return mock(WechatShippingUploadCoordinator.class);
+        }
+
+        @Bean
+        WechatShippingRuntimeSettingService runtimeSettingService() {
+            return mock(WechatShippingRuntimeSettingService.class);
         }
     }
 }

@@ -243,11 +243,12 @@ class TradeReconciliationMatcherTest {
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no,
-                             api_v3_key_ciphertext, verify_mode, notify_url, refund_notify_url,
+                             api_v3_key_ciphertext, private_key_pem_ciphertext,
+                             wechat_public_key_pem_ciphertext, verify_mode, notify_url, refund_notify_url,
                              enabled, status)
                         values
                             (:id, 'reconciliation', 'wx-test', :mchId, 'serial',
-                             'ciphertext', 'PUBLIC_KEY', 'https://notify.test/pay',
+                             'ciphertext', '', '', 'PUBLIC_KEY', 'https://notify.test/pay',
                              'https://notify.test/refund', true, 'ACTIVE')
                         """)
                 .param("id", id)

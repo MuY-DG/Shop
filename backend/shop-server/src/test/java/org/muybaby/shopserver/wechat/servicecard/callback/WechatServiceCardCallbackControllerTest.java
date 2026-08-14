@@ -3,8 +3,10 @@ package org.muybaby.shopserver.wechat.servicecard.callback;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentials;
 import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardProperties;
+import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardTestConfigs;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.unit.DataSize;
@@ -46,12 +48,14 @@ class WechatServiceCardCallbackControllerTest {
         encodingAesKey = "A".repeat(43);
         aesKey = Base64.getDecoder().decode(encodingAesKey + "=");
         WechatServiceCardProperties properties = properties();
+        WechatServiceCardConfigResolver configResolver =
+                () -> WechatServiceCardTestConfigs.fromProperties(properties);
         WechatServiceCardCallbackCrypto crypto = new WechatServiceCardCallbackCrypto(
-                properties, new WechatMiniProgramProperties(APP_ID, "secret", false)
+                configResolver, () -> credentials()
         );
         callbackService = mock(WechatServiceCardCallbackService.class);
         controller = new WechatServiceCardCallbackController(
-                properties, crypto, callbackService, new ObjectMapper(),
+                properties, configResolver, crypto, callbackService, new ObjectMapper(),
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
     }
@@ -136,7 +140,8 @@ class WechatServiceCardCallbackControllerTest {
     @Test
     void cryptoRejectsInvalidPkcs7Padding() throws Exception {
         WechatServiceCardCallbackCrypto crypto = new WechatServiceCardCallbackCrypto(
-                properties(), new WechatMiniProgramProperties(APP_ID, "secret", false)
+                () -> WechatServiceCardTestConfigs.fromProperties(properties()),
+                () -> credentials()
         );
         byte[] invalidPlaintext = new byte[32];
         invalidPlaintext[31] = 0;
@@ -161,6 +166,11 @@ class WechatServiceCardCallbackControllerTest {
                         true, TOKEN, encodingAesKey, Duration.ofMinutes(5)
                 )
         );
+    }
+
+    private WechatPlatformCredentials credentials() {
+        return new WechatPlatformCredentials(
+                APP_ID, "secret", WechatPlatformCredentials.Source.DATABASE);
     }
 
     private String encrypt(String message, String appId) throws Exception {

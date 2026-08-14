@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfig;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -27,18 +29,21 @@ public class WechatServiceCardPayloadFactory {
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
     private final WechatServiceCardProperties properties;
-    private final WechatMiniProgramProperties miniProgramProperties;
+    private final WechatServiceCardConfigResolver configResolver;
+    private final WechatPlatformCredentialResolver credentialResolver;
 
     public WechatServiceCardPayloadFactory(
             JdbcClient jdbcClient,
             ObjectMapper objectMapper,
             WechatServiceCardProperties properties,
-            WechatMiniProgramProperties miniProgramProperties
+            WechatServiceCardConfigResolver configResolver,
+            WechatPlatformCredentialResolver credentialResolver
     ) {
         this.jdbcClient = jdbcClient;
         this.objectMapper = objectMapper;
         this.properties = properties;
-        this.miniProgramProperties = miniProgramProperties;
+        this.configResolver = configResolver;
+        this.credentialResolver = credentialResolver;
     }
 
     public PaymentSnapshot paidPayment(long orderId) {
@@ -68,9 +73,15 @@ public class WechatServiceCardPayloadFactory {
     }
 
     public void validatePaymentMiniProgram(PaymentSnapshot payment) {
-        if (payment == null || !StringUtils.hasText(miniProgramProperties.appId())
+        String appId;
+        try {
+            appId = credentialResolver.resolve().appId();
+        } catch (RuntimeException ex) {
+            throw new IllegalStateException("Mini Program platform config is unavailable", ex);
+        }
+        if (payment == null || !StringUtils.hasText(appId)
                 || !StringUtils.hasText(payment.paymentAppId())
-                || !miniProgramProperties.appId().trim().equals(payment.paymentAppId().trim())) {
+                || !appId.trim().equals(payment.paymentAppId().trim())) {
             throw new IllegalStateException("Payment AppID does not match Mini Program AppID");
         }
     }
@@ -80,6 +91,16 @@ public class WechatServiceCardPayloadFactory {
             WechatServiceCardStatus status,
             boolean activation,
             PaymentSnapshot payment
+    ) {
+        return build(orderId, status, activation, payment, configResolver.resolve());
+    }
+
+    PayloadSnapshot build(
+            long orderId,
+            WechatServiceCardStatus status,
+            boolean activation,
+            PaymentSnapshot payment,
+            WechatServiceCardConfig config
     ) {
         if (status == null || payment == null) {
             throw new IllegalArgumentException("WeChat 2001 payload context is required");
@@ -105,7 +126,7 @@ public class WechatServiceCardPayloadFactory {
             ArrayNode infoList = objectMapper.createArrayNode();
             for (ItemSnapshot item : items.stream().limit(MAX_PRODUCTS).toList()) {
                 ObjectNode product = objectMapper.createObjectNode();
-                product.put("product_img", productImage(item));
+                product.put("product_img", productImage(item, config));
                 product.put("product_name", truncate(item.productTitle(), MAX_PRODUCT_NAME_CODE_POINTS));
                 product.put("product_path_query", productPath(item.spuId()));
                 product.put("count", item.quantity());
@@ -143,9 +164,9 @@ public class WechatServiceCardPayloadFactory {
         }
     }
 
-    private String productImage(ItemSnapshot item) {
-        Set<String> allowedHosts = properties.normalizedAllowedImageHosts();
-        if (properties.preferOrderSnapshotImages()) {
+    private String productImage(ItemSnapshot item, WechatServiceCardConfig config) {
+        Set<String> allowedHosts = config.allowedImageHosts();
+        if (config.preferOrderSnapshotImages()) {
             for (String candidate : List.of(
                     nullToEmpty(item.displayImage()),
                     nullToEmpty(item.skuImage()),
@@ -156,12 +177,12 @@ public class WechatServiceCardPayloadFactory {
             }
         }
         if (!WechatServiceCardProperties.validPublicImage(
-                properties.fallbackProductImage(), allowedHosts)) {
+                config.fallbackProductImage(), allowedHosts)) {
             throw new IllegalStateException(
                     "A controlled public HTTPS fallback image is required for WeChat 2001"
             );
         }
-        return properties.fallbackProductImage().trim();
+        return config.fallbackProductImage();
     }
 
     private List<ItemSnapshot> items(long orderId) {

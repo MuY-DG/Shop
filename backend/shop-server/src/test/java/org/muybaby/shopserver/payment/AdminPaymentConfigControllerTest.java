@@ -10,42 +10,46 @@ import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
+import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
+import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
+import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -58,22 +62,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AdminPaymentConfigControllerTest {
 
     private static final AtomicLong LIMITED_ADMIN_IDS = new AtomicLong(9_910_000L);
-
-    private static final String PRIVATE_KEY_PEM = """
-            -----BEGIN PRIVATE KEY-----
-            synthetic-private-key
-            -----END PRIVATE KEY-----
-            """;
-    private static final String CERTIFICATE_PEM = """
-            -----BEGIN CERTIFICATE-----
-            synthetic-merchant-certificate
-            -----END CERTIFICATE-----
-            """;
-    private static final String PUBLIC_KEY_PEM = """
-            -----BEGIN PUBLIC KEY-----
-            synthetic-wechat-public-key
-            -----END PUBLIC KEY-----
-            """;
+    private static final AtomicLong LEGACY_CONFIG_IDS = new AtomicLong(8_800_000L);
+    private static final String API_V3_KEY = "0123456789abcdef0123456789abcdef"; // gitleaks:allow
+    private static final String REPLACEMENT_API_V3_KEY = "fedcba9876543210fedcba9876543210"; // gitleaks:allow
+    private static final KeyPair PRIMARY_KEY_PAIR = rsaKeyPair(2048);
+    private static final KeyPair REPLACEMENT_KEY_PAIR = rsaKeyPair(2048);
+    private static final String PRIVATE_KEY_PEM = pem("PRIVATE KEY", PRIMARY_KEY_PAIR.getPrivate().getEncoded());
+    private static final String PUBLIC_KEY_PEM = pem("PUBLIC KEY", PRIMARY_KEY_PAIR.getPublic().getEncoded());
+    private static final String REPLACEMENT_PRIVATE_KEY_PEM =
+            pem("PRIVATE KEY", REPLACEMENT_KEY_PAIR.getPrivate().getEncoded());
+    private static final String REPLACEMENT_PUBLIC_KEY_PEM =
+            pem("PUBLIC KEY", REPLACEMENT_KEY_PAIR.getPublic().getEncoded());
     private static Path envPrivateKeyPath;
     private static Path envPublicKeyPath;
 
@@ -89,7 +88,13 @@ class AdminPaymentConfigControllerTest {
     @Autowired
     private OpaqueTokenService opaqueTokenService;
 
-    @MockitoSpyBean
+    @Autowired
+    private PaymentSecretCipher paymentSecretCipher;
+
+    @Autowired
+    private PaymentConfigResolver paymentConfigResolver;
+
+    @Autowired
     private StorageProvider storageProvider;
 
     @BeforeAll
@@ -108,7 +113,7 @@ class AdminPaymentConfigControllerTest {
         registry.add("shop.pay.mch-id", () -> "mch_env_123456");
         registry.add("shop.pay.merchant-serial-no", () -> "serial_env_123456");
         registry.add("shop.pay.private-key-path", () -> envPrivateKeyPath.toString());
-        registry.add("shop.pay.api-v3-key", () -> "synthetic_env_api_v3_key");
+        registry.add("shop.pay.api-v3-key", () -> API_V3_KEY);
         registry.add("shop.pay.notify-url", () -> "https://pay.example.test/wxpay/pay/notify");
         registry.add("shop.pay.refund-notify-url", () -> "https://pay.example.test/wxpay/refund/notify");
         registry.add("shop.pay.verify-mode", () -> "PUBLIC_KEY");
@@ -119,6 +124,7 @@ class AdminPaymentConfigControllerTest {
     @BeforeEach
     void clearPaymentConfigState() {
         clearLimitedAdmins();
+        jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from storage_asset_usage").update();
         jdbcClient.sql("delete from payment_config").update();
         jdbcClient.sql("delete from payment_runtime_setting").update();
@@ -131,662 +137,516 @@ class AdminPaymentConfigControllerTest {
     }
 
     @Test
-    void paymentWriteAuthorityUploadsASecretDocumentOutsideTheAssetLibrary() throws Exception {
-        String readToken = limitedAdminToken(List.of("payment:config:read"));
-        String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        MockMultipartFile file = new MockMultipartFile(
-                "file",
-                "merchant-private.pem",
-                "text/plain",
-                PRIVATE_KEY_PEM.getBytes(StandardCharsets.UTF_8)
+    void createEncryptsAllSecretBodiesWithoutCreatingStorageAssetsOrReturningSecretMaterial() throws Exception {
+        String token = limitedAdminToken(List.of("payment:config:write"));
+
+        String response = createConfigResponse(token, "Main DB Pay", PRIVATE_KEY_PEM, PUBLIC_KEY_PEM);
+        JsonNode data = objectMapper.readTree(response).path("data");
+        long configId = data.path("id").asLong();
+
+        assertThat(data.path("apiV3KeyConfigured").asBoolean()).isTrue();
+        assertThat(data.path("privateKeyConfigured").asBoolean()).isTrue();
+        assertThat(data.path("wechatPublicKeyConfigured").asBoolean()).isTrue();
+        assertThat(data.path("legacySecretFilesPendingImport").asBoolean()).isFalse();
+        assertSecretMaterialIsAbsent(response);
+
+        ConfigSecretRow row = configSecretRow(configId);
+        assertThat(row.apiV3KeyCiphertext()).isNotBlank().doesNotContain(API_V3_KEY);
+        assertThat(row.privateKeyPemCiphertext()).isNotBlank().doesNotContain("BEGIN PRIVATE KEY");
+        assertThat(row.publicKeyPemCiphertext()).isNotBlank().doesNotContain("BEGIN PUBLIC KEY");
+        assertThat(row.privateKeyFileId()).isNull();
+        assertThat(row.merchantCertificateFileId()).isNull();
+        assertThat(row.publicKeyFileId()).isNull();
+        assertThat(decrypt(PaymentConfigResolver.apiV3KeyContext(configId), row)).isEqualTo(API_V3_KEY);
+        assertThat(decrypt(PaymentConfigResolver.privateKeyPemContext(configId), row.privateKeyPemCiphertext(), row))
+                .isEqualTo(PRIVATE_KEY_PEM);
+        assertThat(decrypt(
+                PaymentConfigResolver.wechatPublicKeyPemContext(configId), row.publicKeyPemCiphertext(), row))
+                .isEqualTo(PUBLIC_KEY_PEM);
+        assertThat(jdbcClient.sql("select count(*) from storage_asset").query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void createRejectsNon32ByteApiV3KeyMalformedPemAndWeakRsaKeys() throws Exception {
+        String token = limitedAdminToken(List.of("payment:config:write"));
+        Map<String, Object> shortApiKey = validPayload("Bad API key", PRIVATE_KEY_PEM, PUBLIC_KEY_PEM);
+        shortApiKey.put("apiV3Key", "31-bytes-is-not-an-api-v3-key!!");
+        performCreate(token, shortApiKey)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
+
+        Map<String, Object> malformedPem = validPayload("Bad PEM", PRIVATE_KEY_PEM, PUBLIC_KEY_PEM);
+        malformedPem.put("privateKeyPem", PRIVATE_KEY_PEM + "unexpected suffix");
+        performCreate(token, malformedPem)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
+
+        KeyPair weakPair = rsaKeyPair(1024);
+        Map<String, Object> weakRsa = validPayload(
+                "Weak RSA",
+                pem("PRIVATE KEY", weakPair.getPrivate().getEncoded()),
+                pem("PUBLIC KEY", weakPair.getPublic().getEncoded())
         );
+        performCreate(token, weakRsa)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
 
-        mockMvc.perform(multipart("/admin/pay/configs/secret-files")
-                        .file(file)
-                        .header("Authorization", "Bearer " + readToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
+        assertThat(jdbcClient.sql("select count(*) from payment_config").query(Integer.class).single()).isZero();
+    }
 
-        String response = mockMvc.perform(multipart("/admin/pay/configs/secret-files")
-                        .file(file)
+    @Test
+    void updatePreservesOmittedSecretsAndReplacesSelectedPemBodiesWithoutFileIds() throws Exception {
+        String token = limitedAdminToken(List.of("payment:config:write"));
+        long configId = createConfig(token, "Editable DB Pay");
+
+        Map<String, Object> preserve = validPayload("Editable DB Pay Updated", "", "");
+        preserve.put("appId", "");
+        preserve.put("mchId", "");
+        preserve.put("merchantSerialNo", "");
+        preserve.put("apiV3Key", "");
+        preserve.put("wechatPublicKeyId", "");
+        preserve.put("notifyUrl", "https://pay.example.test/wxpay/pay/notify-updated");
+        updateConfig(token, configId, preserve)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.privateKeyConfigured").value(true))
+                .andExpect(jsonPath("$.data.wechatPublicKeyConfigured").value(true));
+
+        ConfigSecretRow preserved = configSecretRow(configId);
+        assertThat(decrypt(PaymentConfigResolver.apiV3KeyContext(configId), preserved)).isEqualTo(API_V3_KEY);
+        assertThat(decrypt(
+                PaymentConfigResolver.privateKeyPemContext(configId), preserved.privateKeyPemCiphertext(), preserved))
+                .isEqualTo(PRIVATE_KEY_PEM);
+        assertThat(decrypt(
+                PaymentConfigResolver.wechatPublicKeyPemContext(configId), preserved.publicKeyPemCiphertext(), preserved))
+                .isEqualTo(PUBLIC_KEY_PEM);
+
+        Map<String, Object> replacement = validPayload(
+                "Editable DB Pay Updated",
+                REPLACEMENT_PRIVATE_KEY_PEM,
+                REPLACEMENT_PUBLIC_KEY_PEM
+        );
+        replacement.put("appId", "");
+        replacement.put("mchId", "");
+        replacement.put("merchantSerialNo", "");
+        replacement.put("apiV3Key", REPLACEMENT_API_V3_KEY);
+        replacement.put("wechatPublicKeyId", "");
+        String response = updateConfig(token, configId, replacement)
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertSecretMaterialIsAbsent(response);
+
+        ConfigSecretRow replaced = configSecretRow(configId);
+        assertThat(decrypt(PaymentConfigResolver.apiV3KeyContext(configId), replaced))
+                .isEqualTo(REPLACEMENT_API_V3_KEY);
+        assertThat(decrypt(
+                PaymentConfigResolver.privateKeyPemContext(configId), replaced.privateKeyPemCiphertext(), replaced))
+                .isEqualTo(REPLACEMENT_PRIVATE_KEY_PEM);
+        assertThat(decrypt(
+                PaymentConfigResolver.wechatPublicKeyPemContext(configId), replaced.publicKeyPemCiphertext(), replaced))
+                .isEqualTo(REPLACEMENT_PUBLIC_KEY_PEM);
+        assertThat(replaced.privateKeyFileId()).isNull();
+        assertThat(replaced.publicKeyFileId()).isNull();
+    }
+
+    @Test
+    void authorizedLegacyImportPreservesHistoricalFingerprintAndReleasesAllOldFiles() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        long configId = insertLegacyConfig(true);
+        ResolvedPaymentConfig before = paymentConfigResolver.resolveForPaymentConfigId(configId);
+        String fingerprint = paymentConfigResolver.fingerprint(before);
+        insertHistoricalPaymentReference(configId, fingerprint);
+
+        String response = mockMvc.perform(post(
+                                "/admin/pay/configs/{configId}/import-legacy-secret-files", configId)
                         .header("Authorization", "Bearer " + writeToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.scope").value("SECRET"))
-                .andExpect(jsonPath("$.data.mediaKind").value("DOCUMENT"))
-                .andExpect(jsonPath("$.data.visibility").value("PRIVATE"))
-                .andExpect(jsonPath("$.data.uploadedByType").value("ADMIN"))
-                .andExpect(jsonPath("$.data.expiresAt").isString())
-                .andExpect(jsonPath("$.data.url").doesNotExist())
-                .andExpect(jsonPath("$.data.publicUrl").doesNotExist())
+                .andExpect(jsonPath("$.data.privateKeyConfigured").value(true))
+                .andExpect(jsonPath("$.data.wechatPublicKeyConfigured").value(true))
+                .andExpect(jsonPath("$.data.legacySecretFilesPendingImport").value(false))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        long assetId = objectMapper.readTree(response).path("data").path("id").asLong();
-
-        assertThat(jdbcClient.sql("""
-                        select count(*)
-                        from storage_asset
-                        where id = :assetId
-                          and scope = 'SECRET'
-                          and media_kind = 'DOCUMENT'
-                          and visibility = 'PRIVATE'
-                          and uploaded_by_type = 'ADMIN'
-                          and public_url is null
-                        """)
-                .param("assetId", assetId)
-                .query(Integer.class)
-                .single()).isEqualTo(1);
-        LocalDateTime expiresAt = jdbcClient.sql("select expires_at from storage_asset where id = :assetId")
-                .param("assetId", assetId)
-                .query(LocalDateTime.class)
-                .single();
-        LocalDateTime databaseNow = databaseNow();
-        assertThat(expiresAt)
-                .isAfter(databaseNow.plusHours(1))
-                .isBefore(databaseNow.plusHours(3));
-    }
-
-    @Test
-    void readEndpointsRequireAdminTokenAndPaymentConfigReadAuthority() throws Exception {
-        String readToken = limitedAdminToken(List.of("payment:config:read"));
-        String writeOnlyToken = limitedAdminToken(List.of("payment:config:write"));
-        String appToken = appLoginAndExtractToken();
-
-        mockMvc.perform(get("/admin/pay/configs/effective"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.code()));
-
-        mockMvc.perform(get("/admin/pay/configs/environment"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.code()));
-
-        mockMvc.perform(get("/admin/pay/configs")
-                        .header("Authorization", "Bearer " + appToken))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.code()));
-
-        mockMvc.perform(get("/admin/pay/configs/effective")
-                        .header("Authorization", "Bearer " + writeOnlyToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
-
-        mockMvc.perform(get("/admin/pay/configs/environment")
-                        .header("Authorization", "Bearer " + writeOnlyToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
-
-        mockMvc.perform(get("/admin/pay/configs/effective")
-                        .header("Authorization", "Bearer " + readToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
-
-        mockMvc.perform(get("/admin/pay/configs/environment")
-                        .header("Authorization", "Bearer " + readToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
-
-        mockMvc.perform(get("/admin/pay/configs")
-                        .header("Authorization", "Bearer " + readToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
-    }
-
-    @Test
-    void effectiveEndpointReturnsMaskedEnvConfigWhenEnvIsEffective() throws Exception {
-        String readToken = limitedAdminToken(List.of("payment:config:read"));
-
-        String response = mockMvc.perform(get("/admin/pay/configs/effective")
-                        .header("Authorization", "Bearer " + readToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("ENV"))
-                .andExpect(jsonPath("$.data.configName").value("Environment"))
-                .andExpect(jsonPath("$.data.appIdMasked").value(startsWith("wx_")))
-                .andExpect(jsonPath("$.data.mchIdMasked").value(startsWith("mc")))
-                .andExpect(jsonPath("$.data.merchantSerialNoMasked").value(startsWith("ser")))
-                .andExpect(jsonPath("$.data.apiV3KeyConfigured").value(true))
-                .andExpect(jsonPath("$.data.privateKeyFileId").doesNotExist())
-                .andExpect(jsonPath("$.data.enabled").value(true))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
         assertSecretMaterialIsAbsent(response);
-        assertThat(response).doesNotContain("wx_env_app_123456")
-                .doesNotContain("mch_env_123456")
-                .doesNotContain("serial_env_123456")
-                .doesNotContain("pub_key_env_123456");
+
+        ConfigSecretRow row = configSecretRow(configId);
+        assertThat(row.privateKeyPemCiphertext()).isNotBlank();
+        assertThat(row.publicKeyPemCiphertext()).isNotBlank();
+        assertThat(row.privateKeyFileId()).isNull();
+        assertThat(row.merchantCertificateFileId()).isNull();
+        assertThat(row.publicKeyFileId()).isNull();
+        assertThat(paymentConfigResolver.fingerprint(paymentConfigResolver.resolveForPaymentConfigId(configId)))
+                .isEqualTo(fingerprint);
+        assertThat(paymentConfigResolver.resolveForPayment(configId, fingerprint).privateKeyPem())
+                .isEqualTo(PRIVATE_KEY_PEM);
+        assertThat(jdbcClient.sql("""
+                        select count(*) from storage_asset_usage
+                        where owner_type = 'PAYMENT_CONFIG' and owner_id = :configId and status = 'ACTIVE'
+                        """)
+                .param("configId", configId)
+                .query(Integer.class)
+                .single()).isZero();
+        List<LocalDateTime> releaseTimes = jdbcClient.sql("""
+                        select expires_at from storage_asset where object_key like :prefix order by id
+                        """)
+                .param("prefix", "test/legacy-" + configId + "/%")
+                .query(LocalDateTime.class)
+                .list();
+        assertThat(releaseTimes).hasSize(3).allSatisfy(releaseAt ->
+                assertThat(releaseAt).isAfter(databaseNow().plusHours(23)));
     }
 
     @Test
-    void environmentEndpointReturnsMaskedEnvConfigWhenDbIsEffective() throws Exception {
-        String readToken = limitedAdminToken(List.of("payment:config:read"));
+    void environmentImportCreatesDisabledDbConfigWithoutChangingEffectiveSourceAndRejectsDuplicates() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
-        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-        long configId = createConfig(writeToken, "DB Pay", privateKeyFileId, certFileId, publicKeyFileId);
+        String readToken = limitedAdminToken(List.of("payment:config:read"));
 
-        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", configId)
-                        .header("Authorization", "Bearer " + enableToken))
-                .andExpect(status().isOk());
-        mockMvc.perform(put("/admin/pay/configs/source")
-                        .header("Authorization", "Bearer " + enableToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"source":"DB"}
-                                """))
-                .andExpect(status().isOk());
+        String response = mockMvc.perform(post("/admin/pay/configs/import-environment")
+                        .header("Authorization", "Bearer " + writeToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.source").value("DB"))
+                .andExpect(jsonPath("$.data.configName").value("Environment"))
+                .andExpect(jsonPath("$.data.enabled").value(false))
+                .andExpect(jsonPath("$.data.privateKeyConfigured").value(true))
+                .andExpect(jsonPath("$.data.wechatPublicKeyConfigured").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertSecretMaterialIsAbsent(response);
+        long configId = objectMapper.readTree(response).path("data").path("id").asLong();
+        ConfigSecretRow row = configSecretRow(configId);
+        assertThat(decrypt(PaymentConfigResolver.apiV3KeyContext(configId), row)).isEqualTo(API_V3_KEY);
 
-        String response = mockMvc.perform(get("/admin/pay/configs/environment")
+        mockMvc.perform(get("/admin/pay/configs/effective")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.available").value(true))
                 .andExpect(jsonPath("$.data.config.source").value("ENV"))
-                .andExpect(jsonPath("$.data.config.configName").value("Environment"))
-                .andExpect(jsonPath("$.data.config.appIdMasked").value(startsWith("wx_")))
-                .andExpect(jsonPath("$.data.config.apiV3KeyConfigured").value(true))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+                .andExpect(jsonPath("$.data.config.id").doesNotExist());
 
-        assertSecretMaterialIsAbsent(response);
-        assertThat(response).doesNotContain("wx_env_app_123456")
-                .doesNotContain("mch_env_123456")
-                .doesNotContain("synthetic_env_api_v3_key");
+        mockMvc.perform(post("/admin/pay/configs/import-environment")
+                        .header("Authorization", "Bearer " + writeToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ORDER_STATE_CONFLICT.code()));
+        assertThat(jdbcClient.sql("select count(*) from payment_config").query(Integer.class).single()).isEqualTo(1);
     }
 
     @Test
-    void sourceEndpointRequiresReadForViewAndEnableForSwitching() throws Exception {
+    void concurrentEnvironmentImportsCreateExactlyOneConfig() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<ImportResult> first = executor.submit(() -> importEnvironmentAfter(start, writeToken));
+            Future<ImportResult> second = executor.submit(() -> importEnvironmentAfter(start, writeToken));
+            start.countDown();
+
+            List<ImportResult> results = List.of(
+                    first.get(10, TimeUnit.SECONDS),
+                    second.get(10, TimeUnit.SECONDS)
+            );
+            assertThat(results).extracting(ImportResult::status)
+                    .containsExactlyInAnyOrder(200, 400);
+            ImportResult conflict = results.stream()
+                    .filter(result -> result.status() == 400)
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(objectMapper.readTree(conflict.body()).path("code").asInt())
+                    .isEqualTo(ErrorCode.ORDER_STATE_CONFLICT.code());
+        }
+
+        assertThat(jdbcClient.sql("select count(*) from payment_config").query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentFirstSourceWritesShareTheCheckpointLockWithoutDuplicateInsert() throws Exception {
+        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<ImportResult> first = executor.submit(() -> updateSourceAfter(start, enableToken, "ENV"));
+            Future<ImportResult> second = executor.submit(() -> updateSourceAfter(start, enableToken, "AUTO"));
+            start.countDown();
+
+            List<ImportResult> results = List.of(
+                    first.get(10, TimeUnit.SECONDS),
+                    second.get(10, TimeUnit.SECONDS)
+            );
+            assertThat(results).extracting(ImportResult::status)
+                    .containsExactly(200, 200);
+            assertThat(results).extracting(ImportResult::body)
+                    .allSatisfy(body -> assertThat(body).contains("\"persisted\":true"));
+        }
+
+        assertThat(jdbcClient.sql("select count(*) from payment_runtime_setting where id = 1")
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select config_source from payment_runtime_setting where id = 1")
+                .query(String.class)
+                .single()).isIn("ENV", "AUTO");
+    }
+
+    @Test
+    void missingEffectiveConfigReturnsExplicitUnavailableStateAndStillAllowsFirstDbConfigCreation() throws Exception {
         String readToken = limitedAdminToken(List.of("payment:config:read"));
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
+        jdbcClient.sql("insert into payment_runtime_setting (id, config_source) values (1, 'DB')").update();
 
-        mockMvc.perform(get("/admin/pay/configs/source"))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value(ErrorCode.AUTHENTICATION_REQUIRED.code()));
-
-        mockMvc.perform(get("/admin/pay/configs/source")
-                        .header("Authorization", "Bearer " + writeToken))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
-
-        mockMvc.perform(get("/admin/pay/configs/source")
+        mockMvc.perform(get("/admin/pay/configs/effective")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("ENV"))
-                .andExpect(jsonPath("$.data.persisted").value(false));
+                .andExpect(jsonPath("$.data.available").value(false))
+                .andExpect(jsonPath("$.data.config").doesNotExist());
 
-        mockMvc.perform(put("/admin/pay/configs/source")
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"source":"AUTO"}
-                                """))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value(ErrorCode.PERMISSION_DENIED.code()));
-
-        mockMvc.perform(put("/admin/pay/configs/source")
-                        .header("Authorization", "Bearer " + enableToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"source":"ENV"}
-                                """))
+        createConfigResponse(writeToken, "First DB Pay", PRIVATE_KEY_PEM, PUBLIC_KEY_PEM);
+        mockMvc.perform(get("/admin/pay/configs")
+                        .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("ENV"))
-                .andExpect(jsonPath("$.data.persisted").value(true));
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].configName").value("First DB Pay"));
     }
 
     @Test
-    void switchingSourceToDbMakesEnabledDbConfigEffectiveWithoutRestart() throws Exception {
-        String readToken = limitedAdminToken(List.of("payment:config:read"));
+    void enableAndSourceSwitchUseDbCiphertextWithoutExposingBodies() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
         String enableToken = limitedAdminToken(List.of("payment:config:enable"));
-        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-        long configId = createConfig(writeToken, "Switchable DB Pay", privateKeyFileId, certFileId, publicKeyFileId);
+        String readToken = limitedAdminToken(List.of("payment:config:read"));
+        long configId = createConfig(writeToken, "Switchable DB Pay");
 
         mockMvc.perform(post("/admin/pay/configs/{configId}/enable", configId)
                         .header("Authorization", "Bearer " + enableToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.enabled").value(true));
-
-        mockMvc.perform(get("/admin/pay/configs/effective")
-                        .header("Authorization", "Bearer " + readToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("ENV"))
-                .andExpect(jsonPath("$.data.configName").value("Environment"));
-
         mockMvc.perform(put("/admin/pay/configs/source")
                         .header("Authorization", "Bearer " + enableToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"source":"DB"}
-                                """))
+                        .content("{\"source\":\"DB\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("DB"))
-                .andExpect(jsonPath("$.data.persisted").value(true));
+                .andExpect(jsonPath("$.data.source").value("DB"));
 
-        mockMvc.perform(get("/admin/pay/configs/effective")
+        String response = mockMvc.perform(get("/admin/pay/configs/effective")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").value(configId))
-                .andExpect(jsonPath("$.data.source").value("DB"))
-                .andExpect(jsonPath("$.data.configName").value("Switchable DB Pay"))
-                .andExpect(jsonPath("$.data.privateKeyFileId").value(privateKeyFileId))
-                .andExpect(jsonPath("$.data.wechatPublicKeyFileId").value(publicKeyFileId));
-    }
-
-    @Test
-    void configCreateUpdateEnableAndSourceSwitchReadProviderOutsideTransactions() throws Exception {
-        String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
-        long privateKeyFileId = insertStorageAsset(
-                "SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageAsset(
-                "SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageAsset(
-                "SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-        doAnswer(invocation -> {
-            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            return invocation.callRealMethod();
-        }).when(storageProvider).open(any(StorageObjectLocation.class));
-
-        long configId = createConfig(
-                writeToken, "Outside Transaction Pay", privateKeyFileId, certFileId, publicKeyFileId);
-        mockMvc.perform(put("/admin/pay/configs/{configId}", configId)
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                "Outside Transaction Pay Updated",
-                                " ",
-                                " ",
-                                " ",
-                                " ",
-                                privateKeyFileId,
-                                certFileId,
-                                "PUBLIC_KEY",
-                                "pub_key_db_123456",
-                                publicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
-                .andExpect(status().isOk());
-        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", configId)
-                        .header("Authorization", "Bearer " + enableToken))
-                .andExpect(status().isOk());
-        mockMvc.perform(put("/admin/pay/configs/source")
-                        .header("Authorization", "Bearer " + enableToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"source":"DB"}
-                                """))
-                .andExpect(status().isOk());
-
-        verify(storageProvider, atLeastOnce()).open(any(StorageObjectLocation.class));
-    }
-
-    @Test
-    void creatingDbConfigEncryptsApiV3KeyRegistersPrivateFileUsagesAndReturnsMaskedResponse() throws Exception {
-        String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-
-        String response = mockMvc.perform(post("/admin/pay/configs")
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                "Main DB Pay",
-                                "wx_db_app_123456",
-                                "mch_db_123456",
-                                "serial_db_123456",
-                                "synthetic_db_api_v3_key",
-                                privateKeyFileId,
-                                certFileId,
-                                "PUBLIC_KEY",
-                                "pub_key_db_123456",
-                                publicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").isNumber())
-                .andExpect(jsonPath("$.data.source").value("DB"))
-                .andExpect(jsonPath("$.data.configName").value("Main DB Pay"))
-                .andExpect(jsonPath("$.data.appIdMasked").value(startsWith("wx_")))
-                .andExpect(jsonPath("$.data.apiV3KeyConfigured").value(true))
-                .andExpect(jsonPath("$.data.privateKeyFileId").value(privateKeyFileId))
-                .andExpect(jsonPath("$.data.merchantCertificateFileId").value(certFileId))
-                .andExpect(jsonPath("$.data.wechatPublicKeyFileId").value(publicKeyFileId))
-                .andExpect(jsonPath("$.data.enabled").value(false))
-                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.available").value(true))
+                .andExpect(jsonPath("$.data.config.id").value(configId))
+                .andExpect(jsonPath("$.data.config.source").value("DB"))
+                .andExpect(jsonPath("$.data.config.privateKeyConfigured").value(true))
+                .andExpect(jsonPath("$.data.config.wechatPublicKeyConfigured").value(true))
+                .andExpect(jsonPath("$.data.config.legacySecretFilesPendingImport").value(false))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-
         assertSecretMaterialIsAbsent(response);
-        long configId = objectMapper.readTree(response).path("data").path("id").asLong();
-        String ciphertext = jdbcClient.sql("select api_v3_key_ciphertext from payment_config where id = :configId")
-                .param("configId", configId)
-                .query(String.class)
-                .single();
-        assertThat(ciphertext)
-                .startsWith("v1:")
-                .doesNotContain("synthetic_db_api_v3_key");
 
-        Integer activeProtectedUsageCount = jdbcClient.sql("""
-                        select count(*)
-                        from storage_asset_usage
-                        where owner_type = 'PAYMENT_CONFIG'
-                          and owner_id = :configId
-                          and usage_type = 'PAYMENT_CONFIG_CERT'
-                          and protected = true
-                          and status = 'ACTIVE'
+        jdbcClient.sql("""
+                        update payment_config set private_key_pem_ciphertext = 'damaged'
+                        where id = :configId
                         """)
                 .param("configId", configId)
-                .query(Integer.class)
-                .single();
-        assertThat(activeProtectedUsageCount).isEqualTo(3);
-        assertClaimed(privateKeyFileId, certFileId, publicKeyFileId);
-    }
-
-    @Test
-    void updatingDbConfigWithBlankSensitiveFieldsPreservesExistingValuesAndAllowsCallbackAndFileChanges() throws Exception {
-        String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-        long replacementPrivateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private-v2.pem", PRIVATE_KEY_PEM);
-        long replacementCertFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert-v2.pem", CERTIFICATE_PEM);
-        long replacementPublicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public-v2.pem", PUBLIC_KEY_PEM);
-
-        long configId = createConfig(writeToken, "Secret Preserve", privateKeyFileId, certFileId, publicKeyFileId);
-        PaymentConfigSnapshot before = paymentConfigSnapshot(configId);
-
-        String response = mockMvc.perform(put("/admin/pay/configs/{configId}", configId)
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                "Secret Preserve Updated",
-                                "   ",
-                                "",
-                                " ",
-                                "   ",
-                                replacementPrivateKeyFileId,
-                                replacementCertFileId,
-                                "PUBLIC_KEY",
-                                " ",
-                                replacementPublicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify/v2",
-                                "https://pay.example.test/wxpay/refund/notify/v2")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.configName").value("Secret Preserve Updated"))
-                .andExpect(jsonPath("$.data.privateKeyFileId").value(replacementPrivateKeyFileId))
-                .andExpect(jsonPath("$.data.merchantCertificateFileId").value(replacementCertFileId))
-                .andExpect(jsonPath("$.data.wechatPublicKeyFileId").value(replacementPublicKeyFileId))
-                .andExpect(jsonPath("$.data.notifyUrl").value("https://pay.example.test/wxpay/pay/notify/v2"))
-                .andExpect(jsonPath("$.data.refundNotifyUrl").value("https://pay.example.test/wxpay/refund/notify/v2"))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-
-        assertSecretMaterialIsAbsent(response);
-        PaymentConfigSnapshot after = paymentConfigSnapshot(configId);
-        assertThat(after.appId()).isEqualTo(before.appId());
-        assertThat(after.mchId()).isEqualTo(before.mchId());
-        assertThat(after.merchantSerialNo()).isEqualTo(before.merchantSerialNo());
-        assertThat(after.wechatPublicKeyId()).isEqualTo(before.wechatPublicKeyId());
-        assertThat(after.apiV3KeyCiphertext()).isEqualTo(before.apiV3KeyCiphertext());
-        assertThat(after.privateKeyFileId()).isEqualTo(replacementPrivateKeyFileId);
-        assertThat(after.merchantCertificateFileId()).isEqualTo(replacementCertFileId);
-        assertThat(after.wechatPublicKeyFileId()).isEqualTo(replacementPublicKeyFileId);
-        assertThat(after.notifyUrl()).isEqualTo("https://pay.example.test/wxpay/pay/notify/v2");
-        assertThat(after.refundNotifyUrl()).isEqualTo("https://pay.example.test/wxpay/refund/notify/v2");
-        assertClaimed(replacementPrivateKeyFileId, replacementCertFileId, replacementPublicKeyFileId);
-        assertReleased(privateKeyFileId, certFileId, publicKeyFileId);
-    }
-
-    @Test
-    void updatingDbConfigCanExplicitlyClearOptionalMerchantCertificateAndReleaseIt() throws Exception {
-        String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-        long configId = createConfig(writeToken, "Clear Optional Cert", privateKeyFileId, certFileId, publicKeyFileId);
-
-        mockMvc.perform(put("/admin/pay/configs/{configId}", configId)
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                "Clear Optional Cert",
-                                " ",
-                                " ",
-                                " ",
-                                " ",
-                                privateKeyFileId,
-                                null,
-                                "PUBLIC_KEY",
-                                " ",
-                                publicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.merchantCertificateFileId").doesNotExist());
-
-        assertThat(jdbcClient.sql("select merchant_certificate_file_id from payment_config where id = :configId")
-                .param("configId", configId)
-                .query(Long.class)
-                .optional()).isEmpty();
-        assertReleased(certFileId);
-        assertClaimed(privateKeyFileId, publicKeyFileId);
-    }
-
-    @Test
-    void expiredStagedSecretCannotBeClaimedByPaymentConfig() throws Exception {
-        String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "expired-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-        jdbcClient.sql("update storage_asset set expires_at = :expiredAt where id = :assetId")
-                .param("expiredAt", LocalDateTime.now().minusMinutes(1))
-                .param("assetId", privateKeyFileId)
                 .update();
-
-        mockMvc.perform(post("/admin/pay/configs")
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                "Expired Secret",
-                                "wx_db_app_123456",
-                                "mch_db_123456",
-                                "serial_db_123456",
-                                "synthetic_db_api_v3_key",
-                                privateKeyFileId,
-                                certFileId,
-                                "PUBLIC_KEY",
-                                "pub_key_db_123456",
-                                publicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
+        mockMvc.perform(get("/admin/pay/configs/effective")
+                        .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
-
-        assertThat(jdbcClient.sql("select count(*) from payment_config where config_name = 'Expired Secret'")
-                .query(Integer.class)
-                .single()).isZero();
+                .andExpect(jsonPath("$.code").value(ErrorCode.PAYMENT_CONFIGURATION_CHANGED.code()));
     }
 
     @Test
-    void enablingOneDbConfigDisablesOtherDbConfigs() throws Exception {
+    void writeEndpointsRequireAuthorityAndTheOldUploadEndpointNoLongerExists() throws Exception {
+        String readToken = limitedAdminToken(List.of("payment:config:read"));
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
-        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-        long firstConfigId = createConfig(writeToken, "First Pay", privateKeyFileId, certFileId, publicKeyFileId);
-        long secondConfigId = createConfig(writeToken, "Second Pay", privateKeyFileId, certFileId, publicKeyFileId);
 
-        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", firstConfigId)
-                        .header("Authorization", "Bearer " + enableToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.enabled").value(true));
-        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", secondConfigId)
-                        .header("Authorization", "Bearer " + enableToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.enabled").value(true));
-
-        assertThat(enabledFlag(firstConfigId)).isFalse();
-        assertThat(enabledFlag(secondConfigId)).isTrue();
+        mockMvc.perform(post("/admin/pay/configs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(validPayload(
+                                "Unauthorized", PRIVATE_KEY_PEM, PUBLIC_KEY_PEM))))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/admin/pay/configs/import-environment")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/admin/pay/configs/{configId}/import-legacy-secret-files", 1)
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(post("/admin/pay/configs/secret-files")
+                        .header("Authorization", "Bearer " + writeToken))
+                .andExpect(status().isMethodNotAllowed());
+        assertThat(jdbcClient.sql("select count(*) from storage_asset").query(Integer.class).single()).isZero();
     }
 
     @Test
-    void publicOrNonSecretAssetsCannotBeUsedForPaymentConfig() throws Exception {
+    void readResponsesRemainMaskedForEnvironmentAndDatabaseLists() throws Exception {
+        String readToken = limitedAdminToken(List.of("payment:config:read"));
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long publicPaymentFileId = insertStorageAsset("LIBRARY", "DOCUMENT", "PUBLIC", "public-private.pem", PRIVATE_KEY_PEM);
-        long wrongScopeFileId = insertStorageAsset("ATTACHMENT", "IMAGE", "PRIVATE", "after-sale-private.pem", PRIVATE_KEY_PEM);
-        long validCertFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long validPublicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
+        createConfig(writeToken, "Masked DB Pay");
 
-        mockMvc.perform(post("/admin/pay/configs")
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                "Bad Public File",
-                                "wx_db_app_123456",
-                                "mch_db_123456",
-                                "serial_db_123456",
-                                "synthetic_db_api_v3_key",
-                                publicPaymentFileId,
-                                validCertFileId,
-                                "PUBLIC_KEY",
-                                "pub_key_db_123456",
-                                validPublicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
-
-        mockMvc.perform(post("/admin/pay/configs")
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                "Bad Scope File",
-                                "wx_db_app_123456",
-                                "mch_db_123456",
-                                "serial_db_123456",
-                                "synthetic_db_api_v3_key",
-                                wrongScopeFileId,
-                                validCertFileId,
-                                "PUBLIC_KEY",
-                                "pub_key_db_123456",
-                                validPublicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(ErrorCode.STORAGE_FILE_UNAVAILABLE.code()));
-    }
-
-    @Test
-    void certificateVerifyModeIsRejectedForCreateAndUpdate() throws Exception {
-        String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        long privateKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-private.pem", PRIVATE_KEY_PEM);
-        long certFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "merchant-cert.pem", CERTIFICATE_PEM);
-        long publicKeyFileId = insertStorageAsset("SECRET", "DOCUMENT", "PRIVATE", "wechat-public.pem", PUBLIC_KEY_PEM);
-
-        mockMvc.perform(post("/admin/pay/configs")
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                "Unsupported Certificate Mode",
-                                "wx_db_app_123456",
-                                "mch_db_123456",
-                                "serial_db_123456",
-                                "synthetic_db_api_v3_key",
-                                privateKeyFileId,
-                                certFileId,
-                                "CERTIFICATE",
-                                "pub_key_db_123456",
-                                publicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
-        assertThat(jdbcClient.sql("select count(*) from payment_config where verify_mode = 'CERTIFICATE'")
-                .query(Integer.class)
-                .single()).isZero();
-
-        long configId = createConfig(writeToken, "Public Key Config", privateKeyFileId, certFileId, publicKeyFileId);
-        mockMvc.perform(put("/admin/pay/configs/{configId}", configId)
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                "Unsupported Certificate Update",
-                                "   ",
-                                "   ",
-                                "   ",
-                                "   ",
-                                privateKeyFileId,
-                                certFileId,
-                                "CERTIFICATE",
-                                "pub_key_db_123456",
-                                publicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
-
-        assertThat(jdbcClient.sql("select verify_mode from payment_config where id = :configId")
-                .param("configId", configId)
-                .query(String.class)
-                .single()).isEqualTo("PUBLIC_KEY");
-    }
-
-    private long createConfig(String token, String configName, long privateKeyFileId, long certFileId, long publicKeyFileId) throws Exception {
-        String response = mockMvc.perform(post("/admin/pay/configs")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(configJson(
-                                configName,
-                                "wx_db_app_" + UUID.randomUUID().toString().substring(0, 8),
-                                "mch_db_123456",
-                                "serial_db_" + UUID.randomUUID().toString().substring(0, 8),
-                                "synthetic_db_api_v3_key",
-                                privateKeyFileId,
-                                certFileId,
-                                "PUBLIC_KEY",
-                                "pub_key_db_123456",
-                                publicKeyFileId,
-                                "https://pay.example.test/wxpay/pay/notify",
-                                "https://pay.example.test/wxpay/refund/notify")))
+        String environment = mockMvc.perform(get("/admin/pay/configs/environment")
+                        .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.available").value(true))
+                .andExpect(jsonPath("$.data.config.appIdMasked").value(startsWith("wx_")))
+                .andExpect(jsonPath("$.data.config.privateKeyConfigured").value(true))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
+        String page = mockMvc.perform(get("/admin/pay/configs")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].apiV3KeyConfigured").value(true))
+                .andExpect(jsonPath("$.data.records[0].privateKeyConfigured").value(true))
+                .andExpect(jsonPath("$.data.records[0].wechatPublicKeyConfigured").value(true))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertSecretMaterialIsAbsent(environment);
+        assertSecretMaterialIsAbsent(page);
+    }
+
+    private long createConfig(String token, String configName) throws Exception {
+        String response = createConfigResponse(token, configName, PRIVATE_KEY_PEM, PUBLIC_KEY_PEM);
         return objectMapper.readTree(response).path("data").path("id").asLong();
     }
 
-    private long insertStorageAsset(
-            String scope,
-            String mediaKind,
-            String visibility,
-            String filename,
-            String content
-    ) {
-        String objectKey = "test/" + UUID.randomUUID() + "/" + filename;
+    private ImportResult importEnvironmentAfter(CountDownLatch start, String token) throws Exception {
+        start.await(10, TimeUnit.SECONDS);
+        var response = mockMvc.perform(post("/admin/pay/configs/import-environment")
+                        .header("Authorization", "Bearer " + token))
+                .andReturn()
+                .getResponse();
+        return new ImportResult(response.getStatus(), response.getContentAsString());
+    }
+
+    private ImportResult updateSourceAfter(CountDownLatch start, String token, String source) throws Exception {
+        start.await(10, TimeUnit.SECONDS);
+        var response = mockMvc.perform(put("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"source\":\"" + source + "\"}"))
+                .andReturn()
+                .getResponse();
+        return new ImportResult(response.getStatus(), response.getContentAsString());
+    }
+
+    private String createConfigResponse(
+            String token,
+            String configName,
+            String privateKeyPem,
+            String publicKeyPem
+    ) throws Exception {
+        return performCreate(token, validPayload(configName, privateKeyPem, publicKeyPem))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").isNumber())
+                .andExpect(jsonPath("$.data.source").value("DB"))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+    }
+
+    private org.springframework.test.web.servlet.ResultActions performCreate(
+            String token,
+            Map<String, Object> payload
+    ) throws Exception {
+        return mockMvc.perform(post("/admin/pay/configs")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(payload)));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions updateConfig(
+            String token,
+            long configId,
+            Map<String, Object> payload
+    ) throws Exception {
+        return mockMvc.perform(put("/admin/pay/configs/{configId}", configId)
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(payload)));
+    }
+
+    private Map<String, Object> validPayload(String configName, String privateKeyPem, String publicKeyPem) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("configName", configName);
+        payload.put("appId", "wx_db_app_" + UUID.randomUUID().toString().substring(0, 8));
+        payload.put("mchId", "mch_db_123456");
+        payload.put("merchantSerialNo", "serial_db_" + UUID.randomUUID().toString().substring(0, 8));
+        payload.put("apiV3Key", API_V3_KEY);
+        payload.put("privateKeyPem", privateKeyPem);
+        payload.put("verifyMode", "PUBLIC_KEY");
+        payload.put("wechatPublicKeyId", "pub_key_db_123456");
+        payload.put("wechatPublicKeyPem", publicKeyPem);
+        payload.put("notifyUrl", "https://pay.example.test/wxpay/pay/notify");
+        payload.put("refundNotifyUrl", "https://pay.example.test/wxpay/refund/notify");
+        return payload;
+    }
+
+    private long insertLegacyConfig(boolean enabled) {
+        long configId = LEGACY_CONFIG_IDS.incrementAndGet();
+        long privateKeyFileId = insertLegacyStorageAsset(configId, "merchant-private.pem", PRIVATE_KEY_PEM);
+        long certificateFileId = insertLegacyStorageAsset(configId, "merchant-certificate.pem", "legacy-certificate");
+        long publicKeyFileId = insertLegacyStorageAsset(configId, "wechat-public.pem", PUBLIC_KEY_PEM);
+        PaymentSecretCipher.EncryptedSecret encryptedApiV3Key = paymentSecretCipher.encrypt(
+                PaymentConfigResolver.apiV3KeyContext(configId), API_V3_KEY);
+        jdbcClient.sql("""
+                        insert into payment_config
+                            (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
+                             private_key_file_id, merchant_certificate_file_id, verify_mode,
+                             wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                             enabled, status, secret_cipher_version, secret_key_id, secret_revision)
+                        values
+                            (:id, :configName, 'wx_legacy_app', 'mch_legacy', 'serial_legacy', :apiV3, '', '',
+                             :privateKeyFileId, :certificateFileId, 'PUBLIC_KEY', 'pub_key_legacy',
+                             :publicKeyFileId, 'https://pay.example.test/wxpay/pay/notify',
+                             'https://pay.example.test/wxpay/refund/notify', :enabled, 'ACTIVE',
+                             :cipherVersion, :keyId, 1)
+                        """)
+                .param("id", configId)
+                .param("configName", "Legacy Pay " + configId)
+                .param("apiV3", encryptedApiV3Key.ciphertext())
+                .param("privateKeyFileId", privateKeyFileId)
+                .param("certificateFileId", certificateFileId)
+                .param("publicKeyFileId", publicKeyFileId)
+                .param("enabled", enabled)
+                .param("cipherVersion", encryptedApiV3Key.version())
+                .param("keyId", encryptedApiV3Key.keyId())
+                .update();
+        for (long fileId : List.of(privateKeyFileId, certificateFileId, publicKeyFileId)) {
+            jdbcClient.sql("""
+                            insert into storage_asset_usage
+                                (asset_id, usage_type, owner_type, owner_id, owner_label, protected, status)
+                            values
+                                (:fileId, 'PAYMENT_CONFIG_CERT', 'PAYMENT_CONFIG', :configId,
+                                 :ownerLabel, true, 'ACTIVE')
+                            """)
+                    .param("fileId", fileId)
+                    .param("configId", configId)
+                    .param("ownerLabel", "Legacy Pay " + configId)
+                    .update();
+        }
+        jdbcClient.sql("""
+                        update storage_asset set expires_at = null
+                        where id in (:privateKeyFileId, :certificateFileId, :publicKeyFileId)
+                        """)
+                .param("privateKeyFileId", privateKeyFileId)
+                .param("certificateFileId", certificateFileId)
+                .param("publicKeyFileId", publicKeyFileId)
+                .update();
+        return configId;
+    }
+
+    private long insertLegacyStorageAsset(long configId, String filename, String content) {
+        String objectKey = "test/legacy-" + configId + "/" + filename;
         byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
         storageProvider.put(objectKey, "text/plain", new ByteArrayInputStream(bytes), bytes.length);
         jdbcClient.sql("""
                         insert into storage_asset
-                            (scope, media_kind, visibility, provider, storage_container, object_key, original_filename,
-                             content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id,
-                             expires_at)
+                            (scope, media_kind, visibility, provider, storage_container, object_key,
+                             original_filename, content_type, extension, size_bytes, sha256, status,
+                             uploaded_by_type, uploaded_by_id, expires_at)
                         values
-                            (:scope, :mediaKind, :visibility, 'TENCENT_COS', '', :objectKey, :filename,
-                             'text/plain', 'pem', :sizeBytes, :sha256, 'ACTIVE', 'ADMIN', 1, :expiresAt)
+                            ('SECRET', 'DOCUMENT', 'PRIVATE', 'TENCENT_COS', '', :objectKey,
+                             :filename, 'text/plain', 'pem', :sizeBytes, :sha256, 'ACTIVE',
+                             'ADMIN', 1, :expiresAt)
                         """)
-                .param("scope", scope)
-                .param("mediaKind", mediaKind)
-                .param("visibility", visibility)
                 .param("objectKey", objectKey)
                 .param("filename", filename)
                 .param("sizeBytes", bytes.length)
@@ -799,128 +659,73 @@ class AdminPaymentConfigControllerTest {
                 .single();
     }
 
-    private String sha256(byte[] content) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
-        } catch (Exception ex) {
-            throw new IllegalStateException(ex);
-        }
+    private void insertHistoricalPaymentReference(long configId, String fingerprint) {
+        jdbcClient.sql("""
+                        insert into payment_order
+                            (order_id, payment_config_id, payment_config_fingerprint, out_trade_no,
+                             payer_openid, status, amount_cent, currency, expires_at)
+                        values
+                            (:orderId, :configId, :fingerprint, :outTradeNo,
+                             'openid-legacy', 'PAYING', 100, 'CNY', current_timestamp)
+                        """)
+                .param("orderId", configId)
+                .param("configId", configId)
+                .param("fingerprint", fingerprint)
+                .param("outTradeNo", "LEGACY-" + configId)
+                .update();
     }
 
-    private PaymentConfigSnapshot paymentConfigSnapshot(long configId) {
+    private ConfigSecretRow configSecretRow(long configId) {
         return jdbcClient.sql("""
-                        select app_id,
-                               mch_id,
-                               merchant_serial_no,
-                               api_v3_key_ciphertext,
-                               private_key_file_id,
-                               merchant_certificate_file_id,
-                               wechat_public_key_id,
-                               wechat_public_key_file_id,
-                               notify_url,
-                               refund_notify_url
-                        from payment_config
-                        where id = :configId
+                        select api_v3_key_ciphertext, private_key_pem_ciphertext,
+                               wechat_public_key_pem_ciphertext, private_key_file_id,
+                               merchant_certificate_file_id, wechat_public_key_file_id,
+                               secret_cipher_version, secret_key_id
+                        from payment_config where id = :configId
                         """)
                 .param("configId", configId)
-                .query((rs, rowNum) -> new PaymentConfigSnapshot(
-                        rs.getString("app_id"),
-                        rs.getString("mch_id"),
-                        rs.getString("merchant_serial_no"),
+                .query((rs, rowNum) -> new ConfigSecretRow(
                         rs.getString("api_v3_key_ciphertext"),
-                        rs.getLong("private_key_file_id"),
-                        rs.getLong("merchant_certificate_file_id"),
-                        rs.getString("wechat_public_key_id"),
-                        rs.getLong("wechat_public_key_file_id"),
-                        rs.getString("notify_url"),
-                        rs.getString("refund_notify_url")
+                        rs.getString("private_key_pem_ciphertext"),
+                        rs.getString("wechat_public_key_pem_ciphertext"),
+                        nullableLong(rs, "private_key_file_id"),
+                        nullableLong(rs, "merchant_certificate_file_id"),
+                        nullableLong(rs, "wechat_public_key_file_id"),
+                        rs.getInt("secret_cipher_version"),
+                        rs.getString("secret_key_id")
                 ))
                 .single();
     }
 
-    private void assertClaimed(long... assetIds) {
-        for (long assetId : assetIds) {
-            assertThat(jdbcClient.sql("select count(*) from storage_asset where id = :id and expires_at is null")
-                    .param("id", assetId)
-                    .query(Integer.class)
-                    .single()).isEqualTo(1);
-        }
+    private String decrypt(PaymentSecretCipher.SecretContext context, ConfigSecretRow row) {
+        return decrypt(context, row.apiV3KeyCiphertext(), row);
     }
 
-    private void assertReleased(long... assetIds) {
-        LocalDateTime databaseNow = databaseNow();
-        for (long assetId : assetIds) {
-            LocalDateTime expiresAt = jdbcClient.sql("select expires_at from storage_asset where id = :id")
-                    .param("id", assetId)
-                    .query(LocalDateTime.class)
-                    .single();
-            assertThat(expiresAt)
-                    .isAfter(databaseNow.plusHours(23))
-                    .isBefore(databaseNow.plusHours(25));
-        }
-    }
-
-    private LocalDateTime databaseNow() {
-        return jdbcClient.sql("select current_timestamp")
-                .query(LocalDateTime.class)
-                .single();
-    }
-
-    private boolean enabledFlag(long configId) {
-        return Boolean.TRUE.equals(jdbcClient.sql("select enabled from payment_config where id = :configId")
-                .param("configId", configId)
-                .query(Boolean.class)
-                .single());
-    }
-
-    private void assertSecretMaterialIsAbsent(String response) throws Exception {
-        JsonNode root = objectMapper.readTree(response);
-        assertThat(root.toString())
-                .doesNotContain("synthetic_env_api_v3_key")
-                .doesNotContain("synthetic_db_api_v3_key")
-                .doesNotContain("synthetic-private-key")
-                .doesNotContain("synthetic-merchant-certificate")
-                .doesNotContain("synthetic-wechat-public-key")
-                .doesNotContain("apiV3KeyCiphertext")
-                .doesNotContain("privateKeyPem")
-                .doesNotContain("wechatPublicKeyPem")
-                .doesNotContain("objectKey")
-                .doesNotContain("token");
-    }
-
-    private String configJson(
-            String configName,
-            String appId,
-            String mchId,
-            String merchantSerialNo,
-            String apiV3Key,
-            Long privateKeyFileId,
-            Long merchantCertificateFileId,
-            String verifyMode,
-            String wechatPublicKeyId,
-            Long wechatPublicKeyFileId,
-            String notifyUrl,
-            String refundNotifyUrl
+    private String decrypt(
+            PaymentSecretCipher.SecretContext context,
+            String ciphertext,
+            ConfigSecretRow row
     ) {
-        return """
-                {"configName":"%s","appId":"%s","mchId":"%s","merchantSerialNo":"%s",
-                 "apiV3Key":"%s","privateKeyFileId":%d,"merchantCertificateFileId":%d,
-                 "verifyMode":"%s","wechatPublicKeyId":"%s","wechatPublicKeyFileId":%d,
-                 "notifyUrl":"%s","refundNotifyUrl":"%s"}
-                """.formatted(
-                configName,
-                appId,
-                mchId,
-                merchantSerialNo,
-                apiV3Key,
-                privateKeyFileId,
-                merchantCertificateFileId,
-                verifyMode,
-                wechatPublicKeyId,
-                wechatPublicKeyFileId,
-                notifyUrl,
-                refundNotifyUrl
-        );
+        PaymentSecretCipher.DecryptedSecret decrypted = paymentSecretCipher.decrypt(context, ciphertext);
+        assertThat(decrypted.version()).isEqualTo(row.cipherVersion());
+        assertThat(decrypted.keyId()).isEqualTo(row.keyId());
+        return decrypted.plaintext();
+    }
+
+    private void assertSecretMaterialIsAbsent(String response) {
+        assertThat(response)
+                .doesNotContain(API_V3_KEY)
+                .doesNotContain(REPLACEMENT_API_V3_KEY)
+                .doesNotContain("BEGIN PRIVATE KEY")
+                .doesNotContain("BEGIN PUBLIC KEY")
+                .doesNotContain("apiV3KeyCiphertext")
+                .doesNotContain("privateKeyPemCiphertext")
+                .doesNotContain("wechatPublicKeyPemCiphertext")
+                .doesNotContain("privateKeyPem\"")
+                .doesNotContain("wechatPublicKeyPem\"")
+                .doesNotContain("privateKeyFileId")
+                .doesNotContain("merchantCertificateFileId")
+                .doesNotContain("wechatPublicKeyFileId");
     }
 
     private String limitedAdminToken(List<String> permissions) {
@@ -963,47 +768,64 @@ class AdminPaymentConfigControllerTest {
                     .param("permission", permission)
                     .query(Long.class)
                     .single();
-            jdbcClient.sql("""
-                            insert into admin_role_permission (role_id, permission_id)
-                            values (:roleId, :permissionId)
-                            """)
+            jdbcClient.sql("insert into admin_role_permission (role_id, permission_id) values (:roleId, :id)")
                     .param("roleId", adminId)
-                    .param("permissionId", permissionId)
+                    .param("id", permissionId)
                     .update();
         }
     }
 
     private void clearLimitedAdmins() {
-        jdbcClient.sql("delete from admin_role_permission where role_id between 9910001 and 9919999").update();
-        jdbcClient.sql("delete from admin_user_role where role_id between 9910001 and 9919999").update();
-        jdbcClient.sql("delete from admin_role where id between 9910001 and 9919999").update();
-        jdbcClient.sql("delete from admin_user where id between 9910001 and 9919999").update();
+        jdbcClient.sql("delete from admin_role_permission where role_id between 9910001 and 9999999").update();
+        jdbcClient.sql("delete from admin_user_role where role_id between 9910001 and 9999999").update();
+        jdbcClient.sql("delete from admin_role where id between 9910001 and 9999999").update();
+        jdbcClient.sql("delete from admin_user where id between 9910001 and 9999999").update();
     }
 
-    private String appLoginAndExtractToken() throws Exception {
-        String response = mockMvc.perform(post("/app/auth/login")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"code":"payment-admin-controller-test"}
-                                """))
-                .andExpect(status().isOk())
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        return objectMapper.readTree(response).path("data").path("token").asText();
+    private LocalDateTime databaseNow() {
+        return jdbcClient.sql("select current_timestamp").query(LocalDateTime.class).single();
     }
 
-    private record PaymentConfigSnapshot(
-            String appId,
-            String mchId,
-            String merchantSerialNo,
+    private static KeyPair rsaKeyPair(int bits) {
+        try {
+            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+            generator.initialize(bits);
+            return generator.generateKeyPair();
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private static String pem(String label, byte[] encoded) {
+        String base64 = Base64.getMimeEncoder(64, new byte[]{'\n'}).encodeToString(encoded);
+        return "-----BEGIN " + label + "-----\n" + base64 + "\n-----END " + label + "-----\n";
+    }
+
+    private static String sha256(byte[] content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
+    }
+
+    private static Long nullableLong(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
+    }
+
+    private record ConfigSecretRow(
             String apiV3KeyCiphertext,
+            String privateKeyPemCiphertext,
+            String publicKeyPemCiphertext,
             Long privateKeyFileId,
             Long merchantCertificateFileId,
-            String wechatPublicKeyId,
-            Long wechatPublicKeyFileId,
-            String notifyUrl,
-            String refundNotifyUrl
+            Long publicKeyFileId,
+            int cipherVersion,
+            String keyId
     ) {
+    }
+
+    private record ImportResult(int status, String body) {
     }
 }

@@ -2,7 +2,9 @@ package org.muybaby.shopserver.wechat.servicecard;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfig;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardRuntimeUpdateRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,16 +28,19 @@ public class WechatServiceCardRuntimeSettingService {
 
     private final JdbcClient jdbcClient;
     private final WechatServiceCardProperties properties;
-    private final WechatMiniProgramProperties miniProgramProperties;
+    private final WechatPlatformCredentialResolver credentialResolver;
+    private final WechatServiceCardConfigResolver configResolver;
 
     public WechatServiceCardRuntimeSettingService(
             JdbcClient jdbcClient,
             WechatServiceCardProperties properties,
-            WechatMiniProgramProperties miniProgramProperties
+            WechatPlatformCredentialResolver credentialResolver,
+            WechatServiceCardConfigResolver configResolver
     ) {
         this.jdbcClient = jdbcClient;
         this.properties = properties;
-        this.miniProgramProperties = miniProgramProperties;
+        this.credentialResolver = credentialResolver;
+        this.configResolver = configResolver;
     }
 
     @Transactional(readOnly = true)
@@ -127,20 +132,25 @@ public class WechatServiceCardRuntimeSettingService {
     }
 
     public boolean staticCaptureReady() {
-        return properties.imageConfigurationReady();
+        return configResolver.resolveFailClosed()
+                .map(WechatServiceCardConfig::imageConfigurationReady)
+                .orElse(false);
     }
 
     public boolean staticWorkerReady() {
         return staticCaptureReady()
-                && properties.templateConfigurationReady()
-                && StringUtils.hasText(miniProgramProperties.appId())
-                && StringUtils.hasText(miniProgramProperties.appSecret())
+                && configResolver.resolveFailClosed()
+                        .map(WechatServiceCardConfig::templateConfigurationReady)
+                        .orElse(false)
+                && credentialResolver.readyFailClosed()
                 && callbackReady();
     }
 
     public boolean callbackReady() {
-        return properties.callback().secureReady()
-                && StringUtils.hasText(miniProgramProperties.appId());
+        return configResolver.resolveFailClosed()
+                .map(WechatServiceCardConfig::callbackSecureReady)
+                .orElse(false)
+                && credentialResolver.readyFailClosed();
     }
 
     private NormalizedUpdate normalize(AdminWechatServiceCardRuntimeUpdateRequest request) {

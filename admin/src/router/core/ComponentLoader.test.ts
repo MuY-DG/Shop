@@ -43,6 +43,7 @@ test('component path resolution still points to real commerce menu views', () =>
     '/compliance/documents',
     '/compliance/merchant',
     '/configuration/data-cleanup',
+    '/configuration/wechat-platform',
     '/configuration/wechat-service-card',
     '/content/contact',
     '/content/home-decoration',

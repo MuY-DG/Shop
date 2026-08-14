@@ -982,7 +982,6 @@ payload = bytes.fromhex(
 with open(sys.argv[1], "wb") as f:
     f.write(payload)
 PY
-printf '%s\n' '-----BEGIN CERTIFICATE-----' 'smoke-only' '-----END CERTIFICATE-----' > "${SMOKE_DIR}/smoke.pem"
 printf 'not an allowed file' > "${SMOKE_DIR}/bad.exe"
 : > "${SMOKE_DIR}/empty.png"
 python3 - <<'PY' "${SMOKE_DIR}/large.png"
@@ -1099,27 +1098,13 @@ PRODUCT_IMAGE_URL="${SHARED_ASSET_URL}"
 CATEGORY_ICON_URL="${SHARED_ASSET_URL}"
 BANNER_IMAGE_URL="${SHARED_ASSET_URL}"
 
-PRIVATE_CERT_ID=$(
-  curl -s -X POST http://localhost:8080/admin/pay/configs/secret-files \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -F file=@"${SMOKE_DIR}/smoke.pem;type=application/x-pem-file" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.scope !== "SECRET" || body.data.mediaKind !== "DOCUMENT" || body.data.visibility !== "PRIVATE" || body.data.url || body.data.publicUrl || !body.data.expiresAt) process.exit(1); console.log(body.data.id); });'
-)
-
 curl -s "http://localhost:8080/admin/assets?folderId=${ASSET_FOLDER_ID}&mediaKind=IMAGE" \
   -H "Authorization: Bearer ${ADMIN_TOKEN}" \
 | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.total !== 1 || body.data.records[0].id !== Number(process.argv[1])) process.exit(1); console.log("library asset listed"); });' "${SHARED_ASSET_ID}"
-
-curl -s "http://localhost:8080/admin/assets?keyword=smoke.pem" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.total !== 0) process.exit(1); console.log("private scopes hidden"); });'
-
-curl -s "http://localhost:8080/admin/assets/${PRIVATE_CERT_ID}" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.code === 200) process.exit(1); console.log("secret detail rejected"); });'
 ```
 
-Focused tests cover recorded-location routing, database-clock TTLs, the staged/claimed/replaced-or-cleared payment-secret lifecycle, and token-leased retryable cleanup:
+Focused tests cover recorded-location routing, database-clock TTLs, context-bound encrypted payment
+PEM contents plus legacy file-ID release, and token-leased retryable cleanup:
 
 ```bash
 cd backend/shop-server
@@ -1242,7 +1227,9 @@ UI smoke checklist after starting the admin dev server and opening the mini prog
 - Admin creates, renames, disables, and deletes empty folders; disabled folders reject uploads and moves.
 - Admin asset detail shows every actual usage location and the referenced/unreferenced filter follows active usages.
 - Assets referenced by product, banner, order snapshots, or other active usages cannot be deleted.
-- Payment configuration uploads a `.pem` only through `/admin/pay/configs/secret-files`; the secret never appears in the asset library and has no public URL or preview.
+- Payment configuration may use a local file picker, but the browser sends validated PEM text in the
+  config request and the backend stores only encrypted ciphertext. No payment key/certificate is
+  created in the asset library and no path, public URL, preview, or plaintext is returned.
 - Mini program avatar, after-sale evidence, and customer-service images send the
   file body to the configured COS `uploadFile` domain. After-sale evidence never
   appears in the reusable asset library.
@@ -1303,7 +1290,9 @@ Automated verification points:
 
 This is manual real smoke, not automated. Do not mark it passed until a real mini program payment completes against a local backend exposed through HTTPS.
 
-1. Fill `backend/shop-server/.env.dev.local` with local-only placeholders replaced by real local credentials:
+1. Prefer creating and enabling a database payment configuration through Admin, then persist
+   runtime source `DB`. Use the following `.env.dev.local` block only to reproduce and migrate an
+   existing ENV-sourced deployment; never copy it into a tracked example:
 
 ```properties
 WECHAT_PAY_ENABLED=true
@@ -1318,13 +1307,11 @@ WECHAT_PAY_REFUND_NOTIFY_URL=https://<public-tunnel-domain>/wxpay/refund/notify
 WECHAT_PAY_VERIFY_MODE=PUBLIC_KEY
 WECHAT_PAY_PUBLIC_KEY_ID=<wechat-pay-public-key-id>
 WECHAT_PAY_PUBLIC_KEY_PATH=<absolute-path-to-local-wechat-pay-public-key.pem>
-SHOP_PAY_EXPIRE_MINUTES=15
 SHOP_SECRET_ENCRYPTION_LEGACY_KEY=<local-32-byte-application-master-key>
 SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false
 SHOP_SECRET_ENCRYPTION_WRITE_VERSION=1
 SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED=false
 SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
-SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=true
 ```
 
 2. Start the backend with the `dev` profile and expose it with an HTTPS tunnel.
@@ -1335,7 +1322,14 @@ https://<public-tunnel-domain>/wxpay/pay/notify
 https://<public-tunnel-domain>/wxpay/refund/notify
 ```
 
-4. If using DB-managed credentials, upload each private key or certificate through `POST /admin/pay/configs/secret-files`, configure `/admin/pay/configs` with the returned secret asset IDs, set that DB config as the DB candidate, and save the admin runtime source as `DB`. Confirm `/admin/pay/configs/source` returns `DB` with `persisted=true`, and `/admin/pay/configs/effective` returns masked values and the same callback URLs.
+4. If using DB-managed credentials, choose the merchant private-key and WeChat Pay public-key PEM
+   in Admin. The browser submits their text as `privateKeyPem`/`wechatPublicKeyPem`; the backend
+   validates and stores encrypted ciphertext, not a file or storage-asset ID. A legacy ENV setup
+   can instead call `POST /admin/pay/configs/import-environment`; an old DB row with private-file
+   IDs uses `POST /admin/pay/configs/{configId}/import-legacy-secret-files`. Confirm the chosen row
+   reports both keys configured and `legacySecretFilesPendingImport=false`, enable it, save source
+   `DB`, then confirm `/admin/pay/configs/source` returns `DB` with `persisted=true` and
+   `/admin/pay/configs/effective` returns only masked values and the expected callback URLs.
 5. In a real mini program session, create an order and tap payment.
 6. Complete WeChat payment with the real payer account.
 7. Verify the backend receives `POST /wxpay/pay/notify` while route issuance is disabled, or `/wxpay/pay/notify/r/{opaque-token}` after the routed handlers are deployed everywhere and `SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=true`. Confirm the callback log reaches `SUCCESS` and the order becomes `PAID`.
@@ -1355,7 +1349,8 @@ cd backend/shop-server
 
 Local skipped path:
 
-- Set `SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false`.
+- Through Admin or `PUT /admin/wechat-shipping/runtime`, save upload, delivery, and receipt
+  reconciliation as disabled with the current version and a change reason.
 - Start the backend and create or reuse a paid order.
 - Admin ships the order through `POST /admin/orders/{orderId}/ship` with `expressCompany`, `trackingNo`, and optional `shipmentNote`.
 - Verify order status is `SHIPPED`.
@@ -1364,8 +1359,10 @@ Local skipped path:
 
 Real upload enabled path:
 
-- Set `SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=true`.
-- Keep `SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED=true` so the durable scheduler, not only the immediate request, owns eventual delivery.
+- Through Admin or `PUT /admin/wechat-shipping/runtime`, enable upload and durable delivery with
+  the current version and a change reason. Enable receipt reconciliation only when that phase is
+  also being tested.
+- Keep durable delivery enabled so the scheduler, not only the immediate request, owns eventual delivery.
 - Use a real paid order with `payment_transaction_id`, payer `openid`, and real WeChat mini program credentials so the backend can obtain an access token internally.
 - Admin ships the order through `POST /admin/orders/{orderId}/ship`.
 - Verify the committed shipment can start at `PENDING`; a successful claimed delivery becomes `UPLOADED` without creating a duplicate shipment row. `UNAVAILABLE` uses bounded backoff, while deterministic rejection becomes operator-owned `FAILED`.
@@ -1450,7 +1447,9 @@ Manual and Mini Program smoke:
 
 Automatic receipt reconciliation:
 
-- Keep `SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=true`. The default scan delay is 5 minutes, the minimum shipped age is 1 hour, and one still-unconfirmed order is queried at most every 30 minutes.
+- Enable receipt reconciliation through the audited WeChat shipping runtime setting. The tracked
+  scan delay is 5 minutes, the minimum shipped age is 1 hour, and one still-unconfirmed order is
+  queried at most every 30 minutes.
 - Use a `SHIPPED` order whose shipment has `wechatProviderMode=REAL` and `wechatUploadStatus=UPLOADED`.
 - Let WeChat confirm or automatically confirm receipt without tapping the mini program's local confirmation button.
 - After the configured reconciliation interval, verify the local order becomes `COMPLETED`, `completed_at` is populated, and `order_status_log` contains `ORDER_AUTO_COMPLETED` with `operator_type=SYSTEM`.

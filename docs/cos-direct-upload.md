@@ -109,11 +109,9 @@ HTTPS 证书、浏览器 CORS、微信合法域名、POST Policy 和公网链路
 不要把 SecretKey 下发给客户端。客户端拿到的 Policy 同时锁定对象键、
 Content-Type、精确文件长度、私有 ACL、禁止覆盖和 15 分钟有效期。
 服务端还默认限制每个登录主体最多 10 个活跃会话；小程序用户每小时最多
-签发 60 个，管理员每小时最多 600 个。可通过
-`SHOP_DIRECT_UPLOAD_MAX_ACTIVE_SESSIONS`、
-`SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_APP` 和
-`SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_ADMIN` 调整，但生产环境不建议
-取消上限。
+签发 60 个，管理员每小时最多 600 个。这三个技术安全上限由
+`application.yaml` 的 `shop.storage.direct-upload` 管理，不进入生产环境文件；
+调整时必须保留有界上限并经过发布验证。
 
 ### 3. 管理后台 CORS
 

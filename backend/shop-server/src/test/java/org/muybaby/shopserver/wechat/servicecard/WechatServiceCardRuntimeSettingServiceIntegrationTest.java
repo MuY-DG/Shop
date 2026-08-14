@@ -4,7 +4,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentials;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardRuntimeUpdateRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -102,7 +103,9 @@ class WechatServiceCardRuntimeSettingServiceIntegrationTest {
         readyService.update(request(true, true, 1, "enable worker after review"), 1L);
 
         WechatServiceCardRuntimeSettingService brokenService = service(
-                disabledProperties(), new WechatMiniProgramProperties("", "", false)
+                disabledProperties(), () -> {
+                    throw new IllegalStateException("missing credentials");
+                }
         );
         WechatServiceCardRuntimeSettingService.RuntimeSetting disabled = brokenService.update(
                 request(false, false, 2, "emergency provider shutdown"), 1L
@@ -127,10 +130,11 @@ class WechatServiceCardRuntimeSettingServiceIntegrationTest {
 
     private WechatServiceCardRuntimeSettingService service(
             WechatServiceCardProperties properties,
-            WechatMiniProgramProperties miniProgramProperties
+            WechatPlatformCredentialResolver credentialResolver
     ) {
         return new WechatServiceCardRuntimeSettingService(
-                jdbcClient, properties, miniProgramProperties
+                jdbcClient, properties, credentialResolver,
+                () -> WechatServiceCardTestConfigs.fromProperties(properties)
         );
     }
 
@@ -196,9 +200,11 @@ class WechatServiceCardRuntimeSettingServiceIntegrationTest {
         );
     }
 
-    private WechatMiniProgramProperties readyMiniProgram() {
-        return new WechatMiniProgramProperties(
-                "wx-service-card-test", "mini-program-secret", false
+    private WechatPlatformCredentialResolver readyMiniProgram() {
+        return () -> new WechatPlatformCredentials(
+                "wx-service-card-test",
+                "mini-program-secret",
+                WechatPlatformCredentials.Source.DATABASE
         );
     }
 

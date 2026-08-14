@@ -23,8 +23,8 @@ spring:
         enabled: false # 项目直接使用 RedisTemplate，因此关闭未使用的 Repository 扫描。
   servlet: # Servlet Web 容器的相关配置入口。
     multipart: # 配置 multipart/form-data 文件上传限制。
-      max-file-size: ${SHOP_MULTIPART_MAX_FILE_SIZE:50MB} # 限制单个上传文件大小，默认 50MB。
-      max-request-size: ${SHOP_MULTIPART_MAX_REQUEST_SIZE:51MB} # 限制整个上传请求大小，默认 51MB。
+      max-file-size: 50MB # 限制单个上传文件大小。
+      max-request-size: 51MB # 限制整个上传请求大小。
 
 server:
   port: 8080
@@ -46,25 +46,25 @@ management: # Spring Boot Actuator 运维端点配置入口。
 
 springdoc: # Springdoc OpenAPI 文档功能配置入口。
   api-docs: # OpenAPI JSON 描述端点配置。
-    enabled: ${SHOP_OPENAPI_ENABLED:false} # 默认关闭接口描述端点，可通过环境变量显式开启。
+    enabled: false # 公共配置关闭接口描述端点，开发 Profile 单独开启。
   swagger-ui: # Swagger UI 浏览页面配置。
-    enabled: ${SHOP_OPENAPI_ENABLED:false} # 默认关闭接口浏览页面，可通过环境变量显式开启。
+    enabled: false # 公共配置关闭接口浏览页面，开发 Profile 单独开启。
 
 shop: # 商城项目自定义业务配置的统一入口。
   compliance: # 商家资质、法律文档与用户同意留痕。
-    privacy-consent-required: ${SHOP_PRIVACY_CONSENT_REQUIRED:false} # 默认兼容尚未发布正式协议的开发环境；生产配置强制开启。
+    privacy-consent-required: false # 登录使用微信小程序平台隐私保护指引，不依赖后台环境变量。
   secret-encryption: # 后台持久化敏感配置共用的信封加密与轮换配置。
     write-version: ${SHOP_SECRET_ENCRYPTION_WRITE_VERSION:1} # 新写入密文使用的加密格式版本。
     active-key-id: ${SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID:} # 指定当前用于加密新数据的主密钥 ID。
     key-ring: ${SHOP_SECRET_ENCRYPTION_KEY_RING:} # 配置可读取历史密文的 AES-256 主密钥集合。
     legacy-key: ${SHOP_SECRET_ENCRYPTION_LEGACY_KEY:} # 仅用于读取和迁移历史 v1 密文。
     rotation-enabled: ${SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED:false} # 默认关闭后台自动密钥轮换任务。
-    rotation-delay: ${SHOP_SECRET_ENCRYPTION_ROTATION_DELAY:1m} # 密钥轮换任务每批之间默认等待 1 分钟。
-    rotation-batch-size: ${SHOP_SECRET_ENCRYPTION_ROTATION_BATCH_SIZE:50} # 每批最多处理 50 条记录。
+    rotation-delay: 1m # 密钥轮换任务每批之间等待 1 分钟。
+    rotation-batch-size: 50 # 每批最多处理 50 条记录。
   content: # 首页和联系信息等内容模块的缓存配置。
-    cache-enabled: ${SHOP_CONTENT_CACHE_ENABLED:true} # 控制内容缓存总开关，默认启用。
-    home-cache-ttl: ${SHOP_HOME_CACHE_TTL:6h} # 设置首页内容缓存有效期，默认 6 小时。
-    contact-cache-ttl: ${SHOP_CONTACT_CACHE_TTL:24h} # 设置联系信息缓存有效期，默认 24 小时。
+    cache-enabled: true # 启用内容缓存。
+    home-cache-ttl: 6h # 首页内容缓存有效期为 6 小时。
+    contact-cache-ttl: 24h # 联系信息缓存有效期为 24 小时。
   auth: # 管理后台和小程序的认证会话配置。
     token-store: redis # 使用 Redis 保存访问令牌和刷新令牌。
     admin-access-ttl: 2h # 管理后台访问令牌有效期为 2 小时。
@@ -72,131 +72,133 @@ shop: # 商城项目自定义业务配置的统一入口。
     app-access-ttl: 7d # 小程序访问令牌有效期为 7 天。
     app-refresh-ttl: 30d # 小程序刷新令牌有效期为 30 天。
     admin-session-reconciliation: # 定期重试后台账号登录设备上限，修复 Redis 短暂故障造成的延迟裁剪。
-      enabled: ${SHOP_ADMIN_SESSION_RECONCILIATION_ENABLED:true} # 默认启用幂等对账。
-      initial-delay-ms: ${SHOP_ADMIN_SESSION_RECONCILIATION_INITIAL_DELAY_MS:30000} # 启动 30 秒后首次执行。
-      fixed-delay-ms: ${SHOP_ADMIN_SESSION_RECONCILIATION_FIXED_DELAY_MS:60000} # 每轮结束 60 秒后再次执行。
+      enabled: true # 启用幂等对账。
+      initial-delay-ms: 30000 # 启动 30 秒后首次执行。
+      fixed-delay-ms: 60000 # 每轮结束 60 秒后再次执行。
     admin-login-protection: # 管理员登录失败限制与锁定配置。
-      enabled: ${SHOP_ADMIN_LOGIN_PROTECTION_ENABLED:true} # 默认启用管理员登录保护。
-      store: ${SHOP_ADMIN_LOGIN_PROTECTION_STORE:redis} # 默认使用 Redis 保存登录失败计数。
-      failure-window: ${SHOP_ADMIN_LOGIN_FAILURE_WINDOW:15m} # 在 15 分钟统计窗口内累计失败次数。
-      pair-failure-limit: ${SHOP_ADMIN_LOGIN_PAIR_FAILURE_LIMIT:5} # 单个账号与 IP 组合最多允许失败 5 次。
-      account-failure-limit: ${SHOP_ADMIN_LOGIN_ACCOUNT_FAILURE_LIMIT:12} # 单个账号在窗口内最多允许失败 12 次。
-      ip-failure-limit: ${SHOP_ADMIN_LOGIN_IP_FAILURE_LIMIT:30} # 单个来源 IP 在窗口内最多允许失败 30 次。
-      lock-duration: ${SHOP_ADMIN_LOGIN_LOCK_DURATION:15m} # 达到限制后锁定登录 15 分钟。
-      memory-max-entries: ${SHOP_ADMIN_LOGIN_MEMORY_MAX_ENTRIES:100000} # 使用内存存储时最多保留 100000 个计数项。
+      enabled: true # 启用管理员登录保护。
+      store: redis # 使用 Redis 保存登录失败计数。
+      failure-window: 15m # 在 15 分钟统计窗口内累计失败次数。
+      pair-failure-limit: 5 # 单个账号与 IP 组合最多允许失败 5 次。
+      account-failure-limit: 12 # 单个账号在窗口内最多允许失败 12 次。
+      ip-failure-limit: 30 # 单个来源 IP 在窗口内最多允许失败 30 次。
+      lock-duration: 15m # 达到限制后锁定登录 15 分钟。
+      memory-max-entries: 100000 # 使用内存存储时最多保留 100000 个计数项。
   security: # 商城应用层安全配置入口。
     client-ip: # 可信代理链和真实客户端 IP 解析配置。
       trusted-proxy-cidrs: ${SHOP_TRUSTED_PROXY_CIDRS:127.0.0.0/8,::1/128} # 默认只信任本机反向代理写入的代理头；容器生产网关必须显式配置精确 /32。
       max-forwarded-hops: ${SHOP_MAX_FORWARDED_HOPS:20} # 最多解析 20 层代理转发地址。
-      max-forwarded-header-length: ${SHOP_MAX_FORWARDED_HEADER_LENGTH:2048} # 限制转发头最大长度为 2048 字符。
+      max-forwarded-header-length: 2048 # 限制转发头最大长度为 2048 字符。
   analytics: # 访问统计和限流配置。
     rate-limit: # 访问统计事件写入的限流配置。
-      enabled: ${SHOP_ANALYTICS_RATE_LIMIT_ENABLED:true} # 默认启用统计事件限流。
-      window: ${SHOP_ANALYTICS_RATE_LIMIT_WINDOW:1m} # 使用 1 分钟作为限流统计窗口。
-      ip-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_IP_EVENTS:5000} # 每个 IP 每个窗口最多记录 5000 个事件。
-      visitor-event-limit: ${SHOP_ANALYTICS_RATE_LIMIT_VISITOR_EVENTS:1000} # 每个访客每个窗口最多记录 1000 个事件。
+      enabled: true # 启用统计事件限流。
+      window: 1m # 使用 1 分钟作为限流统计窗口。
+      ip-event-limit: 5000 # 每个 IP 每个窗口最多记录 5000 个事件。
+      visitor-event-limit: 1000 # 每个访客每个窗口最多记录 1000 个事件。
   storage: # 图片、视频和私有文件的素材存储配置。
     direct-upload: # 客户端直传 COS 的短期会话与限流策略。
-      max-active-sessions-per-principal: ${SHOP_DIRECT_UPLOAD_MAX_ACTIVE_SESSIONS:10} # 每个登录主体最多同时保留 10 个待完成直传，避免临时对象滥用。
-      max-sessions-per-hour-app: ${SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_APP:60} # 每位小程序用户每小时最多签发 60 次直传。
-      max-sessions-per-hour-admin: ${SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_ADMIN:600} # 每位管理员每小时最多签发 600 次直传。
+      max-active-sessions-per-principal: 10 # 每个登录主体最多同时保留 10 个待完成直传，避免临时对象滥用。
+      max-sessions-per-hour-app: 60 # 每位小程序用户每小时最多签发 60 次直传。
+      max-sessions-per-hour-admin: 600 # 每位管理员每小时最多签发 600 次直传。
     customer-service-thumbnail: # 旧 Multipart 客服图片使用本地异步缩略图；直传路径由数据万象同步生成。
-      max-dimension: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_MAX_DIMENSION:720} # 默认将最长边缩放至 720 像素且不放大小图。
-      webp-enabled: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_WEBP_ENABLED:true} # WebP 不可用时自动降级为本地 JPEG，不阻塞消息。
-      batch-size: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_BATCH_SIZE:20} # 恢复任务每轮最多处理 20 张。
-      processing-timeout: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_PROCESSING_TIMEOUT:5m} # 超时任务可被下一轮重新认领。
-      fixed-delay: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_FIXED_DELAY:30s} # 每 30 秒恢复遗漏或失败的任务。
-      initial-delay: ${SHOP_CUSTOMER_SERVICE_THUMBNAIL_INITIAL_DELAY:10s} # 应用启动 10 秒后开始首次扫描。
+      max-dimension: 720 # 将最长边缩放至 720 像素且不放大小图。
+      webp-enabled: true # WebP 不可用时自动降级为本地 JPEG，不阻塞消息。
+      batch-size: 20 # 恢复任务每轮最多处理 20 张。
+      processing-timeout: 5m # 超时任务可被下一轮重新认领。
+      fixed-delay: 30s # 每 30 秒恢复遗漏或失败的任务。
+      initial-delay: 10s # 应用启动 10 秒后开始首次扫描。
     limits: # 不同素材类型的安全与资源限制。
-      image-max-size: ${SHOP_STORAGE_IMAGE_MAX_SIZE:5MB} # 单张图片最大允许 5MB。
-      image-max-width: ${SHOP_STORAGE_IMAGE_MAX_WIDTH:8192} # 图片最大宽度限制为 8192 像素。
-      image-max-height: ${SHOP_STORAGE_IMAGE_MAX_HEIGHT:8192} # 图片最大高度限制为 8192 像素。
-      image-max-pixels: ${SHOP_STORAGE_IMAGE_MAX_PIXELS:25000000} # 图片总像素数最大限制为 2500 万。
-      video-max-size: ${SHOP_STORAGE_VIDEO_MAX_SIZE:50MB} # 单个视频最大允许 50MB。
-      private-file-max-size: ${SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE:10MB} # 私有文件最大允许 10MB。
+      image-max-size: 5MB # 单张图片最大允许 5MB。
+      image-max-width: 8192 # 图片最大宽度限制为 8192 像素。
+      image-max-height: 8192 # 图片最大高度限制为 8192 像素。
+      image-max-pixels: 25000000 # 图片总像素数最大限制为 2500 万。
+      video-max-size: 50MB # 单个视频最大允许 50MB。
   wechat: # 微信平台相关功能配置入口。
     mini-program: # 微信小程序登录和接口调用配置。
+      # 仅供 V99 legacy-env-import 读取旧部署值；数据库导入和验证完成前不得删除。
       app-id: ${WECHAT_MINI_PROGRAM_APP_ID:} # 从环境变量读取小程序 AppID。
       app-secret: ${WECHAT_MINI_PROGRAM_APP_SECRET:} # 从环境变量读取小程序 AppSecret。
       mock-enabled: false # 基础配置强制关闭小程序模拟模式。
     service-card-2001: # 新版“购物（实体物流）服务动态”，不使用传统订阅消息接口。
       enabled: ${SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED:false} # 只控制事务内可靠意图采集，默认关闭。
       worker-enabled: ${SHOP_WECHAT_SERVICE_CARD_WORKER_ENABLED:false} # 独立控制 set/get 外呼，便于先验收队列再放量。
-      account-template-record-id: ${SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID:} # 仅用于开通就绪度，绝不发送给 setUserNotify。
-      fallback-product-image: ${SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE:https://admin.muybaby6.icu/wechat/service-card-placeholder.png} # 商家自有、无防盗链的固定 HTTPS 占位图。
-      prefer-order-snapshot-images: false # 当前商品 COS 图依赖 Referer，服务动态默认不使用它。
-      allowed-image-hosts: ${SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS:admin.muybaby6.icu} # 仅允许明确批准且无临时签名的公开图片域名。
-      delay: ${SHOP_WECHAT_SERVICE_CARD_DELAY:15s}
-      batch-size: ${SHOP_WECHAT_SERVICE_CARD_BATCH_SIZE:50}
-      claim-timeout: ${SHOP_WECHAT_SERVICE_CARD_CLAIM_TIMEOUT:2m}
-      max-attempts: ${SHOP_WECHAT_SERVICE_CARD_MAX_SET_ATTEMPTS:8}
-      retry-backoff: ${SHOP_WECHAT_SERVICE_CARD_RETRY_BACKOFF:1m}
-      max-retry-backoff: ${SHOP_WECHAT_SERVICE_CARD_MAX_RETRY_BACKOFF:30m}
-      unknown-recheck-interval: ${SHOP_WECHAT_SERVICE_CARD_UNKNOWN_RECHECK:1m}
-      max-unknown-recheck-interval: ${SHOP_WECHAT_SERVICE_CARD_MAX_UNKNOWN_RECHECK:6h}
-      not-applied-confirmations: ${SHOP_WECHAT_SERVICE_CARD_NOT_APPLIED_CONFIRMATIONS:2}
-      connect-timeout: ${SHOP_WECHAT_SERVICE_CARD_CONNECT_TIMEOUT:3s}
-      read-timeout: ${SHOP_WECHAT_SERVICE_CARD_READ_TIMEOUT:15s}
-      max-response-size: ${SHOP_WECHAT_SERVICE_CARD_MAX_RESPONSE_SIZE:1MB}
-      max-payload-size: ${SHOP_WECHAT_SERVICE_CARD_MAX_PAYLOAD_SIZE:64KB}
-      callback: # 微信消息推送 SAFE+JSON 结果回调，独立于核心 set/get 链路。
+      # 以下业务字段仅供 V101 在“尚无 DB 行”时回退和显式 legacy-env-import；新部署不再设置。
+      account-template-record-id: ${SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID:}
+      fallback-product-image: ${SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE:}
+      prefer-order-snapshot-images: false
+      allowed-image-hosts: ${SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS:}
+      delay: 15s
+      batch-size: 50
+      claim-timeout: 2m
+      max-attempts: 8
+      retry-backoff: 1m
+      max-retry-backoff: 30m
+      unknown-recheck-interval: 1m
+      max-unknown-recheck-interval: 6h
+      not-applied-confirmations: 2
+      connect-timeout: 3s
+      read-timeout: 15s
+      max-response-size: 1MB
+      max-payload-size: 64KB
+      callback: # enabled/token/key 仅供 V101 旧部署回退与显式导入；时间偏差仍是技术参数。
         enabled: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_ENABLED:false}
         token: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN:}
         encoding-aes-key: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY:}
-        max-timestamp-skew: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_MAX_SKEW:5m}
+        max-timestamp-skew: 5m
     express: # 微信物流助手与电子面单接口的独立 HTTP 安全边界。
       http:
-        connect-timeout: ${SHOP_WECHAT_EXPRESS_HTTP_CONNECT_TIMEOUT:3s} # 建立微信 API 连接最多等待 3 秒。
-        read-timeout: ${SHOP_WECHAT_EXPRESS_HTTP_READ_TIMEOUT:15s} # 单次微信物流请求最多等待 15 秒。
-        max-response-size: ${SHOP_WECHAT_EXPRESS_HTTP_MAX_RESPONSE_SIZE:5MB} # 解码前最多读取 5MB 响应体。
+        connect-timeout: 3s # 建立微信 API 连接最多等待 3 秒。
+        read-timeout: 15s # 单次微信物流请求最多等待 15 秒。
+        max-response-size: 5MB # 解码前最多读取 5MB 响应体。
       tracking: # 查询组件摘要状态与电子面单 getPath 轨迹的按需同步边界。
-        refresh-interval: ${SHOP_WECHAT_TRACKING_REFRESH_INTERVAL:5m} # 小程序短时间重复打开订单时复用最近同步结果。
-        claim-timeout: ${SHOP_WECHAT_TRACKING_CLAIM_TIMEOUT:5m} # 进程中断后允许下一次请求接管同步占用。
-        max-path-items: ${SHOP_WECHAT_TRACKING_MAX_PATH_ITEMS:200} # 单次最多接受 200 个规范化轨迹节点。
+        refresh-interval: 5m # 小程序短时间重复打开订单时复用最近同步结果。
+        claim-timeout: 5m # 进程中断后允许下一次请求接管同步占用。
+        max-path-items: 200 # 单次最多接受 200 个规范化轨迹节点。
     shipping: # 微信小程序发货信息管理配置。
-      upload-enabled: ${SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED:false} # 默认不向微信上传发货信息。
+      upload-enabled: ${SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED:false} # 旧部署兼容开关；新的运行时开关由数据库审计配置接管。
       http:
-        connect-timeout: ${SHOP_WECHAT_SHIPPING_HTTP_CONNECT_TIMEOUT:3s}
-        read-timeout: ${SHOP_WECHAT_SHIPPING_HTTP_READ_TIMEOUT:15s}
-        max-response-size: ${SHOP_WECHAT_SHIPPING_HTTP_MAX_RESPONSE_SIZE:1MB}
+        connect-timeout: 3s
+        read-timeout: 15s
+        max-response-size: 1MB
       delivery: # 本地发货提交后的可靠微信投递与未知结果对账。
-        enabled: ${SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED:true}
-        delay: ${SHOP_WECHAT_SHIPPING_DELIVERY_DELAY:15s}
-        batch-size: ${SHOP_WECHAT_SHIPPING_DELIVERY_BATCH_SIZE:50}
-        claim-timeout: ${SHOP_WECHAT_SHIPPING_DELIVERY_CLAIM_TIMEOUT:1m}
-        max-attempts: ${SHOP_WECHAT_SHIPPING_DELIVERY_MAX_ATTEMPTS:8}
-        retry-backoff: ${SHOP_WECHAT_SHIPPING_DELIVERY_RETRY_BACKOFF:30s}
-        max-retry-backoff: ${SHOP_WECHAT_SHIPPING_DELIVERY_MAX_RETRY_BACKOFF:30m}
-        unknown-recheck-interval: ${SHOP_WECHAT_SHIPPING_UNKNOWN_RECHECK_INTERVAL:1m}
-        not-uploaded-confirmations: ${SHOP_WECHAT_SHIPPING_UNKNOWN_NOT_UPLOADED_CONFIRMATIONS:2}
+        enabled: ${SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED:true} # 旧部署迁移默认；数据库运行时开关优先。
+        delay: 15s
+        batch-size: 50
+        claim-timeout: 1m
+        max-attempts: 8
+        retry-backoff: 30s
+        max-retry-backoff: 30m
+        unknown-recheck-interval: 1m
+        not-uploaded-confirmations: 2
       receipt-reconciliation: # 微信自动收货后，将微信状态安全同步回本地订单。
-        enabled: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED:true} # 默认启用；仅处理真实微信且发货上传成功的订单。
-        delay: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_DELAY:5m} # 每 5 分钟扫描一批候选订单。
-        batch-size: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_BATCH_SIZE:50} # 单轮最多向微信查询 50 笔。
-        min-shipped-age: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_MIN_SHIPPED_AGE:1h} # 发货满 1 小时后才进入后台对账。
-        recheck-interval: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_RECHECK_INTERVAL:30m} # 同一待收货订单最多每 30 分钟查询一次。
-        claim-timeout: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_CLAIM_TIMEOUT:5m} # 进程中断后允许其他实例接管过期任务。
+        enabled: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED:true} # 旧部署迁移默认；数据库运行时开关优先。
+        delay: 5m # 每 5 分钟扫描一批候选订单。
+        batch-size: 50 # 单轮最多向微信查询 50 笔。
+        min-shipped-age: 1h # 发货满 1 小时后才进入后台对账。
+        recheck-interval: 30m # 同一待收货订单最多每 30 分钟查询一次。
+        claim-timeout: 5m # 进程中断后允许其他实例接管过期任务。
   pay: # 微信支付、退款和支付恢复任务配置入口。
+    # 仅供 V98 import-environment/legacy file-id 迁移；数据库切换和验证完成前不得删除。
     enabled: ${WECHAT_PAY_ENABLED:false} # 微信支付总开关，默认关闭。
     mock-enabled: ${WECHAT_PAY_MOCK_ENABLED:false} # 微信支付模拟实现开关，默认关闭。
     notification: # 微信支付回调请求校验配置。
-      max-timestamp-skew: ${SHOP_PAY_NOTIFICATION_MAX_TIMESTAMP_SKEW:5m} # 回调时间戳与服务器时间最多允许相差 5 分钟。
+      max-timestamp-skew: 5m # 回调时间戳与服务器时间最多允许相差 5 分钟。
     notification-route: # 多商户支付回调路由配置。
-      enabled: ${SHOP_PAY_NOTIFICATION_ROUTE_ENABLED:false} # 默认关闭按商户配置路由回调的能力。
+      enabled: ${SHOP_PAY_NOTIFICATION_ROUTE_ENABLED:false} # 发布期显式开关，默认关闭按商户配置路由回调的能力。
     initiation: # 创建微信预支付单时的并发占用配置。
-      claim-timeout: ${SHOP_PAY_PREPAY_CLAIM_TIMEOUT:2m} # 预支付创建占用超过 2 分钟后允许恢复。
-    timeout-scan-enabled: ${SHOP_PAY_TIMEOUT_SCAN_ENABLED:true} # 默认启用超时支付订单自动核查任务。
-    timeout-scan-delay: ${SHOP_PAY_TIMEOUT_SCAN_DELAY:60s} # 超时支付核查任务默认每 60 秒执行一次。
-    timeout-scan-batch-size: ${SHOP_PAY_TIMEOUT_SCAN_BATCH_SIZE:50} # 每次最多核查 50 个超时支付订单。
-    timeout-scan-claim-timeout: ${SHOP_PAY_TIMEOUT_SCAN_CLAIM_TIMEOUT:5m} # 超时订单处理占用超过 5 分钟后允许其他任务接管。
+      claim-timeout: 2m # 预支付创建占用超过 2 分钟后允许恢复。
+    timeout-scan-enabled: true # 启用超时支付订单自动核查任务。
+    timeout-scan-delay: 60s # 超时支付核查任务每 60 秒执行一次。
+    timeout-scan-batch-size: 50 # 每次最多核查 50 个超时支付订单。
+    timeout-scan-claim-timeout: 5m # 超时订单处理占用超过 5 分钟后允许其他任务接管。
     refund-recovery: # 微信退款异常和中断状态的自动恢复配置。
-      enabled: ${SHOP_REFUND_RECOVERY_ENABLED:true} # 默认启用退款恢复任务。
-      delay: ${SHOP_REFUND_RECOVERY_DELAY:60s} # 退款恢复任务默认每 60 秒执行一次。
-      batch-size: ${SHOP_REFUND_RECOVERY_BATCH_SIZE:20} # 每次最多恢复 20 个退款记录。
-      min-age: ${SHOP_REFUND_RECOVERY_MIN_AGE:1m} # 退款进入处理中至少 1 分钟后才参与恢复。
-      claim-timeout: ${SHOP_REFUND_RECOVERY_CLAIM_TIMEOUT:5m} # 退款恢复占用超过 5 分钟后允许重新接管。
-      base-retry-delay: ${SHOP_REFUND_RECOVERY_BASE_RETRY_DELAY:1m} # 首次恢复重试的基础等待时间为 1 分钟。
-      max-retry-delay: ${SHOP_REFUND_RECOVERY_MAX_RETRY_DELAY:30m} # 指数退避后的最大重试等待时间为 30 分钟。
+      enabled: true # 启用退款恢复任务。
+      delay: 60s # 退款恢复任务每 60 秒执行一次。
+      batch-size: 20 # 每次最多恢复 20 个退款记录。
+      min-age: 1m # 退款进入处理中至少 1 分钟后才参与恢复。
+      claim-timeout: 5m # 退款恢复占用超过 5 分钟后允许重新接管。
+      base-retry-delay: 1m # 首次恢复重试的基础等待时间为 1 分钟。
+      max-retry-delay: 30m # 指数退避后的最大重试等待时间为 30 分钟。
     config-source: ${WECHAT_PAY_CONFIG_SOURCE:AUTO} # 选择支付配置来源，AUTO 会按项目规则自动选择环境或数据库。
     app-id: ${WECHAT_PAY_APP_ID:} # 从环境变量读取支付关联的 AppID。
     mch-id: ${WECHAT_PAY_MCH_ID:} # 从环境变量读取微信支付商户号。
@@ -208,20 +210,20 @@ shop: # 商城项目自定义业务配置的统一入口。
     verify-mode: ${WECHAT_PAY_VERIFY_MODE:PUBLIC_KEY} # 选择微信应答验签方式，默认使用微信支付公钥。
     public-key-id: ${WECHAT_PAY_PUBLIC_KEY_ID:} # 设置微信支付公钥 ID。
     public-key-path: ${WECHAT_PAY_PUBLIC_KEY_PATH:} # 设置微信支付公钥 PEM 文件路径。
-    expire-minutes: ${SHOP_PAY_EXPIRE_MINUTES:15} # 订单提交时固化支付截止时间，默认 15 分钟且后续发起支付不得延长。
+    expire-minutes: 15 # 订单提交时固化支付截止时间，后续发起支付不得延长。
   finance:
     reconciliation: # 微信支付交易账单对账；本阶段不包含资金账单或银行流水对账。
-      worker-enabled: ${SHOP_FINANCE_RECONCILIATION_WORKER_ENABLED:false} # 仅作为尚无 V97 数据库覆盖记录时的部署默认值。
-      daily-enabled: ${SHOP_FINANCE_RECONCILIATION_DAILY_ENABLED:false} # 仅作为尚无 V97 数据库覆盖记录时的部署默认值。
-      daily-cron: ${SHOP_FINANCE_RECONCILIATION_DAILY_CRON:0 30 10 * * *} # 北京时间 10:30，避开微信昨日账单生成窗口。
-      worker-delay: ${SHOP_FINANCE_RECONCILIATION_WORKER_DELAY:30s}
-      claim-timeout: ${SHOP_FINANCE_RECONCILIATION_CLAIM_TIMEOUT:15m}
-      retry-base: ${SHOP_FINANCE_RECONCILIATION_RETRY_BASE:5m}
-      retry-max: ${SHOP_FINANCE_RECONCILIATION_RETRY_MAX:6h}
-      max-attempts: ${SHOP_FINANCE_RECONCILIATION_MAX_ATTEMPTS:8}
-      lookback-days: ${SHOP_FINANCE_RECONCILIATION_LOOKBACK_DAYS:90}
-      max-source-size: ${SHOP_FINANCE_RECONCILIATION_MAX_SOURCE_SIZE:20MB}
-      max-rows: ${SHOP_FINANCE_RECONCILIATION_MAX_ROWS:50000} # 首版单商户单日上限；分块写 SQL，但整批证据发布仍在一个事务中。
-      max-field-length: ${SHOP_FINANCE_RECONCILIATION_MAX_FIELD_LENGTH:4096}
-      export-max-days: ${SHOP_FINANCE_RECONCILIATION_EXPORT_MAX_DAYS:31}
-      export-max-rows: ${SHOP_FINANCE_RECONCILIATION_EXPORT_MAX_ROWS:50000}
+      worker-enabled: false # 尚无数据库覆盖记录时保持关闭。
+      daily-enabled: false # 尚无数据库覆盖记录时保持关闭。
+      daily-cron: "0 30 10 * * *" # 北京时间 10:30，避开微信昨日账单生成窗口。
+      worker-delay: 30s
+      claim-timeout: 15m
+      retry-base: 5m
+      retry-max: 6h
+      max-attempts: 8
+      lookback-days: 90
+      max-source-size: 20MB
+      max-rows: 50000 # 首版单商户单日上限；分块写 SQL，但整批证据发布仍在一个事务中。
+      max-field-length: 4096
+      export-max-days: 31
+      export-max-rows: 50000

@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentials;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -36,7 +38,8 @@ class RestWechatMiniProgramClientTest {
     void springContextCreatesRealMiniProgramClientWhenMockDisabled() {
         new ApplicationContextRunner()
                 .withUserConfiguration(RealWechatClientComponents.class)
-                .withBean(WechatMiniProgramProperties.class, () -> new WechatMiniProgramProperties("app-id", "app-secret", false))
+                .withBean(WechatPlatformCredentialResolver.class,
+                        RestWechatMiniProgramClientTest::credentials)
                 .withBean(RestClient.Builder.class, RestClient::builder)
                 .withBean(ObjectMapper.class, ObjectMapper::new)
                 .withPropertyValues("shop.wechat.mini-program.mock-enabled=false")
@@ -52,7 +55,7 @@ class RestWechatMiniProgramClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestWechatMiniProgramClient client = new RestWechatMiniProgramClient(
-                new WechatMiniProgramProperties("app-id", "app-secret", false),
+                credentials(),
                 builder,
                 objectMapper
         );
@@ -84,7 +87,7 @@ class RestWechatMiniProgramClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestWechatMiniProgramClient client = new RestWechatMiniProgramClient(
-                new WechatMiniProgramProperties("app-id", "app-secret", false),
+                credentials(),
                 builder,
                 objectMapper
         );
@@ -109,7 +112,7 @@ class RestWechatMiniProgramClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestWechatMiniProgramClient client = new RestWechatMiniProgramClient(
-                new WechatMiniProgramProperties("app-id", "app-secret", false),
+                credentials(),
                 builder,
                 objectMapper
         );
@@ -130,7 +133,7 @@ class RestWechatMiniProgramClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestWechatMiniProgramClient client = new RestWechatMiniProgramClient(
-                new WechatMiniProgramProperties("app-id", "app-secret", false),
+                credentials(),
                 builder,
                 objectMapper
         );
@@ -158,7 +161,7 @@ class RestWechatMiniProgramClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestWechatMiniProgramClient client = new RestWechatMiniProgramClient(
-                new WechatMiniProgramProperties("app-id", "app-secret", false),
+                credentials(),
                 builder,
                 objectMapper
         );
@@ -206,7 +209,7 @@ class RestWechatMiniProgramClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestWechatMiniProgramClient client = new RestWechatMiniProgramClient(
-                new WechatMiniProgramProperties("app-id", "app-secret", false),
+                credentials(),
                 builder,
                 objectMapper
         );
@@ -237,7 +240,7 @@ class RestWechatMiniProgramClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         RestWechatMiniProgramClient client = new RestWechatMiniProgramClient(
-                new WechatMiniProgramProperties("app-id", "app-secret", false),
+                credentials(),
                 builder,
                 objectMapper
         );
@@ -269,5 +272,10 @@ class RestWechatMiniProgramClientTest {
             )
     )
     static class RealWechatClientComponents {
+    }
+
+    private static WechatPlatformCredentialResolver credentials() {
+        return () -> new WechatPlatformCredentials(
+                "app-id", "app-secret", WechatPlatformCredentials.Source.DATABASE);
     }
 }

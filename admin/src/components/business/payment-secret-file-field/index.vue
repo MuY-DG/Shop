@@ -4,24 +4,27 @@
       <ElIcon size="22"><DocumentChecked /></ElIcon>
       <div class="payment-secret-file-field__meta">
         <strong>{{ displayName }}</strong>
-        <span v-if="modelValue">文件 ID {{ modelValue }} · 内容不会在后台返回或预览</span>
-        <span v-else>仅支持 PEM、CRT、CER、TXT 私有文件</span>
+        <span>{{ displayHint }}</span>
       </div>
-      <ElTag v-if="modelValue" size="small" type="warning">私有</ElTag>
+      <ElTag v-if="selectedFilename" size="small" type="warning">待保存</ElTag>
+      <ElTag v-else-if="configured" size="small" type="success">已配置</ElTag>
     </div>
 
     <div class="payment-secret-file-field__actions">
       <ElUpload
-        accept=".pem,.crt,.cer,.txt,text/plain,application/x-pem-file,application/x-x509-ca-cert,application/pkix-cert"
+        accept=".pem,text/plain,application/x-pem-file"
+        :auto-upload="false"
         :show-file-list="false"
-        :disabled="disabled"
-        :http-request="handleUpload"
+        :disabled="disabled || reading"
+        :on-change="handleSelection"
       >
-        <ElButton type="primary" plain :disabled="disabled" :loading="uploading">
-          {{ modelValue ? '替换文件' : '上传文件' }}
+        <ElButton type="primary" plain :disabled="disabled" :loading="reading">
+          {{ configured || selectedFilename ? '选择新 PEM' : '选择 PEM' }}
         </ElButton>
       </ElUpload>
-      <ElButton v-if="modelValue" :disabled="disabled" @click="clearValue">清空</ElButton>
+      <ElButton v-if="selectedFilename" :disabled="disabled || reading" @click="clearSelection">
+        取消本次替换
+      </ElButton>
     </div>
   </div>
 </template>
@@ -29,67 +32,90 @@
 <script setup lang="ts">
   import { computed, ref, watch } from 'vue'
   import { DocumentChecked } from '@element-plus/icons-vue'
-  import type { UploadRequestOptions } from 'element-plus'
-  import { uploadPaymentSecretFile } from '@/api/payment'
+  import { ElMessage, type UploadFile } from 'element-plus'
 
   defineOptions({ name: 'PaymentSecretFileField' })
 
   interface Props {
-    modelValue: number | null
+    modelValue?: string
+    configured?: boolean
+    keyType: 'PRIVATE_KEY' | 'PUBLIC_KEY'
     disabled?: boolean
   }
 
   interface Emits {
-    (event: 'update:modelValue', value: number | null): void
-    (event: 'change', value: number | null): void
+    (event: 'update:modelValue', value: string): void
+    (event: 'change', value: string): void
   }
 
-  const props = withDefaults(defineProps<Props>(), { disabled: false })
+  const props = withDefaults(defineProps<Props>(), {
+    modelValue: '',
+    configured: false,
+    disabled: false
+  })
   const emit = defineEmits<Emits>()
-  const uploading = ref(false)
-  const uploadedAssetId = ref<number | null>(null)
-  const uploadedFilename = ref('')
+  const reading = ref(false)
+  const selectedFilename = ref('')
+  const selectedValue = ref('')
 
   const displayName = computed(() => {
-    if (!props.modelValue) return '未上传秘密文件'
-    if (uploadedAssetId.value === props.modelValue && uploadedFilename.value) {
-      return uploadedFilename.value
-    }
-    return `已绑定秘密文件 #${props.modelValue}`
+    if (selectedFilename.value) return selectedFilename.value
+    return props.configured ? '密钥正文已加密存储' : '尚未选择 PEM'
   })
 
-  const emitValue = (value: number | null) => {
+  const displayHint = computed(() => {
+    if (selectedFilename.value) return '仅在本次保存请求中发送正文，后台不会回显'
+    if (props.configured) return '选择新文件可替换；未选择时保留原内容'
+    return props.keyType === 'PRIVATE_KEY'
+      ? '仅支持 PKCS#8 RSA 私钥（BEGIN PRIVATE KEY）'
+      : '仅支持 RSA 公钥（BEGIN PUBLIC KEY）'
+  })
+
+  const emitValue = (value: string) => {
+    selectedValue.value = value
     emit('update:modelValue', value)
     emit('change', value)
   }
 
-  const clearValue = () => {
-    uploadedAssetId.value = null
-    uploadedFilename.value = ''
-    emitValue(null)
+  const clearSelection = () => {
+    selectedFilename.value = ''
+    emitValue('')
   }
 
-  const handleUpload = async (options: UploadRequestOptions) => {
-    uploading.value = true
+  const hasExpectedEnvelope = (value: string) => {
+    const label = props.keyType === 'PRIVATE_KEY' ? 'PRIVATE KEY' : 'PUBLIC KEY'
+    return value.includes(`-----BEGIN ${label}-----`) && value.includes(`-----END ${label}-----`)
+  }
+
+  const handleSelection = async (uploadFile: UploadFile) => {
+    const file = uploadFile.raw
+    if (!file) return
+    if (file.size > 32 * 1024) {
+      ElMessage.error('PEM 文件不能超过 32 KB')
+      return
+    }
+    reading.value = true
     try {
-      const asset = await uploadPaymentSecretFile(options.file)
-      uploadedAssetId.value = asset.id
-      uploadedFilename.value = asset.originalFilename
-      emitValue(asset.id)
-      options.onSuccess?.(asset)
-    } catch (error) {
-      options.onError?.(error as any)
+      const content = await file.text()
+      if (!hasExpectedEnvelope(content)) {
+        ElMessage.error(
+          props.keyType === 'PRIVATE_KEY' ? '请选择 PKCS#8 RSA 私钥 PEM' : '请选择 RSA 公钥 PEM'
+        )
+        return
+      }
+      selectedFilename.value = file.name
+      emitValue(content)
     } finally {
-      uploading.value = false
+      reading.value = false
     }
   }
 
   watch(
     () => props.modelValue,
     (value) => {
-      if (!value || value !== uploadedAssetId.value) {
-        uploadedAssetId.value = null
-        uploadedFilename.value = ''
+      if (!value || value !== selectedValue.value) {
+        selectedFilename.value = ''
+        selectedValue.value = value || ''
       }
     }
   )

@@ -320,23 +320,6 @@ class StorageServiceTest {
     }
 
     @Test
-    void paymentSecretUsesPrivateDocumentProfileAndNoPublicUrl() {
-        TrackingMultipartFile file = TrackingMultipartFile.withBytes(
-                "merchant.pem",
-                "application/x-pem-file",
-                "-----BEGIN PRIVATE KEY-----".getBytes()
-        );
-
-        var response = storageService.uploadPaymentSecret(adminPrincipal(), file);
-
-        assertThat(response.scope()).isEqualTo("SECRET");
-        assertThat(response.mediaKind()).isEqualTo("DOCUMENT");
-        assertThat(response.visibility()).isEqualTo("PRIVATE");
-        assertThat(response.url()).isNull();
-        assertThat(response.publicUrl()).isNull();
-    }
-
-    @Test
     void providerPutAndDeleteRunOutsideTransactionsAroundCommittedStateTransitions() {
         when(storageProvider.put(
                 any(StorageObjectLocation.class), anyString(), any(InputStream.class), anyLong()))

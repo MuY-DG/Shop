@@ -59,6 +59,24 @@ public class WechatServiceCardPropertiesTest {
         assertThat(invalidAesKey.secureReady()).isFalse();
     }
 
+    @Test
+    void toStringRedactsCallbackSecretsAndNonPublicIntegrationValues() {
+        String sensitive = "sensitive-service-card-value";
+        WechatServiceCardProperties.Callback callback = new WechatServiceCardProperties.Callback(
+                true, sensitive, "A".repeat(43), Duration.ofMinutes(5));
+        WechatServiceCardProperties properties = new WechatServiceCardProperties(
+                false, false, sensitive, Duration.ofSeconds(15), 50,
+                Duration.ofMinutes(2), 8, Duration.ofMinutes(1), Duration.ofMinutes(30),
+                Duration.ofMinutes(1), Duration.ofHours(6), 2,
+                Duration.ofSeconds(3), Duration.ofSeconds(15),
+                DataSize.ofMegabytes(1), DataSize.ofKilobytes(64),
+                "https://" + sensitive + ".example/image.png", false,
+                List.of(sensitive + ".example"), callback);
+
+        assertThat(callback.toString()).doesNotContain(sensitive, "A".repeat(43));
+        assertThat(properties.toString()).doesNotContain(sensitive, "A".repeat(43));
+    }
+
     public static WechatServiceCardProperties properties(Duration unknown, Duration maxUnknown) {
         return new WechatServiceCardProperties(
                 true, true, "template-record",

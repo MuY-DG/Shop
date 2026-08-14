@@ -1472,6 +1472,28 @@ declare namespace Api {
       checkedAt: string
     }
 
+    interface WechatShippingRuntime {
+      uploadEnabled: boolean
+      deliveryEnabled: boolean
+      receiptReconciliationEnabled: boolean
+      runtimePersisted: boolean
+      version: number
+      defaultUploadEnabled: boolean
+      defaultDeliveryEnabled: boolean
+      defaultReceiptReconciliationEnabled: boolean
+      reason: string
+      updatedBy: string | null
+      updatedAt: string | null
+    }
+
+    interface WechatShippingRuntimeUpdate {
+      uploadEnabled: boolean
+      deliveryEnabled: boolean
+      receiptReconciliationEnabled: boolean
+      version: number
+      reason: string
+    }
+
     interface WechatDeliveryCompany {
       deliveryId: string
       deliveryName: string
@@ -1494,11 +1516,11 @@ declare namespace Api {
       mchIdMasked: string
       merchantSerialNoMasked: string
       apiV3KeyConfigured: boolean
-      privateKeyFileId?: number | null
-      merchantCertificateFileId: number | null
+      privateKeyConfigured: boolean
       verifyMode: VerifyMode | string
       wechatPublicKeyIdMasked?: string | null
-      wechatPublicKeyFileId?: number | null
+      wechatPublicKeyConfigured: boolean
+      legacySecretFilesPendingImport: boolean
       notifyUrl: string
       refundNotifyUrl: string
       enabled: boolean
@@ -1508,6 +1530,11 @@ declare namespace Api {
     }
 
     type EffectiveConfig = Omit<Config, 'id'> & { id: number | null }
+
+    interface EffectiveConfigState {
+      available: boolean
+      config?: EffectiveConfig | null
+    }
 
     interface EnvironmentConfig {
       available: boolean
@@ -1532,11 +1559,10 @@ declare namespace Api {
       mchId: string
       merchantSerialNo: string
       apiV3Key?: string
-      privateKeyFileId: number | null
-      merchantCertificateFileId: number | null
+      privateKeyPem?: string
       verifyMode: VerifyMode
       wechatPublicKeyId?: string
-      wechatPublicKeyFileId?: number | null
+      wechatPublicKeyPem?: string
       notifyUrl: string
       refundNotifyUrl: string
     }

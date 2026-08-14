@@ -186,7 +186,8 @@ public class PaymentSecretRotationService {
 
     private List<PaymentConfigEnvelope> queryPaymentConfigCandidates(long afterId, int batchSize) {
         return jdbcClient.sql("""
-                        select id, api_v3_key_ciphertext, secret_cipher_version, secret_key_id,
+                        select id, api_v3_key_ciphertext, private_key_pem_ciphertext,
+                               wechat_public_key_pem_ciphertext, secret_cipher_version, secret_key_id,
                                secret_revision
                         from payment_config
                         where id > :afterId
@@ -198,6 +199,8 @@ public class PaymentSecretRotationService {
                 .query((rs, rowNum) -> new PaymentConfigEnvelope(
                         rs.getLong("id"),
                         rs.getString("api_v3_key_ciphertext"),
+                        rs.getString("private_key_pem_ciphertext"),
+                        rs.getString("wechat_public_key_pem_ciphertext"),
                         rs.getInt("secret_cipher_version"),
                         rs.getString("secret_key_id"),
                         rs.getLong("secret_revision")))
@@ -208,20 +211,38 @@ public class PaymentSecretRotationService {
         if (!secretCipher.shouldReencrypt(candidate.version(), candidate.keyId())) {
             return 0;
         }
-        PaymentSecretCipher.SecretContext context =
-                PaymentConfigResolver.apiV3KeyContext(candidate.id());
-        PaymentSecretCipher.DecryptedSecret decrypted = secretCipher.decrypt(
-                context, candidate.ciphertext());
-        requireMetadata(decrypted, candidate.version(), candidate.keyId());
-        if (!secretCipher.shouldReencrypt(decrypted.version(), decrypted.keyId())) {
+        PaymentSecretCipher.DecryptedSecret apiV3Key = secretCipher.decrypt(
+                PaymentConfigResolver.apiV3KeyContext(candidate.id()), candidate.apiV3KeyCiphertext());
+        requireMetadata(apiV3Key, candidate.version(), candidate.keyId());
+        String privateKeyPem = decryptOptionalPaymentConfigSecret(
+                PaymentConfigResolver.privateKeyPemContext(candidate.id()),
+                candidate.privateKeyPemCiphertext(),
+                candidate
+        );
+        String publicKeyPem = decryptOptionalPaymentConfigSecret(
+                PaymentConfigResolver.wechatPublicKeyPemContext(candidate.id()),
+                candidate.publicKeyPemCiphertext(),
+                candidate
+        );
+        if (!secretCipher.shouldReencrypt(apiV3Key.version(), apiV3Key.keyId())) {
             return 0;
         }
-        PaymentSecretCipher.EncryptedSecret encrypted = secretCipher.encrypt(
-                context, decrypted.plaintext());
-        requireTargetEnvelope(encrypted);
+        PaymentSecretCipher.EncryptedSecret encryptedApiV3Key = secretCipher.encrypt(
+                PaymentConfigResolver.apiV3KeyContext(candidate.id()), apiV3Key.plaintext());
+        PaymentSecretCipher.EncryptedSecret encryptedPrivateKey = encryptOptionalPaymentConfigSecret(
+                PaymentConfigResolver.privateKeyPemContext(candidate.id()), privateKeyPem);
+        PaymentSecretCipher.EncryptedSecret encryptedPublicKey = encryptOptionalPaymentConfigSecret(
+                PaymentConfigResolver.wechatPublicKeyPemContext(candidate.id()), publicKeyPem);
+        requireSameTargetEnvelope(
+                encryptedApiV3Key,
+                encryptedPrivateKey == null ? encryptedApiV3Key : encryptedPrivateKey,
+                encryptedPublicKey == null ? encryptedApiV3Key : encryptedPublicKey
+        );
         return jdbcClient.sql("""
                         update payment_config
-                        set api_v3_key_ciphertext = :newCiphertext,
+                        set api_v3_key_ciphertext = :newApiV3KeyCiphertext,
+                            private_key_pem_ciphertext = :newPrivateKeyPemCiphertext,
+                            wechat_public_key_pem_ciphertext = :newPublicKeyPemCiphertext,
                             secret_cipher_version = :newVersion,
                             secret_key_id = :newKeyId,
                             secret_revision = secret_revision + 1,
@@ -230,12 +251,39 @@ public class PaymentSecretRotationService {
                         where id = :id
                           and secret_revision = :oldRevision
                         """)
-                .param("newCiphertext", encrypted.ciphertext())
-                .param("newVersion", encrypted.version())
-                .param("newKeyId", encrypted.keyId())
+                .param("newApiV3KeyCiphertext", encryptedApiV3Key.ciphertext())
+                .param("newPrivateKeyPemCiphertext",
+                        encryptedPrivateKey == null ? "" : encryptedPrivateKey.ciphertext())
+                .param("newPublicKeyPemCiphertext",
+                        encryptedPublicKey == null ? "" : encryptedPublicKey.ciphertext())
+                .param("newVersion", encryptedApiV3Key.version())
+                .param("newKeyId", encryptedApiV3Key.keyId())
                 .param("id", candidate.id())
                 .param("oldRevision", candidate.revision())
                 .update();
+    }
+
+    private String decryptOptionalPaymentConfigSecret(
+            PaymentSecretCipher.SecretContext context,
+            String ciphertext,
+            PaymentConfigEnvelope candidate
+    ) {
+        if (!StringUtils.hasText(ciphertext)) {
+            return "";
+        }
+        PaymentSecretCipher.DecryptedSecret decrypted = secretCipher.decrypt(context, ciphertext);
+        requireMetadata(decrypted, candidate.version(), candidate.keyId());
+        return decrypted.plaintext();
+    }
+
+    private PaymentSecretCipher.EncryptedSecret encryptOptionalPaymentConfigSecret(
+            PaymentSecretCipher.SecretContext context,
+            String plaintext
+    ) {
+        if (!StringUtils.hasText(plaintext)) {
+            return null;
+        }
+        return secretCipher.encrypt(context, plaintext);
     }
 
     private List<SnapshotEnvelope> snapshotCandidates(int batchSize) {
@@ -462,7 +510,9 @@ public class PaymentSecretRotationService {
 
     private record PaymentConfigEnvelope(
             long id,
-            String ciphertext,
+            String apiV3KeyCiphertext,
+            String privateKeyPemCiphertext,
+            String publicKeyPemCiphertext,
             int version,
             String keyId,
             long revision

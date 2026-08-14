@@ -15,6 +15,7 @@ import org.muybaby.shopserver.maintenance.cleanup.dto.DataCleanupConfigUpdateReq
 import org.muybaby.shopserver.maintenance.cleanup.dto.DataCleanupTaskUpdateRequest;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
+import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
 import org.muybaby.shopserver.storage.service.StorageAssetCleanupService;
 import org.muybaby.shopserver.storage.service.StorageService;
@@ -31,10 +32,12 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.TimeZone;
 
@@ -64,6 +67,7 @@ class StorageAssetTimezoneTest {
     );
     private static final long APP_USER_ID = 24_001L;
     private static final long ORDER_ID = 24_002L;
+    private static final long LEGACY_SECRET_ID = 24_003L;
     private static final AuthenticatedPrincipal APP_USER = new AuthenticatedPrincipal(
             TokenKind.APP, APP_USER_ID, "timezone-app", List.of(), List.of()
     );
@@ -87,6 +91,9 @@ class StorageAssetTimezoneTest {
 
     @Autowired
     private PrivateStorageFileService privateStorageFileService;
+
+    @Autowired
+    private StorageProvider storageProvider;
 
     @Autowired
     private StorageAssetCleanupService cleanupService;
@@ -132,23 +139,16 @@ class StorageAssetTimezoneTest {
         TimeZone originalTimeZone = TimeZone.getDefault();
         TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
         try {
-            StorageAssetResponse secret = storageService.uploadPaymentSecret(
-                    ADMIN,
-                    new MockMultipartFile(
-                            "file", "timezone-secret.pem", "text/plain",
-                            "-----BEGIN PRIVATE KEY-----\ntimezone-test\n-----END PRIVATE KEY-----"
-                                    .getBytes(StandardCharsets.UTF_8)
-                    )
-            );
+            long secretId = insertLegacyPaymentSecret();
             StorageAssetResponse evidence = storageService.uploadAfterSaleEvidence(
                     APP_USER,
                     ORDER_ID,
                     new MockMultipartFile("file", "timezone-evidence.png", "image/png", TINY_PNG)
             );
 
-            assertTtlMinutes(secret.id(), 119, 120);
+            assertTtlMinutes(secretId, 119, 120);
             assertTtlMinutes(evidence.id(), 1_439, 1_440);
-            var inspectedSecret = privateStorageFileService.inspectPaymentSecrets(List.of(secret.id()));
+            var inspectedSecret = privateStorageFileService.inspectPaymentSecrets(List.of(secretId));
             assertThatCode(() -> privateStorageFileService.lockAndRevalidatePaymentSecrets(
                     inspectedSecret, List.of())).doesNotThrowAnyException();
             assertThat(cleanupService.cleanupExpiredAssets(100, Duration.ofMinutes(30)).cleanedCount())
@@ -159,10 +159,10 @@ class StorageAssetTimezoneTest {
                             set expires_at = timestampadd(SECOND, -1, current_timestamp)
                             where id in (:assetIds)
                             """)
-                    .param("assetIds", List.of(secret.id(), evidence.id()))
+                    .param("assetIds", List.of(secretId, evidence.id()))
                     .update();
 
-            assertThatThrownBy(() -> privateStorageFileService.inspectPaymentSecrets(List.of(secret.id())))
+            assertThatThrownBy(() -> privateStorageFileService.inspectPaymentSecrets(List.of(secretId)))
                     .isInstanceOfSatisfying(BusinessException.class, exception ->
                     assertThat(exception.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
@@ -184,11 +184,41 @@ class StorageAssetTimezoneTest {
                             where id in (:assetIds)
                               and status = 'DELETED'
                             """)
-                    .param("assetIds", List.of(secret.id(), evidence.id()))
+                    .param("assetIds", List.of(secretId, evidence.id()))
                     .query(Integer.class)
                     .single()).isEqualTo(2);
         } finally {
             TimeZone.setDefault(originalTimeZone);
+        }
+    }
+
+    private long insertLegacyPaymentSecret() {
+        String objectKey = "private/secret/document/timezone-secret.pem";
+        byte[] content = "legacy-timezone-secret".getBytes(StandardCharsets.UTF_8);
+        storageProvider.put(objectKey, "text/plain", new java.io.ByteArrayInputStream(content), content.length);
+        jdbcClient.sql("""
+                        insert into storage_asset
+                            (id, scope, media_kind, visibility, provider, storage_container, object_key,
+                             original_filename, content_type, extension, size_bytes, sha256, status,
+                             uploaded_by_type, uploaded_by_id, expires_at)
+                        values
+                            (:id, 'SECRET', 'DOCUMENT', 'PRIVATE', 'TENCENT_COS', '', :objectKey,
+                             'timezone-secret.pem', 'text/plain', 'pem', :sizeBytes, :sha256, 'ACTIVE',
+                             'ADMIN', 1, timestampadd(HOUR, 2, current_timestamp))
+                        """)
+                .param("id", LEGACY_SECRET_ID)
+                .param("objectKey", objectKey)
+                .param("sizeBytes", content.length)
+                .param("sha256", sha256(content))
+                .update();
+        return LEGACY_SECRET_ID;
+    }
+
+    private String sha256(byte[] content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
         }
     }
 

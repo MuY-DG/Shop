@@ -10,7 +10,6 @@ import org.muybaby.shopserver.storage.StorageUploadProfile;
 
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 
 public class UploadPolicy {
 
@@ -22,16 +21,9 @@ public class UploadPolicy {
             "gif", "image/gif",
             "svg", "image/svg+xml"
     );
-    private static final Set<String> DOCUMENT_EXTENSIONS = Set.of("pem", "crt", "cer", "txt");
     private static final Map<String, String> VIDEO_CONTENT_TYPES = Map.of(
             "mp4", "video/mp4",
             "webm", "video/webm"
-    );
-    private static final Set<String> DOCUMENT_CONTENT_TYPES = Set.of(
-            "text/plain",
-            "application/x-pem-file",
-            "application/x-x509-ca-cert",
-            "application/pkix-cert"
     );
 
     private final StorageProperties storageProperties;
@@ -58,7 +50,7 @@ public class UploadPolicy {
         } else if (profile.mediaKind() == StorageMediaKind.VIDEO) {
             requireAllowedVideo(extension, normalizedContentType, sizeBytes);
         } else {
-            requireAllowedDocument(extension, normalizedContentType, sizeBytes);
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
 
         return new UploadDecision(
@@ -116,15 +108,6 @@ public class UploadPolicy {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
         if (sizeBytes > storageProperties.limits().videoMaxSize().toBytes()) {
-            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
-        }
-    }
-
-    private void requireAllowedDocument(String extension, String contentType, long sizeBytes) {
-        if (!DOCUMENT_EXTENSIONS.contains(extension) || !DOCUMENT_CONTENT_TYPES.contains(contentType)) {
-            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
-        }
-        if (sizeBytes > storageProperties.limits().privateFileMaxSize().toBytes()) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
     }

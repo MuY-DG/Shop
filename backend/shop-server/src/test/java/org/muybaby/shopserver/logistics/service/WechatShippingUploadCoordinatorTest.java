@@ -61,7 +61,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doThrow;
 
-@SpringBootTest
+@SpringBootTest(properties = "shop.wechat.shipping.delivery.enabled=true")
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class WechatShippingUploadCoordinatorTest {

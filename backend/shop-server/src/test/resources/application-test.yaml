@@ -49,7 +49,6 @@ shop:
       image-max-height: 8192
       image-max-pixels: 25000000
       video-max-size: 50MB
-      private-file-max-size: 1MB
   wechat:
     mini-program:
       mock-enabled: true

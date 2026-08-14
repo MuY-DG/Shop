@@ -2,11 +2,12 @@ package org.muybaby.shopserver.wechat.servicecard;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfig;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -28,25 +29,26 @@ public class WechatServiceCardOutboxService {
     );
 
     private final JdbcClient jdbcClient;
-    private final WechatServiceCardProperties properties;
+    private final WechatServiceCardConfigResolver configResolver;
     private final WechatServiceCardRuntimeSettingService runtimeSettingService;
     private final WechatServiceCardPayloadFactory payloadFactory;
 
     public WechatServiceCardOutboxService(
             JdbcClient jdbcClient,
-            WechatServiceCardProperties properties,
+            WechatServiceCardConfigResolver configResolver,
             WechatServiceCardRuntimeSettingService runtimeSettingService,
             WechatServiceCardPayloadFactory payloadFactory
     ) {
         this.jdbcClient = jdbcClient;
-        this.properties = properties;
+        this.configResolver = configResolver;
         this.runtimeSettingService = runtimeSettingService;
         this.payloadFactory = payloadFactory;
     }
 
     public void onOrderFact(long orderId, LocalDateTime eventTime) {
-        if (!runtimeSettingService.captureEnabledFailSoft()
-                || !properties.imageConfigurationReady()) {
+        WechatServiceCardConfig config = configResolver.resolveFailClosed().orElse(null);
+        if (!runtimeSettingService.captureEnabledFailSoft() || config == null
+                || !config.imageConfigurationReady()) {
             return;
         }
         OrderFact order = lockOrder(orderId);
@@ -66,8 +68,9 @@ public class WechatServiceCardOutboxService {
                 );
                 return;
             }
-            card = createCard(orderId, payment, eventTime);
-            enqueue(card, orderId, payment, WechatServiceCardStatus.WAITING_SHIPMENT, true, eventTime);
+            card = createCard(orderId, payment, config, eventTime);
+            enqueue(card, orderId, payment, WechatServiceCardStatus.WAITING_SHIPMENT,
+                    true, config, eventTime);
             card = card.withLast(WechatServiceCardStatus.WAITING_SHIPMENT);
         }
         if (card.terminal() || card.sendBlocked()) {
@@ -80,11 +83,12 @@ public class WechatServiceCardOutboxService {
 
         if (fullyRefunded(order)) {
             if (last != WechatServiceCardStatus.AFTER_SALE) {
-                card = enterAfterSale(card, orderId, payment, base, eventTime);
+                card = enterAfterSale(card, orderId, payment, base, config, eventTime);
                 last = card.lastStatus();
             }
             if (last == WechatServiceCardStatus.AFTER_SALE) {
-                enqueue(card, orderId, payment, WechatServiceCardStatus.AFTER_SALE_ENDED, false, eventTime);
+                enqueue(card, orderId, payment, WechatServiceCardStatus.AFTER_SALE_ENDED,
+                        false, config, eventTime);
             }
             return;
         }
@@ -92,14 +96,15 @@ public class WechatServiceCardOutboxService {
         if ("CLOSED".equals(order.status())) {
             if (last == WechatServiceCardStatus.WAITING_SHIPMENT
                     || last == WechatServiceCardStatus.AFTER_SALE) {
-                enqueue(card, orderId, payment, WechatServiceCardStatus.CANCELLED, false, eventTime);
+                enqueue(card, orderId, payment, WechatServiceCardStatus.CANCELLED,
+                        false, config, eventTime);
             }
             return;
         }
 
         if (activeAfterSales > 0) {
             if (last != WechatServiceCardStatus.AFTER_SALE) {
-                enterAfterSale(card, orderId, payment, base, eventTime);
+                enterAfterSale(card, orderId, payment, base, config, eventTime);
             }
             return;
         }
@@ -108,7 +113,7 @@ public class WechatServiceCardOutboxService {
             WechatServiceCardStatus restore = card.restoreStatus() == null
                     ? base : card.restoreStatus();
             if (restore != null) {
-                enqueue(card, orderId, payment, restore, false, eventTime);
+                enqueue(card, orderId, payment, restore, false, config, eventTime);
                 clearRestore(card.id(), eventTime);
             }
             return;
@@ -116,12 +121,13 @@ public class WechatServiceCardOutboxService {
 
         if (base == WechatServiceCardStatus.SIGNED
                 && last == WechatServiceCardStatus.WAITING_SHIPMENT) {
-            enqueue(card, orderId, payment, WechatServiceCardStatus.SHIPPED, false, eventTime);
+            enqueue(card, orderId, payment, WechatServiceCardStatus.SHIPPED,
+                    false, config, eventTime);
             card = card.withLast(WechatServiceCardStatus.SHIPPED);
             last = card.lastStatus();
         }
         if (base != null && base != last && base.canFollow(last)) {
-            enqueue(card, orderId, payment, base, false, eventTime);
+            enqueue(card, orderId, payment, base, false, config, eventTime);
         }
     }
 
@@ -139,6 +145,7 @@ public class WechatServiceCardOutboxService {
             long orderId,
             WechatServiceCardPayloadFactory.PaymentSnapshot payment,
             WechatServiceCardStatus base,
+            WechatServiceCardConfig config,
             LocalDateTime eventTime
     ) {
         WechatServiceCardStatus last = card.lastStatus();
@@ -147,7 +154,8 @@ public class WechatServiceCardOutboxService {
             restore = WechatServiceCardStatus.WAITING_SHIPMENT;
         }
         setRestore(card.id(), restore, eventTime);
-        enqueue(card, orderId, payment, WechatServiceCardStatus.AFTER_SALE, false, eventTime);
+        enqueue(card, orderId, payment, WechatServiceCardStatus.AFTER_SALE,
+                false, config, eventTime);
         return new Card(card.id(), WechatServiceCardStatus.AFTER_SALE, restore, false, false);
     }
 
@@ -157,6 +165,7 @@ public class WechatServiceCardOutboxService {
             WechatServiceCardPayloadFactory.PaymentSnapshot payment,
             WechatServiceCardStatus target,
             boolean activation,
+            WechatServiceCardConfig config,
             LocalDateTime eventTime
     ) {
         WechatServiceCardStatus previous = card.lastStatus();
@@ -173,7 +182,7 @@ public class WechatServiceCardOutboxService {
             );
         }
         WechatServiceCardPayloadFactory.PayloadSnapshot payload =
-                payloadFactory.build(orderId, target, activation, payment);
+                payloadFactory.build(orderId, target, activation, payment, config);
         Integer nextSequence = jdbcClient.sql("""
                         select coalesce(max(sequence_no), 0) + 1
                         from wechat_service_card_delivery
@@ -217,6 +226,7 @@ public class WechatServiceCardOutboxService {
     private Card createCard(
             long orderId,
             WechatServiceCardPayloadFactory.PaymentSnapshot payment,
+            WechatServiceCardConfig config,
             LocalDateTime now
     ) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
@@ -231,8 +241,7 @@ public class WechatServiceCardOutboxService {
                 .param("orderId", orderId)
                 .param("paymentOrderId", payment.paymentOrderId())
                 .param("notifyCodeDigest", sha256(payment.transactionId()))
-                .param("templateRecordId", StringUtils.hasText(properties.accountTemplateRecordId())
-                        ? properties.accountTemplateRecordId().trim() : "")
+                .param("templateRecordId", config.accountTemplateRecordId())
                 .param("createdAt", now)
                 .param("updatedAt", now)
                 .update(keyHolder, "id");

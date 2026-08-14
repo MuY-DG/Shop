@@ -17,6 +17,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -30,6 +31,7 @@ import java.util.function.Supplier;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -58,6 +60,8 @@ class AdminWechatShippingControllerTest {
 
     @BeforeEach
     void resetState() {
+        jdbcClient.sql("delete from wechat_shipping_runtime_audit").update();
+        jdbcClient.sql("delete from wechat_shipping_runtime_setting").update();
         jdbcClient.sql("delete from wechat_delivery_company").update();
         shippingProperties.setUploadEnabled(true);
         provider.mode = WechatProviderMode.REAL;
@@ -75,6 +79,45 @@ class AdminWechatShippingControllerTest {
         assertProtected(() -> get("/admin/wechat-shipping/capability"), noPermissionToken);
         assertProtected(() -> get("/admin/wechat-shipping/carriers"), noPermissionToken);
         assertProtected(() -> post("/admin/wechat-shipping/carriers/sync"), noPermissionToken);
+        assertProtected(() -> get("/admin/wechat-shipping/runtime"), noPermissionToken);
+        assertProtected(
+                () -> put("/admin/wechat-shipping/runtime")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(runtimeUpdateJson(0)),
+                noPermissionToken
+        );
+    }
+
+    @Test
+    void authorizedAdminCanPersistAndReadVersionedRuntimeControl() throws Exception {
+        String token = adminToken(List.of(
+                "wechat-shipping:runtime:read",
+                "wechat-shipping:runtime:write"
+        ));
+
+        mockMvc.perform(get("/admin/wechat-shipping/runtime")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtimePersisted").value(false))
+                .andExpect(jsonPath("$.data.version").value(0));
+
+        mockMvc.perform(put("/admin/wechat-shipping/runtime")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(runtimeUpdateJson(0)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtimePersisted").value(true))
+                .andExpect(jsonPath("$.data.version").value(1))
+                .andExpect(jsonPath("$.data.uploadEnabled").value(true))
+                .andExpect(jsonPath("$.data.deliveryEnabled").value(true))
+                .andExpect(jsonPath("$.data.receiptReconciliationEnabled").value(true));
+
+        mockMvc.perform(put("/admin/wechat-shipping/runtime")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(runtimeUpdateJson(0)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(600009));
     }
 
     @Test
@@ -137,6 +180,18 @@ class AdminWechatShippingControllerTest {
                 TokenKind.ADMIN,
                 TokenSession.admin(userId, username, List.of(), List.of(), Instant.now())
         ).accessToken();
+    }
+
+    private String runtimeUpdateJson(long version) {
+        return """
+                {
+                  "uploadEnabled": true,
+                  "deliveryEnabled": true,
+                  "receiptReconciliationEnabled": true,
+                  "version": %d,
+                  "reason": "启用微信发货运行链路"
+                }
+                """.formatted(version);
     }
 
     private void insertLimitedAdmin(long userId, long roleId, String username, List<String> permissions) {

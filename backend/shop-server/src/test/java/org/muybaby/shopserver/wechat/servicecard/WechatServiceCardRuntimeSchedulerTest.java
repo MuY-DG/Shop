@@ -71,7 +71,9 @@ class WechatServiceCardRuntimeSchedulerTest {
         );
         when(runtime.captureEnabledFailSoft()).thenReturn(false);
         new WechatServiceCardRepairScheduler(
-                jdbcClient, environmentProperties, runtime, localRepairUnit,
+                jdbcClient, environmentProperties,
+                () -> WechatServiceCardTestConfigs.fromProperties(environmentProperties),
+                runtime, localRepairUnit,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         ).runOnce();
         verifyNoInteractions(localRepairUnit);
@@ -98,6 +100,7 @@ class WechatServiceCardRuntimeSchedulerTest {
         WechatServiceCardRepairScheduler freshScheduler = new WechatServiceCardRepairScheduler(
                 jdbcClient,
                 readyProperties(),
+                () -> WechatServiceCardTestConfigs.fromProperties(readyProperties()),
                 runtime,
                 localRepairUnit,
                 Clock.fixed(NOW, ZoneOffset.UTC)

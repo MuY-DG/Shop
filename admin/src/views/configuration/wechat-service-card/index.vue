@@ -2,13 +2,148 @@
   <div class="service-card-page">
     <ElAlert
       title="微信 2001 服务动态是生产消息链路，不是普通营销订阅消息。"
-      description="采集会为新业务事实与 Repair Scanner 候选建立可靠队列；外呼会真实调用微信。此页不展示或修改 Token、EncodingAESKey，也不提供强推和改库操作。"
+      description="采集会为新业务事实与 Repair Scanner 候选建立可靠队列；外呼会真实调用微信。回调密钥只允许覆盖写入，页面永不回显明文。"
       type="warning"
       :closable="false"
       show-icon
     />
 
-    <ElCard v-loading="statusLoading" shadow="never" class="runtime-card">
+    <ElCard v-if="canReadConfig" v-loading="configLoading" shadow="never" class="config-card">
+      <template #header>
+        <div class="section-header">
+          <div>
+            <h1>服务动态接入配置</h1>
+            <p>模板、公开图片和安全回调凭据由数据库接管；Token/AESKey 使用字段级加密。</p>
+          </div>
+          <div class="section-header__actions">
+            <ElButton
+              v-if="config?.legacyEnvironmentImportAvailable"
+              v-auth="'wechat-service-card:config:write'"
+              :loading="configSaving"
+              @click="importLegacyConfig"
+            >
+              等价导入旧环境配置
+            </ElButton>
+            <ElButton
+              v-auth="'wechat-service-card:config:write'"
+              type="primary"
+              :disabled="
+                (!configDirty && config?.source === 'DATABASE') ||
+                Boolean(configValidation) ||
+                !canWriteConfig
+              "
+              :loading="configSaving"
+              @click="saveConfig"
+            >
+              {{ config?.source === 'DATABASE' ? '保存接入配置' : '创建数据库配置' }}
+            </ElButton>
+          </div>
+        </div>
+      </template>
+
+      <ElAlert
+        v-if="config?.source !== 'DATABASE'"
+        title="数据库尚未接管"
+        description="首次写入要求模板、HTTPS 兜底图和图片域名白名单一次齐全；旧环境导入会在严格校验后保持现有回调启用状态。"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+
+      <ElForm label-position="top" class="config-form">
+        <div class="config-grid">
+          <ElFormItem label="账号模板记录 ID" required>
+            <ElInput
+              v-model="configDraft.accountTemplateRecordId"
+              maxlength="128"
+              autocomplete="off"
+              placeholder="微信后台已添加的服务动态模板记录 ID"
+            />
+          </ElFormItem>
+          <ElFormItem label="公开 HTTPS 兜底图片" required>
+            <ElInput
+              v-model="configDraft.fallbackProductImage"
+              maxlength="2048"
+              autocomplete="off"
+              placeholder="https://example.com/service-card.png"
+            />
+          </ElFormItem>
+          <ElFormItem label="允许的图片域名（逗号或换行分隔）" required>
+            <ElInput
+              v-model="configDraft.allowedImageHosts"
+              type="textarea"
+              :rows="3"
+              maxlength="2048"
+              placeholder="static.example.com"
+            />
+          </ElFormItem>
+          <ElFormItem label="图片策略">
+            <ElSwitch
+              v-model="configDraft.preferOrderSnapshotImages"
+              active-text="优先订单快照图"
+              inactive-text="始终使用兜底图"
+            />
+          </ElFormItem>
+        </div>
+
+        <ElDivider content-position="left">安全消息回调</ElDivider>
+        <div class="config-grid config-grid--callback">
+          <ElFormItem label="回调状态">
+            <ElSwitch
+              v-model="configDraft.callbackEnabled"
+              active-text="启用"
+              inactive-text="关闭"
+            />
+          </ElFormItem>
+          <ElFormItem label="Callback Token">
+            <ElInput
+              v-model="configDraft.callbackToken"
+              type="password"
+              maxlength="32"
+              autocomplete="new-password"
+              :placeholder="
+                config?.source === 'DATABASE' && config.callbackTokenConfigured
+                  ? '已配置；留空保持原值'
+                  : '3–32 位字母或数字'
+              "
+              show-password
+            />
+          </ElFormItem>
+          <ElFormItem label="EncodingAESKey">
+            <ElInput
+              v-model="configDraft.callbackEncodingAesKey"
+              type="password"
+              maxlength="43"
+              autocomplete="new-password"
+              :placeholder="
+                config?.source === 'DATABASE' && config.callbackEncodingAesKeyConfigured
+                  ? '已配置；留空保持原值'
+                  : '43 位字母或数字'
+              "
+              show-password
+            />
+          </ElFormItem>
+        </div>
+        <div v-if="configValidation" class="form-error">{{ configValidation }}</div>
+      </ElForm>
+
+      <ElDescriptions v-if="config" :column="3" border class="config-meta">
+        <ElDescriptionsItem label="生效来源">{{ configSourceLabel }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="配置版本">{{ config.version }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="密钥状态">
+          Token {{ config.callbackTokenConfigured ? '已配置' : '未配置' }} / AESKey
+          {{ config.callbackEncodingAesKeyConfigured ? '已配置' : '未配置' }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem label="最近修改人">
+          {{ config.updatedBy ? `管理员 #${config.updatedBy}` : '-' }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem label="最近修改时间" :span="2">
+          {{ formatTime(config.updatedAt) }}
+        </ElDescriptionsItem>
+      </ElDescriptions>
+    </ElCard>
+
+    <ElCard v-if="canReadOperations" v-loading="statusLoading" shadow="never" class="runtime-card">
       <template #header>
         <div class="section-header">
           <div>
@@ -22,11 +157,15 @@
             <ElButton
               v-auth="'wechat-service-card:runtime:write'"
               type="primary"
-              :disabled="!runtimeDirty || Boolean(runtimeValidation) || !canWrite"
+              :disabled="
+                (!runtimeDirty && status?.runtimePersisted !== false) ||
+                Boolean(runtimeValidation) ||
+                !canWrite
+              "
               :loading="runtimeSaving"
               @click="openRuntimeConfirmation"
             >
-              保存运行开关
+              {{ status?.runtimePersisted ? '保存运行开关' : '写入数据库并接管' }}
             </ElButton>
           </div>
         </div>
@@ -165,7 +304,7 @@
       <ElEmpty v-else-if="!statusLoading" description="未能读取服务动态运行状态" />
     </ElCard>
 
-    <div v-if="status" class="metric-grid">
+    <div v-if="canReadOperations && status" class="metric-grid">
       <button type="button" class="metric-card" @click="applyStateFilter('PENDING')">
         <span>待处理</span><strong>{{ status.pendingDeliveries }}</strong>
       </button>
@@ -187,7 +326,7 @@
       </div>
     </div>
 
-    <ElCard shadow="never" class="delivery-card">
+    <ElCard v-if="canReadOperations" shadow="never" class="delivery-card">
       <template #header>
         <div class="section-header">
           <div>
@@ -385,8 +524,11 @@
   import { useRouter } from 'vue-router'
   import { ElMessage, ElMessageBox } from 'element-plus'
   import {
+    fetchWechatServiceCardConfig,
     fetchWechatServiceCardDeliveries,
     fetchWechatServiceCardStatus,
+    importWechatServiceCardLegacyEnvironment,
+    updateWechatServiceCardConfig,
     updateWechatServiceCardRuntime
   } from '@/api/wechat-service-card'
   import { useAuth } from '@/hooks/core/useAuth'
@@ -415,7 +557,10 @@
   const router = useRouter()
   const { hasAuth } = useAuth()
   const status = ref<Api.WechatServiceCard.Status | null>(null)
+  const config = ref<Api.WechatServiceCard.Config | null>(null)
   const statusLoading = ref(false)
+  const configLoading = ref(false)
+  const configSaving = ref(false)
   const runtimeSaving = ref(false)
   const deliveriesLoading = ref(false)
   const deliveries = ref<Api.WechatServiceCard.Delivery[]>([])
@@ -428,8 +573,109 @@
   const confirmationVisible = ref(false)
   const confirmation = ref<RuntimeConfirmation | null>(null)
   const confirmationForm = reactive({ reason: '', phrase: '' })
+  const configDraft = reactive({
+    accountTemplateRecordId: '',
+    fallbackProductImage: '',
+    allowedImageHosts: '',
+    preferOrderSnapshotImages: false,
+    callbackEnabled: false,
+    callbackToken: '',
+    callbackEncodingAesKey: ''
+  })
 
   const canWrite = computed(() => hasAuth('wechat-service-card:runtime:write'))
+  const canReadOperations = computed(() => hasAuth('wechat-service-card:read'))
+  const canReadConfig = computed(
+    () => hasAuth('wechat-service-card:config:read') || hasAuth('wechat-service-card:config:write')
+  )
+  const canWriteConfig = computed(() => hasAuth('wechat-service-card:config:write'))
+  const normalizedConfigHosts = computed(() =>
+    Array.from(
+      new Set(
+        configDraft.allowedImageHosts
+          .split(/[\s,]+/)
+          .map((value) => value.trim().toLowerCase())
+          .filter(Boolean)
+      )
+    ).sort()
+  )
+  const configValidation = computed(() => {
+    if (!configDraft.accountTemplateRecordId.trim()) return '账号模板记录 ID 不能为空'
+    if (new TextEncoder().encode(configDraft.accountTemplateRecordId.trim()).length > 128)
+      return '账号模板记录 ID 不能超过 128 字节'
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(configDraft.accountTemplateRecordId.trim()))
+      return '账号模板记录 ID 只能包含字母、数字、下划线和连字符'
+    if (!normalizedConfigHosts.value.length) return '至少填写一个图片域名'
+    if (
+      normalizedConfigHosts.value.some(
+        (host) =>
+          host.length > 253 ||
+          host.includes('..') ||
+          !host.includes('.') ||
+          host.split('.').some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))
+      )
+    )
+      return '图片域名只能填写规范化主机名，不能包含协议、端口、路径或通配符'
+    try {
+      const rawImage = configDraft.fallbackProductImage.trim()
+      const image = new URL(rawImage)
+      if (
+        image.protocol !== 'https:' ||
+        image.username ||
+        image.password ||
+        image.port ||
+        image.search ||
+        image.hash ||
+        !/^https:\/\/[^/?#]+\//i.test(rawImage) ||
+        !normalizedConfigHosts.value.includes(image.hostname.toLowerCase())
+      )
+        return '兜底图片必须是白名单域名上的公开 HTTPS URL，且不能带认证、端口、查询或片段'
+    } catch {
+      return '兜底图片 URL 格式不正确'
+    }
+    if (
+      configDraft.callbackToken === '********' ||
+      configDraft.callbackEncodingAesKey === '********'
+    )
+      return '不能把掩码作为密钥保存；留空表示保持原值'
+    if (configDraft.callbackToken && !/^[A-Za-z0-9]{3,32}$/.test(configDraft.callbackToken))
+      return 'Callback Token 必须是 3–32 位字母或数字'
+    if (
+      configDraft.callbackEncodingAesKey &&
+      !/^[A-Za-z0-9]{43}$/.test(configDraft.callbackEncodingAesKey)
+    )
+      return 'EncodingAESKey 必须是 43 位字母或数字'
+    const databaseConfig = config.value?.source === 'DATABASE'
+    const tokenReady = Boolean(
+      configDraft.callbackToken || (databaseConfig && config.value?.callbackTokenConfigured)
+    )
+    const aesReady = Boolean(
+      configDraft.callbackEncodingAesKey ||
+        (databaseConfig && config.value?.callbackEncodingAesKeyConfigured)
+    )
+    if (tokenReady !== aesReady) return 'Callback Token 与 EncodingAESKey 必须成对配置'
+    if (configDraft.callbackEnabled && (!tokenReady || !aesReady))
+      return '启用回调前必须配置 Callback Token 与 EncodingAESKey'
+    return null
+  })
+  const configDirty = computed(() => {
+    if (!config.value) return false
+    return (
+      configDraft.accountTemplateRecordId.trim() !== config.value.accountTemplateRecordId ||
+      configDraft.fallbackProductImage.trim() !== config.value.fallbackProductImage ||
+      normalizedConfigHosts.value.join(',') !==
+        [...config.value.allowedImageHosts].sort().join(',') ||
+      configDraft.preferOrderSnapshotImages !== config.value.preferOrderSnapshotImages ||
+      configDraft.callbackEnabled !== config.value.callbackEnabled ||
+      Boolean(configDraft.callbackToken) ||
+      Boolean(configDraft.callbackEncodingAesKey)
+    )
+  })
+  const configSourceLabel = computed(() => {
+    if (config.value?.source === 'DATABASE') return '加密数据库'
+    if (config.value?.source === 'ENVIRONMENT') return '旧部署环境回退'
+    return '未配置'
+  })
   const runtimeDirty = computed(() => Boolean(status.value && runtimeChanged(status.value, draft)))
   const runtimeValidation = computed(() =>
     status.value ? validateRuntimeDraft(draft, status.value) : null
@@ -484,7 +730,92 @@
     Object.assign(draft, runtimeDraft(value))
   }
 
+  const applyConfig = (value: Api.WechatServiceCard.Config) => {
+    config.value = value
+    Object.assign(configDraft, {
+      accountTemplateRecordId: value.accountTemplateRecordId,
+      fallbackProductImage: value.fallbackProductImage,
+      allowedImageHosts: value.allowedImageHosts.join('\n'),
+      preferOrderSnapshotImages: value.preferOrderSnapshotImages,
+      callbackEnabled: value.callbackEnabled,
+      callbackToken: '',
+      callbackEncodingAesKey: ''
+    })
+  }
+
+  const loadConfig = async () => {
+    if (!canReadConfig.value) return
+    configLoading.value = true
+    try {
+      applyConfig(await fetchWechatServiceCardConfig())
+    } finally {
+      configLoading.value = false
+    }
+  }
+
+  const saveConfig = async () => {
+    if (!config.value || configValidation.value || !canWriteConfig.value) return
+    const previousVersion = config.value.version
+    configSaving.value = true
+    try {
+      applyConfig(
+        await updateWechatServiceCardConfig({
+          accountTemplateRecordId: configDraft.accountTemplateRecordId.trim(),
+          fallbackProductImage: configDraft.fallbackProductImage.trim(),
+          allowedImageHosts: normalizedConfigHosts.value,
+          preferOrderSnapshotImages: configDraft.preferOrderSnapshotImages,
+          callbackEnabled: configDraft.callbackEnabled,
+          callbackToken: configDraft.callbackToken.trim(),
+          callbackEncodingAesKey: configDraft.callbackEncodingAesKey.trim(),
+          version: previousVersion
+        })
+      )
+      await loadStatus()
+    } catch (error) {
+      if (isHttpError(error) && error.httpStatus === 409) {
+        ElMessage.warning('接入配置已被其他管理员修改，已刷新为最新状态')
+        await loadConfig()
+        return
+      }
+      throw error
+    } finally {
+      configSaving.value = false
+    }
+  }
+
+  const importLegacyConfig = async () => {
+    if (!config.value?.legacyEnvironmentImportAvailable || !canWriteConfig.value) return
+    try {
+      await ElMessageBox.confirm(
+        '将严格校验并等价迁移当前旧环境配置；已有启用回调会保持启用。导入后数据库立即优先生效，是否继续？',
+        '导入旧环境配置',
+        {
+          type: 'warning',
+          confirmButtonText: '确认导入',
+          cancelButtonText: '取消'
+        }
+      )
+    } catch {
+      return
+    }
+    configSaving.value = true
+    try {
+      applyConfig(await importWechatServiceCardLegacyEnvironment(config.value.version))
+      await loadStatus()
+    } catch (error) {
+      if (isHttpError(error) && error.httpStatus === 409) {
+        ElMessage.warning('接入配置已发生变化，已刷新为最新状态')
+        await loadConfig()
+        return
+      }
+      throw error
+    } finally {
+      configSaving.value = false
+    }
+  }
+
   const loadStatus = async () => {
+    if (!canReadOperations.value) return
     statusLoading.value = true
     try {
       applyStatus(await fetchWechatServiceCardStatus())
@@ -508,6 +839,7 @@
   }
 
   const loadDeliveries = async () => {
+    if (!canReadOperations.value) return
     const orderId = normalizedOrderId()
     if (orderId === '') return
     deliveriesLoading.value = true
@@ -528,18 +860,22 @@
   }
 
   const reloadAll = async () => {
-    if (runtimeDirty.value) {
+    if (runtimeDirty.value || configDirty.value) {
       try {
-        await ElMessageBox.confirm('刷新会丢弃尚未保存的运行开关修改，是否继续？', '刷新状态', {
-          type: 'warning',
-          confirmButtonText: '丢弃并刷新',
-          cancelButtonText: '取消'
-        })
+        await ElMessageBox.confirm(
+          '刷新会丢弃尚未保存的接入配置或运行开关修改，是否继续？',
+          '刷新状态',
+          {
+            type: 'warning',
+            confirmButtonText: '丢弃并刷新',
+            cancelButtonText: '取消'
+          }
+        )
       } catch {
         return
       }
     }
-    await Promise.all([loadStatus(), loadDeliveries()])
+    await Promise.all([loadConfig(), loadStatus(), loadDeliveries()])
   }
 
   const handleCaptureChange = (value: string | number | boolean) => {
@@ -552,7 +888,12 @@
   }
 
   const openRuntimeConfirmation = () => {
-    if (!status.value || !runtimeDirty.value || runtimeValidation.value) return
+    if (
+      !status.value ||
+      (!runtimeDirty.value && status.value.runtimePersisted) ||
+      runtimeValidation.value
+    )
+      return
     confirmation.value = runtimeConfirmation(status.value, draft)
     confirmationForm.reason = ''
     confirmationForm.phrase = ''
@@ -632,7 +973,7 @@
     void router.push({ path: '/trade/orders', query: { orderNo } })
   }
 
-  onMounted(() => Promise.all([loadStatus(), loadDeliveries()]))
+  onMounted(() => Promise.all([loadConfig(), loadStatus(), loadDeliveries()]))
 </script>
 
 <style scoped lang="scss">
@@ -679,6 +1020,21 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14px;
+  }
+
+  .config-form,
+  .config-meta {
+    margin-top: 14px;
+  }
+
+  .config-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0 16px;
+  }
+
+  .config-grid--callback {
+    grid-template-columns: minmax(140px, 0.45fr) repeat(2, minmax(0, 1fr));
   }
 
   .runtime-item {
@@ -812,6 +1168,11 @@
   }
 
   @media (width <= 1200px) {
+    .config-grid,
+    .config-grid--callback {
+      grid-template-columns: 1fr;
+    }
+
     .runtime-grid {
       grid-template-columns: 1fr;
     }

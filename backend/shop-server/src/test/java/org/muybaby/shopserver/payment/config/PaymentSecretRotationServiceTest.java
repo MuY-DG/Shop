@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaymentSecretRotationServiceTest {
 
     private static final long CONFIG_ID = 93001L;
+    private static final String ACTIVE_KEY_ID = "new-2026";
     private static final String API_V3_KEY = "legacy-api-v3-key";
     private static final String PRIVATE_KEY = "legacy-private-key-pem";
     private static final String PUBLIC_KEY = "legacy-public-key-pem";
@@ -111,6 +112,28 @@ class PaymentSecretRotationServiceTest {
         assertThat(activeCipher.decrypt(
                 PaymentConfigResolver.apiV3KeyContext(CONFIG_ID), paymentEnvelope.ciphertext()).plaintext())
                 .isEqualTo(API_V3_KEY);
+        String rotatedPrivateKey = jdbcClient.sql("""
+                        select private_key_pem_ciphertext from payment_config where id = :id
+                        """)
+                .param("id", CONFIG_ID)
+                .query(String.class)
+                .single();
+        String rotatedPublicKey = jdbcClient.sql("""
+                        select wechat_public_key_pem_ciphertext from payment_config where id = :id
+                        """)
+                .param("id", CONFIG_ID)
+                .query(String.class)
+                .single();
+        PaymentSecretCipher.DecryptedSecret decryptedPrivateKey = activeCipher.decrypt(
+                PaymentConfigResolver.privateKeyPemContext(CONFIG_ID), rotatedPrivateKey);
+        PaymentSecretCipher.DecryptedSecret decryptedPublicKey = activeCipher.decrypt(
+                PaymentConfigResolver.wechatPublicKeyPemContext(CONFIG_ID), rotatedPublicKey);
+        assertThat(decryptedPrivateKey.plaintext()).isEqualTo(PRIVATE_KEY);
+        assertThat(decryptedPublicKey.plaintext()).isEqualTo(PUBLIC_KEY);
+        assertThat(decryptedPrivateKey.version()).isEqualTo(2);
+        assertThat(decryptedPublicKey.version()).isEqualTo(2);
+        assertThat(decryptedPrivateKey.keyId()).isEqualTo(ACTIVE_KEY_ID);
+        assertThat(decryptedPublicKey.keyId()).isEqualTo(ACTIVE_KEY_ID);
 
         ResolvedPaymentConfig restoredSnapshot = snapshotStore
                 .findEnvironmentConfig(snapshotFingerprint)
@@ -225,12 +248,13 @@ class PaymentSecretRotationServiceTest {
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no,
-                             api_v3_key_ciphertext, verify_mode, wechat_public_key_id,
+                             api_v3_key_ciphertext, private_key_pem_ciphertext,
+                             wechat_public_key_pem_ciphertext, verify_mode, wechat_public_key_id,
                              notify_url, refund_notify_url, enabled, status,
                              secret_cipher_version, secret_key_id)
                         values
                             (:id, 'Damaged Rotation Config', 'damaged-app', 'damaged-mch',
-                             'damaged-serial', 'v1:broken:broken', 'PUBLIC_KEY', 'damaged-public-id',
+                             'damaged-serial', 'v1:broken:broken', '', '', 'PUBLIC_KEY', 'damaged-public-id',
                              'https://pay.example.test/wxpay/pay/notify',
                              'https://pay.example.test/wxpay/refund/notify', false, 'ACTIVE', 1, '')
                         """)
@@ -303,20 +327,28 @@ class PaymentSecretRotationServiceTest {
     private void seedLegacyPaymentConfig() {
         PaymentSecretCipher.EncryptedSecret apiV3Key = legacyCipher.encrypt(
                 PaymentConfigResolver.apiV3KeyContext(CONFIG_ID), API_V3_KEY);
+        PaymentSecretCipher.EncryptedSecret privateKey = legacyCipher.encrypt(
+                PaymentConfigResolver.privateKeyPemContext(CONFIG_ID), PRIVATE_KEY);
+        PaymentSecretCipher.EncryptedSecret publicKey = legacyCipher.encrypt(
+                PaymentConfigResolver.wechatPublicKeyPemContext(CONFIG_ID), PUBLIC_KEY);
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no,
-                             api_v3_key_ciphertext, verify_mode, wechat_public_key_id,
+                             api_v3_key_ciphertext, private_key_pem_ciphertext,
+                             wechat_public_key_pem_ciphertext, verify_mode, wechat_public_key_id,
                              notify_url, refund_notify_url, enabled, status,
                              secret_cipher_version, secret_key_id)
                         values
                             (:id, 'Rotation DB Config', 'rotation-app', 'rotation-mch',
-                             'rotation-serial', :ciphertext, 'PUBLIC_KEY', 'rotation-public-id',
+                             'rotation-serial', :ciphertext, :privateKey, :publicKey,
+                             'PUBLIC_KEY', 'rotation-public-id',
                              'https://pay.example.test/wxpay/pay/notify',
                              'https://pay.example.test/wxpay/refund/notify', false, 'ACTIVE', 1, '')
                         """)
                 .param("id", CONFIG_ID)
                 .param("ciphertext", apiV3Key.ciphertext())
+                .param("privateKey", privateKey.ciphertext())
+                .param("publicKey", publicKey.ciphertext())
                 .update();
     }
 

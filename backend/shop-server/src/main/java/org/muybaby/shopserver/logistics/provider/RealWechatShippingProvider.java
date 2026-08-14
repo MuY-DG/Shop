@@ -10,7 +10,7 @@ import org.muybaby.shopserver.logistics.WechatReceiptQueryStatus;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.wechat.WechatAccessTokenProvider;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -53,20 +53,20 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final WechatAccessTokenProvider accessTokenProvider;
-    private final WechatMiniProgramProperties properties;
+    private final WechatPlatformCredentialResolver credentialResolver;
     private final int maxResponseBytes;
 
     public RealWechatShippingProvider(
             @Qualifier(WechatShippingHttpConfiguration.REST_CLIENT_BEAN_NAME) RestClient restClient,
             ObjectMapper objectMapper,
             WechatAccessTokenProvider accessTokenProvider,
-            WechatMiniProgramProperties properties,
+            WechatPlatformCredentialResolver credentialResolver,
             WechatShippingHttpProperties httpProperties
     ) {
         this.restClient = restClient;
         this.objectMapper = objectMapper;
         this.accessTokenProvider = accessTokenProvider;
-        this.properties = properties;
+        this.credentialResolver = credentialResolver;
         this.maxResponseBytes = httpProperties.maxResponseBytes();
     }
 
@@ -128,7 +128,15 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
 
     @Override
     public WechatShippingCapabilityResult queryCapability() {
-        if (!StringUtils.hasText(properties.appId())) {
+        String appId;
+        try {
+            appId = credentialResolver.resolve().appId();
+        } catch (RuntimeException ex) {
+            return WechatShippingCapabilityResult.unavailable(
+                    "MISSING_APP_ID", "WeChat mini program app id is not configured"
+            );
+        }
+        if (!StringUtils.hasText(appId)) {
             return WechatShippingCapabilityResult.unavailable(
                     "MISSING_APP_ID", "WeChat mini program app id is not configured"
             );
@@ -136,7 +144,7 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
 
         String body;
         try {
-            body = objectMapper.writeValueAsString(new CapabilityRequest(properties.appId()));
+            body = objectMapper.writeValueAsString(new CapabilityRequest(appId));
         } catch (JsonProcessingException ex) {
             log.warn("WeChat shipping capability payload failed: exception={}", ex.getClass().getSimpleName());
             return WechatShippingCapabilityResult.unknown(

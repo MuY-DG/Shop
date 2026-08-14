@@ -5,6 +5,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentials;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,32 +26,33 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
     private static final String CODE_TO_SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session";
     private static final String GET_PHONE_NUMBER_URL = "https://api.weixin.qq.com/wxa/business/getuserphonenumber";
 
-    private final WechatMiniProgramProperties properties;
+    private final WechatPlatformCredentialResolver credentialResolver;
     private final WechatAccessTokenProvider accessTokenProvider;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
     @Autowired
     public RestWechatMiniProgramClient(
-            WechatMiniProgramProperties properties,
+            WechatPlatformCredentialResolver credentialResolver,
             WechatAccessTokenProvider accessTokenProvider,
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper
     ) {
-        this.properties = properties;
+        this.credentialResolver = credentialResolver;
         this.accessTokenProvider = accessTokenProvider;
         this.restClient = restClientBuilder.build();
         this.objectMapper = objectMapper;
     }
 
     RestWechatMiniProgramClient(
-            WechatMiniProgramProperties properties,
+            WechatPlatformCredentialResolver credentialResolver,
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper
     ) {
         this(
-                properties,
-                new RestWechatAccessTokenProvider(properties, restClientBuilder, objectMapper),
+                credentialResolver,
+                new RestWechatAccessTokenProvider(
+                        credentialResolver, restClientBuilder, objectMapper),
                 restClientBuilder,
                 objectMapper
         );
@@ -57,11 +60,11 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
 
     @Override
     public WechatCodeSession code2Session(String code) {
-        validateCredentials(ErrorCode.WECHAT_LOGIN_FAILED);
+        WechatPlatformCredentials credentials = requireCredentials(ErrorCode.WECHAT_LOGIN_FAILED);
         try {
             String body = restClient.get()
                     .uri(CODE_TO_SESSION_URL + "?appid={appid}&secret={secret}&js_code={code}&grant_type=authorization_code",
-                            properties.appId(), properties.appSecret(), code)
+                            credentials.appId(), credentials.appSecret(), code)
                     .retrieve()
                     .body(String.class);
             CodeToSessionResponse response = readWechatResponse(
@@ -84,7 +87,7 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
 
     @Override
     public WechatPhoneInfo getPhoneNumber(String code) {
-        validateCredentials(ErrorCode.WECHAT_PHONE_FAILED);
+        requireCredentials(ErrorCode.WECHAT_PHONE_FAILED);
         String accessToken = accessTokenProvider.getAccessToken();
         try {
             String body = restClient.post()
@@ -134,11 +137,21 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
         }
     }
 
-    private void validateCredentials(ErrorCode errorCode) {
-        if (!StringUtils.hasText(properties.appId()) || !StringUtils.hasText(properties.appSecret())) {
-            log.warn("WeChat mini program credentials missing for {}", errorCode.name());
+    private WechatPlatformCredentials requireCredentials(ErrorCode errorCode) {
+        try {
+            WechatPlatformCredentials credentials = credentialResolver.resolve();
+            if (credentials != null
+                    && StringUtils.hasText(credentials.appId())
+                    && StringUtils.hasText(credentials.appSecret())) {
+                return credentials;
+            }
+        } catch (RuntimeException ex) {
+            log.warn("WeChat mini program credentials unavailable for {} (type={})",
+                    errorCode.name(), ex.getClass().getSimpleName());
             throw new BusinessException(errorCode);
         }
+        log.warn("WeChat mini program credentials missing for {}", errorCode.name());
+        throw new BusinessException(errorCode);
     }
 
     private void logWechatError(String operation, Integer errcode, String errmsg) {
@@ -176,9 +189,22 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
         private boolean hasError() {
             return errcode != null && errcode != 0;
         }
+
+        @Override
+        public String toString() {
+            return "CodeToSessionResponse[openid=<redacted>"
+                    + ", unionid=<redacted>"
+                    + ", sessionKey=<redacted>"
+                    + ", errcode=" + errcode
+                    + ", errmsg=" + errmsg + "]";
+        }
     }
 
     private record PhoneNumberRequest(String code) {
+        @Override
+        public String toString() {
+            return "PhoneNumberRequest[code=<redacted>]";
+        }
     }
 
     private record PhoneNumberResponse(
@@ -189,6 +215,13 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
         private boolean hasError() {
             return errcode != null && errcode != 0;
         }
+
+        @Override
+        public String toString() {
+            return "PhoneNumberResponse[errcode=" + errcode
+                    + ", errmsg=" + errmsg
+                    + ", phoneInfo=<redacted>]";
+        }
     }
 
     private record PhoneInfoResponse(
@@ -196,6 +229,12 @@ public class RestWechatMiniProgramClient implements WechatMiniProgramClient {
             String purePhoneNumber,
             String countryCode
     ) {
+        @Override
+        public String toString() {
+            return "PhoneInfoResponse[phoneNumber=<redacted>"
+                    + ", purePhoneNumber=<redacted>"
+                    + ", countryCode=<redacted>]";
+        }
     }
 
     private record WechatErrorResponse(Integer errcode, String errmsg) {

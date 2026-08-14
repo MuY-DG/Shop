@@ -12,9 +12,9 @@
         <div class="section-header">
           <div>
             <div class="section-header__title">支付配置</div>
-            <div class="section-header__subtitle"
-              >配置项按名称在左、输入框在右的方式排列，保存敏感字段后只显示脱敏信息</div
-            >
+            <div class="section-header__subtitle">
+              PEM 文件仅在浏览器本地读取，保存后以加密正文入库且不再回显
+            </div>
           </div>
           <div class="section-header__actions">
             <ElTag :type="effectiveConfig?.source === 'DB' ? 'success' : 'warning'">
@@ -124,7 +124,7 @@
           <ElFormItem label="APIv3 Key" prop="apiV3Key">
             <ElInput
               v-model="formData.apiV3Key"
-              maxlength="128"
+              maxlength="32"
               :type="selectedEnvironment ? 'text' : 'password'"
               :show-password="!selectedEnvironment"
               :disabled="selectedEnvironment"
@@ -165,28 +165,24 @@
               :placeholder="maskedPlaceholder(selectedConfig?.wechatPublicKeyIdMasked)"
             />
           </ElFormItem>
-          <ElFormItem label="私钥文件" prop="privateKeyFileId">
+          <ElFormItem label="商户私钥 PEM" prop="privateKeyPem">
             <ElInput v-if="selectedEnvironment" model-value="由服务器文件路径提供" disabled />
             <PaymentSecretFileField
               v-else
-              :model-value="formData.privateKeyFileId"
-              @change="handleSecretFileChange('privateKeyFileId', $event)"
+              key-type="PRIVATE_KEY"
+              :model-value="formData.privateKeyPem || ''"
+              :configured="selectedConfig?.privateKeyConfigured"
+              @change="handleSecretFileChange('privateKeyPem', $event)"
             />
           </ElFormItem>
-          <ElFormItem label="商户证书文件" prop="merchantCertificateFileId">
-            <ElInput v-if="selectedEnvironment" model-value="由服务器环境变量管理" disabled />
-            <PaymentSecretFileField
-              v-else
-              :model-value="formData.merchantCertificateFileId || null"
-              @change="handleSecretFileChange('merchantCertificateFileId', $event)"
-            />
-          </ElFormItem>
-          <ElFormItem label="微信公钥文件" prop="wechatPublicKeyFileId">
+          <ElFormItem label="微信公钥 PEM" prop="wechatPublicKeyPem">
             <ElInput v-if="selectedEnvironment" model-value="由服务器文件路径提供" disabled />
             <PaymentSecretFileField
               v-else
-              :model-value="formData.wechatPublicKeyFileId || null"
-              @change="handleSecretFileChange('wechatPublicKeyFileId', $event)"
+              key-type="PUBLIC_KEY"
+              :model-value="formData.wechatPublicKeyPem || ''"
+              :configured="selectedConfig?.wechatPublicKeyConfigured"
+              @change="handleSecretFileChange('wechatPublicKeyPem', $event)"
             />
           </ElFormItem>
 
@@ -196,7 +192,7 @@
               type="primary"
               v-auth="'payment:config:write'"
               :loading="saving"
-              :disabled="using"
+              :disabled="using || importing"
               @click="handleSave"
             >
               {{ creating ? '保存配置' : '保存修改' }}
@@ -205,19 +201,45 @@
               type="success"
               v-auth="'payment:config:enable'"
               :loading="using"
-              :disabled="currentUseState.disabled || saving"
+              :disabled="currentUseState.disabled || saving || importing"
               @click="handleUse"
             >
               {{ creating ? '保存并使用' : currentUseState.label }}
             </ElButton>
             <ElButton
+              v-if="selectedEnvironment"
+              v-auth="'payment:config:write'"
+              type="primary"
+              plain
+              :loading="importing"
+              :disabled="saving || using"
+              @click="handleImportEnvironment"
+            >
+              导入为数据库配置
+            </ElButton>
+            <ElButton
+              v-if="!selectedEnvironment && selectedConfig?.legacySecretFilesPendingImport"
+              v-auth="'payment:config:write'"
+              type="warning"
+              plain
+              :loading="importing"
+              :disabled="saving || using"
+              @click="handleImportLegacySecrets"
+            >
+              迁移旧秘密文件
+            </ElButton>
+            <ElButton
               v-if="!creating && !selectedEnvironment"
-              :disabled="!dirty || saving || using"
+              :disabled="!dirty || saving || using || importing"
               @click="resetSelectedForm"
             >
               撤销未保存修改
             </ElButton>
-            <ElButton v-if="creating" :disabled="saving || using" @click="cancelCreate">
+            <ElButton
+              v-if="creating"
+              :disabled="saving || using || importing"
+              @click="cancelCreate"
+            >
               取消新增
             </ElButton>
           </ElFormItem>
@@ -237,6 +259,8 @@
     fetchEffectivePaymentConfig,
     fetchEnvironmentPaymentConfig,
     fetchPaymentConfigs,
+    importEnvironmentPaymentConfig,
+    importLegacyPaymentSecretFiles,
     updatePaymentConfig,
     updatePaymentConfigSource
   } from '@/api/payment'
@@ -249,6 +273,7 @@
   const loading = ref(false)
   const saving = ref(false)
   const using = ref(false)
+  const importing = ref(false)
   const creating = ref(false)
   const configs = ref<Api.Payment.Config[]>([])
   const effectiveConfig = ref<Api.Payment.EffectiveConfig | null>(null)
@@ -263,11 +288,10 @@
     mchId: '',
     merchantSerialNo: '',
     apiV3Key: '',
-    privateKeyFileId: null,
-    merchantCertificateFileId: null,
+    privateKeyPem: '',
     verifyMode: 'PUBLIC_KEY',
     wechatPublicKeyId: '',
-    wechatPublicKeyFileId: null,
+    wechatPublicKeyPem: '',
     notifyUrl: '',
     refundNotifyUrl: ''
   })
@@ -286,11 +310,10 @@
       mchId: formData.mchId,
       merchantSerialNo: formData.merchantSerialNo,
       apiV3Key: formData.apiV3Key,
-      privateKeyFileId: formData.privateKeyFileId,
-      merchantCertificateFileId: formData.merchantCertificateFileId,
+      privateKeyPem: formData.privateKeyPem,
       verifyMode: formData.verifyMode,
       wechatPublicKeyId: formData.wechatPublicKeyId,
-      wechatPublicKeyFileId: formData.wechatPublicKeyFileId,
+      wechatPublicKeyPem: formData.wechatPublicKeyPem,
       notifyUrl: formData.notifyUrl,
       refundNotifyUrl: formData.refundNotifyUrl
     })
@@ -318,7 +341,6 @@
   })
 
   const hasText = (value?: string | null) => Boolean(String(value || '').trim())
-  const hasNumber = (value?: number | null) => typeof value === 'number'
 
   const preserveableTextRule = (message: string, existingValue?: string | null) => ({
     validator: (_rule: unknown, value: string | undefined, callback: (error?: Error) => void) => {
@@ -331,13 +353,9 @@
     trigger: 'blur'
   })
 
-  const requiredFileRule = (message: string) => ({
-    validator: (
-      _rule: unknown,
-      value: number | null | undefined,
-      callback: (error?: Error) => void
-    ) => {
-      if (hasNumber(value)) {
+  const preserveablePemRule = (message: string, configured = false) => ({
+    validator: (_rule: unknown, value: string | undefined, callback: (error?: Error) => void) => {
+      if (hasText(value) || configured) {
         callback()
         return
       }
@@ -356,8 +374,13 @@
     apiV3Key: [
       {
         validator: (_rule, value, callback) => {
-          if (!selectedConfig.value?.apiV3KeyConfigured && !String(value || '').trim()) {
+          const candidate = String(value || '').trim()
+          if (!selectedConfig.value?.apiV3KeyConfigured && !candidate) {
             callback(new Error('请输入 APIv3 Key'))
+            return
+          }
+          if (candidate && new TextEncoder().encode(candidate).byteLength !== 32) {
+            callback(new Error('APIv3 Key 必须恰好为 32 个 UTF-8 字节'))
             return
           }
           callback()
@@ -368,16 +391,8 @@
     notifyUrl: [{ required: true, message: '请输入支付回调 URL', trigger: 'blur' }],
     refundNotifyUrl: [{ required: true, message: '请输入退款回调 URL', trigger: 'blur' }],
     verifyMode: [{ required: true, message: '请选择验签模式', trigger: 'change' }],
-    privateKeyFileId: [requiredFileRule('请选择私钥文件')],
-    merchantCertificateFileId: [
-      {
-        validator: (
-          _rule: unknown,
-          _value: number | null | undefined,
-          callback: (error?: Error) => void
-        ) => callback(),
-        trigger: 'change'
-      }
+    privateKeyPem: [
+      preserveablePemRule('请选择商户私钥 PEM', selectedConfig.value?.privateKeyConfigured)
     ],
     wechatPublicKeyId: [
       {
@@ -395,17 +410,8 @@
         trigger: 'blur'
       }
     ],
-    wechatPublicKeyFileId: [
-      {
-        validator: (_rule, value, callback) => {
-          if (formData.verifyMode === 'PUBLIC_KEY' && !hasNumber(value)) {
-            callback(new Error('请选择微信公钥文件'))
-            return
-          }
-          callback()
-        },
-        trigger: 'change'
-      }
+    wechatPublicKeyPem: [
+      preserveablePemRule('请选择微信公钥 PEM', selectedConfig.value?.wechatPublicKeyConfigured)
     ]
   }))
 
@@ -417,10 +423,7 @@
     Object.assign(formData, {
       ...createDefaultForm(),
       configName: config?.configName || '',
-      privateKeyFileId: config?.privateKeyFileId ?? null,
-      merchantCertificateFileId: config?.merchantCertificateFileId ?? null,
       verifyMode: 'PUBLIC_KEY',
-      wechatPublicKeyFileId: config?.wechatPublicKeyFileId ?? null,
       notifyUrl: config?.notifyUrl || '',
       refundNotifyUrl: config?.refundNotifyUrl || ''
     })
@@ -461,14 +464,15 @@
   const loadData = async (preferredSelection?: PaymentConfigSelection) => {
     loading.value = true
     try {
-      const [environmentResponse, effective, response] = await Promise.all([
+      const [environmentResponse, effectiveState, response] = await Promise.all([
         fetchEnvironmentPaymentConfig().catch(() => null),
         fetchEffectivePaymentConfig(),
         fetchPaymentConfigs({ current: 1, size: 100 })
       ])
+      const effective = effectiveState.config || null
       const environment: Api.Payment.EnvironmentConfig = environmentResponse || {
-        available: true,
-        config: effective.source === 'ENV' ? effective : null
+        available: false,
+        config: null
       }
       environmentSetting.value = environment
       effectiveConfig.value = effective
@@ -477,7 +481,7 @@
       const targetSelection =
         preferredSelection ??
         selectedConfigKey.value ??
-        (effective.source === 'ENV' ? 'ENV' : effective.id) ??
+        (effective?.source === 'ENV' ? 'ENV' : effective?.id) ??
         (environment.available ? 'ENV' : null) ??
         response.records[0]?.id
       if (targetSelection === 'ENV' && environment.available) {
@@ -544,10 +548,7 @@
 
   const resetSelectedForm = () => fillForm(selectedConfig.value)
 
-  const handleSecretFileChange = (
-    field: 'privateKeyFileId' | 'merchantCertificateFileId' | 'wechatPublicKeyFileId',
-    value: number | null
-  ) => {
+  const handleSecretFileChange = (field: 'privateKeyPem' | 'wechatPublicKeyPem', value: string) => {
     formData[field] = value
     formRef.value?.validateField(field)
   }
@@ -558,19 +559,19 @@
       appId: trimText(formData.appId),
       mchId: trimText(formData.mchId),
       merchantSerialNo: trimText(formData.merchantSerialNo),
-      privateKeyFileId: formData.privateKeyFileId,
-      merchantCertificateFileId: formData.merchantCertificateFileId || null,
       verifyMode: formData.verifyMode,
       wechatPublicKeyId:
         formData.verifyMode === 'PUBLIC_KEY' ? trimText(formData.wechatPublicKeyId) : '',
-      wechatPublicKeyFileId:
-        formData.verifyMode === 'PUBLIC_KEY' ? formData.wechatPublicKeyFileId || null : null,
       notifyUrl: trimText(formData.notifyUrl),
       refundNotifyUrl: trimText(formData.refundNotifyUrl)
     }
 
     const apiV3Key = trimText(formData.apiV3Key)
     if (apiV3Key) payload.apiV3Key = apiV3Key
+    if (hasText(formData.privateKeyPem)) payload.privateKeyPem = formData.privateKeyPem
+    if (hasText(formData.wechatPublicKeyPem)) {
+      payload.wechatPublicKeyPem = formData.wechatPublicKeyPem
+    }
     return payload
   }
 
@@ -579,6 +580,47 @@
     if (creating.value) return createPaymentConfig(payload, showSuccessMessage)
     if (!selectedConfig.value) throw new Error('请选择支付配置')
     return updatePaymentConfig(selectedConfig.value.id, payload, showSuccessMessage)
+  }
+
+  const handleImportEnvironment = async () => {
+    await ElMessageBox.confirm(
+      '将读取当前服务器环境中的支付密钥并加密创建一条数据库配置；不会自动启用，也不会切换当前来源。',
+      '导入环境支付配置',
+      {
+        type: 'warning',
+        confirmButtonText: '确认导入',
+        cancelButtonText: '取消'
+      }
+    )
+    importing.value = true
+    try {
+      const imported = await importEnvironmentPaymentConfig(false)
+      await loadData(imported.id)
+      ElMessage.success('环境支付配置已安全导入，请核对后再启用')
+    } finally {
+      importing.value = false
+    }
+  }
+
+  const handleImportLegacySecrets = async () => {
+    if (!selectedConfig.value) return
+    await ElMessageBox.confirm(
+      '将读取旧私有存储中的密钥正文，加密写入支付配置，并解除旧文件引用。支付来源和启用状态不会改变。',
+      '迁移旧秘密文件',
+      {
+        type: 'warning',
+        confirmButtonText: '确认迁移',
+        cancelButtonText: '取消'
+      }
+    )
+    importing.value = true
+    try {
+      const imported = await importLegacyPaymentSecretFiles(selectedConfig.value.id, false)
+      await loadData(imported.id)
+      ElMessage.success('旧秘密文件已迁移为数据库加密正文')
+    } finally {
+      importing.value = false
+    }
   }
 
   const handleSave = async () => {

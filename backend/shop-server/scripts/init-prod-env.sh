@@ -136,16 +136,12 @@ migrate_property \
   SHOP_PAYMENT_SECRET_ROTATION_ENABLED \
   SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED \
   "是否启用敏感配置主密钥轮换任务。"
-migrate_property \
-  "$prod_file" \
-  SHOP_PAYMENT_SECRET_ROTATION_DELAY \
-  SHOP_SECRET_ENCRYPTION_ROTATION_DELAY \
-  "敏感配置密钥轮换任务每批之间的等待时间。"
-migrate_property \
-  "$prod_file" \
-  SHOP_PAYMENT_SECRET_ROTATION_BATCH_SIZE \
-  SHOP_SECRET_ENCRYPTION_ROTATION_BATCH_SIZE \
-  "敏感配置密钥轮换任务每批处理数量。"
+# 轮换调度和批量大小已经是 application.yaml 中的受版本控制技术默认值。
+remove_property "$prod_file" SHOP_PAYMENT_SECRET_ROTATION_DELAY
+remove_property "$prod_file" SHOP_PAYMENT_SECRET_ROTATION_BATCH_SIZE
+remove_property "$prod_file" SHOP_SECRET_ENCRYPTION_ROTATION_DELAY
+remove_property "$prod_file" SHOP_SECRET_ENCRYPTION_ROTATION_BATCH_SIZE
+remove_property "$prod_file" SHOP_PAY_EXPIRE_MINUTES
 
 for obsolete_storage_key in \
   SHOP_STORAGE_PROVIDER \
@@ -155,7 +151,10 @@ for obsolete_storage_key in \
   SHOP_STORAGE_TENCENT_COS_BUCKET \
   SHOP_STORAGE_TENCENT_COS_SECRET_ID \
   SHOP_STORAGE_TENCENT_COS_SECRET_KEY \
-  SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL; do
+  SHOP_STORAGE_TENCENT_COS_PUBLIC_BASE_URL \
+  SHOP_DIRECT_UPLOAD_MAX_ACTIVE_SESSIONS \
+  SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_APP \
+  SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_ADMIN; do
   remove_property "$prod_file" "$obsolete_storage_key"
 done
 

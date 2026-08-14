@@ -19,10 +19,16 @@ public class PaymentConfigSourceSettingService {
 
     private final PaymentProperties properties;
     private final JdbcClient jdbcClient;
+    private final PaymentConfigMutationLock paymentConfigMutationLock;
 
-    public PaymentConfigSourceSettingService(PaymentProperties properties, JdbcClient jdbcClient) {
+    public PaymentConfigSourceSettingService(
+            PaymentProperties properties,
+            JdbcClient jdbcClient,
+            PaymentConfigMutationLock paymentConfigMutationLock
+    ) {
         this.properties = properties;
         this.jdbcClient = jdbcClient;
+        this.paymentConfigMutationLock = paymentConfigMutationLock;
     }
 
     public PaymentConfigSource currentSource() {
@@ -43,6 +49,7 @@ public class PaymentConfigSourceSettingService {
         if (source == null) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
+        paymentConfigMutationLock.acquire();
         int updatedRows = jdbcClient.sql("""
                         update payment_runtime_setting
                         set config_source = :source,

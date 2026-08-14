@@ -139,12 +139,13 @@ public abstract class PaymentTestSupport {
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                              private_key_file_id, merchant_certificate_file_id, verify_mode,
                              wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                              enabled, status)
                         values
                             (91001, 'Payment Flow Test', 'wx_payment_test_app', 'mch_payment_test',
-                             'serial_payment_test', :ciphertext, :privateKeyFileId, null, 'PUBLIC_KEY',
+                             'serial_payment_test', :ciphertext, '', '', :privateKeyFileId, null, 'PUBLIC_KEY',
                              'pub_key_payment_test', :publicKeyFileId, 'https://pay.test/wxpay/pay/notify',
                              'https://pay.test/wxpay/refund/notify', true, 'ACTIVE')
                         """)
@@ -159,11 +160,13 @@ public abstract class PaymentTestSupport {
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                              private_key_file_id, merchant_certificate_file_id, verify_mode,
                              wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                              enabled, status)
                         select :replacementConfigId, 'Replacement Payment Flow Test', app_id,
                                concat(mch_id, '_replacement'), merchant_serial_no, api_v3_key_ciphertext,
+                               private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                                private_key_file_id, merchant_certificate_file_id, verify_mode,
                                wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                                true, status

@@ -23,14 +23,17 @@ Spring Boot 通过隔离的 `data` 网络访问；`ops` 网络只负责 Docker �
 ## 文件分工
 
 - `compose.prod.yaml`：完整声明后端、MySQL、Redis、持久卷、健康检查和资源限制。
-- `.env.prod.local`：Spring Boot 生产配置、业务凭据以及应用使用的数据库/Redis 密码。
+- `.env.prod.local`：新部署只含数据库/Redis、可信代理、通用主加密密钥和首次引导值；
+  升级中的旧部署可暂存待导入的微信兼容值。
 - `.env.infrastructure.local`：只给 MySQL/Redis 使用的基础设施密码。
-- `secrets/`：微信支付 PEM 文件，只读挂载到应用容器。
+- `secrets/`：仅兼容尚未导入数据库的旧微信支付 PEM；完成迁移后移除。
 - `backups/`：本机 MySQL 备份目录。
 - `scripts/deploy-prod.sh`：本地测试、精简源码上传、服务器缓存构建和远程切换的一条命令。
 - `scripts/backup-mysql.sh`：供 1Panel 计划任务调用的 MySQL 备份脚本。
 
-所有 `.env.*.local`、`secrets/` 和 `backups/` 均被 Git 忽略。对象存储只使用后台数据库中配置的腾讯云 COS，生产环境文件中不保存 COS 区域、桶或凭证。
+所有 `.env.*.local`、`secrets/` 和 `backups/` 均被 Git 忽略。对象存储及微信支付
+业务配置由后台数据库管理；新部署模板不保存 COS、微信平台或支付业务凭据。旧服务器
+环境文件中的微信变量只能作为迁移输入，数据库导入与历史订单核验完成前不要直接删除。
 
 ## 首次准备生产配置
 
@@ -51,12 +54,65 @@ cd /Users/muybaby/Project/Production/Shop/backend/shop-server
 
 脚本不会打印密码，并会把两个本地环境文件权限设为 `600`。
 
-升级已有环境时，先把旧的 `SHOP_PAYMENT_SECRET_*` 值一一改名为
-`SHOP_SECRET_ENCRYPTION_*`（其中旧 `SHOP_PAYMENT_SECRET_KEY` 改为
-`SHOP_SECRET_ENCRYPTION_LEGACY_KEY`），再删除所有
+升级已有环境时，初始化脚本会把旧的密钥、写入版本、active key、key ring 和轮换开关
+迁移到 `SHOP_SECRET_ENCRYPTION_*`（其中旧 `SHOP_PAYMENT_SECRET_KEY` 改为
+`SHOP_SECRET_ENCRYPTION_LEGACY_KEY`）。轮换延迟/批量与支付过期时间已经改为受版本控制的
+技术默认值，脚本会删除对应旧覆盖。它还会删除所有
 `SHOP_STORAGE_PROVIDER`、`SHOP_STORAGE_PUBLIC_BASE_URL`、
-`SHOP_STORAGE_LOCAL_ROOT` 和 `SHOP_STORAGE_TENCENT_COS_*` 行。COS
-区域、存储桶和凭证只在管理后台保存；校验脚本会拒绝仍含这些已移除变量的生产文件。
+`SHOP_STORAGE_LOCAL_ROOT`、`SHOP_STORAGE_TENCENT_COS_*` 和
+`SHOP_DIRECT_UPLOAD_*` 行。COS 区域、存储桶和凭证只在管理后台保存；上传限额等
+技术默认值位于 `application.yaml`。校验脚本会拒绝仍含这些已移除变量的生产文件。
+
+`.env.prod.example` 不再列出 `WECHAT_MINI_PROGRAM_*`、`WECHAT_PAY_*` 或微信发货开关。
+新部署通过后台数据库配置这些业务值。旧 `.env.prod.local` 可暂时保留原值以完成迁移，
+但不得把真实值复制回 example、镜像或文档。
+
+### 旧部署两阶段迁移
+
+第一阶段保持 `.env.prod.local` 的真实旧值和 `secrets/` 只读挂载不变。本阶段只部署和
+迁移，不代表已经操作生产数据库：
+
+1. 发布包含 V98、V99、V100、V101 的版本，确认 Flyway 完成且应用仍可用旧 ENV/文件回退启动。
+2. 支付来源为 ENV 时，调用 `POST /admin/pay/configs/import-environment` 创建禁用的 DB
+   候选；已有 DB 配置仍引用旧私有文件 ID 时，对每个待迁移行调用
+   `POST /admin/pay/configs/{configId}/import-legacy-secret-files`。后者把 PEM 正文校验、加密
+   后写入 `payment_config`，并清空旧私有文件引用。确认列表中的
+   `legacySecretFilesPendingImport=false`，必要时启用目标行，再用
+   `PUT /admin/pay/configs/source` 显式保存 `{"source":"DB"}`。
+3. 先 `GET /admin/wechat/platform-config`；仅当返回
+   `legacyEnvironmentImportAvailable=true` 时，以 `{"version":0}` 调用
+   `POST /admin/wechat/platform-config/legacy-env-import`。再次 GET 必须显示
+   `source=DATABASE` 且不再提供 legacy import。
+4. 读取 `GET /admin/wechat-service-cards/config`；仅当返回
+   `legacyEnvironmentImportAvailable=true` 时，以 `{"version":0}` 调用
+   `POST /admin/wechat-service-cards/config/legacy-env-import`。导入会严格校验模板、公开图、
+   host、Token/AESKey，并保持旧环境中已验证的 callback enabled 值；数据库行写入后立即
+   优先生效。再次 GET 必须显示 `source=DATABASE`，但只能看到密钥掩码和 configured 状态。
+5. 从 `GET /admin/wechat-service-cards/status` 读取当前 Capture/Worker 生效值和 version，
+   用相同值及真实原因调用 `PUT /admin/wechat-service-cards/runtime`；从
+   `GET /admin/wechat-shipping/runtime` 读取上传/投递/收货三个生效值和 version，再用相同
+   值及真实原因 PUT 回去。这样先持久化旧开关，不在迁移时改变行为。
+6. 依次验证小程序登录、服务动态 GET 握手/失败回调、低金额沙箱或受控真实支付、历史支付查询/退款解析、发货跳过或
+   沙箱路径。核对支付 effective/source、平台 source、两个 runtime 的 persisted/version
+   与审计记录；健康检查或单元测试不能替代这些外部证据。
+
+第二阶段必须等上述验证、支付回调重试窗口、历史 ENV 支付快照和回滚窗口都满足后再做：
+
+1. 从真实 `.env.prod.local` 删除 `WECHAT_PAY_*`、`WECHAT_MINI_PROGRAM_*`，以及已持久化的
+   `SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED`、`SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED`、
+   `SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED`、`SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED`、
+   `SHOP_WECHAT_SERVICE_CARD_WORKER_ENABLED`、`SHOP_WECHAT_SERVICE_CARD_CALLBACK_ENABLED`、
+   `SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID`、`SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE`、
+   `SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS`、`SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN` 和
+   `SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY`。
+2. 只有所有支付配置都显示 `legacySecretFilesPendingImport=false` 且不再需要旧版本回滚时，
+   才移除 Compose 的 `secrets/` 挂载和服务器旧 PEM。删除服务器文件前先按运维策略留存
+   受控备份；不要删除 `SHOP_SECRET_ENCRYPTION_*` 主密钥环。
+3. 删除服务动态旧环境值前，确认 V101 配置 source 为 `DATABASE`、回调密钥 configured、
+   handshake 与失败回调均通过，并保留满足回滚窗口的受控备份；不要输出密钥明文。
+
+全新部署不执行 legacy import：先准备通用主密钥环，启动后直接在 Admin 创建微信平台和
+支付 DB 配置，再一次性创建完整的服务动态接入配置，最后保存服务动态/发货运行开关。
 
 全新数据库默认不会启用公共 Super。确实需要首次引导账号时：
 
@@ -64,7 +120,8 @@ cd /Users/muybaby/Project/Production/Shop/backend/shop-server
 2. 在 `.env.prod.local` 中临时设置
    `SHOP_DEFAULT_ADMIN_STATUS=ENABLED` 和生成的哈希。
 3. 首次登录后立即创建正式管理员或修改密码。
-4. 删除这两个覆盖值；Flyway 已执行的迁移不会重复创建账号。
+4. 将状态恢复为 `DISABLED`；哈希继续留作受控的首次建库占位值。Flyway 已执行的迁移
+   不会重复创建账号。
 
 ## 一条命令部署
 

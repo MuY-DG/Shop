@@ -72,6 +72,30 @@ public record WechatServiceCardProperties(
         callback = callback == null ? new Callback(false, "", "", Duration.ofMinutes(5)) : callback;
     }
 
+    @Override
+    public String toString() {
+        return "WechatServiceCardProperties[enabled=" + enabled
+                + ", workerEnabled=" + workerEnabled
+                + ", accountTemplateRecordIdConfigured=" + StringUtils.hasText(accountTemplateRecordId)
+                + ", delay=" + delay
+                + ", batchSize=" + batchSize
+                + ", claimTimeout=" + claimTimeout
+                + ", maxAttempts=" + maxAttempts
+                + ", retryBackoff=" + retryBackoff
+                + ", maxRetryBackoff=" + maxRetryBackoff
+                + ", unknownRecheckInterval=" + unknownRecheckInterval
+                + ", maxUnknownRecheckInterval=" + maxUnknownRecheckInterval
+                + ", notAppliedConfirmations=" + notAppliedConfirmations
+                + ", connectTimeout=" + connectTimeout
+                + ", readTimeout=" + readTimeout
+                + ", maxResponseSize=" + maxResponseSize
+                + ", maxPayloadSize=" + maxPayloadSize
+                + ", fallbackProductImageConfigured=" + StringUtils.hasText(fallbackProductImage)
+                + ", preferOrderSnapshotImages=" + preferOrderSnapshotImages
+                + ", allowedImageHostsConfigured=" + !allowedImageHosts.isEmpty()
+                + ", callback=" + callback + "]";
+    }
+
     public Duration retryDelay(int attemptCount) {
         int exponent = Math.max(0, Math.min(attemptCount - 1, 20));
         Duration candidate;
@@ -190,6 +214,14 @@ public record WechatServiceCardProperties(
             } catch (IllegalArgumentException ex) {
                 return false;
             }
+        }
+
+        @Override
+        public String toString() {
+            return "Callback[enabled=" + enabled
+                    + ", token=<redacted>"
+                    + ", encodingAesKey=<redacted>"
+                    + ", maxTimestampSkew=" + maxTimestampSkew + "]";
         }
     }
 }

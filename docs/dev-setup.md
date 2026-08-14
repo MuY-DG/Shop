@@ -20,8 +20,11 @@ Shop/
 
 Environment-specific secrets are selected by the active Spring profile:
 
-- `dev` imports the optional ignored file `backend/shop-server/.env.dev.local`.
-- `prod` requires the ignored file `backend/shop-server/.env.prod.local`.
+- `dev` imports the optional ignored file `backend/shop-server/.env.dev.local`; existing
+  WeChat/payment values in that file are migration-only compatibility inputs.
+- `prod` requires the ignored file `backend/shop-server/.env.prod.local`. The tracked template
+  contains only database/Redis startup values, trusted-proxy boundaries, the application master
+  key ring, and first-bootstrap values.
 - `test` uses `src/test/resources/application-test.yaml`.
 
 Choose the profile externally rather than storing `spring.profiles.active` in either
@@ -155,27 +158,16 @@ crown, `金牌会员` text, member-card assets, and logged-in display condition.
 
 ### V87 WeChat Shipment Delivery
 
-`SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false` is the safe default. When it is enabled for
-a verified real Mini Program and paid order, local shipment creation writes durable
-delivery work; the immediate provider call is only an optimization. Configure bounded
-delivery and reconciliation explicitly:
+The tracked `application.yaml` owns the bounded HTTP, lease, retry, batch, and reconciliation
+defaults. They are technical safety limits rather than environment-file inventory. Migration
+`V100` adds audited database runtime switches for upload, durable delivery, and receipt
+reconciliation. Read or update them through `GET/PUT /admin/wechat-shipping/runtime`; every
+write requires the current version and a change reason. Until the first runtime row is saved,
+the old `SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED`, `SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED`, and
+`SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED` values are accepted only as migration defaults.
 
-```properties
-SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
-SHOP_WECHAT_SHIPPING_HTTP_CONNECT_TIMEOUT=3s
-SHOP_WECHAT_SHIPPING_HTTP_READ_TIMEOUT=15s
-SHOP_WECHAT_SHIPPING_HTTP_MAX_RESPONSE_SIZE=1MB
-SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED=true
-SHOP_WECHAT_SHIPPING_DELIVERY_DELAY=15s
-SHOP_WECHAT_SHIPPING_DELIVERY_BATCH_SIZE=50
-SHOP_WECHAT_SHIPPING_DELIVERY_CLAIM_TIMEOUT=1m
-SHOP_WECHAT_SHIPPING_DELIVERY_MAX_ATTEMPTS=8
-SHOP_WECHAT_SHIPPING_DELIVERY_RETRY_BACKOFF=30s
-SHOP_WECHAT_SHIPPING_DELIVERY_MAX_RETRY_BACKOFF=30m
-SHOP_WECHAT_SHIPPING_UNKNOWN_RECHECK_INTERVAL=1m
-SHOP_WECHAT_SHIPPING_UNKNOWN_NOT_UPLOADED_CONFIRMATIONS=2
-SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=true
-```
+When upload is enabled for a verified real Mini Program and paid order, local shipment creation
+writes durable delivery work; the immediate provider call is only an optimization.
 
 Do not blindly retry `UNKNOWN`: reconcile provider identity and shipment facts first.
 `FAILED` remains an operator decision. `REAL + UPLOADED` keeps WeChat as receipt
@@ -268,52 +260,34 @@ readiness failures never block emergency shutdown. Enable the worker alone, manu
 real bill, then enable daily scheduling in a later revision. No restart or deployment is required
 for later switch changes.
 
-### V94-V95 WeChat 2001 Shopping Service Dynamic
+### V94-V95/V101 WeChat 2001 Shopping Service Dynamic
 
 V94 implements only the new WeChat `notify_type=2001` **购物（实体物流）服务动态**.
 It is not the traditional `wx.requestSubscribeMessage` flow, does not send a private
 template ID in `set_user_notify`, and requires no new Mini Program page or consent call.
-`SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID` stores the account's existing template
-record ID only for readiness/audit. The provider sends the payment's immutable WeChat
+The account template record ID is stored only for readiness/audit. The provider sends the payment's immutable WeChat
 `transaction_id` as `notify_code`; it never substitutes the merchant order number.
 
-The deployment values below are safe defaults. V95 adds a database-backed runtime override
-for Capture and Worker, exposed only through Admin **开发配置 → 微信服务动态**. Once an
-override exists, it survives restarts and takes precedence over the two deployment defaults.
-Callback remains environment-only because its Token/AES material must never enter the database
-or Admin API.
+V95 adds a database-backed runtime override for Capture and Worker, exposed only through Admin
+**开发配置 → 微信服务动态**. Once an override exists, it survives restarts and takes
+precedence over the two legacy deployment defaults. V101 moves template/image readiness,
+snapshot preference, callback enabled state, Callback Token and EncodingAESKey into a singleton
+database configuration. The two callback secrets are independently AES-GCM encrypted with
+row/field-bound AAD and the API returns only configured flags plus `********`. A database row is
+authoritative; damage fails closed and never falls back to environment values.
 
-```properties
-SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED=false
-SHOP_WECHAT_SERVICE_CARD_WORKER_ENABLED=false
-SHOP_WECHAT_SERVICE_CARD_CALLBACK_ENABLED=false
+Existing ignored `.env.*.local` files may temporarily keep the old
+`SHOP_WECHAT_SERVICE_CARD_*` business values solely for no-row compatibility and the explicit
+Admin legacy import. New deployments do not add them. Import validates the complete template,
+image/host and callback pair, preserves an already enabled callback, writes an audit record, and
+makes the database immediately authoritative. Remove old values only after handshake, capture
+and rollback verification.
 
-SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID=<account-template-record-id>
-SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE=https://admin.muybaby6.icu/wechat/service-card-placeholder.png
-SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS=admin.muybaby6.icu
+Delivery delays, retry limits, HTTP limits and Callback timestamp skew are tracked technical
+defaults in `application.yaml`; they are no longer production environment variables.
 
-SHOP_WECHAT_SERVICE_CARD_DELAY=15s
-SHOP_WECHAT_SERVICE_CARD_BATCH_SIZE=50
-SHOP_WECHAT_SERVICE_CARD_CLAIM_TIMEOUT=2m
-SHOP_WECHAT_SERVICE_CARD_MAX_SET_ATTEMPTS=8
-SHOP_WECHAT_SERVICE_CARD_RETRY_BACKOFF=1m
-SHOP_WECHAT_SERVICE_CARD_MAX_RETRY_BACKOFF=30m
-SHOP_WECHAT_SERVICE_CARD_UNKNOWN_RECHECK=1m
-SHOP_WECHAT_SERVICE_CARD_MAX_UNKNOWN_RECHECK=6h
-SHOP_WECHAT_SERVICE_CARD_NOT_APPLIED_CONFIRMATIONS=2
-SHOP_WECHAT_SERVICE_CARD_CONNECT_TIMEOUT=3s
-SHOP_WECHAT_SERVICE_CARD_READ_TIMEOUT=15s
-SHOP_WECHAT_SERVICE_CARD_MAX_RESPONSE_SIZE=1MB
-SHOP_WECHAT_SERVICE_CARD_MAX_PAYLOAD_SIZE=64KB
-
-SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN=<3-to-32-character-alphanumeric-token>
-SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY=<43-character-alphanumeric-encoding-aes-key>
-SHOP_WECHAT_SERVICE_CARD_CALLBACK_MAX_SKEW=5m
-```
-
-The checked-in common configuration deliberately keeps
-`shop.wechat.service-card-2001.prefer-order-snapshot-images=false`: current product COS
-images require a Referer and are not safe service-card image inputs. The fallback is the
+Keep order-snapshot preference disabled in the Admin database configuration while current product
+COS images require a Referer and are not safe service-card image inputs. The fallback is the
 merchant-owned Admin static file `admin/public/wechat/service-card-placeholder.png`.
 Before enabling outbound calls, an unauthenticated, no-Referer request to the URL above
 must return `200`, `image/png`, and actual PNG bytes. Only explicitly allowlisted public
@@ -327,8 +301,8 @@ account-level setting, not a payment callback URL:
 URL: https://api.muybaby6.icu/wechat/mini/message
 Message encryption: Safe mode
 Data format: JSON
-Token: exactly SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN
-EncodingAESKey: exactly SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY
+Token: exactly the value last written in Admin (the API never reads it back)
+EncodingAESKey: exactly the value last written in Admin (the API never reads it back)
 ```
 
 The endpoint validates the GET handshake, `msg_signature`, timestamp window, AES-CBC
@@ -343,6 +317,17 @@ GET /admin/wechat-service-cards/status
 GET /admin/wechat-service-cards/deliveries
 PUT /admin/wechat-service-cards/runtime
 ```
+
+V101 Admin configuration endpoints are:
+
+```text
+GET /admin/wechat-service-cards/config
+PUT /admin/wechat-service-cards/config
+POST /admin/wechat-service-cards/config/legacy-env-import
+```
+
+They require the dedicated `wechat-service-card:config:read` or
+`wechat-service-card:config:write` permission; V101 grants these only to `R_SUPER`.
 
 Read operations require `wechat-service-card:read`; changing the runtime override requires
 `wechat-service-card:runtime:write`. The PUT body is
@@ -392,19 +377,23 @@ SHOP_DEFAULT_ADMIN_STATUS=ENABLED
 SHOP_DEFAULT_ADMIN_PASSWORD_HASH=<bcrypt-hash-for-a-unique-bootstrap-password>
 ```
 
-Log in once, rotate the password or create the real administrator, and remove both variables. Never enable the documented local password on a shared environment.
+Log in once, rotate the password or create the real administrator, then restore
+`SHOP_DEFAULT_ADMIN_STATUS=DISABLED`; retain only a controlled placeholder hash for future clean
+database bootstrap checks. Never enable the documented local password on a shared environment.
 
-OpenAPI is disabled by default and enabled in the local `dev` profile. Override it with `SHOP_OPENAPI_ENABLED` when needed.
+OpenAPI is disabled in the common configuration and enabled only by `application-dev.yaml`.
 
-Administrator login protection is enabled by default and uses Redis in non-test profiles. The pair/account/IP limits are controlled by `SHOP_ADMIN_LOGIN_PAIR_FAILURE_LIMIT`, `SHOP_ADMIN_LOGIN_ACCOUNT_FAILURE_LIMIT`, `SHOP_ADMIN_LOGIN_IP_FAILURE_LIMIT`, `SHOP_ADMIN_LOGIN_FAILURE_WINDOW`, and `SHOP_ADMIN_LOGIN_LOCK_DURATION`. A Redis outage intentionally rejects login with HTTP 503 instead of bypassing the protection.
+Administrator login protection is enabled by default and uses Redis in non-test profiles. Its
+pair/account/IP limits and time windows are tracked technical defaults in `application.yaml`. A
+Redis outage intentionally rejects login with HTTP 503 instead of bypassing the protection.
 
 Spring's container-level forwarded-header rewriting is disabled so the application has one IP trust model. Configure every real reverse proxy or load balancer network in `SHOP_TRUSTED_PROXY_CIDRS`; the edge proxy must replace or safely append `X-Forwarded-For`. Do not trust broad application or cluster networks merely for convenience.
 
-Every new order snapshots one immutable payment deadline at submission. The default is 15 minutes (`SHOP_PAY_EXPIRE_MINUTES` remains an explicit override), and payment initiation inherits that exact timestamp instead of extending the buyer's window. Expired `CREATED` orders without any payment row and expired `PREPARING`/`PAYING` payment orders are scanned every 60 seconds by default. Both paths use leased claims; the `CREATED` path refuses to release an anomalous order that already has payment evidence, while the payment path queries WeChat first and only closes a verified unpaid order. The operational controls are `SHOP_PAY_TIMEOUT_SCAN_ENABLED`, `SHOP_PAY_TIMEOUT_SCAN_DELAY`, `SHOP_PAY_TIMEOUT_SCAN_BATCH_SIZE`, and `SHOP_PAY_TIMEOUT_SCAN_CLAIM_TIMEOUT`.
+Every new order snapshots one immutable 15-minute payment deadline at submission, and payment initiation inherits that exact timestamp instead of extending the buyer's window. Expired `CREATED` orders without any payment row and expired `PREPARING`/`PAYING` payment orders are scanned every 60 seconds by default. Both paths use leased claims; the `CREATED` path refuses to release an anomalous order that already has payment evidence, while the payment path queries WeChat first and only closes a verified unpaid order. These technical defaults live in `application.yaml`.
 
 `V85` intentionally leaves historical `CREATED` deadlines null. Before any one-time assignment, run the read-only classification and invariant queries in [transaction-reconciliation.md](transaction-reconciliation.md); never bulk-close or blindly backfill historical orders.
 
-Refunds left in `PROCESSING` are reconciled with WeChat after one minute by default. Configure this with `SHOP_REFUND_RECOVERY_ENABLED`, `SHOP_REFUND_RECOVERY_DELAY`, `SHOP_REFUND_RECOVERY_BATCH_SIZE`, `SHOP_REFUND_RECOVERY_MIN_AGE`, and `SHOP_REFUND_RECOVERY_CLAIM_TIMEOUT`.
+Refunds left in `PROCESSING` are reconciled with WeChat after one minute by default. The fixed retry, batch, age, and claim limits live in `application.yaml` rather than the environment files.
 
 When a refund is prepared for a `PAID` order that has neither `shipped_at` nor an `order_shipment`, `V86` snapshots an immutable restock requirement. A verified successful refund then restores each confirmed SKU quantity, transitions the order's stock locks to `RESTOCKED`, writes one unique `REFUND_RESTOCK` log per SKU, and finalizes refund/after-sale/order state in one transaction. Shipped and completed refunds never increase sellable inventory. Historical successful refunds remain report-only; use [transaction-reconciliation.md](transaction-reconciliation.md) and never auto-restock them.
 
@@ -429,18 +418,28 @@ Use this rolling deployment order:
 
 ## Local WeChat Mini Program Credentials
 
-The `dev` profile imports the optional local properties file `backend/shop-server/.env.dev.local`. This file is ignored by Git and should hold real mini program credentials for local integration checks:
+New setups configure the Mini Program AppID/AppSecret through Admin **微信平台配置**. The
+`dev` profile still imports the optional ignored file `backend/shop-server/.env.dev.local` so an
+existing deployment can start long enough to import its legacy values:
 
 ```properties
 WECHAT_MINI_PROGRAM_APP_ID=your-app-id
 WECHAT_MINI_PROGRAM_APP_SECRET=your-app-secret
 ```
 
-The `dev` profile uses the real WeChat client. The `test` profile keeps the mock WeChat client for local smoke checks and automated tests.
+Call `GET /admin/wechat/platform-config` first. When it reports
+`legacyEnvironmentImportAvailable=true`, call
+`POST /admin/wechat/platform-config/legacy-env-import` with `{"version":0}`. Verify the next GET
+reports `source=DATABASE` and no longer offers the legacy import before removing the two variables.
+The `dev` profile uses the real WeChat client. The `test` profile keeps the mock client for tests.
 
 ## Local WeChat Pay Credentials
 
-Keep local WeChat Pay credentials in `backend/shop-server/.env.dev.local` or configure them through the admin payment configuration screen. Use placeholders in documentation and commits only:
+New local setups should configure WeChat Pay through the admin payment configuration screen
+and select the database runtime source. The tracked production template intentionally contains
+no `WECHAT_PAY_*` keys. Existing ignored `.env.dev.local` and `.env.prod.local` files may retain
+the following ENV block only until their credentials have been imported and historical ENV
+payments are covered by encrypted snapshots. Use placeholders in documentation and commits only:
 
 ```properties
 WECHAT_PAY_ENABLED=true
@@ -455,7 +454,6 @@ WECHAT_PAY_REFUND_NOTIFY_URL=https://<public-tunnel-domain>/wxpay/refund/notify
 WECHAT_PAY_VERIFY_MODE=PUBLIC_KEY
 WECHAT_PAY_PUBLIC_KEY_ID=<wechat-pay-public-key-id>
 WECHAT_PAY_PUBLIC_KEY_PATH=<absolute-path-to-local-wechat-pay-public-key.pem>
-SHOP_PAY_EXPIRE_MINUTES=15
 SHOP_SECRET_ENCRYPTION_LEGACY_KEY=<local-32-byte-application-master-key>
 SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false
 SHOP_SECRET_ENCRYPTION_WRITE_VERSION=1
@@ -463,24 +461,38 @@ SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID=
 SHOP_SECRET_ENCRYPTION_KEY_RING=
 SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED=false
 SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
-SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED=true
 ```
 
 The configured callback bases must be complete public HTTPS paths with no query, fragment, or user-info. With route issuance disabled, callbacks use `/wxpay/pay/notify` and `/wxpay/refund/notify`. With it enabled, the backend gives WeChat the corresponding `/r/{token}` path per payment/refund; do not pre-append a token in configuration. A real local WeChat Pay smoke check needs an HTTPS tunnel to the local backend.
 
-`WECHAT_PAY_CONFIG_SOURCE=AUTO` is the startup/default source: it uses complete environment credentials first and otherwise falls back to the enabled database payment config. Use `ENV` when the active profile's environment-file values should be mandatory, or `DB` when payment credentials are managed through `/admin/pay/configs`.
+`WECHAT_PAY_CONFIG_SOURCE=AUTO` remains only for migration compatibility: it uses complete
+environment credentials first and otherwise falls back to the enabled database payment config.
+New setups should persist `DB` through `/admin/pay/configs`; do not add ENV payment credentials
+to `.env.prod.example`.
 
 The `开发配置 -> 支付配置` menu has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from the active profile's environment file. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
 
-Current production operational decision (recorded 2026-08-10): new payment preparation
-uses runtime source `ENV`, and its payment/refund callback bases use
-`api.muybaby6.icu`. The existing DB configuration and `pay-dev.muybaby6.icu` route are
-retained only for legacy payment/refund callback compatibility during the provider retry
-window. `pay-dev` is not the release Mini Program API and must not be selected for new
-payments. Verify the source and immutable snapshot on the first new real payment after each
-release; do not infer it from the enabled DB candidate alone.
+The 2026-08-10 production snapshot used runtime source `ENV`; treat that as a legacy deployment
+fact, not the new template. Before deleting existing local ENV values, verify the live runtime
+source, enabled DB configuration, immutable payment snapshots, and callback retry window. New
+deployments use the database source and never copy callback domains or merchant credentials from
+the tracked example.
 
-For DB config, upload the required merchant private key and WeChat Pay public key, plus the optional merchant certificate, only through the payment-owned `/admin/pay/configs/secret-files` endpoint. Updating a config with a null merchant-certificate ID explicitly clears that optional reference; the old secret enters its 24-hour release window after its final active reference is removed. These secret assets never appear in the reusable asset library.
+For a new DB config, the Admin file picker reads the merchant private key and WeChat Pay public
+key PEM as text and submits `privateKeyPem`/`wechatPublicKeyPem` to `/admin/pay/configs`. The
+backend validates the RSA material and stores only context-bound encrypted ciphertext in
+`payment_config`; it does not create a storage asset or persist an upload path, and responses never
+return plaintext. The merchant certificate file is no longer stored because this PUBLIC_KEY flow
+uses its certificate serial number (`merchantSerialNo`) rather than certificate contents.
+
+For an existing ENV deployment, `POST /admin/pay/configs/import-environment` reads the complete
+legacy ENV configuration once and creates a disabled DB candidate without changing the active
+source. For an existing DB row that still points at old private-file IDs, call
+`POST /admin/pay/configs/{configId}/import-legacy-secret-files`; this validates and encrypts the PEM
+contents, clears the three old payment file IDs and releases their storage usage. Verify the list
+response reports `privateKeyConfigured=true`, `wechatPublicKeyConfigured=true` and
+`legacySecretFilesPendingImport=false`. Enable the chosen row if necessary, then explicitly save
+`{"source":"DB"}` through `PUT /admin/pay/configs/source`; neither import endpoint switches it.
 
 Never commit `.env.*.local`, merchant certificates, private keys, APIv3 keys, public-key files, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
 
@@ -499,20 +511,24 @@ from `storage_runtime_setting` and take effect without restarting the backend.
 There is no local provider and no storage environment-file fallback; uploads
 fail with `STORAGE_NOT_CONFIGURED` until the database configuration is complete.
 
-Only non-provider upload policy remains configurable through environment defaults.
+Only non-provider upload policy remains in the tracked application defaults.
 Retention, cleanup batch size, schedule, and upload-pending grace are stored in
 `data_cleanup_task_setting` and are managed from **配置管理 → 数据清理配置**:
 
-```properties
-SHOP_STORAGE_IMAGE_MAX_SIZE=5MB
-SHOP_STORAGE_IMAGE_MAX_WIDTH=8192
-SHOP_STORAGE_IMAGE_MAX_HEIGHT=8192
-SHOP_STORAGE_IMAGE_MAX_PIXELS=25000000
-SHOP_STORAGE_VIDEO_MAX_SIZE=50MB
-SHOP_STORAGE_PRIVATE_FILE_MAX_SIZE=10MB
-SHOP_DIRECT_UPLOAD_MAX_ACTIVE_SESSIONS=10
-SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_APP=60
-SHOP_DIRECT_UPLOAD_MAX_SESSIONS_PER_HOUR_ADMIN=600
+```yaml
+shop:
+  storage:
+    direct-upload:
+      max-active-sessions-per-principal: 10
+      max-sessions-per-hour-app: 60
+      max-sessions-per-hour-admin: 600
+    limits:
+      image-max-size: 5MB
+      image-max-width: 8192
+      image-max-height: 8192
+      image-max-pixels: 25000000
+      video-max-size: 50MB
+      private-file-max-size: 10MB
 ```
 
 JPEG, PNG, WebP, and GIF now use a signed COS POST upload session. The browser or

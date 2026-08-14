@@ -5,6 +5,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentials;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -22,29 +25,34 @@ public class RestWechatAccessTokenProvider implements WechatAccessTokenProvider 
     private static final Logger log = LoggerFactory.getLogger(RestWechatAccessTokenProvider.class);
     private static final String STABLE_TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/stable_token";
 
-    private final WechatMiniProgramProperties properties;
+    private final WechatPlatformCredentialResolver credentialResolver;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
+    @Autowired
     public RestWechatAccessTokenProvider(
-            WechatMiniProgramProperties properties,
+            WechatPlatformCredentialResolver credentialResolver,
             RestClient.Builder restClientBuilder,
             ObjectMapper objectMapper
     ) {
-        this.properties = properties;
+        this.credentialResolver = credentialResolver;
         this.restClient = restClientBuilder.build();
         this.objectMapper = objectMapper;
     }
 
     @Override
     public String getAccessToken() {
-        validateCredentials();
+        WechatPlatformCredentials credentials = requireCredentials();
         try {
             String body = restClient.post()
                     .uri(STABLE_TOKEN_URL)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(writeWechatRequestBody(
-                            new AccessTokenRequest("client_credential", properties.appId(), properties.appSecret(), false)
+                            new AccessTokenRequest(
+                                    "client_credential",
+                                    credentials.appId(),
+                                    credentials.appSecret(),
+                                    false)
                     ))
                     .retrieve()
                     .body(String.class);
@@ -83,11 +91,21 @@ public class RestWechatAccessTokenProvider implements WechatAccessTokenProvider 
         }
     }
 
-    private void validateCredentials() {
-        if (!StringUtils.hasText(properties.appId()) || !StringUtils.hasText(properties.appSecret())) {
-            log.warn("WeChat mini program credentials missing for stable token");
+    private WechatPlatformCredentials requireCredentials() {
+        try {
+            WechatPlatformCredentials credentials = credentialResolver.resolve();
+            if (credentials != null
+                    && StringUtils.hasText(credentials.appId())
+                    && StringUtils.hasText(credentials.appSecret())) {
+                return credentials;
+            }
+        } catch (RuntimeException ex) {
+            log.warn("WeChat mini program credentials unavailable for stable token (type={})",
+                    ex.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.WECHAT_PHONE_FAILED);
         }
+        log.warn("WeChat mini program credentials missing for stable token");
+        throw new BusinessException(ErrorCode.WECHAT_PHONE_FAILED);
     }
 
     private void logWechatError(Integer errcode, String errmsg) {
@@ -121,6 +139,13 @@ public class RestWechatAccessTokenProvider implements WechatAccessTokenProvider 
             String secret,
             @JsonProperty("force_refresh") boolean forceRefresh
     ) {
+        @Override
+        public String toString() {
+            return "AccessTokenRequest[grantType=" + grantType
+                    + ", appidConfigured=" + StringUtils.hasText(appid)
+                    + ", secret=<redacted>"
+                    + ", forceRefresh=" + forceRefresh + "]";
+        }
     }
 
     private record AccessTokenResponse(
@@ -131,6 +156,14 @@ public class RestWechatAccessTokenProvider implements WechatAccessTokenProvider 
     ) {
         private boolean hasError() {
             return errcode != null && errcode != 0;
+        }
+
+        @Override
+        public String toString() {
+            return "AccessTokenResponse[accessToken=<redacted>"
+                    + ", expiresIn=" + expiresIn
+                    + ", errcode=" + errcode
+                    + ", errmsg=" + errmsg + "]";
         }
     }
 

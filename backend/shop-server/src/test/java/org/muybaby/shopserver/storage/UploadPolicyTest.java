@@ -23,8 +23,7 @@ class UploadPolicyTest {
         uploadPolicy = new UploadPolicy(new StorageProperties(
                 new StorageProperties.Limits(
                         DataSize.ofMegabytes(5),
-                        DataSize.ofMegabytes(50),
-                        DataSize.ofMegabytes(1)
+                        DataSize.ofMegabytes(50)
                 )
         ));
         keyGenerator = new StorageObjectKeyGenerator();
@@ -51,10 +50,6 @@ class UploadPolicyTest {
         assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE.scope()).isEqualTo(StorageAssetScope.ATTACHMENT);
         assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE.mediaKind()).isEqualTo(StorageMediaKind.IMAGE);
         assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE.visibility()).isEqualTo(FileVisibility.PRIVATE);
-
-        assertThat(StorageUploadProfile.PAYMENT_SECRET.scope()).isEqualTo(StorageAssetScope.SECRET);
-        assertThat(StorageUploadProfile.PAYMENT_SECRET.mediaKind()).isEqualTo(StorageMediaKind.DOCUMENT);
-        assertThat(StorageUploadProfile.PAYMENT_SECRET.visibility()).isEqualTo(FileVisibility.PRIVATE);
     }
 
     @Test
@@ -104,7 +99,7 @@ class UploadPolicyTest {
     }
 
     @Test
-    void privateProfilesApplyTheirOwnMediaPolicies() {
+    void privateImageProfileAppliesItsOwnMediaPolicy() {
         UploadPolicy.UploadDecision evidence = uploadPolicy.requireAllowed(
                 StorageUploadProfile.AFTER_SALE_EVIDENCE,
                 "evidence.webp",
@@ -112,34 +107,9 @@ class UploadPolicyTest {
                 1024,
                 true
         );
-        UploadPolicy.UploadDecision secret = uploadPolicy.requireAllowed(
-                StorageUploadProfile.PAYMENT_SECRET,
-                "merchant.pem",
-                "application/x-pem-file",
-                512,
-                false
-        );
 
         assertThat(evidence.scope()).isEqualTo(StorageAssetScope.ATTACHMENT);
         assertThat(evidence.visibility()).isEqualTo(FileVisibility.PRIVATE);
-        assertThat(secret.scope()).isEqualTo(StorageAssetScope.SECRET);
-        assertThat(secret.mediaKind()).isEqualTo(StorageMediaKind.DOCUMENT);
-        assertThat(secret.visibility()).isEqualTo(FileVisibility.PRIVATE);
-    }
-
-    @Test
-    void paymentSecretAllowsExpectedDocumentFormatsOnly() {
-        assertThat(uploadPolicy.requireAllowed(StorageUploadProfile.PAYMENT_SECRET,
-                "merchant.pem", "application/x-pem-file", 512, false).extension()).isEqualTo("pem");
-        assertThat(uploadPolicy.requireAllowed(StorageUploadProfile.PAYMENT_SECRET,
-                "merchant.crt", "application/x-x509-ca-cert", 512, false).extension()).isEqualTo("crt");
-        assertThat(uploadPolicy.requireAllowed(StorageUploadProfile.PAYMENT_SECRET,
-                "merchant.cer", "application/pkix-cert", 512, false).extension()).isEqualTo("cer");
-        assertThat(uploadPolicy.requireAllowed(StorageUploadProfile.PAYMENT_SECRET,
-                "merchant.txt", "text/plain", 512, false).extension()).isEqualTo("txt");
-
-        assertValidationFailure(() -> uploadPolicy.requireAllowed(StorageUploadProfile.PAYMENT_SECRET,
-                "wrong-type.pem", "image/png", 512, false));
     }
 
     @Test
@@ -152,8 +122,6 @@ class UploadPolicyTest {
                 "broken.jpg", "image/jpeg", 512, false));
         assertValidationFailure(() -> uploadPolicy.requireAllowed(StorageUploadProfile.LIBRARY_VIDEO,
                 "product-demo.mp4", "video/webm", 1024, false));
-        assertValidationFailure(() -> uploadPolicy.requireAllowed(StorageUploadProfile.PAYMENT_SECRET,
-                "too-large.pem", "text/plain", DataSize.ofMegabytes(2).toBytes(), false));
     }
 
     @Test
@@ -216,16 +184,6 @@ class UploadPolicyTest {
         assertThat(libraryKey).startsWith("public/library/image/2026/07/13/").endsWith(".jpg");
         assertThat(attachmentKey).startsWith("private/attachment/image/2026/07/13/").endsWith(".png");
         assertThat(secretKey).startsWith("private/secret/document/2026/07/13/").endsWith(".pem");
-    }
-
-    @Test
-    void legacyTwoLimitConfigurationKeepsFiftyMegabyteVideoDefault() {
-        StorageProperties.Limits limits = new StorageProperties.Limits(
-                DataSize.ofMegabytes(5),
-                DataSize.ofMegabytes(1)
-        );
-
-        assertThat(limits.videoMaxSize()).isEqualTo(DataSize.ofMegabytes(50));
     }
 
     private void assertValidationFailure(Runnable executable) {

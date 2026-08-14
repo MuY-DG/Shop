@@ -12,9 +12,11 @@ Shop edge. DNS records are managed in DNSPod and point both production hosts to
 V94 uses the account-level Mini Program message-push URL
 `https://api.muybaby6.icu/wechat/mini/message` in **Safe mode + JSON**. This is
 not a WeChat Pay callback and must never point at `pay-dev`. The backend route
-is intentionally absent unless `SHOP_WECHAT_SERVICE_CARD_CALLBACK_ENABLED=true`;
-its Token and 43-character EncodingAESKey live only in the ignored production
-environment and must exactly match the WeChat console.
+is intentionally absent unless the effective service-card database configuration
+enables it. Since V101, its Token and 43-character EncodingAESKey are encrypted in
+the database and must exactly match the WeChat console. The ignored production
+environment remains only as a legacy fallback until the explicit import, production
+verification, and rollback window are complete.
 
 The V94 product fallback image is the merchant-owned static file
 `admin/public/wechat/service-card-placeholder.png`, published as

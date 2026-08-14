@@ -8,7 +8,6 @@ import org.muybaby.shopserver.logistics.DeliveryMode;
 import org.muybaby.shopserver.logistics.LogisticsType;
 import org.muybaby.shopserver.logistics.ShipmentSource;
 import org.muybaby.shopserver.logistics.ShipmentStatus;
-import org.muybaby.shopserver.logistics.ShippingProperties;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.AdminShipOrderRequest;
@@ -39,7 +38,7 @@ public class LocalShipmentService {
     private static final String SF_DELIVERY_ID = "SF";
 
     private final JdbcClient jdbcClient;
-    private final ShippingProperties shippingProperties;
+    private final WechatShippingRuntimeSettingService runtimeSettingService;
     private final WechatShippingProvider shippingProvider;
     private final ShipmentContactMasker contactMasker;
     private final AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy;
@@ -48,7 +47,7 @@ public class LocalShipmentService {
 
     public LocalShipmentService(
             JdbcClient jdbcClient,
-            ShippingProperties shippingProperties,
+            WechatShippingRuntimeSettingService runtimeSettingService,
             WechatShippingProvider shippingProvider,
             ShipmentContactMasker contactMasker,
             AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
@@ -56,7 +55,7 @@ public class LocalShipmentService {
             OrderStatusLogService orderStatusLogService
     ) {
         this.jdbcClient = jdbcClient;
-        this.shippingProperties = shippingProperties;
+        this.runtimeSettingService = runtimeSettingService;
         this.shippingProvider = shippingProvider;
         this.contactMasker = contactMasker;
         this.afterSaleFulfillmentPolicy = afterSaleFulfillmentPolicy;
@@ -70,15 +69,17 @@ public class LocalShipmentService {
             AdminShipOrderRequest request
     ) {
         Long adminUserId = requireAdmin(principal);
-        WechatProviderMode initialProviderMode = initialProviderMode();
+        boolean uploadEnabled = runtimeSettingService.uploadEnabledFailClosed();
+        WechatProviderMode initialProviderMode = initialProviderMode(uploadEnabled);
         return transactionTemplate.execute(status -> createInTransaction(
-                orderId, request, initialProviderMode, adminUserId
+                orderId, request, uploadEnabled, initialProviderMode, adminUserId
         ));
     }
 
     private OrderShipmentResponse createInTransaction(
             long orderId,
             AdminShipOrderRequest request,
+            boolean uploadEnabled,
             WechatProviderMode initialProviderMode,
             Long adminUserId
     ) {
@@ -121,8 +122,8 @@ public class LocalShipmentService {
                     .param("shipmentSource", ShipmentSource.MANUAL.name())
                     .param("status", ShipmentStatus.SHIPPED.name())
                     .param("providerMode", initialProviderMode.name())
-                    .param("uploadStatus", initialUploadStatus().name())
-                    .param("nextActionAt", initialNextActionAt(now))
+                    .param("uploadStatus", initialUploadStatus(uploadEnabled).name())
+                    .param("nextActionAt", initialNextActionAt(uploadEnabled, now))
                     .param("shippedAt", now)
                     .param("createdAt", now)
                     .param("updatedAt", now)
@@ -158,15 +159,17 @@ public class LocalShipmentService {
             long waybillRecordId
     ) {
         Long adminUserId = requireAdmin(principal);
-        WechatProviderMode initialProviderMode = initialProviderMode();
+        boolean uploadEnabled = runtimeSettingService.uploadEnabledFailClosed();
+        WechatProviderMode initialProviderMode = initialProviderMode(uploadEnabled);
         return transactionTemplate.execute(status -> confirmElectronicWaybillInTransaction(
-                orderId, waybillRecordId, initialProviderMode, adminUserId
+                orderId, waybillRecordId, uploadEnabled, initialProviderMode, adminUserId
         ));
     }
 
     private OrderShipmentResponse confirmElectronicWaybillInTransaction(
             long orderId,
             long waybillRecordId,
+            boolean uploadEnabled,
             WechatProviderMode initialProviderMode,
             long adminUserId
     ) {
@@ -229,8 +232,8 @@ public class LocalShipmentService {
                     .param("electronicWaybillId", waybillRecordId)
                     .param("status", ShipmentStatus.SHIPPED.name())
                     .param("providerMode", initialProviderMode.name())
-                    .param("uploadStatus", initialUploadStatus().name())
-                    .param("nextActionAt", initialNextActionAt(now))
+                    .param("uploadStatus", initialUploadStatus(uploadEnabled).name())
+                    .param("nextActionAt", initialNextActionAt(uploadEnabled, now))
                     .param("shippedAt", now)
                     .param("createdAt", now)
                     .param("updatedAt", now)
@@ -499,8 +502,8 @@ public class LocalShipmentService {
                 .orElseThrow(this::validationFailure);
     }
 
-    private WechatProviderMode initialProviderMode() {
-        if (!shippingProperties.isUploadEnabled()) {
+    private WechatProviderMode initialProviderMode(boolean uploadEnabled) {
+        if (!uploadEnabled) {
             return WechatProviderMode.DISABLED;
         }
         try {
@@ -511,14 +514,14 @@ public class LocalShipmentService {
         }
     }
 
-    private WechatShippingUploadStatus initialUploadStatus() {
-        return shippingProperties.isUploadEnabled()
+    private WechatShippingUploadStatus initialUploadStatus(boolean uploadEnabled) {
+        return uploadEnabled
                 ? WechatShippingUploadStatus.PENDING
                 : WechatShippingUploadStatus.SKIPPED;
     }
 
-    private LocalDateTime initialNextActionAt(LocalDateTime now) {
-        return shippingProperties.isUploadEnabled() ? now : null;
+    private LocalDateTime initialNextActionAt(boolean uploadEnabled, LocalDateTime now) {
+        return uploadEnabled ? now : null;
     }
 
     private OrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {

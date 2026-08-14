@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardProperties;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,14 +20,10 @@ import java.time.Instant;
 
 @RestController
 @RequestMapping("/wechat/mini/message")
-@ConditionalOnProperty(
-        prefix = "shop.wechat.service-card-2001.callback",
-        name = "enabled",
-        havingValue = "true"
-)
 public class WechatServiceCardCallbackController {
 
     private final WechatServiceCardProperties properties;
+    private final WechatServiceCardConfigResolver configResolver;
     private final WechatServiceCardCallbackCrypto crypto;
     private final WechatServiceCardCallbackService callbackService;
     private final ObjectMapper objectMapper;
@@ -35,12 +31,14 @@ public class WechatServiceCardCallbackController {
 
     public WechatServiceCardCallbackController(
             WechatServiceCardProperties properties,
+            WechatServiceCardConfigResolver configResolver,
             WechatServiceCardCallbackCrypto crypto,
             WechatServiceCardCallbackService callbackService,
             ObjectMapper objectMapper,
             Clock clock
     ) {
         this.properties = properties;
+        this.configResolver = configResolver;
         this.crypto = crypto;
         this.callbackService = callbackService;
         this.objectMapper = objectMapper;
@@ -89,7 +87,9 @@ public class WechatServiceCardCallbackController {
     }
 
     private boolean readyAndFresh(String timestamp) {
-        if (!properties.callback().secureReady()) {
+        if (configResolver.resolveFailClosed()
+                .filter(config -> config.callbackSecureReady())
+                .isEmpty()) {
             return false;
         }
         try {

@@ -94,7 +94,8 @@ SHOP_DEPLOY_TRANSFER_ATTEMPTS=5 \
 backend/shop-server/scripts/deploy-prod.sh txcloud
 ```
 
-部署脚本会包含工作区内尚未提交的源码。发布前必须先检查 `git status --short`。
+部署脚本会拒绝包含未提交改动的工作区；发布前必须完成验证和 Git 提交，并确认
+`git status --short` 没有输出，确保运行版本可以由 `/actuator/info` 中的 Git SHA 追溯。
 
 ## 生产状态与日志
 
@@ -196,11 +197,11 @@ ssh txcloud \
 | `application.yaml` | 所有环境公共配置 | 是 |
 | `application-dev.yaml` | 本地开发配置 | 是 |
 | `application-prod.yaml` | 生产 Profile 规则 | 是 |
-| `.env.dev.local` | 本机开发变量 | 否 |
-| `.env.prod.local` | 生产应用变量与密钥 | 否 |
-| `.env.infrastructure.local` | MySQL、Redis 密码 | 否 |
+| `.env.dev.local` | 本机数据库/加密材料；旧微信变量仅作迁移兼容 | 否 |
+| `.env.prod.local` | 新部署为最小启动配置；旧微信值仅在两阶段迁移期间暂留 | 否 |
+| `.env.infrastructure.local` | 仅 MySQL、Redis 基础设施密码 | 否 |
 | `.1panel.local` | 1Panel 登录信息 | 否 |
-| `.env.*.example` | 无真实秘密的配置模板 | 是 |
+| `.env.*.example` | 无真实秘密的最小启动模板；不含微信/支付业务凭据 | 是 |
 
 修改普通生产配置后重新执行部署命令。已经初始化的 MySQL 密码不能只靠修改环境文件
 完成轮换，必须同时修改数据库内部账号密码。

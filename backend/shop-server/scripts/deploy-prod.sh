@@ -60,6 +60,7 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
     stage_dir="$(mktemp -d /tmp/shop-deploy.XXXXXX)"
     tar -xzf - -C "$stage_dir"
     sudo install -d -o 10001 -g 10001 -m 750 /opt/shop/shop-server
+    # 仅兼容尚未导入数据库的旧支付 PEM；完成迁移后删除 secrets 目录处理。
     sudo install -d -o 10001 -g 10001 -m 750 /opt/shop/shop-server/secrets
     sudo install -d -o root -g root -m 700 /opt/shop/shop-server/backups
     sudo install -o root -g root -m 644 "$stage_dir/compose.prod.yaml" /opt/shop/shop-server/compose.prod.yaml

@@ -3,7 +3,6 @@ package org.muybaby.shopserver.logistics.service;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.logistics.ShippingProperties;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingCapabilityState;
 import org.muybaby.shopserver.logistics.dto.WechatDeliveryCompanyResponse;
@@ -39,18 +38,18 @@ public class WechatShippingCatalogService {
     private static final Logger log = LoggerFactory.getLogger(WechatShippingCatalogService.class);
 
     private final JdbcClient jdbcClient;
-    private final ShippingProperties shippingProperties;
+    private final WechatShippingRuntimeSettingService runtimeSettingService;
     private final WechatShippingProvider shippingProvider;
     private final TransactionTemplate transactionTemplate;
 
     public WechatShippingCatalogService(
             JdbcClient jdbcClient,
-            ShippingProperties shippingProperties,
+            WechatShippingRuntimeSettingService runtimeSettingService,
             WechatShippingProvider shippingProvider,
             PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
-        this.shippingProperties = shippingProperties;
+        this.runtimeSettingService = runtimeSettingService;
         this.shippingProvider = shippingProvider;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -58,7 +57,7 @@ public class WechatShippingCatalogService {
     public WechatShippingCapabilityResponse capability(AuthenticatedPrincipal principal) {
         requireAdmin(principal);
         OffsetDateTime checkedAt = OffsetDateTime.now(ZoneOffset.UTC);
-        if (!shippingProperties.isUploadEnabled()) {
+        if (!runtimeSettingService.uploadEnabledFailClosed()) {
             return new WechatShippingCapabilityResponse(
                     false,
                     WechatProviderMode.DISABLED,

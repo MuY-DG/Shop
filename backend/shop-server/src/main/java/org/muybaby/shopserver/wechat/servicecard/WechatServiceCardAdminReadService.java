@@ -3,7 +3,9 @@ package org.muybaby.shopserver.wechat.servicecard;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfig;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardDeliveryQuery;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardDeliveryResponse;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardStatusResponse;
@@ -22,21 +24,21 @@ import java.util.Set;
 public class WechatServiceCardAdminReadService {
 
     private final JdbcClient jdbcClient;
-    private final WechatServiceCardProperties properties;
-    private final WechatMiniProgramProperties miniProgramProperties;
+    private final WechatServiceCardConfigResolver configResolver;
+    private final WechatPlatformCredentialResolver credentialResolver;
     private final WechatServiceCardRuntimeSettingService runtimeSettingService;
     private final Clock clock;
 
     public WechatServiceCardAdminReadService(
             JdbcClient jdbcClient,
-            WechatServiceCardProperties properties,
-            WechatMiniProgramProperties miniProgramProperties,
+            WechatServiceCardConfigResolver configResolver,
+            WechatPlatformCredentialResolver credentialResolver,
             WechatServiceCardRuntimeSettingService runtimeSettingService,
             Clock clock
     ) {
         this.jdbcClient = jdbcClient;
-        this.properties = properties;
-        this.miniProgramProperties = miniProgramProperties;
+        this.configResolver = configResolver;
+        this.credentialResolver = credentialResolver;
         this.runtimeSettingService = runtimeSettingService;
         this.clock = clock;
     }
@@ -44,10 +46,10 @@ public class WechatServiceCardAdminReadService {
     public AdminWechatServiceCardStatusResponse status() {
         WechatServiceCardRuntimeSettingService.RuntimeSetting runtime =
                 runtimeSettingService.current();
-        boolean imageReady = properties.imageConfigurationReady();
-        boolean templateConfigured = properties.templateConfigurationReady();
-        boolean credentialsReady = StringUtils.hasText(miniProgramProperties.appId())
-                && StringUtils.hasText(miniProgramProperties.appSecret());
+        WechatServiceCardConfig config = configResolver.resolveFailClosed().orElse(null);
+        boolean imageReady = config != null && config.imageConfigurationReady();
+        boolean templateConfigured = config != null && config.templateConfigurationReady();
+        boolean credentialsReady = credentialResolver.readyFailClosed();
         boolean callbackReady = runtimeSettingService.callbackReady();
         boolean captureReady = runtime.captureEnabled() && imageReady;
         boolean workerReady = captureReady && runtime.workerEnabled()
@@ -58,7 +60,7 @@ public class WechatServiceCardAdminReadService {
                 runtime.version(), runtime.defaultCaptureEnabled(), runtime.defaultWorkerEnabled(),
                 runtime.reason(), runtime.updatedBy(), runtime.updatedAt(), captureReady,
                 templateConfigured, imageReady, credentialsReady, workerReady,
-                properties.callback().enabled(),
+                config != null && config.callbackEnabled(),
                 callbackReady,
                 cardCount(true),
                 deliveryCount("PENDING"), deliveryCount("SENDING"),

@@ -22,3 +22,25 @@ export function updateWechatServiceCardRuntime(data: Api.WechatServiceCard.Runti
     showSuccessMessage: true
   })
 }
+
+export function fetchWechatServiceCardConfig() {
+  return request.get<Api.WechatServiceCard.Config>({
+    url: `${baseUrl}/config`
+  })
+}
+
+export function updateWechatServiceCardConfig(data: Api.WechatServiceCard.ConfigUpdate) {
+  return request.put<Api.WechatServiceCard.Config>({
+    url: `${baseUrl}/config`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
+export function importWechatServiceCardLegacyEnvironment(version: number) {
+  return request.post<Api.WechatServiceCard.Config>({
+    url: `${baseUrl}/config/legacy-env-import`,
+    data: { version },
+    showSuccessMessage: true
+  })
+}

@@ -145,5 +145,36 @@ class WechatServiceCardMySqlMigrationTest {
                         """)
                 .query(String.class)
                 .single()).isEqualTo("SKIPPED");
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.tables
+                        where table_schema = database()
+                          and table_name in (
+                            'wechat_service_card_config',
+                            'wechat_service_card_config_audit'
+                          )
+                        """).query(Integer.class).single()).isEqualTo(2);
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from admin_permission
+                        where id in (23003, 23004)
+                          and auth_mark in (
+                            'wechat-service-card:config:read',
+                            'wechat-service-card:config:write'
+                          )
+                        """).query(Integer.class).single()).isEqualTo(2);
+        assertThatThrownBy(() -> jdbcClient.sql("""
+                        insert into wechat_service_card_config (
+                            id, account_template_record_id, fallback_product_image,
+                            allowed_image_hosts, prefer_order_snapshot_images,
+                            callback_enabled, callback_token_secret_revision,
+                            callback_aes_key_secret_revision, revision
+                        ) values (
+                            1, 'template', 'https://static.example.com/card.png',
+                            'static.example.com', false, true, 0, 0, 1
+                        )
+                        """).update())
+                .isInstanceOf(DataAccessException.class);
     }
 }

@@ -4,7 +4,6 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.logistics.LogisticsType;
-import org.muybaby.shopserver.logistics.ShippingProperties;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingCapabilityState;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
@@ -43,25 +42,25 @@ public class WechatShippingUploadCoordinator {
     private static final String UPLOAD_RESULT_UNKNOWN = "UPLOAD_RESULT_UNKNOWN";
     private static final String UPLOAD_RESULT_UNKNOWN_MESSAGE = "WeChat shipping upload outcome is unknown";
 
-    private final ShippingProperties shippingProperties;
+    private final WechatShippingRuntimeSettingService runtimeSettingService;
     private final WechatShippingProvider shippingProvider;
     private final WechatShippingUploadStateStore stateStore;
     private final WechatShippingErrorSanitizer errorSanitizer;
 
     public WechatShippingUploadCoordinator(
-            ShippingProperties shippingProperties,
+            WechatShippingRuntimeSettingService runtimeSettingService,
             WechatShippingProvider shippingProvider,
             WechatShippingUploadStateStore stateStore,
             WechatShippingErrorSanitizer errorSanitizer
     ) {
-        this.shippingProperties = shippingProperties;
+        this.runtimeSettingService = runtimeSettingService;
         this.shippingProvider = shippingProvider;
         this.stateStore = stateStore;
         this.errorSanitizer = errorSanitizer;
     }
 
     public void attemptInitial(long shipmentId) {
-        if (!shippingProperties.isUploadEnabled()) {
+        if (!runtimeSettingService.uploadEnabledFailClosed()) {
             return;
         }
         stateStore.claimInitial(shipmentId, now()).ifPresent(this::executeClaimed);
@@ -72,13 +71,14 @@ public class WechatShippingUploadCoordinator {
         LocalDateTime now = now();
         stateStore.reconcileStaleByOrder(orderId, now);
         WechatShippingUploadStateStore.UploadClaim claim = stateStore.claimOperatorRetry(
-                orderId, shippingProperties.isUploadEnabled(), now
+                orderId, runtimeSettingService.uploadEnabledFailClosed(), now
         );
         executeClaimed(claim);
     }
 
     public int deliverDue(int batchSize) {
-        if (!shippingProperties.isUploadEnabled() || safeProviderMode() != WechatProviderMode.REAL) {
+        if (!runtimeSettingService.deliveryEnabledFailClosed()
+                || safeProviderMode() != WechatProviderMode.REAL) {
             return 0;
         }
         LocalDateTime scanTime = now();
@@ -95,7 +95,8 @@ public class WechatShippingUploadCoordinator {
     }
 
     public int reconcileDueUnknown(int batchSize) {
-        if (!shippingProperties.isUploadEnabled() || safeProviderMode() != WechatProviderMode.REAL) {
+        if (!runtimeSettingService.deliveryEnabledFailClosed()
+                || safeProviderMode() != WechatProviderMode.REAL) {
             return 0;
         }
         LocalDateTime scanTime = now();
@@ -113,7 +114,8 @@ public class WechatShippingUploadCoordinator {
 
     public void reconcile(AuthenticatedPrincipal principal, long orderId) {
         requireAdmin(principal);
-        if (!shippingProperties.isUploadEnabled() || safeProviderMode() != WechatProviderMode.REAL) {
+        if (!runtimeSettingService.uploadEnabledFailClosed()
+                || safeProviderMode() != WechatProviderMode.REAL) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         WechatShippingUploadStateStore.UnknownClaim claim = stateStore

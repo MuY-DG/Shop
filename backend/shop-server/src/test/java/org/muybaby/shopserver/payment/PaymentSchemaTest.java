@@ -42,12 +42,13 @@ class PaymentSchemaTest {
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                              private_key_file_id, merchant_certificate_file_id, verify_mode,
                              wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                              enabled, status)
                         values
                             (19103, 'Schema Config', 'wx-schema-app', '1900000001', 'schema-serial',
-                             'ciphertext-placeholder', null, null, 'PUBLIC_KEY',
+                             'ciphertext-placeholder', '', '', null, null, 'PUBLIC_KEY',
                              'PUB_KEY_ID_SCHEMA', null, 'https://example.test/wxpay/pay/notify',
                              'https://example.test/wxpay/refund/notify', true, 'ACTIVE')
                         """)

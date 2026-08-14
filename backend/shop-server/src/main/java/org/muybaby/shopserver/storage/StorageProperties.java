@@ -11,7 +11,6 @@ public record StorageProperties(
     public record Limits(
             DataSize imageMaxSize,
             DataSize videoMaxSize,
-            DataSize privateFileMaxSize,
             Integer imageMaxWidth,
             Integer imageMaxHeight,
             Long imageMaxPixels
@@ -30,12 +29,8 @@ public record StorageProperties(
             }
         }
 
-        public Limits(DataSize imageMaxSize, DataSize videoMaxSize, DataSize privateFileMaxSize) {
-            this(imageMaxSize, videoMaxSize, privateFileMaxSize, null, null, null);
-        }
-
-        public Limits(DataSize imageMaxSize, DataSize privateFileMaxSize) {
-            this(imageMaxSize, DataSize.ofMegabytes(50), privateFileMaxSize, null, null, null);
+        public Limits(DataSize imageMaxSize, DataSize videoMaxSize) {
+            this(imageMaxSize, videoMaxSize, null, null, null);
         }
     }
 }

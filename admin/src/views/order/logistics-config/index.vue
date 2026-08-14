@@ -1,5 +1,7 @@
 <template>
   <div class="wechat-express-config-page">
+    <WechatShippingRuntimeCard />
+
     <ElAlert
       title="电子面单与手动发货是两条独立链路"
       description="生成电子面单不会立即发货；只有订单页明确确认发货后，订单才会进入待收货。配置中不会保存快递账号密码。"
@@ -376,6 +378,7 @@
     WECHAT_EXPRESS_MODE_OPTIONS,
     wechatExpressConfigSnapshot
   } from './logistics-config-state'
+  import WechatShippingRuntimeCard from './wechat-shipping-runtime-card.vue'
 
   defineOptions({ name: 'OrderLogisticsConfig' })
 

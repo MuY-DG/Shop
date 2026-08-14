@@ -3,6 +3,7 @@ package org.muybaby.shopserver.logistics;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.logistics.service.WechatReceiptReconciliationScheduler;
 import org.muybaby.shopserver.logistics.service.WechatReceiptReconciliationService;
+import org.muybaby.shopserver.logistics.service.WechatShippingRuntimeSettingService;
 import org.muybaby.shopserver.payment.config.PaymentTimeoutSchedulingConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -15,7 +16,9 @@ import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class WechatReceiptReconciliationSchedulerTest {
 
@@ -23,12 +26,17 @@ class WechatReceiptReconciliationSchedulerTest {
             .withUserConfiguration(SchedulerTestConfiguration.class);
 
     @Test
-    void disabledSwitchDoesNotRegisterScheduler() {
+    void schedulerStaysRegisteredWhenLegacyDefaultIsDisabled() {
         contextRunner
                 .withPropertyValues("shop.wechat.shipping.receipt-reconciliation.enabled=false")
                 .run(context -> {
-                    assertThat(context).doesNotHaveBean(WechatReceiptReconciliationScheduler.class);
-                    assertThat(context.getBean(ScheduledTaskHolder.class).getScheduledTasks()).isEmpty();
+                    assertThat(context).hasSingleBean(WechatReceiptReconciliationScheduler.class);
+                    assertThat(context.getBean(ScheduledTaskHolder.class).getScheduledTasks()).hasSize(1);
+
+                    context.getBean(WechatReceiptReconciliationScheduler.class).runOnce();
+
+                    verify(context.getBean(WechatReceiptReconciliationService.class), never())
+                            .reconcilePendingReceipts(7);
                 });
     }
 
@@ -56,6 +64,8 @@ class WechatReceiptReconciliationSchedulerTest {
                     assertThat(properties.claimTimeout()).isEqualTo(Duration.ofMinutes(3));
                     assertThat(context.getBean(ScheduledTaskHolder.class).getScheduledTasks()).hasSize(1);
 
+                    when(context.getBean(WechatShippingRuntimeSettingService.class)
+                            .receiptReconciliationEnabledFailClosed()).thenReturn(true);
                     context.getBean(WechatReceiptReconciliationScheduler.class).runOnce();
 
                     verify(context.getBean(WechatReceiptReconciliationService.class))
@@ -74,6 +84,11 @@ class WechatReceiptReconciliationSchedulerTest {
         @Bean
         WechatReceiptReconciliationService reconciliationService() {
             return mock(WechatReceiptReconciliationService.class);
+        }
+
+        @Bean
+        WechatShippingRuntimeSettingService runtimeSettingService() {
+            return mock(WechatShippingRuntimeSettingService.class);
         }
     }
 }

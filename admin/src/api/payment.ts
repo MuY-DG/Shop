@@ -1,18 +1,7 @@
 import request from '@/utils/http'
 
-export function uploadPaymentSecretFile(file: File) {
-  const formData = new FormData()
-  formData.append('file', file)
-
-  return request.post<Api.Storage.Asset>({
-    url: '/admin/pay/configs/secret-files',
-    data: formData,
-    showSuccessMessage: true
-  })
-}
-
 export function fetchEffectivePaymentConfig() {
-  return request.get<Api.Payment.EffectiveConfig>({
+  return request.get<Api.Payment.EffectiveConfigState>({
     url: '/admin/pay/configs/effective'
   })
 }
@@ -52,6 +41,20 @@ export function createPaymentConfig(data: Api.Payment.ConfigForm, showSuccessMes
   return request.post<Api.Payment.Config>({
     url: '/admin/pay/configs',
     data,
+    showSuccessMessage
+  })
+}
+
+export function importEnvironmentPaymentConfig(showSuccessMessage = true) {
+  return request.post<Api.Payment.Config>({
+    url: '/admin/pay/configs/import-environment',
+    showSuccessMessage
+  })
+}
+
+export function importLegacyPaymentSecretFiles(configId: number, showSuccessMessage = true) {
+  return request.post<Api.Payment.Config>({
+    url: `/admin/pay/configs/${configId}/import-legacy-secret-files`,
     showSuccessMessage
   })
 }

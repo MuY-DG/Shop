@@ -15,7 +15,7 @@ import org.muybaby.shopserver.logistics.provider.WechatShippingItem;
 import org.muybaby.shopserver.logistics.provider.WechatShippingOrderQueryStatus;
 import org.muybaby.shopserver.logistics.provider.WechatShippingUploadRequest;
 import org.muybaby.shopserver.wechat.WechatAccessTokenProvider;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentials;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpMethod;
@@ -611,7 +611,9 @@ class WechatShippingProviderTest {
                 restClientBuilder.build(),
                 objectMapper,
                 accessTokenProvider,
-                new WechatMiniProgramProperties(APP_ID, "configured-secret", false),
+                () -> new WechatPlatformCredentials(
+                        APP_ID, "configured-secret",
+                        WechatPlatformCredentials.Source.DATABASE),
                 new org.muybaby.shopserver.logistics.provider.WechatShippingHttpProperties(
                         java.time.Duration.ofSeconds(3),
                         java.time.Duration.ofSeconds(15),

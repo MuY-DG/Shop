@@ -167,12 +167,13 @@ class PaymentConfigResolverTest {
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                              private_key_file_id, merchant_certificate_file_id, verify_mode,
                              wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                              enabled, status)
                         values
                             (22003, 'DB Config', 'wx_db_app', 'mch_db', 'serial_db',
-                             :ciphertext, :privateKeyFileId, null, 'PUBLIC_KEY',
+                             :ciphertext, '', '', :privateKeyFileId, null, 'PUBLIC_KEY',
                              'pub_key_db', :publicKeyFileId, 'https://db.test/wxpay/pay/notify',
                              'https://db.test/wxpay/refund/notify', true, 'ACTIVE')
                         """)
@@ -223,12 +224,13 @@ class PaymentConfigResolverTest {
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                              private_key_file_id, merchant_certificate_file_id, verify_mode,
                              wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                              enabled, status)
                         values
                             (22103, 'DB Certificate Config', 'wx_db_app', 'mch_db', 'serial_db',
-                             :ciphertext, :privateKeyFileId, :merchantCertificateFileId, 'CERTIFICATE',
+                             :ciphertext, '', '', :privateKeyFileId, :merchantCertificateFileId, 'CERTIFICATE',
                              '', null, 'https://db.test/wxpay/pay/notify',
                              'https://db.test/wxpay/refund/notify', true, 'ACTIVE')
                         """)
@@ -553,11 +555,12 @@ class PaymentConfigResolverTest {
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
+                             private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
                              private_key_file_id, merchant_certificate_file_id, verify_mode,
                              wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
                              enabled, status)
                         values
-                            (:id, :configName, :appId, :mchId, :merchantSerialNo, :ciphertext,
+                            (:id, :configName, :appId, :mchId, :merchantSerialNo, :ciphertext, '', '',
                              :privateKeyFileId, null, 'PUBLIC_KEY', :publicKeyId, :publicKeyFileId,
                              :notifyUrl, :refundNotifyUrl, :enabled, 'ACTIVE')
                         """)

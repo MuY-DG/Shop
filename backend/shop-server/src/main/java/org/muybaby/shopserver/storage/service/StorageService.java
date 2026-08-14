@@ -113,7 +113,6 @@ public class StorageService {
     private static final Duration CUSTOMER_SERVICE_IMAGE_STAGING_TTL = Duration.ofHours(2);
     private static final Duration PRODUCT_REVIEW_IMAGE_STAGING_TTL = Duration.ofHours(24);
     private static final long PRODUCT_REVIEW_IMAGE_MAX_SIZE_BYTES = 5L * 1024 * 1024;
-    private static final Duration PAYMENT_SECRET_STAGING_TTL = Duration.ofHours(2);
     private static final long IMAGE_VALIDATION_MAX_DECODED_PIXELS = 1_000_000L;
     private static final int IMAGE_VALIDATION_MAX_FRAMES = 16;
     private static final long IMAGE_VALIDATION_MAX_TOTAL_SOURCE_PIXELS = 100_000_000L;
@@ -371,25 +370,6 @@ public class StorageService {
                     databaseNow().plus(CUSTOMER_SERVICE_IMAGE_STAGING_TTL),
                     file,
                     UploadedByType.APP
-            );
-        });
-    }
-
-    public StorageAssetResponse uploadPaymentSecret(
-            AuthenticatedPrincipal principal,
-            MultipartFile file
-    ) {
-        return outsideTransaction(() -> {
-            requirePrincipal(principal, TokenKind.ADMIN);
-            return upload(
-                    principal,
-                    StorageUploadProfile.PAYMENT_SECRET,
-                    null,
-                    null,
-                    null,
-                    databaseNow().plus(PAYMENT_SECRET_STAGING_TTL),
-                    file,
-                    UploadedByType.ADMIN
             );
         });
     }

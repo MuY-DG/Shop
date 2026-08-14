@@ -1,7 +1,8 @@
 package org.muybaby.shopserver.wechat.servicecard.callback;
 
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
-import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardProperties;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfig;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -21,15 +22,15 @@ import java.util.List;
 @Component
 public class WechatServiceCardCallbackCrypto {
 
-    private final WechatServiceCardProperties properties;
-    private final WechatMiniProgramProperties miniProgramProperties;
+    private final WechatServiceCardConfigResolver configResolver;
+    private final WechatPlatformCredentialResolver credentialResolver;
 
     public WechatServiceCardCallbackCrypto(
-            WechatServiceCardProperties properties,
-            WechatMiniProgramProperties miniProgramProperties
+            WechatServiceCardConfigResolver configResolver,
+            WechatPlatformCredentialResolver credentialResolver
     ) {
-        this.properties = properties;
-        this.miniProgramProperties = miniProgramProperties;
+        this.configResolver = configResolver;
+        this.credentialResolver = credentialResolver;
     }
 
     public boolean verifyHandshake(
@@ -37,9 +38,9 @@ public class WechatServiceCardCallbackCrypto {
             String timestamp,
             String nonce
     ) {
-        return validSignature(signature, List.of(
-                properties.callback().token(), timestamp, nonce
-        ));
+        WechatServiceCardConfig config = configResolver.resolveFailClosed().orElse(null);
+        return config != null && config.callbackSecureReady()
+                && validSignature(signature, List.of(config.callbackToken(), timestamp, nonce));
     }
 
     public boolean verifyEncrypted(
@@ -48,20 +49,30 @@ public class WechatServiceCardCallbackCrypto {
             String nonce,
             String encrypted
     ) {
-        return validSignature(signature, List.of(
-                properties.callback().token(), timestamp, nonce, encrypted
-        ));
+        WechatServiceCardConfig config = configResolver.resolveFailClosed().orElse(null);
+        return config != null && config.callbackSecureReady()
+                && validSignature(signature, List.of(
+                        config.callbackToken(), timestamp, nonce, encrypted));
     }
 
     public String decrypt(String encrypted) {
-        if (!properties.callback().secureReady()
-                || !StringUtils.hasText(miniProgramProperties.appId())
+        WechatServiceCardConfig config = configResolver.resolveFailClosed().orElseThrow(
+                () -> new IllegalArgumentException(
+                        "WeChat callback encryption is not configured"));
+        String expectedAppId;
+        try {
+            expectedAppId = credentialResolver.resolve().appId();
+        } catch (RuntimeException ex) {
+            throw new IllegalArgumentException("WeChat platform config is unavailable", ex);
+        }
+        if (!config.callbackSecureReady()
+                || !StringUtils.hasText(expectedAppId)
                 || !StringUtils.hasText(encrypted)) {
             throw new IllegalArgumentException("WeChat callback encryption is not configured");
         }
         try {
             byte[] key = Base64.getDecoder().decode(
-                    properties.callback().encodingAesKey().trim() + "="
+                    config.callbackEncodingAesKey() + "="
             );
             if (key.length != 32) {
                 throw new IllegalArgumentException("WeChat callback AES key must decode to 32 bytes");
@@ -82,9 +93,10 @@ public class WechatServiceCardCallbackCrypto {
                 throw new IllegalArgumentException("WeChat callback message length is invalid");
             }
             byte[] message = java.util.Arrays.copyOfRange(plaintext, 20, 20 + messageLength);
-            byte[] appId = java.util.Arrays.copyOfRange(plaintext, 20 + messageLength, plaintext.length);
+            byte[] appId = java.util.Arrays.copyOfRange(
+                    plaintext, 20 + messageLength, plaintext.length);
             if (!MessageDigest.isEqual(
-                    miniProgramProperties.appId().trim().getBytes(StandardCharsets.UTF_8), appId)) {
+                    expectedAppId.trim().getBytes(StandardCharsets.UTF_8), appId)) {
                 throw new IllegalArgumentException("WeChat callback AppID mismatch");
             }
             return new String(message, StandardCharsets.UTF_8);

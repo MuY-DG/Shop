@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.api.JsonStringId;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
+import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentials;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardDeliveryQuery;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardDeliveryResponse;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardRuntimeUpdateRequest;
@@ -92,8 +92,10 @@ class AdminWechatServiceCardContractTest {
     @Test
     void invalidPaginationOrderAndStateFailAsBusinessValidationBeforeSql() {
         WechatServiceCardAdminReadService service = new WechatServiceCardAdminReadService(
-                mock(JdbcClient.class), disabledProperties(),
-                new WechatMiniProgramProperties("app-id", "secret", false),
+                mock(JdbcClient.class),
+                () -> WechatServiceCardTestConfigs.fromProperties(disabledProperties()),
+                () -> new WechatPlatformCredentials(
+                        "app-id", "secret", WechatPlatformCredentials.Source.DATABASE),
                 mock(WechatServiceCardRuntimeSettingService.class),
                 Clock.fixed(Instant.parse("2026-08-10T12:00:00Z"), ZoneOffset.UTC)
         );

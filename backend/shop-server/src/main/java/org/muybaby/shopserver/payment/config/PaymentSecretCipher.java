@@ -24,8 +24,18 @@ public interface PaymentSecretCipher {
     }
 
     record EncryptedSecret(String ciphertext, int version, String keyId) {
+        @Override
+        public String toString() {
+            return "EncryptedSecret[ciphertext=<redacted>, version=" + version
+                    + ", keyIdConfigured=" + (keyId != null && !keyId.isBlank()) + "]";
+        }
     }
 
     record DecryptedSecret(String plaintext, int version, String keyId) {
+        @Override
+        public String toString() {
+            return "DecryptedSecret[plaintext=<redacted>, version=" + version
+                    + ", keyIdConfigured=" + (keyId != null && !keyId.isBlank()) + "]";
+        }
     }
 }
