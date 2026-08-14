@@ -1,104 +1,80 @@
-<img  src="https://www.qiniu.lingchen.kim/github-cover-light6.webp" />
+# Shop Admin
 
-<br />
-<h1 align="center">Art Design Pro</h1>
-<p align="center">A backend system template that combines design aesthetics with efficient development, helping you quickly build professional-grade applications</p>
-<div align="center">English | <a href="./README.zh-CN.md">简体中文</a></div>
+「灶香集」微信小程序电商的管理后台：Vue 3 + Vite + Element Plus，
+基于 [Art Design Pro](https://github.com/Daymychen/art-design-pro)（MIT）模板二次开发。
 
-<br />
-<div align="center">
+## 环境要求
 
-[![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE) [![github stars](https://img.shields.io/github/stars/Daymychen/art-design-pro)](https://github.com/Daymychen/art-design-pro/stargazers) [![github forks](https://img.shields.io/github/forks/Daymychen/art-design-pro)](https://github.com/Daymychen/art-design-pro/network/members)
+- Node.js >= 20.19.0
+- pnpm >= 8.8.0
 
-</div>
-<br />
-
-## What makes this project special?
-
-**Interface Design**: Modern UI design with smooth interactions, focusing on user experience and visual design
-
-**Quick Start**: Clean architecture + comprehensive documentation, easy for backend developers to use
-
-**Rich Components**: Built-in high-quality components for data display, forms, and more to meet different business scenarios
-
-**Smooth Interactions**: Button clicks, theme switching, page transitions, chart animations - experience comparable to commercial products
-
-**Efficient Development**: Built-in practical APIs like useTable and ArtForm to significantly improve development efficiency
-
-**Clean Scripts**: Built-in one-click cleanup script to quickly remove demo data and get a ready-to-develop base project
-
-## Tech Stack
-
-Development Framework: Vue3, TypeScript, Vite, Element-Plus, Tailwind CSS
-
-Code Standards: Eslint, Prettier, Stylelint, Husky, Lint-staged, cz-git
-
-## Preview
-
-<kbd><img src="https://www.qiniu.lingchen.kim/github-c1.webp" alt="Light Theme"/></kbd>
-
-<kbd><img src="https://www.qiniu.lingchen.kim/github-c2.webp" alt="Light Theme"/></kbd>
-
-<kbd><img src="https://www.qiniu.lingchen.kim/github-c4.webp" alt="Dark Theme"/></kbd>
-
-<kbd><img src="https://www.qiniu.lingchen.kim/github-c5.webp" alt="Dark Theme"/></kbd>
-
-## Quick Access
-
-[Live Demo](https://www.artd.pro) | [Official Documentation](https://www.artd.pro/docs) | [Changelog](./CHANGELOG.en.md)
-
-## Installation & Setup
+## 常用命令
 
 ```bash
-# Install dependencies
-pnpm install
-
-# If pnpm install fails, try using the command below
-pnpm install --ignore-scripts
-
-# Start local development environment
-pnpm dev
-
-# Build for production
-pnpm build
+pnpm install               # 安装依赖（CI 使用 --frozen-lockfile）
+pnpm dev                   # 本地开发（Vite 开发服务器 + 代理）
+pnpm build                 # vue-tsc 类型检查 + 生产构建
+pnpm check                 # typecheck + lint + test
+pnpm test                  # 运行测试
+pnpm check:generated-imports  # 校验自动导入生成物与仓库一致
 ```
 
-## Clean Version
+## 环境变量
 
-The project includes a cleanup script to quickly remove demo data and provide developers with a ready-to-develop base project
+三个环境文件均已入库（不含密钥）：
 
-```bash
-pnpm clean:dev
+| 文件 | 用途 |
+| --- | --- |
+| `.env` | 通用配置；`VITE_ACCESS_MODE=backend` 启用后端驱动菜单与 RBAC |
+| `.env.development` | 开发环境：`VITE_API_PROXY_URL` / `VITE_ADMIN_API_PROXY_URL` 指向 Vite 代理目标 |
+| `.env.production` | 生产环境：同源路径，由边缘网关把 `/admin/**` 转发到后端 |
+
+## 后端契约
+
+- 所有 JSON API 使用信封：`{ "code": 200, "msg": "success", "data": ... }`。
+- 列表页数据在 `data` 内：`{ "records": [], "total": 0, "current": 1, "size": 10 }`。
+- Snowflake ID 一律以字符串传输，避免 JavaScript 精度丢失。
+
+## 后端驱动路由与 RBAC
+
+菜单和权限由后端返回，前端负责渲染与守卫：
+
+- `src/router/core/ComponentLoader.ts`：按白名单 `import.meta.glob` 打包视图，
+  新增业务视图目录必须在此登记，否则不会被生产构建包含。
+- `src/router/core/MenuProcessor.ts`：把后端菜单记录转换为路由。
+- `src/router/core/RoutePermissionValidator.ts` / `RouteRegistry.ts`：路由权限校验。
+- iframe 菜单统一使用 `src/views/outside/Iframe.vue`。
+
+## 生成文件必须入库
+
+`unplugin-auto-import` / `unplugin-vue-components` 的生成物是可重复构建输入，
+必须随代码一起提交：
+
+- `.auto-import.json`
+- `src/types/import/auto-imports.d.ts`
+- `src/types/import/components.d.ts`
+
+CI 在生产构建后运行 `pnpm check:generated-imports`，校验生成结果无差异，
+保证全新 clone 不依赖预先启动 Vite。
+
+## 目录结构
+
+```text
+src/
+  api/        后端 API 封装
+  views/      业务页面（后端菜单按组件路径加载）
+  router/     静态路由、异步路由与后端菜单处理
+  components/ 通用组件
+  store/      Pinia 状态
+  config/     运行配置
 ```
 
-## Technical Support
+## 相关文档
 
-QQ Group: <a href="https://qm.qq.com/cgi-bin/qm/qr?k=Gg6yzZLFaNgmRhK0T5Qcjf7-XcAFWWXm&jump_from=webapi&authKey=YpRKVJQyFKYbGTiKw0GJ/YQXnNF+GdXNZC5beQQqnGZTvuLlXoMO7nw5fNXvmVhA">1038930070</a> (Click the link to join the group chat)
+- [开发环境与命令](../docs/dev-setup.md)
+- [生产发布检查清单](../docs/production-release-checklist.md)
+- [后端架构与演进规则](../docs/backend-architecture.md)
 
-## Browser Compatibility
+## 许可
 
-Supports modern mainstream browsers including Chrome, Safari, Firefox, and more.
-
-## Contributing
-
-We sincerely welcome and appreciate the support of every contributor! Whether you have new ideas, feature suggestions, or code optimizations, you can participate in the following ways:
-
-Submit Pull Requests: Share your code and help the project grow.
-
-Create GitHub Issues: Provide bug feedback or new feature suggestions to help us improve together.
-
-Every contribution you make takes this project one step further! Come join our open source community!
-
-## Continuous Optimization & Extension
-
-The project maintains active updates, supports the latest frontend tech stack, is compatible with mainstream frameworks, and ensures long-term stability and extensibility. Community-driven feedback mechanisms allow your needs to be quickly integrated into project iterations.
-
-## Donation
-
-If you feel this project has reduced your development costs and solved problems in your work/life, you can support us through the following ways:
-
-<img src="https://www.qiniu.lingchen.kim/%E7%BB%84%202%402x%202.png" alt="Donation QR Code"/>
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Daymychen/art-design-pro&type=Date)](https://www.star-history.com/#Daymychen/art-design-pro&Date)
+本项目基于 Art Design Pro（MIT License，见 `LICENSE`）二次开发。
