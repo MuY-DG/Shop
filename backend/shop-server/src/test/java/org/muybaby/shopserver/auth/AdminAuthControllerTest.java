@@ -163,6 +163,7 @@ class AdminAuthControllerTest {
                         "payment:config:read",
                         "payment:config:write",
                         "payment:config:enable",
+                        "payment:config:delete",
                         "storage:config:read",
                         "storage:config:write",
                         "aftersale:read",

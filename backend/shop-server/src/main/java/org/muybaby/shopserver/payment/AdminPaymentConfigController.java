@@ -9,7 +9,10 @@ import org.muybaby.shopserver.payment.dto.EnvironmentPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
 import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.payment.service.AdminPaymentConfigService;
+import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -93,5 +96,15 @@ public class AdminPaymentConfigController {
     @PreAuthorize("hasAuthority('payment:config:enable')")
     public ApiResponse<AdminPaymentConfigResponse> enable(@PathVariable Long configId) {
         return ApiResponse.success(adminPaymentConfigService.enable(configId));
+    }
+
+    @DeleteMapping("/{configId}")
+    @PreAuthorize("hasAuthority('payment:config:delete')")
+    public ApiResponse<Void> delete(
+            @PathVariable Long configId,
+            @AuthenticationPrincipal AuthenticatedPrincipal principal
+    ) {
+        adminPaymentConfigService.delete(configId, principal.subjectId());
+        return ApiResponse.success();
     }
 }

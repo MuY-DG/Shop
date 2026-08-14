@@ -491,6 +491,44 @@ public class AdminPaymentConfigService {
         }
     }
 
+    public void delete(Long configId, Long operatorId) {
+        if (operatorId == null || operatorId <= 0) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        requireTransactionResult(requiresNewTransaction.execute(status -> {
+            paymentConfigMutationLock.acquire();
+            PaymentConfigRow locked = requireConfigRow(
+                    configId,
+                    true,
+                    ErrorCode.PAYMENT_CONFIG_UNAVAILABLE
+            );
+            if (locked.enabled()) {
+                throw new BusinessException(ErrorCode.PAYMENT_CONFIG_ENABLED_DELETE_FORBIDDEN);
+            }
+            if (legacySecretFilesPendingImport(locked)) {
+                throw new BusinessException(ErrorCode.PAYMENT_CONFIG_LEGACY_SECRET_IMPORT_REQUIRED);
+            }
+            int updatedRows = jdbcClient.sql("""
+                            update payment_config
+                            set status = 'DELETED',
+                                enabled = false,
+                                deleted_at = current_timestamp,
+                                deleted_by = :operatorId,
+                                updated_at = current_timestamp
+                            where id = :configId
+                              and status = 'ACTIVE'
+                              and enabled = false
+                            """)
+                    .param("operatorId", operatorId)
+                    .param("configId", configId)
+                    .update();
+            if (updatedRows != 1) {
+                throw new BusinessException(ErrorCode.PAYMENT_CONFIG_CONFLICT);
+            }
+            return Boolean.TRUE;
+        }));
+    }
+
     public AdminPaymentConfigResponse enable(Long configId) {
         return outsideTransaction(() -> {
             StoredConfigSnapshot storedConfig = inspectStoredConfig(configId, false, null);
@@ -742,8 +780,16 @@ public class AdminPaymentConfigService {
     }
 
     private PaymentConfigRow requireConfigRow(Long configId, boolean forUpdate) {
+        return requireConfigRow(configId, forUpdate, ErrorCode.VALIDATION_FAILED);
+    }
+
+    private PaymentConfigRow requireConfigRow(
+            Long configId,
+            boolean forUpdate,
+            ErrorCode unavailableError
+    ) {
         if (configId == null) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+            throw new BusinessException(unavailableError);
         }
         return jdbcClient.sql("""
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
@@ -778,7 +824,7 @@ public class AdminPaymentConfigService {
                         rs.getLong("secret_revision")
                 ))
                 .optional()
-                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+                .orElseThrow(() -> new BusinessException(unavailableError));
     }
 
     private List<Long> paymentSecretIds(PaymentConfigRow config) {

@@ -260,7 +260,8 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[8].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "payment:config:read",
                         "payment:config:write",
-                        "payment:config:enable"
+                        "payment:config:enable",
+                        "payment:config:delete"
                 )))
                 .andExpect(jsonPath("$.data[8].children[2].meta.authList[*].authMark", containsInAnyOrder(
                         "data-cleanup:config:read",

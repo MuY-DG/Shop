@@ -23,7 +23,7 @@
             <ElButton
               type="primary"
               v-auth="'payment:config:write'"
-              :disabled="creating || loading"
+              :disabled="creating || loading || saving || using || importing || deleting"
               @click="openCreateForm"
             >
               新增配置
@@ -50,21 +50,6 @@
                 @change="handleConfigSelect"
               >
                 <ElOption
-                  label="环境变量配置"
-                  value="ENV"
-                  :disabled="!environmentSetting?.available"
-                >
-                  <div class="config-option">
-                    <span>环境变量配置</span>
-                    <ElTag v-if="environmentUseState.active" type="success" size="small">
-                      正在使用
-                    </ElTag>
-                    <ElTag v-else-if="!environmentSetting?.available" type="info" size="small">
-                      配置不完整
-                    </ElTag>
-                  </div>
-                </ElOption>
-                <ElOption
                   v-for="config in configs"
                   :key="config.id"
                   :label="config.configName"
@@ -84,16 +69,12 @@
               </ElSelect>
               <ElTag v-if="currentUseState.active" type="success">正在使用</ElTag>
             </div>
-            <div v-if="selectedEnvironment" class="form-tip">
-              环境变量配置来自后端启动环境，只能查看和切换，不能在此页面编辑。
-            </div>
           </ElFormItem>
 
           <ElFormItem label="配置名称" prop="configName">
             <ElInput
               v-model="formData.configName"
               maxlength="80"
-              :disabled="selectedEnvironment"
               placeholder="例如：生产微信支付"
             />
           </ElFormItem>
@@ -101,7 +82,6 @@
             <ElInput
               v-model="formData.appId"
               maxlength="64"
-              :disabled="selectedEnvironment"
               :placeholder="maskedPlaceholder(selectedConfig?.appIdMasked)"
             />
           </ElFormItem>
@@ -109,7 +89,6 @@
             <ElInput
               v-model="formData.mchId"
               maxlength="32"
-              :disabled="selectedEnvironment"
               :placeholder="maskedPlaceholder(selectedConfig?.mchIdMasked)"
             />
           </ElFormItem>
@@ -117,7 +96,6 @@
             <ElInput
               v-model="formData.merchantSerialNo"
               maxlength="128"
-              :disabled="selectedEnvironment"
               :placeholder="maskedPlaceholder(selectedConfig?.merchantSerialNoMasked)"
             />
           </ElFormItem>
@@ -125,9 +103,8 @@
             <ElInput
               v-model="formData.apiV3Key"
               maxlength="32"
-              :type="selectedEnvironment ? 'text' : 'password'"
-              :show-password="!selectedEnvironment"
-              :disabled="selectedEnvironment"
+              type="password"
+              show-password
               autocomplete="new-password"
               :placeholder="
                 selectedConfig?.apiV3KeyConfigured ? '已配置，留空不修改' : '请输入 APIv3 Key'
@@ -138,7 +115,6 @@
             <ElInput
               v-model="formData.notifyUrl"
               maxlength="255"
-              :disabled="selectedEnvironment"
               placeholder="https://域名/wxpay/pay/notify"
             />
           </ElFormItem>
@@ -146,29 +122,22 @@
             <ElInput
               v-model="formData.refundNotifyUrl"
               maxlength="255"
-              :disabled="selectedEnvironment"
               placeholder="https://域名/wxpay/refund/notify"
             />
           </ElFormItem>
           <ElFormItem label="验签模式" prop="verifyMode">
-            <ElSegmented
-              v-model="formData.verifyMode"
-              :options="verifyModeOptions"
-              :disabled="selectedEnvironment"
-            />
+            <ElSegmented v-model="formData.verifyMode" :options="verifyModeOptions" />
           </ElFormItem>
           <ElFormItem label="微信公钥 ID" prop="wechatPublicKeyId">
             <ElInput
               v-model="formData.wechatPublicKeyId"
               maxlength="128"
-              :disabled="selectedEnvironment || formData.verifyMode !== 'PUBLIC_KEY'"
+              :disabled="formData.verifyMode !== 'PUBLIC_KEY'"
               :placeholder="maskedPlaceholder(selectedConfig?.wechatPublicKeyIdMasked)"
             />
           </ElFormItem>
           <ElFormItem label="商户私钥 PEM" prop="privateKeyPem">
-            <ElInput v-if="selectedEnvironment" model-value="由服务器文件路径提供" disabled />
             <PaymentSecretFileField
-              v-else
               key-type="PRIVATE_KEY"
               :model-value="formData.privateKeyPem || ''"
               :configured="selectedConfig?.privateKeyConfigured"
@@ -176,9 +145,7 @@
             />
           </ElFormItem>
           <ElFormItem label="微信公钥 PEM" prop="wechatPublicKeyPem">
-            <ElInput v-if="selectedEnvironment" model-value="由服务器文件路径提供" disabled />
             <PaymentSecretFileField
-              v-else
               key-type="PUBLIC_KEY"
               :model-value="formData.wechatPublicKeyPem || ''"
               :configured="selectedConfig?.wechatPublicKeyConfigured"
@@ -188,11 +155,10 @@
 
           <ElFormItem>
             <ElButton
-              v-if="!selectedEnvironment"
               type="primary"
               v-auth="'payment:config:write'"
               :loading="saving"
-              :disabled="using || importing"
+              :disabled="using || importing || deleting"
               @click="handleSave"
             >
               {{ creating ? '保存配置' : '保存修改' }}
@@ -201,43 +167,44 @@
               type="success"
               v-auth="'payment:config:enable'"
               :loading="using"
-              :disabled="currentUseState.disabled || saving || importing"
+              :disabled="currentUseState.disabled || saving || importing || deleting"
               @click="handleUse"
             >
               {{ creating ? '保存并使用' : currentUseState.label }}
             </ElButton>
             <ElButton
-              v-if="selectedEnvironment"
-              v-auth="'payment:config:write'"
-              type="primary"
-              plain
-              :loading="importing"
-              :disabled="saving || using"
-              @click="handleImportEnvironment"
-            >
-              导入为数据库配置
-            </ElButton>
-            <ElButton
-              v-if="!selectedEnvironment && selectedConfig?.legacySecretFilesPendingImport"
+              v-if="selectedConfig?.legacySecretFilesPendingImport"
               v-auth="'payment:config:write'"
               type="warning"
               plain
               :loading="importing"
-              :disabled="saving || using"
+              :disabled="saving || using || deleting"
               @click="handleImportLegacySecrets"
             >
               迁移旧秘密文件
             </ElButton>
             <ElButton
-              v-if="!creating && !selectedEnvironment"
-              :disabled="!dirty || saving || using || importing"
+              v-if="!creating"
+              :disabled="!dirty || saving || using || importing || deleting"
               @click="resetSelectedForm"
             >
               撤销未保存修改
             </ElButton>
             <ElButton
-              v-if="creating"
-              :disabled="saving || using || importing"
+              v-if="!creating && selectedConfig"
+              v-auth="'payment:config:delete'"
+              type="danger"
+              plain
+              :title="deleteState.reason || '删除配置'"
+              :loading="deleting"
+              :disabled="deleteState.disabled || saving || using || importing || deleting"
+              @click="handleDelete"
+            >
+              删除配置
+            </ElButton>
+            <ElButton
+              v-if="creating && configs.length > 0"
+              :disabled="saving || using || importing || deleting"
               @click="cancelCreate"
             >
               取消新增
@@ -255,29 +222,28 @@
   import PaymentSecretFileField from '@/components/business/payment-secret-file-field/index.vue'
   import {
     createPaymentConfig,
+    deletePaymentConfig,
     enablePaymentConfig,
     fetchEffectivePaymentConfig,
-    fetchEnvironmentPaymentConfig,
     fetchPaymentConfigs,
-    importEnvironmentPaymentConfig,
     importLegacyPaymentSecretFiles,
     updatePaymentConfig,
     updatePaymentConfigSource
   } from '@/api/payment'
-  import { environmentConfigUseState, paymentConfigUseState } from './payment-config-state'
+  import { paymentConfigDeleteState, paymentConfigUseState } from './payment-config-state'
 
   defineOptions({ name: 'PaymentConfig' })
 
-  type PaymentConfigSelection = 'ENV' | number
+  type PaymentConfigSelection = number
 
   const loading = ref(false)
   const saving = ref(false)
   const using = ref(false)
   const importing = ref(false)
+  const deleting = ref(false)
   const creating = ref(false)
   const configs = ref<Api.Payment.Config[]>([])
   const effectiveConfig = ref<Api.Payment.EffectiveConfig | null>(null)
-  const environmentSetting = ref<Api.Payment.EnvironmentConfig | null>(null)
   const selectedConfigKey = ref<PaymentConfigSelection | null>(null)
   const baseline = ref('')
   const formRef = ref<FormInstance>()
@@ -299,7 +265,6 @@
   const formData = reactive<Api.Payment.ConfigForm>(createDefaultForm())
   const verifyModeOptions = [{ label: '微信公钥', value: 'PUBLIC_KEY' }]
 
-  const selectedEnvironment = computed(() => selectedConfigKey.value === 'ENV')
   const selectedConfig = computed(
     () => configs.value.find((config) => config.id === selectedConfigKey.value) || null
   )
@@ -318,26 +283,28 @@
       refundNotifyUrl: formData.refundNotifyUrl
     })
   const dirty = computed(() => snapshot() !== baseline.value)
-  const environmentUseState = computed(() =>
-    environmentConfigUseState(effectiveConfig.value, environmentSetting.value?.available)
-  )
   const currentUseState = computed(() =>
-    selectedEnvironment.value
-      ? environmentUseState.value
-      : selectedConfig.value
-        ? paymentConfigUseState(selectedConfig.value, effectiveConfig.value, dirty.value)
-        : {
-            active: false,
-            disabled: false,
-            label: '保存并使用' as const
-          }
+    selectedConfig.value
+      ? paymentConfigUseState(selectedConfig.value, effectiveConfig.value, dirty.value)
+      : {
+          active: false,
+          disabled: false,
+          label: '保存并使用' as const
+        }
+  )
+  const deleteState = computed(() =>
+    selectedConfig.value
+      ? paymentConfigDeleteState(selectedConfig.value, effectiveConfig.value)
+      : {
+          disabled: true,
+          reason: '请选择支付配置'
+        }
   )
   const runtimeLabel = computed(() => {
-    if (!effectiveConfig.value) return '暂无正在使用的配置'
-    if (effectiveConfig.value.source === 'DB') {
-      return `正在使用：${effectiveConfig.value.configName}`
+    if (!effectiveConfig.value || effectiveConfig.value.source !== 'DB') {
+      return '当前未使用数据库支付配置'
     }
-    return '正在使用：环境变量配置'
+    return `正在使用：${effectiveConfig.value.configName}`
   })
 
   const hasText = (value?: string | null) => Boolean(String(value || '').trim())
@@ -431,30 +398,6 @@
     formRef.value?.clearValidate()
   }
 
-  const fillEnvironmentForm = () => {
-    const config = environmentSetting.value?.config
-    Object.assign(formData, {
-      ...createDefaultForm(),
-      configName: '环境变量配置',
-      appId: config?.appIdMasked || '',
-      mchId: config?.mchIdMasked || '',
-      merchantSerialNo: config?.merchantSerialNoMasked || '',
-      apiV3Key: config?.apiV3KeyConfigured ? '已配置（内容已隐藏）' : '未配置',
-      verifyMode: 'PUBLIC_KEY',
-      wechatPublicKeyId: config?.wechatPublicKeyIdMasked || '',
-      notifyUrl: config?.notifyUrl || '',
-      refundNotifyUrl: config?.refundNotifyUrl || ''
-    })
-    baseline.value = snapshot()
-    formRef.value?.clearValidate()
-  }
-
-  const selectEnvironment = () => {
-    creating.value = false
-    selectedConfigKey.value = 'ENV'
-    fillEnvironmentForm()
-  }
-
   const selectConfig = (config: Api.Payment.Config) => {
     creating.value = false
     selectedConfigKey.value = config.id
@@ -464,30 +407,23 @@
   const loadData = async (preferredSelection?: PaymentConfigSelection) => {
     loading.value = true
     try {
-      const [environmentResponse, effectiveState, response] = await Promise.all([
-        fetchEnvironmentPaymentConfig().catch(() => null),
+      const [effectiveState, response] = await Promise.all([
         fetchEffectivePaymentConfig(),
         fetchPaymentConfigs({ current: 1, size: 100 })
       ])
       const effective = effectiveState.config || null
-      const environment: Api.Payment.EnvironmentConfig = environmentResponse || {
-        available: false,
-        config: null
-      }
-      environmentSetting.value = environment
       effectiveConfig.value = effective
       configs.value = response.records
 
-      const targetSelection =
-        preferredSelection ??
-        selectedConfigKey.value ??
-        (effective?.source === 'ENV' ? 'ENV' : effective?.id) ??
-        (environment.available ? 'ENV' : null) ??
+      const candidateSelections = [
+        preferredSelection,
+        selectedConfigKey.value,
+        effective?.source === 'DB' ? effective.id : null,
         response.records[0]?.id
-      if (targetSelection === 'ENV' && environment.available) {
-        selectEnvironment()
-        return
-      }
+      ]
+      const targetSelection = candidateSelections.find((candidate) =>
+        response.records.some((config) => config.id === candidate)
+      )
       const target = response.records.find((config) => config.id === targetSelection)
       if (target) {
         selectConfig(target)
@@ -517,10 +453,6 @@
 
   const handleConfigSelect = async (selection: PaymentConfigSelection) => {
     if (selection === selectedConfigKey.value || !(await confirmDiscard())) return
-    if (selection === 'ENV') {
-      selectEnvironment()
-      return
-    }
     const target = configs.value.find((config) => config.id === selection)
     if (target) selectConfig(target)
   }
@@ -533,11 +465,8 @@
   }
 
   const cancelCreate = () => {
-    if (effectiveConfig.value?.source === 'ENV' && environmentSetting.value?.available) {
-      selectEnvironment()
-      return
-    }
-    const activeId = effectiveConfig.value?.id || configs.value[0]?.id
+    const activeId =
+      effectiveConfig.value?.source === 'DB' ? effectiveConfig.value.id : configs.value[0]?.id
     const target = configs.value.find((config) => config.id === activeId) || configs.value[0]
     if (target) {
       selectConfig(target)
@@ -582,26 +511,6 @@
     return updatePaymentConfig(selectedConfig.value.id, payload, showSuccessMessage)
   }
 
-  const handleImportEnvironment = async () => {
-    await ElMessageBox.confirm(
-      '将读取当前服务器环境中的支付密钥并加密创建一条数据库配置；不会自动启用，也不会切换当前来源。',
-      '导入环境支付配置',
-      {
-        type: 'warning',
-        confirmButtonText: '确认导入',
-        cancelButtonText: '取消'
-      }
-    )
-    importing.value = true
-    try {
-      const imported = await importEnvironmentPaymentConfig(false)
-      await loadData(imported.id)
-      ElMessage.success('环境支付配置已安全导入，请核对后再启用')
-    } finally {
-      importing.value = false
-    }
-  }
-
   const handleImportLegacySecrets = async () => {
     if (!selectedConfig.value) return
     await ElMessageBox.confirm(
@@ -635,23 +544,6 @@
   }
 
   const handleUse = async () => {
-    if (selectedEnvironment.value) {
-      await ElMessageBox.confirm('确定切换为环境变量配置吗？', '确认使用配置', {
-        type: 'warning',
-        confirmButtonText: '使用此配置',
-        cancelButtonText: '取消'
-      })
-      using.value = true
-      try {
-        await updatePaymentConfigSource({ source: 'ENV' }, false)
-        await loadData('ENV')
-        ElMessage.success('已开始使用「环境变量配置」')
-      } finally {
-        using.value = false
-      }
-      return
-    }
-
     await formRef.value?.validate()
     const configName = trimText(formData.configName)
     const saveFirst = creating.value || dirty.value
@@ -677,6 +569,30 @@
       ElMessage.success(`已开始使用「${target.configName}」`)
     } finally {
       using.value = false
+    }
+  }
+
+  const handleDelete = async () => {
+    const config = selectedConfig.value
+    if (!config || deleteState.value.disabled) return
+    await ElMessageBox.confirm(
+      `确定删除支付配置「${config.configName}」吗？这是软删除：删除后配置会从管理列表隐藏，但历史订单的支付查询、退款和回调不受影响。`,
+      '确认删除支付配置',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger'
+      }
+    )
+    deleting.value = true
+    try {
+      await deletePaymentConfig(config.id, false)
+      selectedConfigKey.value = null
+      await loadData()
+      ElMessage.success(`支付配置「${config.configName}」已删除`)
+    } finally {
+      deleting.value = false
     }
   }
 
@@ -738,14 +654,6 @@
   .config-option {
     justify-content: space-between;
     width: 100%;
-  }
-
-  .form-tip {
-    width: 100%;
-    margin-top: 4px;
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--el-text-color-secondary);
   }
 
   @media (width <= 768px) {

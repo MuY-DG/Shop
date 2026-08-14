@@ -6,13 +6,6 @@ export function fetchEffectivePaymentConfig() {
   })
 }
 
-export function fetchEnvironmentPaymentConfig() {
-  return request.get<Api.Payment.EnvironmentConfig>({
-    url: '/admin/pay/configs/environment',
-    showErrorMessage: false
-  })
-}
-
 export function fetchPaymentConfigSource() {
   return request.get<Api.Payment.ConfigSourceSetting>({
     url: '/admin/pay/configs/source'
@@ -45,13 +38,6 @@ export function createPaymentConfig(data: Api.Payment.ConfigForm, showSuccessMes
   })
 }
 
-export function importEnvironmentPaymentConfig(showSuccessMessage = true) {
-  return request.post<Api.Payment.Config>({
-    url: '/admin/pay/configs/import-environment',
-    showSuccessMessage
-  })
-}
-
 export function importLegacyPaymentSecretFiles(configId: number, showSuccessMessage = true) {
   return request.post<Api.Payment.Config>({
     url: `/admin/pay/configs/${configId}/import-legacy-secret-files`,
@@ -74,6 +60,13 @@ export function updatePaymentConfig(
 export function enablePaymentConfig(configId: number, showSuccessMessage = true) {
   return request.post<Api.Payment.Config>({
     url: `/admin/pay/configs/${configId}/enable`,
+    showSuccessMessage
+  })
+}
+
+export function deletePaymentConfig(configId: number, showSuccessMessage = true) {
+  return request.del<void>({
+    url: `/admin/pay/configs/${configId}`,
     showSuccessMessage
   })
 }

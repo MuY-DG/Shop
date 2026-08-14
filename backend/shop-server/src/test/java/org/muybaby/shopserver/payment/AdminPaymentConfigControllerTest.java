@@ -49,6 +49,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -192,6 +193,97 @@ class AdminPaymentConfigControllerTest {
                 .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
 
         assertThat(jdbcClient.sql("select count(*) from payment_config").query(Integer.class).single()).isZero();
+    }
+
+    @Test
+    void deleteSoftDeletesDisabledConfigPreservesHistoricalSecretsAndRejectsASecondDelete() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        String deleteToken = limitedAdminToken(List.of("payment:config:delete"));
+        long deletingAdminId = LIMITED_ADMIN_IDS.get();
+        String readToken = limitedAdminToken(List.of("payment:config:read"));
+        long configId = createConfig(writeToken, "Delete Historical DB Pay");
+        ResolvedPaymentConfig before = paymentConfigResolver.resolveForPaymentConfigId(configId);
+        String fingerprint = paymentConfigResolver.fingerprint(before);
+        insertHistoricalPaymentReference(configId, fingerprint);
+        ConfigSecretRow secretBefore = configSecretRow(configId);
+
+        String response = mockMvc.perform(delete("/admin/pay/configs/{configId}", configId)
+                        .header("Authorization", "Bearer " + deleteToken))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertSecretMaterialIsAbsent(response);
+
+        DeletedConfigRow deleted = deletedConfigRow(configId);
+        assertThat(deleted.status()).isEqualTo("DELETED");
+        assertThat(deleted.enabled()).isFalse();
+        assertThat(deleted.deletedAt()).isNotNull();
+        assertThat(deleted.deletedBy()).isEqualTo(deletingAdminId);
+        assertThat(configSecretRow(configId)).isEqualTo(secretBefore);
+        assertThat(paymentConfigResolver.fingerprint(
+                paymentConfigResolver.resolveForPayment(configId, fingerprint))).isEqualTo(fingerprint);
+
+        mockMvc.perform(get("/admin/pay/configs")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0))
+                .andExpect(jsonPath("$.data.records").isEmpty());
+
+        mockMvc.perform(delete("/admin/pay/configs/{configId}", configId)
+                        .header("Authorization", "Bearer " + deleteToken))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PAYMENT_CONFIG_UNAVAILABLE.code()));
+    }
+
+    @Test
+    void deleteRequiresDedicatedAuthorityAndRejectsEnabledConfig() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
+        String deleteToken = limitedAdminToken(List.of("payment:config:delete"));
+        long configId = createConfig(writeToken, "Enabled Delete Guard");
+
+        mockMvc.perform(delete("/admin/pay/configs/{configId}", configId))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/admin/pay/configs/{configId}", configId)
+                        .header("Authorization", "Bearer " + writeToken))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", configId)
+                        .header("Authorization", "Bearer " + enableToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.enabled").value(true));
+        mockMvc.perform(delete("/admin/pay/configs/{configId}", configId)
+                        .header("Authorization", "Bearer " + deleteToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code")
+                        .value(ErrorCode.PAYMENT_CONFIG_ENABLED_DELETE_FORBIDDEN.code()));
+
+        DeletedConfigRow retained = deletedConfigRow(configId);
+        assertThat(retained.status()).isEqualTo("ACTIVE");
+        assertThat(retained.enabled()).isTrue();
+        assertThat(retained.deletedAt()).isNull();
+        assertThat(retained.deletedBy()).isNull();
+    }
+
+    @Test
+    void deleteRejectsLegacyFileBackedConfigUntilSecretsAreImported() throws Exception {
+        String deleteToken = limitedAdminToken(List.of("payment:config:delete"));
+        long configId = insertLegacyConfig(false);
+
+        mockMvc.perform(delete("/admin/pay/configs/{configId}", configId)
+                        .header("Authorization", "Bearer " + deleteToken))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code")
+                        .value(ErrorCode.PAYMENT_CONFIG_LEGACY_SECRET_IMPORT_REQUIRED.code()));
+
+        DeletedConfigRow retained = deletedConfigRow(configId);
+        assertThat(retained.status()).isEqualTo("ACTIVE");
+        assertThat(retained.enabled()).isFalse();
+        assertThat(retained.deletedAt()).isNull();
+        assertThat(retained.deletedBy()).isNull();
+        assertThat(configSecretRow(configId).privateKeyFileId()).isNotNull();
+        assertThat(configSecretRow(configId).publicKeyFileId()).isNotNull();
     }
 
     @Test
@@ -357,6 +449,47 @@ class AdminPaymentConfigControllerTest {
         }
 
         assertThat(jdbcClient.sql("select count(*) from payment_config").query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentEnableAndDeleteLinearizeWithoutInvalidStateOrSecretLoss() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
+        String deleteToken = limitedAdminToken(List.of("payment:config:delete"));
+        long configId = createConfig(writeToken, "Concurrent Enable Delete");
+        ConfigSecretRow secretsBefore = configSecretRow(configId);
+        CountDownLatch start = new CountDownLatch(1);
+
+        List<ImportResult> results;
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<ImportResult> enable = executor.submit(() -> enableAfter(start, enableToken, configId));
+            Future<ImportResult> delete = executor.submit(() -> deleteAfter(start, deleteToken, configId));
+            start.countDown();
+            results = List.of(
+                    enable.get(10, TimeUnit.SECONDS),
+                    delete.get(10, TimeUnit.SECONDS)
+            );
+        }
+
+        assertThat(results).allSatisfy(result -> {
+            assertThat(result.status()).isIn(200, 400, 409);
+            assertThat(result.status()).isLessThan(500);
+            assertSecretMaterialIsAbsent(result.body());
+        });
+        assertThat(results.stream().filter(result -> result.status() == 200).count()).isEqualTo(1);
+        assertThat(results.stream().filter(result -> result.status() >= 400).count()).isEqualTo(1);
+
+        DeletedConfigRow finalState = deletedConfigRow(configId);
+        boolean enabledWon = finalState.status().equals("ACTIVE")
+                && finalState.enabled()
+                && finalState.deletedAt() == null
+                && finalState.deletedBy() == null;
+        boolean deleteWon = finalState.status().equals("DELETED")
+                && !finalState.enabled()
+                && finalState.deletedAt() != null
+                && finalState.deletedBy() != null;
+        assertThat(enabledWon || deleteWon).isTrue();
+        assertThat(configSecretRow(configId)).isEqualTo(secretsBefore);
     }
 
     @Test
@@ -526,6 +659,24 @@ class AdminPaymentConfigControllerTest {
         return new ImportResult(response.getStatus(), response.getContentAsString());
     }
 
+    private ImportResult enableAfter(CountDownLatch start, String token, long configId) throws Exception {
+        start.await(10, TimeUnit.SECONDS);
+        var response = mockMvc.perform(post("/admin/pay/configs/{configId}/enable", configId)
+                        .header("Authorization", "Bearer " + token))
+                .andReturn()
+                .getResponse();
+        return new ImportResult(response.getStatus(), response.getContentAsString());
+    }
+
+    private ImportResult deleteAfter(CountDownLatch start, String token, long configId) throws Exception {
+        start.await(10, TimeUnit.SECONDS);
+        var response = mockMvc.perform(delete("/admin/pay/configs/{configId}", configId)
+                        .header("Authorization", "Bearer " + token))
+                .andReturn()
+                .getResponse();
+        return new ImportResult(response.getStatus(), response.getContentAsString());
+    }
+
     private String createConfigResponse(
             String token,
             String configName,
@@ -680,7 +831,8 @@ class AdminPaymentConfigControllerTest {
                         select api_v3_key_ciphertext, private_key_pem_ciphertext,
                                wechat_public_key_pem_ciphertext, private_key_file_id,
                                merchant_certificate_file_id, wechat_public_key_file_id,
-                               secret_cipher_version, secret_key_id
+                               secret_cipher_version, secret_key_id, secret_revision,
+                               secret_reencrypted_at
                         from payment_config where id = :configId
                         """)
                 .param("configId", configId)
@@ -692,7 +844,24 @@ class AdminPaymentConfigControllerTest {
                         nullableLong(rs, "merchant_certificate_file_id"),
                         nullableLong(rs, "wechat_public_key_file_id"),
                         rs.getInt("secret_cipher_version"),
-                        rs.getString("secret_key_id")
+                        rs.getString("secret_key_id"),
+                        rs.getLong("secret_revision"),
+                        rs.getObject("secret_reencrypted_at", LocalDateTime.class)
+                ))
+                .single();
+    }
+
+    private DeletedConfigRow deletedConfigRow(long configId) {
+        return jdbcClient.sql("""
+                        select status, enabled, deleted_at, deleted_by
+                        from payment_config where id = :configId
+                        """)
+                .param("configId", configId)
+                .query((rs, rowNum) -> new DeletedConfigRow(
+                        rs.getString("status"),
+                        rs.getBoolean("enabled"),
+                        rs.getObject("deleted_at", LocalDateTime.class),
+                        nullableLong(rs, "deleted_by")
                 ))
                 .single();
     }
@@ -822,7 +991,17 @@ class AdminPaymentConfigControllerTest {
             Long merchantCertificateFileId,
             Long publicKeyFileId,
             int cipherVersion,
-            String keyId
+            String keyId,
+            long secretRevision,
+            LocalDateTime secretReencryptedAt
+    ) {
+    }
+
+    private record DeletedConfigRow(
+            String status,
+            boolean enabled,
+            LocalDateTime deletedAt,
+            Long deletedBy
     ) {
     }
 

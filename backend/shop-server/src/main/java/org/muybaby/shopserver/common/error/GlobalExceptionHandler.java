@@ -171,7 +171,11 @@ public class GlobalExceptionHandler {
         return switch (errorCode) {
             case AUTHENTICATION_REQUIRED -> HttpStatus.UNAUTHORIZED;
             case PERMISSION_DENIED, ADMIN_REGISTRATION_DISABLED -> HttpStatus.FORBIDDEN;
+            case PAYMENT_CONFIG_UNAVAILABLE -> HttpStatus.NOT_FOUND;
             case DATA_CLEANUP_CONFIG_CONFLICT,
+                 PAYMENT_CONFIG_ENABLED_DELETE_FORBIDDEN,
+                 PAYMENT_CONFIG_LEGACY_SECRET_IMPORT_REQUIRED,
+                 PAYMENT_CONFIG_CONFLICT,
                  WECHAT_SERVICE_CARD_RUNTIME_CONFLICT,
                  WECHAT_SERVICE_CARD_CONFIG_CONFLICT,
                  WECHAT_PLATFORM_CONFIG_CONFLICT,

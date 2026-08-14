@@ -185,6 +185,24 @@ class PaymentSecretRotationServiceTest {
     }
 
     @Test
+    void softDeletedHistoricalConfigRemainsResolvableAndParticipatesInKeyRotation() {
+        jdbcClient.sql("""
+                        update payment_config
+                        set status = 'DELETED', enabled = false,
+                            deleted_at = current_timestamp, deleted_by = 1
+                        where id = :id
+                        """)
+                .param("id", CONFIG_ID)
+                .update();
+
+        assertThat(rotationService.rotateBatch()).isEqualTo(3);
+        ResolvedPaymentConfig historical = resolver.resolveForPaymentConfigId(CONFIG_ID);
+        assertThat(historical.apiV3Key()).isEqualTo(API_V3_KEY);
+        assertThat(historical.privateKeyPem()).isEqualTo(PRIVATE_KEY);
+        assertThat(historical.wechatPublicKeyPem()).isEqualTo(PUBLIC_KEY);
+    }
+
+    @Test
     void storageSecretReencryptionPreservesCustomDomainVerification() {
         String customOrigin = "https://rotation.example.test";
         String fingerprint = sha256(customOrigin + '\0' + "ap-guangzhou" + '\0'

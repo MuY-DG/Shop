@@ -1536,11 +1536,6 @@ declare namespace Api {
       config?: EffectiveConfig | null
     }
 
-    interface EnvironmentConfig {
-      available: boolean
-      config?: EffectiveConfig | null
-    }
-
     interface ConfigSourceSetting {
       source: ConfigSource
       persisted: boolean

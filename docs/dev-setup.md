@@ -401,7 +401,7 @@ A refund that WeChat definitively closes is not resubmitted under the old mercha
 
 For the latest `PROCESSING` or `FAILED` attempt, the same permission can use `.../refunds/{refundOrderId}/provider-query`, `.../provider-resubmit`, or `.../manual-intervention`. Every request requires a nonblank operation note of at most 180 characters and produces audit records. Resubmit always queries WeChat first and submits the original merchant refund number only when WeChat reports `NOT_FOUND`; it never resubmits a known `PROCESSING`, `SUCCESS`, `CLOSED`, or `ABNORMAL` refund. Manual intervention records `FAILED/MANUAL_INTERVENTION` and stops automatic recovery without fabricating a successful refund, but it cannot overwrite a provider `CLOSED` terminal state. Operator notes stay in the admin audit log and are not returned through App refund error fields. The admin after-sale drawer exposes only the actions valid for the current state.
 
-Once a database payment configuration has been referenced by a payment order, its merchant identity and key material are immutable. Create and enable a new configuration revision instead of editing the historical one; outstanding payment queries, closes, callbacks, and refunds continue to use their original merchant configuration. New payment orders also store a non-reversible configuration fingerprint, and every provider result is bound to that ID/fingerprint before local state changes.
+Once a database payment configuration has been referenced by a payment order, its merchant identity and key material are immutable. Create and enable a new configuration revision instead of editing the historical one; outstanding payment queries, closes, callbacks, and refunds continue to use their original merchant configuration. New payment orders also store a non-reversible configuration fingerprint, and every provider result is bound to that ID/fingerprint before local state changes. The normal Admin payment screen manages database configurations only. Deleting an inactive configuration is a soft delete: it disappears from the Admin list but retains the encrypted historical credential row required by payment queries, closes, callbacks, refunds, and reconciliation. The currently enabled configuration cannot be deleted, and a legacy row whose private-file IDs have not yet been imported must be migrated before deletion.
 
 For an ENV-sourced payment, migration `V41` adds a content-addressed configuration snapshot. Payment preparation encrypts the APIv3 key, merchant private key PEM, and WeChat public key PEM before inserting the payment order. Query, close, refund, recovery, and callback processing can therefore restore the exact credential revision after `WECHAT_PAY_*` values or key files are rotated. For DB-sourced payments, preparation locks and revalidates the configuration row in the payment transaction before inserting its identity reference. Snapshot business content is append-only; only a verified envelope rewrap may update its ciphertext metadata. A row whose decrypted contents no longer match its fingerprint fails closed with `PAYMENT_CONFIGURATION_CHANGED` and is not re-encrypted.
 
@@ -435,8 +435,8 @@ The `dev` profile uses the real WeChat client. The `test` profile keeps the mock
 
 ## Local WeChat Pay Credentials
 
-New local setups should configure WeChat Pay through the admin payment configuration screen
-and select the database runtime source. The tracked production template intentionally contains
+New local setups should configure WeChat Pay through the admin payment configuration screen,
+then enable the required database configuration. The tracked production template intentionally contains
 no `WECHAT_PAY_*` keys. Existing ignored `.env.dev.local` and `.env.prod.local` files may retain
 the following ENV block only until their credentials have been imported and historical ENV
 payments are covered by encrypted snapshots. Use placeholders in documentation and commits only:
@@ -465,12 +465,18 @@ SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
 
 The configured callback bases must be complete public HTTPS paths with no query, fragment, or user-info. With route issuance disabled, callbacks use `/wxpay/pay/notify` and `/wxpay/refund/notify`. With it enabled, the backend gives WeChat the corresponding `/r/{token}` path per payment/refund; do not pre-append a token in configuration. A real local WeChat Pay smoke check needs an HTTPS tunnel to the local backend.
 
-`WECHAT_PAY_CONFIG_SOURCE=AUTO` remains only for migration compatibility: it uses complete
-environment credentials first and otherwise falls back to the enabled database payment config.
-New setups should persist `DB` through `/admin/pay/configs`; do not add ENV payment credentials
-to `.env.prod.example`.
+`WECHAT_PAY_CONFIG_SOURCE=AUTO` remains only for old-deployment migration compatibility: it uses
+complete environment credentials first and otherwise falls back to the enabled database payment
+config. New setups create and enable a database configuration through `/admin/pay/configs`; do not
+add ENV payment credentials to `.env.prod.example`.
 
-The `开发配置 -> 支付配置` menu has a separate runtime source selector for `AUTO`, `ENV`, and `DB`. Saving that selector stores one row in `payment_runtime_setting` and takes effect without restarting the backend; if no row exists, the backend uses `WECHAT_PAY_CONFIG_SOURCE` from the active profile's environment file. The DB config list's candidate action only chooses which DB config is used when the runtime source is `DB` or when `AUTO` falls back to DB.
+The daily `开发配置 -> 支付配置` screen lists, creates, edits, enables, and soft-deletes database
+payment configurations only. It does not display `AUTO`, `ENV`, an environment configuration, or
+an environment-import action. The backend's legacy environment/source/import endpoints remain an
+operations compatibility surface for the two-stage upgrade below; they are not a second day-to-day
+configuration path and must not be linked back into the Admin screen. `PaymentConfigSource.ENV`
+and encrypted ENV snapshot resolution also remain supported for historical payments, even after
+all live merchant credentials have moved to the database.
 
 The 2026-08-10 production snapshot used runtime source `ENV`; treat that as a legacy deployment
 fact, not the new template. Before deleting existing local ENV values, verify the live runtime
@@ -493,6 +499,15 @@ contents, clears the three old payment file IDs and releases their storage usage
 response reports `privateKeyConfigured=true`, `wechatPublicKeyConfigured=true` and
 `legacySecretFilesPendingImport=false`. Enable the chosen row if necessary, then explicitly save
 `{"source":"DB"}` through `PUT /admin/pay/configs/source`; neither import endpoint switches it.
+These endpoints are invoked directly only while following the old-deployment migration runbook;
+they are intentionally absent from the daily Admin UI.
+
+Deleting a payment configuration through Admin never removes the credential row needed by an
+existing payment identity. It marks an inactive, fully migrated row as deleted so it no longer
+appears in the configuration list. The enabled configuration must first be replaced by another
+configuration, and a row with `legacySecretFilesPendingImport=true` must first complete
+`import-legacy-secret-files`. Historical DB configurations and encrypted ENV snapshots remain
+resolvable after the Admin entry is removed; do not manually delete those rows or ciphertexts.
 
 Never commit `.env.*.local`, merchant certificates, private keys, APIv3 keys, public-key files, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
 
