@@ -39,7 +39,7 @@
 
     <section v-if="modelValue.specType === 'SINGLE'" class="editor-section">
       <div class="editor-section__heading">
-        <h3>商品规格</h3>
+        <h3>销售信息</h3>
         <span class="editor-section__hint">商品编码留空自动生成，图片留空使用商品封面图</span>
       </div>
 
@@ -56,23 +56,28 @@
               @change="updateSingleSkuImage"
             />
           </div>
-          <ElFormItem class="single-sku-form__display-text" label="对外规格说明（选填）">
-            <ElInput
-              :model-value="singleSku.specText"
-              maxlength="255"
-              placeholder="例如：500g/袋；留空则不展示"
-              :disabled="disabled"
-              @update:model-value="updateSingleSku({ specText: $event })"
-            />
-          </ElFormItem>
-          <ElFormItem class="single-sku-form__display-text" label="净含量（食品必填）">
-            <ElInput
-              :model-value="singleSku.netContentText"
-              maxlength="120"
-              placeholder="按真实标签填写，例如 500g"
-              :disabled="disabled"
-              @update:model-value="updateSingleSku({ netContentText: $event })"
-            />
+          <ElFormItem class="single-sku-form__display-text" label="对外规格说明">
+            <div class="single-sku-form__spec-text">
+              <ElInput
+                :model-value="singleSpecTextDisplay"
+                maxlength="255"
+                :placeholder="specTextPlaceholder"
+                :disabled="disabled"
+                @update:model-value="updateSingleSpecText"
+              />
+              <ElButton
+                v-if="singleSku.specTextCustomized"
+                link
+                type="primary"
+                :disabled="disabled"
+                @click="restoreAutoSpecText"
+              >
+                恢复自动
+              </ElButton>
+            </div>
+            <small class="single-sku-form__field-hint">
+              留空自动使用净含量作为规格说明；净含量为空时不展示。
+            </small>
           </ElFormItem>
           <ElFormItem class="single-sku-form__money" label="售价（元）" required>
             <ElInputNumber
@@ -136,31 +141,71 @@
               @update:model-value="updateSingleSku({ skuCode: $event })"
             />
           </ElFormItem>
-          <ElFormItem class="single-sku-form__number" label="重量（g）">
-            <ElInputNumber
-              :model-value="singleSku.weightGram"
-              :min="0"
-              :precision="0"
-              controls-position="right"
-              :disabled="disabled"
-              placeholder="可选"
-              @update:model-value="updateSingleSku({ weightGram: $event ?? null })"
-            />
-          </ElFormItem>
-          <ElFormItem class="single-sku-form__number" label="体积（m³）">
-            <ElInputNumber
-              :model-value="singleSku.volumeCubicMeter"
-              :min="0"
-              :precision="6"
-              :step="0.001"
-              controls-position="right"
-              :disabled="disabled"
-              placeholder="可选"
-              @update:model-value="updateSingleSku({ volumeCubicMeter: $event ?? null })"
-            />
-          </ElFormItem>
         </div>
       </ElForm>
+    </section>
+
+    <section
+      v-if="modelValue.specType === 'SINGLE' && complianceType === 'FOOD'"
+      class="editor-section"
+    >
+      <div class="editor-section__heading">
+        <h3>食品净含量</h3>
+        <span class="editor-section__hint">按真实标签填写；非食品商品不展示此项</span>
+      </div>
+
+      <ElForm label-position="top" class="single-sku-form">
+        <ElFormItem class="single-sku-form__display-text" label="净含量（食品必填）">
+          <ElInput
+            :model-value="singleSku.netContentText"
+            maxlength="120"
+            placeholder="按真实标签填写，例如 500g"
+            :disabled="disabled"
+            @update:model-value="updateSingleNetContent"
+          />
+          <small class="single-sku-form__field-hint">
+            填写质量单位（g/kg）时会自动换算填入物流毛重，已填写的毛重不再联动。
+          </small>
+        </ElFormItem>
+      </ElForm>
+    </section>
+
+    <section v-if="modelValue.specType === 'SINGLE'" class="editor-section">
+      <ElCollapse class="logistics-collapse">
+        <ElCollapseItem name="logistics">
+          <template #title>
+            <span class="logistics-collapse__title">物流信息（选填）</span>
+          </template>
+          <ElForm label-position="top" class="single-sku-form">
+            <div class="single-sku-form__row">
+              <ElFormItem class="single-sku-form__number" label="物流毛重（g）">
+                <ElInputNumber
+                  :model-value="singleSku.weightGram"
+                  :min="0"
+                  :precision="0"
+                  controls-position="right"
+                  :disabled="disabled"
+                  placeholder="留空按净含量换算"
+                  @update:model-value="updateSingleSku({ weightGram: $event ?? null })"
+                />
+                <small class="single-sku-form__field-hint">含包装的物流重量，用于运费测算。</small>
+              </ElFormItem>
+              <ElFormItem class="single-sku-form__number" label="体积（m³）">
+                <ElInputNumber
+                  :model-value="singleSku.volumeCubicMeter"
+                  :min="0"
+                  :precision="6"
+                  :step="0.001"
+                  controls-position="right"
+                  :disabled="disabled"
+                  placeholder="可选"
+                  @update:model-value="updateSingleSku({ volumeCubicMeter: $event ?? null })"
+                />
+              </ElFormItem>
+            </div>
+          </ElForm>
+        </ElCollapseItem>
+      </ElCollapse>
     </section>
 
     <section v-if="modelValue.specType === 'SINGLE'" class="editor-section">
@@ -226,6 +271,7 @@
           :model-value="modelValue.skus"
           :groups="modelValue.specGroups"
           :cover-image="modelValue.mainImage"
+          :compliance-type="complianceType"
           :stock-disabled="!canAdjustStock"
           :disabled="disabled"
           @update:model-value="patchForm({ skus: $event })"
@@ -276,6 +322,7 @@
     ProductSpecType
   } from './editor-model'
   import { centToYuan, validateWholesaleTiers, yuanToCent } from './editor-model'
+  import { autoSingleSpecText, parseNetContentGrams } from './sku-derivation'
   import SpecTreeEditor from './spec-tree-editor.vue'
   import SkuMatrix from './sku-matrix.vue'
   import CompactAssetField from './compact-asset-field.vue'
@@ -326,6 +373,17 @@
       ? `组合数量：${describeCombinationCount(props.modelValue.specGroups)}`
       : ''
   )
+  const complianceType = computed(() => props.modelValue.foodDisclosure.complianceType)
+  const singleSpecTextDisplay = computed(() =>
+    singleSku.value.specTextCustomized
+      ? singleSku.value.specText
+      : autoSingleSpecText(singleSku.value)
+  )
+  const specTextPlaceholder = computed(() =>
+    singleSku.value.netContentText.trim()
+      ? `留空自动使用净含量「${singleSku.value.netContentText.trim()}」`
+      : '留空自动跟随净含量，未填写则不展示'
+  )
 
   const patchForm = (patch: Partial<ProductEditorForm>) => {
     emit('update:modelValue', { ...props.modelValue, ...patch })
@@ -357,6 +415,23 @@
 
   const updateSingleSkuImage = (asset: Api.Common.AssetValue) => {
     updateSingleSku({ image: asset.url, imageFileId: asset.fileId })
+  }
+
+  const updateSingleSpecText = (value: string) => {
+    updateSingleSku({ specText: value, specTextCustomized: true })
+  }
+
+  const restoreAutoSpecText = () => {
+    updateSingleSku({ specText: '', specTextCustomized: false })
+  }
+
+  const updateSingleNetContent = (value: string) => {
+    const patch: Partial<ProductEditorSku> = { netContentText: value }
+    if (singleSku.value.weightGram === null) {
+      const grams = parseNetContentGrams(value)
+      if (grams !== null) patch.weightGram = grams
+    }
+    updateSingleSku(patch)
   }
 
   const changeSpecType = (value: string | number | boolean | undefined) => {
@@ -647,6 +722,30 @@
 
   .single-sku-form__display-text {
     width: 240px;
+  }
+
+  .single-sku-form__spec-text {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    width: 100%;
+  }
+
+  .single-sku-form__field-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--el-text-color-secondary);
+  }
+
+  .logistics-collapse {
+    border: none;
+  }
+
+  .logistics-collapse__title {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
   }
 
   .combination-alert {

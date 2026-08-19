@@ -91,6 +91,7 @@ public class HomePageQueryService {
                         select i.id, i.spu_id, s.title, s.subtitle, i.image_url, s.main_image,
                                s.display_badge_text, s.display_badge_tone, s.virtual_sales,
                                pricing.min_price_cent, pricing.max_price_cent, pricing.original_price_cent,
+                               pricing.net_content_text,
                                pricing.wholesale_available,
                                coalesce(sales.actual_sales, 0) as actual_sales
                         from home_product_item i
@@ -101,9 +102,11 @@ public class HomePageQueryService {
                                    min(k.price_cent) as min_price_cent,
                                    max(k.price_cent) as max_price_cent,
                                    max(case when k.price_rank = 1 then k.original_price_cent end) as original_price_cent,
+                                   max(case when k.price_rank = 1 then k.net_content_text end) as net_content_text,
                                    max(case when t.id is null then 0 else 1 end) as wholesale_available
                             from (
                                 select sku.id, sku.spu_id, sku.price_cent, sku.original_price_cent,
+                                       sku.net_content_text,
                                        row_number() over (
                                            partition by sku.spu_id
                                            order by sku.price_cent asc, sku.id asc
@@ -145,6 +148,7 @@ public class HomePageQueryService {
                             rs.getObject("min_price_cent", Long.class),
                             rs.getObject("max_price_cent", Long.class),
                             rs.getObject("original_price_cent", Long.class),
+                            rs.getString("net_content_text"),
                             rs.getString("display_badge_text"),
                             rs.getString("display_badge_tone"),
                             rs.getInt("wholesale_available") == 1,
@@ -174,6 +178,7 @@ public class HomePageQueryService {
         Map<String, List<AppHomeProductFeatureResponse>> features = new LinkedHashMap<>();
         features.put("HIGHLIGHT", new ArrayList<>());
         features.put("META", new ArrayList<>());
+        injectStructuredNetContent(features.get("META"), row.netContentText(), parameterValues);
         for (AppProductParameterValueResponse value : parameterValues) {
             List<AppHomeProductFeatureResponse> target = features.get(value.cardRole());
             if (target == null) {
@@ -226,6 +231,35 @@ public class HomePageQueryService {
                 .orElse(null);
     }
 
+    /** 与小程序端 weight fact 识别规则一致的描述标记，用于判断参数是否已覆盖重量类事实。 */
+    private static final List<String> WEIGHT_FACT_MARKERS = List.of(
+            "WEIGHT", "GRAM", "NET_CONTENT", "净含量", "净重", "重量", "克重");
+
+    /**
+     * 卡片事实管线：净含量由 SKU 结构化字段注入，不再依赖手填参数。
+     * 仅当没有重量类参数且 META 槽位未满时注入，避免与存量参数重复展示。
+     */
+    private void injectStructuredNetContent(
+            List<AppHomeProductFeatureResponse> metaFeatures,
+            String netContentText,
+            List<AppProductParameterValueResponse> parameterValues
+    ) {
+        String netContent = StringUtils.hasText(netContentText) ? netContentText.trim() : "";
+        if (netContent.isEmpty() || metaFeatures.size() >= 2) {
+            return;
+        }
+        for (AppProductParameterValueResponse value : parameterValues) {
+            String descriptor = ((value.parameterCode() == null ? "" : value.parameterCode()) + " "
+                    + (value.parameterName() == null ? "" : value.parameterName()))
+                    .toUpperCase(java.util.Locale.ROOT);
+            if (WEIGHT_FACT_MARKERS.stream().anyMatch(descriptor::contains)) {
+                return;
+            }
+        }
+        metaFeatures.add(new AppHomeProductFeatureResponse(
+                "NET_CONTENT", "净含量", netContent, "TEXT", null));
+    }
+
     private LocalDateTime nextBannerTransition(LocalDateTime now) {
         List<BannerSchedule> schedules = jdbcClient.sql("""
                         select start_at, end_at
@@ -267,6 +301,7 @@ public class HomePageQueryService {
             Long minPriceCent,
             Long maxPriceCent,
             Long originalPriceCent,
+            String netContentText,
             String displayBadgeText,
             String displayBadgeTone,
             Boolean wholesaleAvailable,

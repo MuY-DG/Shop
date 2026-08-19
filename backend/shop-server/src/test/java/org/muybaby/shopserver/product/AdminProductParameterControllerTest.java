@@ -200,6 +200,60 @@ class AdminProductParameterControllerTest {
                 .single();
     }
 
+    @Test
+    void physicalFactsManagedBySkuCannotBeRecreatedAsParameters() throws Exception {
+        String token = adminLoginAndExtractToken();
+        Long categoryId = insertCategory("参数测试-物理量保护");
+
+        mockMvc.perform(post("/admin/product/parameter-definitions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "parameterCode":"NET_CONTENT",
+                                  "parameterName":"净含量",
+                                  "valueType":"TEXT",
+                                  "unit":"g",
+                                  "required":false,
+                                  "filterable":false,
+                                  "cardVisible":true,
+                                  "detailVisible":true,
+                                  "cardRole":"META",
+                                  "cardRenderer":"TEXT",
+                                  "cardPriority":0,
+                                  "sortOrder":0,
+                                  "status":"ENABLED",
+                                  "categoryIds":[%d],
+                                  "options":[]
+                                }
+                                """.formatted(categoryId)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/admin/product/parameter-definitions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "parameterCode":"pack_weight",
+                                  "parameterName":"包装重量",
+                                  "valueType":"TEXT",
+                                  "unit":"g",
+                                  "required":false,
+                                  "filterable":false,
+                                  "cardVisible":true,
+                                  "detailVisible":true,
+                                  "cardRole":"META",
+                                  "cardRenderer":"TEXT",
+                                  "cardPriority":0,
+                                  "sortOrder":0,
+                                  "status":"ENABLED",
+                                  "categoryIds":[%d],
+                                  "options":[]
+                                }
+                                """.formatted(categoryId)))
+                .andExpect(status().isBadRequest());
+    }
+
     private String adminLoginAndExtractToken() throws Exception {
         String response = mockMvc.perform(post("/admin/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

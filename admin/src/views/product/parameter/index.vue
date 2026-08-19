@@ -223,6 +223,19 @@
   defineOptions({ name: 'ProductParameter' })
 
   type ParameterForm = Api.Product.ProductParameterDefinitionForm
+
+  /** 已由商品 SKU 结构化字段统一维护的事实，禁止再建同名参数。 */
+  const RESERVED_PARAMETER_CODES = new Set([
+    'NET_CONTENT',
+    'NET_WEIGHT',
+    'WEIGHT',
+    'WEIGHT_GRAM',
+    'GROSS_WEIGHT',
+    'GRAM',
+    'VOLUME',
+    'SPEC_TEXT'
+  ])
+  const PHYSICAL_FACT_NAME_PATTERN = /(净含量|净重|克重|重量|体积)/
   const loading = ref(false)
   const submitting = ref(false)
   const editorVisible = ref(false)
@@ -414,6 +427,15 @@
       formData.options.some((option) => !option.optionCode.trim() || !option.optionLabel.trim())
     ) {
       ElMessage.error('请完整填写所有参数选项')
+      return
+    }
+    if (
+      RESERVED_PARAMETER_CODES.has(formData.parameterCode.trim().toUpperCase()) ||
+      PHYSICAL_FACT_NAME_PATTERN.test(formData.parameterName.trim())
+    ) {
+      ElMessage.error(
+        '净含量、重量、体积已由商品规格的结构化字段统一维护，系统会自动用于卡片展示，请勿重复创建参数'
+      )
       return
     }
     submitting.value = true

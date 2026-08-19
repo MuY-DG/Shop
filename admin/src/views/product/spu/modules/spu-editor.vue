@@ -149,6 +149,7 @@
   } from './editor-model'
   import { createDefaultForm } from './editor-model'
   import { createDefaultFoodDisclosure, normalizeFoodDisclosureForSave } from './food-compliance'
+  import { autoSingleSpecText, resolveSingleSpecText } from './sku-derivation'
   import {
     buildCombinationKey,
     createEditorKey,
@@ -325,6 +326,7 @@
     skuCode: sku.skuCode || '',
     specJson: sku.specJson || '{}',
     specText: sku.specText || '',
+    specTextCustomized: false,
     priceCent: sku.priceCent ?? null,
     costPriceCent: sku.costPriceCent ?? null,
     originalPriceCent: sku.originalPriceCent ?? null,
@@ -380,6 +382,7 @@
     }
     if (specType === 'SINGLE') {
       const single = skus[0] || createEmptySku()
+      const storedSpecText = normalizeSingleSpecText(single.specText)
       skus = [
         {
           ...single,
@@ -387,7 +390,9 @@
           defaultSelected: true,
           combinationKey: 'SINGLE',
           specJson: '{}',
-          specText: normalizeSingleSpecText(single.specText),
+          specText: storedSpecText,
+          specTextCustomized:
+            Boolean(storedSpecText) && storedSpecText !== autoSingleSpecText(single),
           specValueKeys: [],
           sortOrder: 0
         }
@@ -505,7 +510,10 @@
       id: sku.id,
       skuCode: sku.skuCode.trim(),
       specJson: form.specType === 'SINGLE' ? '{}' : sku.specJson,
-      specText: form.specType === 'SINGLE' ? normalizeSingleSpecText(sku.specText) : sku.specText,
+      specText:
+        form.specType === 'SINGLE'
+          ? normalizeSingleSpecText(resolveSingleSpecText(sku))
+          : sku.specText,
       priceCent: sku.priceCent,
       costPriceCent: sku.costPriceCent,
       originalPriceCent: sku.originalPriceCent,

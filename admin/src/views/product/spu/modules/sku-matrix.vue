@@ -4,7 +4,9 @@
       <div>
         <div class="sku-matrix__title">商品属性</div>
         <div class="sku-matrix__hint">
-          已生成 {{ modelValue.length }} 个组合；图片不填时依次使用规格值图片、商品封面图。
+          已生成
+          {{ modelValue.length }}
+          个组合；图片不填时依次使用规格值图片、商品封面图；物流毛重/体积选填，用于运费测算。
         </div>
       </div>
       <ElTag :type="modelValue.length > MAX_SKU_COMBINATIONS ? 'danger' : 'info'">
@@ -155,19 +157,22 @@
         </template>
       </ElTableColumn>
 
-      <ElTableColumn label="净含量（食品必填）" width="180">
+      <ElTableColumn v-if="complianceType === 'FOOD'" label="净含量（食品必填）" width="180">
         <template #default="{ row, $index }">
           <ElInput
             :model-value="row.netContentText"
             maxlength="120"
             placeholder="按真实标签填写"
             :disabled="disabled"
-            @update:model-value="updateRow($index, { netContentText: $event })"
+            @update:model-value="updateNetContent($index, $event)"
           />
         </template>
       </ElTableColumn>
 
-      <ElTableColumn label="重量（g）" width="140">
+      <ElTableColumn label="物流毛重（g）" width="150">
+        <template #header>
+          <span class="sku-matrix__optional">物流毛重（g）</span>
+        </template>
         <template #default="{ row, $index }">
           <ElInputNumber
             :model-value="row.weightGram"
@@ -176,12 +181,14 @@
             :disabled="disabled"
             controls-position="right"
             class="sku-matrix__number"
+            placeholder="留空按净含量换算"
             @update:model-value="updateNullableNumber($index, 'weightGram', $event)"
           />
         </template>
       </ElTableColumn>
 
       <ElTableColumn label="体积（m³）" width="150">
+        <template #header><span class="sku-matrix__optional">体积（m³）</span></template>
         <template #default="{ row, $index }">
           <ElInputNumber
             :model-value="row.volumeCubicMeter"
@@ -253,6 +260,7 @@
     ProductSkuStatus
   } from './editor-model'
   import { centToYuan, validateWholesaleTiers, yuanToCent } from './editor-model'
+  import { parseNetContentGrams } from './sku-derivation'
   import WholesaleTierEditor from './wholesale-tier-editor.vue'
   import { imageSpecFallback, MAX_SKU_COMBINATIONS, normalizeDefaultSku } from './sku-matrix'
 
@@ -260,6 +268,7 @@
     modelValue: ProductEditorSku[]
     groups: ProductEditorSpecGroup[]
     coverImage?: string
+    complianceType?: Api.Product.ProductComplianceType
     disabled?: boolean
     stockDisabled?: boolean
   }
@@ -270,6 +279,7 @@
 
   const props = withDefaults(defineProps<Props>(), {
     coverImage: '',
+    complianceType: 'UNCLASSIFIED',
     disabled: false,
     stockDisabled: false
   })
@@ -314,6 +324,18 @@
     value: number | undefined
   ) => {
     updateRow(index, { [field]: value ?? null } as Partial<ProductEditorSku>)
+  }
+
+  const updateNetContent = (index: number, value: string) => {
+    const row = props.modelValue[index]
+    if (row?.weightGram === null) {
+      const grams = parseNetContentGrams(value)
+      if (grams !== null) {
+        updateRow(index, { netContentText: value, weightGram: grams })
+        return
+      }
+    }
+    updateRow(index, { netContentText: value })
   }
 
   const updateImage = (index: number, asset: Api.Common.AssetValue) => {
@@ -399,6 +421,11 @@
 
   .sku-matrix__required {
     color: var(--el-color-danger);
+  }
+
+  .sku-matrix__optional {
+    color: var(--el-text-color-secondary);
+    font-weight: 400;
   }
 
   .wholesale-dialog-heading {

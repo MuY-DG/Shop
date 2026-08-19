@@ -50,6 +50,18 @@ public class ProductParameterService {
 
     private static final Pattern CODE_PATTERN = Pattern.compile("[A-Za-z0-9_-]{1,64}");
 
+    /**
+     * 已由商品 SKU 结构化字段（netContentText / weightGram / volumeCubicMeter / specText）统一维护
+     * 的事实，参数编码不允许占用，避免同一事实出现两份数据源。
+     */
+    private static final Set<String> RESERVED_PARAMETER_CODES = Set.of(
+            "NET_CONTENT", "NET_WEIGHT", "WEIGHT", "WEIGHT_GRAM", "GROSS_WEIGHT", "GRAM",
+            "VOLUME", "SPEC_TEXT");
+
+    /** 与结构化物理量同义的参数名，与前端提示保持一致。 */
+    private static final Pattern PHYSICAL_FACT_NAME_PATTERN =
+            Pattern.compile("(净含量|净重|克重|重量|体积)");
+
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -564,6 +576,9 @@ public class ProductParameterService {
         String code = request.parameterCode() == null ? "" : request.parameterCode().trim().toUpperCase(Locale.ROOT);
         String name = request.parameterName() == null ? "" : request.parameterName().trim();
         if (!CODE_PATTERN.matcher(code).matches() || !StringUtils.hasText(name)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (RESERVED_PARAMETER_CODES.contains(code) || PHYSICAL_FACT_NAME_PATTERN.matcher(name).find()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         ProductParameterValueType valueType = parseEnum(request.valueType(), ProductParameterValueType.class);

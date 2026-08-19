@@ -29,6 +29,8 @@ export interface ProductEditorSku {
   skuCode: string
   specJson: string
   specText: string
+  /** 仅编辑器使用：对外规格文案是否由运营手动填写；false 时保存自动按净含量生成。 */
+  specTextCustomized?: boolean
   priceCent: number | null
   costPriceCent: number | null
   originalPriceCent: number | null

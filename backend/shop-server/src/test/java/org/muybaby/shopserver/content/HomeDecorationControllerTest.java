@@ -197,6 +197,43 @@ class HomeDecorationControllerTest {
     }
 
     @Test
+    void structuredNetContentIsInjectedIntoCardMetaFacts() throws Exception {
+        String token = adminLoginAndExtractToken();
+        Product product = insertOnSaleProduct("首页编排商品", "", "http://localhost/net-content.png", 1290, 1290);
+        jdbcClient.sql("""
+                        update product_sku set net_content_text = '500g' where id = :skuId
+                        """)
+                .param("skuId", product.firstSkuId())
+                .update();
+        mockMvc.perform(post("/admin/home/hot-products")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"spuId":%d,"imageFileId":null,"sortOrder":0,"status":"ENABLED"}
+                                """.formatted(product.spuId())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/app/home"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.productSections[0].products[0].metaFacts[0].code")
+                        .value("NET_CONTENT"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].metaFacts[0].name")
+                        .value("净含量"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].metaFacts[0].displayText")
+                        .value("500g"))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].metaFacts[0].renderer")
+                        .value("TEXT"));
+
+        insertLegacyWeightParameter(product);
+        mockMvc.perform(get("/app/home"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.productSections[0].products[0].metaFacts.length()")
+                        .value(1))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].metaFacts[0].code")
+                        .value("PARAM_WEIGHT"));
+    }
+
+    @Test
     void duplicatePlacementsInvalidTargetsAndPrivateAssetsAreRejected() throws Exception {
         String token = adminLoginAndExtractToken();
         Asset publicImage = insertPublicImage("public-home.png");
@@ -465,6 +502,37 @@ class HomeDecorationControllerTest {
                         insert into product_spu_parameter_value
                             (spu_id, parameter_id, option_codes_json)
                         values (:spuId, :parameterId, '["MEDIUM"]')
+                        """)
+                .param("spuId", product.spuId())
+                .param("parameterId", parameterId)
+                .update();
+    }
+
+    private void insertLegacyWeightParameter(Product product) {
+        jdbcClient.sql("""
+                        insert into product_parameter_definition
+                            (parameter_code, parameter_name, value_type, required_value, filterable,
+                             card_visible, detail_visible, card_role, card_renderer, card_priority,
+                             sort_order, status)
+                        values
+                            ('PARAM_WEIGHT', '重量', 'TEXT', false, false,
+                             true, true, 'META', 'TEXT', 0, 0, 'ENABLED')
+                        """).update();
+        Long parameterId = jdbcClient.sql(
+                        "select id from product_parameter_definition where parameter_code = 'PARAM_WEIGHT'")
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into product_category_parameter (category_id, parameter_id)
+                        values (:categoryId, :parameterId)
+                        """)
+                .param("categoryId", product.categoryId())
+                .param("parameterId", parameterId)
+                .update();
+        jdbcClient.sql("""
+                        insert into product_spu_parameter_value
+                            (spu_id, parameter_id, text_value, option_codes_json)
+                        values (:spuId, :parameterId, '净含量 500g', '[]')
                         """)
                 .param("spuId", product.spuId())
                 .param("parameterId", parameterId)

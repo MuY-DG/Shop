@@ -33,6 +33,7 @@ export const createEmptySku = (overrides: Partial<ProductEditorSku> = {}): Produ
   skuCode: '',
   specJson: '{}',
   specText: '',
+  specTextCustomized: false,
   priceCent: null,
   costPriceCent: null,
   originalPriceCent: null,
