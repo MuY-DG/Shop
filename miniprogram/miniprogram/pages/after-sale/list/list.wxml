@@ -1,5 +1,11 @@
 <view class="after-sale-list-page">
-  <navigation-bar title="退款售后" back="{{true}}" color="#2E1D16" />
+  <navigation-bar
+    title="退款售后"
+    back="{{true}}"
+    color="#2E1D16"
+    background="#f6f6f6"
+    show-divider="{{false}}"
+  />
 
   <scroll-view
     class="after-sale-list-scroll"
@@ -37,6 +43,8 @@
         class="record-card"
         data-id="{{item.id}}"
         bindtap="onRecordTap"
+        hover-class="record-card--pressed"
+        hover-stay-time="80"
         aria-role="button"
       >
         <view class="record-card__heading">

@@ -90,7 +90,7 @@
               <text class="order-card__time">下单时间：{{item.createdAtText}}</text>
               <text class="order-status">{{item.statusText}}</text>
             </view>
-            <view wx:if="{{item.items.length}}" class="order-card__items">
+            <view wx:if="{{item.items.length === 1}}" class="order-card__items">
               <view
                 wx:for="{{item.items}}"
                 wx:for-item="product"
@@ -128,6 +128,47 @@
                 </view>
               </view>
             </view>
+            <view wx:elif="{{item.items.length > 1}}" class="order-card__items">
+              <view
+                class="order-product order-product--bundle"
+                aria-role="group"
+                aria-label="{{item.items[0].titleText}} 等 {{item.items.length}} 种商品，{{item.itemCountText}}"
+              >
+                <view class="order-product__image-shell">
+                  <image
+                    wx:if="{{item.items[0].hasImage}}"
+                    class="order-product__image"
+                    src="{{item.items[0].imageUrl}}"
+                    mode="aspectFill"
+                    data-id="{{item.orderId}}"
+                    data-item-id="{{item.items[0].orderItemId}}"
+                    binderror="onItemImageError"
+                  />
+                  <image
+                    wx:else
+                    class="order-product__fallback-icon"
+                    src="/assets/icons/empty-products.svg"
+                    mode="aspectFit"
+                    aria-hidden="true"
+                  />
+                  <view class="order-product__stack-badge">+{{item.items.length - 1}}</view>
+                </view>
+                <view class="order-product__body">
+                  <view class="order-product__details">
+                    <view class="order-product__title">{{item.items[0].titleText}}</view>
+                    <view wx:if="{{item.items[0].specificationText}}" class="order-product__spec">{{item.items[0].specificationText}}</view>
+                    <view wx:else class="order-product__spec">共 {{item.items.length}} 种商品</view>
+                  </view>
+                  <text class="order-product__quantity">{{item.itemCountText}}</text>
+                </view>
+                <view class="order-product__commerce">
+                  <view class="order-product__bundle-amount">
+                    <text class="order-product__bundle-amount-label">合计</text>
+                    <text class="order-product__price">{{item.amountText}}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
             <view wx:else class="order-card__empty-product">商品信息暂不可用</view>
           </view>
 
@@ -139,12 +180,8 @@
                 disabled="{{actionOrderId}}"
                 catchtap="onMoreTap"
                 hover-class="order-action--pressed"
-                aria-label="订单操作 {{item.orderNo}}"
-              >
-                <view class="order-more__dot"></view>
-                <view class="order-more__dot"></view>
-                <view class="order-more__dot"></view>
-              </button>
+                aria-label="更多订单操作 {{item.orderNo}}"
+              >更多</button>
               <view
                 wx:if="{{openMenuOrderId === item.orderId}}"
                 class="order-menu"

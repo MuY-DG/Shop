@@ -1,24 +1,186 @@
 <view class="after-sale-detail-page">
-  <navigation-bar title="售后详情" back="{{true}}" color="#2E1D16" />
-  <view class="detail-content">
-    <view wx:if="{{!loaded && loading}}" class="detail-state"><ui-state type="loading" title="正在加载售后进度" description="请稍候" /></view>
-    <view wx:elif="{{!loaded && errorText}}" class="detail-state"><ui-state type="error" title="售后详情加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" /></view>
-    <block wx:elif="{{detail}}">
-      <view wx:if="{{errorText}}" class="inline-error">{{errorText}}</view>
-      <view class="status-card status-card--{{detail.statusTone}}"><view class="status-card__icon">{{detail.status === 'REFUNDED' ? '✓' : detail.status === 'REJECTED' || detail.status === 'RETURN_REJECTED' || detail.status === 'REFUND_FAILED' ? '!' : '退'}}</view><view class="status-card__body"><view class="status-card__title">{{detail.statusText}}</view><view class="status-card__description">{{detail.statusDescription}}</view></view></view>
-      <view class="detail-card progress-card"><view class="section-heading">处理进度</view><view class="progress-list progress-list--{{detail.progressSteps.length}}"><view wx:for="{{detail.progressSteps}}" wx:key="label" class="progress-step progress-step--{{item.state}}"><view class="progress-step__track"><view class="progress-step__dot">{{item.state === 'done' ? '✓' : item.state === 'error' ? '!' : index + 1}}</view><view wx:if="{{index < detail.progressSteps.length - 1}}" class="progress-step__line"></view></view><view class="progress-step__label">{{item.label}}</view></view></view></view>
-      <view wx:if="{{detail.auditNote}}" class="detail-card audit-card audit-card--{{detail.statusTone}}"><view class="section-heading">商家说明</view><view class="audit-card__copy">{{detail.auditNote}}</view></view>
+  <navigation-bar
+    title="售后详情"
+    back="{{true}}"
+    color="#2E1D16"
+    background="#f6f6f6"
+    show-divider="{{false}}"
+  />
 
-      <view class="detail-card"><view class="section-heading">本次售后商品</view><view wx:for="{{displayItems}}" wx:key="id" class="sale-item"><image wx:if="{{item.image}}" src="{{item.image}}" mode="aspectFill" /><view wx:else class="sale-item__fallback">灶</view><view class="sale-item__body"><view class="sale-item__title">{{item.productTitle}}</view><view wx:if="{{item.specText}}" class="sale-item__spec">{{item.specText}}</view><view class="sale-item__meta">申请 {{item.requestedQuantity}} 件 · {{item.requestedAmountText}}</view><view class="sale-item__meta">批准 {{item.approvedQuantityText}}<text wx:if="{{item.approvedAmountText}}"> · {{item.approvedAmountText}}</text><text wx:if="{{item.restockQuantityText}}"> · 回库 {{item.restockQuantityText}}</text></view></view></view></view>
+  <scroll-view
+    class="detail-scroll"
+    scroll-y="{{true}}"
+    enhanced="{{true}}"
+    bounces="{{false}}"
+    enable-passive="{{true}}"
+    show-scrollbar="{{false}}"
+  >
+    <view class="detail-content">
+      <view wx:if="{{!loaded && loading}}" class="detail-state">
+        <ui-state type="loading" title="正在加载售后进度" description="请稍候" />
+      </view>
+      <view wx:elif="{{!loaded && errorText}}" class="detail-state">
+        <ui-state
+          type="error"
+          title="售后详情加载失败"
+          description="{{errorText}}"
+          action-text="重新加载"
+          bindaction="onRetry"
+        />
+      </view>
 
-      <view wx:if="{{detail.returnInfo}}" class="detail-card"><view class="section-heading">退货信息</view><view wx:if="{{detail.returnAddressText}}" class="address-panel"><view class="address-panel__label">商家退货地址</view><text>{{detail.returnAddressText}}</text><view wx:if="{{detail.returnInfo.returnDeadlineAt}}" class="address-panel__deadline">寄回截止：{{detail.returnInfo.returnDeadlineAt}}</view></view><view wx:if="{{detail.returnShipmentText}}" class="info-row"><text>退货物流</text><text>{{detail.returnShipmentText}}</text></view><view wx:if="{{detail.returnInfo.merchantReceivedAt}}" class="info-row"><text>商家收货</text><text>{{detail.returnInfo.merchantReceivedAt}}</text></view><view wx:if="{{detail.returnInfo.inspectionResult}}" class="info-row"><text>验收结果</text><text>{{detail.returnInfo.inspectionResult === 'ACCEPTED' ? '验收通过' : '验收未通过'}}</text></view><view wx:if="{{detail.returnInfo.inspectionNote}}" class="description-block"><view>验收说明</view><text>{{detail.returnInfo.inspectionNote}}</text></view></view>
+      <block wx:elif="{{detail}}">
+        <view wx:if="{{errorText}}" class="inline-error">{{errorText}}</view>
 
-      <view wx:if="{{detail.canSubmitReturnShipment || detail.canUpdateReturnShipment}}" class="detail-card shipment-form"><view class="section-heading">{{detail.canUpdateReturnShipment ? '修正退货物流' : '填写退货物流'}}</view><picker mode="selector" range="{{shipmentCompanyNames}}" value="{{shipmentCompanyIndex}}" bindchange="onShipmentCompanyChange"><view class="shipment-field">{{shipmentCompanyNames[shipmentCompanyIndex]}} <text>›</text></view></picker><input class="shipment-field" value="{{trackingNo}}" maxlength="40" placeholder="请输入物流单号" bindinput="onTrackingNoInput" /><button class="shipment-submit" loading="{{operating}}" disabled="{{operating}}" bindtap="onSubmitShipmentTap">{{detail.canUpdateReturnShipment ? '确认修正' : '提交退货物流'}}</button></view>
+        <view class="status-card status-card--{{detail.statusTone}}">
+          <view class="status-card__icon">{{detail.status === 'REFUNDED' ? '✓' : detail.status === 'REJECTED' || detail.status === 'RETURN_REJECTED' || detail.status === 'REFUND_FAILED' ? '!' : '退'}}</view>
+          <view class="status-card__body">
+            <view class="status-card__title">{{detail.statusText}}</view>
+            <view class="status-card__description">{{detail.statusDescription}}</view>
+          </view>
+        </view>
 
-      <view class="detail-card"><view class="section-heading">退款信息</view><view class="info-row"><text>售后类型</text><text>{{detail.typeText}}</text></view><view class="info-row"><text>申请金额</text><text class="price-text">{{detail.requestedAmountText}}</text></view><view wx:if="{{detail.approvedAmountText}}" class="info-row"><text>审核金额</text><text class="price-text">{{detail.approvedAmountText}}</text></view><view wx:if="{{detail.refundAmountText}}" class="info-row"><text>退款金额</text><text class="price-text">{{detail.refundAmountText}}</text></view><view class="info-row"><text>退款方式</text><text>原支付方式退回</text></view><view class="info-row"><text>售后原因</text><text>{{detail.reason}}</text></view><view wx:if="{{detail.description}}" class="description-block"><view>补充说明</view><text>{{detail.description}}</text></view></view>
-      <view class="detail-card"><view class="section-heading">凭证信息</view><view class="info-row"><text>图片凭证</text><text>{{detail.evidenceCountText}}</text></view><view wx:if="{{detail.evidenceNames.length}}" class="evidence-list"><view wx:for="{{detail.evidenceNames}}" wx:key="*this" class="evidence-file"><view class="evidence-file__icon">图</view><text>{{item}}</text></view></view><view wx:if="{{detail.evidenceNames.length}}" class="privacy-note">凭证为私有业务附件，仅用于本次售后审核。</view></view>
-      <view class="detail-card"><view class="section-heading">申请信息</view><view class="info-row"><text>售后单号</text><text>{{detail.afterSaleNo}}</text></view><view class="info-row"><text>订单编号</text><text>{{detail.orderNo}}</text></view><view class="info-row"><text>申请时间</text><text>{{detail.createdAtText}}</text></view><view wx:if="{{detail.reviewedAtText}}" class="info-row"><text>审核时间</text><text>{{detail.reviewedAtText}}</text></view><view wx:if="{{detail.refundedAtText}}" class="info-row"><text>退款完成</text><text>{{detail.refundedAtText}}</text></view></view>
-    </block>
+        <view class="detail-card progress-card">
+          <view class="section-heading">处理进度</view>
+          <view class="progress-list progress-list--{{detail.progressSteps.length}}">
+            <view
+              wx:for="{{detail.progressSteps}}"
+              wx:key="label"
+              class="progress-step progress-step--{{item.state}}"
+            >
+              <view class="progress-step__track">
+                <view class="progress-step__dot">{{item.state === 'done' ? '✓' : item.state === 'error' ? '!' : index + 1}}</view>
+                <view wx:if="{{index < detail.progressSteps.length - 1}}" class="progress-step__line"></view>
+              </view>
+              <view class="progress-step__label">{{item.label}}</view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:if="{{detail.auditNote}}" class="detail-card audit-card audit-card--{{detail.statusTone}}">
+          <view class="section-heading">商家说明</view>
+          <view class="audit-card__copy">{{detail.auditNote}}</view>
+        </view>
+
+        <view class="detail-card">
+          <view class="section-heading">本次售后商品</view>
+          <view
+            wx:for="{{displayItems}}"
+            wx:key="id"
+            class="sale-item"
+          >
+            <image wx:if="{{item.image}}" src="{{item.image}}" mode="aspectFill" />
+            <view wx:else class="sale-item__fallback">灶</view>
+            <view class="sale-item__body">
+              <view class="sale-item__title">{{item.productTitle}}</view>
+              <view wx:if="{{item.specText}}" class="sale-item__spec">{{item.specText}}</view>
+              <view class="sale-item__meta">申请 {{item.requestedQuantity}} 件 · {{item.requestedAmountText}}</view>
+              <view class="sale-item__meta">批准 {{item.approvedQuantityText}}<text wx:if="{{item.approvedAmountText}}"> · {{item.approvedAmountText}}</text><text wx:if="{{item.restockQuantityText}}"> · 回库 {{item.restockQuantityText}}</text></view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:if="{{detail.returnInfo}}" class="detail-card">
+          <view class="section-heading">退货信息</view>
+          <view wx:if="{{detail.returnAddressText}}" class="address-panel">
+            <view class="address-panel__label">商家退货地址</view>
+            <text>{{detail.returnAddressText}}</text>
+            <view wx:if="{{detail.returnInfo.returnDeadlineAt}}" class="address-panel__deadline">寄回截止：{{detail.returnInfo.returnDeadlineAt}}</view>
+          </view>
+          <view wx:if="{{detail.returnShipmentText}}" class="info-row"><text>退货物流</text><text>{{detail.returnShipmentText}}</text></view>
+          <view wx:if="{{detail.returnInfo.merchantReceivedAt}}" class="info-row"><text>商家收货</text><text>{{detail.returnInfo.merchantReceivedAt}}</text></view>
+          <view wx:if="{{detail.returnInfo.inspectionResult}}" class="info-row"><text>验收结果</text><text>{{detail.returnInfo.inspectionResult === 'ACCEPTED' ? '验收通过' : '验收未通过'}}</text></view>
+          <view wx:if="{{detail.returnInfo.inspectionNote}}" class="description-block"><view>验收说明</view><text>{{detail.returnInfo.inspectionNote}}</text></view>
+        </view>
+
+        <view wx:if="{{detail.canSubmitReturnShipment || detail.canUpdateReturnShipment}}" class="detail-card shipment-form">
+          <view class="section-heading">{{detail.canUpdateReturnShipment ? '修正退货物流' : '填写退货物流'}}</view>
+          <picker mode="selector" range="{{shipmentCompanyNames}}" value="{{shipmentCompanyIndex}}" bindchange="onShipmentCompanyChange">
+            <view class="shipment-field">{{shipmentCompanyNames[shipmentCompanyIndex]}} <text>›</text></view>
+          </picker>
+          <input
+            class="shipment-field"
+            value="{{trackingNo}}"
+            maxlength="40"
+            placeholder="请输入物流单号"
+            bindinput="onTrackingNoInput"
+          />
+          <button
+            class="shipment-submit"
+            loading="{{operating}}"
+            disabled="{{operating}}"
+            bindtap="onSubmitShipmentTap"
+          >{{detail.canUpdateReturnShipment ? '确认修正' : '提交退货物流'}}</button>
+        </view>
+
+        <view class="detail-card">
+          <view class="section-heading">退款信息</view>
+          <view class="info-row"><text>售后类型</text><text>{{detail.typeText}}</text></view>
+          <view class="info-row"><text>申请金额</text><text class="price-text">{{detail.requestedAmountText}}</text></view>
+          <view wx:if="{{detail.approvedAmountText}}" class="info-row"><text>审核金额</text><text class="price-text">{{detail.approvedAmountText}}</text></view>
+          <view wx:if="{{detail.refundAmountText}}" class="info-row"><text>退款金额</text><text class="price-text">{{detail.refundAmountText}}</text></view>
+          <view class="info-row"><text>退款方式</text><text>原支付方式退回</text></view>
+          <view class="info-row"><text>售后原因</text><text>{{detail.reason}}</text></view>
+          <view wx:if="{{detail.description}}" class="description-block"><view>补充说明</view><text>{{detail.description}}</text></view>
+        </view>
+
+        <view class="detail-card">
+          <view class="section-heading">凭证信息</view>
+          <view class="info-row"><text>图片凭证</text><text>{{detail.evidenceCountText}}</text></view>
+          <view wx:if="{{detail.evidenceNames.length}}" class="evidence-list">
+            <view wx:for="{{detail.evidenceNames}}" wx:key="*this" class="evidence-file">
+              <view class="evidence-file__icon">图</view>
+              <text>{{item}}</text>
+            </view>
+          </view>
+          <view wx:if="{{detail.evidenceNames.length}}" class="privacy-note">凭证为私有业务附件，仅用于本次售后审核。</view>
+        </view>
+
+        <view class="detail-card">
+          <view class="section-heading">申请信息</view>
+          <view class="info-row"><text>售后单号</text><text>{{detail.afterSaleNo}}</text></view>
+          <view class="info-row"><text>订单编号</text><text>{{detail.orderNo}}</text></view>
+          <view class="info-row"><text>申请时间</text><text>{{detail.createdAtText}}</text></view>
+          <view wx:if="{{detail.reviewedAtText}}" class="info-row"><text>审核时间</text><text>{{detail.reviewedAtText}}</text></view>
+          <view wx:if="{{detail.refundedAtText}}" class="info-row"><text>退款完成</text><text>{{detail.refundedAtText}}</text></view>
+          <view
+            class="service-row"
+            hover-class="service-row--pressed"
+            hover-stay-time="80"
+            bindtap="onCustomerServiceTap"
+            aria-role="button"
+            aria-label="联系售后客服"
+          >
+            <view class="service-row__icon-frame">
+              <image
+                class="service-row__icon"
+                src="/assets/icons/support-agent-outline-rounded.svg"
+                mode="aspectFit"
+                aria-hidden="true"
+              />
+            </view>
+            <text class="service-row__label">联系客服</text>
+            <text class="service-row__hint">售后问题在线咨询</text>
+            <image
+              class="service-row__chevron"
+              src="/assets/icons/chevron-right-light.svg"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
+          </view>
+        </view>
+      </block>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{detail}}" class="detail-actions">
+    <button
+      wx:if="{{detail.canCancel}}"
+      class="cancel-button"
+      loading="{{operating}}"
+      disabled="{{operating}}"
+      bindtap="onCancelTap"
+    >取消售后</button>
+    <button class="order-button" bindtap="onOrderTap">查看原订单</button>
   </view>
-  <view wx:if="{{detail}}" class="detail-actions"><button wx:if="{{detail.canCancel}}" class="cancel-button" loading="{{operating}}" disabled="{{operating}}" bindtap="onCancelTap">取消售后</button><button class="order-button" bindtap="onOrderTap">查看原订单</button></view>
 </view>

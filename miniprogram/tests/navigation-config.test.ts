@@ -786,7 +786,9 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderTemplate, /class="order-card__actions">[\s\S]*class="order-more"[\s\S]*catchtap="onMoreTap"[\s\S]*wx:if="\{\{item\.canCancel\}\}"/);
   assert.match(orderTemplate, /class="order-menu"[\s\S]*data-order-no="\{\{item\.orderNo\}\}"[\s\S]*catchtap="onCopyOrderNoTap"[\s\S]*>复制订单号<\/button>[\s\S]*wx:if="\{\{item\.canDelete\}\}"[\s\S]*>删除订单<\/button>/);
   assert.doesNotMatch(orderTemplate, /order-menu-mask|onMenuMaskTap/);
-  assert.doesNotMatch(orderTemplate, />更多<\/button>|catchtap="onDeleteTap"/);
+  assert.doesNotMatch(orderTemplate, /catchtap="onDeleteTap"/);
+  assert.match(orderTemplate, /class="order-action order-action--more"[\s\S]*aria-label="更多订单操作[\s\S]*>更多<\/button>/);
+  assert.doesNotMatch(orderTemplate, /order-more__dot/);
   assert.match(orderTemplate, /\{\{item\.afterSaleActionText\}\}/);
   assert.match(orderTemplate, /class="order-product__quantity"[\s\S]*class="order-product__commerce"/);
   assert.doesNotMatch(orderTemplate, /order-status--\{\{item\.statusTone\}\}/);
@@ -797,8 +799,12 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderStyle, /\.order-card__actions\s*\{[\s\S]*border:\s*0;/);
   assert.match(orderStyle, /button\.order-action--secondary\s*\{[\s\S]*border:\s*2rpx solid #c9c9c9;/);
   assert.match(orderStyle, /button\.order-action--primary\s*\{[\s\S]*color:\s*#fe0000;[\s\S]*background:\s*transparent;/);
-  assert.match(orderStyle, /\.order-more__dot\s*\{[\s\S]*border-radius:\s*50%;/);
+  assert.match(orderStyle, /button\.order-action--more\s*\{[\s\S]*border:\s*0;[\s\S]*color:\s*@color-text-muted;/);
+  assert.doesNotMatch(orderStyle, /\.order-more__dot/);
   assert.match(orderStyle, /\.order-more\s*\{[\s\S]*margin-right:\s*auto;/);
+  assert.match(orderStyle, /\.order-product__stack-badge\s*\{[\s\S]*border-radius:\s*@radius-pill;/);
+  assert.match(orderStyle, /\.order-product__bundle-amount-label\s*\{[\s\S]*color:\s*@color-text-muted;/);
+  assert.match(orderTemplate, /wx:elif="\{\{item\.items\.length > 1\}\}"[\s\S]*order-product--bundle[\s\S]*\+?\{\{item\.items\.length - 1\}\}[\s\S]*\{\{item\.amountText\}\}/);
   assert.match(orderStyle, /\.order-menu\s*\{[\s\S]*bottom:\s*76rpx;[\s\S]*background:\s*#ffffff;[\s\S]*box-shadow:/);
   assert.doesNotMatch(orderStyle, /\.order-menu-mask/);
   assert.match(orderSearchTemplate, /搜索商品名称或订单号/);
@@ -969,6 +975,22 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
       pageable: true
     },
     {
+      path: "pages/order/detail/detail",
+      rootClass: "detail-page",
+      scrollClass: "detail-scroll",
+      stylePath: "pages/order/detail/detail.less",
+      refreshable: false,
+      pageable: false
+    },
+    {
+      path: "pages/order/review/review",
+      rootClass: "review-page",
+      scrollClass: "review-scroll",
+      stylePath: "pages/order/review/review.less",
+      refreshable: false,
+      pageable: false
+    },
+    {
       path: "pages/order/preview/preview",
       rootClass: "preview-page",
       scrollClass: "preview-scroll",
@@ -991,6 +1013,22 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
       stylePath: "pages/after-sale/list/list.less",
       refreshable: true,
       pageable: true
+    },
+    {
+      path: "pages/after-sale/detail/detail",
+      rootClass: "after-sale-detail-page",
+      scrollClass: "detail-scroll",
+      stylePath: "pages/after-sale/detail/detail.less",
+      refreshable: false,
+      pageable: false
+    },
+    {
+      path: "pages/after-sale/apply/apply",
+      rootClass: "apply-page",
+      scrollClass: "apply-scroll",
+      stylePath: "pages/after-sale/apply/apply.less",
+      refreshable: false,
+      pageable: false
     },
     {
       path: "pages/account/address/list/list",

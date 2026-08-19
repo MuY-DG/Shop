@@ -2,21 +2,36 @@
 @import "../../../styles/mixins.less";
 
 .apply-page {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
   background: @color-page;
 }
 
+.apply-scroll {
+  height: 0;
+  min-height: 0;
+  flex: 1;
+}
+
 .apply-content {
-  padding: @space-5 @page-gutter 170rpx;
+  box-sizing: border-box;
+  padding: @space-4 @page-gutter @space-8;
+}
+
+.apply-state {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .apply-card {
-  .card-surface();
-}
-
-.apply-card {
+  border-radius: @radius-lg;
   margin-bottom: @space-4;
   padding: @space-5;
+  background: @color-surface-white;
 }
 
 .section-heading {
@@ -41,6 +56,11 @@
   gap: @space-4;
   color: @color-warning-text;
   background: @color-warning-soft;
+  .press-feedback();
+}
+
+.blocked-card--pressed {
+  opacity: 0.78;
 }
 
 .blocked-card__title {
@@ -79,6 +99,7 @@
 
 .order-item--selectable {
   align-items: flex-start;
+  grid-template-columns: 36rpx 112rpx minmax(0, 1fr);
 }
 
 .item-check {
@@ -86,12 +107,18 @@
   width: 36rpx;
   height: 36rpx;
   margin-top: 34rpx;
-  border: 2rpx solid #c7b9af;
+  border: 2rpx solid #d4d4d9;
   border-radius: 50%;
   color: #fff;
   font-size: 24rpx;
   line-height: 34rpx;
   text-align: center;
+  box-sizing: border-box;
+  .press-feedback();
+}
+
+.item-check--pressed {
+  opacity: 0.72;
 }
 
 .item-check--active {
@@ -114,8 +141,8 @@
   padding: 0;
   border: 0;
   border-radius: 12rpx;
-  background: #f3ede9;
-  color: #4a3328;
+  background: #f2f2f4;
+  color: @color-text-primary;
   font-size: 28rpx;
   line-height: 48rpx;
 }
@@ -133,16 +160,21 @@
 .type-option {
   flex: 1;
   padding: 22rpx 16rpx;
-  border: 2rpx solid #e4d9d1;
+  border: 2rpx solid #e8e8ec;
   border-radius: 16rpx;
-  background: #fff;
-  color: #6b5145;
+  background: @color-surface-white;
+  color: @color-text-secondary;
   text-align: center;
+  .press-feedback();
+}
+
+.type-option--pressed {
+  opacity: 0.78;
 }
 
 .type-option--active {
   border-color: #b72b22;
-  background: #fff5f3;
+  background: @color-brand-soft;
   color: #b72b22;
   font-weight: 600;
 }
@@ -197,16 +229,6 @@
   font-weight: 600;
 }
 
-.policy-card {
-  background: linear-gradient(135deg, @color-surface 0, fade(@color-brand-soft, 45%) 100%);
-}
-
-.policy-card__type {
-  color: @color-brand;
-  font-size: @font-size-base;
-  font-weight: 700;
-}
-
 .policy-card__copy,
 .evidence-copy {
   margin-top: @space-2;
@@ -246,6 +268,11 @@
   color: @color-text-secondary;
   font-size: @font-size-sm;
   gap: @space-3;
+  .press-feedback();
+}
+
+.reason-item--pressed {
+  opacity: 0.72;
 }
 
 .reason-item--active {
@@ -257,10 +284,11 @@
   display: flex;
   width: 34rpx;
   height: 34rpx;
-  border: 2rpx solid @color-border;
+  border: 2rpx solid #d4d4d9;
   border-radius: 50%;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   color: @color-text-inverse;
   font-size: 20rpx;
 }
@@ -284,10 +312,14 @@
   padding: @space-4;
   border-radius: @radius-md;
   color: @color-text-primary;
-  background: @color-surface-muted;
+  background: #f7f7f8;
   box-sizing: border-box;
   font-size: @font-size-sm;
   line-height: @line-height-base;
+}
+
+.description-input__placeholder {
+  color: @color-text-placeholder;
 }
 
 .description-count {
@@ -356,6 +388,12 @@ button.evidence-add {
   color: @color-brand;
   font-size: @font-size-xs;
   line-height: @line-height-base;
+  background: @color-surface-white;
+  .press-feedback();
+}
+
+.evidence-add--pressed {
+  opacity: 0.72;
 }
 
 button.evidence-add::after,
@@ -369,15 +407,10 @@ button.evidence-add > text {
 }
 
 .submit-bar {
-  position: fixed;
-  z-index: 30;
-  right: 0;
-  bottom: 0;
-  left: 0;
+  flex: none;
   padding: @space-4 @page-gutter calc(@space-4 + env(safe-area-inset-bottom));
-  border-top: 1rpx solid @color-border;
-  background: fade(@color-surface, 98%);
-  box-shadow: 0 -10rpx 30rpx rgba(68, 44, 32, 0.08);
+  border-top: 1rpx solid @color-divider;
+  background: @color-surface-white;
 }
 
 button.submit-button {
@@ -386,11 +419,16 @@ button.submit-button {
   margin: 0;
   border-radius: @radius-pill;
   color: @color-text-inverse;
-  background: linear-gradient(135deg, @color-brand 0, @color-brand-dark 100%);
+  background: @color-brand;
   box-shadow: @shadow-action;
   font-size: @font-size-base;
   font-weight: 700;
   line-height: 86rpx;
+  .press-feedback();
+}
+
+.submit-button--pressed {
+  opacity: 0.88;
 }
 
 button.submit-button[disabled] {

@@ -2,20 +2,29 @@
 @import "../../../styles/mixins.less";
 
 page {
-  min-height: 100%;
+  height: 100%;
   background: @color-page;
 }
 
 .review-page {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
   color: @color-text-primary;
   font-family: @font-family-base;
   background: @color-page;
 }
 
+.review-scroll {
+  height: 0;
+  min-height: 0;
+  flex: 1;
+}
+
 .review-content {
   box-sizing: border-box;
-  padding: 24rpx @page-gutter 180rpx;
+  padding: @space-4 @page-gutter @space-8;
 }
 
 .review-state {
@@ -64,11 +73,16 @@ page {
 }
 
 .review-summary {
-  .card-surface();
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 24rpx 26rpx;
+  padding: 26rpx 28rpx;
+  border-radius: @radius-lg;
+  background: @color-surface-white;
+}
+
+.review-summary__copy {
+  min-width: 0;
 }
 
 .review-summary__title,
@@ -90,64 +104,108 @@ page {
 
 .review-summary__progress {
   flex: none;
-  padding: 8rpx 16rpx;
+  margin-left: @space-4;
+  padding: 8rpx 18rpx;
   border-radius: @radius-pill;
-  color: @color-brand-dark;
+  color: @color-brand;
   font-size: @font-size-xs;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
   background: @color-brand-soft;
 }
 
 .product-selector {
   width: 100%;
-  margin-top: 20rpx;
+  margin-top: 8rpx;
   white-space: nowrap;
 }
 
 .product-selector__track {
   display: inline-flex;
-  padding: 2rpx;
+  padding: 12rpx 12rpx 8rpx;
+  box-sizing: border-box;
   gap: 14rpx;
 }
 
 .product-option {
-  width: 220rpx;
+  position: relative;
+  width: 316rpx;
   display: inline-flex;
   box-sizing: border-box;
   align-items: center;
-  padding: 12rpx;
-  border: 1rpx solid @color-border;
+  padding: 14rpx;
+  border: 2rpx solid @color-border;
   border-radius: @radius-md;
-  background: @color-surface;
-  gap: 12rpx;
+  background: @color-surface-white;
+  gap: 14rpx;
+  .press-feedback();
+}
+
+.product-option--pressed {
+  opacity: 0.78;
 }
 
 .product-option--selected {
-  border-color: fade(@color-brand, 56%);
+  border-color: fade(@color-brand, 62%);
   background: @color-brand-soft;
 }
 
 .product-option__image {
-  width: 64rpx;
-  height: 64rpx;
+  width: 88rpx;
+  height: 88rpx;
   border-radius: @radius-sm;
   flex: none;
   background: @color-surface-white;
 }
 
+.product-option__body {
+  min-width: 0;
+  flex: 1;
+}
+
 .product-option__title {
-  .text-ellipsis(2);
+  display: block;
+  overflow: hidden;
   color: @color-text-primary;
   font-size: @font-size-xs;
   font-weight: 600;
-  line-height: 30rpx;
-  white-space: normal;
+  line-height: 32rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-option__spec {
+  display: block;
+  overflow: hidden;
+  margin-top: 4rpx;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  line-height: 28rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.product-option__check {
+  position: absolute;
+  top: -10rpx;
+  right: -10rpx;
+  width: 40rpx;
+  height: 40rpx;
+  display: flex;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  color: @color-text-inverse;
+  background: @color-brand;
+  font-size: @font-size-xs;
+  line-height: 40rpx;
 }
 
 .review-form-card {
-  .card-surface();
-  padding: 26rpx;
-  margin-top: 20rpx;
+  padding: 26rpx 28rpx;
+  margin-top: @space-4;
+  border-radius: @radius-lg;
+  background: @color-surface-white;
 }
 
 .review-product {
@@ -211,8 +269,7 @@ page {
   border-bottom: 1rpx solid @color-divider;
 }
 
-.form-heading,
-.anonymous-row {
+.form-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -228,6 +285,7 @@ page {
 .content-count {
   color: @color-text-placeholder;
   font-size: @font-size-xs;
+  font-variant-numeric: tabular-nums;
 }
 
 .rating-stars {
@@ -246,6 +304,12 @@ page {
   align-items: center;
   justify-content: center;
   background: transparent;
+  .press-feedback();
+}
+
+.rating-star--pressed {
+  opacity: 0.7;
+  transform: scale(0.9);
 }
 
 .rating-star__icon {
@@ -264,12 +328,16 @@ page {
   box-sizing: border-box;
   padding: 22rpx;
   margin-top: 16rpx;
-  border: 1rpx solid @color-border;
+  border: 1rpx solid @color-divider;
   border-radius: @radius-md;
   color: @color-text-primary;
   font-size: @font-size-base;
   line-height: 42rpx;
-  background: fade(@color-surface-muted, 46%);
+  background: #f7f7f8;
+}
+
+.review-textarea__placeholder {
+  color: @color-text-placeholder;
 }
 
 .review-image-hint {
@@ -322,12 +390,17 @@ page {
   justify-content: center;
   margin: 0 !important;
   padding: 0;
-  border: 1rpx dashed @color-border;
+  border: 2rpx dashed #d9d9de;
   flex-direction: column;
   color: @color-text-muted;
   font-size: @font-size-xs;
   line-height: 28rpx;
-  background: fade(@color-surface-muted, 46%);
+  background: #f7f7f8;
+  .press-feedback();
+}
+
+.review-image-add--pressed {
+  opacity: 0.72;
 }
 
 .review-image-add__plus {
@@ -337,8 +410,17 @@ page {
 
 .anonymous-row {
   min-height: 104rpx;
+  display: flex;
   margin-top: 20rpx;
+  padding-top: @space-4;
   border-top: 1rpx solid @color-divider;
+  align-items: center;
+  justify-content: space-between;
+  gap: @space-4;
+}
+
+.anonymous-row__copy {
+  min-width: 0;
 }
 
 .anonymous-row__hint {
@@ -349,15 +431,11 @@ page {
 }
 
 .review-footer {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 20;
-  padding: 18rpx @page-gutter;
+  flex: none;
+  padding: 16rpx @page-gutter;
   border-top: 1rpx solid @color-divider;
-  background: fade(@color-surface, 96%);
-  .safe-bottom(18rpx);
+  background: @color-surface-white;
+  .safe-bottom(16rpx);
 }
 
 .review-submit {
@@ -372,6 +450,11 @@ page {
   line-height: 88rpx;
   background: @color-brand;
   box-shadow: @shadow-action;
+  .press-feedback();
+}
+
+.review-submit--pressed {
+  opacity: 0.88;
 }
 
 .review-submit[disabled] {

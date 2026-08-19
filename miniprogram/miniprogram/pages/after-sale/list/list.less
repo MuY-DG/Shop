@@ -17,11 +17,18 @@
 
 .list-content {
   box-sizing: border-box;
-  padding: @space-5 @page-gutter @space-12;
+  padding: @space-4 12rpx @space-12;
 }
 
 .record-card {
-  .card-surface();
+  border-radius: @radius-lg;
+  background: @color-surface-white;
+  .press-feedback();
+}
+
+.record-card--pressed {
+  opacity: 0.88;
+  transform: scale(0.992);
 }
 
 .inline-error {
@@ -52,7 +59,7 @@
 }
 
 .record-card {
-  margin-bottom: @space-4;
+  margin-bottom: @space-5;
   padding: @space-5;
 }
 

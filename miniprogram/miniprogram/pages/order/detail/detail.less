@@ -668,6 +668,62 @@ button.logistics-card__view[disabled] {
   border-top: 1rpx solid @color-divider;
 }
 
+.order-info__service {
+  min-height: 96rpx;
+  display: flex;
+  box-sizing: border-box;
+  padding: @space-2 0;
+  border-top: 1rpx solid @color-divider;
+  align-items: center;
+  gap: @space-3;
+  .press-feedback();
+}
+
+.order-info__service--pressed {
+  opacity: 0.72;
+}
+
+.order-info__service-icon-frame {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  overflow: hidden;
+  border-radius: 50%;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  background: @color-brand-soft;
+}
+
+.order-info__service-icon {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.order-info__service-label {
+  color: @color-text-black;
+  font-size: @font-size-base;
+  font-weight: 650;
+}
+
+.order-info__service-hint {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: @color-text-muted;
+  font-size: @font-size-xs;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-info__service-chevron {
+  width: 28rpx;
+  height: 28rpx;
+  flex: none;
+  opacity: 0.5;
+}
+
 .info-row {
   align-items: flex-start;
   color: @color-text-muted;

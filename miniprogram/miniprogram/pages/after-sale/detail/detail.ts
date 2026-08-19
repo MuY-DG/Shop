@@ -3,6 +3,7 @@ import {
   positiveAfterSaleId,
   type AfterSaleView
 } from '../../../features/after-sale'
+import { buildCustomerServiceUrl } from '../../../features/customer-service'
 import { buildOrderDetailUrl } from '../../../features/order-center'
 import { formatMoney } from '../../../features/product-catalog'
 import {
@@ -98,11 +99,6 @@ Page({
 
   onUnload() { latestDetailRequest += 1 },
 
-  async onPullDownRefresh() {
-    await this.loadDetail()
-    wx.stopPullDownRefresh()
-  },
-
   onRetry() { void this.loadDetail() },
 
   async loadDetail() {
@@ -138,6 +134,12 @@ Page({
   onOrderTap() {
     const orderId = this.data.detail?.orderId
     if (orderId) wx.navigateTo({ url: buildOrderDetailUrl(orderId) })
+  },
+
+  onCustomerServiceTap() {
+    const orderId = this.data.detail?.orderId
+    if (!orderId) return
+    wx.navigateTo({ url: buildCustomerServiceUrl('ORDER', orderId) })
   },
 
   onShipmentCompanyChange(event: PickerEvent) {

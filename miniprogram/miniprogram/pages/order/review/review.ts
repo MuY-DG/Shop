@@ -135,11 +135,6 @@ Page({
     latestRequest += 1;
   },
 
-  async onPullDownRefresh() {
-    await this.loadOrder();
-    wx.stopPullDownRefresh();
-  },
-
   onRetry() {
     void this.loadOrder();
   },

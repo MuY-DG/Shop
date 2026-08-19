@@ -265,6 +265,31 @@
             <view wx:if="{{detail.closeReason}}" class="info-row"><text>关闭原因</text><text>{{detail.closeReason}}</text></view>
             <view wx:if="{{detail.transactionId}}" class="info-row"><text>微信支付单号</text><text>{{detail.transactionId}}</text></view>
           </view>
+          <view
+            class="order-info__service"
+            hover-class="order-info__service--pressed"
+            hover-stay-time="80"
+            bindtap="onCustomerServiceTap"
+            aria-role="button"
+            aria-label="联系订单客服"
+          >
+            <view class="order-info__service-icon-frame">
+              <image
+                class="order-info__service-icon"
+                src="/assets/icons/support-agent-outline-rounded.svg"
+                mode="aspectFit"
+                aria-hidden="true"
+              />
+            </view>
+            <text class="order-info__service-label">联系客服</text>
+            <text class="order-info__service-hint">订单问题在线咨询</text>
+            <image
+              class="order-info__service-chevron"
+              src="/assets/icons/chevron-right-light.svg"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
+          </view>
         </view>
       </block>
     </view>
