@@ -17,6 +17,7 @@
 - `favorite-clarity-solid.svg`：[Iconify Clarity `clarity:favorite-solid`](https://icon-sets.iconify.design/clarity/favorite-solid/)，MIT，收藏后使用的黄色实心星形。
 - `chevron-left-light.svg`：[Iconify MDI Light `mdi-light:chevron-left`](https://icon-sets.iconify.design/mdi-light/chevron-left/)，OFL，用于更细的返回图标。
 - `chevron-right-light.svg`：[Iconify MDI Light `mdi-light:chevron-right`](https://icon-sets.iconify.design/mdi-light/chevron-right/)，OFL，用于批发价与地址入口。
+- `chevron-right-service.svg`：同一 MDI Light 图标的深灰版本，用于个人中心常用服务列表入口。
 - `close-material-symbols.svg`：[Iconify Material Symbols `material-symbols:close`](https://icon-sets.iconify.design/material-symbols/close/)，Apache 2.0，用于规格弹层关闭按钮。
 - `view-grid-outline.svg`：[Iconify Material Design Icons `mdi:view-grid-outline`](https://icon-sets.iconify.design/mdi/view-grid-outline/)，Apache 2.0，用于切换规格大图模式。
 - `view-list-rounded.svg`：[Iconify Material Symbols `material-symbols:view-list-rounded`](https://icon-sets.iconify.design/material-symbols/view-list-rounded/)，Apache 2.0，用于切换规格列表模式。

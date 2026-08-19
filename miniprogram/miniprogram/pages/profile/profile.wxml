@@ -163,7 +163,7 @@
           <text class="service-item__label">{{item.label}}</text>
           <image
             class="service-item__chevron"
-            src="/assets/icons/chevron-right-light.svg"
+            src="/assets/icons/chevron-right-service.svg"
             mode="aspectFit"
             aria-hidden="true"
           />
