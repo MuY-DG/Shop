@@ -30,12 +30,30 @@ public class AppShipmentTrackingController {
         return noStore(coordinator.readForOwner(principal, orderId));
     }
 
+    @GetMapping("/{id}/shipments/{shipmentId}/logistics/tracking")
+    public ResponseEntity<ApiResponse<ShipmentTrackingResponse>> shipmentTracking(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable("id") long orderId,
+            @PathVariable long shipmentId
+    ) {
+        return noStore(coordinator.readForOwner(principal, orderId, shipmentId));
+    }
+
     @PostMapping("/{id}/logistics/tracking/sync")
     public ResponseEntity<ApiResponse<ShipmentTrackingResponse>> sync(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable("id") long orderId
     ) {
         return noStore(coordinator.syncForOwner(principal, orderId));
+    }
+
+    @PostMapping("/{id}/shipments/{shipmentId}/logistics/tracking/sync")
+    public ResponseEntity<ApiResponse<ShipmentTrackingResponse>> syncShipment(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable("id") long orderId,
+            @PathVariable long shipmentId
+    ) {
+        return noStore(coordinator.syncForOwner(principal, orderId, shipmentId));
     }
 
     private ResponseEntity<ApiResponse<ShipmentTrackingResponse>> noStore(

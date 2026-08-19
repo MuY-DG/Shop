@@ -133,6 +133,88 @@ class AdminShipmentControllerTest {
     }
 
     @Test
+    void shipsOneOrderInTwoPackagesAndOnlyCompletesAfterTheLastPackage() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        AppLoginSession session = appLogin("split-shipment-user");
+        long orderId = insertPaidOrder(session, "SPLIT-SHIPMENT", "wx-split-shipment");
+        jdbcClient.sql("""
+                        update order_item
+                        set quantity = 2, line_original_amount_cent = 7960, line_amount_cent = 7960
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .update();
+        long orderItemId = jdbcClient.sql("select id from order_item where order_id = :orderId")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .single();
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(splitShipRequest(orderItemId, 1, "SF-SPLIT-1")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.packageNo").value(1))
+                .andExpect(jsonPath("$.data.finalShipment").value(false))
+                .andExpect(jsonPath("$.data.deliveryMode").value(2))
+                .andExpect(jsonPath("$.data.items[0].orderItemId").value(orderItemId))
+                .andExpect(jsonPath("$.data.items[0].quantity").value(1));
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("PARTIALLY_SHIPPED");
+
+        mockMvc.perform(post("/admin/orders/{orderId}/ship", orderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(splitShipRequest(orderItemId, 1, "SF-SPLIT-2")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.packageNo").value(2))
+                .andExpect(jsonPath("$.data.finalShipment").value(true))
+                .andExpect(jsonPath("$.data.deliveryMode").value(2));
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("SHIPPED");
+        assertThat(jdbcClient.sql("""
+                        select package_no, final_shipment, delivery_mode, tracking_no
+                        from order_shipment where order_id = :orderId order by package_no
+                        """)
+                .param("orderId", orderId)
+                .query()
+                .listOfRows())
+                .extracting(
+                        row -> row.get("package_no"),
+                        row -> row.get("final_shipment"),
+                        row -> row.get("delivery_mode"),
+                        row -> row.get("tracking_no")
+                )
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(1, false, 2, "SF-SPLIT-1"),
+                        org.assertj.core.groups.Tuple.tuple(2, true, 2, "SF-SPLIT-2")
+                );
+        assertThat(jdbcClient.sql("""
+                        select sum(item.quantity)
+                        from order_shipment_item item
+                        join order_shipment shipment on shipment.id = item.shipment_id
+                        where shipment.order_id = :orderId and item.order_item_id = :orderItemId
+                        """)
+                .param("orderId", orderId)
+                .param("orderItemId", orderItemId)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+
+        mockMvc.perform(get("/app/orders/{orderId}", orderId)
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.shipments.length()").value(2))
+                .andExpect(jsonPath("$.data.shipments[0].packageNo").value(1))
+                .andExpect(jsonPath("$.data.shipments[1].packageNo").value(2));
+    }
+
+    @Test
     void activeElectronicWaybillBlocksManualShipment() throws Exception {
         String adminToken = adminLoginAndExtractToken();
         long orderId = insertPaidOrder(
@@ -242,6 +324,59 @@ class AdminShipmentControllerTest {
                 .query(Integer.class)
                 .single()).isOne();
         assertThat(jdbcClient.sql("select count(*) from order_status_log where order_id = :orderId and event_type = 'ORDER_SHIPPED'")
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single()).isOne();
+    }
+
+    @Test
+    void partialElectronicWaybillConfirmationIsIdempotent() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long orderId = insertPaidOrder(
+                appLogin("partial-waybill-user"),
+                "PARTIAL-WAYBILL",
+                "wx-partial-waybill"
+        );
+        jdbcClient.sql("update order_item set quantity = 2 where order_id = :orderId")
+                .param("orderId", orderId)
+                .update();
+        long waybillRecordId = insertElectronicWaybill(
+                orderId, "CREATED", "TEST-WAYBILL-PARTIAL"
+        );
+        jdbcClient.sql("""
+                        update order_electronic_waybill_item
+                        set quantity = 1
+                        where electronic_waybill_id = :waybillRecordId
+                        """)
+                .param("waybillRecordId", waybillRecordId)
+                .update();
+
+        long shipmentId = 0;
+        for (int requestNumber = 0; requestNumber < 2; requestNumber++) {
+            JsonNode shipment = objectMapper.readTree(mockMvc.perform(post(
+                                    "/admin/orders/{orderId}/waybills/{waybillRecordId}/confirm-shipment",
+                                    orderId, waybillRecordId
+                            )
+                            .header("Authorization", "Bearer " + adminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.packageNo").value(1))
+                    .andExpect(jsonPath("$.data.finalShipment").value(false))
+                    .andExpect(jsonPath("$.data.deliveryMode").value(2))
+                    .andReturn()
+                    .getResponse()
+                    .getContentAsString()).path("data");
+            if (requestNumber == 0) {
+                shipmentId = shipment.path("shipmentId").asLong();
+            } else {
+                assertThat(shipment.path("shipmentId").asLong()).isEqualTo(shipmentId);
+            }
+        }
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(String.class)
+                .single()).isEqualTo("PARTIALLY_SHIPPED");
+        assertThat(jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
                 .param("orderId", orderId)
                 .query(Integer.class)
                 .single()).isOne();
@@ -412,13 +547,14 @@ class AdminShipmentControllerTest {
                 .getResponse()
                 .getContentAsString()).path("data").path("shipment");
         assertExactFields(appShipment,
-                "shipmentId", "orderId", "logisticsType", "deliveryMode", "itemDesc",
+                "shipmentId", "orderId", "packageNo", "finalShipment",
+                "logisticsType", "deliveryMode", "itemDesc",
                 "expressCompanyCode", "expressCompanyName", "trackingNo", "shipmentSource",
                 "localShipmentStatus",
                 "wechatProviderMode", "wechatUploadStatus", "wechatUploadMessage", "shippedAt",
                 "waybillTrackingSupported", "waybillRegistrationKind",
                 "waybillRegistrationStatus", "waybillRegistrationMessage",
-                "uploadTime", "wechatUploadedAt");
+                "uploadTime", "wechatUploadedAt", "items");
         assertThat(appShipment.path("shipmentSource").asText()).isEqualTo("MANUAL");
         assertThat(appShipment.has("electronicWaybillId")).isFalse();
     }
@@ -827,13 +963,14 @@ class AdminShipmentControllerTest {
 
     private void assertExactAdminShipmentFields(JsonNode shipment) {
         assertExactFields(shipment,
-                "shipmentId", "orderId", "logisticsType", "deliveryMode", "itemDesc",
+                "shipmentId", "orderId", "packageNo", "finalShipment",
+                "logisticsType", "deliveryMode", "itemDesc",
                 "expressCompanyCode", "expressCompanyName", "trackingNo", "shipmentSource",
                 "shipmentNote",
                 "localShipmentStatus", "wechatProviderMode", "wechatUploadStatus", "retryCount",
                 "waybillTrackingSupported", "waybillRegistrationKind",
                 "waybillRegistrationStatus", "waybillRegistrationMessage",
-                "shippedAt", "uploadTime", "wechatUploadedAt", "lastAttemptAt");
+                "shippedAt", "uploadTime", "wechatUploadedAt", "lastAttemptAt", "items");
     }
 
     private void assertExactFields(JsonNode object, String... expected) {
@@ -1009,7 +1146,7 @@ class AdminShipmentControllerTest {
                 .param("status", status)
                 .param("waybillId", waybillId)
                 .update();
-        return jdbcClient.sql("""
+        long waybillRecordId = jdbcClient.sql("""
                         select id
                         from order_electronic_waybill
                         where order_id = :orderId and waybill_id = :waybillId
@@ -1018,6 +1155,18 @@ class AdminShipmentControllerTest {
                 .param("waybillId", waybillId)
                 .query(Long.class)
                 .single();
+        jdbcClient.sql("""
+                        insert into order_electronic_waybill_item(
+                            electronic_waybill_id, order_item_id, quantity, created_at
+                        )
+                        select :waybillRecordId, id, quantity - refunded_quantity, current_timestamp
+                        from order_item
+                        where order_id = :orderId and quantity > refunded_quantity
+                        """)
+                .param("waybillRecordId", waybillRecordId)
+                .param("orderId", orderId)
+                .update();
+        return waybillRecordId;
     }
 
     private String shipRequest() {
@@ -1030,6 +1179,18 @@ class AdminShipmentControllerTest {
                   "shipmentNote": "front desk pickup"
                 }
                 """;
+    }
+
+    private String splitShipRequest(long orderItemId, int quantity, String trackingNo) {
+        return """
+                {
+                  "logisticsType": 1,
+                  "itemDesc": "Shipment Item x%d",
+                  "expressCompanyCode": "SF",
+                  "trackingNo": "%s",
+                  "items": [{"orderItemId": %d, "quantity": %d}]
+                }
+                """.formatted(quantity, trackingNo, orderItemId, quantity);
     }
 
     private AppLoginSession appLogin(String code) throws Exception {

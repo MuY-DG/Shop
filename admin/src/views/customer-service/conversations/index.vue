@@ -849,6 +849,7 @@
     CREATED: '待付款',
     PAYING: '支付中',
     PAID: '待发货',
+    PARTIALLY_SHIPPED: '部分发货',
     SHIPPED: '待收货',
     COMPLETED: '已完成',
     CLOSED: '已关闭',

@@ -29,12 +29,30 @@ public class AdminShipmentTrackingController {
         return noStore(coordinator.readForAdmin(orderId));
     }
 
+    @GetMapping("/{orderId}/shipments/{shipmentId}/tracking")
+    @PreAuthorize("hasAuthority('order:read')")
+    public ResponseEntity<ApiResponse<ShipmentTrackingResponse>> shipmentTracking(
+            @PathVariable long orderId,
+            @PathVariable long shipmentId
+    ) {
+        return noStore(coordinator.readForAdmin(orderId, shipmentId));
+    }
+
     @PostMapping("/{orderId}/shipping/tracking/sync")
     @PreAuthorize("hasAuthority('order:shipping:tracking:sync')")
     public ResponseEntity<ApiResponse<ShipmentTrackingResponse>> sync(
             @PathVariable long orderId
     ) {
         return noStore(coordinator.syncForAdmin(orderId));
+    }
+
+    @PostMapping("/{orderId}/shipments/{shipmentId}/tracking/sync")
+    @PreAuthorize("hasAuthority('order:shipping:tracking:sync')")
+    public ResponseEntity<ApiResponse<ShipmentTrackingResponse>> syncShipment(
+            @PathVariable long orderId,
+            @PathVariable long shipmentId
+    ) {
+        return noStore(coordinator.syncForAdmin(orderId, shipmentId));
     }
 
     private ResponseEntity<ApiResponse<ShipmentTrackingResponse>> noStore(

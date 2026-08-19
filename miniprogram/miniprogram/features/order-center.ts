@@ -2,6 +2,7 @@ import { displaySpecText, formatMoney } from "./product-catalog";
 import { formatLocalDateTime } from "../utils/date-time";
 import type {
   AppOrderDetailResponse,
+  AppOrderShipmentResponse,
   OrderItemResponse,
   OrderStatus,
   OrderStatusGroup,
@@ -259,9 +260,12 @@ export interface OrderItemView extends OrderItemResponse {
 }
 
 export interface OrderShipmentView {
+  shipmentId: number;
+  packageNo: number;
   carrierName: string;
   trackingNo: string;
   shippedAtText: string;
+  itemsText: string;
   canCopyTrackingNo: boolean;
   canOpenTracking: boolean;
 }
@@ -294,14 +298,17 @@ export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
   shippedAtText: string;
   completedAtText: string;
   shipmentView?: OrderShipmentView;
+  shipmentViews: OrderShipmentView[];
   hasAfterSale: boolean;
   canApplyAfterSale: boolean;
   afterSaleActionText: string;
   latestAfterSaleView?: AfterSaleView;
 }
 
-function normalizedShipmentView(order: AppOrderDetailResponse): OrderShipmentView | undefined {
-  const shipment = order.shipment;
+function normalizedShipmentView(
+  order: AppOrderDetailResponse,
+  shipment: AppOrderShipmentResponse
+): OrderShipmentView | undefined {
   if (!shipment || shipment.logisticsType !== 1) {
     return undefined;
   }
@@ -311,9 +318,14 @@ function normalizedShipmentView(order: AppOrderDetailResponse): OrderShipmentVie
   const shippedAt = normalizedClipboardText(shipment.shippedAt)
     || normalizedClipboardText(order.shippedAt);
   return {
+    shipmentId: shipment.shipmentId,
+    packageNo: shipment.packageNo || 1,
     carrierName: carrierName || carrierCode || "快递",
     trackingNo,
     shippedAtText: formatLocalDateTime(shippedAt),
+    itemsText: (shipment.items || [])
+      .map((item) => `${item.productTitle} ×${item.quantity}`)
+      .join("；"),
     canCopyTrackingNo: Boolean(trackingNo),
     canOpenTracking: Boolean(
       carrierCode
@@ -322,6 +334,15 @@ function normalizedShipmentView(order: AppOrderDetailResponse): OrderShipmentVie
       && shipment.waybillRegistrationStatus !== "SKIPPED"
     )
   };
+}
+
+function normalizedShipmentViews(order: AppOrderDetailResponse): OrderShipmentView[] {
+  const shipments = Array.isArray(order.shipments) && order.shipments.length > 0
+    ? order.shipments
+    : order.shipment ? [order.shipment] : [];
+  return shipments
+    .map((shipment) => normalizedShipmentView(order, shipment))
+    .filter((shipment): shipment is OrderShipmentView => Boolean(shipment));
 }
 
 function money(cent: unknown): string {
@@ -335,6 +356,8 @@ export function orderStatusText(status: OrderStatus): string {
       return "待付款";
     case "PAID":
       return "待发货";
+    case "PARTIALLY_SHIPPED":
+      return "部分发货";
     case "SHIPPED":
       return "待收货";
     case "COMPLETED":
@@ -354,6 +377,7 @@ function orderStatusTone(status: OrderStatus): string {
     case "PAYING":
       return "warning";
     case "PAID":
+    case "PARTIALLY_SHIPPED":
     case "SHIPPED":
       return "brand";
     case "COMPLETED":
@@ -370,6 +394,8 @@ function statusDescription(status: OrderStatus): string {
       return "请尽快完成支付，超时订单将自动取消";
     case "PAID":
       return "支付成功，正在等待商家发货";
+    case "PARTIALLY_SHIPPED":
+      return "部分商品已发出，其余商品正在出库";
     case "SHIPPED":
       return "商品已发出，收货后请确认完成";
     case "COMPLETED":
@@ -390,6 +416,8 @@ function statusHeadline(status: OrderStatus): string {
       return "等待付款";
     case "PAID":
       return "正在出库";
+    case "PARTIALLY_SHIPPED":
+      return "部分已发货";
     case "SHIPPED":
       return "等待收货";
     case "COMPLETED":
@@ -409,6 +437,7 @@ function statusIcon(status: OrderStatus): string {
     case "PAYING":
       return "/assets/icons/order-wallet.svg";
     case "PAID":
+    case "PARTIALLY_SHIPPED":
       return "/assets/icons/order-package.svg";
     case "SHIPPED":
       return "/assets/icons/order-receive.svg";
@@ -449,8 +478,9 @@ function summaryActions(
   const canPay = status === "CREATED" || status === "PAYING";
   const canReview = status === "COMPLETED" && pendingReviewCount > 0;
   const canDelete = status === "COMPLETED" || status === "CLOSED" || status === "REFUNDED";
-  const canRebuy = status === "SHIPPED" || canDelete;
-  const canAfterSale = status === "PAID" || status === "SHIPPED" || status === "COMPLETED";
+  const canRebuy = status === "PARTIALLY_SHIPPED" || status === "SHIPPED" || canDelete;
+  const canAfterSale = status === "PAID" || status === "PARTIALLY_SHIPPED"
+    || status === "SHIPPED" || status === "COMPLETED";
   const canModify = canPay || status === "PAID";
   return {
     canPay,
@@ -490,7 +520,8 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     items: (Array.isArray(order.items) ? order.items : []).map(buildOrderSummaryItemView),
     statusText: orderActions.canReview ? "待评价" : orderStatusText(order.status),
     statusTone: orderActions.canReview ? "brand" : orderStatusTone(order.status),
-    amountText: money(order.status === "PAID" || order.paidAmountCent > 0
+    amountText: money(order.status === "PAID" || order.status === "PARTIALLY_SHIPPED"
+      || order.paidAmountCent > 0
       ? order.paidAmountCent
       : order.payableAmountCent),
     createdAtText: formatLocalDateTime(order.createdAt, "second"),
@@ -564,7 +595,10 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     (total, item) => total + Math.max(0, item.quantity),
     0
   );
-  const shipmentView = normalizedShipmentView(order);
+  const shipmentViews = normalizedShipmentViews(order);
+  const shipmentView = shipmentViews.length > 0
+    ? shipmentViews[shipmentViews.length - 1]
+    : undefined;
   const orderInfoItemCount = [
     order.orderNo,
     order.createdAt,
@@ -604,6 +638,7 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     shippedAtText: formatLocalDateTime(order.shippedAt),
     completedAtText: formatLocalDateTime(order.completedAt),
     shipmentView,
+    shipmentViews,
     canConfirmReceipt: orderActions.canConfirmReceipt && !fulfillmentBlocked,
     hasAfterSale: Boolean(latestAfterSaleView),
     canApplyAfterSale: canApplyAfterSale(order.status, order.latestAfterSale),

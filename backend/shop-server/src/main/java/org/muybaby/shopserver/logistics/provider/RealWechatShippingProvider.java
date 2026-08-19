@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.muybaby.shopserver.logistics.DeliveryMode;
 import org.muybaby.shopserver.logistics.LogisticsType;
 import org.muybaby.shopserver.logistics.WechatReceiptQueryStatus;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
@@ -433,6 +434,7 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
                 new OrderKey(2, request.transactionId()),
                 request.logisticsType().value(),
                 request.deliveryMode().value(),
+                request.deliveryMode() == DeliveryMode.SPLIT ? request.allDelivered() : null,
                 List.of(shippingItem),
                 request.uploadTime(),
                 new Payer(request.openid())
@@ -678,10 +680,12 @@ public class RealWechatShippingProvider implements WechatShippingProvider {
         return StringUtils.hasText(value) ? value : null;
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private record ShippingUploadPayload(
             @JsonProperty("order_key") OrderKey orderKey,
             @JsonProperty("logistics_type") Integer logisticsType,
             @JsonProperty("delivery_mode") Integer deliveryMode,
+            @JsonProperty("is_all_delivered") Boolean allDelivered,
             @JsonProperty("shipping_list") List<ShippingItemPayload> shippingList,
             @JsonProperty("upload_time") String uploadTime,
             Payer payer

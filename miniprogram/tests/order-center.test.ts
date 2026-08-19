@@ -240,9 +240,12 @@ test("订单详情为实体快递生成独立于 token 的静态物流视图", (
 
   const view = buildOrderDetailView(shipped);
   assert.deepEqual(view.shipmentView, {
+    shipmentId: 701,
+    packageNo: 1,
     carrierName: "顺丰速运",
     trackingNo: "SF1234567890",
     shippedAtText: "2026-08-08 10:20",
+    itemsText: "",
     canCopyTrackingNo: true,
     canOpenTracking: true
   });

@@ -11,6 +11,7 @@ import org.muybaby.shopserver.logistics.ShipmentSource;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
+import org.muybaby.shopserver.logistics.dto.ShipmentItemResponse;
 import org.muybaby.shopserver.logistics.service.WechatShippingUploadRecovery;
 import org.muybaby.shopserver.logistics.waybill.ElectronicWaybillService;
 import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationKind;
@@ -349,7 +350,8 @@ public class AdminOrderService {
         AdminOrderAfterSaleSummaryResponse activeAfterSale = afterSaleFulfillmentPolicy.findBlocking(orderId)
                 .map(this::toAfterSaleSummary)
                 .orElse(null);
-        boolean canShip = OrderStatus.PAID.name().equals(header.status()) && activeAfterSale == null;
+        boolean canShip = isShippableStatus(header.status()) && activeAfterSale == null;
+        List<OrderShipmentResponse> shipments = findShipments(orderId);
 
         return new OrderDetailResponse(
                 header.orderId(),
@@ -387,7 +389,9 @@ public class AdminOrderService {
                 header.refundedAt(),
                 canShip,
                 activeAfterSale,
-                findShipment(orderId),
+                shipments.isEmpty() ? null : shipments.getLast(),
+                shipments,
+                findRemainingShipmentItems(orderId),
                 electronicWaybillService.latestSummary(orderId),
                 items
         );
@@ -460,7 +464,7 @@ public class AdminOrderService {
                 rs.getString("spec_text"),
                 rs.getInt("first_item_quantity"),
                 rs.getInt("item_count"),
-                OrderStatus.PAID.name().equals(status) && activeAfterSale == null,
+                isShippableStatus(status) && activeAfterSale == null,
                 activeAfterSale,
                 rs.getObject("created_at", LocalDateTime.class)
         );
@@ -652,10 +656,12 @@ public class AdminOrderService {
         return StringUtils.hasText(primary) ? primary : fallback;
     }
 
-    private OrderShipmentResponse findShipment(Long orderId) {
+    private List<OrderShipmentResponse> findShipments(Long orderId) {
         return jdbcClient.sql("""
                         select id as shipment_id,
                                order_id,
+                               package_no,
+                               final_shipment,
                                logistics_type,
                                delivery_mode,
                                item_desc,
@@ -692,11 +698,11 @@ public class AdminOrderService {
                                ) as waybill_registration_status
                         from order_shipment
                         where order_id = :orderId
+                        order by package_no, id
                         """)
                 .param("orderId", orderId)
                 .query(this::mapShipment)
-                .optional()
-                .orElse(null);
+                .list();
     }
 
     private OrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {
@@ -708,9 +714,12 @@ public class AdminOrderService {
                 registrationStatus(rs.getString("waybill_registration_status")),
                 rs.getString("electronic_waybill_mode")
         );
+        long shipmentId = rs.getLong("shipment_id");
         return new OrderShipmentResponse(
-                rs.getLong("shipment_id"),
+                shipmentId,
                 rs.getLong("order_id"),
+                rs.getInt("package_no"),
+                rs.getBoolean("final_shipment"),
                 logisticsType,
                 DeliveryMode.fromValue(rs.getInt("delivery_mode")),
                 rs.getString("item_desc"),
@@ -738,8 +747,58 @@ public class AdminOrderService {
                 rs.getObject("shipped_at", LocalDateTime.class),
                 rs.getString("upload_time"),
                 rs.getObject("wechat_uploaded_at", LocalDateTime.class),
-                rs.getObject("last_attempt_at", LocalDateTime.class)
+                rs.getObject("last_attempt_at", LocalDateTime.class),
+                findShipmentItems(shipmentId)
         );
+    }
+
+    private List<ShipmentItemResponse> findShipmentItems(long shipmentId) {
+        return jdbcClient.sql("""
+                        select item.id as order_item_id, item.product_title, item.spec_text,
+                               shipment_item.quantity
+                        from order_shipment_item shipment_item
+                        join order_item item on item.id = shipment_item.order_item_id
+                        where shipment_item.shipment_id = :shipmentId
+                        order by item.id
+                        """)
+                .param("shipmentId", shipmentId)
+                .query((rs, rowNum) -> new ShipmentItemResponse(
+                        rs.getLong("order_item_id"),
+                        rs.getString("product_title"),
+                        rs.getString("spec_text"),
+                        rs.getInt("quantity")
+                ))
+                .list();
+    }
+
+    private List<ShipmentItemResponse> findRemainingShipmentItems(long orderId) {
+        return jdbcClient.sql("""
+                        select item.id as order_item_id, item.product_title, item.spec_text,
+                               item.quantity - item.refunded_quantity
+                                 - coalesce(sum(shipment_item.quantity), 0) as remaining_quantity
+                        from order_item item
+                        left join order_shipment_item shipment_item
+                          on shipment_item.order_item_id = item.id
+                        where item.order_id = :orderId
+                        group by item.id, item.product_title, item.spec_text,
+                                 item.quantity, item.refunded_quantity
+                        having item.quantity - item.refunded_quantity
+                                 - coalesce(sum(shipment_item.quantity), 0) > 0
+                        order by item.id
+                        """)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new ShipmentItemResponse(
+                        rs.getLong("order_item_id"),
+                        rs.getString("product_title"),
+                        rs.getString("spec_text"),
+                        rs.getInt("remaining_quantity")
+                ))
+                .list();
+    }
+
+    private boolean isShippableStatus(String status) {
+        return OrderStatus.PAID.name().equals(status)
+                || OrderStatus.PARTIALLY_SHIPPED.name().equals(status);
     }
 
     private ShipmentSource shipmentSource(String value) {

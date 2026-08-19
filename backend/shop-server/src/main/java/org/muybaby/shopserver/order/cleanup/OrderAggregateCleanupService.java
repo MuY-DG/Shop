@@ -510,8 +510,23 @@ public class OrderAggregateCleanupService {
                 """, orderId));
         sections.put("shipments", rows(
                 "select * from order_shipment where order_id = :orderId order by id", orderId));
+        sections.put("shipment_items", rows("""
+                select shipment_item.*
+                from order_shipment_item shipment_item
+                join order_shipment shipment on shipment.id = shipment_item.shipment_id
+                where shipment.order_id = :orderId
+                order by shipment_item.id
+                """, orderId));
         sections.put("electronic_waybills", rows(
                 "select * from order_electronic_waybill where order_id = :orderId order by id", orderId));
+        sections.put("electronic_waybill_items", rows("""
+                select waybill_item.*
+                from order_electronic_waybill_item waybill_item
+                join order_electronic_waybill waybill
+                  on waybill.id = waybill_item.electronic_waybill_id
+                where waybill.order_id = :orderId
+                order by waybill_item.id
+                """, orderId));
         sections.put("waybill_registrations", rows("""
                 select registration.*
                 from shipment_waybill_registration registration
@@ -759,7 +774,17 @@ public class OrderAggregateCleanupService {
                 delete from shipment_waybill_registration
                 where shipment_id in (select id from order_shipment where order_id = :orderId)
                 """, orderId);
+        delete("""
+                delete from order_shipment_item
+                where shipment_id in (select id from order_shipment where order_id = :orderId)
+                """, orderId);
         delete("delete from order_shipment where order_id = :orderId", orderId);
+        delete("""
+                delete from order_electronic_waybill_item
+                where electronic_waybill_id in (
+                    select id from order_electronic_waybill where order_id = :orderId
+                )
+                """, orderId);
         delete("delete from order_electronic_waybill where order_id = :orderId", orderId);
         delete("delete from payment_order where order_id = :orderId", orderId);
         delete("delete from stock_lock where order_id = :orderId", orderId);

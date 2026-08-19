@@ -1213,6 +1213,7 @@ declare namespace Api {
       | 'CREATED'
       | 'PAYING'
       | 'PAID'
+      | 'PARTIALLY_SHIPPED'
       | 'SHIPPED'
       | 'COMPLETED'
       | 'CLOSED'
@@ -1230,7 +1231,7 @@ declare namespace Api {
     type UserSearchType = 'USER_ID' | 'USER_NAME' | 'USER_PHONE'
     type OrderSource = 'CART' | 'DIRECT' | 'MINI_PROGRAM'
     type LogisticsType = 1 | 2 | 3 | 4
-    type DeliveryMode = 1
+    type DeliveryMode = 1 | 2
     type ShipmentStatus = 'SHIPPED'
     type WechatShippingUploadStatus =
       | 'PENDING'
@@ -1368,6 +1369,8 @@ declare namespace Api {
       canShip: boolean
       activeAfterSale: ActiveAfterSaleSummary | null
       shipment?: Shipment | null
+      shipments?: Shipment[]
+      remainingShipmentItems?: ShipmentItem[]
       electronicWaybill?: Api.Waybill.Attempt | null
       closeReason: string | null
       closedAt: string | null
@@ -1382,6 +1385,8 @@ declare namespace Api {
     interface Shipment {
       shipmentId: number
       orderId: number
+      packageNo?: number
+      finalShipment?: boolean
       logisticsType: LogisticsType
       deliveryMode: DeliveryMode
       itemDesc: string
@@ -1405,6 +1410,14 @@ declare namespace Api {
       waybillRegistrationKind: Api.Waybill.RegistrationKind | null
       waybillRegistrationStatus: Api.Waybill.RegistrationStatus | null
       waybillRegistrationMessage: string | null
+      items?: ShipmentItem[]
+    }
+
+    interface ShipmentItem {
+      orderItemId: number
+      productTitle: string
+      specText?: string | null
+      quantity: number
     }
 
     type TrackingSyncStatus =
@@ -1460,6 +1473,7 @@ declare namespace Api {
       trackingNo?: string
       consignorContact?: string
       shipmentNote?: string
+      items?: Array<{ orderItemId: number; quantity: number }>
     }
 
     interface WechatShippingCapability {

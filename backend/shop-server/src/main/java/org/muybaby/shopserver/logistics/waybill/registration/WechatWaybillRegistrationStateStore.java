@@ -60,13 +60,51 @@ public class WechatWaybillRegistrationStateStore {
         return requireEligibleShipmentForOrder(orderId);
     }
 
+    public long requireEligibleShipmentForOwner(long orderId, long shipmentId, long userId) {
+        Long ownerId = jdbcClient.sql("select user_id from shop_order where id = :orderId")
+                .param("orderId", orderId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
+        if (ownerId != userId) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        return requireEligibleShipmentForOrder(orderId, shipmentId);
+    }
+
     public long requireEligibleShipmentForOrder(long orderId) {
         ShipmentIdentity shipment = jdbcClient.sql("""
                         select id, logistics_type, express_company_code, tracking_no
                         from order_shipment
                         where order_id = :orderId
+                        order by package_no desc, id desc
+                        limit 1
                         """)
                 .param("orderId", orderId)
+                .query((rs, rowNum) -> new ShipmentIdentity(
+                        rs.getLong("id"),
+                        LogisticsType.fromValue(rs.getInt("logistics_type")),
+                        rs.getString("express_company_code"),
+                        rs.getString("tracking_no")
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+        if (!WaybillRegistrationSummary.trackingSupported(
+                shipment.logisticsType(), shipment.expressCompanyCode(), shipment.trackingNo()
+        )) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return shipment.shipmentId();
+    }
+
+    public long requireEligibleShipmentForOrder(long orderId, long shipmentId) {
+        ShipmentIdentity shipment = jdbcClient.sql("""
+                        select id, logistics_type, express_company_code, tracking_no
+                        from order_shipment
+                        where order_id = :orderId and id = :shipmentId
+                        """)
+                .param("orderId", orderId)
+                .param("shipmentId", shipmentId)
                 .query((rs, rowNum) -> new ShipmentIdentity(
                         rs.getLong("id"),
                         LogisticsType.fromValue(rs.getInt("logistics_type")),
@@ -235,7 +273,7 @@ public class WechatWaybillRegistrationStateStore {
         }
 
         PaymentIdentity payment = loadPaymentIdentity(context.orderId());
-        List<WechatWaybillGoodsItem> goods = loadGoods(context.orderId());
+        List<WechatWaybillGoodsItem> goods = loadGoods(context.shipmentId());
         WechatWaybillRegistrationRequest request = new WechatWaybillRegistrationRequest(
                 context.shipmentId(),
                 payment.openid(),
@@ -358,20 +396,21 @@ public class WechatWaybillRegistrationStateStore {
                 .orElse(new PaymentIdentity("", ""));
     }
 
-    private List<WechatWaybillGoodsItem> loadGoods(long orderId) {
+    private List<WechatWaybillGoodsItem> loadGoods(long shipmentId) {
         return jdbcClient.sql("""
-                        select product_title,
+                        select item.product_title,
                                coalesce(
-                                   nullif(display_image, ''),
-                                   nullif(sku_image, ''),
-                                   nullif(main_image, ''),
+                                   nullif(item.display_image, ''),
+                                   nullif(item.sku_image, ''),
+                                   nullif(item.main_image, ''),
                                    ''
                                ) as goods_image_url
-                        from order_item
-                        where order_id = :orderId and quantity > refunded_quantity
-                        order by id
+                        from order_shipment_item shipment_item
+                        join order_item item on item.id = shipment_item.order_item_id
+                        where shipment_item.shipment_id = :shipmentId
+                        order by item.id
                         """)
-                .param("orderId", orderId)
+                .param("shipmentId", shipmentId)
                 .query((rs, rowNum) -> new WechatWaybillGoodsItem(
                         defaultString(rs.getString("product_title")),
                         defaultString(rs.getString("goods_image_url"))

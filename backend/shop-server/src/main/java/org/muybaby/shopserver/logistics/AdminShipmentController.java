@@ -43,6 +43,16 @@ public class AdminShipmentController {
         return ApiResponse.success(adminShipmentService.retryWechatUpload(principal, orderId));
     }
 
+    @PostMapping("/{orderId}/shipments/{shipmentId}/retry-wechat-upload")
+    @PreAuthorize("hasAuthority('order:shipping:retry')")
+    public ApiResponse<OrderShipmentResponse> retryShipmentWechatUpload(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @PathVariable Long shipmentId
+    ) {
+        return ApiResponse.success(adminShipmentService.retryWechatUpload(principal, orderId, shipmentId));
+    }
+
     @PostMapping("/{orderId}/shipping/reconcile-wechat-upload")
     @PreAuthorize("hasAuthority('order:shipping:retry')")
     public ApiResponse<OrderShipmentResponse> reconcileWechatUpload(
@@ -52,6 +62,16 @@ public class AdminShipmentController {
         return ApiResponse.success(adminShipmentService.reconcileWechatUpload(principal, orderId));
     }
 
+    @PostMapping("/{orderId}/shipments/{shipmentId}/reconcile-wechat-upload")
+    @PreAuthorize("hasAuthority('order:shipping:retry')")
+    public ApiResponse<OrderShipmentResponse> reconcileShipmentWechatUpload(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @PathVariable Long shipmentId
+    ) {
+        return ApiResponse.success(adminShipmentService.reconcileWechatUpload(principal, orderId, shipmentId));
+    }
+
     @PostMapping("/{orderId}/shipping/retry-waybill-registration")
     @PreAuthorize("hasAuthority('order:shipping:registration:retry')")
     public ApiResponse<OrderShipmentResponse> retryWaybillRegistration(
@@ -59,6 +79,18 @@ public class AdminShipmentController {
             @PathVariable Long orderId
     ) {
         return ApiResponse.success(adminShipmentService.retryWaybillRegistration(principal, orderId));
+    }
+
+    @PostMapping("/{orderId}/shipments/{shipmentId}/retry-waybill-registration")
+    @PreAuthorize("hasAuthority('order:shipping:registration:retry')")
+    public ApiResponse<OrderShipmentResponse> retryShipmentWaybillRegistration(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long orderId,
+            @PathVariable Long shipmentId
+    ) {
+        return ApiResponse.success(adminShipmentService.retryWaybillRegistration(
+                principal, orderId, shipmentId
+        ));
     }
 
     @PostMapping("/{orderId}/waybills/{waybillRecordId}/confirm-shipment")

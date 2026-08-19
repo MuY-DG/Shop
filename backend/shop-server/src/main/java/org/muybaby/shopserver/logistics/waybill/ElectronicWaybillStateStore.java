@@ -73,12 +73,20 @@ public class ElectronicWaybillStateStore {
                 .orElse(null);
 
         List<ItemSnapshot> items = jdbcClient.sql("""
-                        select id, product_title, product_subtitle,
-                               main_image, sku_image, display_image, spec_text,
-                               quantity - refunded_quantity as quantity
-                        from order_item
-                        where order_id = :orderId and quantity > refunded_quantity
-                        order by id
+                        select item.id, item.product_title, item.product_subtitle,
+                               item.main_image, item.sku_image, item.display_image, item.spec_text,
+                               item.quantity - item.refunded_quantity
+                                 - coalesce(sum(shipment_item.quantity), 0) as quantity
+                        from order_item item
+                        left join order_shipment_item shipment_item
+                          on shipment_item.order_item_id = item.id
+                        where item.order_id = :orderId
+                        group by item.id, item.product_title, item.product_subtitle,
+                                 item.main_image, item.sku_image, item.display_image, item.spec_text,
+                                 item.quantity, item.refunded_quantity
+                        having item.quantity - item.refunded_quantity
+                                 - coalesce(sum(shipment_item.quantity), 0) > 0
+                        order by item.id
                         """)
                 .param("orderId", orderId)
                 .query((rs, rowNum) -> new ItemSnapshot(
@@ -93,9 +101,6 @@ public class ElectronicWaybillStateStore {
                 ))
                 .list();
 
-        boolean shipmentExists = count("""
-                        select count(*) from order_shipment where order_id = :orderId
-                        """, orderId) > 0;
         Integer blockingAfterSaleCount = jdbcClient.sql("""
                         select count(*)
                         from after_sale_request
@@ -109,7 +114,6 @@ public class ElectronicWaybillStateStore {
                 order,
                 payment,
                 List.copyOf(items),
-                shipmentExists,
                 blockingAfterSaleCount != null && blockingAfterSaleCount > 0
         );
     }
@@ -258,7 +262,20 @@ public class ElectronicWaybillStateStore {
                 .param("now", now)
                 .param("createdBy", insert.createdBy())
                 .update();
-        return findByIdempotency(order.id(), insert.idempotencyKey()).orElseThrow();
+        AttemptRow created = findByIdempotency(order.id(), insert.idempotencyKey()).orElseThrow();
+        for (ItemSnapshot item : insert.items()) {
+            jdbcClient.sql("""
+                            insert into order_electronic_waybill_item(
+                                electronic_waybill_id, order_item_id, quantity, created_at
+                            ) values (:waybillId, :orderItemId, :quantity, :createdAt)
+                            """)
+                    .param("waybillId", created.id())
+                    .param("orderItemId", item.id())
+                    .param("quantity", item.quantity())
+                    .param("createdAt", now)
+                    .update();
+        }
+        return created;
     }
 
     public boolean finishCreate(
@@ -549,7 +566,6 @@ public class ElectronicWaybillStateStore {
             OrderRow order,
             PaymentSnapshot payment,
             List<ItemSnapshot> items,
-            boolean shipmentExists,
             boolean blockingAfterSale
     ) {
     }
@@ -604,6 +620,7 @@ public class ElectronicWaybillStateStore {
             String idempotencyKey,
             String requestDigest,
             String providerOrderId,
+            List<ItemSnapshot> items,
             String remark,
             Long expectTime,
             long createdBy

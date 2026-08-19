@@ -165,7 +165,7 @@ class AdminElectronicWaybillControllerTest {
                         """).param("id", orderId).update();
 
         insertShipment(orderId);
-        assertBlocker(manageToken, orderId, "发货记录");
+        assertThat(context(manageToken, orderId).path("canCreate").asBoolean()).isTrue();
         jdbcClient.sql("delete from order_shipment where order_id = :id")
                 .param("id", orderId).update();
 

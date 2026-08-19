@@ -35,8 +35,8 @@ import {
   confirmOrderReceipt,
   deleteOrder,
   getOrderDetail,
-  getOrderWaybillToken,
-  syncOrderTracking
+  getShipmentWaybillToken,
+  syncShipmentTracking
 } from "../../../services/order";
 import { isApiError } from "../../../utils/api-error";
 
@@ -44,6 +44,7 @@ interface DatasetEvent {
   currentTarget: {
     dataset: {
       index?: number | string;
+      shipmentId?: number | string;
     };
   };
 }
@@ -108,6 +109,7 @@ Page({
     errorText: "",
     actionType: "",
     logisticsOpening: false,
+    activeShipmentId: 0,
     trackingView: null as OrderTrackingView | null,
     trackingLoading: false,
     trackingErrorText: ""
@@ -164,15 +166,19 @@ Page({
         return;
       }
       const detail = buildOrderDetailView(response);
+      const latestShipment = detail.shipmentViews.length > 0
+        ? detail.shipmentViews[detail.shipmentViews.length - 1]
+        : undefined;
       this.setData({
         detail,
+        activeShipmentId: latestShipment?.shipmentId || 0,
         loading: false,
         loaded: true,
         errorText: ""
       });
       this.configureCountdown(detail);
-      if (detail.shipmentView) {
-        void this.refreshTracking(detail.orderId);
+      if (latestShipment) {
+        void this.refreshTracking(detail.orderId, latestShipment.shipmentId);
       } else {
         latestTrackingRequest += 1;
         this.setData({
@@ -193,15 +199,16 @@ Page({
     }
   },
 
-  async refreshTracking(orderId: number) {
+  async refreshTracking(orderId: number, shipmentId: number) {
     const requestId = ++latestTrackingRequest;
     this.setData({ trackingLoading: true, trackingErrorText: "" });
     try {
-      const response = await syncOrderTracking(orderId);
+      const response = await syncShipmentTracking(orderId, shipmentId);
       if (
         requestId !== latestTrackingRequest
         || this.data.orderId !== orderId
         || this.data.detail?.orderId !== orderId
+        || this.data.activeShipmentId !== shipmentId
       ) {
         return;
       }
@@ -418,18 +425,30 @@ Page({
     copyOrderNo(this.data.detail?.orderNo);
   },
 
-  onCopyTrackingNoTap() {
-    copyTrackingNo(this.data.detail?.shipmentView?.trackingNo);
+  onCopyTrackingNoTap(event: DatasetEvent) {
+    const shipmentId = Number(event.currentTarget.dataset.shipmentId);
+    const shipment = this.data.detail?.shipmentViews.find((item) => item.shipmentId === shipmentId);
+    copyTrackingNo(shipment?.trackingNo);
   },
 
-  onOpenLogisticsTap() {
-    void this.openCurrentOrderLogistics();
+  onOpenLogisticsTap(event: DatasetEvent) {
+    const shipmentId = Number(event.currentTarget.dataset.shipmentId);
+    void this.openCurrentOrderLogistics(shipmentId);
   },
 
-  async openCurrentOrderLogistics() {
+  onShipmentTap(event: DatasetEvent) {
+    const shipmentId = Number(event.currentTarget.dataset.shipmentId);
     const detail = this.data.detail;
+    if (!detail || !detail.shipmentViews.some((item) => item.shipmentId === shipmentId)) return;
+    this.setData({ activeShipmentId: shipmentId, trackingView: null, trackingErrorText: "" });
+    void this.refreshTracking(detail.orderId, shipmentId);
+  },
+
+  async openCurrentOrderLogistics(shipmentId: number) {
+    const detail = this.data.detail;
+    const shipment = detail?.shipmentViews.find((item) => item.shipmentId === shipmentId);
     if (
-      !detail?.shipmentView?.canOpenTracking
+      !detail || !shipment?.canOpenTracking
       || this.data.logisticsOpening
     ) {
       return;
@@ -437,7 +456,7 @@ Page({
     this.setData({ logisticsOpening: true });
     try {
       const opened = await openOrderLogistics({
-        requestWaybillToken: () => getOrderWaybillToken(detail.orderId)
+        requestWaybillToken: () => getShipmentWaybillToken(detail.orderId, shipmentId)
       });
       if (!opened) {
         wx.showToast({ title: LOGISTICS_UNAVAILABLE_MESSAGE, icon: "none" });

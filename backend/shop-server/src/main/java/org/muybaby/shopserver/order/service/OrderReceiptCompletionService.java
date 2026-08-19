@@ -66,8 +66,8 @@ public class OrderReceiptCompletionService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         afterSaleFulfillmentPolicy.rejectIfBlocked(order.orderId());
-        ReceiptShipment shipment = lockShipment(order.orderId());
-        if (shipment == null || !shipment.permitsLocalFallback()) {
+        java.util.List<ReceiptShipment> shipments = lockShipments(order.orderId());
+        if (shipments.isEmpty() || shipments.stream().anyMatch(shipment -> !shipment.permitsLocalFallback())) {
             throw new BusinessException(ErrorCode.WECHAT_RECEIPT_STATUS_UNAVAILABLE);
         }
         LocalDateTime completedAt = complete(
@@ -137,7 +137,7 @@ public class OrderReceiptCompletionService {
                 .orElse(null);
     }
 
-    private ReceiptShipment lockShipment(Long orderId) {
+    private java.util.List<ReceiptShipment> lockShipments(Long orderId) {
         return jdbcClient.sql("""
                         select wechat_provider_mode, wechat_upload_status
                         from order_shipment
@@ -149,8 +149,7 @@ public class OrderReceiptCompletionService {
                         providerMode(rs.getString("wechat_provider_mode")),
                         uploadStatus(rs.getString("wechat_upload_status"))
                 ))
-                .optional()
-                .orElse(null);
+                .list();
     }
 
     private WechatProviderMode providerMode(String value) {

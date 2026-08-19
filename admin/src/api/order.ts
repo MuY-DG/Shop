@@ -46,14 +46,32 @@ export function retryOrderShippingUpload(orderId: number) {
   })
 }
 
+export function retryShipmentShippingUpload(orderId: number, shipmentId: number) {
+  return request.post<Api.Order.Shipment>({
+    url: `/admin/orders/${orderId}/shipments/${shipmentId}/retry-wechat-upload`
+  })
+}
+
 export function fetchOrderShipmentTracking(orderId: number) {
   return request.get<Api.Order.ShipmentTracking>({
     url: `/admin/orders/${orderId}/shipping/tracking`
   })
 }
 
+export function fetchShipmentTracking(orderId: number, shipmentId: number) {
+  return request.get<Api.Order.ShipmentTracking>({
+    url: `/admin/orders/${orderId}/shipments/${shipmentId}/tracking`
+  })
+}
+
 export function syncOrderShipmentTracking(orderId: number) {
   return request.post<Api.Order.ShipmentTracking>({
     url: `/admin/orders/${orderId}/shipping/tracking/sync`
+  })
+}
+
+export function syncShipmentTracking(orderId: number, shipmentId: number) {
+  return request.post<Api.Order.ShipmentTracking>({
+    url: `/admin/orders/${orderId}/shipments/${shipmentId}/tracking/sync`
   })
 }

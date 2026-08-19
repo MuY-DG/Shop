@@ -137,6 +137,7 @@ declare namespace Api {
       sender: Sender | null
       receiver: Receiver | null
       defaultParcel: Parcel
+      remainingItems?: Api.Order.ShipmentItem[]
       currentAttempt: Attempt | null
       sandboxActions: SandboxEvent[]
     }
@@ -145,6 +146,7 @@ declare namespace Api {
       idempotencyKey: string
       remark?: string
       expectTime?: number
+      items?: Array<{ orderItemId: number; quantity: number }>
     }
 
     type SandboxEventRequest = SandboxEvent

@@ -54,7 +54,7 @@ public class AppUserOverviewService {
                            from shop_order user_order
                            where user_order.user_id = :userId
                              and user_order.app_deleted_at is null
-                             and user_order.status = 'PAID') as to_ship_order_count,
+                             and user_order.status in ('PAID', 'PARTIALLY_SHIPPED')) as to_ship_order_count,
                           (select count(*)
                            from shop_order user_order
                            where user_order.user_id = :userId

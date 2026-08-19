@@ -19,6 +19,7 @@ import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatReceiptQueryStatus;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.AppOrderShipmentResponse;
+import org.muybaby.shopserver.logistics.dto.ShipmentItemResponse;
 import org.muybaby.shopserver.logistics.provider.WechatReceiptQueryResult;
 import org.muybaby.shopserver.logistics.provider.WechatShippingProvider;
 import org.muybaby.shopserver.logistics.service.WechatShippingUploadRecovery;
@@ -566,6 +567,7 @@ public class AppOrderService {
                 : paymentOrder.paidAt();
         AfterSaleResponse latestAfterSale = appAfterSaleService.latestForOrder(principal, orderId);
         List<Long> rebuyableOrderItemIds = findRebuyableOrderItemIds(userId, orderId);
+        List<AppOrderShipmentResponse> shipments = findShipments(orderId);
 
         return new AppOrderDetailResponse(
                 header.orderId(),
@@ -598,7 +600,8 @@ public class AppOrderService {
                 header.completedAt(),
                 header.refundingAt(),
                 header.refundedAt(),
-                findShipment(orderId),
+                shipments.isEmpty() ? null : shipments.getLast(),
+                shipments,
                 latestAfterSale,
                 rebuyableOrderItemIds,
                 items
@@ -1561,10 +1564,12 @@ public class AppOrderService {
         return StringUtils.hasText(primary) ? primary : fallback;
     }
 
-    private AppOrderShipmentResponse findShipment(Long orderId) {
+    private List<AppOrderShipmentResponse> findShipments(Long orderId) {
         return jdbcClient.sql("""
                         select id as shipment_id,
                                order_id,
+                               package_no,
+                               final_shipment,
                                logistics_type,
                                delivery_mode,
                                item_desc,
@@ -1596,11 +1601,11 @@ public class AppOrderService {
                                ) as waybill_registration_status
                         from order_shipment
                         where order_id = :orderId
+                        order by package_no, id
                         """)
                 .param("orderId", orderId)
                 .query(this::mapShipment)
-                .optional()
-                .orElse(null);
+                .list();
     }
 
     private AppOrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {
@@ -1614,9 +1619,12 @@ public class AppOrderService {
                 registrationStatus(rs.getString("waybill_registration_status")),
                 rs.getString("electronic_waybill_mode")
         );
+        long shipmentId = rs.getLong("shipment_id");
         return new AppOrderShipmentResponse(
-                rs.getLong("shipment_id"),
+                shipmentId,
                 rs.getLong("order_id"),
+                rs.getInt("package_no"),
+                rs.getBoolean("final_shipment"),
                 logisticsType,
                 DeliveryMode.fromValue(rs.getInt("delivery_mode")),
                 rs.getString("item_desc"),
@@ -1640,8 +1648,28 @@ public class AppOrderService {
                 WaybillRegistrationSummary.safeMessage(registrationStatus),
                 rs.getObject("shipped_at", LocalDateTime.class),
                 rs.getString("upload_time"),
-                rs.getObject("wechat_uploaded_at", LocalDateTime.class)
+                rs.getObject("wechat_uploaded_at", LocalDateTime.class),
+                findShipmentItems(shipmentId)
         );
+    }
+
+    private List<ShipmentItemResponse> findShipmentItems(long shipmentId) {
+        return jdbcClient.sql("""
+                        select item.id as order_item_id, item.product_title, item.spec_text,
+                               shipment_item.quantity
+                        from order_shipment_item shipment_item
+                        join order_item item on item.id = shipment_item.order_item_id
+                        where shipment_item.shipment_id = :shipmentId
+                        order by item.id
+                        """)
+                .param("shipmentId", shipmentId)
+                .query((rs, rowNum) -> new ShipmentItemResponse(
+                        rs.getLong("order_item_id"),
+                        rs.getString("product_title"),
+                        rs.getString("spec_text"),
+                        rs.getInt("quantity")
+                ))
+                .list();
     }
 
     private ShipmentSource shipmentSource(String value) {
@@ -1795,7 +1823,7 @@ public class AppOrderService {
     private List<String> statusesForGroup(OrderStatusGroup statusGroup) {
         return switch (statusGroup) {
             case UNPAID -> List.of(OrderStatus.CREATED.name(), OrderStatus.PAYING.name());
-            case TO_SHIP -> List.of(OrderStatus.PAID.name());
+            case TO_SHIP -> List.of(OrderStatus.PAID.name(), OrderStatus.PARTIALLY_SHIPPED.name());
             case TO_RECEIVE -> List.of(OrderStatus.SHIPPED.name());
             case TO_REVIEW, COMPLETED -> List.of(OrderStatus.COMPLETED.name());
             case CANCELLED -> List.of(OrderStatus.CLOSED.name());

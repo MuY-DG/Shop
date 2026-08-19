@@ -339,51 +339,78 @@
                     <span>物流信息</span>
                   </h3>
                 </div>
-                <template v-if="currentDetail.shipment">
-                  <dl class="detail-facts detail-facts--compact">
-                    <div class="detail-fact">
-                      <dt>履约方式</dt>
-                      <dd>{{ logisticsTypeLabel(currentDetail.shipment.logisticsType) }}</dd>
-                    </div>
-                    <div class="detail-fact">
-                      <dt>快递公司</dt>
-                      <dd>{{ formatText(currentDetail.shipment.expressCompanyName) }}</dd>
-                    </div>
-                    <div class="detail-fact">
-                      <dt>物流单号</dt>
-                      <dd>
-                        <span class="detail-fact__mono">
-                          {{ formatText(currentDetail.shipment.trackingNo) }}
-                        </span>
-                        <ElButton
-                          v-if="currentDetail.shipment.trackingNo"
-                          link
-                          type="primary"
-                          class="copy-button"
-                          aria-label="复制物流单号"
-                          @click="copyText(currentDetail.shipment.trackingNo, '物流单号')"
+                <template v-if="currentDetail.shipments?.length">
+                  <div
+                    v-for="shipment in currentDetail.shipments"
+                    :key="shipment.shipmentId"
+                    class="shipment-package-card"
+                  >
+                    <div class="shipment-package-card__header">
+                      <strong>包裹 {{ shipment.packageNo || 1 }}</strong>
+                      <div>
+                        <ElTag
+                          :type="shipment.finalShipment ? 'success' : 'warning'"
+                          effect="plain"
                         >
-                          <ElIcon><CopyDocument /></ElIcon>
-                          复制
+                          {{ shipment.finalShipment ? '已全部发货' : '部分发货' }}
+                        </ElTag>
+                        <ElButton link type="primary" @click="selectDiagnosticShipment(shipment)">
+                          查看诊断
                         </ElButton>
-                      </dd>
+                      </div>
                     </div>
-                    <div class="detail-fact">
-                      <dt>发货时间</dt>
-                      <dd>{{ formatDateTime(currentDetail.shipment.shippedAt) }}</dd>
-                    </div>
-                    <div class="detail-fact detail-fact--full">
-                      <dt>商品描述</dt>
-                      <dd>{{ formatText(currentDetail.shipment.itemDesc) }}</dd>
-                    </div>
-                    <div
-                      v-if="currentDetail.shipment.shipmentNote"
-                      class="detail-fact detail-fact--full"
-                    >
-                      <dt>发货备注</dt>
-                      <dd>{{ currentDetail.shipment.shipmentNote }}</dd>
-                    </div>
-                  </dl>
+                    <dl class="detail-facts detail-facts--compact">
+                      <div class="detail-fact">
+                        <dt>履约方式</dt>
+                        <dd>{{ logisticsTypeLabel(shipment.logisticsType) }}</dd>
+                      </div>
+                      <div class="detail-fact">
+                        <dt>快递公司</dt>
+                        <dd>{{ formatText(shipment.expressCompanyName) }}</dd>
+                      </div>
+                      <div class="detail-fact">
+                        <dt>物流单号</dt>
+                        <dd>
+                          <span class="detail-fact__mono">
+                            {{ formatText(shipment.trackingNo) }}
+                          </span>
+                          <ElButton
+                            v-if="shipment.trackingNo"
+                            link
+                            type="primary"
+                            class="copy-button"
+                            aria-label="复制物流单号"
+                            @click="copyText(shipment.trackingNo, '物流单号')"
+                          >
+                            <ElIcon><CopyDocument /></ElIcon>
+                            复制
+                          </ElButton>
+                        </dd>
+                      </div>
+                      <div class="detail-fact">
+                        <dt>发货时间</dt>
+                        <dd>{{ formatDateTime(shipment.shippedAt) }}</dd>
+                      </div>
+                      <div class="detail-fact detail-fact--full">
+                        <dt>商品描述</dt>
+                        <dd>{{ formatText(shipment.itemDesc) }}</dd>
+                      </div>
+                      <div v-if="shipment.items?.length" class="detail-fact detail-fact--full">
+                        <dt>包裹商品</dt>
+                        <dd>
+                          {{
+                            shipment.items
+                              .map((item) => `${item.productTitle} ×${item.quantity}`)
+                              .join('；')
+                          }}
+                        </dd>
+                      </div>
+                      <div v-if="shipment.shipmentNote" class="detail-fact detail-fact--full">
+                        <dt>发货备注</dt>
+                        <dd>{{ shipment.shipmentNote }}</dd>
+                      </div>
+                    </dl>
+                  </div>
                 </template>
                 <template v-else-if="currentDetail.electronicWaybill">
                   <ElAlert
@@ -523,43 +550,46 @@
               </div>
             </section>
 
-            <section v-if="currentDetail.shipment" class="detail-card detail-card--diagnostics">
+            <section v-if="diagnosticShipment" class="detail-card detail-card--diagnostics">
               <ElCollapse class="shipping-diagnostics">
-                <ElCollapseItem title="微信发货诊断信息" name="wechat-shipping">
+                <ElCollapseItem
+                  :title="`包裹 ${diagnosticShipment.packageNo || 1} · 微信发货诊断信息`"
+                  name="wechat-shipping"
+                >
                   <dl class="shipping-diagnostic-grid">
                     <div class="shipping-diagnostic">
                       <dt>配送说明</dt>
-                      <dd>{{ formatShipmentModeDetail(currentDetail.shipment) }}</dd>
+                      <dd>{{ formatShipmentModeDetail(diagnosticShipment) }}</dd>
                     </div>
                     <div class="shipping-diagnostic">
                       <dt>本地发货结果</dt>
                       <dd>
-                        {{ formatLocalShipmentStatus(currentDetail.shipment.localShipmentStatus) }}
+                        {{ formatLocalShipmentStatus(diagnosticShipment.localShipmentStatus) }}
                       </dd>
                     </div>
                     <div class="shipping-diagnostic">
                       <dt>微信提供方</dt>
                       <dd>
-                        {{ formatWechatProviderMode(currentDetail.shipment.wechatProviderMode) }}
+                        {{ formatWechatProviderMode(diagnosticShipment.wechatProviderMode) }}
                       </dd>
                     </div>
                     <div class="shipping-diagnostic">
                       <dt>微信上传状态</dt>
                       <dd>
-                        {{ formatShippingUploadStatus(currentDetail.shipment.wechatUploadStatus) }}
+                        {{ formatShippingUploadStatus(diagnosticShipment.wechatUploadStatus) }}
                       </dd>
                     </div>
                     <div class="shipping-diagnostic">
                       <dt>最近尝试时间</dt>
-                      <dd>{{ formatDateTime(currentDetail.shipment.lastAttemptAt) }}</dd>
+                      <dd>{{ formatDateTime(diagnosticShipment.lastAttemptAt) }}</dd>
                     </div>
                     <div class="shipping-diagnostic">
                       <dt>运营重试次数</dt>
-                      <dd>{{ currentDetail.shipment.retryCount }}</dd>
+                      <dd>{{ diagnosticShipment.retryCount }}</dd>
                     </div>
                     <div class="shipping-diagnostic shipping-diagnostic--full">
                       <dt>微信错误</dt>
-                      <dd>{{ formatWechatUploadError(currentDetail.shipment) }}</dd>
+                      <dd>{{ formatWechatUploadError(diagnosticShipment) }}</dd>
                     </div>
                   </dl>
                 </ElCollapseItem>
@@ -568,18 +598,14 @@
                     <div class="shipping-diagnostic">
                       <dt>轨迹能力</dt>
                       <dd>
-                        {{
-                          currentDetail.shipment.waybillTrackingSupported ? '已支持' : '暂不支持'
-                        }}
+                        {{ diagnosticShipment.waybillTrackingSupported ? '已支持' : '暂不支持' }}
                       </dd>
                     </div>
                     <div class="shipping-diagnostic">
                       <dt>登记类型</dt>
                       <dd>
                         {{
-                          formatWaybillRegistrationKind(
-                            currentDetail.shipment.waybillRegistrationKind
-                          )
+                          formatWaybillRegistrationKind(diagnosticShipment.waybillRegistrationKind)
                         }}
                       </dd>
                     </div>
@@ -588,14 +614,14 @@
                       <dd>
                         {{
                           formatWaybillRegistrationStatus(
-                            currentDetail.shipment.waybillRegistrationStatus
+                            diagnosticShipment.waybillRegistrationStatus
                           )
                         }}
                       </dd>
                     </div>
                     <div class="shipping-diagnostic shipping-diagnostic--full">
                       <dt>状态说明</dt>
-                      <dd>{{ formatText(currentDetail.shipment.waybillRegistrationMessage) }}</dd>
+                      <dd>{{ formatText(diagnosticShipment.waybillRegistrationMessage) }}</dd>
                     </div>
                   </dl>
                 </ElCollapseItem>
@@ -730,7 +756,10 @@
             {{ shipmentEntryLabel(currentDetail) }}
           </ElButton>
           <ElButton
-            v-else-if="currentDetail?.status === 'PAID' && currentDetail.activeAfterSale"
+            v-else-if="
+              (currentDetail?.status === 'PAID' || currentDetail?.status === 'PARTIALLY_SHIPPED') &&
+              currentDetail.activeAfterSale
+            "
             type="warning"
             disabled
           >
@@ -738,19 +767,28 @@
           </ElButton>
           <ElButton
             v-if="
-              currentDetail?.shipment &&
-              canRetryWechatUpload(currentDetail.shipment, wechatShippingCapability)
+              currentDetail &&
+              diagnosticShipment &&
+              canRetryWechatUpload(diagnosticShipment, wechatShippingCapability)
             "
             v-auth="'order:shipping:retry'"
             type="warning"
             :loading="retryingOrderId === currentDetail?.orderId"
             :disabled="retryingOrderId !== null && retryingOrderId !== currentDetail?.orderId"
-            @click="handleRetryShippingUpload(currentDetail.orderId, currentDetail.orderNo)"
+            @click="
+              handleRetryShippingUpload(
+                currentDetail.orderId,
+                currentDetail.orderNo,
+                diagnosticShipment.shipmentId
+              )
+            "
           >
-            重试微信上传
+            重试包裹 {{ diagnosticShipment.packageNo || 1 }} 微信上传
           </ElButton>
           <ElButton
-            v-if="currentDetail?.shipment && canRetryWaybillRegistration(currentDetail.shipment)"
+            v-if="
+              currentDetail && diagnosticShipment && canRetryWaybillRegistration(diagnosticShipment)
+            "
             v-auth="'order:shipping:registration:retry'"
             type="warning"
             plain
@@ -759,9 +797,15 @@
               registrationRetryingOrderId !== null &&
               registrationRetryingOrderId !== currentDetail?.orderId
             "
-            @click="handleRetryWaybillRegistration(currentDetail.orderId, currentDetail.orderNo)"
+            @click="
+              handleRetryWaybillRegistration(
+                currentDetail.orderId,
+                currentDetail.orderNo,
+                diagnosticShipment.shipmentId
+              )
+            "
           >
-            重试物流轨迹登记
+            重试包裹 {{ diagnosticShipment.packageNo || 1 }} 物流轨迹登记
           </ElButton>
           <ElButton
             v-if="currentDetail?.status === 'CREATED'"
@@ -872,6 +916,37 @@
           <ElForm ref="shipFormRef" :model="shipForm" :rules="shipRules" label-width="106px">
             <ElFormItem label="订单号">
               <ElInput :model-value="shipTargetOrderNo" disabled />
+            </ElFormItem>
+            <ElFormItem label="本次发货商品" required>
+              <div class="shipment-item-selector">
+                <div
+                  v-for="item in shipRemainingItems"
+                  :key="item.orderItemId"
+                  class="shipment-item-selector__row"
+                >
+                  <div class="shipment-item-selector__info">
+                    <strong>{{ item.productTitle }}</strong>
+                    <span>{{ item.specText || '默认规格' }}</span>
+                    <span>剩余 {{ item.remainingQuantity }} / 共 {{ item.quantity }}</span>
+                  </div>
+                  <ElInputNumber
+                    v-model="shipItemQuantities[item.orderItemId]"
+                    :min="0"
+                    :max="item.remainingQuantity"
+                    :precision="0"
+                    controls-position="right"
+                    @change="handleShipmentItemQuantityChange"
+                  />
+                </div>
+                <ElEmpty
+                  v-if="shipRemainingItems.length === 0"
+                  description="没有待发货商品"
+                  :image-size="48"
+                />
+                <div class="shipping-field-help">
+                  数量小于剩余数量时，本次保存为部分发货；剩余商品可继续创建新包裹。
+                </div>
+              </div>
             </ElFormItem>
             <ElFormItem label="履约方式" prop="logisticsType">
               <ElSelect
@@ -1025,16 +1100,19 @@
     fetchOrderStatusLogs,
     fetchOrders,
     fetchOrderShipmentTracking,
+    fetchShipmentTracking,
     retryOrderShippingUpload,
+    retryShipmentShippingUpload,
     shipOrder,
-    syncOrderShipmentTracking
+    syncOrderShipmentTracking,
+    syncShipmentTracking
   } from '@/api/order'
   import {
     fetchWechatShippingCapability,
     fetchWechatShippingCarriers,
     syncWechatShippingCarriers
   } from '@/api/wechat-shipping'
-  import { retryWaybillRegistration } from '@/api/waybill'
+  import { retryShipmentWaybillRegistration, retryWaybillRegistration } from '@/api/waybill'
   import {
     canLoadWechatShippingCatalog,
     canRetryWechatUpload,
@@ -1095,6 +1173,16 @@
   const retryingOrderId = ref<number | null>(null)
   const registrationRetryingOrderId = ref<number | null>(null)
   const currentDetail = ref<Api.Order.OrderDetail | null>(null)
+  const diagnosticShipmentId = ref<number | null>(null)
+  const diagnosticShipment = computed(() => {
+    const detail = currentDetail.value
+    if (!detail) return null
+    return (
+      detail.shipments?.find((shipment) => shipment.shipmentId === diagnosticShipmentId.value) ||
+      detail.shipment ||
+      null
+    )
+  })
   const currentTracking = ref<Api.Order.ShipmentTracking | null>(null)
   const trackingLoading = ref(false)
   const trackingSyncing = ref(false)
@@ -1134,6 +1222,70 @@
     consignorContact: undefined,
     shipmentNote: ''
   })
+  const shipItemQuantities = reactive<Record<number, number>>({})
+  const remainingShipmentQuantityMap = (detail: Api.Order.OrderDetail) => {
+    if (detail.remainingShipmentItems) {
+      return new Map(detail.remainingShipmentItems.map((item) => [item.orderItemId, item.quantity]))
+    }
+    const shipped = new Map<number, number>()
+    for (const shipment of detail.shipments || []) {
+      for (const item of shipment.items || []) {
+        shipped.set(item.orderItemId, (shipped.get(item.orderItemId) || 0) + item.quantity)
+      }
+    }
+    return new Map(
+      detail.items.map((item) => [
+        item.orderItemId,
+        Math.max(0, item.quantity - (shipped.get(item.orderItemId) || 0))
+      ])
+    )
+  }
+  const shipRemainingItems = computed(() => {
+    const detail = shipOrderDetail.value
+    if (!detail) return []
+    const remaining = remainingShipmentQuantityMap(detail)
+    return detail.items
+      .map((item) => ({
+        ...item,
+        remainingQuantity: remaining.get(item.orderItemId) || 0
+      }))
+      .filter((item) => item.remainingQuantity > 0)
+  })
+  const selectedShipmentItems = computed(() =>
+    shipRemainingItems.value
+      .map((item) => ({
+        orderItemId: item.orderItemId,
+        quantity: Math.max(
+          0,
+          Math.min(item.remainingQuantity, shipItemQuantities[item.orderItemId] || 0)
+        )
+      }))
+      .filter((item) => item.quantity > 0)
+  )
+
+  const resetShipmentItemQuantities = (detail: Api.Order.OrderDetail | null) => {
+    Object.keys(shipItemQuantities).forEach((key) => delete shipItemQuantities[Number(key)])
+    if (!detail) return
+    const remainingQuantities = remainingShipmentQuantityMap(detail)
+    for (const item of detail.items) {
+      const remaining = remainingQuantities.get(item.orderItemId) || 0
+      if (remaining > 0) shipItemQuantities[item.orderItemId] = remaining
+    }
+  }
+
+  const updateShipmentItemDesc = () => {
+    if (shipItemDescEdited.value || !shipOrderDetail.value) return
+    const quantities = new Map(
+      selectedShipmentItems.value.map((item) => [item.orderItemId, item.quantity])
+    )
+    shipForm.itemDesc = suggestItemDesc(
+      shipOrderDetail.value.items
+        .filter((item) => quantities.has(item.orderItemId))
+        .map((item) => ({ ...item, quantity: quantities.get(item.orderItemId) || 0 }))
+    )
+  }
+
+  const handleShipmentItemQuantityChange = () => updateShipmentItemDesc()
 
   interface OrderSearchForm {
     orderNo?: string
@@ -1200,6 +1352,7 @@
     CREATED: { type: 'warning', text: '待付款', tone: 'pending' },
     PAYING: { type: 'warning', text: '待付款', tone: 'pending' },
     PAID: { type: 'primary', text: '待发货', tone: 'to-ship' },
+    PARTIALLY_SHIPPED: { type: 'warning', text: '部分发货', tone: 'to-ship' },
     SHIPPED: { type: 'primary', text: '待收货', tone: 'to-receive' },
     COMPLETED: { type: 'success', text: '已完成', tone: 'completed' },
     CLOSED: { type: 'info', text: '已关闭', tone: 'closed' },
@@ -1222,7 +1375,9 @@
 
   const formatAfterSaleStatus = (status: string) => afterSaleStatusMap[status] || status
   const formatAfterSaleHoldTitle = (orderStatus: Api.Order.OrderStatus) => {
-    if (orderStatus === 'PAID') return '订单存在进行中售后，已暂停发货'
+    if (orderStatus === 'PAID' || orderStatus === 'PARTIALLY_SHIPPED') {
+      return '订单存在进行中售后，已暂停发货'
+    }
     if (orderStatus === 'SHIPPED') return '订单存在进行中售后，已暂停确认收货'
     return '订单存在进行中售后，退款流程处理中'
   }
@@ -1514,6 +1669,7 @@
     CREATED: '待付款（待发起支付）',
     PAYING: '待付款（支付处理中）',
     PAID: '待发货',
+    PARTIALLY_SHIPPED: '部分发货',
     SHIPPED: '待收货',
     COMPLETED: '已完成',
     CLOSED: '已关闭',
@@ -1881,12 +2037,14 @@
     trackingErrorText.value = ''
   }
 
-  const loadOrderTracking = async (orderId: number) => {
+  const loadOrderTracking = async (orderId: number, shipmentId?: number) => {
     const requestId = ++trackingRequestSeq.value
     trackingLoading.value = true
     trackingErrorText.value = ''
     try {
-      const tracking = await fetchOrderShipmentTracking(orderId)
+      const tracking = shipmentId
+        ? await fetchShipmentTracking(orderId, shipmentId)
+        : await fetchOrderShipmentTracking(orderId)
       if (
         requestId !== trackingRequestSeq.value ||
         currentDetail.value?.orderId !== orderId ||
@@ -1906,9 +2064,11 @@
 
   const handleSyncTracking = async () => {
     const orderId = currentDetail.value?.orderId
+    const shipment = diagnosticShipment.value
     if (
       !orderId ||
-      currentDetail.value?.shipment?.logisticsType !== 1 ||
+      !shipment ||
+      shipment.logisticsType !== 1 ||
       trackingSyncing.value ||
       !hasAuth('order:shipping:tracking:sync')
     ) {
@@ -1918,7 +2078,9 @@
     trackingSyncing.value = true
     trackingErrorText.value = ''
     try {
-      const tracking = await syncOrderShipmentTracking(orderId)
+      const tracking = shipment.shipmentId
+        ? await syncShipmentTracking(orderId, shipment.shipmentId)
+        : await syncOrderShipmentTracking(orderId)
       if (
         requestId !== trackingRequestSeq.value ||
         currentDetail.value?.orderId !== orderId ||
@@ -1943,6 +2105,7 @@
 
   const loadOrderDetail = async (orderId: number) => {
     const requestId = ++detailRequestSeq.value
+    if (detailTargetOrderId.value !== orderId) diagnosticShipmentId.value = null
     detailTargetOrderId.value = orderId
     drawerLoading.value = true
     currentDetail.value = null
@@ -1951,7 +2114,11 @@
       const detail = await fetchOrderDetail(orderId)
       if (requestId !== detailRequestSeq.value) return
       currentDetail.value = detail
-      if (detail.shipment?.logisticsType === 1) void loadOrderTracking(orderId)
+      const selected =
+        detail.shipments?.find((shipment) => shipment.shipmentId === diagnosticShipmentId.value) ||
+        detail.shipment
+      diagnosticShipmentId.value = selected?.shipmentId || null
+      if (selected?.logisticsType === 1) void loadOrderTracking(orderId, selected.shipmentId)
     } catch (error) {
       if (requestId !== detailRequestSeq.value) return
       currentDetail.value = null
@@ -1962,6 +2129,14 @@
   }
 
   const reloadCurrentDetail = (orderId: number) => loadOrderDetail(orderId)
+
+  const selectDiagnosticShipment = (shipment: Api.Order.Shipment) => {
+    const orderId = currentDetail.value?.orderId
+    if (!orderId || shipment.shipmentId === diagnosticShipmentId.value) return
+    diagnosticShipmentId.value = shipment.shipmentId
+    resetTrackingState()
+    if (shipment.logisticsType === 1) void loadOrderTracking(orderId, shipment.shipmentId)
+  }
 
   const openDetail = async (orderId: number) => {
     drawerVisible.value = true
@@ -1975,13 +2150,15 @@
 
   const resetShipForm = (detail: Api.Order.OrderDetail | null = null) => {
     shipForm.logisticsType = 1
-    shipForm.itemDesc = detail ? suggestItemDesc(detail.items) : ''
     delete shipForm.expressCompanyCode
     delete shipForm.trackingNo
     delete shipForm.consignorContact
     shipForm.shipmentNote = ''
     shipOrderDetail.value = detail
+    resetShipmentItemQuantities(detail)
     shipItemDescEdited.value = false
+    shipForm.itemDesc = ''
+    updateShipmentItemDesc()
     shipFormRef.value?.clearValidate()
   }
 
@@ -2043,6 +2220,7 @@
       .then((detail) => {
         if (!isCurrentShipDialog(generation, orderId)) return
         shipOrderDetail.value = detail
+        resetShipmentItemQuantities(detail)
         const resolvedAttempt = waybillPanelResolved.value
           ? waybillPanelAttempt.value
           : detail.electronicWaybill
@@ -2059,7 +2237,7 @@
             waybillPanelAttempt.value
           )
         }
-        if (!shipItemDescEdited.value) shipForm.itemDesc = suggestItemDesc(detail.items)
+        updateShipmentItemDesc()
       })
       .catch(() => undefined)
       .finally(() => {
@@ -2269,6 +2447,10 @@
     const generation = shipDialogGeneration.value
 
     try {
+      if (selectedShipmentItems.value.length === 0) {
+        ElMessage.warning('请至少选择一件本次发货商品')
+        return
+      }
       shipForm.itemDesc = trimItemDesc(shipForm.itemDesc)
       const formValid = (await shipFormRef.value?.validate().catch(() => false)) ?? true
       if (!formValid) return
@@ -2281,7 +2463,8 @@
 
       const payload: Api.Order.ShipOrderForm = {
         logisticsType: shipForm.logisticsType,
-        itemDesc: shipForm.itemDesc
+        itemDesc: shipForm.itemDesc,
+        items: selectedShipmentItems.value
       }
       const shipmentNote = shipForm.shipmentNote?.trim()
       if (shipmentNote) payload.shipmentNote = shipmentNote
@@ -2314,7 +2497,11 @@
     }
   }
 
-  const handleRetryShippingUpload = async (orderId: number, orderNo: string) => {
+  const handleRetryShippingUpload = async (
+    orderId: number,
+    orderNo: string,
+    shipmentId?: number
+  ) => {
     if (retryingOrderId.value !== null) return
     const requestGeneration = ++retryRequestGeneration.value
     const detailGenerationAtStart = detailRequestSeq.value
@@ -2328,7 +2515,9 @@
       if (requestGeneration !== retryRequestGeneration.value || retryingOrderId.value !== orderId) {
         return
       }
-      const shipment = await retryOrderShippingUpload(orderId)
+      const shipment = shipmentId
+        ? await retryShipmentShippingUpload(orderId, shipmentId)
+        : await retryOrderShippingUpload(orderId)
       const detailContextChanged =
         detailRequestSeq.value !== detailGenerationAtStart && detailTargetOrderId.value !== orderId
       notifyShippingOutcome(
@@ -2350,7 +2539,11 @@
     }
   }
 
-  const handleRetryWaybillRegistration = async (orderId: number, orderNo: string) => {
+  const handleRetryWaybillRegistration = async (
+    orderId: number,
+    orderNo: string,
+    shipmentId?: number
+  ) => {
     if (!hasAuth('order:shipping:registration:retry')) return
     if (registrationRetryingOrderId.value !== null) return
     const requestGeneration = ++registrationRetryRequestGeneration.value
@@ -2368,7 +2561,9 @@
         return
       }
 
-      const shipment = await retryWaybillRegistration(orderId)
+      const shipment = shipmentId
+        ? await retryShipmentWaybillRegistration(orderId, shipmentId)
+        : await retryWaybillRegistration(orderId)
       if (
         requestGeneration !== registrationRetryRequestGeneration.value ||
         registrationRetryingOrderId.value !== orderId
@@ -2377,7 +2572,7 @@
       }
       if (currentDetail.value?.orderId === orderId) {
         currentDetail.value.shipment = shipment
-        if (shipment.logisticsType === 1) void loadOrderTracking(orderId)
+        if (shipment.logisticsType === 1) void loadOrderTracking(orderId, shipment.shipmentId)
       }
 
       const statusText = formatWaybillRegistrationStatus(shipment.waybillRegistrationStatus)
@@ -2388,7 +2583,11 @@
       } else {
         ElMessage.warning({ message: outcome, duration: 6000 })
       }
-      await Promise.allSettled([refreshData()])
+      const refreshTasks: Promise<unknown>[] = [refreshData()]
+      if (drawerVisible.value && currentDetail.value?.orderId === orderId) {
+        refreshTasks.push(loadOrderDetail(orderId))
+      }
+      await Promise.allSettled(refreshTasks)
     } finally {
       if (
         requestGeneration === registrationRetryRequestGeneration.value &&
@@ -2827,6 +3026,31 @@
     }
   }
 
+  .shipment-package-card {
+    padding: 14px;
+    background: var(--el-fill-color-extra-light);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+
+    & + & {
+      margin-top: 12px;
+    }
+  }
+
+  .shipment-package-card__header {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+
+    > div {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+  }
+
   .shipping-diagnostics {
     border-top: 0;
     border-bottom: 0;
@@ -3115,6 +3339,42 @@
   .shipping-item-desc,
   .shipping-carrier-field {
     width: 100%;
+  }
+
+  .shipment-item-selector {
+    width: 100%;
+  }
+
+  .shipment-item-selector__row {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--el-fill-color-extra-light);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+
+    & + & {
+      margin-top: 8px;
+    }
+  }
+
+  .shipment-item-selector__info {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+
+    strong {
+      color: var(--el-text-color-primary);
+    }
+
+    span {
+      font-size: 12px;
+      line-height: 18px;
+      color: var(--el-text-color-secondary);
+    }
   }
 
   .shipping-item-desc__counter,

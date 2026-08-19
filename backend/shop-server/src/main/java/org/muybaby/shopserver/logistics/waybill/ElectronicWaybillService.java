@@ -31,6 +31,8 @@ import org.muybaby.shopserver.logistics.waybill.provider.WechatExpressCargoItem;
 import org.muybaby.shopserver.logistics.waybill.provider.WechatExpressContact;
 import org.muybaby.shopserver.logistics.waybill.provider.WechatExpressShopItem;
 import org.muybaby.shopserver.logistics.waybill.provider.WechatProviderOutcome;
+import org.muybaby.shopserver.logistics.dto.ShipmentItemRequest;
+import org.muybaby.shopserver.logistics.dto.ShipmentItemResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -50,7 +52,9 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -115,6 +119,9 @@ public class ElectronicWaybillService {
                 completeSender(config.sender()) ? config.sender() : null,
                 completeReceiver(material.order().order()) ? receiver(material.order().order()) : null,
                 config.defaultParcel(),
+                material.order().items().stream().map(item -> new ShipmentItemResponse(
+                        item.id(), item.title(), item.specText(), item.quantity()
+                )).toList(),
                 material.current() == null ? null : toResponse(material.current()),
                 config.mode() == WechatExpressMode.SANDBOX ? SANDBOX_ACTIONS : List.of()
         );
@@ -328,6 +335,7 @@ public class ElectronicWaybillService {
             throw conflict();
         }
         int attemptNo = stateStore.nextAttemptNo(orderId);
+        List<ItemSnapshot> selectedItems = selectedItems(order.items(), request.items());
         String providerOrderId = providerOrderId(order.order().orderNo(), attemptNo);
         AttemptRow created = stateStore.insertCreating(new ElectronicWaybillStateStore.CreateInsert(
                 order,
@@ -337,11 +345,12 @@ public class ElectronicWaybillService {
                 request.idempotencyKey(),
                 request.digest(),
                 providerOrderId,
+                selectedItems,
                 request.remark(),
                 request.expectTime(),
                 adminId
         ), now);
-        return new CreateClaim(created, addRequest(created, order), true, false);
+        return new CreateClaim(created, addRequest(created, selectedItems), true, false);
     }
 
     private AttemptRow finishCreate(AttemptRow claimed, WechatElectronicWaybillResult result) {
@@ -495,7 +504,8 @@ public class ElectronicWaybillService {
         } else if (!completeConfig(config)) {
             blockers.add("电子面单配置不完整，请先完成配置");
         }
-        if (!"PAID".equals(order.order().status())) {
+        if (!"PAID".equals(order.order().status())
+                && !"PARTIALLY_SHIPPED".equals(order.order().status())) {
             blockers.add("订单不是待发货状态，不能生成电子面单");
         }
         if (order.blockingAfterSale()) {
@@ -514,9 +524,6 @@ public class ElectronicWaybillService {
             blockers.add("订单缺少商品快照，不能生成电子面单");
         } else if (order.items().stream().anyMatch(item -> !validItem(item))) {
             blockers.add("商品图片必须是公开 HTTPS 地址");
-        }
-        if (order.shipmentExists()) {
-            blockers.add("订单已存在发货记录");
         }
         if (activeAttempt) {
             blockers.add("订单已有待处理的电子面单，请先恢复或取消");
@@ -618,6 +625,11 @@ public class ElectronicWaybillService {
         if (!validParcel(parcel) || remark.length() > 1024) {
             throw validation();
         }
+        List<ShipmentItemRequest> items = normalizeItemRequests(request.items());
+        String itemDigest = items.stream()
+                .map(item -> item.orderItemId() + ":" + item.quantity())
+                .reduce((left, right) -> left + "," + right)
+                .orElse("ALL_REMAINING");
         String digest = sha256(String.join("\u0000",
                 key,
                 Integer.toString(parcel.count()),
@@ -626,16 +638,60 @@ public class ElectronicWaybillService {
                 decimal(parcel.widthCm()),
                 decimal(parcel.heightCm()),
                 remark,
-                request.expectTime() == null ? "" : request.expectTime().toString()
+                request.expectTime() == null ? "" : request.expectTime().toString(),
+                itemDigest
         ));
-        return new NormalizedCreate(key, parcel, remark, request.expectTime(), digest);
+        return new NormalizedCreate(key, parcel, remark, request.expectTime(), items, digest);
     }
 
-    private WechatElectronicWaybillAddRequest addRequest(AttemptRow row, OrderSnapshot order) {
-        List<WechatExpressCargoItem> cargoItems = order.items().stream()
+    private List<ShipmentItemRequest> normalizeItemRequests(List<ShipmentItemRequest> requested) {
+        if (requested == null || requested.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Integer> quantities = new LinkedHashMap<>();
+        for (ShipmentItemRequest item : requested) {
+            if (item == null || item.orderItemId() == null || item.quantity() == null
+                    || item.orderItemId() < 1 || item.quantity() < 1
+                    || quantities.putIfAbsent(item.orderItemId(), item.quantity()) != null) {
+                throw validation();
+            }
+        }
+        return quantities.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new ShipmentItemRequest(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    private List<ItemSnapshot> selectedItems(
+            List<ItemSnapshot> remaining,
+            List<ShipmentItemRequest> requested
+    ) {
+        if (requested == null || requested.isEmpty()) {
+            return List.copyOf(remaining);
+        }
+        Map<Long, ItemSnapshot> byId = remaining.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        ItemSnapshot::id, item -> item, (left, right) -> left, LinkedHashMap::new
+                ));
+        List<ItemSnapshot> selected = new ArrayList<>();
+        for (ShipmentItemRequest request : requested) {
+            ItemSnapshot item = byId.get(request.orderItemId());
+            if (item == null || request.quantity() > item.quantity()) {
+                throw conflict();
+            }
+            selected.add(new ItemSnapshot(
+                    item.id(), item.title(), item.subtitle(), item.mainImage(), item.skuImage(),
+                    item.displayImage(), item.specText(), request.quantity()
+            ));
+        }
+        return List.copyOf(selected);
+    }
+
+    private WechatElectronicWaybillAddRequest addRequest(AttemptRow row, List<ItemSnapshot> items) {
+        List<WechatExpressCargoItem> cargoItems = items.stream()
                 .map(item -> new WechatExpressCargoItem(item.title().trim(), item.quantity()))
                 .toList();
-        List<WechatExpressShopItem> shopItems = order.items().stream()
+        List<WechatExpressShopItem> shopItems = items.stream()
                 .map(item -> new WechatExpressShopItem(
                         item.title().trim(),
                         image(item),
@@ -976,6 +1032,7 @@ public class ElectronicWaybillService {
             WechatExpressParcel parcel,
             String remark,
             Long expectTime,
+            List<ShipmentItemRequest> items,
             String digest
     ) {
     }

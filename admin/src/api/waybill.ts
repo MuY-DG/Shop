@@ -79,3 +79,9 @@ export function retryWaybillRegistration(orderId: number) {
     url: `/admin/orders/${orderId}/shipping/retry-waybill-registration`
   })
 }
+
+export function retryShipmentWaybillRegistration(orderId: number, shipmentId: number) {
+  return request.post<Api.Order.Shipment>({
+    url: `/admin/orders/${orderId}/shipments/${shipmentId}/retry-waybill-registration`
+  })
+}

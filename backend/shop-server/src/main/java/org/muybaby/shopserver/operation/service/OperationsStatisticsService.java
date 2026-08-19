@@ -908,7 +908,7 @@ public class OperationsStatisticsService {
     private List<TodoItem> todoItems() {
         OrderTodoAggregate orders = jdbcClient.sql("""
                         select coalesce(sum(case when status in ('CREATED', 'PAYING') then 1 else 0 end), 0) as unpaid_count,
-                               coalesce(sum(case when status = 'PAID' then 1 else 0 end), 0) as to_ship_count
+                               coalesce(sum(case when status in ('PAID', 'PARTIALLY_SHIPPED') then 1 else 0 end), 0) as to_ship_count
                         from shop_order
                         """)
                 .query((rs, rowNum) -> new OrderTodoAggregate(
@@ -1884,8 +1884,8 @@ public class OperationsStatisticsService {
     private CurrentServiceQueue currentServiceQueue() {
         LocalDateTime overdueBefore = LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(48);
         OrderServiceQueue orders = jdbcClient.sql("""
-                        select coalesce(sum(case when status = 'PAID' then 1 else 0 end), 0) as to_ship_count,
-                               coalesce(sum(case when status = 'PAID' and paid_at < :overdueBefore then 1 else 0 end), 0) as overdue_count
+                        select coalesce(sum(case when status in ('PAID', 'PARTIALLY_SHIPPED') then 1 else 0 end), 0) as to_ship_count,
+                               coalesce(sum(case when status in ('PAID', 'PARTIALLY_SHIPPED') and paid_at < :overdueBefore then 1 else 0 end), 0) as overdue_count
                         from shop_order
                         """)
                 .param("overdueBefore", overdueBefore)
@@ -2159,6 +2159,7 @@ public class OperationsStatisticsService {
             case "CREATED" -> "待付款";
             case "PAYING" -> "支付中";
             case "PAID" -> "待发货";
+            case "PARTIALLY_SHIPPED" -> "部分发货";
             case "SHIPPED" -> "已发货";
             case "COMPLETED" -> "已完成";
             case "CLOSED" -> "已关闭";
@@ -2195,6 +2196,7 @@ public class OperationsStatisticsService {
                 case "CREATED" -> "待付款";
                 case "PAYING" -> "支付中";
                 case "PAID" -> "待发货";
+                case "PARTIALLY_SHIPPED" -> "部分发货";
                 case "SHIPPED" -> "已发货";
                 case "COMPLETED" -> "已完成";
                 case "CLOSED" -> "已关闭";

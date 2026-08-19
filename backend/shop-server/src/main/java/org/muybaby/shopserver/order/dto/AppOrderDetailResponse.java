@@ -38,6 +38,7 @@ public record AppOrderDetailResponse(
         LocalDateTime refundingAt,
         LocalDateTime refundedAt,
         AppOrderShipmentResponse shipment,
+        List<AppOrderShipmentResponse> shipments,
         AfterSaleResponse latestAfterSale,
         List<Long> rebuyableOrderItemIds,
         List<OrderItemResponse> items

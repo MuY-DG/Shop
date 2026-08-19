@@ -51,7 +51,8 @@ import java.util.Set;
 public class AppAfterSaleV2Service {
 
     private static final Set<String> ELIGIBLE_ORDER_STATUSES = Set.of(
-            OrderStatus.PAID.name(), OrderStatus.SHIPPED.name(), OrderStatus.COMPLETED.name());
+            OrderStatus.PAID.name(), OrderStatus.PARTIALLY_SHIPPED.name(),
+            OrderStatus.SHIPPED.name(), OrderStatus.COMPLETED.name());
     private static final Set<String> ACTIVE_STATUSES = Set.of(
             AfterSaleStatus.REQUESTED.name(), AfterSaleStatus.APPROVED.name(),
             AfterSaleStatus.WAITING_RETURN.name(), AfterSaleStatus.RETURNING.name(),

@@ -6,7 +6,7 @@ import java.util.List;
 public enum AdminOrderStatusGroup {
     ALL(Arrays.stream(OrderStatus.values()).map(Enum::name).toList()),
     UNPAID(List.of(OrderStatus.CREATED.name(), OrderStatus.PAYING.name())),
-    TO_SHIP(List.of(OrderStatus.PAID.name())),
+    TO_SHIP(List.of(OrderStatus.PAID.name(), OrderStatus.PARTIALLY_SHIPPED.name())),
     TO_RECEIVE(List.of(OrderStatus.SHIPPED.name())),
     COMPLETED(List.of(OrderStatus.COMPLETED.name())),
     CLOSED(List.of(OrderStatus.CLOSED.name())),

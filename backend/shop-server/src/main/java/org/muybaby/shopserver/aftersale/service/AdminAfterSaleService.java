@@ -78,6 +78,7 @@ public class AdminAfterSaleService {
     private static final Set<String> AUDITABLE_STATUSES = Set.of(AfterSaleStatus.REQUESTED.name());
     private static final Set<String> REFUNDABLE_ORDER_STATUSES = Set.of(
             OrderStatus.PAID.name(),
+            OrderStatus.PARTIALLY_SHIPPED.name(),
             OrderStatus.SHIPPED.name(),
             OrderStatus.COMPLETED.name()
     );

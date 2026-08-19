@@ -76,6 +76,16 @@ export function getOrderWaybillToken(orderId: number): Promise<OrderWaybillToken
   });
 }
 
+export function getShipmentWaybillToken(
+  orderId: number,
+  shipmentId: number
+): Promise<OrderWaybillTokenResponse> {
+  return request<OrderWaybillTokenResponse>({
+    url: API_ENDPOINTS.orders.shipmentWaybillToken(orderId, shipmentId),
+    method: "POST"
+  });
+}
+
 export function getOrderTracking(orderId: number): Promise<ShipmentTrackingResponse> {
   return request<ShipmentTrackingResponse>({
     url: API_ENDPOINTS.orders.tracking(orderId),
@@ -86,6 +96,16 @@ export function getOrderTracking(orderId: number): Promise<ShipmentTrackingRespo
 export function syncOrderTracking(orderId: number): Promise<ShipmentTrackingResponse> {
   return request<ShipmentTrackingResponse>({
     url: API_ENDPOINTS.orders.syncTracking(orderId),
+    method: "POST"
+  });
+}
+
+export function syncShipmentTracking(
+  orderId: number,
+  shipmentId: number
+): Promise<ShipmentTrackingResponse> {
+  return request<ShipmentTrackingResponse>({
+    url: API_ENDPOINTS.orders.syncShipmentTracking(orderId, shipmentId),
     method: "POST"
   });
 }

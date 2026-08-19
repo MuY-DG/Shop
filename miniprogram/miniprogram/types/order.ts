@@ -4,6 +4,7 @@ export type OrderStatus =
   | "CREATED"
   | "PAYING"
   | "PAID"
+  | "PARTIALLY_SHIPPED"
   | "SHIPPED"
   | "COMPLETED"
   | "CLOSED"
@@ -82,7 +83,7 @@ export interface OrderItemResponse {
 }
 
 export type LogisticsType = 1 | 2 | 3 | 4;
-export type DeliveryMode = 1;
+export type DeliveryMode = 1 | 2;
 export type ShipmentSource = "MANUAL" | "WECHAT_WAYBILL";
 export type WechatShippingProviderMode = "REAL" | "MOCK" | "DISABLED" | "UNKNOWN";
 export type WechatShippingUploadStatus =
@@ -106,6 +107,8 @@ export type WaybillRegistrationStatus =
 export interface AppOrderShipmentResponse {
   shipmentId: number;
   orderId: number;
+  packageNo?: number;
+  finalShipment?: boolean;
   logisticsType: LogisticsType;
   deliveryMode: DeliveryMode;
   itemDesc: string;
@@ -125,6 +128,14 @@ export interface AppOrderShipmentResponse {
   shippedAt: string;
   uploadTime: string | null;
   wechatUploadedAt: string | null;
+  items?: ShipmentItemResponse[];
+}
+
+export interface ShipmentItemResponse {
+  orderItemId: number;
+  productTitle: string;
+  specText?: string;
+  quantity: number;
 }
 
 export interface OrderWaybillTokenResponse {
@@ -209,6 +220,7 @@ export interface AppOrderDetailResponse {
   refundingAt?: string;
   refundedAt?: string;
   shipment?: AppOrderShipmentResponse | null;
+  shipments?: AppOrderShipmentResponse[];
   latestAfterSale?: AfterSaleResponse;
   rebuyableOrderItemIds?: number[];
   items: OrderItemResponse[];

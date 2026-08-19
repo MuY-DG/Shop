@@ -9,9 +9,11 @@ import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistration
 import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationStatus;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record OrderShipmentResponse(
         Long shipmentId, Long orderId,
+        Integer packageNo, boolean finalShipment,
         LogisticsType logisticsType, DeliveryMode deliveryMode,
         String itemDesc,
         String expressCompanyCode, String expressCompanyName, String trackingNo,
@@ -26,6 +28,10 @@ public record OrderShipmentResponse(
         String waybillRegistrationMessage,
         int retryCount,
         LocalDateTime shippedAt, String uploadTime,
-        LocalDateTime wechatUploadedAt, LocalDateTime lastAttemptAt
+        LocalDateTime wechatUploadedAt, LocalDateTime lastAttemptAt,
+        List<ShipmentItemResponse> items
 ) {
+    public OrderShipmentResponse {
+        items = items == null ? List.of() : List.copyOf(items);
+    }
 }

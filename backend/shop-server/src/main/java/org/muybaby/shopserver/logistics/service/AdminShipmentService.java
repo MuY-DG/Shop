@@ -64,12 +64,26 @@ public class AdminShipmentService {
         return localShipmentService.getForAdmin(orderId);
     }
 
+    public OrderShipmentResponse retryWechatUpload(
+            AuthenticatedPrincipal principal, Long orderId, Long shipmentId
+    ) {
+        uploadCoordinator.retry(principal, orderId, shipmentId);
+        return localShipmentService.getForAdmin(orderId, shipmentId);
+    }
+
     public OrderShipmentResponse reconcileWechatUpload(
             AuthenticatedPrincipal principal,
             Long orderId
     ) {
         uploadCoordinator.reconcile(principal, orderId);
         return localShipmentService.getForAdmin(orderId);
+    }
+
+    public OrderShipmentResponse reconcileWechatUpload(
+            AuthenticatedPrincipal principal, Long orderId, Long shipmentId
+    ) {
+        uploadCoordinator.reconcile(principal, orderId, shipmentId);
+        return localShipmentService.getForAdmin(orderId, shipmentId);
     }
 
     public OrderShipmentResponse retryWaybillRegistration(
@@ -79,6 +93,14 @@ public class AdminShipmentService {
         requireAdmin(principal);
         registrationCoordinator.retryForAdmin(orderId);
         return localShipmentService.getForAdmin(orderId);
+    }
+
+    public OrderShipmentResponse retryWaybillRegistration(
+            AuthenticatedPrincipal principal, Long orderId, Long shipmentId
+    ) {
+        requireAdmin(principal);
+        registrationCoordinator.retryForAdmin(orderId, shipmentId);
+        return localShipmentService.getForAdmin(orderId, shipmentId);
     }
 
     public OrderShipmentResponse confirmElectronicWaybill(

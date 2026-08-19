@@ -76,6 +76,15 @@ public class WechatShippingUploadCoordinator {
         executeClaimed(claim);
     }
 
+    public void retry(AuthenticatedPrincipal principal, long orderId, long shipmentId) {
+        requireAdmin(principal);
+        LocalDateTime now = now();
+        stateStore.reconcileStaleByOrder(orderId, now);
+        executeClaimed(stateStore.claimOperatorRetry(
+                orderId, shipmentId, runtimeSettingService.uploadEnabledFailClosed(), now
+        ));
+    }
+
     public int deliverDue(int batchSize) {
         if (!runtimeSettingService.deliveryEnabledFailClosed()
                 || safeProviderMode() != WechatProviderMode.REAL) {
@@ -120,6 +129,18 @@ public class WechatShippingUploadCoordinator {
         }
         WechatShippingUploadStateStore.UnknownClaim claim = stateStore
                 .claimUnknownByOrder(orderId, now())
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+        reconcileClaimed(claim);
+    }
+
+    public void reconcile(AuthenticatedPrincipal principal, long orderId, long shipmentId) {
+        requireAdmin(principal);
+        if (!runtimeSettingService.uploadEnabledFailClosed()
+                || safeProviderMode() != WechatProviderMode.REAL) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        WechatShippingUploadStateStore.UnknownClaim claim = stateStore
+                .claimUnknownByShipment(orderId, shipmentId, true, now())
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
         reconcileClaimed(claim);
     }
@@ -286,7 +307,7 @@ public class WechatShippingUploadCoordinator {
     ) {
         if (!claim.transactionId().equals(result.transactionId())
                 || result.shipping() == null
-                || !result.shipping().finishShipping()
+                || result.shipping().finishShipping() != claim.allDelivered()
                 || result.shipping().logisticsType() != claim.logisticsType()
                 || result.shipping().deliveryMode() != claim.deliveryMode()) {
             return false;
@@ -332,7 +353,8 @@ public class WechatShippingUploadCoordinator {
         }
         return new WechatShippingUploadRequest(
                 context.orderId(), context.transactionId(), context.openid(),
-                context.logisticsType(), context.deliveryMode(), context.uploadTime(), List.of(item)
+                context.logisticsType(), context.deliveryMode(), context.allDelivered(),
+                context.uploadTime(), List.of(item)
         );
     }
 

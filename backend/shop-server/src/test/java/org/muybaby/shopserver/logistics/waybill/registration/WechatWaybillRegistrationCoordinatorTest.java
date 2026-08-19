@@ -84,7 +84,9 @@ class WechatWaybillRegistrationCoordinatorTest {
     @BeforeEach
     void reset() {
         jdbcClient.sql("delete from shipment_waybill_registration").update();
+        jdbcClient.sql("delete from order_shipment_item").update();
         jdbcClient.sql("delete from order_shipment").update();
+        jdbcClient.sql("delete from order_electronic_waybill_item").update();
         jdbcClient.sql("delete from order_electronic_waybill").update();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from order_item").update();
@@ -451,6 +453,15 @@ class WechatWaybillRegistrationCoordinatorTest {
                 .param("orderId", orderId)
                 .query(Long.class)
                 .single();
+        jdbcClient.sql("""
+                        insert into order_shipment_item(shipment_id, order_item_id, quantity)
+                        select :shipmentId, item.id, item.quantity - item.refunded_quantity
+                        from order_item item
+                        where item.order_id = :orderId
+                        """)
+                .param("shipmentId", shipmentId)
+                .param("orderId", orderId)
+                .update();
         return new ShipmentSeed(orderId, orderId, shipmentId);
     }
 
@@ -570,10 +581,22 @@ class WechatWaybillRegistrationCoordinatorTest {
                 .param("deliveryId", deliveryId)
                 .param("waybillId", waybillId)
                 .update();
-        return jdbcClient.sql("select id from order_electronic_waybill where order_id = :orderId")
+        long waybillRecordId = jdbcClient.sql("select id from order_electronic_waybill where order_id = :orderId")
                 .param("orderId", orderId)
                 .query(Long.class)
                 .single();
+        jdbcClient.sql("""
+                        insert into order_electronic_waybill_item(
+                            electronic_waybill_id, order_item_id, quantity
+                        )
+                        select :waybillRecordId, item.id, item.quantity - item.refunded_quantity
+                        from order_item item
+                        where item.order_id = :orderId
+                        """)
+                .param("waybillRecordId", waybillRecordId)
+                .param("orderId", orderId)
+                .update();
+        return waybillRecordId;
     }
 
     private void assertRegistration(

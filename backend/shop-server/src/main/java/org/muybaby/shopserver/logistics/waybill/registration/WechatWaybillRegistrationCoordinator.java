@@ -36,6 +36,10 @@ public class WechatWaybillRegistrationCoordinator {
         attempt(shipmentId);
     }
 
+    public void retryForAdmin(long orderId, long shipmentId) {
+        attempt(stateStore.requireEligibleShipmentForOrder(orderId, shipmentId));
+    }
+
     public String tokenForOwner(AuthenticatedPrincipal principal, long orderId) {
         long userId = requireAppUser(principal);
         long shipmentId = stateStore.requireEligibleShipmentForOwner(orderId, userId);
@@ -46,6 +50,20 @@ public class WechatWaybillRegistrationCoordinator {
 
         attempt(shipmentId);
         return stateStore.registeredToken(shipmentId)
+                .orElseThrow(() -> new BusinessException(
+                        ErrorCode.WECHAT_WAYBILL_REGISTRATION_UNAVAILABLE
+                ));
+    }
+
+    public String tokenForOwner(AuthenticatedPrincipal principal, long orderId, long shipmentId) {
+        long userId = requireAppUser(principal);
+        long eligibleShipmentId = stateStore.requireEligibleShipmentForOwner(orderId, shipmentId, userId);
+        var existing = stateStore.registeredToken(eligibleShipmentId);
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+        attempt(eligibleShipmentId);
+        return stateStore.registeredToken(eligibleShipmentId)
                 .orElseThrow(() -> new BusinessException(
                         ErrorCode.WECHAT_WAYBILL_REGISTRATION_UNAVAILABLE
                 ));

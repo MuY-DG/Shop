@@ -12,6 +12,8 @@ import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.AdminShipOrderRequest;
 import org.muybaby.shopserver.logistics.dto.OrderShipmentResponse;
+import org.muybaby.shopserver.logistics.dto.ShipmentItemRequest;
+import org.muybaby.shopserver.logistics.dto.ShipmentItemResponse;
 import org.muybaby.shopserver.logistics.provider.WechatShippingProvider;
 import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationKind;
 import org.muybaby.shopserver.logistics.waybill.registration.WaybillRegistrationStatus;
@@ -29,13 +31,42 @@ import org.springframework.util.StringUtils;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class LocalShipmentService {
 
     private static final int MAX_ITEM_DESC_CODE_POINTS = 120;
     private static final String SF_DELIVERY_ID = "SF";
+    private static final String SHIPMENT_SELECT = """
+            select id as shipment_id, order_id, package_no, final_shipment,
+                   logistics_type, delivery_mode, item_desc,
+                   express_company_code, express_company_name, tracking_no,
+                   shipment_source, electronic_waybill_id,
+                   shipment_note, status as local_shipment_status,
+                   wechat_provider_mode, wechat_upload_status,
+                   wechat_error_code, wechat_error_message, retry_count,
+                   shipped_at, upload_time, wechat_uploaded_at, last_attempt_at,
+                   (
+                       select mode
+                       from order_electronic_waybill electronic_waybill
+                       where electronic_waybill.id = order_shipment.electronic_waybill_id
+                   ) as electronic_waybill_mode,
+                   (
+                       select registration_kind
+                       from shipment_waybill_registration registration
+                       where registration.shipment_id = order_shipment.id
+                   ) as waybill_registration_kind,
+                   (
+                       select status
+                       from shipment_waybill_registration registration
+                       where registration.shipment_id = order_shipment.id
+                   ) as waybill_registration_status
+            from order_shipment
+            """;
 
     private final JdbcClient jdbcClient;
     private final WechatShippingRuntimeSettingService runtimeSettingService;
@@ -83,16 +114,23 @@ public class LocalShipmentService {
             WechatProviderMode initialProviderMode,
             Long adminUserId
     ) {
-        OrderForShipment order = lockPaidOrder(orderId);
+        OrderForShipment order = lockShippableOrder(orderId);
         rejectIfActiveElectronicWaybill(orderId);
         afterSaleFulfillmentPolicy.rejectIfBlocked(orderId);
+        List<ShipmentAllocation> allocations = normalizeAllocations(orderId, request.items());
+        int packageNo = nextPackageNo(orderId);
+        boolean finalShipment = remainingQuantity(orderId) == allocatedQuantity(allocations);
+        DeliveryMode deliveryMode = packageNo == 1 && finalShipment
+                ? DeliveryMode.UNIFIED
+                : DeliveryMode.SPLIT;
         NormalizedShipment shipment = normalize(request, order.receiverPhone());
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
 
         try {
             jdbcClient.sql("""
                             insert into order_shipment(
-                                order_id, logistics_type, delivery_mode, item_desc,
+                                order_id, package_no, final_shipment,
+                                logistics_type, delivery_mode, item_desc,
                                 express_company_code, express_company_name, tracking_no,
                                 consignor_contact, receiver_contact, shipment_note,
                                 shipment_source, electronic_waybill_id,
@@ -101,7 +139,8 @@ public class LocalShipmentService {
                                 wechat_upload_next_action_at,
                                 shipped_at, created_at, updated_at)
                             values (
-                                :orderId, :logisticsType, :deliveryMode, :itemDesc,
+                                :orderId, :packageNo, :finalShipment,
+                                :logisticsType, :deliveryMode, :itemDesc,
                                 :expressCompanyCode, :expressCompanyName, :trackingNo,
                                 :consignorContact, :receiverContact, :shipmentNote,
                                 :shipmentSource, null,
@@ -110,8 +149,10 @@ public class LocalShipmentService {
                                 :shippedAt, :createdAt, :updatedAt)
                             """)
                     .param("orderId", orderId)
+                    .param("packageNo", packageNo)
+                    .param("finalShipment", finalShipment)
                     .param("logisticsType", shipment.logisticsType().value())
-                    .param("deliveryMode", DeliveryMode.UNIFIED.value())
+                    .param("deliveryMode", deliveryMode.value())
                     .param("itemDesc", shipment.itemDesc())
                     .param("expressCompanyCode", shipment.expressCompanyCode())
                     .param("expressCompanyName", shipment.expressCompanyName())
@@ -132,25 +173,34 @@ public class LocalShipmentService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
 
+        long shipmentId = requireShipmentId(orderId, packageNo);
+        insertShipmentItems(shipmentId, allocations, now);
+
+        OrderStatus nextStatus = finalShipment ? OrderStatus.SHIPPED : OrderStatus.PARTIALLY_SHIPPED;
         int updated = jdbcClient.sql("""
                         update shop_order
-                        set status = :newStatus, shipped_at = :shippedAt, updated_at = :updatedAt
+                        set status = :newStatus,
+                            shipped_at = case when :finalShipment then :shippedAt else shipped_at end,
+                            updated_at = :updatedAt
                         where id = :orderId and status = :expectedStatus
                         """)
-                .param("newStatus", OrderStatus.SHIPPED.name())
+                .param("newStatus", nextStatus.name())
+                .param("finalShipment", finalShipment)
                 .param("shippedAt", now)
                 .param("updatedAt", now)
                 .param("orderId", orderId)
-                .param("expectedStatus", OrderStatus.PAID.name())
+                .param("expectedStatus", order.status())
                 .update();
         if (updated != 1) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         orderStatusLogService.record(
-                orderId, OrderStatus.PAID.name(), OrderStatus.SHIPPED.name(),
-                "ORDER_SHIPPED", "ADMIN", adminUserId, "订单发货", now
+                orderId, order.status(), nextStatus.name(),
+                finalShipment ? "ORDER_SHIPPED" : "ORDER_PARTIALLY_SHIPPED",
+                "ADMIN", adminUserId,
+                finalShipment ? "订单全部发货" : "订单部分发货（包裹 " + packageNo + "）", now
         );
-        return getForAdmin(orderId);
+        return getForAdmin(orderId, shipmentId);
     }
 
     public OrderShipmentResponse confirmElectronicWaybill(
@@ -175,12 +225,13 @@ public class LocalShipmentService {
     ) {
         OrderForConfirmation order = lockOrderForConfirmation(orderId);
         ElectronicWaybillForConfirmation waybill = lockElectronicWaybill(orderId, waybillRecordId);
-        if (OrderStatus.SHIPPED.name().equals(order.status())
+        if ((OrderStatus.PARTIALLY_SHIPPED.name().equals(order.status())
+                || OrderStatus.SHIPPED.name().equals(order.status()))
                 && "CONFIRMED".equals(waybill.status())
                 && shipmentLinkedToWaybill(orderId, waybillRecordId)) {
-            return getForAdmin(orderId);
+            return getForAdmin(orderId, requireShipmentIdForWaybill(orderId, waybillRecordId));
         }
-        if (!OrderStatus.PAID.name().equals(order.status())
+        if (!isShippableStatus(order.status())
                 || !"CREATED".equals(waybill.status())
                 || !"NONE".equals(waybill.pendingOperation())
                 || !StringUtils.hasText(waybill.deliveryId())
@@ -189,11 +240,14 @@ public class LocalShipmentService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         afterSaleFulfillmentPolicy.rejectIfBlocked(orderId);
-        if (shipmentExists(orderId)) {
-            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-        }
+        List<ShipmentAllocation> allocations = loadWaybillAllocations(orderId, waybillRecordId);
+        int packageNo = nextPackageNo(orderId);
+        boolean finalShipment = remainingQuantity(orderId) == allocatedQuantity(allocations);
+        DeliveryMode deliveryMode = packageNo == 1 && finalShipment
+                ? DeliveryMode.UNIFIED
+                : DeliveryMode.SPLIT;
 
-        String itemDesc = buildItemDescription(orderId);
+        String itemDesc = buildItemDescription(allocations);
         String consignorContact = contactMasker.mask(waybill.senderMobile());
         String receiverContact = SF_DELIVERY_ID.equals(waybill.deliveryId())
                 ? contactMasker.mask(waybill.receiverPhone())
@@ -202,7 +256,8 @@ public class LocalShipmentService {
         try {
             jdbcClient.sql("""
                             insert into order_shipment(
-                                order_id, logistics_type, delivery_mode, item_desc,
+                                order_id, package_no, final_shipment,
+                                logistics_type, delivery_mode, item_desc,
                                 express_company_code, express_company_name, tracking_no,
                                 consignor_contact, receiver_contact, shipment_note,
                                 shipment_source, electronic_waybill_id,
@@ -211,7 +266,8 @@ public class LocalShipmentService {
                                 wechat_upload_next_action_at,
                                 shipped_at, created_at, updated_at)
                             values (
-                                :orderId, :logisticsType, :deliveryMode, :itemDesc,
+                                :orderId, :packageNo, :finalShipment,
+                                :logisticsType, :deliveryMode, :itemDesc,
                                 :expressCompanyCode, :expressCompanyName, :trackingNo,
                                 :consignorContact, :receiverContact, '',
                                 :shipmentSource, :electronicWaybillId,
@@ -220,8 +276,10 @@ public class LocalShipmentService {
                                 :shippedAt, :createdAt, :updatedAt)
                             """)
                     .param("orderId", orderId)
+                    .param("packageNo", packageNo)
+                    .param("finalShipment", finalShipment)
                     .param("logisticsType", LogisticsType.EXPRESS.value())
-                    .param("deliveryMode", DeliveryMode.UNIFIED.value())
+                    .param("deliveryMode", deliveryMode.value())
                     .param("itemDesc", itemDesc)
                     .param("expressCompanyCode", waybill.deliveryId())
                     .param("expressCompanyName", waybill.deliveryName())
@@ -242,6 +300,9 @@ public class LocalShipmentService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
 
+        long shipmentId = requireShipmentId(orderId, packageNo);
+        insertShipmentItems(shipmentId, allocations, now);
+
         int waybillUpdated = jdbcClient.sql("""
                         update order_electronic_waybill
                         set status = 'CONFIRMED', pending_operation = 'NONE',
@@ -258,53 +319,38 @@ public class LocalShipmentService {
                 .param("waybillRecordId", waybillRecordId)
                 .param("orderId", orderId)
                 .update();
+        OrderStatus nextStatus = finalShipment ? OrderStatus.SHIPPED : OrderStatus.PARTIALLY_SHIPPED;
         int orderUpdated = jdbcClient.sql("""
                         update shop_order
-                        set status = :newStatus, shipped_at = :shippedAt, updated_at = :updatedAt
+                        set status = :newStatus,
+                            shipped_at = case when :finalShipment then :shippedAt else shipped_at end,
+                            updated_at = :updatedAt
                         where id = :orderId and status = :expectedStatus
                         """)
-                .param("newStatus", OrderStatus.SHIPPED.name())
+                .param("newStatus", nextStatus.name())
+                .param("finalShipment", finalShipment)
                 .param("shippedAt", now)
                 .param("updatedAt", now)
                 .param("orderId", orderId)
-                .param("expectedStatus", OrderStatus.PAID.name())
+                .param("expectedStatus", order.status())
                 .update();
         if (waybillUpdated != 1 || orderUpdated != 1) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         orderStatusLogService.record(
-                orderId, OrderStatus.PAID.name(), OrderStatus.SHIPPED.name(),
-                "ORDER_SHIPPED", "ADMIN", adminUserId, "订单发货", now
+                orderId, order.status(), nextStatus.name(),
+                finalShipment ? "ORDER_SHIPPED" : "ORDER_PARTIALLY_SHIPPED",
+                "ADMIN", adminUserId,
+                finalShipment ? "订单全部发货" : "订单部分发货（包裹 " + packageNo + "）", now
         );
-        return getForAdmin(orderId);
+        return getForAdmin(orderId, shipmentId);
     }
 
     public OrderShipmentResponse getForAdmin(long orderId) {
-        return jdbcClient.sql("""
-                        select id as shipment_id, order_id, logistics_type, delivery_mode, item_desc,
-                               express_company_code, express_company_name, tracking_no,
-                               shipment_source, electronic_waybill_id,
-                               shipment_note, status as local_shipment_status,
-                               wechat_provider_mode, wechat_upload_status,
-                               wechat_error_code, wechat_error_message, retry_count,
-                               shipped_at, upload_time, wechat_uploaded_at, last_attempt_at,
-                               (
-                                   select mode
-                                   from order_electronic_waybill electronic_waybill
-                                   where electronic_waybill.id = order_shipment.electronic_waybill_id
-                               ) as electronic_waybill_mode,
-                               (
-                                   select registration_kind
-                                   from shipment_waybill_registration registration
-                                   where registration.shipment_id = order_shipment.id
-                               ) as waybill_registration_kind,
-                               (
-                                   select status
-                                   from shipment_waybill_registration registration
-                                   where registration.shipment_id = order_shipment.id
-                               ) as waybill_registration_status
-                        from order_shipment
+        return jdbcClient.sql(SHIPMENT_SELECT + """
                         where order_id = :orderId
+                        order by package_no desc, id desc
+                        limit 1
                         """)
                 .param("orderId", orderId)
                 .query(this::mapShipment)
@@ -312,7 +358,28 @@ public class LocalShipmentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
     }
 
-    private OrderForShipment lockPaidOrder(long orderId) {
+    public OrderShipmentResponse getForAdmin(long orderId, long shipmentId) {
+        return jdbcClient.sql(SHIPMENT_SELECT + """
+                        where order_id = :orderId and id = :shipmentId
+                        """)
+                .param("orderId", orderId)
+                .param("shipmentId", shipmentId)
+                .query(this::mapShipment)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
+    }
+
+    public List<OrderShipmentResponse> listForAdmin(long orderId) {
+        return jdbcClient.sql(SHIPMENT_SELECT + """
+                        where order_id = :orderId
+                        order by package_no, id
+                        """)
+                .param("orderId", orderId)
+                .query(this::mapShipment)
+                .list();
+    }
+
+    private OrderForShipment lockShippableOrder(long orderId) {
         OrderForShipment order = jdbcClient.sql("""
                         select id, status, receiver_phone
                         from shop_order
@@ -325,7 +392,7 @@ public class LocalShipmentService {
                 ))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
-        if (!OrderStatus.PAID.name().equals(order.status())) {
+        if (!isShippableStatus(order.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         return order;
@@ -374,14 +441,6 @@ public class LocalShipmentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
     }
 
-    private boolean shipmentExists(long orderId) {
-        Integer count = jdbcClient.sql("select count(*) from order_shipment where order_id = :orderId")
-                .param("orderId", orderId)
-                .query(Integer.class)
-                .single();
-        return count != null && count > 0;
-    }
-
     private boolean shipmentLinkedToWaybill(long orderId, long waybillRecordId) {
         Integer count = jdbcClient.sql("""
                         select count(*)
@@ -398,21 +457,134 @@ public class LocalShipmentService {
         return count != null && count == 1;
     }
 
-    private String buildItemDescription(long orderId) {
-        List<OrderItemForShipment> items = jdbcClient.sql("""
-                        select product_title, quantity - refunded_quantity as quantity
-                        from order_item
-                        where order_id = :orderId and quantity > refunded_quantity
-                        order by id
+    private long requireShipmentIdForWaybill(long orderId, long waybillRecordId) {
+        return jdbcClient.sql("""
+                        select id from order_shipment
+                        where order_id = :orderId
+                          and shipment_source = :shipmentSource
+                          and electronic_waybill_id = :electronicWaybillId
                         """)
                 .param("orderId", orderId)
-                .query((rs, rowNum) -> new OrderItemForShipment(
-                        rs.getString("product_title"), rs.getInt("quantity")
-                ))
-                .list();
-        if (items.isEmpty()) {
+                .param("shipmentSource", ShipmentSource.WECHAT_WAYBILL.name())
+                .param("electronicWaybillId", waybillRecordId)
+                .query(Long.class)
+                .single();
+    }
+
+    private List<ShipmentAllocation> normalizeAllocations(
+            long orderId,
+            List<ShipmentItemRequest> requested
+    ) {
+        Map<Long, RemainingItem> remaining = remainingItems(orderId);
+        if (remaining.isEmpty()) {
+            Integer itemCount = jdbcClient.sql("select count(*) from order_item where order_id = :orderId")
+                    .param("orderId", orderId)
+                    .query(Integer.class)
+                    .single();
+            if ((requested == null || requested.isEmpty()) && itemCount != null && itemCount == 0) {
+                return List.of();
+            }
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
+        if (requested == null || requested.isEmpty()) {
+            return remaining.values().stream()
+                    .map(item -> new ShipmentAllocation(
+                            item.orderItemId(), item.productTitle(), item.specText(), item.remainingQuantity()
+                    ))
+                    .toList();
+        }
+        Map<Long, Integer> quantities = new LinkedHashMap<>();
+        for (ShipmentItemRequest item : requested) {
+            if (item == null || item.orderItemId() == null || item.quantity() == null
+                    || item.orderItemId() < 1 || item.quantity() < 1
+                    || quantities.putIfAbsent(item.orderItemId(), item.quantity()) != null) {
+                throw validationFailure();
+            }
+        }
+        List<ShipmentAllocation> allocations = new ArrayList<>();
+        for (Map.Entry<Long, Integer> entry : quantities.entrySet()) {
+            RemainingItem item = remaining.get(entry.getKey());
+            if (item == null || entry.getValue() > item.remainingQuantity()) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            allocations.add(new ShipmentAllocation(
+                    item.orderItemId(), item.productTitle(), item.specText(), entry.getValue()
+            ));
+        }
+        return List.copyOf(allocations);
+    }
+
+    private List<ShipmentAllocation> loadWaybillAllocations(long orderId, long waybillRecordId) {
+        Map<Long, RemainingItem> remaining = remainingItems(orderId);
+        List<ShipmentAllocation> allocations = jdbcClient.sql("""
+                        select item.id as order_item_id, item.product_title, item.spec_text,
+                               waybill_item.quantity
+                        from order_electronic_waybill_item waybill_item
+                        join order_electronic_waybill waybill
+                          on waybill.id = waybill_item.electronic_waybill_id
+                        join order_item item on item.id = waybill_item.order_item_id
+                        where waybill.id = :waybillRecordId
+                          and waybill.order_id = :orderId
+                          and item.order_id = :orderId
+                        order by item.id
+                        """)
+                .param("waybillRecordId", waybillRecordId)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new ShipmentAllocation(
+                        rs.getLong("order_item_id"),
+                        rs.getString("product_title"),
+                        rs.getString("spec_text"),
+                        rs.getInt("quantity")
+                ))
+                .list();
+        if (allocations.isEmpty() || allocations.stream().anyMatch(allocation -> {
+            RemainingItem item = remaining.get(allocation.orderItemId());
+            return item == null || allocation.quantity() > item.remainingQuantity();
+        })) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return allocations;
+    }
+
+    private Map<Long, RemainingItem> remainingItems(long orderId) {
+        Map<Long, RemainingItem> remaining = new LinkedHashMap<>();
+        jdbcClient.sql("""
+                        select item.id as order_item_id, item.product_title, item.spec_text,
+                               item.quantity - item.refunded_quantity
+                                 - coalesce(sum(shipment_item.quantity), 0) as remaining_quantity
+                        from order_item item
+                        left join order_shipment_item shipment_item
+                          on shipment_item.order_item_id = item.id
+                        where item.order_id = :orderId
+                        group by item.id, item.product_title, item.spec_text,
+                                 item.quantity, item.refunded_quantity
+                        having item.quantity - item.refunded_quantity
+                                 - coalesce(sum(shipment_item.quantity), 0) > 0
+                        order by item.id
+                        """)
+                .param("orderId", orderId)
+                .query((rs, rowNum) -> new RemainingItem(
+                        rs.getLong("order_item_id"),
+                        rs.getString("product_title"),
+                        rs.getString("spec_text"),
+                        rs.getInt("remaining_quantity")
+                ))
+                .list()
+                .forEach(item -> remaining.put(item.orderItemId(), item));
+        return remaining;
+    }
+
+    private int remainingQuantity(long orderId) {
+        return remainingItems(orderId).values().stream()
+                .mapToInt(RemainingItem::remainingQuantity)
+                .sum();
+    }
+
+    private int allocatedQuantity(List<ShipmentAllocation> allocations) {
+        return allocations.stream().mapToInt(ShipmentAllocation::quantity).sum();
+    }
+
+    private String buildItemDescription(List<ShipmentAllocation> items) {
         String joined = String.join("; ", items.stream()
                 .map(item -> item.productTitle().trim() + " x" + item.quantity())
                 .toList());
@@ -422,6 +594,48 @@ public class LocalShipmentService {
         }
         int end = joined.offsetByCodePoints(0, MAX_ITEM_DESC_CODE_POINTS);
         return joined.substring(0, end);
+    }
+
+    private int nextPackageNo(long orderId) {
+        Integer next = jdbcClient.sql("""
+                        select coalesce(max(package_no), 0) + 1
+                        from order_shipment
+                        where order_id = :orderId
+                        """)
+                .param("orderId", orderId)
+                .query(Integer.class)
+                .single();
+        return next == null ? 1 : next;
+    }
+
+    private long requireShipmentId(long orderId, int packageNo) {
+        return jdbcClient.sql("""
+                        select id from order_shipment
+                        where order_id = :orderId and package_no = :packageNo
+                        """)
+                .param("orderId", orderId)
+                .param("packageNo", packageNo)
+                .query(Long.class)
+                .single();
+    }
+
+    private void insertShipmentItems(
+            long shipmentId,
+            List<ShipmentAllocation> allocations,
+            LocalDateTime now
+    ) {
+        for (ShipmentAllocation allocation : allocations) {
+            jdbcClient.sql("""
+                            insert into order_shipment_item(
+                                shipment_id, order_item_id, quantity, created_at
+                            ) values (:shipmentId, :orderItemId, :quantity, :createdAt)
+                            """)
+                    .param("shipmentId", shipmentId)
+                    .param("orderItemId", allocation.orderItemId())
+                    .param("quantity", allocation.quantity())
+                    .param("createdAt", now)
+                    .update();
+        }
     }
 
     private void rejectIfActiveElectronicWaybill(long orderId) {
@@ -525,6 +739,7 @@ public class LocalShipmentService {
     }
 
     private OrderShipmentResponse mapShipment(ResultSet rs, int rowNum) throws SQLException {
+        long shipmentId = rs.getLong("shipment_id");
         LogisticsType logisticsType = LogisticsType.fromValue(rs.getInt("logistics_type"));
         WaybillRegistrationKind registrationKind = registrationKind(
                 rs.getString("waybill_registration_kind")
@@ -534,8 +749,10 @@ public class LocalShipmentService {
                 rs.getString("electronic_waybill_mode")
         );
         return new OrderShipmentResponse(
-                rs.getLong("shipment_id"),
+                shipmentId,
                 rs.getLong("order_id"),
+                rs.getInt("package_no"),
+                rs.getBoolean("final_shipment"),
                 logisticsType,
                 DeliveryMode.fromValue(rs.getInt("delivery_mode")),
                 rs.getString("item_desc"),
@@ -563,8 +780,33 @@ public class LocalShipmentService {
                 rs.getObject("shipped_at", LocalDateTime.class),
                 rs.getString("upload_time"),
                 rs.getObject("wechat_uploaded_at", LocalDateTime.class),
-                rs.getObject("last_attempt_at", LocalDateTime.class)
+                rs.getObject("last_attempt_at", LocalDateTime.class),
+                findShipmentItems(shipmentId)
         );
+    }
+
+    private List<ShipmentItemResponse> findShipmentItems(long shipmentId) {
+        return jdbcClient.sql("""
+                        select item.id as order_item_id, item.product_title, item.spec_text,
+                               shipment_item.quantity
+                        from order_shipment_item shipment_item
+                        join order_item item on item.id = shipment_item.order_item_id
+                        where shipment_item.shipment_id = :shipmentId
+                        order by item.id
+                        """)
+                .param("shipmentId", shipmentId)
+                .query((rs, rowNum) -> new ShipmentItemResponse(
+                        rs.getLong("order_item_id"),
+                        rs.getString("product_title"),
+                        rs.getString("spec_text"),
+                        rs.getInt("quantity")
+                ))
+                .list();
+    }
+
+    private boolean isShippableStatus(String status) {
+        return OrderStatus.PAID.name().equals(status)
+                || OrderStatus.PARTIALLY_SHIPPED.name().equals(status);
     }
 
     private ShipmentSource shipmentSource(String value) {
@@ -648,7 +890,20 @@ public class LocalShipmentService {
     ) {
     }
 
-    private record OrderItemForShipment(String productTitle, int quantity) {
+    private record RemainingItem(
+            long orderItemId,
+            String productTitle,
+            String specText,
+            int remainingQuantity
+    ) {
+    }
+
+    private record ShipmentAllocation(
+            long orderItemId,
+            String productTitle,
+            String specText,
+            int quantity
+    ) {
     }
 
     private record Carrier(String deliveryId, String deliveryName) {

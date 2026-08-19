@@ -64,9 +64,23 @@ public class ShipmentTrackingStateStore {
         return claim(orderId, force);
     }
 
+    public Optional<ShipmentTrackingClaim> claimForOwner(
+            long orderId, long shipmentId, long userId, boolean force
+    ) {
+        requireOwnedVisibleOrder(orderId, userId);
+        return claim(orderId, shipmentId, force);
+    }
+
     public Optional<ShipmentTrackingClaim> claimForAdmin(long orderId, boolean force) {
         requireOrder(orderId);
         return claim(orderId, force);
+    }
+
+    public Optional<ShipmentTrackingClaim> claimForAdmin(
+            long orderId, long shipmentId, boolean force
+    ) {
+        requireOrder(orderId);
+        return claim(orderId, shipmentId, force);
     }
 
     public ShipmentTrackingResponse snapshotForOwner(long orderId, long userId) {
@@ -74,9 +88,19 @@ public class ShipmentTrackingStateStore {
         return snapshot(orderId);
     }
 
+    public ShipmentTrackingResponse snapshotForOwner(long orderId, long shipmentId, long userId) {
+        requireOwnedVisibleOrder(orderId, userId);
+        return snapshot(orderId, shipmentId);
+    }
+
     public ShipmentTrackingResponse snapshotForAdmin(long orderId) {
         requireOrder(orderId);
         return snapshot(orderId);
+    }
+
+    public ShipmentTrackingResponse snapshotForAdmin(long orderId, long shipmentId) {
+        requireOrder(orderId);
+        return snapshot(orderId, shipmentId);
     }
 
     public boolean complete(ShipmentTrackingClaim claim, ShipmentTrackingSyncResult result) {
@@ -88,14 +112,21 @@ public class ShipmentTrackingStateStore {
     }
 
     private Optional<ShipmentTrackingClaim> claim(long orderId, boolean force) {
+        long shipmentId = latestShipmentId(orderId);
+        return claim(orderId, shipmentId, force);
+    }
+
+    private Optional<ShipmentTrackingClaim> claim(long orderId, long shipmentId, boolean force) {
         Optional<ShipmentTrackingClaim> claim = transactionTemplate.execute(
-                status -> claimInTransaction(orderId, force)
+                status -> claimInTransaction(orderId, shipmentId, force)
         );
         return claim == null ? Optional.empty() : claim;
     }
 
-    private Optional<ShipmentTrackingClaim> claimInTransaction(long orderId, boolean force) {
-        TrackingContext context = lockAndLoadContext(orderId);
+    private Optional<ShipmentTrackingClaim> claimInTransaction(
+            long orderId, long shipmentId, boolean force
+    ) {
+        TrackingContext context = lockAndLoadContext(orderId, shipmentId);
         boolean querySupported = querySupported(context);
         boolean pathSupported = pathSupported(context);
         ensureSnapshot(context.shipmentId(), querySupported, pathSupported);
@@ -344,23 +375,24 @@ public class ShipmentTrackingStateStore {
         return previousStatus;
     }
 
-    private TrackingContext lockAndLoadContext(long orderId) {
+    private TrackingContext lockAndLoadContext(long orderId, long shipmentId) {
         jdbcClient.sql("select id from shop_order where id = :orderId for update")
                 .param("orderId", orderId)
                 .query(Long.class)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.RESOURCE_NOT_FOUND));
-        Long shipmentId = jdbcClient.sql("""
+        Long lockedShipmentId = jdbcClient.sql("""
                         select id
                         from order_shipment
-                        where order_id = :orderId
+                        where order_id = :orderId and id = :shipmentId
                         for update
                         """)
                 .param("orderId", orderId)
+                .param("shipmentId", shipmentId)
                 .query(Long.class)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
-        return loadContext(shipmentId);
+        return loadContext(lockedShipmentId);
     }
 
     private TrackingContext loadContext(long shipmentId) {
@@ -406,12 +438,20 @@ public class ShipmentTrackingStateStore {
     }
 
     private ShipmentTrackingResponse snapshot(long orderId) {
-        Long shipmentId = jdbcClient.sql("select id from order_shipment where order_id = :orderId")
+        return snapshot(orderId, latestShipmentId(orderId));
+    }
+
+    private ShipmentTrackingResponse snapshot(long orderId, long shipmentId) {
+        Long ownedShipmentId = jdbcClient.sql("""
+                        select id from order_shipment
+                        where order_id = :orderId and id = :shipmentId
+                        """)
                 .param("orderId", orderId)
+                .param("shipmentId", shipmentId)
                 .query(Long.class)
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
-        TrackingContext context = loadContext(shipmentId);
+        TrackingContext context = loadContext(ownedShipmentId);
         if (context.logisticsType() != LogisticsType.EXPRESS) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
@@ -424,7 +464,7 @@ public class ShipmentTrackingStateStore {
                         from shipment_tracking_snapshot
                         where shipment_id = :shipmentId
                         """)
-                .param("shipmentId", shipmentId)
+                .param("shipmentId", ownedShipmentId)
                 .query((rs, rowNum) -> new SnapshotDetailRow(
                         rs.getBoolean("query_supported"),
                         trackingStatus(rs.getString("query_sync_status")),
@@ -489,6 +529,19 @@ public class ShipmentTrackingStateStore {
                 row == null ? null : row.lastAttemptAt(),
                 row == null ? null : row.lastSyncedAt()
         );
+    }
+
+    private long latestShipmentId(long orderId) {
+        return jdbcClient.sql("""
+                        select id from order_shipment
+                        where order_id = :orderId
+                        order by package_no desc, id desc
+                        limit 1
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_STATE_CONFLICT));
     }
 
     private WechatTrackingSyncStatus effectiveStatus(

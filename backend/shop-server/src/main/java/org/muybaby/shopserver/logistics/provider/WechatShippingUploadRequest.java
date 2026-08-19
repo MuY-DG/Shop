@@ -11,10 +11,23 @@ public record WechatShippingUploadRequest(
         String openid,
         LogisticsType logisticsType,
         DeliveryMode deliveryMode,
+        boolean allDelivered,
         String uploadTime,
         List<WechatShippingItem> shippingList
 ) {
     public WechatShippingUploadRequest {
         shippingList = shippingList == null ? null : List.copyOf(shippingList);
+    }
+
+    public WechatShippingUploadRequest(
+            Long orderId,
+            String transactionId,
+            String openid,
+            LogisticsType logisticsType,
+            DeliveryMode deliveryMode,
+            String uploadTime,
+            List<WechatShippingItem> shippingList
+    ) {
+        this(orderId, transactionId, openid, logisticsType, deliveryMode, true, uploadTime, shippingList);
     }
 }

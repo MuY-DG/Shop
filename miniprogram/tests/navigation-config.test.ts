@@ -1593,8 +1593,9 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(detailTemplate, /receiverPhoneDisplay/);
   assert.match(detailTemplate, /bindtap="onModifyTap"[\s\S]*>修改<\/button>/);
   assert.match(detailTemplate, /class="detail-card logistics-card"/);
-  assert.match(detailTemplate, /detail\.shipmentView\.carrierName/);
-  assert.match(detailTemplate, /detail\.shipmentView\.trackingNo/);
+  assert.match(detailTemplate, /detail\.shipmentViews/);
+  assert.match(detailTemplate, /shipment\.carrierName/);
+  assert.match(detailTemplate, /shipment\.trackingNo/);
   assert.match(detailTemplate, /catchtap="onCopyTrackingNoTap"/);
   assert.match(detailTemplate, /catchtap="onOpenLogisticsTap"/);
   assert.match(detailTemplate, /loading="\{\{logisticsOpening\}\}"/);
@@ -1616,7 +1617,7 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(detailLogic, /copyOrderNo/);
   assert.match(detailLogic, /copyTrackingNo/);
   assert.match(detailLogic, /openOrderLogistics/);
-  assert.match(detailLogic, /getOrderWaybillToken/);
+  assert.match(detailLogic, /getShipmentWaybillToken/);
   assert.match(detailLogic, /this\.data\.logisticsOpening/);
   assert.match(detailLogic, /finally\s*\{\s*this\.setData\(\{ logisticsOpening: false \}\)/);
   assert.doesNotMatch(detailLogic, /setData\(\{[^}]*waybillToken/);

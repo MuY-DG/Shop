@@ -36,6 +36,12 @@ public class ShipmentTrackingCoordinator {
         return stateStore.snapshotForOwner(orderId, requireAppUser(principal));
     }
 
+    public ShipmentTrackingResponse readForOwner(
+            AuthenticatedPrincipal principal, long orderId, long shipmentId
+    ) {
+        return stateStore.snapshotForOwner(orderId, shipmentId, requireAppUser(principal));
+    }
+
     public ShipmentTrackingResponse syncForOwner(
             AuthenticatedPrincipal principal,
             long orderId
@@ -45,13 +51,30 @@ public class ShipmentTrackingCoordinator {
         return stateStore.snapshotForOwner(orderId, userId);
     }
 
+    public ShipmentTrackingResponse syncForOwner(
+            AuthenticatedPrincipal principal, long orderId, long shipmentId
+    ) {
+        long userId = requireAppUser(principal);
+        stateStore.claimForOwner(orderId, shipmentId, userId, false).ifPresent(this::execute);
+        return stateStore.snapshotForOwner(orderId, shipmentId, userId);
+    }
+
     public ShipmentTrackingResponse readForAdmin(long orderId) {
         return stateStore.snapshotForAdmin(orderId);
+    }
+
+    public ShipmentTrackingResponse readForAdmin(long orderId, long shipmentId) {
+        return stateStore.snapshotForAdmin(orderId, shipmentId);
     }
 
     public ShipmentTrackingResponse syncForAdmin(long orderId) {
         stateStore.claimForAdmin(orderId, true).ifPresent(this::execute);
         return stateStore.snapshotForAdmin(orderId);
+    }
+
+    public ShipmentTrackingResponse syncForAdmin(long orderId, long shipmentId) {
+        stateStore.claimForAdmin(orderId, shipmentId, true).ifPresent(this::execute);
+        return stateStore.snapshotForAdmin(orderId, shipmentId);
     }
 
     private void execute(ShipmentTrackingClaim claim) {

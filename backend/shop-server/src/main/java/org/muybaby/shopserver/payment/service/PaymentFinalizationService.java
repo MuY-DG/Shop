@@ -25,6 +25,7 @@ public class PaymentFinalizationService {
 
     private static final Set<String> PAID_DUPLICATE_ORDER_STATUSES = Set.of(
             OrderStatus.PAID.name(),
+            OrderStatus.PARTIALLY_SHIPPED.name(),
             OrderStatus.SHIPPED.name(),
             OrderStatus.COMPLETED.name(),
             OrderStatus.REFUNDING.name(),

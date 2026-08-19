@@ -104,6 +104,31 @@ class WechatShippingProviderTest {
         fixture.server().verify();
     }
 
+    @Test
+    void splitUploadSendsPackageCompletionFlag() {
+        ProviderFixture fixture = fixture();
+        AtomicReference<JsonNode> capturedBody = new AtomicReference<>();
+        fixture.server().expect(once(), safeEndpoint("/wxa/sec/order/upload_shipping_info"))
+                .andExpect(method(HttpMethod.POST))
+                .andExpect(captureJson(capturedBody))
+                .andRespond(withSuccess("{\"errcode\":0}", MediaType.APPLICATION_JSON));
+
+        fixture.provider().upload(new WechatShippingUploadRequest(
+                91L,
+                "4200000000000000001",
+                OPENID,
+                LogisticsType.EXPRESS,
+                DeliveryMode.SPLIT,
+                false,
+                UPLOAD_TIME,
+                List.of(expressItem())
+        ));
+
+        assertThat(capturedBody.get().path("delivery_mode").asInt()).isEqualTo(2);
+        assertThat(capturedBody.get().path("is_all_delivered").asBoolean()).isFalse();
+        fixture.server().verify();
+    }
+
     @ParameterizedTest
     @MethodSource("nonExpressModes")
     void nonExpressUploadUsesExactMinimalItemShape(LogisticsType logisticsType, int officialValue) throws Exception {

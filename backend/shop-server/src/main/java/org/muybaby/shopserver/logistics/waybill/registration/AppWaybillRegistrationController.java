@@ -30,4 +30,16 @@ public class AppWaybillRegistrationController {
                 .cacheControl(CacheControl.noStore())
                 .body(ApiResponse.success(new OrderWaybillTokenResponse(token)));
     }
+
+    @PostMapping("/{id}/shipments/{shipmentId}/logistics/waybill-token")
+    public ResponseEntity<ApiResponse<OrderWaybillTokenResponse>> shipmentToken(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable("id") Long orderId,
+            @PathVariable Long shipmentId
+    ) {
+        String token = coordinator.tokenForOwner(principal, orderId, shipmentId);
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(ApiResponse.success(new OrderWaybillTokenResponse(token)));
+    }
 }

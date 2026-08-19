@@ -223,6 +223,7 @@ export function buildWaybillCreateRequest(input: {
   parcel: Api.Waybill.Parcel
   remark?: string | null
   expectTime?: number | null
+  items?: Array<{ orderItemId: number; quantity: number }>
 }): Api.Waybill.CreateRequest {
   const request: Api.Waybill.CreateRequest = {
     idempotencyKey: input.idempotencyKey.trim(),
@@ -235,6 +236,7 @@ export function buildWaybillCreateRequest(input: {
   const remark = input.remark?.trim()
   if (remark) request.remark = remark
   if (input.expectTime != null) request.expectTime = input.expectTime
+  if (input.items?.length) request.items = input.items.map((item) => ({ ...item }))
   return request
 }
 

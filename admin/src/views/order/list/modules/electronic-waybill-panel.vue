@@ -154,13 +154,34 @@
 
         <section v-if="context.canCreate" class="waybill-panel__section">
           <div class="waybill-panel__section-title">生成电子面单</div>
+          <div class="waybill-panel__items">
+            <div
+              v-for="item in context.remainingItems"
+              :key="item.orderItemId"
+              class="waybill-panel__item"
+            >
+              <div>
+                <strong>{{ item.productTitle }}</strong>
+                <span>{{ item.specText || '默认规格' }} · 剩余 {{ item.quantity }}</span>
+              </div>
+              <ElInputNumber
+                v-model="itemQuantities[item.orderItemId]"
+                :min="0"
+                :max="item.quantity"
+                :precision="0"
+                controls-position="right"
+              />
+            </div>
+          </div>
           <ElForm label-width="112px" class="waybill-panel__form">
             <div class="waybill-panel__parcel-grid">
               <ElFormItem label="包裹数量" required>
                 <ElInputNumber
                   v-model="form.count"
                   :min="1"
+                  :max="1"
                   :precision="0"
+                  disabled
                   controls-position="right"
                 />
               </ElFormItem>
@@ -353,6 +374,22 @@
     heightCm: 10,
     remark: ''
   })
+  const itemQuantities = reactive<Record<number, number>>({})
+  const selectedItems = computed(() =>
+    (context.value?.remainingItems || [])
+      .map((item) => ({
+        orderItemId: item.orderItemId,
+        quantity: Math.max(0, Math.min(item.quantity, itemQuantities[item.orderItemId] || 0))
+      }))
+      .filter((item) => item.quantity > 0)
+  )
+
+  const resetItemQuantities = (items: Api.Order.ShipmentItem[] = []) => {
+    Object.keys(itemQuantities).forEach((key) => delete itemQuantities[Number(key)])
+    items.forEach((item) => {
+      itemQuantities[item.orderItemId] = item.quantity
+    })
+  }
 
   const access = computed(() => ({
     canManage: props.canManage,
@@ -436,6 +473,7 @@
       context.value = response
       applyAttempt(response.currentAttempt)
       resetForm(response.defaultParcel)
+      resetItemQuantities(response.remainingItems)
     } catch {
       if (currentRequest(generation, orderId)) context.value = null
     } finally {
@@ -490,6 +528,10 @@
   }
 
   const handleCreate = async () => {
+    if (selectedItems.value.length === 0) {
+      ElMessage.warning('请至少选择一件本次发货商品')
+      return
+    }
     const validationError = validateParcel()
     if (validationError) {
       ElMessage.warning(validationError)
@@ -504,7 +546,8 @@
           remark: form.remark,
           expectTime: expectPickupAt.value
             ? Math.floor(expectPickupAt.value.getTime() / 1000)
-            : undefined
+            : undefined,
+          items: selectedItems.value
         })
       )
       if (!currentRequest(generation, orderId)) return
@@ -775,6 +818,40 @@
 
   .waybill-panel__section-header .waybill-panel__section-title {
     margin-bottom: 0;
+  }
+
+  .waybill-panel__items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .waybill-panel__item {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--el-bg-color);
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+
+    > div {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    span {
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+
+    :deep(.el-input-number) {
+      width: 132px;
+    }
   }
 
   .waybill-panel__address-grid,

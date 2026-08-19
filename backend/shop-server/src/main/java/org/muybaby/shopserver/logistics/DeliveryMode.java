@@ -6,7 +6,8 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.Arrays;
 
 public enum DeliveryMode {
-    UNIFIED(1);
+    UNIFIED(1),
+    SPLIT(2);
 
     private final int value;
 

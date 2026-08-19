@@ -163,7 +163,8 @@ export function canApplyAfterSale(
   orderStatus: OrderStatus,
   latestAfterSale?: AfterSaleResponse
 ): boolean {
-  const eligibleOrder = orderStatus === 'PAID' || orderStatus === 'SHIPPED' || orderStatus === 'COMPLETED'
+  const eligibleOrder = orderStatus === 'PAID' || orderStatus === 'PARTIALLY_SHIPPED'
+    || orderStatus === 'SHIPPED' || orderStatus === 'COMPLETED'
   return eligibleOrder && (!latestAfterSale || !isActiveAfterSale(latestAfterSale.status))
 }
 
