@@ -11,6 +11,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -198,6 +199,81 @@ class AdminProductParameterControllerTest {
                 .param("title", title)
                 .query(Long.class)
                 .single();
+    }
+
+    @Test
+    void recycledProductValuesDoNotBlockParameterDeletionAndAreCleanedUp() throws Exception {
+        String token = adminLoginAndExtractToken();
+        Long categoryId = insertCategory("参数测试-回收站值清理");
+        Long spuId = insertSpu(categoryId, "参数测试-待删除参数商品");
+
+        String createResponse = mockMvc.perform(post("/admin/product/parameter-definitions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "parameterCode":"taste_test",
+                                  "parameterName":"口味",
+                                  "valueType":"TEXT",
+                                  "unit":"",
+                                  "required":false,
+                                  "filterable":false,
+                                  "cardVisible":true,
+                                  "detailVisible":true,
+                                  "cardRole":"META",
+                                  "cardRenderer":"TEXT",
+                                  "cardPriority":0,
+                                  "sortOrder":0,
+                                  "status":"ENABLED",
+                                  "categoryIds":[%d],
+                                  "options":[]
+                                }
+                                """.formatted(categoryId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long parameterId = objectMapper.readTree(createResponse).path("data").asLong();
+
+        mockMvc.perform(put("/admin/product/spus/{spuId}/parameters", spuId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "values":[{
+                                    "parameterId":%d,
+                                    "textValue":"香辣",
+                                    "numberValue":null,
+                                    "booleanValue":null,
+                                    "optionCodes":[]
+                                  }]
+                                }
+                                """.formatted(parameterId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(delete("/admin/product/spus/{spuId}", spuId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/admin/product/spus/{spuId}/parameters", spuId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"values":[]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(200001));
+
+        mockMvc.perform(delete("/admin/product/parameter-definitions/{parameterId}", parameterId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        Integer orphanCount = jdbcClient.sql("""
+                        select count(*) from product_spu_parameter_value
+                        where parameter_id = :parameterId
+                        """)
+                .param("parameterId", parameterId)
+                .query(Integer.class)
+                .single();
+        org.assertj.core.api.Assertions.assertThat(orphanCount).isZero();
     }
 
     @Test

@@ -321,6 +321,9 @@ public class ProductParameterService {
         if (hasValues(parameterId)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
+        // 删除定义后值表只剩回收站商品的孤儿数据，一并清理，避免恢复商品时挂到不存在的参数。
+        jdbcClient.sql("delete from product_spu_parameter_value where parameter_id = :parameterId")
+                .param("parameterId", parameterId).update();
         jdbcClient.sql("delete from product_category_parameter where parameter_id = :parameterId")
                 .param("parameterId", parameterId).update();
         jdbcClient.sql("delete from product_parameter_option where parameter_id = :parameterId")
@@ -741,8 +744,12 @@ public class ProductParameterService {
 
     private boolean hasValues(Long parameterId) {
         Integer count = jdbcClient.sql("""
-                        select count(*) from product_spu_parameter_value
-                        where parameter_id = :parameterId
+                        select count(*)
+                        from product_spu_parameter_value v
+                        join product_spu s on s.id = v.spu_id
+                        where v.parameter_id = :parameterId
+                          and s.deleted_at is null
+                          and s.purged_at is null
                         """)
                 .param("parameterId", parameterId)
                 .query(Integer.class)
