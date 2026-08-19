@@ -330,6 +330,55 @@ class AdminProductParameterControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void existingLegacyWeightishParameterCanStillBeManaged() throws Exception {
+        String token = adminLoginAndExtractToken();
+        Long categoryId = insertCategory("参数测试-存量重量参数");
+        jdbcClient.sql("""
+                        insert into product_parameter_definition
+                            (parameter_code, parameter_name, value_type, required_value, filterable,
+                             card_visible, detail_visible, card_role, card_renderer, card_priority,
+                             sort_order, status)
+                        values
+                            ('PARAM_WEIGHT', '重量', 'TEXT', false, false,
+                             true, true, 'META', 'TEXT', 0, 0, 'ENABLED')
+                        """).update();
+        Long parameterId = jdbcClient.sql(
+                        "select id from product_parameter_definition where parameter_code = 'PARAM_WEIGHT'")
+                .query(Long.class)
+                .single();
+
+        mockMvc.perform(put("/admin/product/parameter-definitions/{parameterId}", parameterId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "parameterCode":"PARAM_WEIGHT",
+                                  "parameterName":"重量",
+                                  "valueType":"TEXT",
+                                  "unit":"g",
+                                  "required":false,
+                                  "filterable":false,
+                                  "cardVisible":true,
+                                  "detailVisible":true,
+                                  "cardRole":"META",
+                                  "cardRenderer":"TEXT",
+                                  "cardPriority":0,
+                                  "sortOrder":0,
+                                  "status":"DISABLED",
+                                  "categoryIds":[%d],
+                                  "options":[]
+                                }
+                                """.formatted(categoryId)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/product/parameter-definitions")
+                        .param("enabledOnly", "true")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[?(@.parameterCode == 'PARAM_WEIGHT')]").isEmpty());
+    }
+
     private String adminLoginAndExtractToken() throws Exception {
         String response = mockMvc.perform(post("/admin/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

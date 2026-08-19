@@ -430,8 +430,9 @@
       return
     }
     if (
-      RESERVED_PARAMETER_CODES.has(formData.parameterCode.trim().toUpperCase()) ||
-      PHYSICAL_FACT_NAME_PATTERN.test(formData.parameterName.trim())
+      !editingId.value &&
+      (RESERVED_PARAMETER_CODES.has(formData.parameterCode.trim().toUpperCase()) ||
+        PHYSICAL_FACT_NAME_PATTERN.test(formData.parameterName.trim()))
     ) {
       ElMessage.error(
         '净含量、重量、体积已由商品规格的结构化字段统一维护，系统会自动用于卡片展示，请勿重复创建参数'

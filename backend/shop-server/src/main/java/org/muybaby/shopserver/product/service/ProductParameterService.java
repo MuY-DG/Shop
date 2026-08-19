@@ -243,6 +243,13 @@ public class ProductParameterService {
 
     @Transactional
     public Long createDefinition(AdminProductParameterDefinitionRequest request) {
+        String code = request.parameterCode() == null
+                ? ""
+                : request.parameterCode().trim().toUpperCase(Locale.ROOT);
+        String name = request.parameterName() == null ? "" : request.parameterName().trim();
+        if (RESERVED_PARAMETER_CODES.contains(code) || PHYSICAL_FACT_NAME_PATTERN.matcher(name).find()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
         NormalizedDefinition normalized = normalizeDefinition(request);
         KeyHolder keyHolder = new GeneratedKeyHolder();
         try {
@@ -579,9 +586,6 @@ public class ProductParameterService {
         String code = request.parameterCode() == null ? "" : request.parameterCode().trim().toUpperCase(Locale.ROOT);
         String name = request.parameterName() == null ? "" : request.parameterName().trim();
         if (!CODE_PATTERN.matcher(code).matches() || !StringUtils.hasText(name)) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        if (RESERVED_PARAMETER_CODES.contains(code) || PHYSICAL_FACT_NAME_PATTERN.matcher(name).find()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         ProductParameterValueType valueType = parseEnum(request.valueType(), ProductParameterValueType.class);
