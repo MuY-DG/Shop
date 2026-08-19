@@ -293,11 +293,10 @@
   transition: opacity @duration-fast @ease-standard;
 }
 
-.order-center-card__title,
-.service-card__title {
+.order-center-card__title {
   color: #241711;
   font-family: "Songti SC", "STSong", @font-family-base;
-  font-size: 31rpx;
+  font-size: 28rpx;
   font-weight: 700;
   letter-spacing: 1rpx;
 }
@@ -377,15 +376,12 @@
 
 .service-card {
   margin-top: 24rpx;
-  padding: 28rpx 26rpx 32rpx;
+  padding: 14rpx 26rpx 12rpx;
 }
 
-.service-grid {
-  display: grid;
-  margin-top: 28rpx;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  justify-content: stretch;
-  gap: 0;
+.service-list {
+  display: flex;
+  flex-direction: column;
 }
 
 .service-item {
@@ -393,30 +389,37 @@
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 112rpx;
+  min-height: 96rpx;
   margin: 0;
-  padding: 4rpx 0;
+  padding: 14rpx 0;
   border: 0;
-  border-radius: @radius-md;
-  flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
   color: @color-text-primary;
   background: transparent;
   line-height: 1.4;
   transition: opacity @duration-fast @ease-standard;
 }
 
+.service-item + .service-item::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1rpx;
+  background: @color-divider;
+  content: "";
+}
+
 .service-item__icon {
-  width: 62rpx;
-  height: 62rpx;
+  width: 60rpx;
+  height: 60rpx;
   flex: none;
 }
 
 .service-item__visual {
   position: relative;
-  width: 62rpx;
-  height: 62rpx;
+  width: 60rpx;
+  height: 60rpx;
   flex: none;
 }
 
@@ -513,12 +516,21 @@
 }
 
 .service-item__label {
-  max-width: 100%;
-  margin-top: 14rpx;
+  min-width: 0;
+  margin-left: 26rpx;
   overflow: hidden;
-  font-size: 22rpx;
+  flex: 1;
+  font-size: 26rpx;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.service-item__chevron {
+  width: 28rpx;
+  height: 28rpx;
+  margin-left: 20rpx;
+  flex: none;
+  opacity: 0.5;
 }
 
 @media (max-width: 340px) {

@@ -131,8 +131,7 @@
     </view>
 
     <view class="service-card">
-      <view class="service-card__title">常用服务</view>
-      <view class="service-grid">
+      <view class="service-list">
         <view
           wx:for="{{serviceItems}}"
           wx:key="label"
@@ -162,6 +161,12 @@
             <text wx:if="{{item.badge}}" class="service-item__badge">{{item.badge}}</text>
           </view>
           <text class="service-item__label">{{item.label}}</text>
+          <image
+            class="service-item__chevron"
+            src="/assets/icons/chevron-right-light.svg"
+            mode="aspectFit"
+            aria-hidden="true"
+          />
         </view>
       </view>
     </view>
