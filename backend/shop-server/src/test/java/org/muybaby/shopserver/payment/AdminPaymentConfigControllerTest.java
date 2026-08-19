@@ -3,7 +3,6 @@ package org.muybaby.shopserver.payment;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
@@ -21,14 +20,10 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
@@ -48,7 +43,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -74,9 +68,6 @@ class AdminPaymentConfigControllerTest {
             pem("PRIVATE KEY", REPLACEMENT_KEY_PAIR.getPrivate().getEncoded());
     private static final String REPLACEMENT_PUBLIC_KEY_PEM =
             pem("PUBLIC KEY", REPLACEMENT_KEY_PAIR.getPublic().getEncoded());
-    private static Path envPrivateKeyPath;
-    private static Path envPublicKeyPath;
-
     @Autowired
     private MockMvc mockMvc;
 
@@ -98,37 +89,12 @@ class AdminPaymentConfigControllerTest {
     @Autowired
     private StorageProvider storageProvider;
 
-    @BeforeAll
-    static void writeEnvPaymentFiles() throws Exception {
-        Path envDir = Files.createTempDirectory("shop-pay-admin-env");
-        envPrivateKeyPath = envDir.resolve("merchant-private.pem");
-        envPublicKeyPath = envDir.resolve("wechat-public.pem");
-        Files.writeString(envPrivateKeyPath, PRIVATE_KEY_PEM, StandardCharsets.UTF_8);
-        Files.writeString(envPublicKeyPath, PUBLIC_KEY_PEM, StandardCharsets.UTF_8);
-    }
-
-    @DynamicPropertySource
-    static void envPaymentProperties(DynamicPropertyRegistry registry) {
-        registry.add("shop.pay.config-source", () -> "ENV");
-        registry.add("shop.pay.app-id", () -> "wx_env_app_123456");
-        registry.add("shop.pay.mch-id", () -> "mch_env_123456");
-        registry.add("shop.pay.merchant-serial-no", () -> "serial_env_123456");
-        registry.add("shop.pay.private-key-path", () -> envPrivateKeyPath.toString());
-        registry.add("shop.pay.api-v3-key", () -> API_V3_KEY);
-        registry.add("shop.pay.notify-url", () -> "https://pay.example.test/wxpay/pay/notify");
-        registry.add("shop.pay.refund-notify-url", () -> "https://pay.example.test/wxpay/refund/notify");
-        registry.add("shop.pay.verify-mode", () -> "PUBLIC_KEY");
-        registry.add("shop.pay.public-key-id", () -> "pub_key_env_123456");
-        registry.add("shop.pay.public-key-path", () -> envPublicKeyPath.toString());
-    }
-
     @BeforeEach
     void clearPaymentConfigState() {
         clearLimitedAdmins();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from storage_asset_usage").update();
         jdbcClient.sql("delete from payment_config").update();
-        jdbcClient.sql("delete from payment_runtime_setting").update();
         jdbcClient.sql("delete from storage_asset").update();
     }
 
@@ -390,68 +356,6 @@ class AdminPaymentConfigControllerTest {
     }
 
     @Test
-    void environmentImportCreatesDisabledDbConfigWithoutChangingEffectiveSourceAndRejectsDuplicates() throws Exception {
-        String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        String readToken = limitedAdminToken(List.of("payment:config:read"));
-
-        String response = mockMvc.perform(post("/admin/pay/configs/import-environment")
-                        .header("Authorization", "Bearer " + writeToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("DB"))
-                .andExpect(jsonPath("$.data.configName").value("Environment"))
-                .andExpect(jsonPath("$.data.enabled").value(false))
-                .andExpect(jsonPath("$.data.privateKeyConfigured").value(true))
-                .andExpect(jsonPath("$.data.wechatPublicKeyConfigured").value(true))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
-        assertSecretMaterialIsAbsent(response);
-        long configId = objectMapper.readTree(response).path("data").path("id").asLong();
-        ConfigSecretRow row = configSecretRow(configId);
-        assertThat(decrypt(PaymentConfigResolver.apiV3KeyContext(configId), row)).isEqualTo(API_V3_KEY);
-
-        mockMvc.perform(get("/admin/pay/configs/effective")
-                        .header("Authorization", "Bearer " + readToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.available").value(true))
-                .andExpect(jsonPath("$.data.config.source").value("ENV"))
-                .andExpect(jsonPath("$.data.config.id").doesNotExist());
-
-        mockMvc.perform(post("/admin/pay/configs/import-environment")
-                        .header("Authorization", "Bearer " + writeToken))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(ErrorCode.ORDER_STATE_CONFLICT.code()));
-        assertThat(jdbcClient.sql("select count(*) from payment_config").query(Integer.class).single()).isEqualTo(1);
-    }
-
-    @Test
-    void concurrentEnvironmentImportsCreateExactlyOneConfig() throws Exception {
-        String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        CountDownLatch start = new CountDownLatch(1);
-
-        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
-            Future<ImportResult> first = executor.submit(() -> importEnvironmentAfter(start, writeToken));
-            Future<ImportResult> second = executor.submit(() -> importEnvironmentAfter(start, writeToken));
-            start.countDown();
-
-            List<ImportResult> results = List.of(
-                    first.get(10, TimeUnit.SECONDS),
-                    second.get(10, TimeUnit.SECONDS)
-            );
-            assertThat(results).extracting(ImportResult::status)
-                    .containsExactlyInAnyOrder(200, 400);
-            ImportResult conflict = results.stream()
-                    .filter(result -> result.status() == 400)
-                    .findFirst()
-                    .orElseThrow();
-            assertThat(objectMapper.readTree(conflict.body()).path("code").asInt())
-                    .isEqualTo(ErrorCode.ORDER_STATE_CONFLICT.code());
-        }
-
-        assertThat(jdbcClient.sql("select count(*) from payment_config").query(Integer.class).single()).isEqualTo(1);
-    }
-
-    @Test
     void concurrentEnableAndDeleteLinearizeWithoutInvalidStateOrSecretLoss() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
         String enableToken = limitedAdminToken(List.of("payment:config:enable"));
@@ -493,39 +397,9 @@ class AdminPaymentConfigControllerTest {
     }
 
     @Test
-    void concurrentFirstSourceWritesShareTheCheckpointLockWithoutDuplicateInsert() throws Exception {
-        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
-        CountDownLatch start = new CountDownLatch(1);
-
-        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
-            Future<ImportResult> first = executor.submit(() -> updateSourceAfter(start, enableToken, "ENV"));
-            Future<ImportResult> second = executor.submit(() -> updateSourceAfter(start, enableToken, "AUTO"));
-            start.countDown();
-
-            List<ImportResult> results = List.of(
-                    first.get(10, TimeUnit.SECONDS),
-                    second.get(10, TimeUnit.SECONDS)
-            );
-            assertThat(results).extracting(ImportResult::status)
-                    .containsExactly(200, 200);
-            assertThat(results).extracting(ImportResult::body)
-                    .allSatisfy(body -> assertThat(body).contains("\"persisted\":true"));
-        }
-
-        assertThat(jdbcClient.sql("select count(*) from payment_runtime_setting where id = 1")
-                .query(Integer.class)
-                .single()).isEqualTo(1);
-        assertThat(jdbcClient.sql("select config_source from payment_runtime_setting where id = 1")
-                .query(String.class)
-                .single()).isIn("ENV", "AUTO");
-    }
-
-    @Test
     void missingEffectiveConfigReturnsExplicitUnavailableStateAndStillAllowsFirstDbConfigCreation() throws Exception {
         String readToken = limitedAdminToken(List.of("payment:config:read"));
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
-        jdbcClient.sql("insert into payment_runtime_setting (id, config_source) values (1, 'DB')").update();
-
         mockMvc.perform(get("/admin/pay/configs/effective")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
@@ -541,7 +415,7 @@ class AdminPaymentConfigControllerTest {
     }
 
     @Test
-    void enableAndSourceSwitchUseDbCiphertextWithoutExposingBodies() throws Exception {
+    void enablingConfigMakesDatabaseCiphertextEffectiveWithoutExposingBodies() throws Exception {
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
         String enableToken = limitedAdminToken(List.of("payment:config:enable"));
         String readToken = limitedAdminToken(List.of("payment:config:read"));
@@ -551,19 +425,11 @@ class AdminPaymentConfigControllerTest {
                         .header("Authorization", "Bearer " + enableToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.enabled").value(true));
-        mockMvc.perform(put("/admin/pay/configs/source")
-                        .header("Authorization", "Bearer " + enableToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"source\":\"DB\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("DB"));
-
         String response = mockMvc.perform(get("/admin/pay/configs/effective")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.available").value(true))
                 .andExpect(jsonPath("$.data.config.id").value(configId))
-                .andExpect(jsonPath("$.data.config.source").value("DB"))
                 .andExpect(jsonPath("$.data.config.privateKeyConfigured").value(true))
                 .andExpect(jsonPath("$.data.config.wechatPublicKeyConfigured").value(true))
                 .andExpect(jsonPath("$.data.config.legacySecretFilesPendingImport").value(false))
@@ -596,7 +462,7 @@ class AdminPaymentConfigControllerTest {
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(post("/admin/pay/configs/import-environment")
                         .header("Authorization", "Bearer " + readToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isMethodNotAllowed());
         mockMvc.perform(post("/admin/pay/configs/{configId}/import-legacy-secret-files", 1)
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isForbidden());
@@ -607,20 +473,22 @@ class AdminPaymentConfigControllerTest {
     }
 
     @Test
-    void readResponsesRemainMaskedForEnvironmentAndDatabaseLists() throws Exception {
+    void databaseListResponsesRemainMaskedAndLegacyEnvironmentEndpointsAreUnavailable() throws Exception {
         String readToken = limitedAdminToken(List.of("payment:config:read"));
         String writeToken = limitedAdminToken(List.of("payment:config:write"));
         createConfig(writeToken, "Masked DB Pay");
 
-        String environment = mockMvc.perform(get("/admin/pay/configs/environment")
+        mockMvc.perform(get("/admin/pay/configs/environment")
                         .header("Authorization", "Bearer " + readToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.available").value(true))
-                .andExpect(jsonPath("$.data.config.appIdMasked").value(startsWith("wx_")))
-                .andExpect(jsonPath("$.data.config.privateKeyConfigured").value(true))
-                .andReturn()
-                .getResponse()
-                .getContentAsString();
+                .andExpect(status().is4xxClientError());
+        mockMvc.perform(get("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + readToken))
+                .andExpect(status().is4xxClientError());
+        mockMvc.perform(put("/admin/pay/configs/source")
+                        .header("Authorization", "Bearer " + readToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"source\":\"DB\"}"))
+                .andExpect(status().is4xxClientError());
         String page = mockMvc.perform(get("/admin/pay/configs")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
@@ -630,33 +498,12 @@ class AdminPaymentConfigControllerTest {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        assertSecretMaterialIsAbsent(environment);
         assertSecretMaterialIsAbsent(page);
     }
 
     private long createConfig(String token, String configName) throws Exception {
         String response = createConfigResponse(token, configName, PRIVATE_KEY_PEM, PUBLIC_KEY_PEM);
         return objectMapper.readTree(response).path("data").path("id").asLong();
-    }
-
-    private ImportResult importEnvironmentAfter(CountDownLatch start, String token) throws Exception {
-        start.await(10, TimeUnit.SECONDS);
-        var response = mockMvc.perform(post("/admin/pay/configs/import-environment")
-                        .header("Authorization", "Bearer " + token))
-                .andReturn()
-                .getResponse();
-        return new ImportResult(response.getStatus(), response.getContentAsString());
-    }
-
-    private ImportResult updateSourceAfter(CountDownLatch start, String token, String source) throws Exception {
-        start.await(10, TimeUnit.SECONDS);
-        var response = mockMvc.perform(put("/admin/pay/configs/source")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"source\":\"" + source + "\"}"))
-                .andReturn()
-                .getResponse();
-        return new ImportResult(response.getStatus(), response.getContentAsString());
     }
 
     private ImportResult enableAfter(CountDownLatch start, String token, long configId) throws Exception {
@@ -686,7 +533,7 @@ class AdminPaymentConfigControllerTest {
         return performCreate(token, validPayload(configName, privateKeyPem, publicKeyPem))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.id").isNumber())
-                .andExpect(jsonPath("$.data.source").value("DB"))
+                .andExpect(jsonPath("$.data.source").doesNotExist())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();

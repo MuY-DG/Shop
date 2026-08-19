@@ -4,7 +4,6 @@ import java.time.LocalDateTime;
 
 public record AdminPaymentConfigResponse(
         Long id,
-        String source,
         String configName,
         String appIdMasked,
         String mchIdMasked,

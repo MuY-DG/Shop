@@ -1,7 +1,6 @@
 package org.muybaby.shopserver.payment.config;
 
 import org.junit.jupiter.api.Test;
-import org.muybaby.shopserver.payment.PaymentProperties;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -15,10 +14,6 @@ class PaymentSecretRecordRedactionTest {
         AdminPaymentConfigRequest request = new AdminPaymentConfigRequest(
                 "config", SENSITIVE, SENSITIVE, SENSITIVE, SENSITIVE, SENSITIVE,
                 "PUBLIC_KEY", SENSITIVE, SENSITIVE, SENSITIVE, SENSITIVE);
-        PaymentProperties properties = new PaymentProperties(
-                true, false, PaymentConfigSource.ENV, SENSITIVE, SENSITIVE, SENSITIVE,
-                SENSITIVE, SENSITIVE, SENSITIVE, SENSITIVE, PaymentVerifyMode.PUBLIC_KEY,
-                SENSITIVE, SENSITIVE, 15);
         ResolvedPaymentConfig resolved = new ResolvedPaymentConfig(
                 PaymentConfigSource.DB, 1L, "config", true, SENSITIVE, SENSITIVE, SENSITIVE,
                 SENSITIVE, SENSITIVE, SENSITIVE, SENSITIVE, PaymentVerifyMode.PUBLIC_KEY,
@@ -29,7 +24,6 @@ class PaymentSecretRecordRedactionTest {
                 new PaymentSecretCipher.DecryptedSecret(SENSITIVE, 2, SENSITIVE);
 
         assertThat(request.toString()).doesNotContain(SENSITIVE).contains("apiV3KeyConfigured=true");
-        assertThat(properties.toString()).doesNotContain(SENSITIVE).contains("privateKeyPathConfigured=true");
         assertThat(resolved.toString()).doesNotContain(SENSITIVE).contains("wechatPublicKeyPemConfigured=true");
         assertThat(encrypted.toString()).doesNotContain(SENSITIVE).contains("ciphertext=<redacted>");
         assertThat(decrypted.toString()).doesNotContain(SENSITIVE).contains("plaintext=<redacted>");

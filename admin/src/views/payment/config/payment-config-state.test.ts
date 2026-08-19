@@ -9,7 +9,6 @@ const apiSource = readFileSync(new URL('../../../api/payment.ts', import.meta.ur
 
 const config = (overrides: Partial<Api.Payment.Config> = {}): Api.Payment.Config => ({
   id: 7,
-  source: 'DB',
   configName: '正式环境',
   appIdMasked: 'wx_***_123',
   mchIdMasked: '12***34',
@@ -107,7 +106,10 @@ test('the payment config Admin source exposes only database configurations', () 
     '环境变量配置',
     'fetchEnvironmentPaymentConfig',
     'importEnvironmentPaymentConfig',
-    'value="ENV"'
+    'value="ENV"',
+    'updatePaymentConfigSource',
+    '/admin/pay/configs/source',
+    'import-environment'
   ]) {
     assert.equal(pageSource.includes(removedEnvironmentContract), false)
     assert.equal(apiSource.includes(removedEnvironmentContract), false)

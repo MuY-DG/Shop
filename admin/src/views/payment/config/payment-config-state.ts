@@ -14,7 +14,7 @@ export function paymentConfigUseState(
   effectiveConfig?: Api.Payment.EffectiveConfig | null,
   dirty = false
 ): PaymentConfigUseState {
-  const active = effectiveConfig?.source === 'DB' && effectiveConfig.id === config.id
+  const active = effectiveConfig?.id === config.id
   return {
     active,
     disabled: active,
@@ -26,7 +26,7 @@ export function paymentConfigDeleteState(
   config: Api.Payment.Config,
   effectiveConfig?: Api.Payment.EffectiveConfig | null
 ): PaymentConfigDeleteState {
-  if (effectiveConfig?.source === 'DB' && effectiveConfig.id === config.id) {
+  if (effectiveConfig?.id === config.id) {
     return {
       disabled: true,
       reason: '正在使用的配置不能删除'

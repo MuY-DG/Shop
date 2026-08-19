@@ -72,8 +72,8 @@ for key in \
   reject_property "$prod_file" "$key"
 done
 
-# V98-V101 数据库配置完成后，生产文件不得重新引入微信业务凭据或旧运行开关。
-# 旧部署必须先使用保留兼容值和 PEM 挂载的过渡版本完成两阶段迁移。
+# 支付运行时只允许数据库配置，生产文件永久拒绝 WECHAT_PAY_*；其余微信业务键也只允许
+# 通过对应的数据库配置和运行开关管理，不得重新写回环境文件。
 for key in \
   WECHAT_MINI_PROGRAM_APP_ID \
   WECHAT_MINI_PROGRAM_APP_SECRET \

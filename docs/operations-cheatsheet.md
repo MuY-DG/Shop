@@ -197,7 +197,7 @@ ssh txcloud \
 | `application.yaml` | 所有环境公共配置 | 是 |
 | `application-dev.yaml` | 本地开发配置 | 是 |
 | `application-prod.yaml` | 生产 Profile 规则 | 是 |
-| `.env.dev.local` | 本机数据库/加密材料；旧微信变量仅作迁移兼容 | 否 |
+| `.env.dev.local` | 本机微信平台兼容值、加密主密钥及发货开关；不允许支付商户配置 | 否 |
 | `.env.prod.local` | 新部署为最小启动配置；旧微信值仅在两阶段迁移期间暂留 | 否 |
 | `.env.infrastructure.local` | 仅 MySQL、Redis 基础设施密码 | 否 |
 | `.1panel.local` | 1Panel 登录信息 | 否 |

@@ -4,7 +4,6 @@ import java.time.LocalDateTime;
 
 public record EffectivePaymentConfigResponse(
         Long id,
-        String source,
         String configName,
         String appIdMasked,
         String mchIdMasked,

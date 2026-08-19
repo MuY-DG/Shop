@@ -79,7 +79,8 @@ git status --short --branch
 - [ ] V95 Admin 运行开关的分阶段启用、CAS 冲突、追加审计、独立读写权限、运行时
       动态停用、故障 fail-soft/fail-closed 和 MySQL 并发首写都实际执行；页面不得接收或
       返回 Callback Token/EncodingAESKey。
-- [ ] V102 支付配置页面只管理数据库配置，不展示 `AUTO`、`ENV`、环境配置或环境导入；
+- [ ] 支付运行时和 V102 配置页面只使用数据库配置；代码不存在 `AUTO`/`ENV` 实时解析、
+      环境导入或来源切换接口；
       软删除的独立权限、当前配置禁删、未迁移 legacy file 配置禁删、删除状态约束、历史
       支付身份继续回放及并发启用/删除测试都实际执行。
 - [ ] 人工审查发布差异：只包含批准范围，没有 `.env.*.local`、PEM、密钥、生产 URL、
@@ -172,7 +173,7 @@ order by installed_rank;
       存储；支付/退款回调均使用 `api.muybaby6.icu`，不把值写入仓库、日志、
       截图或发布证据。
 - [ ] 当前生产决策为新支付使用数据库配置；Admin 只展示数据库候选和当前配置，不展示
-      `AUTO`、`ENV` 或环境导入。用切换后的第一笔新真实支付确认 `payment_config_id`
+      ENV/AUTO 来源或环境导入接口。用切换后的第一笔新真实支付确认 `payment_config_id`
       指向启用的 DB 配置、不可变指纹正确，且支付/退款回调基址均为
       `api.muybaby6.icu`；不得仅根据页面标签或运行开关推断已生效。
 - [ ] 使用无删除权限、仅编辑权限和具备 `payment:config:delete` 的三个角色核对 Admin
@@ -439,21 +440,19 @@ V94 的激活条件是支付后 24 小时内，激活后更新窗口是 30 天�
 
 ## 12. 基础设施和运维
 
-- [ ] 按 [docker-deployment.md](docker-deployment.md) 的两阶段 runbook 升级：部署
-      V98/V99/V100/V101 时先保留真实 local/PEM；完成支付 ENV 导入、旧 file-id 回填、
-      微信平台与服务动态接入配置 ENV 导入、service-card/shipping 运行开关同值持久化和
-      真实/沙箱验证后，才进入清理阶段。
+- [ ] 支付只允许数据库配置，不接受旧 ENV 部署升级；已有数据库支付行若仍有旧 file-ID，
+      必须先转成数据库密文。微信平台与服务动态若仍需要兼容迁移，按
+      [docker-deployment.md](docker-deployment.md) 的 V99-V101 过渡步骤完成 ENV 导入、
+      service-card/shipping 运行开关同值持久化和真实/沙箱验证后，再进入清理阶段。
 - [ ] 新部署的 `.env.prod.local` 只含数据库/Redis、可信代理、通用主加密密钥和首次引导值。
       升级中的旧文件只可在第一阶段过渡版本暂含尚未导入的兼容项，必须为 `600` 且不进入
       镜像、日志或证据。
 - [ ] 第二阶段后的生产校验拒绝全部微信平台、支付、服务动态和发货 legacy ENV key；
-      当前 Compose 不再挂载支付 PEM，旧部署只能先通过 V98-V101 过渡版本完成导入。
-- [ ] V102 后日常 Admin 不再提供支付 ENV/AUTO/环境导入入口；后端 legacy
-      environment/source/import endpoint 只作为旧部署升级或受控运维兼容保留，不把它们
-      重新开放成日常配置路径。历史 ENV snapshot 解析长期保留，不随 UI 收口或配置软删除
-      一并清理。
-- [ ] 删除支付路径/PEM 前，所有目标配置的 `legacySecretFilesPendingImport=false`、运行来源
-      已显式持久化为 `DB`，历史 ENV 支付有可解密快照且回调/回滚窗口已结束。服务动态
+      当前 Compose 不再挂载支付 PEM，支付必须直接创建数据库配置。
+- [ ] V102 后 Admin 和后端都不再提供支付 ENV/AUTO、环境导入或来源切换接口。历史 ENV
+      snapshot 解析只用于旧交易回放，不随 UI 收口或配置软删除一并清理。
+- [ ] 删除支付路径/PEM 前，所有目标配置的 `legacySecretFilesPendingImport=false`，历史 ENV
+      支付有可解密快照且回调/回滚窗口已结束。服务动态
       template/image/Callback 只有在 V101 source=DATABASE、握手/失败回调及回滚验证完成后
       才能删除旧环境值。
 - [ ] Redis 可用；管理员登录保护、会话撤销和 app token auth-version 检查在故障模式下

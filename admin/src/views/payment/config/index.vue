@@ -17,7 +17,7 @@
             </div>
           </div>
           <div class="section-header__actions">
-            <ElTag :type="effectiveConfig?.source === 'DB' ? 'success' : 'warning'">
+            <ElTag :type="effectiveConfig ? 'success' : 'warning'">
               {{ runtimeLabel }}
             </ElTag>
             <ElButton
@@ -227,8 +227,7 @@
     fetchEffectivePaymentConfig,
     fetchPaymentConfigs,
     importLegacyPaymentSecretFiles,
-    updatePaymentConfig,
-    updatePaymentConfigSource
+    updatePaymentConfig
   } from '@/api/payment'
   import { paymentConfigDeleteState, paymentConfigUseState } from './payment-config-state'
 
@@ -301,8 +300,8 @@
         }
   )
   const runtimeLabel = computed(() => {
-    if (!effectiveConfig.value || effectiveConfig.value.source !== 'DB') {
-      return '当前未使用数据库支付配置'
+    if (!effectiveConfig.value) {
+      return '当前无正在使用的支付配置'
     }
     return `正在使用：${effectiveConfig.value.configName}`
   })
@@ -418,7 +417,7 @@
       const candidateSelections = [
         preferredSelection,
         selectedConfigKey.value,
-        effective?.source === 'DB' ? effective.id : null,
+        effective?.id,
         response.records[0]?.id
       ]
       const targetSelection = candidateSelections.find((candidate) =>
@@ -465,8 +464,7 @@
   }
 
   const cancelCreate = () => {
-    const activeId =
-      effectiveConfig.value?.source === 'DB' ? effectiveConfig.value.id : configs.value[0]?.id
+    const activeId = effectiveConfig.value?.id || configs.value[0]?.id
     const target = configs.value.find((config) => config.id === activeId) || configs.value[0]
     if (target) {
       selectConfig(target)
@@ -564,7 +562,6 @@
       const target =
         saveFirst || !selectedConfig.value ? await persistCurrent(false) : selectedConfig.value
       await enablePaymentConfig(target.id, false)
-      await updatePaymentConfigSource({ source: 'DB' }, false)
       await loadData(target.id)
       ElMessage.success(`已开始使用「${target.configName}」`)
     } finally {

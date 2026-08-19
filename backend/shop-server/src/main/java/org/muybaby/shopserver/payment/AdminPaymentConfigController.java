@@ -5,9 +5,6 @@ import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigRequest;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigStateResponse;
-import org.muybaby.shopserver.payment.dto.EnvironmentPaymentConfigResponse;
-import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
-import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.payment.service.AdminPaymentConfigService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -38,24 +35,6 @@ public class AdminPaymentConfigController {
         return ApiResponse.success(adminPaymentConfigService.effective());
     }
 
-    @GetMapping("/environment")
-    @PreAuthorize("hasAuthority('payment:config:read')")
-    public ApiResponse<EnvironmentPaymentConfigResponse> environment() {
-        return ApiResponse.success(adminPaymentConfigService.environment());
-    }
-
-    @GetMapping("/source")
-    @PreAuthorize("hasAuthority('payment:config:read')")
-    public ApiResponse<PaymentConfigSourceResponse> source() {
-        return ApiResponse.success(adminPaymentConfigService.source());
-    }
-
-    @PutMapping("/source")
-    @PreAuthorize("hasAuthority('payment:config:enable')")
-    public ApiResponse<PaymentConfigSourceResponse> updateSource(@RequestBody PaymentConfigSourceUpdateRequest request) {
-        return ApiResponse.success(adminPaymentConfigService.updateSource(request));
-    }
-
     @GetMapping
     @PreAuthorize("hasAuthority('payment:config:read')")
     public ApiResponse<PageResult<AdminPaymentConfigResponse>> page(
@@ -69,12 +48,6 @@ public class AdminPaymentConfigController {
     @PreAuthorize("hasAuthority('payment:config:write')")
     public ApiResponse<AdminPaymentConfigResponse> create(@RequestBody AdminPaymentConfigRequest request) {
         return ApiResponse.success(adminPaymentConfigService.create(request));
-    }
-
-    @PostMapping("/import-environment")
-    @PreAuthorize("hasAuthority('payment:config:write')")
-    public ApiResponse<AdminPaymentConfigResponse> importEnvironment() {
-        return ApiResponse.success(adminPaymentConfigService.importEnvironment());
     }
 
     @PutMapping("/{configId}")

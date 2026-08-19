@@ -1290,23 +1290,10 @@ Automated verification points:
 
 This is manual real smoke, not automated. Do not mark it passed until a real mini program payment completes against a local backend exposed through HTTPS.
 
-1. Prefer creating and enabling a database payment configuration through Admin, then persist
-   runtime source `DB`. Use the following `.env.dev.local` block only to reproduce and migrate an
-   existing ENV-sourced deployment; never copy it into a tracked example:
+1. Create and enable the payment configuration through Admin. Local and production payment
+   runtimes are DB-only; do not add merchant credentials or callback URLs to `.env.dev.local`.
 
 ```properties
-WECHAT_PAY_ENABLED=true
-WECHAT_PAY_CONFIG_SOURCE=ENV
-WECHAT_PAY_APP_ID=<wechat-mini-program-app-id>
-WECHAT_PAY_MCH_ID=<wechat-pay-merchant-id>
-WECHAT_PAY_MERCHANT_SERIAL_NO=<merchant-certificate-serial-no>
-WECHAT_PAY_PRIVATE_KEY_PATH=<absolute-path-to-local-merchant-private-key.pem>
-WECHAT_PAY_API_V3_KEY=<wechat-pay-api-v3-key>
-WECHAT_PAY_NOTIFY_URL=https://<public-tunnel-domain>/wxpay/pay/notify
-WECHAT_PAY_REFUND_NOTIFY_URL=https://<public-tunnel-domain>/wxpay/refund/notify
-WECHAT_PAY_VERIFY_MODE=PUBLIC_KEY
-WECHAT_PAY_PUBLIC_KEY_ID=<wechat-pay-public-key-id>
-WECHAT_PAY_PUBLIC_KEY_PATH=<absolute-path-to-local-wechat-pay-public-key.pem>
 SHOP_SECRET_ENCRYPTION_LEGACY_KEY=<local-32-byte-application-master-key>
 SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false
 SHOP_SECRET_ENCRYPTION_WRITE_VERSION=1
@@ -1322,14 +1309,13 @@ https://<public-tunnel-domain>/wxpay/pay/notify
 https://<public-tunnel-domain>/wxpay/refund/notify
 ```
 
-4. If using DB-managed credentials, choose the merchant private-key and WeChat Pay public-key PEM
+4. Choose the merchant private-key and WeChat Pay public-key PEM
    in Admin. The browser submits their text as `privateKeyPem`/`wechatPublicKeyPem`; the backend
-   validates and stores encrypted ciphertext, not a file or storage-asset ID. A legacy ENV setup
-   can instead call `POST /admin/pay/configs/import-environment`; an old DB row with private-file
-   IDs uses `POST /admin/pay/configs/{configId}/import-legacy-secret-files`. Confirm the chosen row
-   reports both keys configured and `legacySecretFilesPendingImport=false`, enable it, save source
-   `DB`, then confirm `/admin/pay/configs/source` returns `DB` with `persisted=true` and
-   `/admin/pay/configs/effective` returns only masked values and the expected callback URLs.
+   validates and stores encrypted ciphertext, not a file or storage-asset ID. An old DB row with
+   private-file IDs uses `POST /admin/pay/configs/{configId}/import-legacy-secret-files`. Confirm the
+   chosen row reports both keys configured and `legacySecretFilesPendingImport=false`, enable it,
+   then confirm `/admin/pay/configs/effective` returns only masked values and the expected callback
+   URLs. Environment import and runtime source APIs must be unavailable.
 5. In a real mini program session, create an order and tap payment.
 6. Complete WeChat payment with the real payer account.
 7. Verify the backend receives `POST /wxpay/pay/notify` while route issuance is disabled, or `/wxpay/pay/notify/r/{opaque-token}` after the routed handlers are deployed everywhere and `SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=true`. Confirm the callback log reaches `SUCCESS` and the order becomes `PAID`.

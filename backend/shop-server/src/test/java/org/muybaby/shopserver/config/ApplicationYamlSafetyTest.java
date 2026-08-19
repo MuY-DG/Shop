@@ -169,20 +169,7 @@ class ApplicationYamlSafetyTest {
                 "SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED",
                 "SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED",
                 "WECHAT_MINI_PROGRAM_APP_ID",
-                "WECHAT_MINI_PROGRAM_APP_SECRET",
-                "WECHAT_PAY_API_V3_KEY",
-                "WECHAT_PAY_APP_ID",
-                "WECHAT_PAY_CONFIG_SOURCE",
-                "WECHAT_PAY_ENABLED",
-                "WECHAT_PAY_MCH_ID",
-                "WECHAT_PAY_MERCHANT_SERIAL_NO",
-                "WECHAT_PAY_MOCK_ENABLED",
-                "WECHAT_PAY_NOTIFY_URL",
-                "WECHAT_PAY_PRIVATE_KEY_PATH",
-                "WECHAT_PAY_PUBLIC_KEY_ID",
-                "WECHAT_PAY_PUBLIC_KEY_PATH",
-                "WECHAT_PAY_REFUND_NOTIFY_URL",
-                "WECHAT_PAY_VERIFY_MODE"
+                "WECHAT_MINI_PROGRAM_APP_SECRET"
         );
     }
 

@@ -136,7 +136,7 @@ class PaymentSecretRotationServiceTest {
         assertThat(decryptedPublicKey.keyId()).isEqualTo(ACTIVE_KEY_ID);
 
         ResolvedPaymentConfig restoredSnapshot = snapshotStore
-                .findEnvironmentConfig(snapshotFingerprint)
+                .findHistoricalSnapshot(snapshotFingerprint)
                 .orElseThrow();
         assertThat(restoredSnapshot.apiV3Key()).isEqualTo(API_V3_KEY);
         assertThat(restoredSnapshot.privateKeyPem()).isEqualTo(PRIVATE_KEY);
@@ -372,7 +372,7 @@ class PaymentSecretRotationServiceTest {
 
     private void seedLegacySnapshot() {
         snapshotConfig = new ResolvedPaymentConfig(
-                PaymentConfigSource.ENV,
+                PaymentConfigSource.HISTORICAL_SNAPSHOT,
                 null,
                 "Rotation ENV Config",
                 true,

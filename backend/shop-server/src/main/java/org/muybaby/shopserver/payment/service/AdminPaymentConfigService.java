@@ -6,7 +6,6 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.PaymentConfigMutationLock;
 import org.muybaby.shopserver.payment.config.PaymentConfigSource;
-import org.muybaby.shopserver.payment.config.PaymentConfigSourceSettingService;
 import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
 import org.muybaby.shopserver.payment.config.PaymentPemValidator;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
@@ -16,9 +15,6 @@ import org.muybaby.shopserver.payment.dto.AdminPaymentConfigRequest;
 import org.muybaby.shopserver.payment.dto.AdminPaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigResponse;
 import org.muybaby.shopserver.payment.dto.EffectivePaymentConfigStateResponse;
-import org.muybaby.shopserver.payment.dto.EnvironmentPaymentConfigResponse;
-import org.muybaby.shopserver.payment.dto.PaymentConfigSourceResponse;
-import org.muybaby.shopserver.payment.dto.PaymentConfigSourceUpdateRequest;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService.PaymentSecretSnapshot;
@@ -56,7 +52,6 @@ public class AdminPaymentConfigService {
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final PaymentConfigResolver paymentConfigResolver;
     private final PaymentConfigMutationLock paymentConfigMutationLock;
-    private final PaymentConfigSourceSettingService paymentConfigSourceSettingService;
     private final PaymentNotificationRouteService paymentNotificationRouteService;
     private final PaymentSecretCipher paymentSecretCipher;
     private final PaymentPemValidator paymentPemValidator;
@@ -70,7 +65,6 @@ public class AdminPaymentConfigService {
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             PaymentConfigResolver paymentConfigResolver,
             PaymentConfigMutationLock paymentConfigMutationLock,
-            PaymentConfigSourceSettingService paymentConfigSourceSettingService,
             PaymentNotificationRouteService paymentNotificationRouteService,
             PaymentSecretCipher paymentSecretCipher,
             PaymentPemValidator paymentPemValidator,
@@ -82,7 +76,6 @@ public class AdminPaymentConfigService {
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.paymentConfigResolver = paymentConfigResolver;
         this.paymentConfigMutationLock = paymentConfigMutationLock;
-        this.paymentConfigSourceSettingService = paymentConfigSourceSettingService;
         this.paymentNotificationRouteService = paymentNotificationRouteService;
         this.paymentSecretCipher = paymentSecretCipher;
         this.paymentPemValidator = paymentPemValidator;
@@ -100,24 +93,9 @@ public class AdminPaymentConfigService {
                 .orElseGet(() -> new EffectivePaymentConfigStateResponse(false, null));
     }
 
-    public EnvironmentPaymentConfigResponse environment() {
-        try {
-            return new EnvironmentPaymentConfigResponse(
-                    true,
-                    toEffectiveResponse(paymentConfigResolver.resolve(PaymentConfigSource.ENV))
-            );
-        } catch (BusinessException ex) {
-            if (ex.errorCode() != ErrorCode.VALIDATION_FAILED) {
-                throw ex;
-            }
-            return new EnvironmentPaymentConfigResponse(false, null);
-        }
-    }
-
     private EffectivePaymentConfigResponse toEffectiveResponse(ResolvedPaymentConfig config) {
         return new EffectivePaymentConfigResponse(
                 config.configId(),
-                config.source().name(),
                 config.configName(),
                 mask(config.appId(), 3, 3),
                 mask(config.mchId(), 2, 2),
@@ -137,31 +115,6 @@ public class AdminPaymentConfigService {
                 null,
                 null
         );
-    }
-
-    public PaymentConfigSourceResponse source() {
-        return paymentConfigSourceSettingService.current();
-    }
-
-    public PaymentConfigSourceResponse updateSource(PaymentConfigSourceUpdateRequest request) {
-        return outsideTransaction(() -> {
-            if (request == null) {
-                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-            }
-            PaymentConfigSource source = paymentConfigSourceSettingService.parse(request.source());
-            ResolvedPaymentConfig resolved = paymentConfigResolver.resolve(source);
-            requireNotificationRouteReady(resolved);
-            StoredConfigSnapshot storedConfig = resolved.source() == PaymentConfigSource.DB
-                    ? inspectStoredConfig(resolved.configId(), true, resolved)
-                    : null;
-            return requireTransactionResult(requiresNewTransaction.execute(status -> {
-                paymentConfigSourceSettingService.update(source);
-                if (storedConfig != null) {
-                    revalidateStoredConfig(storedConfig, false);
-                }
-                return paymentConfigSourceSettingService.current();
-            }));
-        });
     }
 
     public PageResult<AdminPaymentConfigResponse> page(Long current, Long size) {
@@ -199,48 +152,6 @@ public class AdminPaymentConfigService {
             ValidatedConfig validated = validateRequest(request, null);
             return requireTransactionResult(requiresNewTransaction.execute(status -> createInTransaction(validated)));
         });
-    }
-
-    public AdminPaymentConfigResponse importEnvironment() {
-        return outsideTransaction(() -> {
-            ResolvedPaymentConfig environment = paymentConfigResolver.resolve(PaymentConfigSource.ENV);
-            ValidatedConfig validated = new ValidatedConfig(
-                    requireText(environment.configName(), 80),
-                    requireText(environment.appId(), 64),
-                    requireText(environment.mchId(), 32),
-                    requireText(environment.merchantSerialNo(), 128),
-                    validateApiV3Key(environment.apiV3Key()),
-                    paymentPemValidator.validatePrivateKey(environment.privateKeyPem()),
-                    PaymentVerifyMode.PUBLIC_KEY,
-                    requireText(environment.wechatPublicKeyId(), 128),
-                    paymentPemValidator.validatePublicKey(environment.wechatPublicKeyPem()),
-                    requireText(environment.notifyUrl(), 255),
-                    requireText(environment.refundNotifyUrl(), 255)
-            );
-            requireNotificationRouteReady(environment);
-            return requireTransactionResult(requiresNewTransaction.execute(status -> {
-                paymentConfigMutationLock.acquire();
-                rejectEnvironmentImportConflict(validated);
-                return createInTransaction(validated);
-            }));
-        });
-    }
-
-    private void rejectEnvironmentImportConflict(ValidatedConfig config) {
-        Long conflicts = jdbcClient.sql("""
-                        select count(*)
-                        from payment_config
-                        where status = 'ACTIVE'
-                          and (config_name = :configName or (app_id = :appId and mch_id = :mchId))
-                        """)
-                .param("configName", config.configName())
-                .param("appId", config.appId())
-                .param("mchId", config.mchId())
-                .query(Long.class)
-                .single();
-        if (conflicts != null && conflicts > 0) {
-            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-        }
     }
 
     private AdminPaymentConfigResponse createInTransaction(ValidatedConfig validated) {
@@ -847,7 +758,6 @@ public class AdminPaymentConfigService {
         Long publicKeyFileId = nullableLong(rs, "wechat_public_key_file_id");
         return new AdminPaymentConfigResponse(
                 rs.getLong("id"),
-                PaymentConfigSource.DB.name(),
                 rs.getString("config_name"),
                 mask(rs.getString("app_id"), 3, 3),
                 mask(rs.getString("mch_id"), 2, 2),

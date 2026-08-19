@@ -2,16 +2,12 @@ package org.muybaby.shopserver.payment.config;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.payment.PaymentProperties;
 import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
@@ -24,69 +20,43 @@ import java.util.Optional;
 public class PaymentConfigResolver {
 
 
-    private final PaymentProperties properties;
     private final JdbcClient jdbcClient;
     private final PaymentSecretCipher secretCipher;
     private final PrivateStorageFileService privateStorageFileService;
-    private final PaymentConfigSourceSettingService sourceSettingService;
     private final PaymentConfigSnapshotStore snapshotStore;
 
     public PaymentConfigResolver(
-            PaymentProperties properties,
             JdbcClient jdbcClient,
             PaymentSecretCipher secretCipher,
             PrivateStorageFileService privateStorageFileService,
-            PaymentConfigSourceSettingService sourceSettingService,
             PaymentConfigSnapshotStore snapshotStore
     ) {
-        this.properties = properties;
         this.jdbcClient = jdbcClient;
         this.secretCipher = secretCipher;
         this.privateStorageFileService = privateStorageFileService;
-        this.sourceSettingService = sourceSettingService;
         this.snapshotStore = snapshotStore;
     }
 
     public ResolvedPaymentConfig resolve() {
-        return resolve(properties, sourceSettingService.currentSource());
+        return resolveDb();
     }
 
     /**
-     * Returns empty only when the selected source has no configured candidate. Once a candidate
-     * exists, invalid paths, damaged ciphertext and incomplete secret material still fail closed.
+     * Returns empty only when no enabled database configuration exists. Once a candidate exists,
+     * damaged ciphertext and incomplete secret material still fail closed.
      */
     public Optional<ResolvedPaymentConfig> resolveAvailable() {
-        PaymentConfigSource source = sourceSettingService.currentSource();
-        if (source == PaymentConfigSource.ENV) {
-            return isCompleteEnv(properties) ? Optional.of(resolveEnv(properties)) : Optional.empty();
-        }
-        if (source == PaymentConfigSource.DB) {
-            return hasEnabledDbConfig() ? Optional.of(resolveDb()) : Optional.empty();
-        }
-        if (isCompleteEnv(properties)) {
-            return Optional.of(resolveEnv(properties));
-        }
         return hasEnabledDbConfig() ? Optional.of(resolveDb()) : Optional.empty();
-    }
-
-    public ResolvedPaymentConfig resolve(PaymentProperties candidate) {
-        PaymentConfigSource source = candidate.configSource() == null ? PaymentConfigSource.AUTO : candidate.configSource();
-        return resolve(candidate, source);
-    }
-
-    public ResolvedPaymentConfig resolve(PaymentConfigSource source) {
-        return resolve(properties, source == null ? PaymentConfigSource.AUTO : source);
     }
 
     /**
      * Resolves the configuration persisted on a payment order. Historical database configurations
-     * remain usable after they are no longer the enabled/current configuration. Payments created
-     * from environment configuration persist no database id, so a null id retains the normal
-     * runtime source fallback.
+     * remain usable after they are no longer the enabled/current configuration. A null id is only
+     * valid for historical environment snapshots and must be resolved with its fingerprint.
      */
     public ResolvedPaymentConfig resolveForPaymentConfigId(Long paymentConfigId) {
         if (paymentConfigId == null) {
-            return resolve();
+            throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
         }
         PaymentConfigRow row = jdbcClient.sql("""
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
@@ -106,9 +76,9 @@ public class PaymentConfigResolver {
 
     /**
      * Resolves the immutable configuration identity captured by a payment order. Database-backed
-     * legacy orders remain safe because their referenced row cannot be mutated. A versioned ENV
-     * order first matches the live environment and then falls back to its encrypted historical
-     * snapshot. Upgrade-era ENV rows without a fingerprint still fail closed.
+     * legacy orders remain safe because their referenced row cannot be mutated. Historical ENV
+     * orders are restored only from their encrypted snapshots; live ENV payment configuration is
+     * no longer supported. Upgrade-era ENV rows without a fingerprint still fail closed.
      */
     public ResolvedPaymentConfig resolveForPayment(
             Long paymentConfigId,
@@ -129,17 +99,7 @@ public class PaymentConfigResolver {
         }
 
         try {
-            ResolvedPaymentConfig current = resolve();
-            if (current.source() == PaymentConfigSource.ENV
-                    && fingerprintsEqual(normalizedFingerprint, fingerprint(current))) {
-                return current;
-            }
-        } catch (BusinessException ignored) {
-            // The runtime source may be DB or temporarily unavailable; the snapshot is authoritative.
-        }
-
-        try {
-            ResolvedPaymentConfig snapshot = snapshotStore.findEnvironmentConfig(normalizedFingerprint)
+            ResolvedPaymentConfig snapshot = snapshotStore.findHistoricalSnapshot(normalizedFingerprint)
                     .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED));
             return requireFingerprint(snapshot, normalizedFingerprint);
         } catch (BusinessException ex) {
@@ -148,18 +108,14 @@ public class PaymentConfigResolver {
     }
 
     /**
-     * Persists the exact environment credential revision before a new payment order references it.
-     * Database configurations are already immutable once referenced, so only their fingerprint is
-     * returned. Snapshot encryption failure aborts payment preparation instead of creating an order
-     * that cannot later be reconciled.
+     * New payment orders may only capture an enabled database configuration. Historical ENV
+     * snapshots remain readable but cannot be created through the runtime path.
      */
     public String captureForPayment(ResolvedPaymentConfig config) {
-        String configFingerprint = fingerprint(config);
-        if (config.source() == PaymentConfigSource.ENV) {
-            ResolvedPaymentConfig snapshot = snapshotStore.captureEnvironmentConfig(config, configFingerprint);
-            requireFingerprint(snapshot, configFingerprint);
+        if (config == null || config.source() != PaymentConfigSource.DB || config.configId() == null) {
+            throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
         }
-        return configFingerprint;
+        return fingerprint(config);
     }
 
     /**
@@ -174,10 +130,7 @@ public class PaymentConfigResolver {
         if (config == null) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        if (config.source() != PaymentConfigSource.DB) {
-            return config;
-        }
-        if (config.configId() == null) {
+        if (config.source() != PaymentConfigSource.DB || config.configId() == null) {
             throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
         }
 
@@ -260,45 +213,6 @@ public class PaymentConfigResolver {
         return MessageDigest.isEqual(expected, actual);
     }
 
-    private ResolvedPaymentConfig resolve(PaymentProperties candidate, PaymentConfigSource source) {
-        if (source == PaymentConfigSource.ENV) {
-            return resolveEnv(candidate);
-        }
-        if (source == PaymentConfigSource.DB) {
-            return resolveDb();
-        }
-        if (isCompleteEnv(candidate)) {
-            return resolveEnv(candidate);
-        }
-        return resolveDb();
-    }
-
-    public ResolvedPaymentConfig resolveEnv(PaymentProperties candidate) {
-        if (!isCompleteEnv(candidate)) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        PaymentVerifyMode verifyMode = requireSupportedVerifyMode(candidate.verifyMode());
-        return new ResolvedPaymentConfig(
-                PaymentConfigSource.ENV,
-                null,
-                "Environment",
-                candidate.enabled(),
-                candidate.appId(),
-                candidate.mchId(),
-                candidate.merchantSerialNo(),
-                candidate.apiV3Key(),
-                readTextFile(candidate.privateKeyPath()),
-                candidate.notifyUrl(),
-                candidate.refundNotifyUrl(),
-                verifyMode,
-                nullToEmpty(candidate.publicKeyId()),
-                readOptionalTextFile(candidate.publicKeyPath()),
-                null,
-                null,
-                null
-        );
-    }
-
     public ResolvedPaymentConfig resolveDb() {
         PaymentConfigRow row = jdbcClient.sql("""
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
@@ -353,18 +267,6 @@ public class PaymentConfigResolver {
         );
     }
 
-    private boolean isCompleteEnv(PaymentProperties candidate) {
-        return candidate.enabled()
-                && StringUtils.hasText(candidate.appId())
-                && StringUtils.hasText(candidate.mchId())
-                && StringUtils.hasText(candidate.merchantSerialNo())
-                && StringUtils.hasText(candidate.privateKeyPath())
-                && StringUtils.hasText(candidate.apiV3Key())
-                && StringUtils.hasText(candidate.notifyUrl())
-                && StringUtils.hasText(candidate.refundNotifyUrl())
-                && isCompleteVerifyMaterial(candidate);
-    }
-
     private String readPrivateFile(Long fileId) {
         if (fileId == null) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
@@ -386,14 +288,6 @@ public class PaymentConfigResolver {
         return privateStorageFileService.readSecretText(fileId);
     }
 
-    private boolean isCompleteVerifyMaterial(PaymentProperties candidate) {
-        if (normalizeVerifyMode(candidate.verifyMode()) != PaymentVerifyMode.PUBLIC_KEY) {
-            return false;
-        }
-        return StringUtils.hasText(candidate.publicKeyId())
-                && StringUtils.hasText(candidate.publicKeyPath());
-    }
-
     private String requiredPublicKeyId(PaymentVerifyMode verifyMode, String publicKeyId) {
         if (verifyMode == PaymentVerifyMode.PUBLIC_KEY && !StringUtils.hasText(publicKeyId)) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
@@ -410,24 +304,6 @@ public class PaymentConfigResolver {
             return readPrivateFile(row.wechatPublicKeyFileId());
         }
         return readOptionalPrivateFile(row.wechatPublicKeyFileId());
-    }
-
-    private String readTextFile(String path) {
-        if (!StringUtils.hasText(path)) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        try {
-            return Files.readString(Path.of(path), StandardCharsets.UTF_8);
-        } catch (IOException ex) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-    }
-
-    private String readOptionalTextFile(String path) {
-        if (!StringUtils.hasText(path)) {
-            return "";
-        }
-        return readTextFile(path);
     }
 
     private PaymentVerifyMode normalizeVerifyMode(PaymentVerifyMode verifyMode) {

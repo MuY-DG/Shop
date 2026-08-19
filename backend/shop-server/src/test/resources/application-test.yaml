@@ -65,12 +65,10 @@ shop:
       callback:
         enabled: false
   pay:
-    enabled: true
     mock-enabled: true
     initiation:
       claim-timeout: 2m
     timeout-scan-enabled: false
     refund-recovery:
       enabled: false
-    config-source: DB
     expire-minutes: 1440

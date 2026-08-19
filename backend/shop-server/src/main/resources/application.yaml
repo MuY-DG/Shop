@@ -178,9 +178,8 @@ shop: # 商城项目自定义业务配置的统一入口。
         recheck-interval: 30m # 同一待收货订单最多每 30 分钟查询一次。
         claim-timeout: 5m # 进程中断后允许其他实例接管过期任务。
   pay: # 微信支付、退款和支付恢复任务配置入口。
-    # 仅供 V98 import-environment/legacy file-id 迁移；数据库切换和验证完成前不得删除。
-    enabled: ${WECHAT_PAY_ENABLED:false} # 微信支付总开关，默认关闭。
-    mock-enabled: ${WECHAT_PAY_MOCK_ENABLED:false} # 微信支付模拟实现开关，默认关闭。
+    # 商户号、APIv3 Key、PEM 等业务凭据只从加密数据库配置读取。
+    mock-enabled: false # 是否启用支付模拟实现；测试环境可在 application-test.yaml 中覆盖。
     notification: # 微信支付回调请求校验配置。
       max-timestamp-skew: 5m # 回调时间戳与服务器时间最多允许相差 5 分钟。
     notification-route: # 多商户支付回调路由配置。
@@ -199,17 +198,6 @@ shop: # 商城项目自定义业务配置的统一入口。
       claim-timeout: 5m # 退款恢复占用超过 5 分钟后允许重新接管。
       base-retry-delay: 1m # 首次恢复重试的基础等待时间为 1 分钟。
       max-retry-delay: 30m # 指数退避后的最大重试等待时间为 30 分钟。
-    config-source: ${WECHAT_PAY_CONFIG_SOURCE:AUTO} # 选择支付配置来源，AUTO 会按项目规则自动选择环境或数据库。
-    app-id: ${WECHAT_PAY_APP_ID:} # 从环境变量读取支付关联的 AppID。
-    mch-id: ${WECHAT_PAY_MCH_ID:} # 从环境变量读取微信支付商户号。
-    merchant-serial-no: ${WECHAT_PAY_MERCHANT_SERIAL_NO:} # 从环境变量读取商户 API 证书序列号。
-    private-key-path: ${WECHAT_PAY_PRIVATE_KEY_PATH:} # 设置商户 API 私钥 PEM 文件路径。
-    api-v3-key: ${WECHAT_PAY_API_V3_KEY:} # 从环境变量读取微信支付 APIv3 密钥。
-    notify-url: ${WECHAT_PAY_NOTIFY_URL:} # 设置支付结果通知的公网 HTTPS 地址。
-    refund-notify-url: ${WECHAT_PAY_REFUND_NOTIFY_URL:} # 设置退款结果通知的公网 HTTPS 地址。
-    verify-mode: ${WECHAT_PAY_VERIFY_MODE:PUBLIC_KEY} # 选择微信应答验签方式，默认使用微信支付公钥。
-    public-key-id: ${WECHAT_PAY_PUBLIC_KEY_ID:} # 设置微信支付公钥 ID。
-    public-key-path: ${WECHAT_PAY_PUBLIC_KEY_PATH:} # 设置微信支付公钥 PEM 文件路径。
     expire-minutes: 15 # 订单提交时固化支付截止时间，后续发起支付不得延长。
   finance:
     reconciliation: # 微信支付交易账单对账；本阶段不包含资金账单或银行流水对账。

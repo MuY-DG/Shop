@@ -322,7 +322,7 @@ public class PaymentSecretRotationService {
         if (!secretCipher.shouldReencrypt(candidate.version(), candidate.keyId())) {
             return 0;
         }
-        ResolvedPaymentConfig config = snapshotStore.findEnvironmentConfig(candidate.fingerprint())
+        ResolvedPaymentConfig config = snapshotStore.findHistoricalSnapshot(candidate.fingerprint())
                 .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED));
         if (!constantTimeEquals(candidate.fingerprint(), paymentConfigResolver.fingerprint(config))) {
             throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);

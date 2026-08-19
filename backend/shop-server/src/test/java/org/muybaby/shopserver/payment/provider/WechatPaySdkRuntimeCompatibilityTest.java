@@ -52,7 +52,7 @@ class WechatPaySdkRuntimeCompatibilityTest {
         generator.initialize(2048);
         KeyPair keyPair = generator.generateKeyPair();
         return new ResolvedPaymentConfig(
-                PaymentConfigSource.ENV,
+                PaymentConfigSource.HISTORICAL_SNAPSHOT,
                 null,
                 "SDK runtime compatibility test",
                 true,

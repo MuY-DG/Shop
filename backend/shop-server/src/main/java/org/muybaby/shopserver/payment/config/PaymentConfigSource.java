@@ -1,7 +1,7 @@
 package org.muybaby.shopserver.payment.config;
 
 public enum PaymentConfigSource {
-    AUTO,
-    ENV,
-    DB
+    DB,
+    /** Read-only encrypted snapshot used only to replay historical payments. */
+    HISTORICAL_SNAPSHOT
 }

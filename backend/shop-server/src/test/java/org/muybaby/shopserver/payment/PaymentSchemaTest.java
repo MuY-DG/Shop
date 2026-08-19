@@ -11,7 +11,6 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -151,32 +150,4 @@ class PaymentSchemaTest {
         assertThat(runtimeTableCount).isZero();
     }
 
-    @Test
-    void paymentRuntimeSettingTableStoresSourceSelection() {
-        jdbcClient.sql("""
-                        insert into payment_runtime_setting
-                            (id, config_source)
-                        values
-                            (1, 'DB')
-                        """)
-                .update();
-
-        String source = jdbcClient.sql("select config_source from payment_runtime_setting where id = 1")
-                .query(String.class)
-                .single();
-
-        assertThat(source).isEqualTo("DB");
-    }
-
-    @Test
-    void paymentRuntimeSettingRejectsUnknownSourceSelection() {
-        assertThatThrownBy(() -> jdbcClient.sql("""
-                                insert into payment_runtime_setting
-                                    (id, config_source)
-                                values
-                                    (2, 'BROKEN')
-                                """)
-                        .update())
-                .hasMessageContaining("BROKEN");
-    }
 }

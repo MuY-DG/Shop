@@ -65,26 +65,25 @@ cd /Users/muybaby/Project/Production/Shop/backend/shop-server
 `.env.prod.example` 不再列出 `WECHAT_MINI_PROGRAM_*`、`WECHAT_PAY_*` 或微信发货开关。
 新部署通过后台数据库配置这些业务值，真实值不得复制回 example、镜像或文档。
 
-日常 Admin 的支付配置页面只管理数据库配置：创建、编辑、启用和软删除，不展示
-`AUTO`、`ENV`、环境变量配置或环境导入入口。删除只会让非当前配置退出日常列表；当前启用
+支付运行时和日常 Admin 都只使用数据库配置：创建、编辑、启用和软删除。代码不再提供
+支付 ENV/AUTO 解析、环境导入或来源切换接口。删除只会让非当前配置退出日常列表；当前启用
 配置必须先切换到其他配置，仍有旧私有文件 ID 的配置必须先完成秘密文件迁移。历史支付、
 退款、回调和对账仍按原配置 ID 或加密 ENV snapshot 回放，禁止手工物理删除对应数据库行、
 密文或 snapshot。
 
-### 旧部署两阶段迁移
+### 微信平台与服务动态旧部署迁移
 
-未迁移的旧部署必须先使用仍保留 `.env.prod.local` 兼容值和 `secrets/` 只读挂载的
-V98-V101 过渡版本完成第一阶段；当前主 Compose 已进入第二阶段，不再提供 PEM 挂载。
+微信平台与服务动态若仍有旧部署需要迁移，必须先使用仍保留 `.env.prod.local` 兼容值的
+V99-V101 过渡版本完成第一阶段；当前主 Compose 已进入第二阶段，不再提供 PEM 挂载。
+支付不再支持旧 ENV 部署升级，必须直接在数据库创建完整配置。微信平台与服务动态的
 第一阶段只部署和迁移，不代表已经操作生产数据库：
 
-1. 发布包含 V98、V99、V100、V101 的版本，确认 Flyway 完成且应用仍可用旧 ENV/文件回退启动。
-2. 支付来源为 ENV 时，由运维直接调用兼容接口
-   `POST /admin/pay/configs/import-environment` 创建禁用的 DB
-   候选；已有 DB 配置仍引用旧私有文件 ID 时，对每个待迁移行调用
+1. 发布包含 V99、V100、V101 的版本，确认 Flyway 完成且微信平台与服务动态仍可用旧 ENV 回退启动。
+2. 支付只接受数据库配置。已有 DB 配置仍引用旧私有文件 ID 时，对每个待迁移行调用
    `POST /admin/pay/configs/{configId}/import-legacy-secret-files`。后者把 PEM 正文校验、加密
    后写入 `payment_config`，并清空旧私有文件引用。确认列表中的
-   `legacySecretFilesPendingImport=false`，必要时启用目标行，再用
-   `PUT /admin/pay/configs/source` 显式保存 `{"source":"DB"}`。
+   `legacySecretFilesPendingImport=false`，必要时启用目标行。该入口只维护已有数据库行，
+   不读取 ENV，也不恢复任何 ENV 支付升级能力。
 3. 先 `GET /admin/wechat/platform-config`；仅当返回
    `legacyEnvironmentImportAvailable=true` 时，以 `{"version":0}` 调用
    `POST /admin/wechat/platform-config/legacy-env-import`。再次 GET 必须显示
@@ -99,12 +98,11 @@ V98-V101 过渡版本完成第一阶段；当前主 Compose 已进入第二阶�
    `GET /admin/wechat-shipping/runtime` 读取上传/投递/收货三个生效值和 version，再用相同
    值及真实原因 PUT 回去。这样先持久化旧开关，不在迁移时改变行为。
 6. 依次验证小程序登录、服务动态 GET 握手/失败回调、低金额沙箱或受控真实支付、历史支付查询/退款解析、发货跳过或
-   沙箱路径。核对支付 effective/source、平台 source、两个 runtime 的 persisted/version
+   沙箱路径。核对支付 effective 配置、平台 source、两个 runtime 的 persisted/version
    与审计记录；健康检查或单元测试不能替代这些外部证据。
 
-上述支付 ENV/source/import 接口仅服务老部署升级或受控运维回滚，日常 Admin 不展示这些
-入口。升级完成后不要借它们恢复双配置入口；但后端仍长期保留历史 ENV snapshot 的解析，
-以处理旧支付的查询、退款、回调和对账。
+后端长期保留历史 ENV snapshot 的只读解析，以处理旧支付的查询、退款、回调和对账；它不
+允许创建新的 ENV 支付，也不提供实时 ENV 凭据解析。
 
 第二阶段必须等上述验证、支付回调重试窗口、历史 ENV 支付快照和回滚窗口都满足后再做：
 
@@ -122,8 +120,8 @@ V98-V101 过渡版本完成第一阶段；当前主 Compose 已进入第二阶�
    handshake 与失败回调均通过，并保留满足回滚窗口的受控备份；不要输出密钥明文。
 
 当前主部署要求第二阶段已经完成：生产校验脚本拒绝上述 26 个 legacy key，Compose 不再
-挂载 `secrets/`。`.env.dev.local` 属于独立开发环境；只有开发数据库也完成相同迁移后才
-删除其微信业务值，生产迁移不能代替本地迁移。
+挂载 `secrets/`。本地开发与生产一致，`.env.dev.local` 也不得保存支付业务值；需要本地
+真支付时，先在本地数据库创建配置，再通过 HTTPS 内网穿透接收回调。
 
 全新部署不执行 legacy import：先准备通用主密钥环，启动后直接在 Admin 创建微信平台和
 支付 DB 配置，再一次性创建完整的服务动态接入配置，最后保存服务动态/发货运行开关。

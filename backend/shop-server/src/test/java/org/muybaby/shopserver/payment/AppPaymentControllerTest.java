@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.payment.config.PaymentConfigSource;
-import org.muybaby.shopserver.payment.config.PaymentVerifyMode;
 import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
 import org.muybaby.shopserver.payment.provider.WechatPayOrderQueryResult;
 import org.muybaby.shopserver.payment.service.PaymentInitiationService;
@@ -420,21 +418,6 @@ class AppPaymentControllerTest extends PaymentTestSupport {
     }
 
     private PaymentProperties nonMockPaymentProperties() {
-        return new PaymentProperties(
-                paymentProperties.enabled(),
-                false,
-                PaymentConfigSource.DB,
-                paymentProperties.appId(),
-                paymentProperties.mchId(),
-                paymentProperties.merchantSerialNo(),
-                paymentProperties.privateKeyPath(),
-                paymentProperties.apiV3Key(),
-                paymentProperties.notifyUrl(),
-                paymentProperties.refundNotifyUrl(),
-                PaymentVerifyMode.PUBLIC_KEY,
-                paymentProperties.publicKeyId(),
-                paymentProperties.publicKeyPath(),
-                paymentProperties.expireMinutes()
-        );
+        return new PaymentProperties(false, paymentProperties.expireMinutes());
     }
 }

@@ -4,7 +4,6 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
-import org.springframework.util.StringUtils;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -14,7 +13,7 @@ import java.util.regex.Pattern;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher.SecretContext;
 
 /**
- * Content-addressed, append-only storage for environment payment configurations.
+ * Read-only recovery store for historical environment payment configurations.
  *
  * <p>Only public merchant identity fields are stored directly. Provider key material is encrypted
  * through {@link PaymentSecretCipher}; callers must still verify the decrypted configuration against
@@ -33,53 +32,7 @@ public class PaymentConfigSnapshotStore {
         this.secretCipher = secretCipher;
     }
 
-    ResolvedPaymentConfig captureEnvironmentConfig(ResolvedPaymentConfig config, String fingerprint) {
-        requireEnvironmentConfig(config, fingerprint);
-        Optional<ResolvedPaymentConfig> existing = findEnvironmentConfig(fingerprint);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
-
-        PaymentSecretCipher.EncryptedSecret apiV3Key = secretCipher.encrypt(
-                secretContext(fingerprint, "api-v3-key"), config.apiV3Key());
-        PaymentSecretCipher.EncryptedSecret privateKeyPem = secretCipher.encrypt(
-                secretContext(fingerprint, "private-key-pem"), config.privateKeyPem());
-        PaymentSecretCipher.EncryptedSecret publicKeyPem = secretCipher.encrypt(
-                secretContext(fingerprint, "wechat-public-key-pem"), config.wechatPublicKeyPem());
-        requireSameEnvelope(apiV3Key, privateKeyPem, publicKeyPem);
-        jdbcClient.sql("""
-                        insert into payment_config_snapshot
-                            (fingerprint, config_source, config_name, app_id, mch_id,
-                             merchant_serial_no, api_v3_key_ciphertext, private_key_pem_ciphertext,
-                             notify_url, refund_notify_url, verify_mode, wechat_public_key_id,
-                             wechat_public_key_pem_ciphertext, secret_cipher_version, secret_key_id)
-                        values
-                            (:fingerprint, 'ENV', :configName, :appId, :mchId,
-                             :merchantSerialNo, :apiV3KeyCiphertext, :privateKeyPemCiphertext,
-                             :notifyUrl, :refundNotifyUrl, :verifyMode, :wechatPublicKeyId,
-                             :wechatPublicKeyPemCiphertext, :secretCipherVersion, :secretKeyId)
-                        on duplicate key update fingerprint = fingerprint
-                        """)
-                .param("fingerprint", fingerprint)
-                .param("configName", config.configName())
-                .param("appId", config.appId())
-                .param("mchId", config.mchId())
-                .param("merchantSerialNo", config.merchantSerialNo())
-                .param("apiV3KeyCiphertext", apiV3Key.ciphertext())
-                .param("privateKeyPemCiphertext", privateKeyPem.ciphertext())
-                .param("notifyUrl", config.notifyUrl())
-                .param("refundNotifyUrl", config.refundNotifyUrl())
-                .param("verifyMode", config.verifyMode().name())
-                .param("wechatPublicKeyId", config.wechatPublicKeyId())
-                .param("wechatPublicKeyPemCiphertext", publicKeyPem.ciphertext())
-                .param("secretCipherVersion", apiV3Key.version())
-                .param("secretKeyId", apiV3Key.keyId())
-                .update();
-        return findEnvironmentConfig(fingerprint)
-                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED));
-    }
-
-    Optional<ResolvedPaymentConfig> findEnvironmentConfig(String fingerprint) {
+    Optional<ResolvedPaymentConfig> findHistoricalSnapshot(String fingerprint) {
         if (!validFingerprint(fingerprint)) {
             return Optional.empty();
         }
@@ -98,7 +51,7 @@ public class PaymentConfigSnapshotStore {
     }
 
     private ResolvedPaymentConfig mapSnapshot(ResultSet rs, int rowNum) throws SQLException {
-        if (!PaymentConfigSource.ENV.name().equals(rs.getString("config_source"))) {
+        if (!"ENV".equals(rs.getString("config_source"))) {
             throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
         }
         PaymentVerifyMode verifyMode;
@@ -123,7 +76,7 @@ public class PaymentConfigSnapshotStore {
                 secretContext(fingerprint, "wechat-public-key-pem"),
                 rs.getString("wechat_public_key_pem_ciphertext"), cipherVersion, keyId);
         return new ResolvedPaymentConfig(
-                PaymentConfigSource.ENV,
+                PaymentConfigSource.HISTORICAL_SNAPSHOT,
                 null,
                 rs.getString("config_name"),
                 true,
@@ -161,45 +114,8 @@ public class PaymentConfigSnapshotStore {
         return decrypted;
     }
 
-    private void requireSameEnvelope(PaymentSecretCipher.EncryptedSecret... secrets) {
-        if (secrets.length == 0) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        int version = secrets[0].version();
-        String keyId = secrets[0].keyId();
-        for (PaymentSecretCipher.EncryptedSecret secret : secrets) {
-            if (secret.version() != version || !keyId.equals(secret.keyId())) {
-                throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-            }
-        }
-    }
-
-    private void requireEnvironmentConfig(ResolvedPaymentConfig config, String fingerprint) {
-        boolean valid = config != null
-                && config.source() == PaymentConfigSource.ENV
-                && config.configId() == null
-                && validFingerprint(fingerprint)
-                && validText(config.configName(), 80)
-                && validText(config.appId(), 64)
-                && validText(config.mchId(), 32)
-                && validText(config.merchantSerialNo(), 128)
-                && StringUtils.hasText(config.apiV3Key())
-                && StringUtils.hasText(config.privateKeyPem())
-                && validText(config.notifyUrl(), 255)
-                && validText(config.refundNotifyUrl(), 255)
-                && config.verifyMode() == PaymentVerifyMode.PUBLIC_KEY
-                && validText(config.wechatPublicKeyId(), 128)
-                && StringUtils.hasText(config.wechatPublicKeyPem());
-        if (!valid) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-    }
-
     private boolean validFingerprint(String fingerprint) {
         return fingerprint != null && FINGERPRINT_PATTERN.matcher(fingerprint).matches();
     }
 
-    private boolean validText(String value, int maxLength) {
-        return StringUtils.hasText(value) && value.length() <= maxLength;
-    }
 }
