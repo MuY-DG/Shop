@@ -72,12 +72,21 @@ Component({
       type: Object,
       value: EMPTY_PRODUCT,
       observer() {
+        const product = this.data.product as ProductCardValue;
+        const source = Array.isArray(product.features) ? product.features : [];
+        const featureViews = [
+          ...source.filter((feature) => feature.kind === "weight"),
+          ...source.filter((feature) => feature.kind !== "weight")
+        ];
         this.setData({
           imageFailed: false,
           titleExpanded: false,
-          titleExpandable: false
+          titleExpandable: false,
+          showServing: false,
+          featureViews
         }, () => {
           this.measureTitleOverflow();
+          this.measureFeaturesFit();
         });
       }
     },
@@ -90,6 +99,7 @@ Component({
           titleExpandable: false
         }, () => {
           this.measureTitleOverflow();
+          this.measureFeaturesFit();
         });
       }
     },
@@ -106,12 +116,19 @@ Component({
   data: {
     imageFailed: false,
     titleExpanded: false,
-    titleExpandable: false
+    titleExpandable: false,
+    featureViews: [] as Array<{
+      text: string;
+      kind: string;
+      servingText?: string;
+    }>,
+    showServing: false
   },
 
   lifetimes: {
     ready() {
       this.measureTitleOverflow();
+      this.measureFeaturesFit();
     }
   },
 
@@ -150,6 +167,63 @@ Component({
           titleExpandable,
           titleExpanded: titleExpandable && this.data.titleExpanded
         });
+      });
+    },
+
+    /**
+     * 克数与辣度同行展示：按当前容器宽度判断「适合N人」提示是否放得下，
+     * 放不下时隐藏，保证克数、辣度与辣椒图标始终在一行。
+     */
+    measureFeaturesFit() {
+      const featureViews = this.data.featureViews as Array<{
+        kind: string;
+        servingText?: string;
+      }>;
+      const hasMeasurableServing = featureViews.some(
+        (feature) => feature.kind === "weight" && Boolean(feature.servingText)
+      );
+      if (!hasMeasurableServing) {
+        return;
+      }
+      const query = this.createSelectorQuery();
+      query.select(".product-card__features").boundingClientRect();
+      query.selectAll(".product-card__fact, .product-card__fact-group").boundingClientRect();
+      query.select(".product-card__serving-measure").boundingClientRect();
+      query.exec((results) => {
+        const containerRect = results[0] as RectResult | null;
+        const factRects = (results[1] as Array<RectResult> | null) ?? [];
+        const servingRect = results[2] as RectResult | null;
+        const containerWidth = Number(containerRect?.width);
+        const servingWidth = Number(servingRect?.width);
+        if (
+          !Number.isFinite(containerWidth) ||
+          !Number.isFinite(servingWidth) ||
+          containerWidth <= 0 ||
+          factRects.length === 0
+        ) {
+          return;
+        }
+        const factsWidth = factRects.reduce(
+          (sum, rect) => sum + Number(rect?.width ?? 0),
+          0
+        );
+        if (!Number.isFinite(factsWidth) || factsWidth <= 0) {
+          return;
+        }
+        const systemInfo =
+          typeof wx.getWindowInfo === "function"
+            ? wx.getWindowInfo()
+            : wx.getSystemInfoSync();
+        const windowWidth = Number(systemInfo.windowWidth) || 375;
+        const gapPx = (6 / 750) * windowWidth;
+        const gapsWidth = gapPx * Math.max(0, factRects.length - 1);
+        const showingServing = this.data.showServing === true;
+        const neededWidth =
+          factsWidth + (showingServing ? 0 : servingWidth) + gapsWidth;
+        const shouldShowServing = neededWidth <= containerWidth + 0.5;
+        if (shouldShowServing !== showingServing) {
+          this.setData({ showServing: shouldShowServing });
+        }
       });
     },
 

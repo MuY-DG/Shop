@@ -47,9 +47,9 @@
     </view>
     <view wx:if="{{product.subtitle}}" class="product-card__subtitle">{{product.subtitle}}</view>
 
-    <view wx:if="{{product.features.length}}" class="product-card__features">
+    <view wx:if="{{featureViews.length}}" class="product-card__features">
       <block
-        wx:for="{{product.features}}"
+        wx:for="{{featureViews}}"
         wx:key="text"
         wx:for-item="feature"
       >
@@ -75,7 +75,8 @@
           class="product-card__fact product-card__fact--weight"
         >
           <text>{{feature.text}}</text>
-          <text wx:if="{{feature.servingText}}" class="product-card__serving">｜{{feature.servingText}}</text>
+          <text wx:if="{{showServing && feature.servingText}}" class="product-card__serving">｜{{feature.servingText}}</text>
+          <text wx:if="{{feature.servingText}}" class="product-card__serving-measure" aria-hidden="true">｜{{feature.servingText}}</text>
         </view>
         <view
           wx:else

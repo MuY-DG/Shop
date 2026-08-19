@@ -268,8 +268,8 @@
 .product-card__features {
   display: flex;
   min-height: 40rpx;
-  align-items: flex-start;
-  flex-direction: column;
+  align-items: center;
+  flex-flow: row wrap;
   margin-top: 8rpx;
   overflow: hidden;
   gap: 6rpx;
@@ -312,6 +312,7 @@
   padding: 0;
   border: 0;
   border-radius: 0;
+  position: relative;
   color: @color-text-gray;
   line-height: 30rpx;
 }
@@ -322,6 +323,22 @@
 
 .product-card__serving {
   color: @color-text-gray;
+}
+
+.product-card__serving-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.product-card__fact--weight + .product-card__fact-group::before {
+  content: "｜";
+  margin-right: 4rpx;
+  color: @color-text-gray;
+  font-size: 20rpx;
 }
 
 .product-card__fact--mild {
