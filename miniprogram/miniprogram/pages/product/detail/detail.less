@@ -56,16 +56,16 @@
   flex: none !important;
   border-radius: 50%;
   line-height: 1;
-  background: @color-surface;
+  background: @color-surface-white;
   box-shadow: 0 2rpx 10rpx rgba(46, 29, 22, 0.06);
   transition: transform @duration-fast @ease-standard;
 }
 
 .hero-action::after { border: 0; }
-.hero-action--active { background: @color-surface; }
+.hero-action--active { background: @color-surface-white; }
 .hero-action--pressed { transform: scale(0.9); }
 .hero-action__icon { width: 30rpx; height: 30rpx; }
-.hero-action__icon--favorite { width: 32rpx; height: 32rpx; }
+.hero-action__icon--favorite { width: 26rpx; height: 26rpx; }
 
 .hero-action__icon--favorited {
   animation: favorite-pop 340ms cubic-bezier(0.22, 1.25, 0.36, 1);
