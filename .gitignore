@@ -8,6 +8,9 @@
 /design-qa.md
 /artifacts/
 
+# WorkBuddy local session data
+.workbuddy/
+
 # Logs
 *.log
 logs/
