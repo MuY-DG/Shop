@@ -27,6 +27,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -102,11 +103,19 @@ public class AppProductService {
                                min(k.price_cent) AS min_price_cent,
                                max(k.price_cent) AS max_price_cent,
                                s.virtual_sales + coalesce(sales.actual_sales, 0) AS display_sales,
-                               max(case when k.stock_available > 0 then 1 else 0 end) AS has_available_sku
+                               max(case when k.stock_available > 0 then 1 else 0 end) AS has_available_sku,
+                               max(case when k.price_rank = 1 then k.net_content_text end) AS net_content_text
                         FROM product_spu s
                         JOIN product_category c ON c.id = s.category_id
-                        LEFT JOIN product_sku k ON k.spu_id = s.id
-                            AND k.status = :skuStatus AND k.deleted_at IS NULL
+                        LEFT JOIN (
+                            SELECT sku.id, sku.spu_id, sku.price_cent, sku.stock_available, sku.net_content_text,
+                                   row_number() OVER (
+                                       PARTITION BY sku.spu_id
+                                       ORDER BY sku.price_cent ASC, sku.id ASC
+                                   ) AS price_rank
+                            FROM product_sku sku
+                            WHERE sku.status = :skuStatus AND sku.deleted_at IS NULL
+                        ) k ON k.spu_id = s.id
                         LEFT JOIN (
                             SELECT oi.spu_id, sum(oi.quantity) AS actual_sales
                             FROM order_item oi
@@ -148,11 +157,42 @@ public class AppProductService {
                         row.saleState(),
                         row.badgeText(),
                         row.badgeTone(),
-                        parametersBySpuId.getOrDefault(row.id(), List.of())
+                        cardParameters(row, parametersBySpuId.getOrDefault(row.id(), List.of()))
                 ))
                 .toList();
 
         return PageResult.of(records, total == null ? 0 : total, current, size);
+    }
+
+    /** 与小程序端 weight fact 识别规则一致的描述标记，与首页 HomePageQueryService 保持同步。 */
+    private static final List<String> WEIGHT_FACT_MARKERS = List.of(
+            "WEIGHT", "GRAM", "NET_CONTENT", "净含量", "净重", "重量", "克重");
+
+    /**
+     * 列表卡片事实管线：净含量由 SKU 结构化字段注入，不再依赖手填参数，
+     * 与首页卡片保持一致；仅当没有重量类参数时注入，避免与存量参数重复展示。
+     */
+    private List<AppProductParameterValueResponse> cardParameters(
+            SpuListRow row,
+            List<AppProductParameterValueResponse> parameterValues
+    ) {
+        String netContent = StringUtils.hasText(row.netContentText()) ? row.netContentText().trim() : "";
+        if (netContent.isEmpty()) {
+            return parameterValues;
+        }
+        for (AppProductParameterValueResponse value : parameterValues) {
+            String descriptor = ((value.parameterCode() == null ? "" : value.parameterCode()) + " "
+                    + (value.parameterName() == null ? "" : value.parameterName()))
+                    .toUpperCase(java.util.Locale.ROOT);
+            if (WEIGHT_FACT_MARKERS.stream().anyMatch(descriptor::contains)) {
+                return parameterValues;
+            }
+        }
+        List<AppProductParameterValueResponse> merged = new ArrayList<>(parameterValues.size() + 1);
+        merged.add(new AppProductParameterValueResponse(
+                null, "NET_CONTENT", "净含量", "TEXT", "", netContent, "META", "TEXT", 0, List.of()));
+        merged.addAll(parameterValues);
+        return List.copyOf(merged);
     }
 
     public AppSpuDetailResponse detail(Long spuId) {
@@ -306,7 +346,8 @@ public class AppProductService {
                 rs.getLong("display_sales"),
                 rs.getInt("has_available_sku") == 1
                         ? ProductSaleState.AVAILABLE
-                        : ProductSaleState.SOLD_OUT
+                        : ProductSaleState.SOLD_OUT,
+                rs.getString("net_content_text")
         );
     }
 
@@ -500,7 +541,8 @@ public class AppProductService {
             Long minPriceCent,
             Long maxPriceCent,
             Long displaySales,
-            ProductSaleState saleState
+            ProductSaleState saleState,
+            String netContentText
     ) {
     }
 

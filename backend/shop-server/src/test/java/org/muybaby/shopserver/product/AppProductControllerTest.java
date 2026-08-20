@@ -293,6 +293,88 @@ class AppProductControllerTest {
                 .andExpect(jsonPath("$.code").value(200001));
     }
 
+    @Test
+    void structuredNetContentIsInjectedIntoListCardParameters() throws Exception {
+        String suffix = Long.toString(System.nanoTime());
+        Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(
+                0L, "净含量列表分类-" + suffix, "", null, 6, "ENABLED"
+        ));
+        Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
+                categoryId,
+                "净含量列表商品-" + suffix,
+                "净含量注入列表卡片",
+                "https://example.test/net-content-list-main.jpg",
+                null,
+                "净含量",
+                "<p>detail</p>",
+                1,
+                List.of(new AdminProductImageUpsertRequest("https://example.test/net-content-list-gallery.jpg", null)),
+                List.of(new AdminSkuUpsertRequest(
+                        null, "NET-CONTENT-LIST-SKU-" + suffix, "{}", "默认规格",
+                        3990L, 4990L, 9, 500,
+                        "https://example.test/net-content-list-sku.jpg", null, "ENABLED", 1
+                ))
+        ));
+        jdbcClient.sql("update product_sku set net_content_text = '500g' where spu_id = :spuId")
+                .param("spuId", spuId)
+                .update();
+        markNonFood(jdbcClient, spuId);
+        adminProductService.publishSpu(spuId);
+
+        mockMvc.perform(get("/app/product/spus")
+                        .param("current", "1")
+                        .param("size", "10")
+                        .param("categoryId", categoryId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].parameters[0].parameterCode").value("NET_CONTENT"))
+                .andExpect(jsonPath("$.data.records[0].parameters[0].parameterName").value("净含量"))
+                .andExpect(jsonPath("$.data.records[0].parameters[0].displayText").value("500g"))
+                .andExpect(jsonPath("$.data.records[0].parameters[0].cardRole").value("META"));
+
+        insertLegacyWeightParameter(spuId, categoryId, "LIST_LEGACY_WEIGHT_" + suffix);
+        mockMvc.perform(get("/app/product/spus")
+                        .param("current", "1")
+                        .param("size", "10")
+                        .param("categoryId", categoryId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].parameters.length()").value(1))
+                .andExpect(jsonPath("$.data.records[0].parameters[0].parameterCode").value("LIST_LEGACY_WEIGHT_" + suffix));
+    }
+
+    private void insertLegacyWeightParameter(Long spuId, Long categoryId, String parameterCode) {
+        jdbcClient.sql("""
+                        insert into product_parameter_definition
+                            (parameter_code, parameter_name, value_type, required_value, filterable,
+                             card_visible, detail_visible, card_role, card_renderer, card_priority,
+                             sort_order, status)
+                        values
+                            (:parameterCode, '重量', 'TEXT', false, false,
+                             true, true, 'META', 'TEXT', 0, 0, 'ENABLED')
+                        """)
+                .param("parameterCode", parameterCode)
+                .update();
+        Long parameterId = jdbcClient.sql(
+                        "select id from product_parameter_definition where parameter_code = :parameterCode")
+                .param("parameterCode", parameterCode)
+                .query(Long.class)
+                .single();
+        jdbcClient.sql("""
+                        insert into product_category_parameter (category_id, parameter_id)
+                        values (:categoryId, :parameterId)
+                        """)
+                .param("categoryId", categoryId)
+                .param("parameterId", parameterId)
+                .update();
+        jdbcClient.sql("""
+                        insert into product_spu_parameter_value
+                            (spu_id, parameter_id, text_value, option_codes_json)
+                        values (:spuId, :parameterId, '净含量 500g', '[]')
+                        """)
+                .param("spuId", spuId)
+                .param("parameterId", parameterId)
+                .update();
+    }
+
     private StoredFile insertStorageFile(String originalFilename) {
         String objectKey = "public/test/app-product/" + System.nanoTime() + "-" + originalFilename;
         String publicUrl = "http://localhost:8080/files/public/test/" + originalFilename;
