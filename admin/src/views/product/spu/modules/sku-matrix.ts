@@ -42,6 +42,7 @@ export const createEmptySku = (overrides: Partial<ProductEditorSku> = {}): Produ
   weightGram: null,
   volumeCubicMeter: null,
   netContentText: '',
+  packUnitText: '',
   image: '',
   imageFileId: null,
   status: 'ENABLED',
@@ -92,6 +93,19 @@ const createCompatibilityFields = (parts: CombinationPart[]) => {
     specText: entries.map(([groupName, valueName]) => `${groupName}：${valueName}`).join(' / '),
     specValueKeys: parts.map(({ value }) => value.valueKey)
   }
+}
+
+/** 多规格行文案：规格值组合 + 包装单位后缀（如 口味：微辣 / 500g/袋）。 */
+export const composeSkuSpecText = (
+  groups: ProductEditorSpecGroup[],
+  sku: Pick<ProductEditorSku, 'specValueKeys' | 'packUnitText'>
+): string => {
+  const entries = groups.map((group) => {
+    const value = group.values.find((item) => sku.specValueKeys.includes(item.valueKey))
+    return `${group.name.trim()}：${value?.valueName.trim() || ''}`
+  })
+  const unit = (sku.packUnitText || '').trim()
+  return entries.join(' / ') + (unit ? `/${unit}` : '')
 }
 
 export const resolveSkuFallbackImage = (
@@ -176,9 +190,11 @@ export const reconcileSkuMatrix = (
     const existing = existingByCombination.get(combinationKey)
     const compatibility = createCompatibilityFields(parts)
     if (existing) {
+      const unit = (existing.packUnitText || '').trim()
       return {
         ...existing,
         ...compatibility,
+        specText: compatibility.specText + (unit ? `/${unit}` : ''),
         combinationKey,
         sortOrder: index
       }

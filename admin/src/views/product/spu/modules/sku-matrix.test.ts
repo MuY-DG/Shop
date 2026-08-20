@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  composeSkuSpecText,
   createEmptySku,
   createEmptySpecGroup,
   describeCombinationCount,
@@ -80,4 +81,29 @@ test('keeps single-SKU display text optional and removes legacy placeholders', (
   assert.equal(normalizeSingleSpecText(' 默认规格 '), '')
   assert.equal(normalizeSingleSpecText('默认'), '')
   assert.equal(normalizeSingleSpecText(' 500g/袋 '), '500g/袋')
+})
+
+test('multi-sku spec text appends the pack unit only when chosen', () => {
+  const groups: ProductEditorSpecGroup[] = [
+    {
+      groupKey: 'taste',
+      name: '口味',
+      imageEnabled: false,
+      sortOrder: 0,
+      values: [{ valueKey: 'mild', valueName: '微辣', image: '', imageFileId: null, sortOrder: 0 }]
+    },
+    {
+      groupKey: 'size',
+      name: '规格',
+      imageEnabled: false,
+      sortOrder: 1,
+      values: [{ valueKey: 'g500', valueName: '500g', image: '', imageFileId: null, sortOrder: 0 }]
+    }
+  ]
+  const sku = { specValueKeys: ['mild', 'g500'], packUnitText: '' }
+  assert.equal(composeSkuSpecText(groups, sku), '口味：微辣 / 规格：500g')
+  assert.equal(
+    composeSkuSpecText(groups, { ...sku, packUnitText: '袋' }),
+    '口味：微辣 / 规格：500g/袋'
+  )
 })

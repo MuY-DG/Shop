@@ -1,29 +1,27 @@
 import type { ProductEditorSku } from './editor-model'
 
-const MASS_UNIT_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*(kg|g|千克|公斤|克)\s*$/i
+/** 常用包装单位选项；也允许运营自行输入其他单位。 */
+export const PACK_UNIT_OPTIONS = ['袋', '盒', '箱', '瓶', '罐', '支', '枚', '包', '桶']
+
+/** 包装单位未选择时的默认值。 */
+export const DEFAULT_PACK_UNIT = '袋'
 
 /**
- * 从净含量文案中提取克数，仅当整个文案是单一质量单位时生效。
- * 例如 "500g"、"1.5 kg"、"300克"；"500ml"、"500g×2袋" 等非质量或组合文案返回 null。
+ * 单规格商品的自动对外规格文案：净含量 + 包装单位（如 500g/袋）。
+ * 净含量为空时不生成；包装单位未选择时默认使用「袋」。
  */
-export function parseNetContentGrams(text: string): number | null {
-  const match = MASS_UNIT_PATTERN.exec(text.trim())
-  if (!match) return null
-  const amount = Number(match[1])
-  if (!Number.isFinite(amount) || amount <= 0) return null
-  const unit = match[2].toLowerCase()
-  const grams = unit === 'kg' || unit === '千克' || unit === '公斤' ? amount * 1000 : amount
-  return Math.round(grams)
-}
-
-/** 单规格商品的自动对外规格文案：跟随净含量，净含量为空则不展示。 */
-export function autoSingleSpecText(sku: Pick<ProductEditorSku, 'netContentText'>): string {
-  return sku.netContentText.trim()
+export function autoSingleSpecText(
+  sku: Pick<ProductEditorSku, 'netContentText' | 'packUnitText'>
+): string {
+  const netContent = sku.netContentText.trim()
+  if (!netContent) return ''
+  const unit = (sku.packUnitText || '').trim() || DEFAULT_PACK_UNIT
+  return `${netContent}/${unit}`
 }
 
 /** 保存时解析单规格 specText：自定义过则用填写的值，否则使用自动文案。 */
 export function resolveSingleSpecText(
-  sku: Pick<ProductEditorSku, 'specText' | 'specTextCustomized' | 'netContentText'>
+  sku: Pick<ProductEditorSku, 'specText' | 'specTextCustomized' | 'netContentText' | 'packUnitText'>
 ): string {
   if (sku.specTextCustomized) return sku.specText.trim()
   return autoSingleSpecText(sku)

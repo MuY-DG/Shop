@@ -38,6 +38,9 @@ public class AdminSkuUpsertRequest {
     @Size(max = 64)
     private String netContentText;
 
+    @Size(max = 24)
+    private String packUnitText;
+
     @Min(0)
     private Long costPriceCent;
 
@@ -75,6 +78,8 @@ public class AdminSkuUpsertRequest {
     private boolean wholesaleTiersSpecified;
 
     private boolean netContentTextSpecified;
+
+    private boolean packUnitTextSpecified;
 
     public AdminSkuUpsertRequest() {
     }
@@ -314,6 +319,15 @@ public class AdminSkuUpsertRequest {
         this.netContentTextSpecified = true;
     }
 
+    public String packUnitText() {
+        return packUnitText;
+    }
+
+    public void setPackUnitText(String packUnitText) {
+        this.packUnitText = packUnitText;
+        this.packUnitTextSpecified = true;
+    }
+
     public Long costPriceCent() {
         return costPriceCent;
     }
@@ -425,5 +439,9 @@ public class AdminSkuUpsertRequest {
 
     public boolean netContentTextSpecified() {
         return netContentTextSpecified;
+    }
+
+    public boolean packUnitTextSpecified() {
+        return packUnitTextSpecified;
     }
 }

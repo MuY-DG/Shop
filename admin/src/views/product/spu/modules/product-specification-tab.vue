@@ -76,7 +76,7 @@
               </ElButton>
             </div>
             <small class="single-sku-form__field-hint">
-              留空自动使用净含量作为规格说明；净含量为空时不展示。
+              留空自动使用「净含量/包装单位」（如 500g/袋）；需要特殊文案时可手动填写。
             </small>
           </ElFormItem>
           <ElFormItem class="single-sku-form__money" label="售价（元）" required>
@@ -155,57 +155,35 @@
       </div>
 
       <ElForm label-position="top" class="single-sku-form">
-        <ElFormItem class="single-sku-form__display-text" label="净含量（食品必填）">
-          <ElInput
-            :model-value="singleSku.netContentText"
-            maxlength="120"
-            placeholder="按真实标签填写，例如 500g"
-            :disabled="disabled"
-            @update:model-value="updateSingleNetContent"
-          />
-          <small class="single-sku-form__field-hint">
-            填写质量单位（g/kg）时会自动换算填入物流毛重，已填写的毛重不再联动。
-          </small>
-        </ElFormItem>
+        <div class="single-sku-form__row">
+          <ElFormItem class="single-sku-form__display-text" label="净含量（食品必填）">
+            <ElInput
+              :model-value="singleSku.netContentText"
+              maxlength="120"
+              placeholder="按真实标签填写，例如 500g"
+              :disabled="disabled"
+              @update:model-value="updateSingleNetContent"
+            />
+          </ElFormItem>
+          <ElFormItem class="single-sku-form__unit" label="包装单位">
+            <ElSelect
+              :model-value="singleSku.packUnitText"
+              :disabled="disabled"
+              filterable
+              allow-create
+              default-first-option
+              clearable
+              placeholder="默认「袋」"
+              @update:model-value="updateSinglePackUnit"
+            >
+              <ElOption v-for="unit in PACK_UNIT_OPTIONS" :key="unit" :label="unit" :value="unit" />
+            </ElSelect>
+            <small class="single-sku-form__field-hint">
+              规格说明自动拼成「净含量/单位」，如 500g/袋。
+            </small>
+          </ElFormItem>
+        </div>
       </ElForm>
-    </section>
-
-    <section v-if="modelValue.specType === 'SINGLE'" class="editor-section">
-      <ElCollapse class="logistics-collapse">
-        <ElCollapseItem name="logistics">
-          <template #title>
-            <span class="logistics-collapse__title">物流信息（选填）</span>
-          </template>
-          <ElForm label-position="top" class="single-sku-form">
-            <div class="single-sku-form__row">
-              <ElFormItem class="single-sku-form__number" label="物流毛重（g）">
-                <ElInputNumber
-                  :model-value="singleSku.weightGram"
-                  :min="0"
-                  :precision="0"
-                  controls-position="right"
-                  :disabled="disabled"
-                  placeholder="留空按净含量换算"
-                  @update:model-value="updateSingleSku({ weightGram: $event ?? null })"
-                />
-                <small class="single-sku-form__field-hint">含包装的物流重量，用于运费测算。</small>
-              </ElFormItem>
-              <ElFormItem class="single-sku-form__number" label="体积（m³）">
-                <ElInputNumber
-                  :model-value="singleSku.volumeCubicMeter"
-                  :min="0"
-                  :precision="6"
-                  :step="0.001"
-                  controls-position="right"
-                  :disabled="disabled"
-                  placeholder="可选"
-                  @update:model-value="updateSingleSku({ volumeCubicMeter: $event ?? null })"
-                />
-              </ElFormItem>
-            </div>
-          </ElForm>
-        </ElCollapseItem>
-      </ElCollapse>
     </section>
 
     <section v-if="modelValue.specType === 'SINGLE'" class="editor-section">
@@ -322,7 +300,7 @@
     ProductSpecType
   } from './editor-model'
   import { centToYuan, validateWholesaleTiers, yuanToCent } from './editor-model'
-  import { autoSingleSpecText, parseNetContentGrams } from './sku-derivation'
+  import { autoSingleSpecText, PACK_UNIT_OPTIONS } from './sku-derivation'
   import SpecTreeEditor from './spec-tree-editor.vue'
   import SkuMatrix from './sku-matrix.vue'
   import CompactAssetField from './compact-asset-field.vue'
@@ -381,8 +359,8 @@
   )
   const specTextPlaceholder = computed(() =>
     singleSku.value.netContentText.trim()
-      ? `留空自动使用净含量「${singleSku.value.netContentText.trim()}」`
-      : '留空自动跟随净含量，未填写则不展示'
+      ? `留空自动使用「${autoSingleSpecText(singleSku.value)}」`
+      : '填写净含量后自动生成，例如 500g/袋'
   )
 
   const patchForm = (patch: Partial<ProductEditorForm>) => {
@@ -426,12 +404,11 @@
   }
 
   const updateSingleNetContent = (value: string) => {
-    const patch: Partial<ProductEditorSku> = { netContentText: value }
-    if (singleSku.value.weightGram === null) {
-      const grams = parseNetContentGrams(value)
-      if (grams !== null) patch.weightGram = grams
-    }
-    updateSingleSku(patch)
+    updateSingleSku({ netContentText: value })
+  }
+
+  const updateSinglePackUnit = (value: string | number | boolean | undefined) => {
+    updateSingleSku({ packUnitText: typeof value === 'string' ? value : '' })
   }
 
   const changeSpecType = (value: string | number | boolean | undefined) => {
@@ -724,6 +701,10 @@
     width: 240px;
   }
 
+  .single-sku-form__unit {
+    width: 160px;
+  }
+
   .single-sku-form__spec-text {
     display: flex;
     gap: 4px;
@@ -737,15 +718,6 @@
     font-size: 12px;
     line-height: 1.5;
     color: var(--el-text-color-secondary);
-  }
-
-  .logistics-collapse {
-    border: none;
-  }
-
-  .logistics-collapse__title {
-    font-weight: 600;
-    color: var(--el-text-color-primary);
   }
 
   .combination-alert {

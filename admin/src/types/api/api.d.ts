@@ -343,6 +343,7 @@ declare namespace Api {
       weightGram?: number | null
       volumeCubicMeter?: number | null
       netContentText?: string
+      packUnitText?: string
       image: string
       imageFileId?: number | null
       status: SkuStatus

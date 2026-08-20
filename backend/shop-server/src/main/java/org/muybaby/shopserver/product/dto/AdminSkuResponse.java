@@ -15,6 +15,7 @@ public record AdminSkuResponse(
         Integer lowStockThreshold,
         Integer weightGram,
         String netContentText,
+        String packUnitText,
         BigDecimal volumeCubicMeter,
         String image,
         Long imageFileId,

@@ -4,9 +4,7 @@
       <div>
         <div class="sku-matrix__title">商品属性</div>
         <div class="sku-matrix__hint">
-          已生成
-          {{ modelValue.length }}
-          个组合；图片不填时依次使用规格值图片、商品封面图；物流毛重/体积选填，用于运费测算。
+          已生成 {{ modelValue.length }} 个组合；图片不填时依次使用规格值图片、商品封面图。
         </div>
       </div>
       <ElTag :type="modelValue.length > MAX_SKU_COMBINATIONS ? 'danger' : 'info'">
@@ -164,42 +162,26 @@
             maxlength="120"
             placeholder="按真实标签填写"
             :disabled="disabled"
-            @update:model-value="updateNetContent($index, $event)"
+            @update:model-value="updateRow($index, { netContentText: $event })"
           />
         </template>
       </ElTableColumn>
 
-      <ElTableColumn label="物流毛重（g）" width="150">
-        <template #header>
-          <span class="sku-matrix__optional">物流毛重（g）</span>
-        </template>
+      <ElTableColumn v-if="complianceType === 'FOOD'" width="150">
+        <template #header><span class="sku-matrix__optional">包装单位</span></template>
         <template #default="{ row, $index }">
-          <ElInputNumber
-            :model-value="row.weightGram"
-            :min="0"
-            :precision="0"
+          <ElSelect
+            :model-value="row.packUnitText"
             :disabled="disabled"
-            controls-position="right"
-            class="sku-matrix__number"
-            placeholder="留空按净含量换算"
-            @update:model-value="updateNullableNumber($index, 'weightGram', $event)"
-          />
-        </template>
-      </ElTableColumn>
-
-      <ElTableColumn label="体积（m³）" width="150">
-        <template #header><span class="sku-matrix__optional">体积（m³）</span></template>
-        <template #default="{ row, $index }">
-          <ElInputNumber
-            :model-value="row.volumeCubicMeter"
-            :min="0"
-            :precision="6"
-            :step="0.001"
-            :disabled="disabled"
-            controls-position="right"
-            class="sku-matrix__number"
-            @update:model-value="updateNullableNumber($index, 'volumeCubicMeter', $event)"
-          />
+            filterable
+            allow-create
+            default-first-option
+            clearable
+            placeholder="默认「袋」"
+            @update:model-value="updatePackUnit($index, $event)"
+          >
+            <ElOption v-for="unit in PACK_UNIT_OPTIONS" :key="unit" :label="unit" :value="unit" />
+          </ElSelect>
         </template>
       </ElTableColumn>
 
@@ -260,9 +242,14 @@
     ProductSkuStatus
   } from './editor-model'
   import { centToYuan, validateWholesaleTiers, yuanToCent } from './editor-model'
-  import { parseNetContentGrams } from './sku-derivation'
+  import { PACK_UNIT_OPTIONS } from './sku-derivation'
   import WholesaleTierEditor from './wholesale-tier-editor.vue'
-  import { imageSpecFallback, MAX_SKU_COMBINATIONS, normalizeDefaultSku } from './sku-matrix'
+  import {
+    imageSpecFallback,
+    MAX_SKU_COMBINATIONS,
+    composeSkuSpecText,
+    normalizeDefaultSku
+  } from './sku-matrix'
 
   interface Props {
     modelValue: ProductEditorSku[]
@@ -289,7 +276,6 @@
   const wholesaleDraft = ref<ProductEditorWholesaleTier[]>([])
 
   type MoneyField = 'priceCent' | 'costPriceCent' | 'originalPriceCent'
-  type NullableNumberField = 'weightGram' | 'volumeCubicMeter'
 
   const defaultCombinationKey = computed(
     () => props.modelValue.find((sku) => sku.defaultSelected)?.combinationKey || ''
@@ -318,24 +304,14 @@
     updateRow(index, { [field]: value ?? 0 })
   }
 
-  const updateNullableNumber = (
-    index: number,
-    field: NullableNumberField,
-    value: number | undefined
-  ) => {
-    updateRow(index, { [field]: value ?? null } as Partial<ProductEditorSku>)
-  }
-
-  const updateNetContent = (index: number, value: string) => {
-    const row = props.modelValue[index]
-    if (row?.weightGram === null) {
-      const grams = parseNetContentGrams(value)
-      if (grams !== null) {
-        updateRow(index, { netContentText: value, weightGram: grams })
-        return
-      }
+  const updatePackUnit = (index: number, value: string | number | boolean | undefined) => {
+    const rows = copyRows()
+    rows[index] = {
+      ...rows[index],
+      packUnitText: typeof value === 'string' ? value : '',
+      specText: composeSkuSpecText(props.groups, rows[index])
     }
-    updateRow(index, { netContentText: value })
+    commit(rows)
   }
 
   const updateImage = (index: number, asset: Api.Common.AssetValue) => {

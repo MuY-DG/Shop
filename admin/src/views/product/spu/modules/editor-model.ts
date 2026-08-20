@@ -39,6 +39,8 @@ export interface ProductEditorSku {
   weightGram: number | null
   volumeCubicMeter: number | null
   netContentText: string
+  /** 包装单位（袋/盒/箱等），与净含量共同派生对外规格文案。 */
+  packUnitText: string
   image: string
   imageFileId: number | null
   status: ProductSkuStatus

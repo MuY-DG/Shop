@@ -20,6 +20,7 @@ const enabledSku = (): ProductEditorSku => ({
   weightGram: 500,
   volumeCubicMeter: null,
   netContentText: '500g',
+  packUnitText: '袋',
   image: '',
   imageFileId: null,
   status: 'ENABLED',
