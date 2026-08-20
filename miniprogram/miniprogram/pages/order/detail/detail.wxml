@@ -162,6 +162,8 @@
             wx:for="{{detail.items}}"
             wx:key="orderItemId"
             class="detail-item {{index ? 'detail-item--divided' : ''}}"
+            data-spu-id="{{item.spuId}}"
+            bindtap="onItemTap"
           >
             <view class="detail-item__image-shell">
               <image
@@ -281,15 +283,8 @@
                 aria-hidden="true"
               />
             </view>
-            <text class="order-info__service-label">联系客服</text>
-            <text class="order-info__service-hint">订单问题在线咨询</text>
-            <image
-              class="order-info__service-chevron"
-              src="/assets/icons/chevron-right-light.svg"
-              mode="aspectFit"
-              aria-hidden="true"
-            />
-          </view>
+          <text class="order-info__service-label">联系客服</text>
+        </view>
         </view>
       </block>
     </view>

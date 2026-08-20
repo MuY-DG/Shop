@@ -16,11 +16,10 @@
     show-scrollbar="{{false}}"
   >
     <view class="settings-content">
-      <view wx:for="{{sections}}" wx:key="title" class="settings-section">
-        <view class="settings-section__title">{{item.title}}</view>
-        <view class="settings-card">
+      <view class="settings-container">
+        <block wx:for="{{sections}}" wx:for-item="section" wx:key="title">
           <view
-            wx:for="{{item.items}}"
+            wx:for="{{section.items}}"
             wx:for-item="entry"
             wx:key="key"
             class="settings-row"
@@ -28,11 +27,10 @@
             bindtap="onItemTap"
             hover-class="settings-row--pressed"
             aria-role="button"
-            aria-label="{{entry.label}}，{{entry.description}}"
+            aria-label="{{entry.label}}"
           >
             <view class="settings-row__body">
               <view class="settings-row__label">{{entry.label}}</view>
-              <view class="settings-row__description">{{entry.description}}</view>
             </view>
             <image
               class="settings-row__chevron"
@@ -41,9 +39,8 @@
               aria-hidden="true"
             />
           </view>
-        </view>
+        </block>
       </view>
-      <view class="settings-note">隐私保护指引由微信小程序平台只读展示；其他协议仅展示后台当前已发布的正式版本。</view>
     </view>
   </scroll-view>
 </view>

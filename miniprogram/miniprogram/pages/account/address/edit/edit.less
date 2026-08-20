@@ -2,22 +2,35 @@
 @import "../../../../styles/mixins.less";
 
 .address-edit-page {
-  min-height: 100vh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: @color-page;
 }
 
-.address-edit-content {
-  padding: @space-5 @page-gutter @space-12;
+.address-edit-scroll {
+  flex: 1;
+  min-height: 0;
 }
 
-.address-form {
-  .card-surface();
+.address-edit-content {
+  padding: @space-5 @page-gutter @space-8;
+}
+
+.address-edit-actions {
+  flex: none;
+  padding: 12rpx @page-gutter calc(12rpx + env(safe-area-inset-bottom));
+  border-top: 1rpx solid rgba(28, 28, 30, 0.08);
+  background: @color-surface-white;
 }
 
 .address-form {
   overflow: hidden;
   padding: @space-6;
   background: #ffffff;
+  border: 0;
+  border-radius: @radius-lg;
 }
 
 .form-heading {
@@ -216,6 +229,7 @@ button.form-field--address[disabled] {
 
 .form-field--switch {
   justify-content: space-between;
+  border-bottom: 0;
 }
 
 .form-field--switch .form-field__label {

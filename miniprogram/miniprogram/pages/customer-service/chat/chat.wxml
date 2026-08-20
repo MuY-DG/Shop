@@ -11,12 +11,6 @@
     >
       <view class="chat-navigation-title__main">
         <text>MuYbaby</text>
-        <image
-          class="chat-navigation-title__chevron"
-          src="/assets/icons/chevron-left-medium.svg"
-          mode="aspectFit"
-          aria-hidden="true"
-        />
       </view>
       <text class="chat-navigation-title__subtitle">客服会话</text>
     </view>

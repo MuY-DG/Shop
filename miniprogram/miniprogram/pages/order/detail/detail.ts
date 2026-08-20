@@ -45,6 +45,7 @@ interface DatasetEvent {
     dataset: {
       index?: number | string;
       shipmentId?: number | string;
+      spuId?: number | string;
     };
   };
 }
@@ -642,6 +643,17 @@ Page({
       return;
     }
     wx.navigateTo({ url: buildAfterSaleDetailUrl(afterSaleId) });
+  },
+
+  onItemTap(event: DatasetEvent) {
+    const spuId = Number(event.currentTarget.dataset.spuId);
+    if (!Number.isSafeInteger(spuId) || spuId <= 0) {
+      return;
+    }
+    wx.navigateTo({
+      url: `/pages/product/detail/detail?id=${spuId}`,
+      fail: () => wx.showToast({ title: "商品详情暂不可用", icon: "none" })
+    });
   },
 
   onItemImageError(event: DatasetEvent) {

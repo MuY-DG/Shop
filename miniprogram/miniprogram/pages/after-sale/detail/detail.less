@@ -366,6 +366,7 @@
   padding: @space-2 0 @space-1;
   border-top: 1rpx solid @color-divider;
   align-items: center;
+  justify-content: center;
   gap: @space-3;
   .press-feedback();
 }
@@ -378,12 +379,11 @@
   width: 56rpx;
   height: 56rpx;
   display: flex;
-  overflow: hidden;
-  border-radius: 50%;
   flex: none;
   align-items: center;
   justify-content: center;
-  background: @color-brand-soft;
+  background: transparent;
+  border-radius: 0;
 }
 
 .service-row__icon {
@@ -395,24 +395,6 @@
   color: @color-text-primary;
   font-size: @font-size-base;
   font-weight: 650;
-}
-
-.service-row__hint {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  color: @color-text-muted;
-  font-size: @font-size-xs;
-  text-align: right;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.service-row__chevron {
-  width: 28rpx;
-  height: 28rpx;
-  flex: none;
-  opacity: 0.5;
 }
 
 .shipment-field {

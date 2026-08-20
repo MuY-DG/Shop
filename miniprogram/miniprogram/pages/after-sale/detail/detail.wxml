@@ -160,13 +160,6 @@
               />
             </view>
             <text class="service-row__label">联系客服</text>
-            <text class="service-row__hint">售后问题在线咨询</text>
-            <image
-              class="service-row__chevron"
-              src="/assets/icons/chevron-right-light.svg"
-              mode="aspectFit"
-              aria-hidden="true"
-            />
           </view>
         </view>
       </block>
