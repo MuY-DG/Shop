@@ -8,6 +8,8 @@ import org.muybaby.shopserver.user.dto.AdminCouponIssueRequest;
 import org.muybaby.shopserver.user.dto.AdminCouponIssueResponse;
 import org.muybaby.shopserver.user.dto.AdminCustomerQueryRequest;
 import org.muybaby.shopserver.user.dto.AdminCustomerResponse;
+import org.muybaby.shopserver.user.dto.AdminCustomerStatusRequest;
+import org.muybaby.shopserver.user.dto.AdminCustomerStatusResponse;
 import org.muybaby.shopserver.user.dto.AdminDirectCouponIssueRequest;
 import org.muybaby.shopserver.user.dto.AdminIssuableCouponTemplateResponse;
 import org.muybaby.shopserver.user.service.AdminCustomerService;
@@ -15,6 +17,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,9 +36,21 @@ public class AdminCustomerController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyAuthority('customer:user:read', 'customer:coupon:issue')")
+    @PreAuthorize("hasAnyAuthority('customer:user:read', 'customer:coupon:issue', 'customer:user:status')")
     public ApiResponse<PageResult<AdminCustomerResponse>> page(AdminCustomerQueryRequest query) {
         return ApiResponse.success(adminCustomerService.page(query));
+    }
+
+    @PatchMapping("/{userId}/status")
+    @PreAuthorize("hasAuthority('customer:user:status')")
+    public ApiResponse<AdminCustomerStatusResponse> changeStatus(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long userId,
+            @Valid @RequestBody AdminCustomerStatusRequest request
+    ) {
+        return ApiResponse.success(
+                adminCustomerService.changeStatus(principal.subjectId(), userId, request)
+        );
     }
 
     @GetMapping("/{userId}/issuable-coupon-templates")

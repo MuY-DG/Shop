@@ -160,7 +160,7 @@ Product unavailable
 
 ## Compliance And Account-Cancellation Smoke Checks
 
-These checks cover the safe local portions of `V88` through `V105`. Run them only
+These checks cover the safe local portions of `V88` through `V106`. Run them only
 against a disposable database using the `test`-profile backend command above. They
 intentionally do not publish invented merchant facts or replace reviewed legal text, do not classify a
 food as non-food, and do not complete an account cancellation.
@@ -262,6 +262,20 @@ confirmation, and submit the exact current notice version and SHA-256. Verify th
 commerce blocks the request, that disposable profile/account data is removed, that the
 completion row is written, and that both old access and refresh tokens fail afterward.
 There is no Admin review or approval endpoint.
+
+### V106 Admin Customer Status And Cancellation Records
+
+In **客户管理 → 用户管理**, an unfiltered query must omit cancelled accounts. Select
+**已注销** explicitly to locate an anonymized account; its row must be read-only and must not
+offer enable, disable, coupon, or restore actions. For an ordinary disposable test customer,
+verify that **停用账号** and **重新启用** both require a reason, invalidate existing app
+sessions, and create rows in `app_user_status_change_audit`.
+
+In **合规管理 → 注销记录**, verify that the immutable completion row is visible to an operator
+with `compliance:cancellation:read`. The page and API must expose only completion metadata,
+deleted/retained categories, and notice evidence; there must be no approval, completion,
+deletion, restore, or identity-recovery operation. A `CANCELLED` account submitted to the
+customer status endpoint must return HTTP 409 and remain cancelled.
 
 ## Cart Smoke Checks
 

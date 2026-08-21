@@ -26,6 +26,7 @@ public enum ErrorCode {
     WECHAT_PHONE_FAILED(100102, "WeChat phone authorization failed"),
     APP_USER_UNAVAILABLE(100103, "App user unavailable"),
     APP_USER_AVATAR_RATE_LIMITED(100104, "每天最多修改 3 次头像，请明天再试"),
+    APP_USER_STATUS_CONFLICT(100105, "用户状态已变化，请刷新后重试"),
     ACCOUNT_CANCELLATION_IDENTITY_MISMATCH(120004, "微信身份校验失败，请重新获取登录凭证"),
     ACCOUNT_CANCELLATION_ACTIVE_OBLIGATIONS(120005, "仍有进行中的交易、支付、退款或售后事项"),
     ACCOUNT_CANCELLATION_NOTICE_UNAVAILABLE(120006, "账号注销须知尚未发布"),

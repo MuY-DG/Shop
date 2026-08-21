@@ -5,13 +5,26 @@ import test from 'node:test'
 const apiSource = readFileSync(new URL('../../api/compliance.ts', import.meta.url), 'utf8')
 const merchantSource = readFileSync(new URL('./merchant/index.vue', import.meta.url), 'utf8')
 const documentSource = readFileSync(new URL('./documents/index.vue', import.meta.url), 'utf8')
+const cancellationSource = readFileSync(
+  new URL('./cancellations/index.vue', import.meta.url),
+  'utf8'
+)
 
 test('compliance admin uses immutable draft and publish endpoints', () => {
   assert.match(apiSource, /\/admin\/compliance\/merchant\/drafts/)
   assert.match(apiSource, /\/admin\/compliance\/merchant\/\$\{id\}\/publish/)
   assert.match(apiSource, /\/admin\/compliance\/documents\/\$\{type\}\/drafts/)
   assert.match(apiSource, /\/admin\/compliance\/documents\/\$\{id\}\/publish/)
+  assert.match(apiSource, /\/admin\/compliance\/account-cancellations/)
   assert.doesNotMatch(apiSource, /request\.put/)
+})
+
+test('account cancellation records are read-only and expose processing facts', () => {
+  assert.match(cancellationSource, /不提供审批、恢复或删除操作/)
+  assert.match(cancellationSource, /立即清理/)
+  assert.match(cancellationSource, /按规则保留/)
+  assert.match(cancellationSource, /noticeContentSha256/)
+  assert.doesNotMatch(cancellationSource, /request\.(post|put|patch|delete)/)
 })
 
 test('merchant publication requires an explicit confirmation and real managed assets', () => {

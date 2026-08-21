@@ -153,7 +153,16 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[3].component").value("/customer/user"))
                 .andExpect(jsonPath("$.data[3].meta.authList[*].authMark", containsInAnyOrder(
                         "customer:user:read",
-                        "customer:coupon:issue"
+                        "customer:coupon:issue",
+                        "customer:user:status"
+                )))
+                .andExpect(jsonPath("$.data[10].children[*].path", contains(
+                        "merchant", "documents", "cancellations"
+                )))
+                .andExpect(jsonPath("$.data[10].children[2].component")
+                        .value("/compliance/cancellations"))
+                .andExpect(jsonPath("$.data[10].children[2].meta.authList[*].authMark", contains(
+                        "compliance:cancellation:read"
                 )))
                 .andExpect(jsonPath("$.data[4].path").value("/trade"))
                 .andExpect(jsonPath("$.data[4].children[*].path", contains(

@@ -7,6 +7,15 @@ export function fetchCustomers(params: Api.Customer.CustomerSearchParams) {
   })
 }
 
+export function updateCustomerStatus(userId: string, data: Api.Customer.CustomerStatusForm) {
+  return request.request<Api.Customer.CustomerStatusResult>({
+    method: 'PATCH',
+    url: `/admin/customers/${userId}/status`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
 export function fetchIssuableCouponTemplates(userId: string) {
   return request.get<Api.Customer.IssuableCouponTemplate[]>({
     url: `/admin/customers/${userId}/issuable-coupon-templates`

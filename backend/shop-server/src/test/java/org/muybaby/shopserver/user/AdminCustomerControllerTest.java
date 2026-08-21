@@ -21,6 +21,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -100,6 +101,89 @@ class AdminCustomerControllerTest {
                         .header("Authorization", "Bearer " + tokenWith("customer:coupon:issue")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.total").isNumber());
+    }
+
+    @Test
+    void pageHidesCancelledCustomersByDefaultAndAllowsExplicitFilter() throws Exception {
+        seedCustomer(CUSTOMER_ID, "", null, "CANCELLED");
+        String token = tokenWith("customer:user:read");
+
+        mockMvc.perform(get("/admin/customers")
+                        .header("Authorization", "Bearer " + token)
+                        .param("keyword", Long.toString(CUSTOMER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(0));
+
+        mockMvc.perform(get("/admin/customers")
+                        .header("Authorization", "Bearer " + token)
+                        .param("keyword", Long.toString(CUSTOMER_ID))
+                        .param("status", "CANCELLED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.records[0].status").value("CANCELLED"))
+                .andExpect(jsonPath("$.data.records[0].nickname").value(""))
+                .andExpect(jsonPath("$.data.records[0].phoneNumber").doesNotExist());
+    }
+
+    @Test
+    void statusPermissionDisablesAndReenablesCustomerWithAuditAndSessionInvalidation() throws Exception {
+        seedCustomer(CUSTOMER_ID, "状态管理用户", null, "ENABLED");
+        String request = """
+                {"status":"DISABLED","reason":"客服确认异常登录，临时停用"}
+                """;
+
+        mockMvc.perform(patch("/admin/customers/{userId}/status", CUSTOMER_ID)
+                        .header("Authorization", "Bearer " + tokenWith("customer:user:read"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(100003));
+
+        String token = tokenWith("customer:user:status");
+        mockMvc.perform(patch("/admin/customers/{userId}/status", CUSTOMER_ID)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.userId").value(Long.toString(CUSTOMER_ID)))
+                .andExpect(jsonPath("$.data.status").value("DISABLED"));
+
+        assertThat(customerStatusAndVersion(CUSTOMER_ID)).isEqualTo("DISABLED|1");
+        assertThat(latestStatusAudit(CUSTOMER_ID))
+                .isEqualTo("ENABLED|DISABLED|客服确认异常登录，临时停用");
+
+        mockMvc.perform(patch("/admin/customers/{userId}/status", CUSTOMER_ID)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"ENABLED","reason":"已完成身份核验，恢复使用"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("ENABLED"));
+
+        assertThat(customerStatusAndVersion(CUSTOMER_ID)).isEqualTo("ENABLED|2");
+        assertThat(jdbcClient.sql("""
+                        select count(*) from app_user_status_change_audit where user_id = :userId
+                        """)
+                .param("userId", CUSTOMER_ID)
+                .query(Integer.class)
+                .single()).isEqualTo(2);
+    }
+
+    @Test
+    void cancelledCustomerCannotBeReenabledByAdmin() throws Exception {
+        seedCustomer(CUSTOMER_ID, "", null, "CANCELLED");
+
+        mockMvc.perform(patch("/admin/customers/{userId}/status", CUSTOMER_ID)
+                        .header("Authorization", "Bearer " + tokenWith("customer:user:status"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status":"ENABLED","reason":"错误尝试恢复注销账号"}
+                                """))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(100105));
+
+        assertThat(customerStatusAndVersion(CUSTOMER_ID)).isEqualTo("CANCELLED|0");
     }
 
     @Test
@@ -383,6 +467,28 @@ class AdminCustomerControllerTest {
                 opaqueTokenService,
                 List.of(permissions)
         );
+    }
+
+    private String customerStatusAndVersion(long userId) {
+        return jdbcClient.sql("""
+                        select concat(status, '|', auth_version) from app_user where id = :userId
+                        """)
+                .param("userId", userId)
+                .query(String.class)
+                .single();
+    }
+
+    private String latestStatusAudit(long userId) {
+        return jdbcClient.sql("""
+                        select concat(from_status, '|', to_status, '|', reason)
+                        from app_user_status_change_audit
+                        where user_id = :userId
+                        order by created_at desc, id desc
+                        limit 1
+                        """)
+                .param("userId", userId)
+                .query(String.class)
+                .single();
     }
 
     private record ClaimAudit(String issueSource, Long adminUserId, String note) {

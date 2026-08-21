@@ -130,6 +130,9 @@ MySQL migration/concurrency run or any production-provider smoke check.
 # V105 self-service cancellation, immutable record, and active-obligation gate
 ./mvnw -Dtest='AccountCancellationSchemaTest,AccountCancellationControllerTest' test
 
+# V106 customer disable/enable and read-only cancellation records
+./mvnw -Dtest='AdminCustomerControllerTest,AdminAccountCancellationControllerTest,AccountCancellationSchemaTest' test
+
 # V93 and V97 WeChat trade-bill reconciliation and Admin runtime control
 ./mvnw -Dtest='*FinanceReconciliation*Test,AdminFinanceReconciliationControllerTest' test
 
@@ -154,7 +157,7 @@ customer-service order routing, public compliance rendering, food disclosure,
 account cancellation, and the source contract that preserves the current profile V frame,
 crown, `金牌会员` text, member-card assets, and logged-in display condition.
 
-## V87-V105 Runtime And Publication Controls
+## V87-V106 Runtime And Publication Controls
 
 ### V87 WeChat Shipment Delivery
 
@@ -231,6 +234,18 @@ identity, clears optional identity, addresses, cart, favorites, browse history a
 coupons, and anonymizes the user's reviews. Completed commerce, refund, after-sale,
 customer-service, review, security and audit data follow the reviewed retention policies.
 Only an immutable completion record remains; there is no Admin approval queue.
+
+### V106 Admin Customer Status And Cancellation Records
+
+The Admin customer list excludes `CANCELLED` accounts by default. Operators with
+`customer:user:status` may disable or re-enable an ordinary customer only after recording a
+reason; every real transition invalidates existing sessions and writes an append-only status
+audit. A cancelled customer can never be re-enabled by this endpoint.
+
+Use the explicit `CANCELLED` filter only when investigating an account. The read-only
+**Compliance → Account Cancellations** page is backed by
+`GET /admin/compliance/account-cancellations` and shows the immutable completion facts without
+restoring identity fields or offering review, approval, deletion, or rollback actions.
 
 ### V93/V97 WeChat Trade-Bill Reconciliation
 

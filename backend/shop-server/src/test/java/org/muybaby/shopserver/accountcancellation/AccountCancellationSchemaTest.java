@@ -21,6 +21,7 @@ class AccountCancellationSchemaTest {
         assertThat(tableCount("app_user_rights_request")).isZero();
         assertThat(tableCount("app_user_rights_request_audit")).isZero();
         assertThat(tableCount("app_user_account_cancellation")).isOne();
+        assertThat(tableCount("app_user_status_change_audit")).isOne();
 
         Integer oldPermissions = jdbcClient.sql("""
                         select count(*) from admin_permission
@@ -29,6 +30,23 @@ class AccountCancellationSchemaTest {
                 .query(Integer.class)
                 .single();
         Integer oldMenu = jdbcClient.sql("select count(*) from admin_menu where id = 910")
+                .query(Integer.class)
+                .single();
+        Integer adminCapabilities = jdbcClient.sql("""
+                        select count(*) from admin_permission
+                        where auth_mark in (
+                            'customer:user:status', 'compliance:cancellation:read'
+                        )
+                        """)
+                .query(Integer.class)
+                .single();
+        Integer cancellationMenu = jdbcClient.sql("""
+                        select count(*) from admin_menu
+                        where id = 903
+                          and parent_id = 900
+                          and path = 'cancellations'
+                          and component = '/compliance/cancellations'
+                        """)
                 .query(Integer.class)
                 .single();
         String notice = jdbcClient.sql("""
@@ -41,6 +59,8 @@ class AccountCancellationSchemaTest {
 
         assertThat(oldPermissions).isZero();
         assertThat(oldMenu).isZero();
+        assertThat(adminCapabilities).isEqualTo(2);
+        assertThat(cancellationMenu).isOne();
         assertThat(notice).isEqualTo("ACCOUNT_CANCELLATION_NOTICE|PUBLISHED|账号注销须知");
         assertThat(LegalDocumentType.values()).contains(
                 LegalDocumentType.ACCOUNT_CANCELLATION_NOTICE);

@@ -1036,7 +1036,7 @@ declare namespace Api {
   }
 
   namespace Customer {
-    type CustomerStatus = 'ENABLED' | 'DISABLED'
+    type CustomerStatus = 'ENABLED' | 'DISABLED' | 'CANCELLED'
 
     type CustomerList = Api.Common.PaginatedResponse<CustomerListItem>
 
@@ -1060,6 +1060,17 @@ declare namespace Api {
         status: CustomerStatus
       }
     >
+
+    interface CustomerStatusForm {
+      status: 'ENABLED' | 'DISABLED'
+      reason: string
+    }
+
+    interface CustomerStatusResult {
+      userId: string
+      status: 'ENABLED' | 'DISABLED'
+      updatedAt: string
+    }
 
     interface IssuableCouponTemplate {
       id: number
@@ -1803,6 +1814,29 @@ declare namespace Api {
       | 'USER_AGREEMENT'
       | 'AFTER_SALE_POLICY'
       | 'ACCOUNT_CANCELLATION_NOTICE'
+
+    interface AccountCancellation {
+      id: string
+      userId: string
+      legalDocumentRevisionId: string
+      noticeVersion: string
+      noticeContentSha256: string
+      channel: 'WECHAT_MINIPROGRAM'
+      miniProgramEnv: 'develop' | 'trial' | 'release'
+      identityVerifiedAt: string
+      deletedDataCategories: string[]
+      retainedDataCategories: string[]
+      completedAt: string
+    }
+
+    type AccountCancellationList = Api.Common.PaginatedResponse<AccountCancellation>
+
+    type AccountCancellationSearchParams = Partial<
+      Api.Common.CommonSearchParams & {
+        userId: string
+        miniProgramEnv: 'develop' | 'trial' | 'release'
+      }
+    >
 
     interface MerchantPublicationDraft {
       legalName: string

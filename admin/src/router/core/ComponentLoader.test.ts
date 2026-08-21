@@ -40,6 +40,7 @@ test('component path resolution still points to real commerce menu views', () =>
   const businessComponents = [
     '/aftersale/list',
     '/compliance/documents',
+    '/compliance/cancellations',
     '/compliance/merchant',
     '/configuration/data-cleanup',
     '/configuration/wechat-platform',

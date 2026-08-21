@@ -1,5 +1,12 @@
 import request from '@/utils/http'
 
+export function fetchAccountCancellations(params: Api.Compliance.AccountCancellationSearchParams) {
+  return request.get<Api.Compliance.AccountCancellationList>({
+    url: '/admin/compliance/account-cancellations',
+    params
+  })
+}
+
 export function fetchMerchantPublicationHistory() {
   return request.get<Api.Compliance.MerchantPublication[]>({
     url: '/admin/compliance/merchant'

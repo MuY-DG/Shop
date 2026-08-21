@@ -62,7 +62,9 @@ class AdminRbacSchemaTest {
         Integer customerPermissionCount = jdbcClient.sql("""
                         select count(*)
                         from admin_permission
-                        where auth_mark in ('customer:user:read', 'customer:coupon:issue')
+                        where auth_mark in (
+                            'customer:user:read', 'customer:coupon:issue', 'customer:user:status'
+                        )
                         """)
                 .query(Integer.class)
                 .single();
@@ -116,7 +118,7 @@ class AdminRbacSchemaTest {
         assertThat(storageRouteCount).isEqualTo(1);
         assertThat(menuReadPermissionCount).isEqualTo(1);
         assertThat(obsoleteMenuPermissionCount).isZero();
-        assertThat(customerPermissionCount).isEqualTo(2);
+        assertThat(customerPermissionCount).isEqualTo(3);
         assertThat(customerMenuCount).isEqualTo(1);
         assertThat(couponCenterMenuCount).isEqualTo(3);
         assertThat(couponClaimReadGrantCount).isEqualTo(1);

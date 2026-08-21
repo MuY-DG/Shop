@@ -1,5 +1,6 @@
 package org.muybaby.shopserver.user.service;
 
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
@@ -12,6 +13,8 @@ import org.muybaby.shopserver.user.dto.AdminCouponIssueRequest;
 import org.muybaby.shopserver.user.dto.AdminCouponIssueResponse;
 import org.muybaby.shopserver.user.dto.AdminCustomerQueryRequest;
 import org.muybaby.shopserver.user.dto.AdminCustomerResponse;
+import org.muybaby.shopserver.user.dto.AdminCustomerStatusRequest;
+import org.muybaby.shopserver.user.dto.AdminCustomerStatusResponse;
 import org.muybaby.shopserver.user.dto.AdminDirectCouponIssueRequest;
 import org.muybaby.shopserver.user.dto.AdminIssuableCouponTemplateResponse;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -26,6 +29,7 @@ import org.springframework.util.StringUtils;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -35,6 +39,8 @@ import java.util.Optional;
 public class AdminCustomerService {
 
     private static final String ENABLED_USER_STATUS = "ENABLED";
+    private static final String DISABLED_USER_STATUS = "DISABLED";
+    private static final String CANCELLED_USER_STATUS = "CANCELLED";
     private static final String PUBLIC_DISTRIBUTION_MODE = "PUBLIC";
     private static final String DIRECT_DISTRIBUTION_MODE = "DIRECT";
     private static final String ADMIN_ISSUE_SOURCE = "ADMIN_ISSUE";
@@ -74,7 +80,10 @@ public class AdminCustomerService {
                             or u.phone_number like :keywordPattern
                             or (:keywordUserId is not null and u.id = :keywordUserId)
                         )
-                          and (:status = '' or u.status = :status)
+                          and (
+                              (:status = '' and u.status <> 'CANCELLED')
+                              or u.status = :status
+                          )
                         """)
                 .param("keyword", keyword)
                 .param("keywordPattern", keywordPattern)
@@ -106,7 +115,10 @@ public class AdminCustomerService {
                             or u.phone_number like :keywordPattern
                             or (:keywordUserId is not null and u.id = :keywordUserId)
                         )
-                          and (:status = '' or u.status = :status)
+                          and (
+                              (:status = '' and u.status <> 'CANCELLED')
+                              or u.status = :status
+                          )
                         order by u.created_at desc, u.id desc
                         limit :size offset :offset
                         """)
@@ -123,6 +135,72 @@ public class AdminCustomerService {
                 .list();
 
         return PageResult.of(records, total == null ? 0 : total, current, size);
+    }
+
+    @Transactional
+    public AdminCustomerStatusResponse changeStatus(
+            Long adminUserId,
+            Long userId,
+            AdminCustomerStatusRequest request
+    ) {
+        if (adminUserId == null || adminUserId <= 0 || userId == null || userId <= 0 || request == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        String targetStatus = normalizeManagedStatus(request.status());
+        String reason = normalizeStatusReason(request.reason());
+        CustomerStatusRow current = jdbcClient.sql("""
+                        select status, updated_at
+                        from app_user
+                        where id = :userId
+                        for update
+                        """)
+                .param("userId", userId)
+                .query((rs, rowNum) -> new CustomerStatusRow(
+                        rs.getString("status"),
+                        rs.getObject("updated_at", LocalDateTime.class)
+                ))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.APP_USER_UNAVAILABLE));
+        if (CANCELLED_USER_STATUS.equals(current.status())) {
+            throw new BusinessException(ErrorCode.APP_USER_STATUS_CONFLICT);
+        }
+        if (targetStatus.equals(current.status())) {
+            return new AdminCustomerStatusResponse(userId, current.status(), current.updatedAt());
+        }
+
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        int updated = jdbcClient.sql("""
+                        update app_user
+                        set status = :targetStatus,
+                            auth_version = auth_version + 1,
+                            updated_at = :updatedAt
+                        where id = :userId
+                          and status = :currentStatus
+                        """)
+                .param("targetStatus", targetStatus)
+                .param("updatedAt", now)
+                .param("userId", userId)
+                .param("currentStatus", current.status())
+                .update();
+        if (updated != 1) {
+            throw new BusinessException(ErrorCode.APP_USER_STATUS_CONFLICT);
+        }
+        jdbcClient.sql("""
+                        insert into app_user_status_change_audit (
+                            id, user_id, admin_user_id, from_status, to_status, reason, created_at
+                        ) values (
+                            :id, :userId, :adminUserId, :fromStatus, :toStatus, :reason, :createdAt
+                        )
+                        """)
+                .param("id", IdWorker.getId())
+                .param("userId", userId)
+                .param("adminUserId", adminUserId)
+                .param("fromStatus", current.status())
+                .param("toStatus", targetStatus)
+                .param("reason", reason)
+                .param("createdAt", now)
+                .update();
+        return new AdminCustomerStatusResponse(userId, targetStatus, now);
     }
 
     public List<AdminIssuableCouponTemplateResponse> issuableCouponTemplates(Long userId) {
@@ -614,7 +692,28 @@ public class AdminCustomerService {
             return "";
         }
         String normalized = status.trim().toUpperCase();
-        if (!"ENABLED".equals(normalized) && !"DISABLED".equals(normalized)) {
+        if (!ENABLED_USER_STATUS.equals(normalized)
+                && !DISABLED_USER_STATUS.equals(normalized)
+                && !CANCELLED_USER_STATUS.equals(normalized)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return normalized;
+    }
+
+    private String normalizeManagedStatus(String status) {
+        String normalized = normalizeStatus(status);
+        if (!ENABLED_USER_STATUS.equals(normalized) && !DISABLED_USER_STATUS.equals(normalized)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return normalized;
+    }
+
+    private String normalizeStatusReason(String reason) {
+        if (!StringUtils.hasText(reason)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        String normalized = reason.trim();
+        if (normalized.length() > 200) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return normalized;
@@ -634,6 +733,9 @@ public class AdminCustomerService {
             return generatedId.longValue();
         }
         throw new IllegalStateException("Failed to retrieve generated key");
+    }
+
+    private record CustomerStatusRow(String status, LocalDateTime updatedAt) {
     }
 
     private record CouponTemplateRow(
