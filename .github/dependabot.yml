@@ -6,7 +6,19 @@ updates:
       interval: weekly
       day: monday
       timezone: Asia/Shanghai
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     labels:
       - dependencies
     commit-message:
@@ -19,7 +31,19 @@ updates:
       interval: weekly
       day: monday
       timezone: Asia/Shanghai
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     labels:
       - dependencies
     commit-message:
@@ -32,7 +56,19 @@ updates:
       interval: weekly
       day: monday
       timezone: Asia/Shanghai
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     labels:
       - dependencies
     commit-message:
@@ -45,6 +81,19 @@ updates:
       interval: weekly
       day: monday
       timezone: Asia/Shanghai
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
     labels:
       - dependencies
     commit-message:
