@@ -13,7 +13,7 @@
     "pages/account/favorites/favorites",
     "pages/account/history/history",
     "pages/account/settings/settings",
-    "pages/account/rights/rights",
+    "pages/account/cancellation/cancellation",
     "pages/product/search/search",
     "pages/product/list/list",
     "pages/product/detail/detail",

@@ -1,0 +1,75 @@
+@import "../../../styles/tokens.less";
+
+.cancellation-page {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  flex-direction: column;
+  background: @color-page;
+}
+
+.cancellation-scroll { height: 0; min-height: 0; flex: 1; }
+.cancellation-content { padding: @space-5 @page-gutter 220rpx; }
+
+.cancellation-hero {
+  padding: @space-7 @space-5 @space-6;
+  text-align: center;
+  border-radius: @radius-lg;
+  background: linear-gradient(180deg, #fff3f2 0%, #fff 100%);
+}
+.cancellation-hero__icon {
+  display: flex;
+  width: 72rpx;
+  height: 72rpx;
+  margin: 0 auto @space-3;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 48rpx;
+  font-weight: 800;
+  border-radius: 50%;
+  background: @color-brand;
+}
+.cancellation-hero__title { color: @color-text-primary; font-size: 38rpx; font-weight: 750; }
+.cancellation-hero__description { margin-top: @space-2; color: @color-text-muted; font-size: @font-size-sm; line-height: 1.6; }
+
+.cancellation-card {
+  margin-top: @space-4;
+  padding: @space-5;
+  border: 1rpx solid @color-border;
+  border-radius: @radius-lg;
+  background: @color-surface;
+}
+.cancellation-card__title { color: @color-text-primary; font-weight: 700; }
+.cancellation-card__description { margin-top: @space-3; color: @color-text-secondary; font-size: @font-size-sm; line-height: 1.75; }
+.cancellation-list { margin-top: @space-3; color: @color-text-secondary; font-size: @font-size-sm; line-height: 1.7; }
+.cancellation-list view { position: relative; padding-left: 28rpx; }
+.cancellation-list view + view { margin-top: @space-2; }
+.cancellation-list view::before { content: ""; position: absolute; top: 17rpx; left: 4rpx; width: 8rpx; height: 8rpx; border-radius: 50%; background: @color-brand; }
+
+.cancellation-blockers { margin-top: @space-4; padding: @space-5; border: 1rpx solid #f2c5a7; border-radius: @radius-lg; background: #fff8ef; }
+.cancellation-blockers__title { color: #8b4719; font-weight: 700; }
+.cancellation-blockers__row { display: flex; margin-top: @space-3; justify-content: space-between; color: #80572f; font-size: @font-size-sm; }
+.cancellation-blockers__note { margin-top: @space-3; color: #9b6c45; font-size: @font-size-xs; }
+
+.cancellation-more { display: flex; min-height: 96rpx; margin-top: @space-4; padding: 0 @space-4; align-items: center; justify-content: space-between; color: @color-brand; font-size: @font-size-sm; }
+
+.cancellation-footer { position: fixed; z-index: 80; right: 0; bottom: 0; left: 0; padding: @space-3 @page-gutter calc(@space-3 + env(safe-area-inset-bottom)); border-top: 1rpx solid @color-border; background: rgba(255, 255, 255, 0.96); }
+.cancellation-button { height: 92rpx; color: #fff; font-weight: 700; line-height: 92rpx; border-radius: @radius-pill; background: @color-brand; }
+.cancellation-button[disabled] { color: @color-text-muted; background: #e8e8e8; }
+.cancellation-button::after,
+.confirm-dialog button::after { border: 0; }
+
+.confirm-mask { position: fixed; z-index: 400; inset: 0; display: flex; padding: @page-gutter; box-sizing: border-box; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.52); }
+.confirm-dialog { width: 100%; padding: @space-6 @space-5 @space-4; box-sizing: border-box; border-radius: 28rpx; background: #fff; }
+.confirm-dialog__title { color: @color-text-primary; font-size: 36rpx; font-weight: 750; text-align: center; }
+.confirm-dialog__description { margin-top: @space-3; color: @color-text-secondary; font-size: @font-size-sm; line-height: 1.7; text-align: center; }
+.confirm-dialog__acknowledgement { display: flex; margin-top: @space-5; align-items: center; justify-content: center; flex-wrap: wrap; color: @color-text-secondary; font-size: @font-size-xs; line-height: 1.7; }
+.confirm-dialog__checkbox { display: flex; width: 32rpx; height: 32rpx; margin-right: @space-2; align-items: center; justify-content: center; color: #fff; border: 2rpx solid @color-border-strong; border-radius: 50%; }
+.confirm-dialog__checkbox--checked { border-color: @color-brand; background: @color-brand; }
+.confirm-dialog__notice-link { color: @color-brand; }
+.confirm-dialog__actions { display: flex; margin-top: @space-6; gap: @space-3; }
+.confirm-dialog__actions button { height: 84rpx; flex: 1; font-weight: 700; line-height: 84rpx; border-radius: @radius-pill; }
+.confirm-dialog__secondary { color: @color-text-secondary; background: @color-page; }
+.confirm-dialog__danger { color: #fff; background: @color-brand; }
+.confirm-dialog__danger[disabled] { color: @color-text-muted; background: #ececec; }

@@ -13,16 +13,21 @@ import {
 
 const sourceRoot = resolve(process.cwd(), "miniprogram");
 
-test("合规公开页只接受三种法律文档类型并生成内部路由", () => {
+test("合规公开页只接受四种法律文档类型并生成内部路由", () => {
   assert.equal(parseLegalDocumentType("PRIVACY_POLICY"), "PRIVACY_POLICY");
   assert.equal(parseLegalDocumentType("USER_AGREEMENT"), "USER_AGREEMENT");
   assert.equal(parseLegalDocumentType("AFTER_SALE_POLICY"), "AFTER_SALE_POLICY");
+  assert.equal(
+    parseLegalDocumentType("ACCOUNT_CANCELLATION_NOTICE"),
+    "ACCOUNT_CANCELLATION_NOTICE"
+  );
   assert.equal(parseLegalDocumentType("../../admin"), undefined);
   assert.equal(
     buildLegalDocumentUrl("PRIVACY_POLICY"),
     "/pages/compliance/document/document?type=PRIVACY_POLICY"
   );
   assert.equal(legalDocumentTitle("AFTER_SALE_POLICY"), "售后服务政策");
+  assert.equal(legalDocumentTitle("ACCOUNT_CANCELLATION_NOTICE"), "账号注销须知");
 });
 
 test("隐私政策必须是当前已发布且内容完整的修订", () => {
@@ -80,6 +85,7 @@ test("小程序注册公开合规页并从我的页面提供免登录设置入�
 
   [
     "pages/account/settings/settings",
+    "pages/account/cancellation/cancellation",
     "pages/compliance/merchant/merchant",
     "pages/compliance/document/document"
   ].forEach((pagePath) => {
@@ -108,5 +114,6 @@ test("小程序隐私入口使用微信原生只读指引且登录不依赖后�
   assert.match(sessionLogic, /data: \{ code \}/);
   assert.doesNotMatch(sessionLogic, /privacyPolicyVersion|privacyPolicyAccepted|miniProgramEnv/);
   assert.match(settingsLogic, /key === "privacy"[\s\S]{0,120}wx\.openPrivacyContract\(/);
-  assert.match(settingsTemplate, /隐私保护指引由微信小程序平台只读展示/);
+  assert.match(settingsLogic, /隐私保护指引由微信小程序平台只读展示/);
+  assert.match(settingsTemplate, /entry\.description/);
 });

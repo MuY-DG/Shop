@@ -1,0 +1,94 @@
+<view class="cancellation-page">
+  <navigation-bar
+    title="注销账号"
+    back="{{true}}"
+    round-back="{{true}}"
+    show-divider="{{false}}"
+    color="#2E1D16"
+  />
+
+  <ui-state
+    wx:if="{{loading}}"
+    type="loading"
+    title="正在检查注销条件"
+    description="请稍候"
+  />
+  <ui-state
+    wx:elif="{{errorText}}"
+    type="error"
+    title="注销信息暂不可用"
+    description="{{errorText}}"
+    action-text="重新加载"
+    bindaction="onRetry"
+  />
+
+  <scroll-view
+    wx:else
+    class="cancellation-scroll"
+    scroll-y="{{true}}"
+    show-scrollbar="{{false}}"
+  >
+    <view class="cancellation-content">
+      <view class="cancellation-hero">
+        <view class="cancellation-hero__icon">!</view>
+        <view class="cancellation-hero__title">注销后无法恢复</view>
+        <view class="cancellation-hero__description">请先确认交易、退款和售后均已结束。</view>
+      </view>
+
+      <view class="cancellation-card">
+        <view class="cancellation-card__title">将立即清理</view>
+        <view class="cancellation-list">
+          <view>昵称、头像、授权手机号等身份资料</view>
+          <view>收货地址、购物车、商品收藏与浏览记录</view>
+          <view>未使用优惠券与当前账号登录关系</view>
+        </view>
+      </view>
+
+      <view class="cancellation-card">
+        <view class="cancellation-card__title">会按规则保留</view>
+        <view class="cancellation-card__description">已完成的订单、支付、退款、售后、客服、评价以及安全审计记录，仅在履行法定义务、处理争议和保障交易安全所必需的期限内保留。</view>
+      </view>
+
+      <view wx:if="{{!eligibility.eligible}}" class="cancellation-blockers">
+        <view class="cancellation-blockers__title">当前暂不能注销</view>
+        <view wx:for="{{blockers}}" wx:key="key" class="cancellation-blockers__row">
+          <text>{{item.label}}</text><text>{{item.count}} 项</text>
+        </view>
+        <view class="cancellation-blockers__note">请处理完上述事项后重新检查。</view>
+      </view>
+
+      <view class="cancellation-more" bindtap="onOpenNotice" aria-role="button">
+        <text>查看完整《账号注销须知》</text><text>›</text>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view wx:if="{{loaded}}" class="cancellation-footer">
+    <button
+      class="cancellation-button"
+      disabled="{{!eligibility.eligible || !notice}}"
+      bindtap="onCancelAccountTap"
+    >{{eligibility.eligible ? '注销账号' : '暂不符合注销条件'}}</button>
+  </view>
+
+  <view wx:if="{{confirmOpen}}" class="confirm-mask" bindtap="onCloseConfirm">
+    <view class="confirm-dialog" catchtap="onPreventMove">
+      <view class="confirm-dialog__title">确认注销账号？</view>
+      <view class="confirm-dialog__description">注销会立即生效，已清理的资料和账号权益无法找回。</view>
+      <view class="confirm-dialog__acknowledgement" bindtap="onToggleAcknowledgement">
+        <view class="confirm-dialog__checkbox {{noticeAcknowledged ? 'confirm-dialog__checkbox--checked' : ''}}">{{noticeAcknowledged ? '✓' : ''}}</view>
+        <text>我已阅读并了解</text>
+        <text class="confirm-dialog__notice-link" catchtap="onOpenNotice">《账号注销须知》</text>
+      </view>
+      <view class="confirm-dialog__actions">
+        <button class="confirm-dialog__secondary" disabled="{{submitting}}" bindtap="onCloseConfirm">再想想</button>
+        <button
+          class="confirm-dialog__danger"
+          loading="{{submitting}}"
+          disabled="{{!noticeAcknowledged || submitting}}"
+          bindtap="onConfirmCancellation"
+        >确认注销</button>
+      </view>
+    </view>
+  </view>
+</view>

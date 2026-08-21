@@ -196,8 +196,6 @@ class AdminAuthControllerTest {
                         "compliance:merchant:write",
                         "compliance:document:read",
                         "compliance:document:write",
-                        "account-rights:read",
-                        "account-rights:manage",
                         "finance:reconciliation:read",
                         "finance:reconciliation:run",
                         "finance:reconciliation:resolve",

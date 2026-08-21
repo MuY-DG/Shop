@@ -18,12 +18,9 @@ export const API_ENDPOINTS = Object.freeze({
     currentDocument: (type: string): string =>
       `/app/compliance/documents/${type}/current`
   },
-  accountRights: {
-    list: "/app/account-rights/requests",
-    detail: (requestId: string): string =>
-      `/app/account-rights/requests/${requestId}`,
-    withdraw: (requestId: string): string =>
-      `/app/account-rights/requests/${requestId}/withdraw`
+  accountCancellation: {
+    eligibility: "/app/account-cancellation/eligibility",
+    cancel: "/app/account-cancellation"
   },
   realtime: {
     ticket: "/app/realtime/tickets"

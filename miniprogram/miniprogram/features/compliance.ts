@@ -7,7 +7,8 @@ import type {
 const LEGAL_DOCUMENT_TYPES = Object.freeze([
   "PRIVACY_POLICY",
   "USER_AGREEMENT",
-  "AFTER_SALE_POLICY"
+  "AFTER_SALE_POLICY",
+  "ACCOUNT_CANCELLATION_NOTICE"
 ] as const);
 
 export const COMPLIANCE_ROUTES = Object.freeze({
@@ -66,6 +67,8 @@ export function legalDocumentTitle(type: LegalDocumentType): string {
       return "用户协议";
     case "AFTER_SALE_POLICY":
       return "售后服务政策";
+    case "ACCOUNT_CANCELLATION_NOTICE":
+      return "账号注销须知";
   }
 }
 

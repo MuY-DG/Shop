@@ -127,8 +127,8 @@ MySQL migration/concurrency run or any production-provider smoke check.
 # V89 product food disclosure and publication gate
 ./mvnw -Dtest='ProductFoodComplianceSchemaTest,ProductFoodComplianceServiceTest,ProductFoodComplianceControllerTest' test
 
-# V90 account-rights state, authorization, and active-obligation gate
-./mvnw -Dtest='AccountRightsSchemaTest,AccountRightsControllerTest,AccountRightsObligationServiceTest' test
+# V105 self-service cancellation, immutable record, and active-obligation gate
+./mvnw -Dtest='AccountCancellationSchemaTest,AccountCancellationControllerTest' test
 
 # V93 and V97 WeChat trade-bill reconciliation and Admin runtime control
 ./mvnw -Dtest='*FinanceReconciliation*Test,AdminFinanceReconciliationControllerTest' test
@@ -151,10 +151,10 @@ pnpm check
 
 The Mini Program gate includes runtime environment, explicit privacy-consent ordering,
 customer-service order routing, public compliance rendering, food disclosure,
-account-rights, and the source contract that preserves the current profile V frame,
+account cancellation, and the source contract that preserves the current profile V frame,
 crown, `金牌会员` text, member-card assets, and logged-in display condition.
 
-## V87-V97 Runtime And Publication Controls
+## V87-V105 Runtime And Publication Controls
 
 ### V87 WeChat Shipment Delivery
 
@@ -217,20 +217,20 @@ not satisfy the gate.
 before enabling production traffic. Never copy the document's non-food fixture
 classification onto a real food.
 
-### V90 Account Rights
+### V105 Self-Service Account Cancellation
 
-Users can submit, inspect, and withdraw rights requests under
-`/app/account-rights/requests`; authorized operators handle them under
-`/admin/account-rights/requests`. Every admin transition requires the current version, a
-nonblank reason, and a nonblank retention explanation; the retained-data category list
-may be empty only when the operator truthfully declares that no category is retained.
+`V105` removes the V90 request/audit tables, Admin menu and approval permissions. The Mini
+Program now exposes only `/app/account-cancellation/eligibility` and
+`POST /app/account-cancellation`. The final request must include a newly obtained WeChat
+code plus the exact current `ACCOUNT_CANCELLATION_NOTICE` version and SHA-256. A changed
+notice forces the user to read and acknowledge it again.
 
-Account cancellation additionally requires a fresh WeChat code bound to the same user
-and cannot complete while active orders, payments, refunds, or after-sales exist.
-Completion invalidates access and refresh sessions and minimally anonymizes optional
-identity data while preserving required transaction/audit records. Assign a real owner,
-review SLA, escalation route, and reviewed retention rules before release; automated
-tests cannot decide those merchant/legal obligations.
+Cancellation is one transaction and cannot run while active orders, payments, refunds or
+after-sales exist. It invalidates access and refresh sessions, unbinds the original WeChat
+identity, clears optional identity, addresses, cart, favorites, browse history and unused
+coupons, and anonymizes the user's reviews. Completed commerce, refund, after-sale,
+customer-service, review, security and audit data follow the reviewed retention policies.
+Only an immutable completion record remains; there is no Admin approval queue.
 
 ### V93/V97 WeChat Trade-Bill Reconciliation
 

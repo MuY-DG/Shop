@@ -1798,7 +1798,11 @@ declare namespace Api {
   namespace Compliance {
     type Identifier = string | number
     type PublicationStatus = 'DRAFT' | 'PUBLISHED' | 'SUPERSEDED'
-    type LegalDocumentType = 'PRIVACY_POLICY' | 'USER_AGREEMENT' | 'AFTER_SALE_POLICY'
+    type LegalDocumentType =
+      | 'PRIVACY_POLICY'
+      | 'USER_AGREEMENT'
+      | 'AFTER_SALE_POLICY'
+      | 'ACCOUNT_CANCELLATION_NOTICE'
 
     interface MerchantPublicationDraft {
       legalName: string
@@ -2028,80 +2032,6 @@ declare namespace Api {
     }
     interface ResolveForm extends InvestigateForm {
       resolutionCode: string
-    }
-  }
-
-  namespace AccountRights {
-    type Identifier = string | number
-    type RequestType =
-      | 'ACCOUNT_CANCELLATION'
-      | 'PERSONAL_INFORMATION_DELETION'
-      | 'ACCESS_COPY'
-      | 'CORRECTION'
-    type RequestStatus =
-      | 'PENDING'
-      | 'IN_REVIEW'
-      | 'APPROVED'
-      | 'REJECTED'
-      | 'WITHDRAWN'
-      | 'COMPLETED'
-    type AdminAction = 'review' | 'reject' | 'approve' | 'complete'
-
-    interface RequestItem {
-      id: Identifier
-      userId: Identifier
-      userNickname: string
-      userStatus: string
-      requestType: RequestType
-      status: RequestStatus
-      requestNote?: string | null
-      identityVerifiedAt?: string | null
-      reviewReason?: string | null
-      retentionExplanation?: string | null
-      retainedDataCategories: string[]
-      reviewedBy?: Identifier | null
-      reviewedAt?: string | null
-      approvedAt?: string | null
-      rejectedAt?: string | null
-      withdrawnAt?: string | null
-      completedAt?: string | null
-      version: number
-      createdAt: string
-      updatedAt: string
-    }
-
-    interface AuditItem {
-      id: Identifier
-      action: string
-      actorType: string
-      actorId?: Identifier | null
-      fromStatus?: RequestStatus | null
-      toStatus: RequestStatus
-      reason?: string | null
-      retentionExplanation?: string | null
-      retainedDataCategories: string[]
-      createdAt: string
-    }
-
-    interface RequestDetail {
-      request: RequestItem
-      audits: AuditItem[]
-    }
-
-    type RequestList = Api.Common.PaginatedResponse<RequestItem>
-
-    type SearchParams = Api.Common.CommonSearchParams &
-      Partial<{
-        userId: Identifier
-        requestType: RequestType
-        status: RequestStatus
-      }>
-
-    interface ActionForm {
-      version: number
-      reason: string
-      retentionExplanation: string
-      retainedDataCategories: string[]
     }
   }
 }

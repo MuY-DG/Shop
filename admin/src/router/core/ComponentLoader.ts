@@ -19,7 +19,6 @@ export class ComponentLoader {
   constructor() {
     // 仅打包后端业务菜单会引用的视图，避免演示页面重新进入生产构建。
     this.modules = import.meta.glob([
-      '../../views/account-rights/**/*.vue',
       '../../views/aftersale/**/*.vue',
       '../../views/compliance/**/*.vue',
       '../../views/configuration/**/*.vue',

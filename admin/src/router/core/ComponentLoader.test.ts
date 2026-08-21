@@ -38,7 +38,6 @@ test('static and fallback business routes expose no template demo entries', () =
 
 test('component path resolution still points to real commerce menu views', () => {
   const businessComponents = [
-    '/account-rights/index',
     '/aftersale/list',
     '/compliance/documents',
     '/compliance/merchant',

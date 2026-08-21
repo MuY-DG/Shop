@@ -1,7 +1,8 @@
 export type LegalDocumentType =
   | "PRIVACY_POLICY"
   | "USER_AGREEMENT"
-  | "AFTER_SALE_POLICY";
+  | "AFTER_SALE_POLICY"
+  | "ACCOUNT_CANCELLATION_NOTICE";
 
 export interface LegalDocumentResponse {
   id: string;

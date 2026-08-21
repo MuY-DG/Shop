@@ -59,7 +59,6 @@ class AdminMenuControllerTest {
                         "/development",
                         "/system",
                         "/compliance",
-                        "/account-rights",
                         "/finance"
                 )))
                 .andExpect(jsonPath("$.data[0].path").value("/operations"))
@@ -313,12 +312,12 @@ class AdminMenuControllerTest {
                 .andExpect(jsonPath("$.data[9].children[3].meta.authList[*].authMark", containsInAnyOrder(
                         "system:log:read"
                 )))
-                .andExpect(jsonPath("$.data[12].path").value("/finance"))
-                .andExpect(jsonPath("$.data[12].component").value("/index/index"))
-                .andExpect(jsonPath("$.data[12].children[*].path", contains("reconciliation")))
-                .andExpect(jsonPath("$.data[12].children[0].component")
+                .andExpect(jsonPath("$.data[11].path").value("/finance"))
+                .andExpect(jsonPath("$.data[11].component").value("/index/index"))
+                .andExpect(jsonPath("$.data[11].children[*].path", contains("reconciliation")))
+                .andExpect(jsonPath("$.data[11].children[0].component")
                         .value("/finance/reconciliation/index"))
-                .andExpect(jsonPath("$.data[12].children[0].meta.authList[*].authMark", containsInAnyOrder(
+                .andExpect(jsonPath("$.data[11].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "finance:reconciliation:read",
                         "finance:reconciliation:run",
                         "finance:reconciliation:resolve",
@@ -352,7 +351,6 @@ class AdminMenuControllerTest {
                         "/system",
                         "/compliance",
                         "/guest",
-                        "/account-rights",
                         "/finance"
                 )));
     }

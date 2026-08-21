@@ -31,6 +31,7 @@
           >
             <view class="settings-row__body">
               <view class="settings-row__label">{{entry.label}}</view>
+              <view wx:if="{{entry.description}}" class="settings-row__description">{{entry.description}}</view>
             </view>
             <image
               class="settings-row__chevron"

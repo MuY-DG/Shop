@@ -32,9 +32,9 @@ Page({
       {
         title: "账户与个人信息",
         items: [{
-          key: "accountRights",
-          label: "账户注销与个人信息权利",
-          description: "提交、查看或撤回账户与个人信息处理申请"
+          key: "accountCancellation",
+          label: "注销账号",
+          description: "查看注销后果并确认注销"
         }]
       },
       {
@@ -43,7 +43,7 @@ Page({
           {
             key: "privacy",
             label: "微信隐私保护指引",
-            description: "查看微信小程序平台当前指引（只读）"
+            description: "隐私保护指引由微信小程序平台只读展示"
           },
           {
             key: "agreement",
@@ -66,8 +66,8 @@ Page({
       wx.navigateTo({ url: COMPLIANCE_ROUTES.merchant });
       return;
     }
-    if (key === "accountRights") {
-      wx.navigateTo({ url: "/pages/account/rights/rights" });
+    if (key === "accountCancellation") {
+      wx.navigateTo({ url: "/pages/account/cancellation/cancellation" });
       return;
     }
     if (key === "privacy") {

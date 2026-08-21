@@ -69,6 +69,35 @@ public class LegalDocumentService {
     }
 
     @Transactional
+    public LegalDocumentResponse requireAcknowledgedCurrent(
+            LegalDocumentType type,
+            String requestedVersion,
+            String requestedContentSha256
+    ) {
+        if (type == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        LegalDocumentResponse current = jdbcClient.sql("""
+                        select id, document_type, version, title, content, content_sha256,
+                               status, effective_at, created_by, published_by, published_at,
+                               created_at, updated_at
+                        from legal_document_revision
+                        where current_publication_key = :currentKey
+                          and status = 'PUBLISHED'
+                        for update
+                        """)
+                .param("currentKey", type.name())
+                .query(this::map)
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.ACCOUNT_CANCELLATION_NOTICE_UNAVAILABLE));
+        if (!current.version().equals(normalize(requestedVersion))
+                || !current.contentSha256().equalsIgnoreCase(normalize(requestedContentSha256))) {
+            throw new BusinessException(ErrorCode.ACCOUNT_CANCELLATION_NOTICE_CHANGED);
+        }
+        return current;
+    }
+
+    @Transactional
     public LegalDocumentResponse createDraft(
             LegalDocumentType type,
             LegalDocumentDraftRequest request,

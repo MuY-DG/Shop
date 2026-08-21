@@ -158,11 +158,11 @@ success
 Product unavailable
 ```
 
-## Compliance And Account-Rights Smoke Checks
+## Compliance And Account-Cancellation Smoke Checks
 
-These checks cover the safe local portions of `V88` through `V90`. Run them only
+These checks cover the safe local portions of `V88` through `V105`. Run them only
 against a disposable database using the `test`-profile backend command above. They
-intentionally do not publish invented merchant facts or legal text, do not classify a
+intentionally do not publish invented merchant facts or replace reviewed legal text, do not classify a
 food as non-food, and do not complete an account cancellation.
 
 Create local tokens:
@@ -242,83 +242,26 @@ an operator must verify each returned product and either save its truthful class
 and disclosure or take it off sale. A `FOOD` smoke needs the real package label and
 qualification data for that product; this document provides no fake food payload.
 
-### V90 User And Admin Workflow
+### V105 Self-Service Account Cancellation
 
-Exercise submit, detail, list, and withdraw with the non-destructive access/copy request:
-
-```bash
-RIGHTS_REQUEST_ID=$(
-  curl -s -X POST http://localhost:8080/app/account-rights/requests \
-    -H "Authorization: Bearer ${APP_TOKEN}" \
-    -H 'Content-Type: application/json' \
-    -d '{"requestType":"ACCESS_COPY","requestNote":"本地 smoke：验证提交、查询与撤回"}' \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "PENDING") process.exit(1); console.log(body.data.id); });'
-)
-
-RIGHTS_VERSION=$(
-  curl -s "http://localhost:8080/app/account-rights/requests/${RIGHTS_REQUEST_ID}" \
-    -H "Authorization: Bearer ${APP_TOKEN}" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.request.status !== "PENDING" || body.data.audits[0].action !== "SUBMITTED") process.exit(1); console.log(body.data.request.version); });'
-)
-
-curl -s http://localhost:8080/app/account-rights/requests \
-  -H "Authorization: Bearer ${APP_TOKEN}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); const found = body.data.some(item => String(item.id) === process.argv[1]); if (!found) process.exit(1); console.log("request listed"); });' "${RIGHTS_REQUEST_ID}"
-
-curl -s -X POST "http://localhost:8080/app/account-rights/requests/${RIGHTS_REQUEST_ID}/withdraw" \
-  -H "Authorization: Bearer ${APP_TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d "{\"version\":${RIGHTS_VERSION}}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "WITHDRAWN") process.exit(1); console.log(body.data.status); });'
-```
-
-Exercise an operator review and rejection. The explanations below state only what this
-disposable smoke did; they are not production retention decisions:
+The read-only eligibility request is safe for an ordinary test account:
 
 ```bash
-REVIEW_REQUEST_ID=$(
-  curl -s -X POST http://localhost:8080/app/account-rights/requests \
-    -H "Authorization: Bearer ${APP_TOKEN}" \
-    -H 'Content-Type: application/json' \
-    -d '{"requestType":"CORRECTION","requestNote":"本地 smoke：验证后台受理与驳回"}' \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.id));'
-)
+curl -s http://localhost:8080/app/account-cancellation/eligibility \
+  -H "Authorization: Bearer ${APP_TOKEN}" \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (typeof body.data.eligible !== "boolean") process.exit(1); console.log(JSON.stringify(body.data)); });'
 
-REVIEW_VERSION=$(
-  curl -s "http://localhost:8080/app/account-rights/requests/${REVIEW_REQUEST_ID}" \
-    -H "Authorization: Bearer ${APP_TOKEN}" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.request.version));'
-)
-
-REVIEWED_VERSION=$(
-  curl -s -X POST "http://localhost:8080/admin/account-rights/requests/${REVIEW_REQUEST_ID}/review" \
-    -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-    -H 'Content-Type: application/json' \
-    -d "{\"version\":${REVIEW_VERSION},\"reason\":\"本地 smoke：开始核对测试申请\",\"retentionExplanation\":\"本地 smoke 未执行真实数据导出、修改或法定保留判断\",\"retainedDataCategories\":[]}" \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "IN_REVIEW") process.exit(1); console.log(body.data.version); });'
-)
-
-curl -s -X POST "http://localhost:8080/admin/account-rights/requests/${REVIEW_REQUEST_ID}/reject" \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -H 'Content-Type: application/json' \
-  -d "{\"version\":${REVIEWED_VERSION},\"reason\":\"本地 smoke：结束测试申请\",\"retentionExplanation\":\"本地 smoke 未形成任何真实处理或保留结论\",\"retainedDataCategories\":[]}" \
-| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.status !== "REJECTED") process.exit(1); console.log(body.data.status); });'
+curl -s http://localhost:8080/app/compliance/documents/ACCOUNT_CANCELLATION_NOTICE/current \
+| node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => { const body = JSON.parse(b); if (body.data.documentType !== "ACCOUNT_CANCELLATION_NOTICE" || body.data.status !== "PUBLISHED") process.exit(1); console.log(body.data.version); });'
 ```
 
-Expected result includes:
-
-```text
-no fake publication
-empty admin history
-request listed
-WITHDRAWN
-REJECTED
-```
-
-Do not turn this into a cancellation-completion smoke on a merchant or production user.
-Cancellation needs a fresh one-time WeChat code for the same account, an active-business
-obligation review, a documented retention decision, and a disposable dedicated real
-test account. Completion intentionally invalidates sessions and changes stored identity.
+Do not call `POST /app/account-cancellation` with a merchant, employee or real customer
+account: success is immediate and irreversible. Final validation must use a dedicated,
+disposable real WeChat test account, obtain a new `wx.login` code only after the final
+confirmation, and submit the exact current notice version and SHA-256. Verify that active
+commerce blocks the request, that disposable profile/account data is removed, that the
+completion row is written, and that both old access and refresh tokens fail afterward.
+There is no Admin review or approval endpoint.
 
 ## Cart Smoke Checks
 

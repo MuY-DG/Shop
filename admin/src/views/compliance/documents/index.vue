@@ -1,7 +1,7 @@
 <template>
   <div class="legal-documents-page art-full-height">
     <ElAlert
-      title="法律文档按版本保存且发布后不可修改。请粘贴经过业务或法律审核的正式内容；系统不会提供示例条款。"
+      title="法律文档按版本保存且发布后不可修改。V105 已创建首版账号注销须知；上线前仍须按真实删除和保留规则复核，其他文档不提供示例条款。"
       type="warning"
       :closable="false"
       show-icon
@@ -134,7 +134,8 @@
   const documentTypes: Array<{ value: Api.Compliance.LegalDocumentType; label: string }> = [
     { value: 'PRIVACY_POLICY', label: '隐私保护指引' },
     { value: 'USER_AGREEMENT', label: '用户协议' },
-    { value: 'AFTER_SALE_POLICY', label: '售后政策' }
+    { value: 'AFTER_SALE_POLICY', label: '售后政策' },
+    { value: 'ACCOUNT_CANCELLATION_NOTICE', label: '账号注销须知' }
   ]
 
   const emptyDraft = (): Api.Compliance.LegalDocumentDraft => ({
@@ -216,7 +217,9 @@
     const consentWarning =
       activeType.value === 'PRIVACY_POLICY'
         ? '发布后，小程序登录只接受此版本；旧页面上的版本会被后端拒绝并要求重新加载。'
-        : '发布后，小程序将只展示此版本。'
+        : activeType.value === 'ACCOUNT_CANCELLATION_NOTICE'
+          ? '发布后，已打开注销确认框的用户必须重新阅读并勾选新版本。'
+          : '发布后，小程序将只展示此版本。'
     await ElMessageBox.confirm(
       `${consentWarning} 请确认标题、正文、生效时间和内容摘要均已人工复核。`,
       `发布${activeTypeLabel.value}`,

@@ -22,9 +22,11 @@ test('merchant publication requires an explicit confirmation and real managed as
   assert.match(merchantSource, /compliance:merchant:write/)
 })
 
-test('legal-document publication warns about privacy version invalidation', () => {
-  assert.match(documentSource, /系统不会提供示例条款/)
+test('legal-document publication warns about privacy and cancellation version invalidation', () => {
+  assert.match(documentSource, /V105 已创建首版账号注销须知/)
+  assert.match(documentSource, /真实删除和保留规则/)
   assert.match(documentSource, /小程序登录只接受此版本/)
+  assert.match(documentSource, /重新阅读并勾选新版本/)
   assert.match(documentSource, /SHA-256/)
   assert.match(documentSource, /compliance:document:write/)
 })
