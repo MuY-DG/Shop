@@ -441,7 +441,8 @@ public class TradeReconciliationProcessor {
     ) {
         Map<String, ExistingDifference> existing = new HashMap<>();
         for (ExistingDifference difference : jdbcClient.sql("""
-                        select id, diff_key, difference_type, status, version
+                        select id, diff_key, difference_type, status, version,
+                               external_refund_applied
                         from finance_reconciliation_difference
                         where batch_id = :batchId
                         order by id
@@ -453,7 +454,8 @@ public class TradeReconciliationProcessor {
                         rs.getString("diff_key"),
                         rs.getString("difference_type"),
                         rs.getString("status"),
-                        rs.getLong("version")
+                        rs.getLong("version"),
+                        rs.getBoolean("external_refund_applied")
                 ))
                 .list()) {
             existing.put(difference.diffKey(), difference);
@@ -505,8 +507,8 @@ public class TradeReconciliationProcessor {
             ExistingDifference prior,
             DifferenceDraft draft
     ) {
-        boolean reopen = "RESOLVED".equals(prior.status())
-                || "AUTO_CLEARED".equals(prior.status());
+        boolean reopen = !prior.externalRefundApplied() && ("RESOLVED".equals(prior.status())
+                || "AUTO_CLEARED".equals(prior.status()));
         String targetStatus = reopen ? "OPEN" : prior.status();
         LocalDateTime now = now();
         int updated = jdbcClient.sql("""
@@ -517,9 +519,14 @@ public class TradeReconciliationProcessor {
                             order_id = :orderId, payment_order_id = :paymentOrderId,
                             refund_order_id = :refundOrderId,
                             provider_amount_cent = :providerAmountCent,
-                            local_amount_cent = :localAmountCent,
-                            provider_status = :providerStatus, local_status = :localStatus,
-                            provider_evidence = :providerEvidence, local_evidence = :localEvidence,
+                            local_amount_cent = case when :externalRefundApplied
+                                then local_amount_cent else :localAmountCent end,
+                            provider_status = :providerStatus,
+                            provider_evidence = :providerEvidence,
+                            local_status = case when :externalRefundApplied
+                                then local_status else :localStatus end,
+                            local_evidence = case when :externalRefundApplied
+                                then local_evidence else :localEvidence end,
                             candidate_content_sha256 = :candidateContentSha256,
                             candidate_storage_provider = :candidateStorageProvider,
                             candidate_storage_container = :candidateStorageContainer,
@@ -548,6 +555,7 @@ public class TradeReconciliationProcessor {
                 .param("localStatus", draft.localStatus())
                 .param("providerEvidence", draft.providerEvidence())
                 .param("localEvidence", draft.localEvidence())
+                .param("externalRefundApplied", prior.externalRefundApplied())
                 .param("candidateContentSha256", draft.candidateContentSha256())
                 .param("candidateStorageProvider", draft.candidateStorageProvider())
                 .param("candidateStorageContainer", draft.candidateStorageContainer())
@@ -941,7 +949,8 @@ public class TradeReconciliationProcessor {
             String diffKey,
             String differenceType,
             String status,
-            long version
+            long version,
+            boolean externalRefundApplied
     ) {
     }
 

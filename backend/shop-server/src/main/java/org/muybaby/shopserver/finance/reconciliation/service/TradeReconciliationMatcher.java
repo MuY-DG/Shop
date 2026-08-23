@@ -55,12 +55,13 @@ public class TradeReconciliationMatcher {
         List<LocalPayment> datedPayments = localPayments(mchId, start, end);
         List<LocalRefund> datedRefunds = localRefunds(mchId, start, end);
         List<LocalPayment> paymentCandidates = mergePayments(
-                datedPayments, paymentCandidates(mchId, channelPayments));
+                datedPayments, paymentCandidates(mchId, bill.rows()));
         List<LocalRefund> refundCandidates = mergeRefunds(
                 datedRefunds, refundCandidates(mchId, channelRefunds));
         List<DifferenceDraft> differences = new ArrayList<>();
         differences.addAll(comparePayments(channelPayments, paymentCandidates, datedPayments));
-        differences.addAll(compareRefunds(channelRefunds, refundCandidates, datedRefunds));
+        differences.addAll(compareRefunds(
+                channelRefunds, refundCandidates, datedRefunds, paymentCandidates));
         differences.sort(Comparator.comparing(DifferenceDraft::diffKey));
         long localPaymentAmount = exactSum(
                 datedPayments, ignored -> true, LocalPayment::amountCent);
@@ -131,7 +132,8 @@ public class TradeReconciliationMatcher {
     private List<DifferenceDraft> compareRefunds(
             List<TradeBillRow> channelRows,
             List<LocalRefund> localRows,
-            List<LocalRefund> datedRows
+            List<LocalRefund> datedRows,
+            List<LocalPayment> paymentRows
     ) {
         List<DifferenceDraft> differences = new ArrayList<>();
         Set<Long> matchedLocalIds = new HashSet<>();
@@ -141,6 +143,9 @@ public class TradeReconciliationMatcher {
         Map<String, List<LocalRefund>> localByTradeNo = group(localRows, LocalRefund::outTradeNo);
         Map<String, List<LocalRefund>> localByTransaction = group(localRows, LocalRefund::transactionId);
         Map<String, List<LocalRefund>> localByIdentity = group(localRows, this::refundIdentity);
+        Map<String, List<LocalPayment>> paymentsByTrade = group(paymentRows, LocalPayment::outTradeNo);
+        Map<String, List<LocalPayment>> paymentsByTransaction = group(
+                paymentRows, LocalPayment::transactionId);
         for (List<TradeBillRow> duplicateGroup : channelByIdentity.values()) {
             TradeBillRow channel = duplicateGroup.getFirst();
             List<LocalRefund> exactGroup = localByIdentity.get(refundIdentity(channel));
@@ -158,7 +163,10 @@ public class TradeReconciliationMatcher {
                         localByTransaction.get(channel.transactionId()));
                 matched = partial;
                 if (partial == null) {
-                    differences.add(channelOnly(channel));
+                    LocalPayment parentPayment = preferredCandidate(
+                            paymentsByTrade.get(channel.outTradeNo()),
+                            paymentsByTransaction.get(channel.transactionId()));
+                    differences.add(channelRefundOnly(channel, parentPayment));
                 } else {
                     matchedLocalIds.add(partial.id());
                     differences.add(identityMismatch(channel, partial));
@@ -504,6 +512,31 @@ public class TradeReconciliationMatcher {
                 "",
                 channelEvidence(row),
                 "{}"
+        );
+    }
+
+    private DifferenceDraft channelRefundOnly(TradeBillRow row, LocalPayment parentPayment) {
+        if (parentPayment == null) {
+            return channelOnly(row);
+        }
+        return new DifferenceDraft(
+                diffKey(ReconciliationDifferenceType.CHANNEL_ONLY,
+                        stableBusinessIdentity(row, null)),
+                ReconciliationDifferenceType.CHANNEL_ONLY,
+                ReconciliationDifferenceSeverity.CRITICAL,
+                row.transactionId(),
+                row.outTradeNo(),
+                row.refundId(),
+                row.outRefundNo(),
+                parentPayment.orderId(),
+                parentPayment.id(),
+                null,
+                row.amountCent(),
+                null,
+                row.channelStatus(),
+                "",
+                channelEvidence(row),
+                localEvidence(parentPayment)
         );
     }
 

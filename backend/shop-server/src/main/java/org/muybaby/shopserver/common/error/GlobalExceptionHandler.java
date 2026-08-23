@@ -134,37 +134,15 @@ public class GlobalExceptionHandler {
     }
 
     private void logUnexpectedException(Exception ex) {
-        ServiceException serviceException = findWechatPayServiceException(ex);
+        ServiceException serviceException = ProviderFailureCode.findWechatPayServiceException(ex);
         if (serviceException != null) {
             // ServiceException embeds the complete HTTP request in its message, including the
             // Authorization header and payer identifiers. Log only stable, non-sensitive fields.
             log.error("Unhandled request failure: provider=WECHAT_PAY, exceptionType={}, errorCode={}",
-                    ex.getClass().getSimpleName(), safeProviderErrorCode(serviceException.getErrorCode()));
+                    ex.getClass().getSimpleName(), ProviderFailureCode.safeCode(serviceException));
             return;
         }
         log.error("Unhandled request failure", ex);
-    }
-
-    private ServiceException findWechatPayServiceException(Throwable failure) {
-        Throwable current = failure;
-        for (int depth = 0; current != null && depth < 16; depth++) {
-            if (current instanceof ServiceException serviceException) {
-                return serviceException;
-            }
-            if (current.getCause() == current) {
-                break;
-            }
-            current = current.getCause();
-        }
-        return null;
-    }
-
-    private String safeProviderErrorCode(String value) {
-        if (value == null || value.isBlank()) {
-            return "UNKNOWN";
-        }
-        String sanitized = value.replaceAll("[^A-Za-z0-9_-]", "_");
-        return sanitized.substring(0, Math.min(sanitized.length(), 64));
     }
 
     private HttpStatus statusFor(ErrorCode errorCode) {

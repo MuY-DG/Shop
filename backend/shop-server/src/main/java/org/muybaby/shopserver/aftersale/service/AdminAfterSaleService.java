@@ -21,6 +21,7 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.common.error.ProviderFailureCode;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.dto.OrderStatusLogResponse;
 import org.muybaby.shopserver.order.service.OrderStatusLogService;
@@ -711,7 +712,7 @@ public class AdminAfterSaleService {
             recordRefundOperationResult(
                     target, adminUserId,
                     resubmitWhenMissing ? "REFUND_RESUBMIT_FAILED" : "REFUND_QUERY_FAILED",
-                    auditDescription("退款人工操作失败", safeFailureCode(failure))
+                    auditDescription("退款人工操作失败", ProviderFailureCode.safeCode(failure))
             );
             if (failure instanceof BusinessException businessException) {
                 throw businessException;
@@ -1383,7 +1384,7 @@ public class AdminAfterSaleService {
                               and status = :expectedStatus
                             """)
                     .param("callbackStatus", "REQUEST_UNKNOWN")
-                    .param("lastErrorCode", safeFailureCode(failure))
+                    .param("lastErrorCode", ProviderFailureCode.safeCode(failure))
                     .param("lastErrorMessage", "Refund request result is unknown; provider query scheduled")
                     .param("nextRecoveryAt", now)
                     .param("updatedAt", now)
@@ -1391,14 +1392,6 @@ public class AdminAfterSaleService {
                     .param("expectedStatus", RefundOrderStatus.PROCESSING.name())
                     .update();
         });
-    }
-
-    private String safeFailureCode(RuntimeException failure) {
-        String simpleName = failure == null ? null : failure.getClass().getSimpleName();
-        if (!StringUtils.hasText(simpleName)) {
-            return "RuntimeException";
-        }
-        return simpleName.length() <= 64 ? simpleName : simpleName.substring(0, 64);
     }
 
     private AdminAfterSaleQueryRequest normalizedQuery(AdminAfterSaleQueryRequest query) {

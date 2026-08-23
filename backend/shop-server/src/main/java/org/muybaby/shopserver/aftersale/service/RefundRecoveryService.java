@@ -4,6 +4,7 @@ import org.muybaby.shopserver.aftersale.RefundOrderStatus;
 import org.muybaby.shopserver.aftersale.RefundRecoveryProperties;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.common.error.ProviderFailureCode;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
@@ -26,6 +27,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 @Service
 public class RefundRecoveryService {
@@ -112,35 +114,45 @@ public class RefundRecoveryService {
             if (claimed == null) {
                 throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
             }
-            try {
-                ResolvedPaymentConfig config = paymentConfigResolver.resolveForPayment(
-                        claimed.paymentConfigId(), claimed.paymentConfigFingerprint());
-                WechatRefundQueryResult providerResult = wechatPayProvider.queryRefund(
-                        config, claimed.outRefundNo());
-                boolean resubmitted = false;
-                if ("NOT_FOUND".equalsIgnoreCase(providerResult.status())) {
-                    if (!resubmitWhenMissing) {
-                        if (!releaseClaimAfterManualQuery(claimed)) {
-                            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-                        }
-                        return new ManualRecoveryResult(
-                                claimed.refundOrderId(), "NOT_FOUND", null, false);
+            ResolvedPaymentConfig config = executeRecoveryStep(
+                    claimed,
+                    RecoveryStage.CONFIGURATION,
+                    () -> paymentConfigResolver.resolveForPayment(
+                            claimed.paymentConfigId(), claimed.paymentConfigFingerprint())
+            );
+            WechatRefundQueryResult providerResult = executeRecoveryStep(
+                    claimed,
+                    RecoveryStage.QUERY,
+                    () -> wechatPayProvider.queryRefund(config, claimed.outRefundNo())
+            );
+            boolean resubmitted = false;
+            if ("NOT_FOUND".equalsIgnoreCase(providerResult.status())) {
+                if (!resubmitWhenMissing) {
+                    if (!releaseClaimAfterManualQuery(claimed)) {
+                        throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
                     }
-                    providerResult = submitOriginalRefundRequest(config, claimed);
-                    resubmitted = true;
+                    return new ManualRecoveryResult(
+                            claimed.refundOrderId(), "NOT_FOUND", null, false);
                 }
-
-                RefundFinalizationService.Outcome outcome = applyProviderResult(
-                        claimed, providerResult, config);
-                if (outcome == null) {
-                    throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-                }
-                return new ManualRecoveryResult(
-                        claimed.refundOrderId(), providerResult.status(), outcome, resubmitted);
-            } catch (RuntimeException ex) {
-                recordQueryFailure(claimed, ex);
-                throw ex;
+                providerResult = executeRecoveryStep(
+                        claimed,
+                        RecoveryStage.SUBMISSION,
+                        () -> submitOriginalRefundRequest(config, claimed)
+                );
+                resubmitted = true;
             }
+
+            WechatRefundQueryResult resolvedProviderResult = providerResult;
+            RefundFinalizationService.Outcome outcome = executeRecoveryStep(
+                    claimed,
+                    RecoveryStage.FINALIZATION,
+                    () -> applyProviderResult(claimed, resolvedProviderResult, config)
+            );
+            if (outcome == null) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            return new ManualRecoveryResult(
+                    claimed.refundOrderId(), providerResult.status(), outcome, resubmitted);
         });
         if (result == null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
@@ -160,50 +172,43 @@ public class RefundRecoveryService {
                 break;
             }
             try {
-                ResolvedPaymentConfig config = paymentConfigResolver.resolveForPayment(
-                        claimedRefund.paymentConfigId(), claimedRefund.paymentConfigFingerprint());
-                WechatRefundQueryResult providerResult = reconcileWithProvider(config, claimedRefund);
+                ResolvedPaymentConfig config = executeRecoveryStep(
+                        claimedRefund,
+                        RecoveryStage.CONFIGURATION,
+                        () -> paymentConfigResolver.resolveForPayment(
+                                claimedRefund.paymentConfigId(), claimedRefund.paymentConfigFingerprint())
+                );
+                WechatRefundQueryResult providerResult = executeRecoveryStep(
+                        claimedRefund,
+                        RecoveryStage.QUERY,
+                        () -> wechatPayProvider.queryRefund(config, claimedRefund.outRefundNo())
+                );
                 if ("NOT_FOUND".equalsIgnoreCase(providerResult.status())) {
-                    releaseClaimAfterProviderNotFound(claimedRefund);
-                    continue;
+                    if (RefundOrderStatus.FAILED.name().equals(claimedRefund.status())) {
+                        releaseClaimAfterProviderNotFound(claimedRefund);
+                        continue;
+                    }
+                    providerResult = executeRecoveryStep(
+                            claimedRefund,
+                            RecoveryStage.SUBMISSION,
+                            () -> submitOriginalRefundRequest(config, claimedRefund)
+                    );
                 }
-                RefundFinalizationService.Outcome outcome = applyProviderResult(
-                        claimedRefund, providerResult, config);
+                WechatRefundQueryResult resolvedProviderResult = providerResult;
+                RefundFinalizationService.Outcome outcome = executeRecoveryStep(
+                        claimedRefund,
+                        RecoveryStage.FINALIZATION,
+                        () -> applyProviderResult(claimedRefund, resolvedProviderResult, config)
+                );
                 if (outcome != null && outcome != RefundFinalizationService.Outcome.DUPLICATE) {
                     recoveredCount++;
                 }
             } catch (RuntimeException ex) {
-                recordQueryFailure(claimedRefund, ex);
-                log.warn("One refund could not be reconciled; it will be retried (type={})", safeErrorCode(ex));
+                log.warn("One refund could not be reconciled; it will be retried (type={})",
+                        ProviderFailureCode.safeCode(ex));
             }
         }
         return recoveredCount;
-    }
-
-    /**
-     * A failed HTTP response does not prove that WeChat accepted the original refund request. If
-     * the subsequent query confirms that the merchant refund number does not exist, submitting the
-     * exact same request again is the provider-supported idempotent recovery path.
-     */
-    private WechatRefundQueryResult reconcileWithProvider(
-            ResolvedPaymentConfig config,
-            ClaimedRefund claimedRefund
-    ) {
-        WechatRefundQueryResult queryResult = wechatPayProvider.queryRefund(
-                config, claimedRefund.outRefundNo());
-        if (!"NOT_FOUND".equalsIgnoreCase(queryResult.status())) {
-            return queryResult;
-        }
-
-        // A PROCESSING row represents an indeterminate original request, for which reusing the
-        // same merchant refund number is the idempotent crash-recovery path. FAILED rows selected
-        // by the scheduler are ABNORMAL refunds: they may be queried for a later merchant-side
-        // resolution, but a new provider submission requires an explicit administrator action.
-        if (RefundOrderStatus.FAILED.name().equals(claimedRefund.status())) {
-            return queryResult;
-        }
-
-        return submitOriginalRefundRequest(config, claimedRefund);
     }
 
     private WechatRefundQueryResult submitOriginalRefundRequest(
@@ -620,7 +625,24 @@ public class RefundRecoveryService {
                 claimed, LocalDateTime.now(clock).plus(properties.maxRetryDelay())));
     }
 
-    private void recordQueryFailure(ClaimedRefund claimed, RuntimeException failure) {
+    private <T> T executeRecoveryStep(
+            ClaimedRefund claimed,
+            RecoveryStage stage,
+            Supplier<T> action
+    ) {
+        try {
+            return action.get();
+        } catch (RuntimeException failure) {
+            recordRecoveryFailure(claimed, failure, stage);
+            throw failure;
+        }
+    }
+
+    private void recordRecoveryFailure(
+            ClaimedRefund claimed,
+            RuntimeException failure,
+            RecoveryStage stage
+    ) {
         try {
             requiresNewTransaction.executeWithoutResult(status -> {
                 LocalDateTime now = LocalDateTime.now(clock);
@@ -630,14 +652,15 @@ public class RefundRecoveryService {
                                     recovery_claimed_at = null,
                                     next_recovery_at = :nextRecoveryAt,
                                     last_error_code = :errorCode,
-                                    last_error_message = 'Refund status query failed; retry scheduled',
+                                    last_error_message = :errorMessage,
                                     updated_at = :updatedAt
                                 where id = :refundOrderId
                                   and status = :status
                                   and recovery_claim_token = :claimToken
                                 """)
                         .param("nextRecoveryAt", now.plus(retryDelay(claimed.recoveryAttempts())))
-                        .param("errorCode", safeErrorCode(failure))
+                        .param("errorCode", ProviderFailureCode.safeCode(failure))
+                        .param("errorMessage", stage.errorMessage())
                         .param("updatedAt", now)
                         .param("refundOrderId", claimed.refundOrderId())
                         .param("status", claimed.status())
@@ -645,7 +668,8 @@ public class RefundRecoveryService {
                         .update();
             });
         } catch (RuntimeException persistenceFailure) {
-            log.warn("A refund recovery failure could not be recorded (type={})", safeErrorCode(persistenceFailure));
+            log.warn("A refund recovery failure could not be recorded (type={})",
+                    ProviderFailureCode.safeCode(persistenceFailure));
         }
     }
 
@@ -675,14 +699,6 @@ public class RefundRecoveryService {
         return candidate.compareTo(properties.maxRetryDelay()) > 0
                 ? properties.maxRetryDelay()
                 : candidate;
-    }
-
-    private String safeErrorCode(RuntimeException failure) {
-        String simpleName = failure.getClass().getSimpleName();
-        if (simpleName == null || simpleName.isBlank()) {
-            return "RuntimeException";
-        }
-        return simpleName.length() <= 64 ? simpleName : simpleName.substring(0, 64);
     }
 
     private void requireValidBatchSize(int batchSize) {
@@ -771,6 +787,23 @@ public class RefundRecoveryService {
     }
 
     private record RecoveryClaimState(String status, String claimToken) {
+    }
+
+    private enum RecoveryStage {
+        CONFIGURATION("Refund payment configuration failed; recovery scheduled"),
+        QUERY("Refund provider query failed; recovery scheduled"),
+        SUBMISSION("Refund provider resubmission failed; provider query scheduled"),
+        FINALIZATION("Refund result finalization failed; recovery scheduled");
+
+        private final String errorMessage;
+
+        RecoveryStage(String errorMessage) {
+            this.errorMessage = errorMessage;
+        }
+
+        String errorMessage() {
+            return errorMessage;
+        }
     }
 
     private record ManualClaimRoute(Long afterSaleId, Long orderId, Long paymentOrderId) {

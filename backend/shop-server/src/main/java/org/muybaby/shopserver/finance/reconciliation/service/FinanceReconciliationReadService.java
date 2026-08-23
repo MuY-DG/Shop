@@ -329,6 +329,8 @@ public class FinanceReconciliationReadService {
                 rs.getString("refund_id"),
                 rs.getString("out_refund_no"),
                 rs.getObject("order_id", Long.class),
+                rs.getObject("payment_order_id", Long.class),
+                rs.getObject("refund_order_id", Long.class),
                 rs.getObject("provider_amount_cent", Long.class),
                 rs.getObject("local_amount_cent", Long.class),
                 rs.getString("provider_status"),
@@ -344,7 +346,8 @@ public class FinanceReconciliationReadService {
                 rs.getObject("candidate_size_bytes", Long.class),
                 !rs.getString("candidate_object_key").isBlank()
                         && !rs.getString("candidate_content_sha256").isBlank()
-                        && rs.getObject("candidate_size_bytes") != null
+                        && rs.getObject("candidate_size_bytes") != null,
+                rs.getBoolean("external_refund_applied")
         );
     }
 

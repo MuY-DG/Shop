@@ -204,6 +204,41 @@ class TradeReconciliationMatcherTest {
     }
 
     @Test
+    void channelOnlyRefundKeepsItsProviderIdentityAndLinksTheOriginalPayment() {
+        insertDbConfig(94601L, "mch-external-refund");
+        insertOrder(94611L, "ORDER-EXTERNAL-REFUND");
+        insertPayment(94621L, 94611L, 94601L, "6".repeat(64),
+                "trade-external-refund", "tx-external-refund", "PAID", 1_000L, HISTORICAL_TIME);
+        TradeBillRow externalRefund = refundRow(
+                1,
+                "tx-external-refund",
+                "trade-external-refund",
+                "wx-refund-external",
+                "merchant-platform-refund",
+                520L,
+                "SUCCESS"
+        );
+
+        DifferenceDraft difference = matcher().compare(
+                        "mch-external-refund",
+                        BILL_DATE,
+                        ParsedTradeBill.of(List.of(externalRefund)))
+                .differences()
+                .stream()
+                .filter(value -> value.type() == ReconciliationDifferenceType.CHANNEL_ONLY)
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(difference.orderId()).isEqualTo(94611L);
+        assertThat(difference.paymentOrderId()).isEqualTo(94621L);
+        assertThat(difference.refundOrderId()).isNull();
+        assertThat(difference.refundId()).isEqualTo("wx-refund-external");
+        assertThat(difference.outRefundNo()).isEqualTo("merchant-platform-refund");
+        assertThat(difference.localEvidence())
+                .contains("\"paymentOrderId\":94621", "\"orderId\":94611");
+    }
+
+    @Test
     void largeDuplicateGroupUsesBoundedDigestSampleAndWholeGroupHash() throws Exception {
         List<TradeBillRow> duplicates = java.util.stream.LongStream.rangeClosed(1L, 1_200L)
                 .mapToObj(rowNo -> paymentRow(

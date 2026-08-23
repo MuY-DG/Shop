@@ -16,6 +16,8 @@ public record AdminReconciliationDifferenceResponse(
         String refundId,
         String outRefundNo,
         @JsonStringId Long orderId,
+        @JsonStringId Long paymentOrderId,
+        @JsonStringId Long refundOrderId,
         Long providerAmountCent,
         Long localAmountCent,
         String providerStatus,
@@ -29,6 +31,7 @@ public record AdminReconciliationDifferenceResponse(
         LocalDateTime updatedAt,
         String candidateContentSha256,
         Long candidateSizeBytes,
-        boolean candidateSourceAvailable
+        boolean candidateSourceAvailable,
+        boolean externalRefundApplied
 ) {
 }

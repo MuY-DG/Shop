@@ -315,9 +315,13 @@ public class AfterSaleV2WorkflowService {
             if (approved == 0) {
                 continue;
             }
-            long approvedAmount = AfterSaleAmountAllocator.tranche(
+            long allocatedAmount = AfterSaleAmountAllocator.tranche(
                     item.paidAmountBasisCent(), item.orderQuantitySnapshot(),
                     item.refundedQuantityBefore(), approved);
+            if (item.requestedAmountCent() <= 0) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            long approvedAmount = Math.min(allocatedAmount, item.requestedAmountCent());
             amount = Math.addExact(amount, approvedAmount);
             result.add(new PlannedItem(item.id(), item.orderItemId(), approved, approvedAmount));
         }
@@ -339,7 +343,8 @@ public class AfterSaleV2WorkflowService {
         return jdbcClient.sql("""
                         select asi.id, asi.order_item_id, asi.order_quantity_snapshot,
                                asi.paid_amount_basis_cent, asi.refunded_quantity_before,
-                               asi.requested_quantity, asi.approved_quantity,
+                               asi.requested_quantity, asi.requested_amount_cent,
+                               asi.approved_quantity,
                                asi.approved_amount_cent, oi.refunded_quantity
                         from after_sale_item asi
                         join order_item oi on oi.id = asi.order_item_id
@@ -353,6 +358,7 @@ public class AfterSaleV2WorkflowService {
                         rs.getLong("paid_amount_basis_cent"),
                         rs.getInt("refunded_quantity_before"),
                         rs.getInt("requested_quantity"),
+                        rs.getLong("requested_amount_cent"),
                         rs.getObject("approved_quantity", Integer.class),
                         rs.getObject("approved_amount_cent", Long.class),
                         rs.getInt("refunded_quantity")))
@@ -470,6 +476,7 @@ public class AfterSaleV2WorkflowService {
             long paidAmountBasisCent,
             int refundedQuantityBefore,
             int requestedQuantity,
+            long requestedAmountCent,
             Integer approvedQuantity,
             Long approvedAmountCent,
             int currentRefundedQuantity

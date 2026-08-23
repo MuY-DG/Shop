@@ -7,6 +7,7 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminFinanceReconciliationRuntimeResponse;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminFinanceReconciliationRuntimeUpdateRequest;
+import org.muybaby.shopserver.finance.reconciliation.dto.AdminExternalRefundApplyRequest;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminReconciliationBatchDetailResponse;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminReconciliationBatchQuery;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminReconciliationBatchResponse;
@@ -24,6 +25,7 @@ import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliati
 import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliationCommandService;
 import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliationExportService;
 import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliationReadService;
+import org.muybaby.shopserver.finance.reconciliation.service.ExternalRefundRegistrationService;
 import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliationReadService.StoredBatchSource;
 import org.muybaby.shopserver.finance.reconciliation.service.FinanceReconciliationReadService.StoredCandidateSource;
 import org.muybaby.shopserver.finance.reconciliation.storage.FinanceTradeBillStorage;
@@ -63,6 +65,7 @@ public class AdminFinanceReconciliationController {
     private final FinanceTradeBillStorage storage;
     private final FinanceReconciliationProperties properties;
     private final FinanceReconciliationAdminRuntimeService runtimeService;
+    private final ExternalRefundRegistrationService externalRefundRegistrationService;
 
     public AdminFinanceReconciliationController(
             FinanceReconciliationReadService readService,
@@ -70,7 +73,8 @@ public class AdminFinanceReconciliationController {
             FinanceReconciliationExportService exportService,
             FinanceTradeBillStorage storage,
             FinanceReconciliationProperties properties,
-            FinanceReconciliationAdminRuntimeService runtimeService
+            FinanceReconciliationAdminRuntimeService runtimeService,
+            ExternalRefundRegistrationService externalRefundRegistrationService
     ) {
         this.readService = readService;
         this.commandService = commandService;
@@ -78,6 +82,7 @@ public class AdminFinanceReconciliationController {
         this.storage = storage;
         this.properties = properties;
         this.runtimeService = runtimeService;
+        this.externalRefundRegistrationService = externalRefundRegistrationService;
     }
 
     @GetMapping("/runtime")
@@ -175,6 +180,17 @@ public class AdminFinanceReconciliationController {
             @Valid @RequestBody AdminReconciliationResolveRequest request
     ) {
         return ApiResponse.success(commandService.resolve(
+                differenceId, request, principal.subjectId()));
+    }
+
+    @PostMapping("/differences/{differenceId}/external-refund")
+    @PreAuthorize("hasAuthority('finance:reconciliation:resolve')")
+    public ApiResponse<AdminReconciliationDifferenceResponse> applyExternalRefund(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long differenceId,
+            @Valid @RequestBody AdminExternalRefundApplyRequest request
+    ) {
+        return ApiResponse.success(externalRefundRegistrationService.apply(
                 differenceId, request, principal.subjectId()));
     }
 

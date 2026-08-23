@@ -2001,6 +2001,8 @@ declare namespace Api {
       refundId?: string | null
       outRefundNo?: string | null
       orderId?: Identifier | null
+      paymentOrderId?: Identifier | null
+      refundOrderId?: Identifier | null
       providerAmountCent?: number | null
       localAmountCent?: number | null
       providerStatus?: string | null
@@ -2015,6 +2017,7 @@ declare namespace Api {
       candidateContentSha256: string
       candidateSizeBytes: number | null
       candidateSourceAvailable: boolean
+      externalRefundApplied: boolean
     }
 
     interface ResolutionAudit {
@@ -2067,5 +2070,6 @@ declare namespace Api {
     interface ResolveForm extends InvestigateForm {
       resolutionCode: string
     }
+    type ExternalRefundApplyForm = InvestigateForm
   }
 }

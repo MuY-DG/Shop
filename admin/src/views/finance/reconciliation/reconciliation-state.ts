@@ -85,6 +85,14 @@ export const canInvestigateDifference = (status: Api.FinanceReconciliation.Diffe
 export const canResolveDifference = (status: Api.FinanceReconciliation.DifferenceStatus) =>
   status === 'OPEN' || status === 'INVESTIGATING'
 
+export const canApplyExternalRefund = (row: Api.FinanceReconciliation.Difference) =>
+  row.type === 'CHANNEL_ONLY' &&
+  row.providerStatus === 'SUCCESS' &&
+  (row.providerAmountCent ?? 0) > 0 &&
+  Boolean(row.refundId || row.outRefundNo) &&
+  row.status !== 'AUTO_CLEARED' &&
+  !row.externalRefundApplied
+
 export const canRetryBatch = (status: Api.FinanceReconciliation.BatchStatus) =>
   status !== 'PENDING' && status !== 'RUNNING'
 

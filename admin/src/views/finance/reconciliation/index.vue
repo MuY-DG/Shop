@@ -2,7 +2,7 @@
   <div class="finance-reconciliation-page art-full-height">
     <ElAlert
       title="这里核对微信支付交易账单与本地支付、退款记录，不代表银行账户到账已核对。"
-      description="差异只记录证据和人工处理结论，不会直接篡改订单、支付或退款状态。"
+      description="普通“记录解决”只写审计结论；仅“登记商户平台退款”会基于已验真的微信账单更新订单退款累计，不会伪造本地微信退款单或自动退库存。"
       type="warning"
       :closable="false"
       show-icon
@@ -426,9 +426,12 @@
                   <ElTag :type="differenceStatusTone(row.status)">
                     {{ differenceStatusLabel(row.status) }}
                   </ElTag>
+                  <ElTag v-if="row.externalRefundApplied" type="success" effect="plain">
+                    已登记外部退款
+                  </ElTag>
                 </template>
               </ElTableColumn>
-              <ElTableColumn label="操作" min-width="210" fixed="right">
+              <ElTableColumn label="操作" min-width="310" fixed="right">
                 <template #default="{ row }">
                   <ElButton link type="primary" @click="showAudits(row)">轨迹</ElButton>
                   <ElButton
@@ -457,6 +460,15 @@
                     @click="openDifferenceAction(row, 'resolve')"
                   >
                     记录解决
+                  </ElButton>
+                  <ElButton
+                    v-if="canApplyExternalRefund(row)"
+                    v-auth="'finance:reconciliation:resolve'"
+                    link
+                    type="danger"
+                    @click="openDifferenceAction(row, 'external-refund')"
+                  >
+                    登记商户平台退款
                   </ElButton>
                 </template>
               </ElTableColumn>
@@ -507,6 +519,20 @@
     </ElDialog>
 
     <ElDialog v-model="actionVisible" :title="actionTitle" width="560px" destroy-on-close>
+      <ElAlert
+        v-if="differenceAction === 'external-refund'"
+        title="这会把微信账单中的成功退款登记到订单退款累计；不会把失败的本地退款单伪造成成功，也不会自动修改售后结果或库存。"
+        type="error"
+        :closable="false"
+        show-icon
+      />
+      <ElAlert
+        v-else-if="differenceAction === 'resolve'"
+        title="这里只记录差异处理结论，不会同步订单、支付或退款业务状态。"
+        type="info"
+        :closable="false"
+        show-icon
+      />
       <ElForm label-position="top">
         <ElFormItem v-if="differenceAction === 'resolve'" label="解决代码" required>
           <ElInput
@@ -525,10 +551,21 @@
             placeholder="记录实际核验依据；不要填写虚假模板说明"
           />
         </ElFormItem>
+        <ElFormItem
+          v-if="differenceAction === 'external-refund'"
+          label="输入“登记外部退款”确认"
+          required
+        >
+          <ElInput v-model="differenceActionForm.confirmPhrase" autocomplete="off" />
+        </ElFormItem>
       </ElForm>
       <template #footer>
         <ElButton @click="actionVisible = false">取消</ElButton>
-        <ElButton type="primary" :loading="submitting" @click="submitDifferenceAction">
+        <ElButton
+          :type="differenceAction === 'external-refund' ? 'danger' : 'primary'"
+          :loading="submitting"
+          @click="submitDifferenceAction"
+        >
           确认
         </ElButton>
       </template>
@@ -620,6 +657,7 @@
     fetchReconciliationEntries,
     fetchReconciliationRuntime,
     investigateReconciliationDifference,
+    applyExternalRefundDifference,
     resolveReconciliationDifference,
     retryReconciliationBatch,
     runReconciliation,
@@ -633,6 +671,7 @@
     batchStatusOptions,
     batchStatusTone,
     canInvestigateDifference,
+    canApplyExternalRefund,
     canRetryBatch,
     canResolveDifference,
     differenceSeverityTone,
@@ -658,7 +697,7 @@
 
   defineOptions({ name: 'FinanceReconciliation' })
 
-  type DifferenceAction = 'investigate' | 'resolve'
+  type DifferenceAction = 'investigate' | 'resolve' | 'external-refund'
   const { hasAuth } = useAuth()
   const formatBusinessDate = (value: Date) =>
     new Intl.DateTimeFormat('en-CA', {
@@ -713,13 +752,15 @@
   const actionVisible = ref(false)
   const differenceAction = ref<DifferenceAction>('investigate')
   const activeDifference = ref<Api.FinanceReconciliation.Difference | null>(null)
-  const differenceActionForm = reactive({ reason: '', resolutionCode: '' })
+  const differenceActionForm = reactive({ reason: '', resolutionCode: '', confirmPhrase: '' })
   const auditsVisible = ref(false)
   const audits = ref<Api.FinanceReconciliation.ResolutionAudit[]>([])
 
-  const actionTitle = computed(() =>
-    differenceAction.value === 'resolve' ? '记录差异解决结论' : '开始调查差异'
-  )
+  const actionTitle = computed(() => {
+    if (differenceAction.value === 'resolve') return '记录差异解决结论'
+    if (differenceAction.value === 'external-refund') return '登记微信商户平台退款'
+    return '开始调查差异'
+  })
   const canWriteRuntime = computed(() => hasAuth('finance:reconciliation:runtime:write'))
   const runtimeDirty = computed(() =>
     Boolean(runtimeStatus.value && financeRuntimeChanged(runtimeStatus.value, runtimeDraft))
@@ -979,6 +1020,7 @@
     differenceAction.value = action
     differenceActionForm.reason = ''
     differenceActionForm.resolutionCode = ''
+    differenceActionForm.confirmPhrase = ''
     actionVisible.value = true
   }
 
@@ -992,12 +1034,24 @@
       ElMessage.error(error)
       return
     }
+    if (
+      differenceAction.value === 'external-refund' &&
+      differenceActionForm.confirmPhrase.trim() !== '登记外部退款'
+    ) {
+      ElMessage.error('请输入“登记外部退款”确认')
+      return
+    }
     submitting.value = true
     try {
       if (differenceAction.value === 'resolve') {
         await resolveReconciliationDifference(activeDifference.value.id, {
           version: activeDifference.value.version,
           resolutionCode: differenceActionForm.resolutionCode.trim(),
+          reason: differenceActionForm.reason.trim()
+        })
+      } else if (differenceAction.value === 'external-refund') {
+        await applyExternalRefundDifference(activeDifference.value.id, {
+          version: activeDifference.value.version,
           reason: differenceActionForm.reason.trim()
         })
       } else {

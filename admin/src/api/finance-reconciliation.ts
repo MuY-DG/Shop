@@ -98,6 +98,17 @@ export function resolveReconciliationDifference(
   })
 }
 
+export function applyExternalRefundDifference(
+  differenceId: Api.FinanceReconciliation.Identifier,
+  data: Api.FinanceReconciliation.ExternalRefundApplyForm
+) {
+  return request.post<Api.FinanceReconciliation.Difference>({
+    url: `${baseUrl}/differences/${differenceId}/external-refund`,
+    data,
+    showSuccessMessage: true
+  })
+}
+
 export function downloadReconciliationSource(batchId: Api.FinanceReconciliation.Identifier) {
   return request.get<Blob>({
     url: `${baseUrl}/batches/${batchId}/source`,

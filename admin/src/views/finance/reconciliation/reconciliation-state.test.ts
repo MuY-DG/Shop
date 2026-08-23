@@ -5,6 +5,7 @@ import {
   batchStatusLabel,
   batchStatusTone,
   canInvestigateDifference,
+  canApplyExternalRefund,
   canRetryBatch,
   canResolveDifference,
   differenceStatusLabel,
@@ -61,6 +62,28 @@ test('only unresolved differences expose investigation and resolution actions', 
   assert.equal(canResolveDifference('OPEN'), true)
   assert.equal(canResolveDifference('INVESTIGATING'), true)
   assert.equal(canResolveDifference('AUTO_CLEARED'), false)
+  assert.equal(
+    canApplyExternalRefund({
+      type: 'CHANNEL_ONLY',
+      providerStatus: 'SUCCESS',
+      providerAmountCent: 52,
+      refundId: 'wx-refund',
+      status: 'RESOLVED',
+      externalRefundApplied: false
+    } as Api.FinanceReconciliation.Difference),
+    true
+  )
+  assert.equal(
+    canApplyExternalRefund({
+      type: 'CHANNEL_ONLY',
+      providerStatus: 'SUCCESS',
+      providerAmountCent: 52,
+      refundId: 'wx-refund',
+      status: 'RESOLVED',
+      externalRefundApplied: true
+    } as Api.FinanceReconciliation.Difference),
+    false
+  )
   assert.equal(canRetryBatch('PENDING'), false)
   assert.equal(canRetryBatch('RUNNING'), false)
   assert.equal(canRetryBatch('FAILED'), true)

@@ -85,6 +85,47 @@ class TradeReconciliationProcessorDifferenceTest {
     }
 
     @Test
+    void rerunKeepsAnAppliedExternalRefundResolved() {
+        long batchId = insertBatch();
+        String key = "5".repeat(64);
+        processor.applyDifferences(batchId, List.of(draft(
+                key, ReconciliationDifferenceType.CHANNEL_ONLY, null, "provider-v1")));
+        jdbcClient.sql("""
+                        update finance_reconciliation_difference
+                        set status = 'RESOLVED', external_refund_applied = true,
+                            local_amount_cent = 100,
+                            local_status = 'EXTERNAL_REFUND_RECORDED',
+                            resolution_code = 'EXTERNAL_REFUND_RECORDED',
+                            resolution_reason = 'verified', resolved_at = current_timestamp
+                        where batch_id = :batchId and diff_key = :diffKey
+                        """)
+                .param("batchId", batchId)
+                .param("diffKey", key)
+                .update();
+
+        processor.applyDifferences(batchId, List.of(draft(
+                key, ReconciliationDifferenceType.CHANNEL_ONLY, null, "provider-v2")));
+
+        assertThat(jdbcClient.sql("""
+                        select concat(status, '|', local_status, '|', resolution_code)
+                        from finance_reconciliation_difference
+                        where batch_id = :batchId and diff_key = :diffKey
+                        """)
+                .param("batchId", batchId)
+                .param("diffKey", key)
+                .query(String.class)
+                .single()).isEqualTo(
+                        "RESOLVED|EXTERNAL_REFUND_RECORDED|EXTERNAL_REFUND_RECORDED");
+        assertThat(jdbcClient.sql("""
+                        select count(*) from finance_reconciliation_resolution_audit
+                        where batch_id = :batchId and action = 'REOPEN'
+                        """)
+                .param("batchId", batchId)
+                .query(Integer.class)
+                .single()).isZero();
+    }
+
+    @Test
     void newDifferencesArePublishedInBoundedSqlBatches() {
         long batchId = insertBatch();
         List<DifferenceDraft> drafts = LongStream.range(1L, 1_206L)

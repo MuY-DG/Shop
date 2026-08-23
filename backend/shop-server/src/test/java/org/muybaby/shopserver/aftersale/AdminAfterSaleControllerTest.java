@@ -1186,6 +1186,74 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .single()).isEqualTo("REFUNDING");
     }
 
+    @Test
+    void v2ApprovalCapsAllocatedItemAmountAtTheCustomerRequestedAmount() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession appUser = appLogin("after-sale-admin-self-reported-amount-app");
+        SeedPaidOrder order = seedPaidOrder(
+                appUser, 200L, "COMPLETED", "wx-refund-admin-self-reported-amount");
+        long orderItemId = jdbcClient.sql("select id from order_item where order_id = :orderId")
+                .param("orderId", order.orderId())
+                .query(Long.class)
+                .single();
+        String applyResponse = mockMvc.perform(post(
+                        "/app/orders/{orderId}/after-sales", order.orderId())
+                        .header("Authorization", "Bearer " + appUser.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "requestKey":"self-reported-amount-52",
+                                  "afterSaleType":"REFUND_ONLY",
+                                  "reason":"用户按实际损失申请部分金额",
+                                  "requestedAmountCent":52,
+                                  "items":[{
+                                    "orderItemId":%d,
+                                    "quantity":1,
+                                    "requestedAmountCent":52
+                                  }]
+                                }
+                                """.formatted(orderItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.requestedAmountCent").value(52))
+                .andExpect(jsonPath("$.data.items[0].requestedAmountCent").value(52))
+                .andReturn().getResponse().getContentAsString();
+        long afterSaleId = objectMapper.readTree(applyResponse).path("data").path("id").asLong();
+        clearInvocations(refundProvider);
+
+        mockMvc.perform(post("/admin/after-sales/{afterSaleId}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + adminLogin())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "auditNote":"同意按申请金额退款",
+                                  "items":[{"orderItemId":%d,"approvedQuantity":1}]
+                                }
+                                """.formatted(orderItemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("REFUNDING"))
+                .andExpect(jsonPath("$.data.approvedAmountCent").value(52))
+                .andExpect(jsonPath("$.data.items[0].approvedAmountCent").value(52));
+
+        assertThat(jdbcClient.sql("""
+                        select concat(asr.approved_amount_cent, '|', asi.approved_amount_cent, '|',
+                                      refund.refund_amount_cent, '|', orders.refund_status)
+                        from after_sale_request asr
+                        join after_sale_item asi on asi.after_sale_id = asr.id
+                        join refund_order refund on refund.after_sale_id = asr.id
+                        join shop_order orders on orders.id = asr.order_id
+                        where asr.id = :afterSaleId
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .query(String.class)
+                .single()).isEqualTo("52|52|52|PARTIAL_REFUNDING");
+
+        ArgumentCaptor<WechatRefundRequest> requestCaptor =
+                ArgumentCaptor.forClass(WechatRefundRequest.class);
+        verify(refundProvider, times(1)).requestRefund(any(), requestCaptor.capture());
+        assertThat(requestCaptor.getValue().refundAmountCent()).isEqualTo(52L);
+        assertThat(requestCaptor.getValue().totalAmountCent()).isEqualTo(200L);
+    }
+
     private long applyAfterSale(AppLoginSession appUser, SeedPaidOrder order, long requestedAmountCent) throws Exception {
         long evidenceFileId = insertAppEvidenceFile(appUser.userId(), order.orderId());
         String response = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())

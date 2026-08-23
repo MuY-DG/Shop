@@ -114,6 +114,39 @@ class FinanceReconciliationSchemaTest {
     }
 
     @Test
+    void externalRefundMigrationCreatesAppendOnlyLedgerAndSafetyConstraints() {
+        assertThat(jdbcClient.sql("""
+                        select count(*) from information_schema.tables
+                        where lower(table_name) = 'finance_external_refund'
+                        """)
+                .query(Integer.class)
+                .single()).isOne();
+
+        assertThat(jdbcClient.sql("""
+                        select count(*) from information_schema.columns
+                        where lower(table_name) = 'finance_reconciliation_difference'
+                          and lower(column_name) = 'external_refund_applied'
+                          and is_nullable = 'NO'
+                        """)
+                .query(Integer.class)
+                .single()).isOne();
+
+        assertThat(jdbcClient.sql("""
+                        select count(*) from information_schema.table_constraints
+                        where lower(constraint_name) in (
+                            'uk_finance_external_refund_difference',
+                            'uk_finance_external_refund_identity',
+                            'chk_finance_external_refund_amount',
+                            'chk_finance_external_refund_currency',
+                            'chk_finance_external_refund_status',
+                            'chk_finance_external_refund_identity_present'
+                        )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(6);
+    }
+
+    @Test
     void migrationSeedsFinanceMenuAndSixPermissionsOnlyForSuper() {
         assertThat(jdbcClient.sql("""
                         select count(*) from admin_menu

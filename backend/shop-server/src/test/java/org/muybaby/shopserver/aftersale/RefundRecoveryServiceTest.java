@@ -344,7 +344,7 @@ class RefundRecoveryServiceTest extends PaymentTestSupport {
                           and recovery_attempts = 1
                           and next_recovery_at > current_timestamp
                           and last_error_code = 'IllegalStateException'
-                          and last_error_message = 'Refund status query failed; retry scheduled'
+                          and last_error_message = 'Refund provider query failed; recovery scheduled'
                         """)
                 .param("outRefundNo", approved.outRefundNo())
                 .query(Integer.class)
@@ -371,6 +371,33 @@ class RefundRecoveryServiceTest extends PaymentTestSupport {
         assertThat(mockWechatPayProvider.queriedOutRefundNos()).containsExactly(approved.outRefundNo());
         assertThat(jdbcClient.sql("select recovery_attempts from refund_order where out_refund_no = :outRefundNo")
                 .param("outRefundNo", approved.outRefundNo())
+                .query(Integer.class)
+                .single()).isEqualTo(1);
+    }
+
+    @Test
+    void manualResubmitRecordsSubmissionFailureSeparatelyFromQueryFailure() throws Exception {
+        ApprovedRefund approved = approveRefund("refund-recovery-resubmit-failure-stage");
+        mockWechatPayProvider.forgetRefund(approved.outRefundNo());
+        doAnswer(invocation -> {
+            throw new IllegalStateException("sensitive-resubmission-detail");
+        }).when(refundProvider).requestRefund(any(), any());
+
+        assertThatThrownBy(() -> refundRecoveryService.resubmitRefundNow(approved.refundOrderId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("sensitive-resubmission-detail");
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from refund_order
+                        where id = :refundOrderId
+                          and recovery_claim_token is null
+                          and recovery_claimed_at is null
+                          and last_error_code = 'IllegalStateException'
+                          and last_error_message = 'Refund provider resubmission failed; provider query scheduled'
+                          and next_recovery_at > current_timestamp
+                        """)
+                .param("refundOrderId", approved.refundOrderId())
                 .query(Integer.class)
                 .single()).isEqualTo(1);
     }
