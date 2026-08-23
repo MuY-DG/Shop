@@ -1,5 +1,5 @@
 <template>
-  <div class="merchant-compliance-page art-full-height">
+  <div class="merchant-compliance-page">
     <ElAlert
       title="各项资质字段均可留空保存并发布；已填写的字段仅做基础格式校验。留空的字段不会在小程序公示页展示，请尽量填写真实证照信息。"
       type="warning"
@@ -340,16 +340,30 @@
 
 <style scoped lang="scss">
   .merchant-compliance-page {
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 16px;
+    // 不再锁定为一屏固定高度：内容超出时页面随内容增长，由外层主区域滚动，
+    // 避免 flex 子项（el-card 自带 overflow:hidden）被压缩裁切、内容看不全。
+    min-height: var(--art-full-height, calc(100vh - 120px));
+
+    @media (width <= 640px) {
+      min-height: auto;
+    }
+
+    // 草稿表单较长时在抽屉体内滚动，保证全部字段与底部按钮可见可达。
+    :deep(.el-drawer__body) {
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
   }
 
   .card-header {
     display: flex;
+    gap: 16px;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
   }
 
   .header-actions {
@@ -375,14 +389,14 @@
   }
 
   .draft-form {
-    margin-top: 20px;
     padding-right: 12px;
+    margin-top: 20px;
   }
 
   @media (width <= 768px) {
     .card-header {
-      align-items: flex-start;
       flex-direction: column;
+      align-items: flex-start;
     }
   }
 </style>

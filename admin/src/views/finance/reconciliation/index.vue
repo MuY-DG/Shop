@@ -1,5 +1,5 @@
 <template>
-  <div class="finance-reconciliation-page art-full-height">
+  <div class="finance-reconciliation-page">
     <ElAlert
       title="这里核对微信支付交易账单与本地支付、退款记录，不代表银行账户到账已核对。"
       description="普通“记录解决”只写审计结论；仅“登记商户平台退款”会基于已验真的微信账单更新订单退款累计，不会伪造本地微信退款单或自动退库存。"
@@ -1125,8 +1125,23 @@
 
 <style scoped lang="scss">
   .finance-reconciliation-page {
+    box-sizing: border-box;
     display: grid;
     gap: 16px;
+    align-content: start;
+    // 不再锁定为一屏固定高度：运行控制卡片、筛选区和表格超出视口时页面随内容增长，
+    // 由外层主区域滚动，避免卡片被压缩裁切、内容看不全。
+    min-height: var(--art-full-height, calc(100vh - 120px));
+
+    @media (width <= 640px) {
+      min-height: auto;
+    }
+
+    // 对账详情抽屉内容较长时在抽屉体内滚动，保证描述区与明细标签页完整可见。
+    :deep(.el-drawer__body) {
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
   }
 
   .runtime-card h1,
