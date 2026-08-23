@@ -205,13 +205,25 @@ class ComplianceControllerTest {
     }
 
     @Test
-    void merchantPublicationRejectsIncompleteFactsAndPublishesManagedAssets() throws Exception {
+    void merchantPublicationAllowsIncompleteFactsAndPublishesManagedAssets() throws Exception {
         MerchantPublicationResponse incomplete = merchantComplianceService.createDraft(
                 new MerchantPublicationDraftRequest(
                         "", "", "", "", "", "", null,
                         "", "", null, null, null),
                 1L);
-        assertThatThrownBy(() -> merchantComplianceService.publish(incomplete.id(), 1L))
+        MerchantPublicationResponse publishedIncomplete =
+                merchantComplianceService.publish(incomplete.id(), 1L);
+        assertThat(publishedIncomplete.status()).isEqualTo("PUBLISHED");
+
+        MerchantPublicationResponse malformed = merchantComplianceService.createDraft(
+                new MerchantPublicationDraftRequest(
+                        "真实主体名称", "LIMITED_COMPANY", "BAD-CODE",
+                        "真实经营地址", "020-12345678", "020-87654321",
+                        null, "食品经营许可证", "JY14401010000001",
+                        null, LocalDate.now().minusYears(1),
+                        LocalDate.now().minusYears(2)),
+                1L);
+        assertThatThrownBy(() -> merchantComplianceService.publish(malformed.id(), 1L))
                 .isInstanceOfSatisfying(BusinessException.class, exception ->
                         assertThat(exception.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
 

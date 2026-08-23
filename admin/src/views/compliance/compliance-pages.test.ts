@@ -27,11 +27,11 @@ test('account cancellation records are read-only and expose processing facts', (
   assert.doesNotMatch(cancellationSource, /request\.(post|put|patch|delete)/)
 })
 
-test('merchant publication requires an explicit confirmation and real managed assets', () => {
-  assert.match(merchantSource, /系统不会自动生成示例证照/)
+test('merchant publication allows empty fields, confirms before publishing real assets', () => {
+  assert.match(merchantSource, /各项资质字段均可留空保存并发布/)
   assert.match(merchantSource, /AssetPicker[\s\S]*?businessLicenseAsset/)
   assert.match(merchantSource, /AssetPicker[\s\S]*?foodQualificationAsset/)
-  assert.match(merchantSource, /发布真实资质/)
+  assert.match(merchantSource, /发布商家资质/)
   assert.match(merchantSource, /compliance:merchant:write/)
 })
 

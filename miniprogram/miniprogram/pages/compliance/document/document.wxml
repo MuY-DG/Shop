@@ -36,9 +36,6 @@
           decode="{{true}}"
         >{{document.content}}</text>
       </view>
-      <view wx:if="{{document.publishedAtText}}" class="legal-document-note">
-        当前版本发布于 {{document.publishedAtText}}
-      </view>
     </view>
   </scroll-view>
 </view>

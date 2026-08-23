@@ -24,29 +24,34 @@
     show-scrollbar="{{false}}"
   >
     <view class="merchant-content">
-      <view class="merchant-card merchant-card--identity">
-        <view class="merchant-card__title">经营主体</view>
-        <view class="merchant-field">
+      <view
+        wx:if="{{publication.legalName || publication.entityType || publication.unifiedSocialCreditCode || publication.businessAddress}}"
+        class="merchant-card"
+      >
+        <view wx:if="{{publication.legalName}}" class="merchant-field">
           <text class="merchant-field__label">主体名称</text>
           <text class="merchant-field__value" user-select="{{true}}">{{publication.legalName}}</text>
         </view>
-        <view class="merchant-field">
+        <view wx:if="{{publication.entityType}}" class="merchant-field">
           <text class="merchant-field__label">主体类型</text>
           <text class="merchant-field__value">{{publication.entityType}}</text>
         </view>
-        <view class="merchant-field">
+        <view wx:if="{{publication.unifiedSocialCreditCode}}" class="merchant-field">
           <text class="merchant-field__label">统一社会信用代码</text>
           <text class="merchant-field__value merchant-field__value--code" user-select="{{true}}">{{publication.unifiedSocialCreditCode}}</text>
         </view>
-        <view class="merchant-field">
+        <view wx:if="{{publication.businessAddress}}" class="merchant-field">
           <text class="merchant-field__label">经营地址</text>
           <text class="merchant-field__value" user-select="{{true}}">{{publication.businessAddress}}</text>
         </view>
       </view>
 
-      <view class="merchant-card">
-        <view class="merchant-card__title">联系与投诉</view>
+      <view
+        wx:if="{{publication.customerServicePhone || publication.complaintPhone}}"
+        class="merchant-card"
+      >
         <view
+          wx:if="{{publication.customerServicePhone}}"
           class="merchant-field merchant-field--action"
           data-phone="{{publication.customerServicePhone}}"
           bindtap="onPhoneTap"
@@ -57,6 +62,7 @@
           <text class="merchant-field__value merchant-field__value--link">{{publication.customerServicePhone}}</text>
         </view>
         <view
+          wx:if="{{publication.complaintPhone}}"
           class="merchant-field merchant-field--action"
           data-phone="{{publication.complaintPhone}}"
           bindtap="onPhoneTap"
@@ -68,8 +74,7 @@
         </view>
       </view>
 
-      <view class="merchant-card">
-        <view class="merchant-card__title">营业执照</view>
+      <view wx:if="{{publication.businessLicenseUrl}}" class="merchant-card">
         <image
           class="license-image"
           src="{{publication.businessLicenseUrl}}"
@@ -78,24 +83,26 @@
           bindtap="onLicenseTap"
           aria-label="查看营业执照大图"
         />
-        <view class="license-tip">点击图片可查看原图</view>
       </view>
 
-      <view class="merchant-card">
-        <view class="merchant-card__title">食品经营资质</view>
-        <view class="merchant-field">
+      <view
+        wx:if="{{publication.foodQualificationType || publication.foodQualificationNumber || publication.foodQualificationValidity || publication.foodQualificationUrl}}"
+        class="merchant-card"
+      >
+        <view wx:if="{{publication.foodQualificationType}}" class="merchant-field">
           <text class="merchant-field__label">资质类型</text>
           <text class="merchant-field__value">{{publication.foodQualificationType}}</text>
         </view>
-        <view class="merchant-field">
+        <view wx:if="{{publication.foodQualificationNumber}}" class="merchant-field">
           <text class="merchant-field__label">证照编号</text>
           <text class="merchant-field__value merchant-field__value--code" user-select="{{true}}">{{publication.foodQualificationNumber}}</text>
         </view>
-        <view class="merchant-field">
+        <view wx:if="{{publication.foodQualificationValidity}}" class="merchant-field">
           <text class="merchant-field__label">有效期</text>
           <text class="merchant-field__value">{{publication.foodQualificationValidity}}</text>
         </view>
         <image
+          wx:if="{{publication.foodQualificationUrl}}"
           class="license-image"
           src="{{publication.foodQualificationUrl}}"
           mode="widthFix"
@@ -103,11 +110,6 @@
           bindtap="onLicenseTap"
           aria-label="查看食品经营资质大图"
         />
-        <view class="license-tip">点击图片可查看原图</view>
-      </view>
-
-      <view wx:if="{{publication.publishedAtText}}" class="publication-note">
-        当前公开修订 {{publication.revisionNo}}，发布于 {{publication.publishedAtText}}
       </view>
     </view>
   </scroll-view>

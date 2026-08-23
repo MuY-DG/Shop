@@ -1,6 +1,6 @@
 <view class="settings-page">
   <navigation-bar
-    title="关于与协议"
+    title="关于我们"
     back="{{true}}"
     round-back="{{true}}"
     show-divider="{{false}}"

@@ -129,7 +129,7 @@ function serviceItems(display: ProfileOverviewDisplay) {
       kind: "phone"
     },
     {
-      label: "关于与协议",
+      label: "关于我们",
       iconPath: "/assets/icons/verified-user-outline-rounded.svg",
       path: COMPLIANCE_ROUTES.settings,
       kind: "public-route"

@@ -1,7 +1,6 @@
 import type {
   LegalDocumentResponse,
-  LegalDocumentType,
-  MerchantPublicationResponse
+  LegalDocumentType
 } from "../types/compliance";
 
 const LEGAL_DOCUMENT_TYPES = Object.freeze([
@@ -20,7 +19,24 @@ export interface LegalDocumentView extends LegalDocumentResponse {
   effectiveAtText: string;
   publishedAtText: string;
 }
-export interface MerchantPublicationView extends MerchantPublicationResponse {
+export interface MerchantPublicationView {
+  id: string;
+  revisionNo: number;
+  status: "PUBLISHED";
+  legalName: string;
+  entityType: string;
+  unifiedSocialCreditCode: string;
+  businessAddress: string;
+  customerServicePhone: string;
+  complaintPhone: string;
+  businessLicenseUrl: string;
+  foodQualificationType: string;
+  foodQualificationNumber: string;
+  foodQualificationUrl: string;
+  foodQualificationValidFrom?: string;
+  foodQualificationValidUntil?: string;
+  publishedAt?: string;
+  updatedAt?: string;
   foodQualificationValidity: string;
   publishedAtText: string;
 }
@@ -131,62 +147,40 @@ export function buildLegalDocumentView(
 export function buildMerchantPublicationView(
   value: unknown
 ): MerchantPublicationView | undefined {
+  // 后台允许字段留空：这里只要求是已发布修订，
+  // 保存了什么就展示什么，空字段由页面自行隐藏。
   if (!isRecord(value) || value.status !== "PUBLISHED") {
     return undefined;
   }
   const id = positiveId(value.id);
   const revisionNo = positiveRevision(value.revisionNo);
-  const legalName = cleanText(value.legalName);
-  const entityType = cleanText(value.entityType);
-  const unifiedSocialCreditCode = cleanText(value.unifiedSocialCreditCode);
-  const businessAddress = cleanText(value.businessAddress);
-  const customerServicePhone = cleanText(value.customerServicePhone);
-  const complaintPhone = cleanText(value.complaintPhone);
-  const businessLicenseUrl = cleanText(value.businessLicenseUrl);
-  const foodQualificationType = cleanText(value.foodQualificationType);
-  const foodQualificationNumber = cleanText(value.foodQualificationNumber);
-  const foodQualificationUrl = cleanText(value.foodQualificationUrl);
-  const foodQualificationValidFrom = cleanText(value.foodQualificationValidFrom);
-  const foodQualificationValidUntil = cleanText(value.foodQualificationValidUntil);
-  const validFromText = isoDate(foodQualificationValidFrom);
-  const validUntilText = isoDate(foodQualificationValidUntil);
-  if (
-    !id
-    || !revisionNo
-    || !legalName
-    || !entityType
-    || !/^[0-9A-Z]{18}$/.test(unifiedSocialCreditCode)
-    || !businessAddress
-    || !customerServicePhone
-    || !complaintPhone
-    || !businessLicenseUrl
-    || !foodQualificationType
-    || !foodQualificationNumber
-    || !foodQualificationUrl
-    || !validFromText
-    || !validUntilText
-  ) {
+  if (!id || !revisionNo) {
     return undefined;
   }
+  const foodQualificationValidFrom = cleanText(value.foodQualificationValidFrom) || undefined;
+  const foodQualificationValidUntil = cleanText(value.foodQualificationValidUntil) || undefined;
+  const validFromText = isoDate(foodQualificationValidFrom);
+  const validUntilText = isoDate(foodQualificationValidUntil);
   return {
     id,
     revisionNo,
     status: "PUBLISHED",
-    legalName,
-    entityType,
-    unifiedSocialCreditCode,
-    businessAddress,
-    customerServicePhone,
-    complaintPhone,
-    businessLicenseUrl,
-    foodQualificationType,
-    foodQualificationNumber,
-    foodQualificationUrl,
+    legalName: cleanText(value.legalName),
+    entityType: cleanText(value.entityType),
+    unifiedSocialCreditCode: cleanText(value.unifiedSocialCreditCode).toUpperCase(),
+    businessAddress: cleanText(value.businessAddress),
+    customerServicePhone: cleanText(value.customerServicePhone),
+    complaintPhone: cleanText(value.complaintPhone),
+    businessLicenseUrl: cleanText(value.businessLicenseUrl),
+    foodQualificationType: cleanText(value.foodQualificationType),
+    foodQualificationNumber: cleanText(value.foodQualificationNumber),
+    foodQualificationUrl: cleanText(value.foodQualificationUrl),
     foodQualificationValidFrom,
     foodQualificationValidUntil,
     publishedAt: cleanText(value.publishedAt) || undefined,
     updatedAt: cleanText(value.updatedAt) || undefined,
-    foodQualificationValidity: `${validFromText} 至 ${validUntilText}`,
+    foodQualificationValidity:
+      validFromText && validUntilText ? `${validFromText} 至 ${validUntilText}` : "",
     publishedAtText: isoDate(value.publishedAt)
   };
 }

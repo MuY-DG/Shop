@@ -30,19 +30,12 @@
   padding: @space-5;
   border: 1rpx solid @color-border;
   border-radius: @radius-lg;
-  background: @color-surface;
+  background: @color-surface-white;
   box-shadow: @shadow-card;
 }
 
 .merchant-card + .merchant-card {
   margin-top: @space-5;
-}
-
-.merchant-card__title {
-  margin-bottom: @space-4;
-  color: @color-text-primary;
-  font-size: @font-size-lg;
-  font-weight: 700;
 }
 
 .merchant-field {
@@ -99,18 +92,6 @@
   background: @color-page;
 }
 
-.license-tip,
-.publication-note {
-  color: @color-text-placeholder;
-  font-size: 22rpx;
-  text-align: center;
-}
-
-.license-tip {
+.merchant-field + .license-image {
   margin-top: @space-3;
-}
-
-.publication-note {
-  margin-top: @space-6;
-  line-height: 1.6;
 }

@@ -34,9 +34,6 @@ public class MerchantComplianceService {
 
     private static final Pattern CREDIT_CODE = Pattern.compile("[0-9A-Z]{18}");
     private static final Pattern PHONE = Pattern.compile("[0-9+()\\-\\s]{5,32}");
-    private static final Pattern PLACEHOLDER = Pattern.compile(
-            ".*(示例|待填写|待补充|占位|example|placeholder|todo|tbd|xxx).*",
-            Pattern.CASE_INSENSITIVE);
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -187,32 +184,36 @@ public class MerchantComplianceService {
                 assignments);
     }
 
+    /**
+     * 发布不再要求字段非空：允许保存并发布留空的资质信息。
+     * 仅在字段有值时做基础格式校验，保证已填写内容本身合法。
+     */
     private void validatePublishable(MerchantPublicationResponse candidate) {
-        if (!StringUtils.hasText(candidate.legalName())
-                || !StringUtils.hasText(candidate.entityType())
-                || isPlaceholder(candidate.legalName())
-                || isPlaceholder(candidate.entityType())
-                || !CREDIT_CODE.matcher(candidate.unifiedSocialCreditCode()).matches()
-                || !StringUtils.hasText(candidate.businessAddress())
-                || isPlaceholder(candidate.businessAddress())
-                || !PHONE.matcher(candidate.customerServicePhone()).matches()
-                || !PHONE.matcher(candidate.complaintPhone()).matches()
-                || candidate.businessLicenseAssetId() == null
-                || !StringUtils.hasText(candidate.foodQualificationType())
-                || !StringUtils.hasText(candidate.foodQualificationNumber())
-                || isPlaceholder(candidate.foodQualificationType())
-                || isPlaceholder(candidate.foodQualificationNumber())
-                || candidate.foodQualificationAssetId() == null
-                || candidate.foodQualificationValidFrom() == null
-                || candidate.foodQualificationValidUntil() == null
-                || candidate.foodQualificationValidUntil().isBefore(LocalDate.now(ZoneOffset.UTC))
-                || candidate.foodQualificationValidUntil().isBefore(candidate.foodQualificationValidFrom())) {
+        if (StringUtils.hasText(candidate.unifiedSocialCreditCode())
+                && !CREDIT_CODE.matcher(candidate.unifiedSocialCreditCode()).matches()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        storageUsageService.requireActivePublicMedia(
-                candidate.businessLicenseAssetId(), StorageMediaKind.IMAGE);
-        storageUsageService.requireActivePublicMedia(
-                candidate.foodQualificationAssetId(), StorageMediaKind.IMAGE);
+        if (StringUtils.hasText(candidate.customerServicePhone())
+                && !PHONE.matcher(candidate.customerServicePhone()).matches()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (StringUtils.hasText(candidate.complaintPhone())
+                && !PHONE.matcher(candidate.complaintPhone()).matches()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (candidate.foodQualificationValidFrom() != null
+                && candidate.foodQualificationValidUntil() != null
+                && candidate.foodQualificationValidUntil().isBefore(candidate.foodQualificationValidFrom())) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        if (candidate.businessLicenseAssetId() != null) {
+            storageUsageService.requireActivePublicMedia(
+                    candidate.businessLicenseAssetId(), StorageMediaKind.IMAGE);
+        }
+        if (candidate.foodQualificationAssetId() != null) {
+            storageUsageService.requireActivePublicMedia(
+                    candidate.foodQualificationAssetId(), StorageMediaKind.IMAGE);
+        }
     }
 
     private long nextRevisionNo() {
@@ -347,9 +348,5 @@ public class MerchantComplianceService {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim();
-    }
-
-    private boolean isPlaceholder(String value) {
-        return PLACEHOLDER.matcher(normalize(value)).matches();
     }
 }

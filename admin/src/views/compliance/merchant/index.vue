@@ -1,7 +1,7 @@
 <template>
   <div class="merchant-compliance-page art-full-height">
     <ElAlert
-      title="此处只发布真实经营主体与资质原件。系统不会自动生成示例证照；资料不完整或已过期时，发布会被后端拒绝。"
+      title="各项资质字段均可留空保存并发布；已填写的字段仅做基础格式校验。留空的字段不会在小程序公示页展示，请尽量填写真实证照信息。"
       type="warning"
       :closable="false"
       show-icon
@@ -96,7 +96,7 @@
               :loading="publishingId === row.id"
               @click="handlePublish(row)"
             >
-              校验并发布
+              发布
             </ElButton>
             <ElButton v-else link @click="openPreview(row)">查看</ElButton>
           </template>
@@ -301,8 +301,8 @@
 
   const handlePublish = async (row: Api.Compliance.MerchantPublication) => {
     await ElMessageBox.confirm(
-      `发布修订 #${row.revisionNo} 后，它将立即替换小程序当前公示。请确认主体、联系电话、证照原件和有效期均已人工核对。`,
-      '发布真实资质',
+      `发布修订 #${row.revisionNo} 后，它将立即替换小程序当前公示。请确认已填写的内容与原件一致；留空的字段不会在小程序展示。`,
+      '发布商家资质',
       { type: 'warning', confirmButtonText: '确认发布', cancelButtonText: '继续检查' }
     )
     publishingId.value = row.id

@@ -37,7 +37,7 @@ export async function getCurrentMerchantPublication(): Promise<MerchantPublicati
   });
   const publication = buildMerchantPublicationView(value);
   if (!publication) {
-    throw protocolError("商家经营资质尚未发布或内容不完整");
+    throw protocolError("商家经营资质尚未发布");
   }
   return publication;
 }

@@ -49,11 +49,12 @@ Page({
     loading: true,
     loaded: false,
     errorText: "",
-    eligibility: null as AccountCancellationEligibilityResponse | null,
-    blockers: [] as AccountCancellationBlocker[],
     notice: null as LegalDocumentResponse | null,
+    blockers: [] as AccountCancellationBlocker[],
+    blockersVisible: false,
     confirmOpen: false,
     noticeAcknowledged: false,
+    checking: false,
     submitting: false
   },
 
@@ -77,13 +78,13 @@ Page({
     }
     loginRequested = false;
     if (!this.data.loaded && !this.data.loading) {
-      void this.loadCancellationState();
+      void this.loadNotice();
     }
   },
 
   onReady() {
     if (getSessionState().user) {
-      void this.loadCancellationState();
+      void this.loadNotice();
     } else {
       this.setData({ loading: false });
     }
@@ -94,47 +95,51 @@ Page({
   },
 
   onRetry() {
-    void this.loadCancellationState();
+    void this.loadNotice();
   },
 
-  async loadCancellationState() {
+  async loadNotice() {
     const requestId = ++latestRequest;
-    this.setData({ loading: true, loaded: false, errorText: "" });
+    this.setData({
+      loading: true,
+      loaded: false,
+      errorText: "",
+      blockers: [],
+      blockersVisible: false
+    });
     try {
-      const [eligibility, notice] = await Promise.all([
-        getAccountCancellationEligibility(),
-        getCurrentLegalDocument(NOTICE_TYPE)
-      ]);
+      const notice = await getCurrentLegalDocument(NOTICE_TYPE);
       if (requestId !== latestRequest) {
         return;
       }
-      this.setData({
-        loading: false,
-        loaded: true,
-        eligibility,
-        blockers: buildAccountCancellationBlockers(eligibility),
-        notice
-      });
+      this.setData({ loading: false, loaded: true, notice });
     } catch (error) {
       if (requestId === latestRequest) {
         this.setData({
           loading: false,
           loaded: false,
-          errorText: errorMessage(error, "注销信息加载失败，请稍后重试")
+          errorText: errorMessage(error, "注销须知加载失败，请稍后重试")
         });
       }
     }
   },
 
+  async checkEligibility(): Promise<AccountCancellationEligibilityResponse> {
+    const eligibility = await getAccountCancellationEligibility();
+    const blockers = buildAccountCancellationBlockers(eligibility);
+    this.setData({ blockers, blockersVisible: !eligibility.eligible });
+    return eligibility;
+  },
+
   onCancelAccountTap() {
-    if (this.data.submitting || !this.data.eligibility?.eligible || !this.data.notice) {
+    if (this.data.checking || this.data.submitting || !this.data.notice) {
       return;
     }
     this.setData({ confirmOpen: true, noticeAcknowledged: false });
   },
 
   onCloseConfirm() {
-    if (!this.data.submitting) {
+    if (!this.data.checking && !this.data.submitting) {
       this.setData({ confirmOpen: false, noticeAcknowledged: false });
     }
   },
@@ -142,23 +147,51 @@ Page({
   onPreventMove() {},
 
   onToggleAcknowledgement() {
-    if (!this.data.submitting) {
+    if (!this.data.checking && !this.data.submitting) {
       this.setData({ noticeAcknowledged: !this.data.noticeAcknowledged });
     }
   },
 
   onOpenNotice() {
-    if (!this.data.submitting) {
+    if (!this.data.checking && !this.data.submitting) {
       wx.navigateTo({ url: buildLegalDocumentUrl(NOTICE_TYPE) });
     }
   },
 
   async onConfirmCancellation() {
     const notice = this.data.notice;
-    if (this.data.submitting || !this.data.noticeAcknowledged || !notice) {
+    if (
+      !notice
+      || this.data.checking
+      || this.data.submitting
+      || !this.data.noticeAcknowledged
+    ) {
       return;
     }
-    this.setData({ submitting: true });
+    // 点击“确认注销”后才开始检查是否满足注销条件。
+    this.setData({ checking: true });
+    let eligibility: AccountCancellationEligibilityResponse;
+    try {
+      eligibility = await this.checkEligibility();
+    } catch (error) {
+      this.setData({ checking: false });
+      wx.showToast({
+        title: errorMessage(error, "注销条件检查失败，请稍后重试"),
+        icon: "none"
+      });
+      return;
+    }
+    if (!eligibility.eligible) {
+      // 不满足注销条件：关闭弹窗并展示具体原因。
+      this.setData({
+        checking: false,
+        confirmOpen: false,
+        noticeAcknowledged: false
+      });
+      wx.showToast({ title: "当前暂不能注销", icon: "none" });
+      return;
+    }
+    this.setData({ checking: false, submitting: true });
     try {
       const wechatCode = await requestFreshWechatCode();
       await cancelAccount({
@@ -182,15 +215,19 @@ Page({
       const obligationChanged = isApiError(error) && error.code === 120005;
       this.setData({
         submitting: false,
-        confirmOpen: noticeChanged ? false : this.data.confirmOpen,
-        noticeAcknowledged: noticeChanged ? false : this.data.noticeAcknowledged
+        confirmOpen: false,
+        noticeAcknowledged: false
       });
       wx.showToast({
         title: errorMessage(error, "注销失败，请稍后重试"),
         icon: "none"
       });
-      if (noticeChanged || obligationChanged) {
-        void this.loadCancellationState();
+      if (noticeChanged) {
+        void this.loadNotice();
+      }
+      if (obligationChanged) {
+        // 注销被后台拒绝说明存在未完成事项，刷新并展示原因。
+        this.checkEligibility().catch(() => {});
       }
     }
   }

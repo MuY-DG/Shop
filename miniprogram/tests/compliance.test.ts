@@ -50,7 +50,7 @@ test("隐私政策必须是当前已发布且内容完整的修订", () => {
   assert.equal(normalizeLegalDocument({ ...document, documentType: "USER_AGREEMENT" }, "PRIVACY_POLICY"), undefined);
 });
 
-test("商家资质视图不伪造缺失字段并保留证照有效期", () => {
+test("商家资质视图保存了什么就展示什么，不要求字段非空", () => {
   const view = buildMerchantPublicationView({
     id: "201",
     revisionNo: 3,
@@ -72,6 +72,28 @@ test("商家资质视图不伪造缺失字段并保留证照有效期", () => {
 
   assert.equal(view?.legalName, "成都示例食品有限公司");
   assert.equal(view?.foodQualificationValidity, "2026.01.01 至 2031.01.01");
+
+  const partialView = buildMerchantPublicationView({
+    id: "202",
+    revisionNo: 4,
+    status: "PUBLISHED",
+    legalName: "成都示例食品有限公司",
+    entityType: "",
+    unifiedSocialCreditCode: "",
+    businessAddress: "",
+    customerServicePhone: "",
+    complaintPhone: "",
+    businessLicenseUrl: "https://assets.example.test/license.png",
+    foodQualificationType: "",
+    foodQualificationNumber: "",
+    foodQualificationUrl: "",
+    publishedAt: ""
+  });
+  assert.equal(partialView?.legalName, "成都示例食品有限公司");
+  assert.equal(partialView?.businessLicenseUrl, "https://assets.example.test/license.png");
+  assert.equal(partialView?.entityType, "");
+  assert.equal(partialView?.foodQualificationValidity, "");
+
   assert.equal(buildMerchantPublicationView({ status: "DRAFT" }), undefined);
   assert.equal(buildMerchantPublicationView({ status: "PUBLISHED" }), undefined);
 });
@@ -95,7 +117,7 @@ test("小程序注册公开合规页并从我的页面提供免登录设置入�
   });
 
   const profileLogic = readFileSync(resolve(sourceRoot, "pages/profile/profile.ts"), "utf8");
-  assert.match(profileLogic, /label: "关于与协议"[\s\S]{0,220}kind: "public-route"/);
+  assert.match(profileLogic, /label: "关于我们"[\s\S]{0,220}kind: "public-route"/);
   assert.match(profileLogic, /kind === "public-route"[\s\S]{0,180}wx\.navigateTo/);
 });
 
