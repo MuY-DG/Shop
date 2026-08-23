@@ -5,7 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.admin.log.service.AdminSystemLogRecorder;
 import org.muybaby.shopserver.admin.rbac.service.AdminRbacService;
 import org.muybaby.shopserver.aftersale.AppAfterSaleController;
-import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
+import org.muybaby.shopserver.aftersale.service.AfterSaleEvidenceService;
+import org.muybaby.shopserver.aftersale.service.AppAfterSaleQueryService;
 import org.muybaby.shopserver.aftersale.service.AppAfterSaleV2Service;
 import org.muybaby.shopserver.analytics.AppUserDailyActivityService;
 import org.muybaby.shopserver.auth.service.AppAuthService;
@@ -96,10 +97,13 @@ class DirectUploadCancellationControllerTest {
     private AppUserOverviewService appUserOverviewService;
 
     @MockitoBean
-    private AppAfterSaleService appAfterSaleService;
+    private AfterSaleEvidenceService afterSaleEvidenceService;
 
     @MockitoBean
     private AppAfterSaleV2Service appAfterSaleV2Service;
+
+    @MockitoBean
+    private AppAfterSaleQueryService appAfterSaleQueryService;
 
     @MockitoBean
     private PathTokenKindResolver pathTokenKindResolver;
@@ -169,7 +173,7 @@ class DirectUploadCancellationControllerTest {
                         "after-sale-upload"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
-        verify(appAfterSaleService).cancelEvidenceUploadSession(
+        verify(afterSaleEvidenceService).cancelEvidenceUploadSession(
                 APP, 44L, "after-sale-upload");
 
         mockMvc.perform(delete(

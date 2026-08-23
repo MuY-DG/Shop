@@ -216,9 +216,45 @@ export function buildAfterSaleView(record: AfterSaleResponse): AfterSaleView {
 
 function normalizeItems(items: AfterSaleItemRequest[]): AfterSaleItemRequest[] {
   return items
-    .map((item) => ({ orderItemId: Number(item.orderItemId), quantity: Number(item.quantity) }))
-    .filter((item) => Number.isSafeInteger(item.orderItemId) && item.orderItemId > 0 && Number.isSafeInteger(item.quantity) && item.quantity > 0)
+    .map((item) => ({
+      orderItemId: Number(item.orderItemId),
+      quantity: Number(item.quantity),
+      requestedAmountCent: item.requestedAmountCent == null ? undefined : Number(item.requestedAmountCent)
+    }))
+    .filter((item) =>
+      Number.isSafeInteger(item.orderItemId) && item.orderItemId > 0
+      && Number.isSafeInteger(item.quantity) && item.quantity > 0
+      && (item.requestedAmountCent === undefined
+        || (Number.isSafeInteger(item.requestedAmountCent) && item.requestedAmountCent > 0)))
     .sort((a, b) => a.orderItemId - b.orderItemId)
+}
+
+function itemSignature(items: AfterSaleItemRequest[]): string {
+  return normalizeItems(items)
+    .map((item) => `${item.orderItemId}:${item.quantity}:${item.requestedAmountCent ?? ''}`)
+    .join(',')
+}
+
+/**
+ * 与服务端 AfterSaleAmountAllocator.tranche 一致的单件分摊上限：
+ * 按件均摊订单实付（含优惠分摊），向上取整差值保证不超收。
+ */
+export function afterSaleItemRefundCeilingCent(
+  paidAmountBasisCent: number,
+  purchasedQuantity: number,
+  refundedQuantity: number,
+  requestedQuantity: number
+): number {
+  const basis = Math.trunc(Number(paidAmountBasisCent))
+  const total = Math.trunc(Number(purchasedQuantity))
+  const refunded = Math.trunc(Number(refundedQuantity))
+  const requested = Math.trunc(Number(requestedQuantity))
+  if (!(basis >= 0) || total <= 0 || refunded < 0 || requested <= 0 || refunded + requested > total) {
+    return 0
+  }
+  const end = Math.floor(basis * (refunded + requested) / total)
+  const start = Math.floor(basis * refunded / total)
+  return Math.max(0, end - start)
 }
 
 export function buildAfterSaleApplyPayload(input: {
@@ -238,9 +274,8 @@ export function buildAfterSaleApplyPayload(input: {
     throw new Error('请先获取服务端退款报价')
   }
   if (!items.length) throw new Error('请至少选择一件商品')
-  const quoteItems = normalizeItems(input.quote.items)
-  if (JSON.stringify(items) !== JSON.stringify(quoteItems)) {
-    throw new Error('商品数量已变化，请重新获取报价')
+  if (itemSignature(items) !== itemSignature(input.quote.items)) {
+    throw new Error('商品数量或金额已变化，请重新获取报价')
   }
   const evidenceFileIds = Array.from(new Set(
     (Array.isArray(input.evidenceFileIds) ? input.evidenceFileIds : [])

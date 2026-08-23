@@ -6,8 +6,9 @@ import org.muybaby.shopserver.aftersale.dto.AfterSaleQuoteResponse;
 import org.muybaby.shopserver.aftersale.dto.AppAfterSaleApplyRequest;
 import org.muybaby.shopserver.aftersale.dto.AppAfterSaleQuoteRequest;
 import org.muybaby.shopserver.aftersale.dto.AppReturnShipmentRequest;
-import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
+import org.muybaby.shopserver.aftersale.service.AppAfterSaleQueryService;
 import org.muybaby.shopserver.aftersale.service.AppAfterSaleV2Service;
+import org.muybaby.shopserver.aftersale.service.AfterSaleEvidenceService;
 import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
@@ -31,15 +32,18 @@ import java.util.List;
 @RestController
 public class AppAfterSaleController {
 
-    private final AppAfterSaleService appAfterSaleService;
+    private final AppAfterSaleQueryService appAfterSaleQueryService;
     private final AppAfterSaleV2Service appAfterSaleV2Service;
+    private final AfterSaleEvidenceService afterSaleEvidenceService;
 
     public AppAfterSaleController(
-            AppAfterSaleService appAfterSaleService,
-            AppAfterSaleV2Service appAfterSaleV2Service
+            AppAfterSaleQueryService appAfterSaleQueryService,
+            AppAfterSaleV2Service appAfterSaleV2Service,
+            AfterSaleEvidenceService afterSaleEvidenceService
     ) {
-        this.appAfterSaleService = appAfterSaleService;
+        this.appAfterSaleQueryService = appAfterSaleQueryService;
         this.appAfterSaleV2Service = appAfterSaleV2Service;
+        this.afterSaleEvidenceService = afterSaleEvidenceService;
     }
 
     @PostMapping("/app/orders/{orderId}/after-sales")
@@ -92,7 +96,7 @@ public class AppAfterSaleController {
             @PathVariable Long orderId,
             @RequestParam("file") MultipartFile file
     ) {
-        return ApiResponse.success(appAfterSaleService.uploadEvidence(principal, orderId, file));
+        return ApiResponse.success(afterSaleEvidenceService.uploadEvidence(principal, orderId, file));
     }
 
     @PostMapping("/app/orders/{orderId}/after-sale-evidence/upload-sessions")
@@ -102,7 +106,7 @@ public class AppAfterSaleController {
             @Valid @RequestBody DirectUploadSessionRequest request
     ) {
         return ApiResponse.success(
-                appAfterSaleService.createEvidenceUploadSession(
+                afterSaleEvidenceService.createEvidenceUploadSession(
                         principal, orderId, request));
     }
 
@@ -113,7 +117,7 @@ public class AppAfterSaleController {
             @PathVariable String uploadId
     ) {
         return ApiResponse.success(
-                appAfterSaleService.completeEvidenceUploadSession(
+                afterSaleEvidenceService.completeEvidenceUploadSession(
                         principal, orderId, uploadId));
     }
 
@@ -123,7 +127,7 @@ public class AppAfterSaleController {
             @PathVariable Long orderId,
             @PathVariable String uploadId
     ) {
-        appAfterSaleService.cancelEvidenceUploadSession(
+        afterSaleEvidenceService.cancelEvidenceUploadSession(
                 principal, orderId, uploadId);
         return ApiResponse.success();
     }
@@ -133,7 +137,7 @@ public class AppAfterSaleController {
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long orderId
     ) {
-        return ApiResponse.success(appAfterSaleService.listForOrder(principal, orderId));
+        return ApiResponse.success(appAfterSaleQueryService.listForOrder(principal, orderId));
     }
 
     @GetMapping("/app/after-sales/{afterSaleId}")
@@ -141,7 +145,7 @@ public class AppAfterSaleController {
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @PathVariable Long afterSaleId
     ) {
-        return ApiResponse.success(appAfterSaleService.detail(principal, afterSaleId));
+        return ApiResponse.success(appAfterSaleQueryService.detail(principal, afterSaleId));
     }
 
     @GetMapping("/app/after-sales")
@@ -151,6 +155,6 @@ public class AppAfterSaleController {
             Long size,
             String status
     ) {
-        return ApiResponse.success(appAfterSaleService.list(principal, current, size, status));
+        return ApiResponse.success(appAfterSaleQueryService.list(principal, current, size, status));
     }
 }

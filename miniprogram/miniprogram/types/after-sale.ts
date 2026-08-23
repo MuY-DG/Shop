@@ -23,6 +23,8 @@ export type AfterSaleAction =
 export interface AfterSaleItemRequest {
   orderItemId: number
   quantity: number
+  /** 用户自报的按件退款金额（分）；缺省表示按服务端分摊上限全额申报 */
+  requestedAmountCent?: number
 }
 
 export interface AfterSaleQuoteRequest {

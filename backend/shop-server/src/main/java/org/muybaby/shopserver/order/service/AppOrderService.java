@@ -2,7 +2,7 @@ package org.muybaby.shopserver.order.service;
 
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.service.AfterSaleFulfillmentPolicy;
-import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
+import org.muybaby.shopserver.aftersale.service.AppAfterSaleQueryService;
 import org.muybaby.shopserver.analytics.AnalyticsEventService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
@@ -96,7 +96,7 @@ public class AppOrderService {
     private final StorageUsageService storageUsageService;
     private final CheckoutSelectionService checkoutSelectionService;
     private final AppAddressService appAddressService;
-    private final AppAfterSaleService appAfterSaleService;
+    private final AppAfterSaleQueryService appAfterSaleQueryService;
     private final AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy;
     private final WechatShippingUploadRecovery shippingUploadRecovery;
     private final WechatShippingProvider wechatShippingProvider;
@@ -113,7 +113,7 @@ public class AppOrderService {
             StorageUsageService storageUsageService,
             CheckoutSelectionService checkoutSelectionService,
             AppAddressService appAddressService,
-            AppAfterSaleService appAfterSaleService,
+            AppAfterSaleQueryService appAfterSaleQueryService,
             AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
             WechatShippingUploadRecovery shippingUploadRecovery,
             WechatShippingProvider wechatShippingProvider,
@@ -128,7 +128,7 @@ public class AppOrderService {
         this.storageUsageService = storageUsageService;
         this.checkoutSelectionService = checkoutSelectionService;
         this.appAddressService = appAddressService;
-        this.appAfterSaleService = appAfterSaleService;
+        this.appAfterSaleQueryService = appAfterSaleQueryService;
         this.afterSaleFulfillmentPolicy = afterSaleFulfillmentPolicy;
         this.shippingUploadRecovery = shippingUploadRecovery;
         this.wechatShippingProvider = wechatShippingProvider;
@@ -565,7 +565,7 @@ public class AppOrderService {
         LocalDateTime paidAt = paymentOrder == null || paymentOrder.paidAt() == null
                 ? header.paidAt()
                 : paymentOrder.paidAt();
-        AfterSaleResponse latestAfterSale = appAfterSaleService.latestForOrder(principal, orderId);
+        AfterSaleResponse latestAfterSale = appAfterSaleQueryService.latestForOrder(principal, orderId);
         List<Long> rebuyableOrderItemIds = findRebuyableOrderItemIds(userId, orderId);
         List<AppOrderShipmentResponse> shipments = findShipments(orderId);
 

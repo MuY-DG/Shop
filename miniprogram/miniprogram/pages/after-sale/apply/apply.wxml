@@ -59,11 +59,29 @@
             <view class="order-item__body">
               <view class="order-item__title">{{item.productTitle}}</view>
               <view wx:if="{{item.specText}}" class="order-item__spec">{{item.specText}}</view>
-              <view class="order-item__price">可售后 {{item.availableQuantity}} 件 · 分摊金额 {{item.amountText}}</view>
+              <view class="order-item__price">可售后 {{item.availableQuantity}} 件 · 可退上限 {{item.maxAmountText}}</view>
               <view wx:if="{{item.selected}}" class="quantity-stepper">
                 <button data-index="{{index}}" bindtap="onQuantityMinus" disabled="{{item.quantity <= 1}}">−</button>
                 <text>{{item.quantity}}</text>
                 <button data-index="{{index}}" bindtap="onQuantityPlus" disabled="{{item.quantity >= item.availableQuantity}}">＋</button>
+              </view>
+              <view wx:if="{{item.selected}}" class="item-amount">
+                <text class="item-amount__label">退款金额</text>
+                <view class="item-amount__field">
+                  <text class="item-amount__currency">¥</text>
+                  <input
+                    class="item-amount__input"
+                    type="digit"
+                    value="{{item.amountText}}"
+                    data-index="{{index}}"
+                    bindinput="onItemAmountInput"
+                    bindblur="onItemAmountBlur"
+                    placeholder="{{item.maxAmountText}}"
+                    disabled="{{submitting}}"
+                    aria-label="调整商品退款金额，上限 {{item.maxAmountText}}"
+                  />
+                </view>
+                <text class="item-amount__hint">上限 {{item.maxAmountText}}</text>
               </view>
             </view>
           </view>
@@ -85,9 +103,9 @@
               aria-checked="{{selectedType === item.value}}"
             >{{item.text}}</view>
           </view>
-          <view class="policy-card__copy">退款金额由服务端按所选商品、数量和订单优惠分摊计算。</view>
+          <view class="policy-card__copy">退款金额默认按订单实付分摊计算，可按商品自行调低，不超过各商品可退上限。</view>
           <view class="refund-amount">
-            <text>服务端报价</text>
+            <text>退款金额</text>
             <text>{{quoting ? '计算中…' : (quoteAmountText || '请选择商品')}}</text>
           </view>
         </view>

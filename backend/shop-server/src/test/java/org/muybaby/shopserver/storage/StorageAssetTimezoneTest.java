@@ -5,7 +5,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.muybaby.shopserver.aftersale.dto.AppAfterSaleApplyRequest;
-import org.muybaby.shopserver.aftersale.service.AppAfterSaleService;
+import org.muybaby.shopserver.aftersale.service.AfterSaleEvidenceService;
+import org.muybaby.shopserver.aftersale.service.AppAfterSaleV2Service;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
@@ -99,7 +100,10 @@ class StorageAssetTimezoneTest {
     private StorageAssetCleanupService cleanupService;
 
     @Autowired
-    private AppAfterSaleService appAfterSaleService;
+    private AfterSaleEvidenceService afterSaleEvidenceService;
+
+    @Autowired
+    private AppAfterSaleV2Service appAfterSaleV2Service;
 
     @Autowired
     private DataCleanupConfigService dataCleanupConfigService;
@@ -111,6 +115,7 @@ class StorageAssetTimezoneTest {
         jdbcClient.sql("delete from after_sale_request").update();
         jdbcClient.sql("delete from payment_config").update();
         jdbcClient.sql("delete from storage_asset").update();
+        jdbcClient.sql("delete from order_item").update();
         jdbcClient.sql("delete from shop_order").update();
         jdbcClient.sql("delete from app_user").update();
 
@@ -131,6 +136,15 @@ class StorageAssetTimezoneTest {
                         """)
                 .param("orderId", ORDER_ID)
                 .param("userId", APP_USER_ID)
+                .update();
+        jdbcClient.sql("""
+                        insert into order_item
+                            (order_id, sku_id, spu_id, product_title, sku_code,
+                             quantity, line_amount_cent, paid_amount_allocated_cent)
+                        values
+                            (:orderId, 99001, 99001, 'TZ seed item', 'TZ-SKU-001', 1, 1000, 1000)
+                        """)
+                .param("orderId", ORDER_ID)
                 .update();
     }
 
@@ -166,7 +180,7 @@ class StorageAssetTimezoneTest {
                     .isInstanceOfSatisfying(BusinessException.class, exception ->
                     assertThat(exception.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
-            assertThatThrownBy(() -> appAfterSaleService.apply(
+            assertThatThrownBy(() -> appAfterSaleV2Service.apply(
                     APP_USER,
                     ORDER_ID,
                     new AppAfterSaleApplyRequest(

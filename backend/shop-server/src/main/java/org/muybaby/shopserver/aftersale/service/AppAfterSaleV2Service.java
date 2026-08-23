@@ -35,6 +35,7 @@ import org.springframework.util.StringUtils;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
@@ -44,6 +45,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -58,6 +60,11 @@ public class AppAfterSaleV2Service {
             AfterSaleStatus.WAITING_RETURN.name(), AfterSaleStatus.RETURNING.name(),
             AfterSaleStatus.WAITING_INSPECTION.name(), AfterSaleStatus.REFUNDING.name(),
             AfterSaleStatus.REFUND_FAILED.name());
+    private static final java.time.format.DateTimeFormatter AFTER_SALE_NO_TIME_FORMATTER =
+            java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final int AFTER_SALE_NO_RANDOM_BYTES = 9;
+    private static final int AFTER_SALE_NO_RANDOM_WIDTH = 14;
+    private static final SecureRandom AFTER_SALE_NO_RANDOM = new SecureRandom();
 
     private final JdbcClient jdbcClient;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -175,7 +182,7 @@ public class AppAfterSaleV2Service {
         validateEvidence(userId, orderId, evidenceIds);
 
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
-        String afterSaleNo = AppAfterSaleService.nextAfterSaleNo(now);
+        String afterSaleNo = nextAfterSaleNo(now);
         long afterSaleId = insertAfterSale(
                 order, userId, type, afterSaleNo, requestKey, requestDigest,
                 reason, description, quote.requestedAmountCent(), now);
@@ -313,9 +320,12 @@ public class AppAfterSaleV2Service {
                     || item.refundedQuantity() + request.quantity() > item.quantity()) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
-            long amount = AfterSaleAmountAllocator.tranche(
+            long ceiling = AfterSaleAmountAllocator.tranche(
                     item.paidAmountBasisCent(), item.quantity(),
                     item.refundedQuantity(), request.quantity());
+            long amount = request.requestedAmountCent() == null
+                    ? ceiling
+                    : requestedAmount(request.requestedAmountCent(), ceiling);
             total = Math.addExact(total, amount);
             result.add(new AfterSaleQuoteItemResponse(item.orderItemId(), request.quantity(), amount));
         }
@@ -676,18 +686,26 @@ public class AppAfterSaleV2Service {
         if (items == null || items.isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
-        Map<Long, Integer> quantities = new LinkedHashMap<>();
+        Map<Long, AfterSaleItemRequest> byOrderItemId = new LinkedHashMap<>();
         for (AfterSaleItemRequest item : items) {
             if (item == null || item.orderItemId() == null || item.orderItemId() <= 0
                     || item.quantity() == null || item.quantity() <= 0
-                    || quantities.putIfAbsent(item.orderItemId(), item.quantity()) != null) {
+                    || item.requestedAmountCent() != null && item.requestedAmountCent() <= 0
+                    || byOrderItemId.putIfAbsent(item.orderItemId(), item) != null) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
         }
-        return quantities.entrySet().stream()
+        return byOrderItemId.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .map(entry -> new AfterSaleItemRequest(entry.getKey(), entry.getValue()))
+                .map(Map.Entry::getValue)
                 .toList();
+    }
+
+    private long requestedAmount(long amount, long ceiling) {
+        if (amount <= 0 || amount > ceiling) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return amount;
     }
 
     private List<Long> evidenceIds(List<Long> ids) {
@@ -709,7 +727,7 @@ public class AppAfterSaleV2Service {
             List<Long> evidenceIds
     ) {
         String itemText = normalizeItems(items).stream()
-                .map(item -> item.orderItemId() + ":" + item.quantity())
+                .map(item -> item.orderItemId() + ":" + item.quantity() + ":" + item.requestedAmountCent())
                 .reduce((left, right) -> left + "," + right).orElse("");
         return sha256(type.name() + "|" + itemText + "|" + reason + "|" + description + "|" + evidenceIds);
     }
@@ -732,6 +750,17 @@ public class AppAfterSaleV2Service {
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
+    }
+
+    private static String nextAfterSaleNo(LocalDateTime requestedAt) {
+        byte[] randomBytes = new byte[AFTER_SALE_NO_RANDOM_BYTES];
+        AFTER_SALE_NO_RANDOM.nextBytes(randomBytes);
+        String randomSuffix = new BigInteger(1, randomBytes)
+                .toString(Character.MAX_RADIX)
+                .toUpperCase(Locale.ROOT);
+        String paddedSuffix = "0".repeat(Math.max(0, AFTER_SALE_NO_RANDOM_WIDTH - randomSuffix.length()))
+                + randomSuffix;
+        return "AS" + requestedAt.format(AFTER_SALE_NO_TIME_FORMATTER) + paddedSuffix;
     }
 
     private long requireAppUser(AuthenticatedPrincipal principal) {

@@ -36,14 +36,14 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Import(AppAfterSaleServiceTest.CountingDataSourceConfiguration.class)
+@Import(AppAfterSaleQueryServiceTest.CountingDataSourceConfiguration.class)
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-class AppAfterSaleServiceTest {
+class AppAfterSaleQueryServiceTest {
 
     private static final AtomicLong SEQUENCE = new AtomicLong(96_000L);
 
     @Autowired
-    private AppAfterSaleService appAfterSaleService;
+    private AppAfterSaleQueryService appAfterSaleQueryService;
 
     @Autowired
     private JdbcClient jdbcClient;
@@ -72,9 +72,9 @@ class AppAfterSaleServiceTest {
         long newerOwned = insertAfterSale(ownerOrderB, otherId, "REJECTED", createdAt.plusMinutes(1));
         long otherRecord = insertAfterSale(otherOrder, ownerId, "REQUESTED", createdAt.plusMinutes(2));
 
-        PageResult<AfterSaleResponse> first = appAfterSaleService.list(appPrincipal(ownerId), 1L, 1L, null);
-        PageResult<AfterSaleResponse> second = appAfterSaleService.list(appPrincipal(ownerId), 2L, 1L, null);
-        PageResult<AfterSaleResponse> requested = appAfterSaleService.list(
+        PageResult<AfterSaleResponse> first = appAfterSaleQueryService.list(appPrincipal(ownerId), 1L, 1L, null);
+        PageResult<AfterSaleResponse> second = appAfterSaleQueryService.list(appPrincipal(ownerId), 2L, 1L, null);
+        PageResult<AfterSaleResponse> requested = appAfterSaleQueryService.list(
                 appPrincipal(ownerId), 1L, 10L, " REQUESTED ");
 
         assertThat(first.total()).isEqualTo(2L);
@@ -86,7 +86,7 @@ class AppAfterSaleServiceTest {
         assertThat(requested.records()).extracting(AfterSaleResponse::id).containsExactly(olderOwned);
         assertThat(first.records()).extracting(AfterSaleResponse::id).doesNotContain(otherRecord);
 
-        PageResult<AfterSaleResponse> otherPage = appAfterSaleService.list(appPrincipal(otherId), 1L, 10L, null);
+        PageResult<AfterSaleResponse> otherPage = appAfterSaleQueryService.list(appPrincipal(otherId), 1L, 10L, null);
         assertThat(otherPage.records()).extracting(AfterSaleResponse::id).containsExactly(otherRecord);
     }
 
@@ -97,17 +97,17 @@ class AppAfterSaleServiceTest {
         long orderId = insertOrder(ownerId, "COMPLETED", LocalDateTime.of(2026, 7, 10, 13, 0));
         long afterSaleId = insertAfterSale(orderId, otherId, "REQUESTED", LocalDateTime.of(2026, 7, 10, 13, 1));
 
-        AfterSaleResponse detail = appAfterSaleService.detail(appPrincipal(ownerId), afterSaleId);
-        PageResult<AfterSaleResponse> clamped = appAfterSaleService.list(appPrincipal(ownerId), 1L, 1_000L, null);
+        AfterSaleResponse detail = appAfterSaleQueryService.detail(appPrincipal(ownerId), afterSaleId);
+        PageResult<AfterSaleResponse> clamped = appAfterSaleQueryService.list(appPrincipal(ownerId), 1L, 1_000L, null);
 
         assertThat(detail.id()).isEqualTo(afterSaleId);
         assertThat(clamped.size()).isEqualTo(100L);
         assertBusiness(ErrorCode.VALIDATION_FAILED,
-                () -> appAfterSaleService.detail(appPrincipal(otherId), afterSaleId));
+                () -> appAfterSaleQueryService.detail(appPrincipal(otherId), afterSaleId));
         assertBusiness(ErrorCode.VALIDATION_FAILED,
-                () -> appAfterSaleService.list(appPrincipal(ownerId), 0L, 10L, null));
+                () -> appAfterSaleQueryService.list(appPrincipal(ownerId), 0L, 10L, null));
         assertBusiness(ErrorCode.VALIDATION_FAILED,
-                () -> appAfterSaleService.list(appPrincipal(ownerId), 1L, 0L, null));
+                () -> appAfterSaleQueryService.list(appPrincipal(ownerId), 1L, 0L, null));
     }
 
     @Test
@@ -136,7 +136,7 @@ class AppAfterSaleServiceTest {
                 .update();
 
         sqlCounter.reset();
-        PageResult<AfterSaleResponse> single = appAfterSaleService.list(appPrincipal(ownerId), 1L, 100L, null);
+        PageResult<AfterSaleResponse> single = appAfterSaleQueryService.list(appPrincipal(ownerId), 1L, 100L, null);
         int singleRecordQueries = sqlCounter.count();
 
         assertThat(single.records()).hasSize(1);
@@ -166,7 +166,7 @@ class AppAfterSaleServiceTest {
         }
 
         sqlCounter.reset();
-        PageResult<AfterSaleResponse> many = appAfterSaleService.list(appPrincipal(ownerId), 1L, 100L, null);
+        PageResult<AfterSaleResponse> many = appAfterSaleQueryService.list(appPrincipal(ownerId), 1L, 100L, null);
         int manyRecordQueries = sqlCounter.count();
 
         assertThat(many.records()).hasSize(6);
@@ -188,7 +188,7 @@ class AppAfterSaleServiceTest {
         long ownerId = insertUser("after-sale-empty-page-owner");
 
         sqlCounter.reset();
-        PageResult<AfterSaleResponse> page = appAfterSaleService.list(appPrincipal(ownerId), 1L, 100L, null);
+        PageResult<AfterSaleResponse> page = appAfterSaleQueryService.list(appPrincipal(ownerId), 1L, 100L, null);
 
         assertThat(page.total()).isZero();
         assertThat(page.records()).isEmpty();

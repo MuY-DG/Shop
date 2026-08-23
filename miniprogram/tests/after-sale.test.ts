@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { test } from "node:test";
 
 import {
+  afterSaleItemRefundCeilingCent,
   afterSaleStatusText,
   buildAfterSaleApplyPayload,
   buildAfterSaleApplyUrl,
@@ -224,7 +225,7 @@ test("同一申请意图在响应丢失后复用稳定幂等键", () => {
   );
 });
 
-test("售后申请使用服务端报价并支持按商品数量和退货退款", () => {
+test("售后申请携带按件自报金额并与服务端报价保持一致", () => {
   assert.deepEqual(buildAfterSaleApplyPayload({
     requestKey: "apply-101",
     quote: {
@@ -234,7 +235,7 @@ test("售后申请使用服务端报价并支持按商品数量和退货退款",
       quoteDigest: "digest-101",
       items: [{ orderItemId: 201, quantity: 1, requestedAmountCent: 3490 }]
     },
-    items: [{ orderItemId: 201, quantity: 1 }],
+    items: [{ orderItemId: 201, quantity: 1, requestedAmountCent: 3490 }],
     reason: "  商品存在问题  ",
     description: "  包装破损  ",
     evidenceFileIds: [801, 801, "802", -1]
@@ -246,12 +247,12 @@ test("售后申请使用服务端报价并支持按商品数量和退货退款",
     requestedAmountCent: 3490,
     description: "包装破损",
     evidenceFileIds: [801, 802],
-    items: [{ orderItemId: 201, quantity: 1 }]
+    items: [{ orderItemId: 201, quantity: 1, requestedAmountCent: 3490 }]
   });
   assert.throws(() => buildAfterSaleApplyPayload({
     requestKey: "apply-101",
     quote: null,
-    items: [{ orderItemId: 201, quantity: 1 }],
+    items: [{ orderItemId: 201, quantity: 1, requestedAmountCent: 3490 }],
     reason: "",
     description: ""
   }), /原因/);
@@ -264,10 +265,34 @@ test("售后申请使用服务端报价并支持按商品数量和退货退款",
       quoteDigest: "digest-101",
       items: [{ orderItemId: 201, quantity: 1, requestedAmountCent: 3490 }]
     },
-    items: [{ orderItemId: 201, quantity: 2 }],
+    items: [{ orderItemId: 201, quantity: 2, requestedAmountCent: 3490 }],
     reason: "其他原因",
     description: ""
   }), /重新获取报价/);
+  assert.throws(() => buildAfterSaleApplyPayload({
+    requestKey: "apply-101",
+    quote: {
+      orderId: 101,
+      afterSaleType: "REFUND_ONLY",
+      requestedAmountCent: 3490,
+      quoteDigest: "digest-101",
+      items: [{ orderItemId: 201, quantity: 1, requestedAmountCent: 3490 }]
+    },
+    items: [{ orderItemId: 201, quantity: 1 }],
+    reason: "其他原因",
+    description: ""
+  }), /重新获取报价/);
+});
+
+test("按件可退上限与服务端分摊算法一致", () => {
+  // 100 分摊到 3 件：第 1-2 件各 33，第 3 件收尾差值 34
+  assert.equal(afterSaleItemRefundCeilingCent(100, 3, 0, 1), 33);
+  assert.equal(afterSaleItemRefundCeilingCent(100, 3, 1, 1), 33);
+  assert.equal(afterSaleItemRefundCeilingCent(100, 3, 2, 1), 34);
+  assert.equal(afterSaleItemRefundCeilingCent(6980, 1, 0, 1), 6980);
+  assert.equal(afterSaleItemRefundCeilingCent(0, 2, 0, 1), 0);
+  assert.equal(afterSaleItemRefundCeilingCent(100, 0, 0, 1), 0);
+  assert.equal(afterSaleItemRefundCeilingCent(100, 3, 2, 2), 0);
 });
 
 test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
