@@ -53,8 +53,13 @@ const axiosInstance = axios.create({
   validateStatus: (status) => status >= 200 && status < 300,
   transformResponse: [
     (data, headers) => {
-      const contentType = headers['content-type']
-      if (contentType?.includes('application/json')) {
+      const rawContentType = headers['content-type']
+      const contentType = Array.isArray(rawContentType)
+        ? rawContentType.join(';')
+        : typeof rawContentType === 'string'
+          ? rawContentType
+          : ''
+      if (contentType.includes('application/json')) {
         try {
           return JSON.parse(data)
         } catch {
