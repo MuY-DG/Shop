@@ -56,7 +56,7 @@ test('退货地址维护使用独立权限并生成可核对的完整地址', ()
   )
 })
 
-test('售后记录覆盖后端 V92 实际退货事件键', () => {
+test('售后记录覆盖当前实际退货事件键', () => {
   const source = readFileSync(resolve(process.cwd(), 'src/views/aftersale/list/index.vue'), 'utf8')
   ;[
     'RETURN_AUTHORIZED',

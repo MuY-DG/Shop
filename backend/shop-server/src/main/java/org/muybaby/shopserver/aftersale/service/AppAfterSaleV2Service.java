@@ -415,12 +415,12 @@ public class AppAfterSaleV2Service {
                         insert into after_sale_request (
                             after_sale_no, order_id, user_id, after_sale_type, status,
                             reason, description, requested_amount_cent,
-                            flow_version, request_key, request_digest, source_order_status,
+                            request_key, request_digest, source_order_status,
                             created_at, updated_at
                         ) values (
                             :afterSaleNo, :orderId, :userId, :type, :status,
                             :reason, :description, :amount,
-                            2, :requestKey, :requestDigest, :sourceOrderStatus,
+                            :requestKey, :requestDigest, :sourceOrderStatus,
                             :now, :now
                         )
                         """,

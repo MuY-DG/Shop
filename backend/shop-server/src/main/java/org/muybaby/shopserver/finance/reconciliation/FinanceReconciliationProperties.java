@@ -8,8 +8,6 @@ import java.time.Duration;
 
 @ConfigurationProperties(prefix = "shop.finance.reconciliation")
 public record FinanceReconciliationProperties(
-        boolean workerEnabled,
-        boolean dailyEnabled,
         String dailyCron,
         Duration workerDelay,
         Duration claimTimeout,

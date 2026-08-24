@@ -21,7 +21,6 @@ import java.util.regex.Pattern;
 @Component
 public class AesGcmPaymentSecretCipher implements PaymentSecretCipher {
 
-    private static final String V1_PREFIX = "v1";
     private static final String V2_PREFIX = "v2";
     private static final int NONCE_BYTES = 12;
     private static final int TAG_BITS = 128;
@@ -31,19 +30,20 @@ public class AesGcmPaymentSecretCipher implements PaymentSecretCipher {
     private static final Pattern CONTEXT_PART_PATTERN = Pattern.compile("[A-Za-z0-9._:-]{1,128}");
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private final int writeVersion;
     private final String activeKeyId;
     private final Map<String, byte[]> keyRing;
-    private final String legacyKey;
 
     public AesGcmPaymentSecretCipher(
             SecretEncryptionProperties encryptionProperties
     ) {
-        this.writeVersion = encryptionProperties.effectiveWriteVersion();
         this.activeKeyId = normalizeKeyId(encryptionProperties.activeKeyId());
         this.keyRing = parseKeyRing(encryptionProperties.keyRing());
-        this.legacyKey = encryptionProperties.legacyKey();
         validateWriteConfiguration();
+    }
+
+    @Override
+    public EncryptionMetadata activeEncryptionMetadata() {
+        return new EncryptionMetadata(2, activeKeyId);
     }
 
     @Override
@@ -52,9 +52,6 @@ public class AesGcmPaymentSecretCipher implements PaymentSecretCipher {
             throw validationFailure();
         }
         SecretContext requiredContext = requireContext(context);
-        if (writeVersion == 1) {
-            return encryptV1(plaintext);
-        }
         return encryptV2(requiredContext, plaintext);
     }
 
@@ -67,39 +64,17 @@ public class AesGcmPaymentSecretCipher implements PaymentSecretCipher {
         if (versionParts.length != 2) {
             throw validationFailure();
         }
-        return switch (versionParts[0]) {
-            case V1_PREFIX -> decryptV1(ciphertext);
-            case V2_PREFIX -> decryptV2(requireContext(context), ciphertext);
-            default -> throw validationFailure();
-        };
+        if (!V2_PREFIX.equals(versionParts[0])) {
+            throw validationFailure();
+        }
+        return decryptV2(requireContext(context), ciphertext);
     }
 
     @Override
     public boolean shouldReencrypt(int cipherVersion, String keyId) {
-        if (writeVersion != 2) {
-            return false;
-        }
         return cipherVersion != 2 || !MessageDigest.isEqual(
                 activeKeyId.getBytes(StandardCharsets.UTF_8),
                 normalizeKeyId(keyId).getBytes(StandardCharsets.UTF_8));
-    }
-
-    private EncryptedSecret encryptV1(String plaintext) {
-        byte[] nonce = randomNonce();
-        byte[] ciphertext = crypt(
-                Cipher.ENCRYPT_MODE,
-                legacyKeyBytes(),
-                nonce,
-                plaintext.getBytes(StandardCharsets.UTF_8),
-                null
-        );
-        return new EncryptedSecret(
-                V1_PREFIX + ":"
-                        + Base64.getEncoder().encodeToString(nonce) + ":"
-                        + Base64.getEncoder().encodeToString(ciphertext),
-                1,
-                ""
-        );
     }
 
     private EncryptedSecret encryptV2(SecretContext context, String plaintext) {
@@ -123,24 +98,6 @@ public class AesGcmPaymentSecretCipher implements PaymentSecretCipher {
                 2,
                 activeKeyId
         );
-    }
-
-    private DecryptedSecret decryptV1(String ciphertext) {
-        String[] parts = ciphertext.split(":", 3);
-        if (parts.length != 3 || !V1_PREFIX.equals(parts[0])) {
-            throw validationFailure();
-        }
-        try {
-            byte[] nonce = Base64.getDecoder().decode(parts[1]);
-            byte[] encrypted = Base64.getDecoder().decode(parts[2]);
-            requireEnvelopeLengths(nonce, encrypted);
-            byte[] plaintext = crypt(
-                    Cipher.DECRYPT_MODE, legacyKeyBytes(), nonce, encrypted, null);
-            return new DecryptedSecret(
-                    new String(plaintext, StandardCharsets.UTF_8), 1, "");
-        } catch (IllegalArgumentException ex) {
-            throw validationFailure();
-        }
     }
 
     private DecryptedSecret decryptV2(SecretContext context, String ciphertext) {
@@ -200,10 +157,7 @@ public class AesGcmPaymentSecretCipher implements PaymentSecretCipher {
     }
 
     private void validateWriteConfiguration() {
-        if (writeVersion != 1 && writeVersion != 2) {
-            throw new IllegalStateException("Payment secret write version must be 1 or 2");
-        }
-        if (writeVersion == 2 && (!StringUtils.hasText(activeKeyId) || !keyRing.containsKey(activeKeyId))) {
+        if (!StringUtils.hasText(activeKeyId) || !keyRing.containsKey(activeKeyId)) {
             throw new IllegalStateException("Payment secret active key is missing from the key ring");
         }
     }
@@ -252,26 +206,6 @@ public class AesGcmPaymentSecretCipher implements PaymentSecretCipher {
 
     private String normalizeKeyId(String value) {
         return value == null ? "" : value.trim();
-    }
-
-    private byte[] legacyKeyBytes() {
-        String secretKey = legacyKey;
-        if (!StringUtils.hasText(secretKey)) {
-            throw validationFailure();
-        }
-        byte[] raw = secretKey.getBytes(StandardCharsets.UTF_8);
-        if (raw.length == 16 || raw.length == 24 || raw.length == 32) {
-            return raw;
-        }
-        try {
-            byte[] decoded = Base64.getDecoder().decode(secretKey);
-            if (decoded.length == 16 || decoded.length == 24 || decoded.length == 32) {
-                return decoded;
-            }
-        } catch (IllegalArgumentException ignored) {
-            // Fall through without exposing configured key material.
-        }
-        throw validationFailure();
     }
 
     private byte[] randomNonce() {

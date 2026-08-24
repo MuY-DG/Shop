@@ -101,7 +101,7 @@ class ProductManagementV2SchemaTest {
 
         assertThat(columnValue("product_spu", "spec_type", "column_default")).isEqualTo("'SINGLE'");
         assertThat(columnValue("product_spu", "freight_template_id", "is_nullable")).isEqualTo("NO");
-        assertThat(columnValue("product_spu", "virtual_sales", "column_default")).isEqualTo("0");
+        assertThat(columnValue("product_spu", "virtual_sales", "column_default")).isEqualTo("'0'");
         assertThat(columnValue("product_sku", "weight_gram", "is_nullable")).isEqualTo("YES");
         assertThat(columnValue("product_sku", "combination_key", "is_nullable")).isEqualTo("NO");
         assertThat(columnValue("product_sku", "volume_cubic_meter", "numeric_scale")).isEqualTo("6");
@@ -171,10 +171,14 @@ class ProductManagementV2SchemaTest {
         );
 
         List<String> actualIndexes = jdbcClient.sql("""
-                        select lower(index_name)
+                        select lower(index_name) as object_name
                         from information_schema.indexes
                         where table_schema = 'public'
-                        order by lower(index_name)
+                        union
+                        select lower(constraint_name) as object_name
+                        from information_schema.table_constraints
+                        where table_schema = 'public'
+                          and constraint_type = 'UNIQUE'
                         """)
                 .query(String.class)
                 .list();

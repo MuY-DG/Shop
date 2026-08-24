@@ -16,7 +16,6 @@ public record WechatPlatformCredentials(
     }
 
     public enum Source {
-        DATABASE,
-        ENVIRONMENT
+        DATABASE
     }
 }

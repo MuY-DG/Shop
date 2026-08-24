@@ -1168,7 +1168,7 @@ public class OrderAggregateCleanupService {
                     .param("outTradeNoDigest", PurgedOrderIdentityDigests.value(
                             text(payment, "out_trade_no")))
                     .param("transactionIdDigest", digestOrEmpty(text(payment, "transaction_id")))
-                    .param("notificationRouteDigest", PurgedOrderIdentityDigests.nullableValue(
+                    .param("notificationRouteDigest", PurgedOrderIdentityDigests.value(
                             text(payment, "notification_route_token")))
                     .param("paymentConfigId", numberAsLong(payment.get("payment_config_id")))
                     .param("paymentConfigFingerprint", text(payment, "payment_config_fingerprint"))
@@ -1213,7 +1213,7 @@ public class OrderAggregateCleanupService {
                     .param("outTradeNoDigest", PurgedOrderIdentityDigests.value(
                             text(payment, "out_trade_no")))
                     .param("refundIdDigest", digestOrEmpty(text(refund, "refund_id")))
-                    .param("notificationRouteDigest", PurgedOrderIdentityDigests.nullableValue(
+                    .param("notificationRouteDigest", PurgedOrderIdentityDigests.value(
                             text(refund, "notification_route_token")))
                     .param("paymentConfigId", numberAsLong(payment.get("payment_config_id")))
                     .param("paymentConfigFingerprint", text(payment, "payment_config_fingerprint"))

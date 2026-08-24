@@ -33,8 +33,8 @@ class ProductCatalogSchemaTest {
                         """)
                 .update();
         jdbcClient.sql("""
-                        insert into product_sku (id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent, stock_available, weight_gram, image, status, sort_order)
-                        values (9904, 9902, 'SCHEMA-SKU', '{"口味":"牛油"}', '牛油', 3990, 4990, 10, 300, 'https://example.test/sku.jpg', 'ENABLED', 1)
+                        insert into product_sku (id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent, stock_available, weight_gram, image, status, sort_order, combination_key)
+                        values (9904, 9902, 'SCHEMA-SKU', '{"口味":"牛油"}', '牛油', 3990, 4990, 10, 300, 'https://example.test/sku.jpg', 'ENABLED', 1, 'SCHEMA-SKU')
                         """)
                 .update();
         jdbcClient.sql("""

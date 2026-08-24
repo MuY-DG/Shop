@@ -7,14 +7,12 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.unit.DataSize;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,18 +34,13 @@ class WechatServiceCardRuntimeSchedulerTest {
     JdbcClient jdbcClient;
 
     @Autowired
-    WechatServiceCardProperties environmentProperties;
-
-    @Autowired
     WechatServiceCardDeliveryScheduler deliveryScheduler;
 
     @Autowired
     WechatServiceCardRepairScheduler repairScheduler;
 
     @Test
-    void schedulersRemainInstalledWithStaticDefaultsOffAndLeaveWorkUntouched() {
-        assertThat(environmentProperties.enabled()).isFalse();
-        assertThat(environmentProperties.workerEnabled()).isFalse();
+    void schedulersRemainInstalledAndLeaveWorkUntouchedWhenDatabaseSwitchesAreOff() {
         assertThat(deliveryScheduler).isNotNull();
         assertThat(repairScheduler).isNotNull();
 
@@ -71,8 +64,7 @@ class WechatServiceCardRuntimeSchedulerTest {
         );
         when(runtime.captureEnabledFailSoft()).thenReturn(false);
         new WechatServiceCardRepairScheduler(
-                jdbcClient, environmentProperties,
-                () -> WechatServiceCardTestConfigs.fromProperties(environmentProperties),
+                jdbcClient, readyProperties(), WechatServiceCardTestConfigs::readyConfig,
                 runtime, localRepairUnit,
                 Clock.fixed(NOW, ZoneOffset.UTC)
         ).runOnce();
@@ -100,7 +92,7 @@ class WechatServiceCardRuntimeSchedulerTest {
         WechatServiceCardRepairScheduler freshScheduler = new WechatServiceCardRepairScheduler(
                 jdbcClient,
                 readyProperties(),
-                () -> WechatServiceCardTestConfigs.fromProperties(readyProperties()),
+                WechatServiceCardTestConfigs::readyConfig,
                 runtime,
                 localRepairUnit,
                 Clock.fixed(NOW, ZoneOffset.UTC)
@@ -124,11 +116,12 @@ class WechatServiceCardRuntimeSchedulerTest {
     private void seedPaidOrder(long orderId, long paymentId, LocalDateTime paidAt) {
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              payable_amount_cent, paid_amount_cent, paid_at,
                              created_at, updated_at)
                         values
                             (:id, :orderNo, 1, 'PAID', 'DIRECT', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              100, 100, :paidAt, :createdAt, :updatedAt)
                         """)
                 .param("id", orderId)
@@ -140,14 +133,19 @@ class WechatServiceCardRuntimeSchedulerTest {
                 .update();
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, out_trade_no, transaction_id, payer_openid,
+                            (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, transaction_id, payer_openid,
                              status, amount_cent, expires_at, paid_at, created_at, updated_at)
                         values
-                            (:id, :orderId, :outTradeNo, :transactionId, :openid,
+                            (:id, :orderId, :paymentConfigId, :paymentConfigFingerprint,
+                             :notificationRouteToken, :outTradeNo, :transactionId, :openid,
                              'PAID', 100, :expiresAt, :paidAt, :createdAt, :updatedAt)
                         """)
                 .param("id", paymentId)
                 .param("orderId", orderId)
+                .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(paymentId))
                 .param("outTradeNo", "RUNTIME-SCHEDULER-OUT-" + paymentId)
                 .param("transactionId", "4200" + paymentId)
                 .param("openid", "runtime-scheduler-openid-" + paymentId)
@@ -159,29 +157,7 @@ class WechatServiceCardRuntimeSchedulerTest {
     }
 
     private WechatServiceCardProperties readyProperties() {
-        return new WechatServiceCardProperties(
-                false,
-                false,
-                "template-record",
-                Duration.ofSeconds(15),
-                50,
-                Duration.ofMinutes(2),
-                8,
-                Duration.ofMinutes(1),
-                Duration.ofMinutes(30),
-                Duration.ofMinutes(1),
-                Duration.ofHours(6),
-                2,
-                Duration.ofSeconds(3),
-                Duration.ofSeconds(15),
-                DataSize.ofMegabytes(1),
-                DataSize.ofKilobytes(64),
-                "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
-                false,
-                List.of("admin.junxiangshiping.cn"),
-                new WechatServiceCardProperties.Callback(
-                        false, "", "", Duration.ofMinutes(5)
-                )
-        );
+        return WechatServiceCardPropertiesTest.properties(
+                Duration.ofMinutes(1), Duration.ofHours(6));
     }
 }

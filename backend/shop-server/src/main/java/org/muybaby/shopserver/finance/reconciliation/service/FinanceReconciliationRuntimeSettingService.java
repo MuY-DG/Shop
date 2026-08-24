@@ -3,7 +3,6 @@ package org.muybaby.shopserver.finance.reconciliation.service;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.common.time.TimePolicy;
-import org.muybaby.shopserver.finance.reconciliation.FinanceReconciliationProperties;
 import org.muybaby.shopserver.finance.reconciliation.dto.AdminFinanceReconciliationRuntimeUpdateRequest;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
 import org.slf4j.Logger;
@@ -29,20 +28,17 @@ public class FinanceReconciliationRuntimeSettingService {
     private static final long SETTING_ID = 1L;
 
     private final JdbcClient jdbcClient;
-    private final FinanceReconciliationProperties properties;
     private final ReconciliationCredentialCatalog credentialCatalog;
     private final StorageRuntimeConfigService storageConfigService;
     private final Clock clock;
 
     public FinanceReconciliationRuntimeSettingService(
             JdbcClient jdbcClient,
-            FinanceReconciliationProperties properties,
             ReconciliationCredentialCatalog credentialCatalog,
             StorageRuntimeConfigService storageConfigService,
             Clock clock
     ) {
         this.jdbcClient = jdbcClient;
-        this.properties = properties;
         this.credentialCatalog = credentialCatalog;
         this.storageConfigService = storageConfigService;
         this.clock = clock;
@@ -59,7 +55,7 @@ public class FinanceReconciliationRuntimeSettingService {
                 .param("id", SETTING_ID)
                 .query(this::map)
                 .optional()
-                .orElseGet(this::environmentDefault);
+                .orElseGet(this::databaseSafeDefault);
     }
 
     public boolean workerEnabledFailClosed() {
@@ -257,17 +253,14 @@ public class FinanceReconciliationRuntimeSettingService {
                 rs.getString("change_reason"),
                 rs.getObject("updated_by", Long.class),
                 rs.getObject("updated_at", LocalDateTime.class),
-                properties.workerEnabled(),
-                properties.dailyEnabled()
+                false, false
         );
     }
 
-    private RuntimeSetting environmentDefault() {
-        boolean workerEnabled = properties.workerEnabled();
-        boolean dailyEnabled = workerEnabled && properties.dailyEnabled();
+    private RuntimeSetting databaseSafeDefault() {
         return new RuntimeSetting(
-                workerEnabled, dailyEnabled, false, 0L, "", null, null,
-                properties.workerEnabled(), properties.dailyEnabled()
+                false, false, false, 0L, "", null, null,
+                false, false
         );
     }
 

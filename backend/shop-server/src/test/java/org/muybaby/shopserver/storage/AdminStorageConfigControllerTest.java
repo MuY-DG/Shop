@@ -142,10 +142,10 @@ class AdminStorageConfigControllerTest {
                 ))
                 .single();
         assertThat(secretRow.secretIdCiphertext())
-                .startsWith("v1:")
+                .startsWith("v2:test-main:")
                 .doesNotContain("AKIDexample-secret-id");
         assertThat(secretRow.secretKeyCiphertext())
-                .startsWith("v1:")
+                .startsWith("v2:test-main:")
                 .doesNotContain("example-secret-key");
         assertThat(secretRow.customDomainVerificationFingerprint()).isNull();
         assertThat(storageRuntimeConfigService.effective().publicBaseUrl())

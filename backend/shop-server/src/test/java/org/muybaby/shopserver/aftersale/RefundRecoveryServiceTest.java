@@ -423,6 +423,13 @@ class RefundRecoveryServiceTest extends PaymentTestSupport {
             assertThat(queryStarted.await(5, TimeUnit.SECONDS)).isTrue();
 
             assertThatThrownBy(() -> refundCallbackService.handleRefundNotification(
+                    jdbcClient.sql("""
+                                    select notification_route_token from refund_order
+                                    where id = :refundOrderId
+                                    """)
+                            .param("refundOrderId", approved.refundOrderId())
+                            .query(String.class)
+                            .single(),
                     currentWechatpayTimestamp(),
                     "mock-refund-notify-nonce",
                     "mock-refund-serial",

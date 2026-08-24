@@ -27,18 +27,15 @@ public class WechatServiceCardRuntimeSettingService {
     private static final long SETTING_ID = 1L;
 
     private final JdbcClient jdbcClient;
-    private final WechatServiceCardProperties properties;
     private final WechatPlatformCredentialResolver credentialResolver;
     private final WechatServiceCardConfigResolver configResolver;
 
     public WechatServiceCardRuntimeSettingService(
             JdbcClient jdbcClient,
-            WechatServiceCardProperties properties,
             WechatPlatformCredentialResolver credentialResolver,
             WechatServiceCardConfigResolver configResolver
     ) {
         this.jdbcClient = jdbcClient;
-        this.properties = properties;
         this.credentialResolver = credentialResolver;
         this.configResolver = configResolver;
     }
@@ -54,7 +51,7 @@ public class WechatServiceCardRuntimeSettingService {
                 .param("id", SETTING_ID)
                 .query(this::map)
                 .optional()
-                .orElseGet(this::environmentDefault);
+                .orElseGet(this::databaseSafeDefault);
     }
 
     /**
@@ -262,17 +259,14 @@ public class WechatServiceCardRuntimeSettingService {
                 rs.getString("change_reason"),
                 rs.getObject("updated_by", Long.class),
                 rs.getObject("updated_at", LocalDateTime.class),
-                properties.enabled(),
-                properties.workerEnabled()
+                false, false
         );
     }
 
-    private RuntimeSetting environmentDefault() {
-        boolean captureEnabled = properties.enabled();
-        boolean workerEnabled = captureEnabled && properties.workerEnabled();
+    private RuntimeSetting databaseSafeDefault() {
         return new RuntimeSetting(
-                captureEnabled, workerEnabled, false, 0L, "", null, null,
-                properties.enabled(), properties.workerEnabled()
+                false, false, false, 0L, "", null, null,
+                false, false
         );
     }
 

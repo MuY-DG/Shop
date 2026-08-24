@@ -59,10 +59,12 @@ class WechatServiceCardRuntimeOutboxFailureTest {
             jdbcClient.sql("""
                             insert into shop_order
                                 (id, order_no, user_id, status, source, idempotency_key,
+                                 checkout_request_digest,
                                  payable_amount_cent, paid_amount_cent, paid_at,
                                  created_at, updated_at)
                             values
                                 (:id, :orderNo, 1, 'PAID', 'DIRECT', :idempotencyKey,
+                                 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                                  100, 100, :paidAt, :createdAt, :updatedAt)
                             """)
                     .param("id", orderId)

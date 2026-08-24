@@ -10,7 +10,6 @@ public record AdminWechatPlatformConfigResponse(
         String appId,
         String appSecretMasked,
         boolean appSecretConfigured,
-        boolean legacyEnvironmentImportAvailable,
         long version,
         @JsonStringId Long updatedBy,
         LocalDateTime updatedAt

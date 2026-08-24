@@ -23,7 +23,7 @@ class ProductFoodComplianceSchemaTest {
     void migrationCreatesFoodDisclosureSchemaWithFailClosedHistoricalDefaults() {
         jdbcClient.sql("""
                         insert into product_category (id, parent_id, name, icon, sort_order, status)
-                        values (9890001, 0, 'V89 Schema Category', '', 1, 'ENABLED')
+                        values (9890001, 0, 'Food Schema Category', '', 1, 'ENABLED')
                         """)
                 .update();
         jdbcClient.sql("""
@@ -31,7 +31,7 @@ class ProductFoodComplianceSchemaTest {
                             id, category_id, title, subtitle, main_image,
                             selling_points, detail_html, sort_order, status
                         ) values (
-                            9890002, 9890001, 'V89 Schema SPU', '',
+                            9890002, 9890001, 'Food Schema SPU', '',
                             'https://assets.example.test/v89-main.png', '', '', 1, 'DRAFT'
                         )
                         """)
@@ -40,10 +40,10 @@ class ProductFoodComplianceSchemaTest {
                         insert into product_sku (
                             id, spu_id, sku_code, spec_json, spec_text,
                             price_cent, original_price_cent, stock_available,
-                            weight_gram, image, status, sort_order
+                            weight_gram, image, status, sort_order, combination_key
                         ) values (
-                            9890003, 9890002, 'V89-SCHEMA-SKU', '{}', '默认规格',
-                            1000, 1200, 10, 100, '', 'ENABLED', 1
+                            9890003, 9890002, 'FOOD-SCHEMA-SKU', '{}', '默认规格',
+                            1000, 1200, 10, 100, '', 'ENABLED', 1, 'FOOD-SCHEMA-SKU'
                         )
                         """)
                 .update();

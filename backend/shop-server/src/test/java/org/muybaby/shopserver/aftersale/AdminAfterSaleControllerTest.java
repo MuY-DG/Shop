@@ -1300,15 +1300,17 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
     private void insertRefundOrder(long afterSaleId, long orderId, String outRefundNo) {
         jdbcClient.sql("""
                         insert into refund_order
-                            (after_sale_id, order_id, payment_order_id, out_refund_no, refund_id,
+                            (after_sale_id, order_id, payment_order_id, notification_route_token,
+                             out_refund_no, refund_id,
                              refund_amount_cent, status, callback_status, requested_at)
                         values
-                            (:afterSaleId, :orderId, :paymentOrderId, :outRefundNo, '',
+                            (:afterSaleId, :orderId, :paymentOrderId, :routeToken, :outRefundNo, '',
                              100, 'PROCESSING', 'PROCESSING', current_timestamp)
                         """)
                 .param("afterSaleId", afterSaleId)
                 .param("orderId", orderId)
                 .param("paymentOrderId", paymentOrderId(orderId))
+                .param("routeToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(outRefundNo))
                 .param("outRefundNo", outRefundNo)
                 .update();
     }

@@ -2,9 +2,6 @@ package org.muybaby.shopserver.logistics.service;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.logistics.ShippingProperties;
-import org.muybaby.shopserver.logistics.WechatReceiptReconciliationProperties;
-import org.muybaby.shopserver.logistics.WechatShippingDeliveryProperties;
 import org.muybaby.shopserver.logistics.dto.AdminWechatShippingRuntimeUpdateRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,20 +24,9 @@ public class WechatShippingRuntimeSettingService {
     private static final long SETTING_ID = 1L;
 
     private final JdbcClient jdbcClient;
-    private final ShippingProperties shippingProperties;
-    private final WechatShippingDeliveryProperties deliveryProperties;
-    private final WechatReceiptReconciliationProperties receiptProperties;
 
-    public WechatShippingRuntimeSettingService(
-            JdbcClient jdbcClient,
-            ShippingProperties shippingProperties,
-            WechatShippingDeliveryProperties deliveryProperties,
-            WechatReceiptReconciliationProperties receiptProperties
-    ) {
+    public WechatShippingRuntimeSettingService(JdbcClient jdbcClient) {
         this.jdbcClient = jdbcClient;
-        this.shippingProperties = shippingProperties;
-        this.deliveryProperties = deliveryProperties;
-        this.receiptProperties = receiptProperties;
     }
 
     @Transactional(readOnly = true)
@@ -55,7 +41,7 @@ public class WechatShippingRuntimeSettingService {
                 .param("id", SETTING_ID)
                 .query(this::map)
                 .optional()
-                .orElseGet(this::environmentDefault);
+                .orElseGet(this::databaseSafeDefault);
     }
 
     public boolean uploadEnabledFailClosed() {
@@ -237,7 +223,6 @@ public class WechatShippingRuntimeSettingService {
     }
 
     private RuntimeSetting map(ResultSet rs, int rowNum) throws SQLException {
-        RuntimeSetting defaults = environmentDefault();
         return new RuntimeSetting(
                 rs.getBoolean("upload_enabled"),
                 rs.getBoolean("delivery_enabled"),
@@ -247,20 +232,15 @@ public class WechatShippingRuntimeSettingService {
                 rs.getString("change_reason"),
                 rs.getObject("updated_by", Long.class),
                 rs.getObject("updated_at", LocalDateTime.class),
-                defaults.defaultUploadEnabled(),
-                defaults.defaultDeliveryEnabled(),
-                defaults.defaultReceiptReconciliationEnabled()
+                false, false, false
         );
     }
 
-    private RuntimeSetting environmentDefault() {
-        boolean uploadEnabled = shippingProperties.isUploadEnabled();
-        boolean deliveryEnabled = uploadEnabled && deliveryProperties.enabled();
-        boolean receiptEnabled = uploadEnabled && receiptProperties.enabled();
+    private RuntimeSetting databaseSafeDefault() {
         return new RuntimeSetting(
-                uploadEnabled, deliveryEnabled, receiptEnabled,
+                false, false, false,
                 false, 0L, "", null, null,
-                uploadEnabled, deliveryEnabled, receiptEnabled
+                false, false, false
         );
     }
 

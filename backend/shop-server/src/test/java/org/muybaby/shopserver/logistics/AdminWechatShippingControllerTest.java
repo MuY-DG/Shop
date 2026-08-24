@@ -53,9 +53,6 @@ class AdminWechatShippingControllerTest {
     private JdbcClient jdbcClient;
 
     @Autowired
-    private ShippingProperties shippingProperties;
-
-    @Autowired
     private AdminCatalogProvider provider;
 
     @BeforeEach
@@ -63,7 +60,6 @@ class AdminWechatShippingControllerTest {
         jdbcClient.sql("delete from wechat_shipping_runtime_audit").update();
         jdbcClient.sql("delete from wechat_shipping_runtime_setting").update();
         jdbcClient.sql("delete from wechat_delivery_company").update();
-        shippingProperties.setUploadEnabled(true);
         provider.mode = WechatProviderMode.REAL;
         provider.capability = WechatShippingCapabilityResult.available();
         provider.companies = List.of(
@@ -123,6 +119,12 @@ class AdminWechatShippingControllerTest {
     @Test
     void authorizedAdminCanReadCapabilityAndCachedCarriersAndSyncOfficialDirectory() throws Exception {
         String token = adminToken(List.of("order:ship"));
+        jdbcClient.sql("""
+                        insert into wechat_shipping_runtime_setting (
+                            id, upload_enabled, delivery_enabled,
+                            receipt_reconciliation_enabled, revision, change_reason
+                        ) values (1, true, false, false, 1, 'TEST_ENABLE_UPLOAD')
+                        """).update();
         jdbcClient.sql("""
                         insert into wechat_delivery_company(delivery_id, delivery_name, enabled, synced_at)
                         values ('OLD', '旧物流', true, :syncedAt)

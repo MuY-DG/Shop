@@ -10,7 +10,6 @@ import org.muybaby.shopserver.operation.dto.OperationsStatisticsDtos.TrafficStat
 import org.muybaby.shopserver.operation.query.TrafficStatisticsQueryRepository;
 import org.muybaby.shopserver.operation.query.CommerceTrendQueryRepository;
 import org.muybaby.shopserver.operation.service.OperationsStatisticsService;
-import org.muybaby.shopserver.storage.AssetModelMigrationTest;
 import org.muybaby.shopserver.user.service.AdminCustomerService;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -29,6 +28,7 @@ import java.time.LocalDate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.muybaby.shopserver.support.MigrationTestSupport.latestMigrationVersion;
+import static org.muybaby.shopserver.support.MigrationTestSupport.migrateToLatest;
 
 @Testcontainers
 @Tag("integration")
@@ -37,21 +37,15 @@ class CommerceFulfillmentMySqlMigrationTest {
     @Container
     private static final MySQLContainer<?> CLEAN_MYSQL = mysql("fulfillment_clean");
 
-    @Container
-    private static final MySQLContainer<?> UPGRADE_MYSQL = mysql("fulfillment_upgrade");
-
     @Test
     void cleanMySqlSchemaMigratesFromV1ToLatest() throws SQLException {
-        CommerceFulfillmentMigrationTest.migrateToLatest(
+        migrateToLatest(
                 CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
 
         Flyway flyway = Flyway.configure()
                 .dataSource(CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword())
-                .placeholders(CommerceFulfillmentMigrationTest.safeSeedPlaceholders())
                 .load();
         assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo(latestMigrationVersion());
-        AssetModelMigrationTest.assertFinalAssetSchema(
-                CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
         assertAdminCustomerCouponQueryIsCollationSafe();
 
         try (Connection connection = DriverManager.getConnection(
@@ -72,61 +66,6 @@ class CommerceFulfillmentMySqlMigrationTest {
             assertThat(resultSet.next()).isTrue();
             assertThat(resultSet.getInt(1)).isEqualTo(10);
         }
-    }
-
-    @Test
-    void environmentPaymentSnapshotInsertIsAppendOnlyOnMySql() {
-        CommerceFulfillmentMigrationTest.migrateToLatest(
-                CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
-        JdbcClient jdbcClient = JdbcClient.create(new DriverManagerDataSource(
-                CLEAN_MYSQL.getJdbcUrl(), CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword()));
-        String fingerprint = "a".repeat(64);
-
-        insertEnvironmentSnapshot(jdbcClient, fingerprint, "wx-original", "v1:original-ciphertext");
-        insertEnvironmentSnapshot(jdbcClient, fingerprint, "wx-replacement", "v1:replacement-ciphertext");
-
-        assertThat(jdbcClient.sql("""
-                        select app_id
-                        from payment_config_snapshot
-                        where fingerprint = :fingerprint
-                        """)
-                .param("fingerprint", fingerprint)
-                .query(String.class)
-                .single()).isEqualTo("wx-original");
-        assertThat(jdbcClient.sql("""
-                        select api_v3_key_ciphertext
-                        from payment_config_snapshot
-                        where fingerprint = :fingerprint
-                        """)
-                .param("fingerprint", fingerprint)
-                .query(String.class)
-                .single()).isEqualTo("v1:original-ciphertext");
-    }
-
-    private void insertEnvironmentSnapshot(
-            JdbcClient jdbcClient,
-            String fingerprint,
-            String appId,
-            String apiV3KeyCiphertext
-    ) {
-        jdbcClient.sql("""
-                        insert into payment_config_snapshot
-                            (fingerprint, config_source, config_name, app_id, mch_id,
-                             merchant_serial_no, api_v3_key_ciphertext, private_key_pem_ciphertext,
-                             notify_url, refund_notify_url, verify_mode, wechat_public_key_id,
-                             wechat_public_key_pem_ciphertext)
-                        values
-                            (:fingerprint, 'ENV', 'MySQL snapshot', :appId, 'mch-snapshot',
-                             'serial-snapshot', :apiV3KeyCiphertext, 'v1:private-ciphertext',
-                             'https://example.test/wxpay/pay/notify',
-                             'https://example.test/wxpay/refund/notify', 'PUBLIC_KEY',
-                             'wechat-public-key-id', 'v1:public-ciphertext')
-                        on duplicate key update fingerprint = fingerprint
-                        """)
-                .param("fingerprint", fingerprint)
-                .param("appId", appId)
-                .param("apiV3KeyCiphertext", apiV3KeyCiphertext)
-                .update();
     }
 
     private void assertAdminCustomerCouponQueryIsCollationSafe() {
@@ -187,29 +126,9 @@ class CommerceFulfillmentMySqlMigrationTest {
     }
 
     @Test
-    void populatedMySqlSchemaMigratesThroughV16AndTheV17StorageCleanBreak() throws SQLException {
-        String jdbcUrl = UPGRADE_MYSQL.getJdbcUrl();
-        String username = UPGRADE_MYSQL.getUsername();
-        String password = UPGRADE_MYSQL.getPassword();
-
-        CommerceFulfillmentMigrationTest.migrateToV9(jdbcUrl, username, password);
-        CommerceFulfillmentMigrationTest.seedLegacyShipment(jdbcUrl, username, password);
-        AssetModelMigrationTest.migrateToV16(jdbcUrl, username, password);
-        AssetModelMigrationTest.seedLegacyStorageBindings(jdbcUrl, username, password);
-        seedLegacyPhoneAuthorization(jdbcUrl, username, password);
-        AssetModelMigrationTest.migrateToLatest(jdbcUrl, username, password);
-
-        CommerceFulfillmentMigrationTest.assertMigratedLegacyShipment(jdbcUrl, username, password);
-        CommerceFulfillmentMigrationTest.assertMigratedLegacyProduct(jdbcUrl, username, password);
-        AssetModelMigrationTest.assertFinalAssetSchema(jdbcUrl, username, password);
-        AssetModelMigrationTest.assertLegacyBindingsWereCleared(jdbcUrl, username, password);
-        assertLegacyPhoneAuthorizationWasSnapshotted(jdbcUrl, username, password);
-    }
-
-    @Test
     void operationsStatisticsUseShanghaiDayBoundariesForUtcMySqlTimestamps() {
         String jdbcUrl = CLEAN_MYSQL.getJdbcUrl();
-        CommerceFulfillmentMigrationTest.migrateToLatest(
+        migrateToLatest(
                 jdbcUrl, CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 jdbcUrl, CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
@@ -222,19 +141,23 @@ class CommerceFulfillmentMySqlMigrationTest {
                 .update();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, idempotency_key,
+                            (id, order_no, user_id, status, idempotency_key, checkout_request_digest,
                              payable_amount_cent, paid_amount_cent, paid_at, created_at, updated_at)
                         values
                             (990111, 'MYSQL-OPS-BEFORE', 990101, 'PAID', 'mysql-ops-before',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              100, 100, timestamp '2029-12-31 15:59:59',
                              timestamp '2029-12-31 15:59:59', timestamp '2029-12-31 15:59:59'),
                             (990112, 'MYSQL-OPS-START', 990101, 'PAID', 'mysql-ops-start',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              200, 200, timestamp '2029-12-31 16:00:00',
                              timestamp '2029-12-31 16:00:00', timestamp '2029-12-31 16:00:00'),
                             (990113, 'MYSQL-OPS-END', 990101, 'PAID', 'mysql-ops-end',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              300, 300, timestamp '2030-01-01 15:59:59',
                              timestamp '2030-01-01 15:59:59', timestamp '2030-01-01 15:59:59'),
                             (990114, 'MYSQL-OPS-AFTER', 990101, 'PAID', 'mysql-ops-after',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              400, 400, timestamp '2030-01-01 16:00:00',
                              timestamp '2030-01-01 16:00:00', timestamp '2030-01-01 16:00:00')
                         """)
@@ -260,7 +183,7 @@ class CommerceFulfillmentMySqlMigrationTest {
     @Test
     void trafficStatisticsReadMySqlTimestampsWithoutReportingAuthenticationFailure() {
         String jdbcUrl = CLEAN_MYSQL.getJdbcUrl();
-        CommerceFulfillmentMigrationTest.migrateToLatest(
+        migrateToLatest(
                 jdbcUrl, CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword());
         JdbcClient jdbcClient = JdbcClient.create(new DriverManagerDataSource(
                 jdbcUrl, CLEAN_MYSQL.getUsername(), CLEAN_MYSQL.getPassword()));
@@ -325,26 +248,6 @@ class CommerceFulfillmentMySqlMigrationTest {
                         org.assertj.core.groups.Tuple.tuple("homeVisit", 1L),
                         org.assertj.core.groups.Tuple.tuple("productView", 1L)
                 );
-    }
-
-    private void seedLegacyPhoneAuthorization(String jdbcUrl, String username, String password) {
-        JdbcClient.create(new DriverManagerDataSource(jdbcUrl, username, password))
-                .sql("""
-                        insert into app_user (id, openid, phone_number, phone_authorized, status)
-                        values (990201, 'mysql-legacy-phone-auth', '13800009902', true, 'ENABLED')
-                        """)
-                .update();
-    }
-
-    private void assertLegacyPhoneAuthorizationWasSnapshotted(
-            String jdbcUrl,
-            String username,
-            String password
-    ) {
-        assertThat(JdbcClient.create(new DriverManagerDataSource(jdbcUrl, username, password))
-                .sql("select phone_authorized_at from app_user where id = 990201")
-                .query(java.time.LocalDateTime.class)
-                .single()).isNotNull();
     }
 
     private static MySQLContainer<?> mysql(String databaseName) {

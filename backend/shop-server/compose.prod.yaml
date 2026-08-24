@@ -6,10 +6,12 @@ services:
     image: mysql:8.4.10
     # 数据库异常退出或服务器重启后自动恢复。
     restart: unless-stopped
-    # 只向 MySQL 容器注入基础设施变量，不暴露微信支付等应用密钥。
-    env_file:
-      - ./.env.infrastructure.local
+    # Compose 通过 --env-file 读取唯一 runtime manifest，本服务只注入 MySQL 所需白名单。
     environment:
+      MYSQL_DATABASE: hotpot_shop
+      MYSQL_USER: shop
+      MYSQL_PASSWORD: ${SHOP_DB_PASSWORD:?SHOP_DB_PASSWORD is required}
+      MYSQL_ROOT_PASSWORD: ${SHOP_DB_ROOT_PASSWORD:?SHOP_DB_ROOT_PASSWORD is required}
       TZ: UTC
     # 使用 utf8mb4，并按当前 4 GB 服务器限制连接数与 InnoDB 缓冲池。
     command:
@@ -54,9 +56,9 @@ services:
     image: redis:7.4.9-alpine
     # Redis 异常退出或服务器重启后自动恢复。
     restart: unless-stopped
-    # Redis 只读取自己的密码，不接触应用或数据库密钥。
-    env_file:
-      - ./.env.infrastructure.local
+    # Redis 只读取自己的密码，不接触 MySQL 或应用加密密钥。
+    environment:
+      REDIS_PASSWORD: ${SHOP_REDIS_PASSWORD:?SHOP_REDIS_PASSWORD is required}
     # 开启 AOF everysec，并要求密码后才接受命令。
     command:
       - /bin/sh
@@ -94,9 +96,9 @@ services:
 
   shop-server:
     # 一键脚本把每个版本保留为独立标签，再将已验证版本指向 shop-server:local。
-    image: ${SHOP_IMAGE:-shop-server:local}
-    # SSH 直传模式不访问公开镜像仓库；切换私有仓库时可覆盖为 always。
-    pull_policy: ${SHOP_IMAGE_PULL_POLICY:-never}
+    image: shop-server:local
+    # SSH 直传模式不访问公开镜像仓库。
+    pull_policy: never
     # MySQL 和 Redis 均通过健康检查后才启动应用。
     depends_on:
       mysql:
@@ -108,28 +110,25 @@ services:
     working_dir: /opt/shop/shop-server
 
     environment:
-      # 容器始终启用生产 Profile。
-      SPRING_PROFILES_ACTIVE: prod
+      # txcloud 和 shop 共用相同的服务器 Profile。
+      SPRING_PROFILES_ACTIVE: server
       # 应用内部与数据库统一使用 UTC；展示时由客户端转换到设备时区。
       TZ: UTC
-      # 容器内部必须监听所有容器网卡，端口仍只发布到宿主机回环地址。
-      SERVER_ADDRESS: 0.0.0.0
+      # 应用只获取自己的业务数据库密码、Redis 密码和加密边界。
+      SHOP_DB_PASSWORD: ${SHOP_DB_PASSWORD:?SHOP_DB_PASSWORD is required}
+      SHOP_REDIS_PASSWORD: ${SHOP_REDIS_PASSWORD:?SHOP_REDIS_PASSWORD is required}
+      SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID: ${SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID:?SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID is required}
+      SHOP_SECRET_ENCRYPTION_KEY_RING: ${SHOP_SECRET_ENCRYPTION_KEY_RING:?SHOP_SECRET_ENCRYPTION_KEY_RING is required}
 
     ports:
       # 只有宿主机 OpenResty/运维检查可以访问，公网不能直接访问 8080。
-      - "127.0.0.1:${SHOP_HOST_PORT:-8080}:8080"
+      - "127.0.0.1:8080:8080"
 
     # 应用可访问内部数据服务，也可通过普通网络访问微信与 COS。
     networks:
-      - data
-      - edge
-
-    volumes:
-      # Spring Boot 强制读取生产变量；文件只读挂载且绝不写进镜像。
-      - type: bind
-        source: ./.env.prod.local
-        target: /opt/shop/shop-server/.env.prod.local
-        read_only: true
+      data:
+      edge:
+        gw_priority: 1
 
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/actuator/health"]
@@ -160,12 +159,25 @@ services:
 networks:
   data:
     internal: true
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
+          gateway: 172.22.0.1
   edge:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.23.0.0/24
+          gateway: 172.23.0.1
   ops:
     driver: bridge
     driver_opts:
       # 即使将来端口短语法漏写 Host IP，也默认只绑定服务器回环地址。
       com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
+    ipam:
+      config:
+        - subnet: 172.24.0.0/24
+          gateway: 172.24.0.1
 
 # 命名卷由 Docker 管理，并可由 1Panel 进行查看和备份。
 volumes:

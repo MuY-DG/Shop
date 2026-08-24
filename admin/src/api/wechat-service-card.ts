@@ -36,11 +36,3 @@ export function updateWechatServiceCardConfig(data: Api.WechatServiceCard.Config
     showSuccessMessage: true
   })
 }
-
-export function importWechatServiceCardLegacyEnvironment(version: number) {
-  return request.post<Api.WechatServiceCard.Config>({
-    url: `${baseUrl}/config/legacy-env-import`,
-    data: { version },
-    showSuccessMessage: true
-  })
-}

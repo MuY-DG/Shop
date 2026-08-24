@@ -52,8 +52,8 @@ class WechatPaySdkRuntimeCompatibilityTest {
         generator.initialize(2048);
         KeyPair keyPair = generator.generateKeyPair();
         return new ResolvedPaymentConfig(
-                PaymentConfigSource.HISTORICAL_SNAPSHOT,
-                null,
+                PaymentConfigSource.DB,
+                1L,
                 "SDK runtime compatibility test",
                 true,
                 "wx-sdk-runtime-test",
@@ -65,10 +65,7 @@ class WechatPaySdkRuntimeCompatibilityTest {
                 "https://pay.example.test/wxpay/refund/notify",
                 PaymentVerifyMode.PUBLIC_KEY,
                 "PUB_KEY_ID_SDK_RUNTIME_TEST",
-                pem("PUBLIC KEY", keyPair.getPublic().getEncoded()),
-                null,
-                null,
-                null
+                pem("PUBLIC KEY", keyPair.getPublic().getEncoded())
         );
     }
 

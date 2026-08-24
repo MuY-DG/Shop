@@ -59,12 +59,6 @@ public class AdminPaymentConfigController {
         return ApiResponse.success(adminPaymentConfigService.update(configId, request));
     }
 
-    @PostMapping("/{configId}/import-legacy-secret-files")
-    @PreAuthorize("hasAuthority('payment:config:write')")
-    public ApiResponse<AdminPaymentConfigResponse> importLegacySecretFiles(@PathVariable Long configId) {
-        return ApiResponse.success(adminPaymentConfigService.importLegacySecretFiles(configId));
-    }
-
     @PostMapping("/{configId}/enable")
     @PreAuthorize("hasAuthority('payment:config:enable')")
     public ApiResponse<AdminPaymentConfigResponse> enable(@PathVariable Long configId) {

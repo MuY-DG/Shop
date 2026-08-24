@@ -1,6 +1,6 @@
 declare namespace Api {
   namespace WechatPlatform {
-    type Source = 'DATABASE' | 'ENVIRONMENT' | 'NONE'
+    type Source = 'DATABASE' | 'NONE'
 
     interface Config {
       configured: boolean
@@ -8,7 +8,6 @@ declare namespace Api {
       appId: string
       appSecretMasked: string
       appSecretConfigured: boolean
-      legacyEnvironmentImportAvailable: boolean
       version: number
       updatedBy: string | null
       updatedAt: string | null

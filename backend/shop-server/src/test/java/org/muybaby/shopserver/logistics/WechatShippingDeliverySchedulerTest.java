@@ -66,7 +66,6 @@ class WechatShippingDeliverySchedulerTest {
                     WechatShippingDeliveryProperties properties = context.getBean(
                             WechatShippingDeliveryProperties.class
                     );
-                    assertThat(properties.enabled()).isTrue();
                     assertThat(properties.delay()).isEqualTo(Duration.ofHours(1));
                     assertThat(properties.batchSize()).isEqualTo(7);
                     assertThat(properties.claimTimeout()).isEqualTo(Duration.ofMinutes(3));

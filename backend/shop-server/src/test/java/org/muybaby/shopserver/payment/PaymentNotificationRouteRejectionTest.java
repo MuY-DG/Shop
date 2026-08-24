@@ -18,6 +18,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PaymentNotificationRouteRejectionTest extends PaymentTestSupport {
 
     @Test
+    void callbacksWithoutOpaqueRoutesAreNotExposed() throws Exception {
+        mockMvc.perform(post("/wxpay/pay/notify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/wxpay/refund/notify")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isNotFound());
+
+        assertThat(callbackLogCount()).isZero();
+    }
+
+    @Test
     void unknownWellFormedPayRouteDoesNotCreateARejectedCallbackLog() throws Exception {
         String outTradeNo = "UNKNOWN-ROUTE-PAYMENT";
 

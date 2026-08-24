@@ -24,15 +24,6 @@ public class AfterSaleV2ReadService {
         this.jdbcClient = jdbcClient;
     }
 
-    public boolean isV2(long afterSaleId) {
-        Integer version = jdbcClient.sql("select flow_version from after_sale_request where id = :id")
-                .param("id", afterSaleId)
-                .query(Integer.class)
-                .optional()
-                .orElse(1);
-        return version >= 2;
-    }
-
     public AfterSaleResponse decorate(AfterSaleResponse base) {
         return decorateAll(List.of(base)).getFirst();
     }
@@ -44,60 +35,27 @@ public class AfterSaleV2ReadService {
         List<Long> afterSaleIds = bases.stream()
                 .map(AfterSaleResponse::id)
                 .toList();
-        Map<Long, Integer> flowVersions = flowVersions(afterSaleIds);
-        List<Long> v2AfterSaleIds = bases.stream()
-                .filter(base -> flowVersions.getOrDefault(base.id(), 1) >= 2)
-                .map(AfterSaleResponse::id)
-                .toList();
-        List<Long> legacyOrderIds = bases.stream()
-                .filter(base -> flowVersions.getOrDefault(base.id(), 1) < 2)
-                .map(AfterSaleResponse::orderId)
-                .distinct()
-                .toList();
-        Map<Long, List<AfterSaleItemResponse>> v2Items = v2Items(v2AfterSaleIds);
-        Map<Long, List<LegacyItem>> legacyItems = legacyItems(legacyOrderIds);
+        Map<Long, List<AfterSaleItemResponse>> items = currentItems(afterSaleIds);
         Map<Long, AfterSaleReturnResponse> returns = returnInfos(afterSaleIds);
 
         return bases.stream()
-                .map(base -> {
-                    int flowVersion = flowVersions.getOrDefault(base.id(), 1);
-                    List<AfterSaleItemResponse> items = flowVersion >= 2
-                            ? v2Items.getOrDefault(base.id(), List.of())
-                            : legacyItems(
-                                    legacyItems.getOrDefault(base.orderId(), List.of()),
-                                    base.requestedAmountCent());
-                    return new AfterSaleResponse(
+                .map(base -> new AfterSaleResponse(
                             base.id(), base.afterSaleNo(), base.orderId(), base.orderNo(),
                             base.userId(), base.userNickname(), base.afterSaleType(), base.status(),
                             base.reason(), base.description(), base.requestedAmountCent(),
                             base.approvedAmountCent(), base.auditNote(), base.reviewedBy(),
                             base.reviewedAt(), base.createdAt(), base.evidenceFileIds(),
-                            base.evidenceFiles(), base.refundOrder(), flowVersion, flowVersion < 2,
-                            items, returns.get(base.id()), allowedActions(base.status()));
-                })
+                            base.evidenceFiles(), base.refundOrder(),
+                            items.getOrDefault(base.id(), List.of()),
+                            returns.get(base.id()), allowedActions(base.status())))
                 .toList();
     }
 
-    private Map<Long, Integer> flowVersions(List<Long> afterSaleIds) {
-        Map<Long, Integer> versions = new HashMap<>();
-        jdbcClient.sql("""
-                        select id, flow_version
-                        from after_sale_request
-                        where id in (:afterSaleIds)
-                        """)
-                .param("afterSaleIds", afterSaleIds)
-                .query((rs, rowNum) -> new FlowVersionRow(
-                        rs.getLong("id"), rs.getInt("flow_version")))
-                .list()
-                .forEach(row -> versions.put(row.afterSaleId(), row.flowVersion()));
-        return versions;
-    }
-
-    private Map<Long, List<AfterSaleItemResponse>> v2Items(List<Long> afterSaleIds) {
+    private Map<Long, List<AfterSaleItemResponse>> currentItems(List<Long> afterSaleIds) {
         if (afterSaleIds.isEmpty()) {
             return Map.of();
         }
-        List<V2ItemRow> rows = jdbcClient.sql("""
+        List<ItemRow> rows = jdbcClient.sql("""
                         select asi.after_sale_id, asi.id, asi.order_item_id, asi.sku_id,
                                oi.product_title, oi.spec_text,
                                case when oi.display_image <> '' then oi.display_image
@@ -112,70 +70,15 @@ public class AfterSaleV2ReadService {
                         order by asi.after_sale_id, asi.id
                         """)
                 .param("afterSaleIds", afterSaleIds)
-                .query((rs, rowNum) -> new V2ItemRow(
+                .query((rs, rowNum) -> new ItemRow(
                         rs.getLong("after_sale_id"), mapItem(rs, rowNum)))
                 .list();
         Map<Long, List<AfterSaleItemResponse>> items = new HashMap<>();
-        for (V2ItemRow row : rows) {
+        for (ItemRow row : rows) {
             items.computeIfAbsent(row.afterSaleId(), ignored -> new ArrayList<>())
                     .add(row.item());
         }
         return items;
-    }
-
-    private Map<Long, List<LegacyItem>> legacyItems(List<Long> orderIds) {
-        if (orderIds.isEmpty()) {
-            return Map.of();
-        }
-        List<LegacyItemRow> rows = jdbcClient.sql("""
-                        select order_id, id, sku_id, product_title, spec_text,
-                               case when display_image <> '' then display_image
-                                    when sku_image <> '' then sku_image
-                                    else main_image end as image,
-                               quantity,
-                               coalesce(paid_amount_allocated_cent, line_amount_cent) as amount_cent
-                        from order_item
-                        where order_id in (:orderIds)
-                        order by order_id, id
-                        """)
-                .param("orderIds", orderIds)
-                .query((rs, rowNum) -> new LegacyItemRow(
-                        rs.getLong("order_id"),
-                        new LegacyItem(
-                                rs.getLong("id"), rs.getLong("sku_id"),
-                                rs.getString("product_title"), rs.getString("spec_text"),
-                                rs.getString("image"), rs.getInt("quantity"),
-                                rs.getLong("amount_cent"))))
-                .list();
-        Map<Long, List<LegacyItem>> items = new HashMap<>();
-        for (LegacyItemRow row : rows) {
-            items.computeIfAbsent(row.orderId(), ignored -> new ArrayList<>())
-                    .add(row.item());
-        }
-        return items;
-    }
-
-    private List<AfterSaleItemResponse> legacyItems(
-            List<LegacyItem> rows,
-            long requestedAmountCent
-    ) {
-        if (rows.isEmpty()) {
-            return List.of();
-        }
-        long basisTotal = rows.stream().mapToLong(LegacyItem::amountCent).sum();
-        List<AfterSaleItemResponse> result = new ArrayList<>(rows.size());
-        long allocated = 0;
-        for (int index = 0; index < rows.size(); index++) {
-            LegacyItem row = rows.get(index);
-            long amount = index == rows.size() - 1
-                    ? Math.max(0, requestedAmountCent - allocated)
-                    : basisTotal == 0 ? 0 : requestedAmountCent * row.amountCent() / basisTotal;
-            allocated += amount;
-            result.add(new AfterSaleItemResponse(
-                    null, row.orderItemId(), row.skuId(), row.title(), row.specText(), row.image(),
-                    row.quantity(), row.quantity(), amount, amount, row.quantity()));
-        }
-        return List.copyOf(result);
     }
 
     private Map<Long, AfterSaleReturnResponse> returnInfos(List<Long> afterSaleIds) {
@@ -231,24 +134,7 @@ public class AfterSaleV2ReadService {
                 rs.getObject("approved_amount_cent", Long.class), rs.getInt("restock_quantity"));
     }
 
-    private record LegacyItem(
-            Long orderItemId,
-            Long skuId,
-            String title,
-            String specText,
-            String image,
-            int quantity,
-            long amountCent
-    ) {
-    }
-
-    private record FlowVersionRow(long afterSaleId, int flowVersion) {
-    }
-
-    private record V2ItemRow(long afterSaleId, AfterSaleItemResponse item) {
-    }
-
-    private record LegacyItemRow(long orderId, LegacyItem item) {
+    private record ItemRow(long afterSaleId, AfterSaleItemResponse item) {
     }
 
     private record ReturnRow(long afterSaleId, AfterSaleReturnResponse returnInfo) {

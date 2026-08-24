@@ -36,7 +36,8 @@ test('merchant publication allows empty fields, confirms before publishing real 
 })
 
 test('legal-document publication warns about privacy and cancellation version invalidation', () => {
-  assert.match(documentSource, /V105 已创建首版账号注销须知/)
+  assert.match(documentSource, /录入并发布/)
+  assert.match(documentSource, /账号注销须知/)
   assert.match(documentSource, /真实删除和保留规则/)
   assert.match(documentSource, /小程序登录只接受此版本/)
   assert.match(documentSource, /重新阅读并勾选新版本/)

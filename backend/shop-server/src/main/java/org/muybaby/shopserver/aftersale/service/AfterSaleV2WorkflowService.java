@@ -41,14 +41,6 @@ public class AfterSaleV2WorkflowService {
         this.orderStatusLogService = orderStatusLogService;
     }
 
-    public boolean isV2(long afterSaleId) {
-        return jdbcClient.sql("select flow_version from after_sale_request where id = :id")
-                .param("id", afterSaleId)
-                .query(Integer.class)
-                .optional()
-                .orElse(1) >= 2;
-    }
-
     public String type(long afterSaleId) {
         return jdbcClient.sql("select after_sale_type from after_sale_request where id = :id")
                 .param("id", afterSaleId)
@@ -70,8 +62,7 @@ public class AfterSaleV2WorkflowService {
         Route route = route(afterSaleId);
         OrderState order = lockOrder(route.orderId());
         AfterSaleState afterSale = lockAfterSale(afterSaleId);
-        if (afterSale.flowVersion() < 2
-                || !AfterSaleType.RETURN_REFUND.name().equals(afterSale.type())
+        if (!AfterSaleType.RETURN_REFUND.name().equals(afterSale.type())
                 || !AfterSaleStatus.REQUESTED.name().equals(afterSale.status())
                 || request == null || request.returnAddressId() == null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
@@ -207,8 +198,7 @@ public class AfterSaleV2WorkflowService {
         Route route = route(afterSaleId);
         OrderState order = lockOrder(route.orderId());
         AfterSaleState afterSale = lockAfterSale(afterSaleId);
-        if (afterSale.flowVersion() < 2
-                || !AfterSaleStatus.RETURNING.name().equals(afterSale.status())) {
+        if (!AfterSaleStatus.RETURNING.name().equals(afterSale.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
@@ -241,8 +231,7 @@ public class AfterSaleV2WorkflowService {
         Route route = route(afterSaleId);
         OrderState order = lockOrder(route.orderId());
         AfterSaleState afterSale = lockAfterSale(afterSaleId);
-        if (afterSale.flowVersion() < 2
-                || !AfterSaleStatus.WAITING_INSPECTION.name().equals(afterSale.status())) {
+        if (!AfterSaleStatus.WAITING_INSPECTION.name().equals(afterSale.status())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         String rejection = note(note, true);
@@ -416,13 +405,13 @@ public class AfterSaleV2WorkflowService {
 
     private AfterSaleState lockAfterSale(long afterSaleId) {
         return jdbcClient.sql("""
-                        select id, order_id, flow_version, after_sale_type, status
+                        select id, order_id, after_sale_type, status
                         from after_sale_request where id = :id for update
                         """)
                 .param("id", afterSaleId)
                 .query((rs, rowNum) -> new AfterSaleState(
                         rs.getLong("id"), rs.getLong("order_id"),
-                        rs.getInt("flow_version"), rs.getString("after_sale_type"),
+                        rs.getString("after_sale_type"),
                         rs.getString("status")))
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
@@ -492,7 +481,6 @@ public class AfterSaleV2WorkflowService {
     private record AfterSaleState(
             long afterSaleId,
             long orderId,
-            int flowVersion,
             String type,
             String status
     ) {

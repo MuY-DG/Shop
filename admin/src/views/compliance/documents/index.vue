@@ -1,7 +1,7 @@
 <template>
   <div class="legal-documents-page art-full-height">
     <ElAlert
-      title="法律文档按版本保存且发布后不可修改。V105 已创建首版账号注销须知；上线前仍须按真实删除和保留规则复核，其他文档不提供示例条款。"
+      title="法律文档按版本保存且发布后不可修改。上线前必须录入并发布符合真实删除和保留规则的账号注销须知；其他文档也不提供示例条款。"
       type="warning"
       :closable="false"
       show-icon

@@ -4,11 +4,9 @@ import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.wechat.platform.dto.AdminWechatPlatformConfigResponse;
 import org.muybaby.shopserver.wechat.platform.dto.AdminWechatPlatformConfigUpdateRequest;
-import org.muybaby.shopserver.wechat.platform.dto.AdminWechatPlatformEnvironmentImportRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -37,15 +35,5 @@ public class AdminWechatPlatformConfigController {
             @RequestBody AdminWechatPlatformConfigUpdateRequest request
     ) {
         return ApiResponse.success(configService.update(request, principal.subjectId()));
-    }
-
-    @PostMapping("/legacy-env-import")
-    @PreAuthorize("hasAuthority('wechat-platform:config:write')")
-    public ApiResponse<AdminWechatPlatformConfigResponse> importLegacyEnvironment(
-            @AuthenticationPrincipal AuthenticatedPrincipal principal,
-            @RequestBody AdminWechatPlatformEnvironmentImportRequest request
-    ) {
-        return ApiResponse.success(
-                configService.importLegacyEnvironment(request, principal.subjectId()));
     }
 }

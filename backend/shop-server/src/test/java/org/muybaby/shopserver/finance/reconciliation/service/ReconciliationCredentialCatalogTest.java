@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +28,7 @@ class ReconciliationCredentialCatalogTest {
 
     private static final LocalDate BILL_DATE = LocalDate.of(2026, 8, 1);
     private static final String FINGERPRINT = "9".repeat(64);
+    private static final long HISTORICAL_CONFIG_ID = 76L;
 
     @Autowired
     private ReconciliationCredentialCatalog catalog;
@@ -40,14 +41,14 @@ class ReconciliationCredentialCatalogTest {
 
     @Test
     void unavailableCurrentConfigDoesNotBlockUsableHistoricalIdentity() {
-        insertPaidEnvironmentPayment(9_362_001L, 9_362_002L);
+        insertPaidDbPayment(9_362_001L, 9_362_002L);
         ResolvedPaymentConfig historical = mock(ResolvedPaymentConfig.class);
         when(paymentConfigResolver.resolve())
                 .thenThrow(new BusinessException(ErrorCode.VALIDATION_FAILED));
-        when(paymentConfigResolver.resolveForPayment(isNull(), org.mockito.ArgumentMatchers.eq(FINGERPRINT)))
+        when(paymentConfigResolver.resolveForPayment(eq(HISTORICAL_CONFIG_ID), eq(FINGERPRINT)))
                 .thenReturn(historical);
         when(historical.mchId()).thenReturn("mch-historical");
-        when(historical.configId()).thenReturn(null);
+        when(historical.configId()).thenReturn(HISTORICAL_CONFIG_ID);
         when(paymentConfigResolver.fingerprint(historical)).thenReturn(FINGERPRINT);
 
         assertThat(catalog.available(BILL_DATE))
@@ -60,10 +61,10 @@ class ReconciliationCredentialCatalogTest {
 
     @Test
     void unresolvedHistoricalIdentityFailsClosedInsteadOfSilentlySkippingMerchant() {
-        insertPaidEnvironmentPayment(9_362_003L, 9_362_004L);
+        insertPaidDbPayment(9_362_003L, 9_362_004L);
         when(paymentConfigResolver.resolve())
                 .thenThrow(new BusinessException(ErrorCode.VALIDATION_FAILED));
-        when(paymentConfigResolver.resolveForPayment(isNull(), org.mockito.ArgumentMatchers.eq(FINGERPRINT)))
+        when(paymentConfigResolver.resolveForPayment(eq(HISTORICAL_CONFIG_ID), eq(FINGERPRINT)))
                 .thenThrow(new BusinessException(ErrorCode.VALIDATION_FAILED));
 
         assertThatThrownBy(() -> catalog.available(BILL_DATE))
@@ -74,7 +75,7 @@ class ReconciliationCredentialCatalogTest {
 
     @Test
     void currentMerchantSwitchStillDiscoversOldPayingIdentityWithMissedCallback() {
-        insertEnvironmentPayment(9_362_005L, 9_362_006L, "PAYING", null);
+        insertDbPayment(9_362_005L, 9_362_006L, "PAYING", null);
         ResolvedPaymentConfig current = mock(ResolvedPaymentConfig.class);
         ResolvedPaymentConfig historical = mock(ResolvedPaymentConfig.class);
         when(paymentConfigResolver.resolve()).thenReturn(current);
@@ -82,10 +83,10 @@ class ReconciliationCredentialCatalogTest {
         when(current.mchId()).thenReturn("mch-current-new");
         when(current.configId()).thenReturn(77L);
         when(paymentConfigResolver.fingerprint(current)).thenReturn("8".repeat(64));
-        when(paymentConfigResolver.resolveForPayment(isNull(), org.mockito.ArgumentMatchers.eq(FINGERPRINT)))
+        when(paymentConfigResolver.resolveForPayment(eq(HISTORICAL_CONFIG_ID), eq(FINGERPRINT)))
                 .thenReturn(historical);
         when(historical.mchId()).thenReturn("mch-historical-missed-callback");
-        when(historical.configId()).thenReturn(null);
+        when(historical.configId()).thenReturn(HISTORICAL_CONFIG_ID);
         when(paymentConfigResolver.fingerprint(historical)).thenReturn(FINGERPRINT);
 
         assertThat(catalog.available(BILL_DATE))
@@ -93,15 +94,15 @@ class ReconciliationCredentialCatalogTest {
                 .containsExactly("mch-current-new", "mch-historical-missed-callback");
     }
 
-    private void insertPaidEnvironmentPayment(long orderId, long paymentId) {
-        insertEnvironmentPayment(
+    private void insertPaidDbPayment(long orderId, long paymentId) {
+        insertDbPayment(
                 orderId,
                 paymentId,
                 "PAID",
                 LocalDateTime.of(2026, 8, 1, 2, 0));
     }
 
-    private void insertEnvironmentPayment(
+    private void insertDbPayment(
             long orderId,
             long paymentId,
             String status,
@@ -110,10 +111,11 @@ class ReconciliationCredentialCatalogTest {
         LocalDateTime now = LocalDateTime.of(2026, 8, 1, 2, 0);
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              paid_amount_cent, created_at, updated_at)
                         values
                             (:id, :orderNo, 1, 'PAID', 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              100, :now, :now)
                         """)
                 .param("id", orderId)
@@ -124,16 +126,18 @@ class ReconciliationCredentialCatalogTest {
         jdbcClient.sql("""
                         insert into payment_order
                             (id, order_id, payment_config_id, payment_config_fingerprint,
-                             out_trade_no, transaction_id, status, amount_cent, expires_at,
+                             notification_route_token, out_trade_no, transaction_id, status, amount_cent, expires_at,
                              paid_at, created_at, updated_at)
                         values
-                            (:id, :orderId, null, :fingerprint,
-                             :outTradeNo, :transactionId, :status, 100, :expiresAt,
+                            (:id, :orderId, :paymentConfigId, :fingerprint,
+                             :routeToken, :outTradeNo, :transactionId, :status, 100, :expiresAt,
                              :paidAt, :createdAt, :updatedAt)
                         """)
                 .param("id", paymentId)
                 .param("orderId", orderId)
+                .param("paymentConfigId", HISTORICAL_CONFIG_ID)
                 .param("fingerprint", FINGERPRINT)
+                .param("routeToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(paymentId))
                 .param("outTradeNo", "TRADE-CREDENTIAL-" + paymentId)
                 .param("transactionId", "TX-CREDENTIAL-" + paymentId)
                 .param("status", status)

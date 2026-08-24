@@ -14,10 +14,7 @@ public record ResolvedPaymentConfig(
         String refundNotifyUrl,
         PaymentVerifyMode verifyMode,
         String wechatPublicKeyId,
-        String wechatPublicKeyPem,
-        Long privateKeyFileId,
-        Long merchantCertificateFileId,
-        Long wechatPublicKeyFileId
+        String wechatPublicKeyPem
 ) {
     @Override
     public String toString() {
@@ -34,9 +31,7 @@ public record ResolvedPaymentConfig(
                 + ", refundNotifyUrlConfigured=" + hasText(refundNotifyUrl)
                 + ", verifyMode=" + verifyMode
                 + ", wechatPublicKeyIdConfigured=" + hasText(wechatPublicKeyId)
-                + ", wechatPublicKeyPemConfigured=" + hasText(wechatPublicKeyPem)
-                + ", legacySecretFilesConfigured=" + (privateKeyFileId != null
-                || merchantCertificateFileId != null || wechatPublicKeyFileId != null) + "]";
+                + ", wechatPublicKeyPemConfigured=" + hasText(wechatPublicKeyPem) + "]";
     }
 
     private boolean hasText(String value) {

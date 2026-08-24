@@ -701,8 +701,11 @@ class AppProductEngagementControllerTest {
         String suffix = Long.toString(System.nanoTime());
         jdbcClient.sql("""
                         INSERT INTO shop_order (
-                            order_no, user_id, status, idempotency_key, completed_at
-                        ) VALUES (:orderNo, :userId, :status, :idempotencyKey, :completedAt)
+                            order_no, user_id, status, idempotency_key,
+                            checkout_request_digest, completed_at
+                        ) VALUES (:orderNo, :userId, :status, :idempotencyKey,
+                                  'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                                  :completedAt)
                         """)
                 .param("orderNo", "ENG" + suffix)
                 .param("userId", userId)

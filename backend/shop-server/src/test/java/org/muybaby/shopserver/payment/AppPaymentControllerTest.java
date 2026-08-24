@@ -208,8 +208,8 @@ class AppPaymentControllerTest extends PaymentTestSupport {
     }
 
     @Test
-    void nonMockRepeatPayWithMissingSigningMaterialFailsClosedWithoutMockParams() throws Exception {
-        seedEnabledPaymentConfig("", "");
+    void nonMockRepeatPayWithInvalidSigningMaterialFailsClosedWithoutMockParams() throws Exception {
+        seedEnabledPaymentConfig("invalid-private-key", "invalid-public-key");
         AppLoginSession session = appLogin("payment-repeat-non-mock-user");
         SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
         pay(session.token(), order.orderId());

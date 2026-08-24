@@ -180,9 +180,9 @@ class AppCartServiceTest {
                 .update();
         jdbcClient.sql("""
                         insert into product_sku (id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                                                 stock_available, weight_gram, image, status, sort_order)
+                                                 stock_available, weight_gram, image, status, sort_order, combination_key)
                         values (:id, :spuId, :skuCode, '{"规格":"300g"}', '300g', :priceCent, :originalPriceCent,
-                                :stockAvailable, 300, 'https://example.test/sku.jpg', 'ENABLED', 1)
+                                :stockAvailable, 300, 'https://example.test/sku.jpg', 'ENABLED', 1, :skuCode)
                         """)
                 .param("id", skuId)
                 .param("spuId", spuId)

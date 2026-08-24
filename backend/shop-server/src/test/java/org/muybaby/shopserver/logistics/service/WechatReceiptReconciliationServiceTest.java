@@ -210,13 +210,14 @@ class WechatReceiptReconciliationServiceTest {
                 .update();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent,
                              receiver_name, receiver_phone, receiver_address,
                              payment_transaction_id, shipped_at, created_at, updated_at)
                         values
                             (:orderId, :orderNo, :userId, 'SHIPPED', 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              1000, 1000, 0, 0, 1000, 1000,
                              'Receipt User', '13800138000', 'Receipt Address',
                              :transactionId, :shippedAt, :now, :now)

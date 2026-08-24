@@ -26,7 +26,7 @@ pnpm check:generated-imports  # 校验自动导入生成物与仓库一致
 | 文件 | 用途 |
 | --- | --- |
 | `.env` | 通用配置；`VITE_ACCESS_MODE=backend` 启用后端驱动菜单与 RBAC |
-| `.env.development` | 开发环境：`VITE_API_PROXY_URL` / `VITE_ADMIN_API_PROXY_URL` 指向 Vite 代理目标 |
+| `.env.development` | 本机开发：一个 `VITE_API_PROXY_URL` 统一代理到 `local` 后端 |
 | `.env.production` | 生产环境：同源路径，由边缘网关把 `/admin/**` 转发到后端 |
 
 ## 后端契约

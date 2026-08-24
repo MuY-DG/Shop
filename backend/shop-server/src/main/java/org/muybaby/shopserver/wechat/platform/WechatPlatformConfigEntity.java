@@ -10,7 +10,6 @@ public record WechatPlatformConfigEntity(
         String secretKeyId,
         long secretRevision,
         long revision,
-        LocalDateTime importedFromEnvAt,
         Long createdBy,
         Long updatedBy,
         LocalDateTime secretReencryptedAt,

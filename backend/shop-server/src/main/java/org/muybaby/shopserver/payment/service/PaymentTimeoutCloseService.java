@@ -368,7 +368,7 @@ public class PaymentTimeoutCloseService {
         return new ExpiredPaymentRow(
                 rs.getLong("payment_order_id"),
                 rs.getLong("order_id"),
-                nullableLong(rs, "payment_config_id"),
+                rs.getLong("payment_config_id"),
                 rs.getString("payment_config_fingerprint"),
                 rs.getString("out_trade_no")
         );
@@ -380,11 +380,6 @@ public class PaymentTimeoutCloseService {
                 rs.getObject("expires_at", LocalDateTime.class),
                 rs.getString("timeout_close_claim_token")
         );
-    }
-
-    private Long nullableLong(ResultSet rs, String columnLabel) throws SQLException {
-        long value = rs.getLong(columnLabel);
-        return rs.wasNull() ? null : value;
     }
 
     private record ExpiredPaymentRow(

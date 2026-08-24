@@ -12,7 +12,6 @@ import java.time.Duration;
 @Validated
 @ConfigurationProperties(prefix = "shop.wechat.shipping.delivery")
 public record WechatShippingDeliveryProperties(
-        @DefaultValue("true") boolean enabled,
         @DefaultValue("15s") @NotNull Duration delay,
         @DefaultValue("50") @Min(1) @Max(200) int batchSize,
         @DefaultValue("1m") @NotNull Duration claimTimeout,

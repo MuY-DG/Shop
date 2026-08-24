@@ -1,30 +1,31 @@
 package org.muybaby.shopserver.wechat.servicecard;
 
 import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfig;
-import org.springframework.util.StringUtils;
 
-import java.util.Locale;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 public final class WechatServiceCardTestConfigs {
 
     private WechatServiceCardTestConfigs() {
     }
 
-    public static WechatServiceCardConfig fromProperties(
-            WechatServiceCardProperties properties
-    ) {
+    public static WechatServiceCardConfig readyConfig() {
         return new WechatServiceCardConfig(
-                properties.accountTemplateRecordId(),
-                properties.fallbackProductImage(),
-                properties.allowedImageHosts().stream()
-                        .filter(StringUtils::hasText)
-                        .map(value -> value.trim().toLowerCase(Locale.ROOT))
-                        .collect(Collectors.toUnmodifiableSet()),
-                properties.preferOrderSnapshotImages(),
-                properties.callback().enabled(),
-                properties.callback().token(),
-                properties.callback().encodingAesKey(),
-                WechatServiceCardConfig.Source.ENVIRONMENT);
+                "template-record",
+                "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
+                Set.of("admin.junxiangshiping.cn"),
+                false,
+                true,
+                "callbackToken123",
+                "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
+                WechatServiceCardConfig.Source.DATABASE
+        );
+    }
+
+    public static WechatServiceCardConfig disabledConfig() {
+        return new WechatServiceCardConfig(
+                "", "", Set.of(), false, false, "", "",
+                WechatServiceCardConfig.Source.DATABASE
+        );
     }
 }

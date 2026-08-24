@@ -16,6 +16,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -27,6 +29,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class PaymentCallbackServiceTest extends PaymentTestSupport {
+
+    private static final Pattern OUT_TRADE_NO_PATTERN =
+            Pattern.compile("\\\"out_trade_no\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
 
     @Autowired
     private PaymentCallbackService paymentCallbackService;
@@ -99,7 +104,7 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
     }
 
     @Test
-    void callbackFallsBackToPaymentOrdersHistoricalConfigurationAfterRotation() throws Exception {
+    void routedCallbackUsesThePaymentOrdersBoundConfigurationAfterRotation() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-callback-config-rotation-user");
         SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
@@ -115,11 +120,11 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
 
         assertPaidState(order, outTradeNo, "wx-old-config");
         assertThat(mockWechatPayProvider.payNotificationConfigAttempts(outTradeNo))
-                .containsExactly(91002L, 91001L);
+                .containsExactly(91001L);
     }
 
     @Test
-    void callbackReparsesWithExactStoredIdentityWhenCurrentRevisionCanAlsoParse() throws Exception {
+    void routedCallbackParsesExactlyOnceWithTheBoundConfiguration() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-callback-shared-key-rotation-user");
         SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
@@ -134,11 +139,11 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
 
         assertPaidState(order, outTradeNo, "wx-shared-key");
         assertThat(mockWechatPayProvider.payNotificationConfigAttempts(outTradeNo))
-                .containsExactly(91002L, 91001L);
+                .containsExactly(91001L);
     }
 
     @Test
-    void verifiedNotificationConfigurationMustMatchPaymentConfigurationIdentity() throws Exception {
+    void routedNotificationNeverFallsBackToTheCurrentConfiguration() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-callback-config-mismatch-user");
         SeedOrder order = seedCreatedOrder(session.userId(), 6980L, true);
@@ -151,7 +156,7 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                 payNotifyBody("notify-payment-wrong-config", outTradeNo, "wx-wrong-config", 6980L),
                 "mock-valid-signature"
         ).andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(500002));
+                .andExpect(jsonPath("$.code").value(100400));
 
         assertPayingState(order, outTradeNo);
         assertThat(jdbcClient.sql("""
@@ -165,7 +170,7 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                 .query(Integer.class)
                 .single()).isZero();
         assertThat(mockWechatPayProvider.payNotificationConfigAttempts(outTradeNo))
-                .containsExactly(91002L, 91001L);
+                .containsExactly(91001L);
     }
 
     @Test
@@ -200,6 +205,7 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
                         throw new IllegalStateException("Concurrent callback was interrupted", ex);
                     }
                     paymentCallbackService.handlePayNotification(
+                            paymentRouteToken(outTradeNo),
                             notificationTimestamp,
                             "mock-notify-nonce",
                             "mock-serial",
@@ -530,13 +536,32 @@ class PaymentCallbackServiceTest extends PaymentTestSupport {
             String signature,
             String timestamp
     ) throws Exception {
-        return mockMvc.perform(post("/wxpay/pay/notify")
+        String outTradeNo = requiredJsonField(OUT_TRADE_NO_PATTERN, body);
+        return mockMvc.perform(post("/wxpay/pay/notify/r/{routeToken}", paymentRouteToken(outTradeNo))
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Wechatpay-Timestamp", timestamp)
                 .header("Wechatpay-Nonce", "mock-notify-nonce")
                 .header("Wechatpay-Serial", "mock-serial")
                 .header("Wechatpay-Signature", signature)
                 .content(body));
+    }
+
+    private String paymentRouteToken(String outTradeNo) {
+        return jdbcClient.sql("""
+                        select notification_route_token from payment_order
+                        where out_trade_no = :outTradeNo
+                        """)
+                .param("outTradeNo", outTradeNo)
+                .query(String.class)
+                .single();
+    }
+
+    private String requiredJsonField(Pattern pattern, String body) {
+        Matcher matcher = pattern.matcher(body);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("Required notification identity is missing");
+        }
+        return matcher.group(1);
     }
 
     private String payNotifyBody(String notifyId, String outTradeNo, String transactionId, long amountCent) {

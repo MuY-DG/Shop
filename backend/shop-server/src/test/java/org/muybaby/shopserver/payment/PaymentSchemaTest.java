@@ -28,13 +28,15 @@ class PaymentSchemaTest {
 
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent)
                         values
                             (19101, 'PAY-SCHEMA-CREATED', 1, 'CREATED', 'CART', 'pay-schema-created',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              3980, 3980, 0, 0, 3980, 0),
                             (19102, 'PAY-SCHEMA-PAYING', 1, 'PAYING', 'CART', 'pay-schema-paying',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              3980, 3980, 0, 0, 3980, 0)
                         """)
                 .update();
@@ -42,23 +44,26 @@ class PaymentSchemaTest {
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                              private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
-                             private_key_file_id, merchant_certificate_file_id, verify_mode,
-                             wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
-                             enabled, status)
+                             verify_mode, wechat_public_key_id, notify_url, refund_notify_url,
+                             enabled, status, secret_key_id)
                         values
                             (19103, 'Schema Config', 'wx-schema-app', '1900000001', 'schema-serial',
-                             'ciphertext-placeholder', '', '', null, null, 'PUBLIC_KEY',
-                             'PUB_KEY_ID_SCHEMA', null, 'https://example.test/wxpay/pay/notify',
-                             'https://example.test/wxpay/refund/notify', true, 'ACTIVE')
+                             'ciphertext-placeholder', '', '', 'PUBLIC_KEY',
+                             'PUB_KEY_ID_SCHEMA', 'https://example.test/wxpay/pay/notify',
+                             'https://example.test/wxpay/refund/notify', true, 'ACTIVE', 'test-2026')
                         """)
                 .update();
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, payment_config_id, out_trade_no, prepay_id, transaction_id,
+                            (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, prepay_id, transaction_id,
                              payer_openid, status, amount_cent, request_digest, callback_digest,
                              expires_at, paid_at)
                         values
-                            (19104, 19102, 19103, 'PAY-SCHEMA-OUT-TRADE', 'prepay-schema',
+                            (19104, 19102, 19103,
+                             'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                             'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+                             'PAY-SCHEMA-OUT-TRADE', 'prepay-schema',
                              'transaction-schema', 'openid-schema', 'PAID', 3980,
                              'request-digest-schema', 'callback-digest-schema',
                              dateadd('MINUTE', 15, current_timestamp), current_timestamp)
@@ -67,11 +72,13 @@ class PaymentSchemaTest {
         jdbcClient.sql("""
                         insert into payment_callback_log
                             (id, callback_type, notify_id, out_trade_no, transaction_id, event_type,
-                             resource_digest, raw_body_sha256, status)
+                             resource_digest, raw_body_sha256, route_digest, status)
                         values
                             (19105, 'PAY', 'notify-schema', 'PAY-SCHEMA-OUT-TRADE',
                              'transaction-schema', 'TRANSACTION.SUCCESS', 'resource-digest-schema',
-                             'raw-body-sha256-schema', 'SUCCESS')
+                             'raw-body-sha256-schema',
+                             'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                             'SUCCESS')
                         """)
                 .update();
 

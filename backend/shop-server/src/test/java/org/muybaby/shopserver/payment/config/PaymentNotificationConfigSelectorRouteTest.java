@@ -11,8 +11,6 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.ArrayList;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -90,23 +88,6 @@ class PaymentNotificationConfigSelectorRouteTest extends PaymentTestSupport {
     }
 
     @Test
-    void legacySelectorCannotConsumeAPaymentThatWasIssuedWithARoutedUrl() {
-        seedEnabledPaymentConfig();
-        insertRoutedPayment("ROUTED-ONLY-PAYMENT", PAY_ROUTE_TOKEN);
-        AtomicInteger parserCalls = new AtomicInteger();
-
-        assertValidationFailure(() -> selector.parse(
-                config -> {
-                    parserCalls.incrementAndGet();
-                    return "ROUTED-ONLY-PAYMENT";
-                },
-                PaymentNotificationConfigSelector.NotificationRoute::payment
-        ));
-
-        assertThat(parserCalls).hasValue(1);
-    }
-
-    @Test
     void routedSelectorResolvesThePersistedConfigurationAndParsesExactlyOnce() {
         seedEnabledPaymentConfig();
         insertRoutedPayment("ROUTED-PAYMENT", PAY_ROUTE_TOKEN);
@@ -125,33 +106,6 @@ class PaymentNotificationConfigSelectorRouteTest extends PaymentTestSupport {
 
         assertThat(parsed.notification()).isEqualTo("ROUTED-PAYMENT");
         assertThat(parserCalls).hasValue(1);
-    }
-
-    @Test
-    void legacyRefundFromRoutedPaymentCanUseItsHistoricalConfiguration() {
-        seedEnabledPaymentConfig();
-        long paymentOrderId = insertRoutedPayment("ROUTED-PARENT-TRADE", PAY_ROUTE_TOKEN);
-        insertRoutedRefund(paymentOrderId, "LEGACY-REFUND-NO", null);
-        switchToClonedPaymentConfig(91002L);
-        List<Long> attemptedConfigIds = new ArrayList<>();
-
-        PaymentNotificationConfigSelector.ParsedNotification<
-                PaymentNotificationConfigSelector.NotificationRoute> parsed = selector.parse(
-                null,
-                PaymentNotificationConfigSelector.NotificationKind.REFUND,
-                config -> {
-                    attemptedConfigIds.add(config.configId());
-                    if (!Long.valueOf(91001L).equals(config.configId())) {
-                        throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-                    }
-                    return PaymentNotificationConfigSelector.NotificationRoute.refund(
-                            "ROUTED-PARENT-TRADE", "LEGACY-REFUND-NO");
-                },
-                route -> route
-        );
-
-        assertThat(parsed.config().configId()).isEqualTo(91001L);
-        assertThat(attemptedConfigIds).containsExactly(91002L, 91001L);
     }
 
     private long insertRoutedPayment(String outTradeNo, String routeToken) {

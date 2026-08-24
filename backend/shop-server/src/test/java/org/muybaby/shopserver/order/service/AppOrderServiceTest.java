@@ -703,15 +703,12 @@ class AppOrderServiceTest {
     }
 
     @Test
-    void legacyBlankDigestRowsRetainReplayCompatibilityWithoutReadingCheckoutState() {
-        long userId = insertUser("legacy-digest-user");
-        insertLegacyOrder(userId, "legacy-key");
+    void mismatchedPersistedDigestRejectsReplayWithoutReadingCheckoutState() {
+        long userId = insertUser("mismatched-digest-user");
+        insertOrderWithMismatchedDigest(userId, "mismatched-key");
 
-        OrderSubmitResponse replay = appOrderService.submit(appPrincipal(userId), new AppOrderSubmitRequest(
-                CheckoutSource.DIRECT, List.of(), 999_999L, 1, 999_999L, 888_888L, "legacy-key"));
-
-        assertThat(replay.orderNo()).isEqualTo("ORD-LEGACY-DIGEST");
-        assertThat(replay.payableAmountCent()).isEqualTo(1234L);
+        assertConflict(userId, new AppOrderSubmitRequest(
+                CheckoutSource.DIRECT, List.of(), 999_999L, 1, 999_999L, 888_888L, "mismatched-key"));
     }
 
     private void assertConflict(long userId, AppOrderSubmitRequest request) {
@@ -793,9 +790,9 @@ class AppOrderServiceTest {
         jdbcClient.sql("""
                         insert into product_sku
                             (spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                             stock_available, weight_gram, image, status, sort_order)
+                             stock_available, weight_gram, image, status, sort_order, combination_key)
                         values (:spuId, :skuCode, '{}', '300g', :priceCent, :originalPriceCent,
-                                :stock, 300, :image, 'ENABLED', 1)
+                                :stock, 300, :image, 'ENABLED', 1, :skuCode)
                         """)
                 .param("spuId", spuId)
                 .param("skuCode", skuCode)
@@ -876,29 +873,34 @@ class AppOrderServiceTest {
                 .param("userId", userId).param("templateId", templateId).query(Long.class).single();
     }
 
-    private void insertLegacyOrder(long userId, String key) {
+    private void insertOrderWithMismatchedDigest(long userId, String key) {
         LocalDateTime now = LocalDateTime.now();
         jdbcClient.sql("""
                         insert into shop_order
                             (order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent, created_at, updated_at)
-                        values ('ORD-LEGACY-DIGEST', :userId, 'CREATED', 'CART', :key, '',
+                        values ('ORD-MISMATCHED-DIGEST', :userId, 'CREATED', 'CART', :key, :digest,
                                 1234, 1234, 0, 0, 1234, 0, :now, :now)
                         """)
-                .param("userId", userId).param("key", key).param("now", now).update();
+                .param("userId", userId)
+                .param("key", key)
+                .param("digest", "f".repeat(64))
+                .param("now", now)
+                .update();
     }
 
     private long insertReadOrder(long userId, String status, LocalDateTime createdAt) {
         long orderId = SEQUENCE.incrementAndGet();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent,
                              receiver_name, receiver_phone, receiver_address, created_at, updated_at)
                         values
                             (:orderId, :orderNo, :userId, :status, 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              1200, 1000, 0, 0, 1000, 1000,
                              'Read Receiver', '13800138000', 'Read Address', :createdAt, :createdAt)
                         """)
@@ -1028,7 +1030,7 @@ class AppOrderServiceTest {
         long orderId = SEQUENCE.incrementAndGet();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent,
                              receiver_name, receiver_phone, receiver_address,
@@ -1036,6 +1038,7 @@ class AppOrderServiceTest {
                              completed_at, refunding_at, refunded_at, created_at, updated_at)
                         values
                             (:orderId, :orderNo, :userId, :status, 'DIRECT', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              1500, 1400, 100, 50, 1350, 1350,
                              'Receiver Snapshot', '13800138000', 'Persisted Receiver Address',
                              :legacyTransactionId, :legacyTradeNo, :paidAt, :shippedAt,
@@ -1067,16 +1070,24 @@ class AppOrderServiceTest {
             LocalDateTime updatedAt
     ) {
         long paymentId = SEQUENCE.incrementAndGet();
+        ensurePaymentConfigFixture();
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, out_trade_no, transaction_id, status, amount_cent,
+                            (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, transaction_id, status, amount_cent,
                              expires_at, paid_at, created_at, updated_at)
                         values
-                            (:paymentId, :orderId, :outTradeNo, :transactionId, :status, 1350,
+                            (:paymentId, :orderId, :paymentConfigId, :paymentConfigFingerprint,
+                             :notificationRouteToken, :outTradeNo, :transactionId, :status, 1350,
                              :expiresAt, :paidAt, :createdAt, :updatedAt)
                         """)
                 .param("paymentId", paymentId)
                 .param("orderId", orderId)
+                .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint",
+                        org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken",
+                        org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(paymentId))
                 .param("outTradeNo", outTradeNo)
                 .param("transactionId", transactionId)
                 .param("status", status)
@@ -1084,6 +1095,26 @@ class AppOrderServiceTest {
                 .param("paidAt", paidAt)
                 .param("createdAt", updatedAt.minusMinutes(1))
                 .param("updatedAt", updatedAt)
+                .update();
+    }
+
+    private void ensurePaymentConfigFixture() {
+        jdbcClient.sql("""
+                        insert into payment_config
+                            (id, config_name, app_id, mch_id, merchant_serial_no,
+                             api_v3_key_ciphertext, verify_mode, wechat_public_key_id,
+                             notify_url, refund_notify_url, enabled, status,
+                             secret_cipher_version, secret_key_id, secret_revision)
+                        select :configId, 'Order fixture', 'fixture-app', 'fixture-mch',
+                               'fixture-serial', 'v2:test-main:fixture', 'PUBLIC_KEY',
+                               'fixture-public-key', 'https://notify.test/pay',
+                               'https://notify.test/refund', false, 'ACTIVE',
+                               2, 'test-main', 1
+                        where not exists (
+                            select 1 from payment_config where id = :configId
+                        )
+                        """)
+                .param("configId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
                 .update();
     }
 

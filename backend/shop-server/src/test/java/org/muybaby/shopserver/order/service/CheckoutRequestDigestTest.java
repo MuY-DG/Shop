@@ -41,7 +41,7 @@ class CheckoutRequestDigestTest {
                 null
         );
 
-        assertThat(CheckoutRequestDigest.digest(request))
+        assertThat(CheckoutRequestDigest.initialOwnershipDigest(request))
                 .isEqualTo("fb5ebb2d83d646eb227e7a82a5ef8a17d4333a024dd05fcbad10d436a462d363");
     }
 
@@ -49,26 +49,26 @@ class CheckoutRequestDigestTest {
     void directDigestContainsOnlyStableRequestFieldsAndChangesWithEveryIdempotencyInput() {
         CheckoutRequest base = new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 2, 4L, null);
 
-        assertThat(CheckoutRequestDigest.digest(base))
+        assertThat(CheckoutRequestDigest.initialOwnershipDigest(base))
                 .isEqualTo("2f86e83c1a08b0980e8ed4a0feece057457262a22d32e67509ea7dc2dea5ba9a");
-        assertThat(CheckoutRequestDigest.digest(new CheckoutRequest(CheckoutSource.CART, List.of(18L), null, null, 4L, null)))
-                .isNotEqualTo(CheckoutRequestDigest.digest(base));
-        assertThat(CheckoutRequestDigest.digest(new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 19L, 2, 4L, null)))
-                .isNotEqualTo(CheckoutRequestDigest.digest(base));
-        assertThat(CheckoutRequestDigest.digest(new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 3, 4L, null)))
-                .isNotEqualTo(CheckoutRequestDigest.digest(base));
-        assertThat(CheckoutRequestDigest.digest(new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 2, 5L, null)))
-                .isNotEqualTo(CheckoutRequestDigest.digest(base));
-        assertThat(CheckoutRequestDigest.digest(new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 2, 4L, 6L)))
-                .isNotEqualTo(CheckoutRequestDigest.digest(base));
+        assertThat(CheckoutRequestDigest.initialOwnershipDigest(new CheckoutRequest(CheckoutSource.CART, List.of(18L), null, null, 4L, null)))
+                .isNotEqualTo(CheckoutRequestDigest.initialOwnershipDigest(base));
+        assertThat(CheckoutRequestDigest.initialOwnershipDigest(new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 19L, 2, 4L, null)))
+                .isNotEqualTo(CheckoutRequestDigest.initialOwnershipDigest(base));
+        assertThat(CheckoutRequestDigest.initialOwnershipDigest(new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 3, 4L, null)))
+                .isNotEqualTo(CheckoutRequestDigest.initialOwnershipDigest(base));
+        assertThat(CheckoutRequestDigest.initialOwnershipDigest(new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 2, 5L, null)))
+                .isNotEqualTo(CheckoutRequestDigest.initialOwnershipDigest(base));
+        assertThat(CheckoutRequestDigest.initialOwnershipDigest(new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 2, 4L, 6L)))
+                .isNotEqualTo(CheckoutRequestDigest.initialOwnershipDigest(base));
     }
 
     @Test
-    void freightAwareDigestChangesWithCalculatedFreightAndKeepsLegacyDigestStable() {
+    void freightAwareDigestDiffersFromTheInitialOwnershipDigest() {
         CheckoutRequest request = new CheckoutRequest(CheckoutSource.DIRECT, List.of(), 18L, 2, 4L, null);
 
         assertThat(CheckoutRequestDigest.digest(request, 0L))
-                .isNotEqualTo(CheckoutRequestDigest.digest(request));
+                .isNotEqualTo(CheckoutRequestDigest.initialOwnershipDigest(request));
         assertThat(CheckoutRequestDigest.digest(request, 800L))
                 .isNotEqualTo(CheckoutRequestDigest.digest(request, 1_200L));
         assertThat(CheckoutRequestDigest.digest(request, 800L)).hasSize(64);

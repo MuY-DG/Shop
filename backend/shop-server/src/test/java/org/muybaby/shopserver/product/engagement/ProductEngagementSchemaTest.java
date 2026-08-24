@@ -47,18 +47,21 @@ class ProductEngagementSchemaTest {
         jdbcClient.sql("""
                         INSERT INTO product_sku (
                             id, spu_id, sku_code, spec_json, spec_text, price_cent,
-                            stock_available, image, status
+                            stock_available, image, status, combination_key
                         ) VALUES (:id, :spuId, 'ENGAGEMENT-SCHEMA-SKU', '{}', '默认', 100,
-                                  1, '', 'ENABLED')
+                                  1, '', 'ENABLED', 'ENGAGEMENT-SCHEMA-SKU')
                         """)
                 .param("id", skuId)
                 .param("spuId", spuId)
                 .update();
         jdbcClient.sql("""
                         INSERT INTO shop_order (
-                            id, order_no, user_id, status, idempotency_key, completed_at
+                            id, order_no, user_id, status, idempotency_key,
+                            checkout_request_digest, completed_at
                         ) VALUES (:id, 'ENGAGEMENT-SCHEMA-ORDER', :userId, 'COMPLETED',
-                                  'engagement-schema-key', CURRENT_TIMESTAMP)
+                                  'engagement-schema-key',
+                                  'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                                  CURRENT_TIMESTAMP)
                         """)
                 .param("id", orderId)
                 .param("userId", userId)

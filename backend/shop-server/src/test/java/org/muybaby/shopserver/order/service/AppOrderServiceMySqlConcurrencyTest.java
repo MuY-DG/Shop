@@ -143,12 +143,13 @@ class AppOrderServiceMySqlConcurrencyTest {
         LocalDateTime createdAt = LocalDateTime.of(2026, 7, 10, 14, 0);
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent,
                              receiver_name, receiver_phone, receiver_address, shipped_at, created_at, updated_at)
                         values
                             (:orderId, :orderNo, :userId, 'SHIPPED', 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              1000, 1000, 0, 0, 1000, 1000,
                              'Race Receiver', '13800138000', 'Race Address', :shippedAt, :createdAt, :createdAt)
                         """)
@@ -516,9 +517,9 @@ class AppOrderServiceMySqlConcurrencyTest {
         jdbcClient.sql("""
                         insert into product_sku
                             (spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                             stock_available, weight_gram, image, status, sort_order)
+                             stock_available, weight_gram, image, status, sort_order, combination_key)
                         values (:spuId, :skuCode, '{}', '300g', 3990, 4990,
-                                :stock, 300, '', 'ENABLED', 1)
+                                :stock, 300, '', 'ENABLED', 1, :skuCode)
                         """)
                 .param("spuId", spuId).param("skuCode", skuCode).param("stock", stock).update();
         return jdbcClient.sql("select id from product_sku where sku_code = :skuCode")

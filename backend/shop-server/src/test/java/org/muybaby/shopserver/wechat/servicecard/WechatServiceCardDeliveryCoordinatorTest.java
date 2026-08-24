@@ -8,7 +8,6 @@ import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardQuery
 import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardQueryResult;
 import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardSetRequest;
 import org.muybaby.shopserver.wechat.servicecard.provider.WechatServiceCardSetResult;
-import org.springframework.util.unit.DataSize;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -367,18 +366,8 @@ class WechatServiceCardDeliveryCoordinatorTest {
     }
 
     private WechatServiceCardProperties readyProperties() {
-        return new WechatServiceCardProperties(
-                true, true, "template-record", Duration.ofSeconds(15), 50,
-                Duration.ofMinutes(2), 8, Duration.ofMinutes(1), Duration.ofMinutes(30),
-                Duration.ofMinutes(1), Duration.ofHours(6), 2,
-                Duration.ofSeconds(3), Duration.ofSeconds(15),
-                DataSize.ofMegabytes(1), DataSize.ofKilobytes(64),
-                "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
-                false, List.of("admin.junxiangshiping.cn"),
-                new WechatServiceCardProperties.Callback(
-                        false, "", "", Duration.ofMinutes(5)
-                )
-        );
+        return WechatServiceCardPropertiesTest.properties(
+                Duration.ofMinutes(1), Duration.ofHours(6));
     }
 
 }

@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# 每个环境的唯一 runtime manifest 和一次性管理员凭据永不提交 Git。
+config/runtime/*.env
+config/runtime/bootstrap-admin.*.txt

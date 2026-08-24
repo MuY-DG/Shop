@@ -9,9 +9,7 @@ import org.muybaby.shopserver.common.secret.SecretEncryptionProperties;
 import org.muybaby.shopserver.payment.config.AesGcmPaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.support.AdminTokenTestSupport;
-import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardProperties;
 import org.muybaby.shopserver.wechat.servicecard.config.dto.AdminWechatServiceCardConfigUpdateRequest;
-import org.muybaby.shopserver.wechat.servicecard.config.dto.AdminWechatServiceCardEnvironmentImportRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,20 +25,11 @@ import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = {
-        "shop.wechat.service-card-2001.account-template-record-id=legacy-template",
-        "shop.wechat.service-card-2001.fallback-product-image=https://static.example.com/card.png",
-        "shop.wechat.service-card-2001.allowed-image-hosts=static.example.com",
-        "shop.wechat.service-card-2001.prefer-order-snapshot-images=false",
-        "shop.wechat.service-card-2001.callback.enabled=true",
-        "shop.wechat.service-card-2001.callback.token=LegacyToken2026",
-        "shop.wechat.service-card-2001.callback.encoding-aes-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
@@ -61,9 +50,6 @@ class AdminWechatServiceCardConfigControllerTest {
     @Autowired
     private WechatServiceCardConfigRepository repository;
 
-    @Autowired
-    private WechatServiceCardProperties legacyEnvironment;
-
     @BeforeEach
     void clearConfig() {
         jdbcClient.sql("delete from wechat_service_card_config_audit").update();
@@ -71,46 +57,19 @@ class AdminWechatServiceCardConfigControllerTest {
     }
 
     @Test
-    void explicitLegacyImportPreservesValidatedCallbackAndNeverReturnsSecrets() throws Exception {
+    void currentReturnsOnlyDatabaseStateAndNeverReturnsSecrets() throws Exception {
         String readToken = token(List.of("wechat-service-card:config:read"));
-        String writeToken = token(List.of("wechat-service-card:config:write"));
 
         mockMvc.perform(get("/admin/wechat-service-cards/config")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("ENVIRONMENT"))
-                .andExpect(jsonPath("$.data.callbackEnabled").value(true))
-                .andExpect(jsonPath("$.data.callbackTokenMasked").value("********"))
-                .andExpect(jsonPath("$.data.callbackEncodingAesKeyMasked").value("********"))
+                .andExpect(jsonPath("$.data.source").value("NONE"))
+                .andExpect(jsonPath("$.data.callbackEnabled").value(false))
+                .andExpect(jsonPath("$.data.callbackTokenMasked").value(""))
+                .andExpect(jsonPath("$.data.callbackEncodingAesKeyMasked").value(""))
                 .andExpect(jsonPath("$.data.callbackToken").doesNotExist())
-                .andExpect(jsonPath("$.data.callbackEncodingAesKey").doesNotExist());
-
-        mockMvc.perform(post("/admin/wechat-service-cards/config/legacy-env-import")
-                        .header("Authorization", "Bearer " + readToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":0}"))
-                .andExpect(status().isForbidden());
-
-        mockMvc.perform(post("/admin/wechat-service-cards/config/legacy-env-import")
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":0}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("DATABASE"))
-                .andExpect(jsonPath("$.data.callbackEnabled").value(true))
-                .andExpect(jsonPath("$.data.version").value(1));
-
-        WechatServiceCardConfig resolved = configService.resolve();
-        assertThat(resolved.source()).isEqualTo(WechatServiceCardConfig.Source.DATABASE);
-        assertThat(resolved.callbackSecureReady()).isTrue();
-        assertThat(resolved.toString()).doesNotContain("LegacyToken2026", "AAAAAAAAAA");
-        assertThat(jdbcClient.sql("""
-                        select callback_token_ciphertext
-                        from wechat_service_card_config where id = 1
-                        """).query(String.class).single())
-                .doesNotContain("LegacyToken2026");
-        assertThat(jdbcClient.sql("select action_type from wechat_service_card_config_audit")
-                .query(String.class).single()).isEqualTo("LEGACY_IMPORT");
+                .andExpect(jsonPath("$.data.callbackEncodingAesKey").doesNotExist())
+                .andExpect(jsonPath("$.data.legacyEnvironmentImportAvailable").doesNotExist());
     }
 
     @Test
@@ -162,9 +121,9 @@ class AdminWechatServiceCardConfigControllerTest {
     }
 
     @Test
-    void persistedDamageFailsClosedWithoutEnvironmentFallback() {
-        configService.importLegacyEnvironment(
-                new AdminWechatServiceCardEnvironmentImportRequest(0L), 1L);
+    void persistedDamageFailsClosed() {
+        configService.update(request(
+                "template-created", "CreatedToken2026", "A".repeat(43), 0L), 1L);
         jdbcClient.sql("""
                         update wechat_service_card_config
                         set callback_token_key_id = 'tampered',
@@ -219,26 +178,26 @@ class AdminWechatServiceCardConfigControllerTest {
 
     @Test
     void rotationRewrapsBothFieldsWithActiveV2KeyWithoutChangingPlaintextOrConfigVersion() {
-        PaymentSecretCipher legacyCipher = new AesGcmPaymentSecretCipher(
+        PaymentSecretCipher oldCipher = new AesGcmPaymentSecretCipher(
                 new SecretEncryptionProperties(
-                        1, "", "", "0123456789abcdef0123456789abcdef",
+                        "old-2025",
+                        "old-2025=base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
                         false, Duration.ofMinutes(1), 50));
-        WechatServiceCardConfigService legacyService = new WechatServiceCardConfigService(
-                repository, legacyCipher, legacyEnvironment);
-        legacyService.update(request(
+        WechatServiceCardConfigService oldService = new WechatServiceCardConfigService(
+                repository, oldCipher);
+        oldService.update(request(
                 "template-rotate", "RotateToken2026", "A".repeat(43), 0L), 1L);
 
         PaymentSecretCipher activeCipher = new AesGcmPaymentSecretCipher(
                 new SecretEncryptionProperties(
-                        2,
                         "new-2026",
-                        "new-2026=base64:bmV3LWtleS1tYXRlcmlhbC0zMi1ieXRlcy0wMDAwMDA=",
-                        "0123456789abcdef0123456789abcdef",
+                        "old-2025=base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=;"
+                                + "new-2026=base64:ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=",
                         false,
                         Duration.ofMinutes(1),
                         50));
         WechatServiceCardConfigService rotatingService = new WechatServiceCardConfigService(
-                repository, activeCipher, legacyEnvironment);
+                repository, activeCipher);
 
         assertThat(rotatingService.rotateSecretsIfNeeded()).isEqualTo(2);
         assertThat(rotatingService.rotateSecretsIfNeeded()).isZero();
@@ -262,27 +221,27 @@ class AdminWechatServiceCardConfigControllerTest {
 
     @Test
     void staleAdminUpdateCannotRollbackRotatedSecretEnvelopes() {
-        PaymentSecretCipher legacyCipher = new AesGcmPaymentSecretCipher(
+        PaymentSecretCipher oldCipher = new AesGcmPaymentSecretCipher(
                 new SecretEncryptionProperties(
-                        1, "", "", "0123456789abcdef0123456789abcdef",
+                        "old-2025",
+                        "old-2025=base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
                         false, Duration.ofMinutes(1), 50));
-        WechatServiceCardConfigService legacyService = new WechatServiceCardConfigService(
-                repository, legacyCipher, legacyEnvironment);
-        legacyService.update(request(
+        WechatServiceCardConfigService oldService = new WechatServiceCardConfigService(
+                repository, oldCipher);
+        oldService.update(request(
                 "template-before-rotation", "RotateToken2026", "A".repeat(43), 0L), 1L);
         WechatServiceCardConfigEntity staleRow = repository.find().orElseThrow();
 
         PaymentSecretCipher activeCipher = new AesGcmPaymentSecretCipher(
                 new SecretEncryptionProperties(
-                        2,
                         "new-2026",
-                        "new-2026=base64:bmV3LWtleS1tYXRlcmlhbC0zMi1ieXRlcy0wMDAwMDA=",
-                        "0123456789abcdef0123456789abcdef",
+                        "old-2025=base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=;"
+                                + "new-2026=base64:ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=",
                         false,
                         Duration.ofMinutes(1),
                         50));
         WechatServiceCardConfigService rotatingService = new WechatServiceCardConfigService(
-                repository, activeCipher, legacyEnvironment);
+                repository, activeCipher);
         assertThat(rotatingService.rotateSecretsIfNeeded()).isEqualTo(2);
         WechatServiceCardConfigEntity rotatedRow = repository.find().orElseThrow();
 

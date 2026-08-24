@@ -333,7 +333,7 @@ public class PaymentCancellationService {
     private PaymentClaimState mapPaymentClaimState(ResultSet rs, int rowNum) throws SQLException {
         return new PaymentClaimState(
                 rs.getLong("id"),
-                nullableLong(rs, "payment_config_id"),
+                rs.getLong("payment_config_id"),
                 rs.getString("payment_config_fingerprint"),
                 rs.getString("out_trade_no"),
                 rs.getString("status"),
@@ -371,11 +371,6 @@ public class PaymentCancellationService {
     }
 
     private record CancellationPreparation(ClaimedPayment providerClose) {
-    }
-
-    private Long nullableLong(ResultSet rs, String columnLabel) throws SQLException {
-        long value = rs.getLong(columnLabel);
-        return rs.wasNull() ? null : value;
     }
 
     private void validateProviderIdentity(ClaimedPayment payment, WechatPayOrderQueryResult queryResult) {

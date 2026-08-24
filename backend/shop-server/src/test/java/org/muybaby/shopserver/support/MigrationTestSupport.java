@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.support;
 
+import org.flywaydb.core.Flyway;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -28,5 +30,13 @@ public final class MigrationTestSupport {
         } catch (IOException ex) {
             throw new UncheckedIOException(ex);
         }
+    }
+
+    public static Flyway migrateToLatest(String jdbcUrl, String username, String password) {
+        Flyway flyway = Flyway.configure()
+                .dataSource(jdbcUrl, username, password)
+                .load();
+        flyway.migrate();
+        return flyway;
     }
 }

@@ -826,7 +826,7 @@ class OrderAggregateCleanupServiceTest {
                         values
                             (9870012, :afterSaleId, :orderId, :paymentId, 'REFUND-9870001',
                              'WX-REFUND-9870001', 1000, 'SUCCESS', 'SUCCESS',
-                             'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr',
+                             'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr',
                              :oldAt, :oldAt, :oldAt, :oldAt)
                         """)
                 .param("afterSaleId", AFTER_SALE_ID)
@@ -838,11 +838,13 @@ class OrderAggregateCleanupServiceTest {
                         insert into payment_callback_log
                             (id, callback_type, notify_id, out_trade_no, out_refund_no,
                              transaction_id, refund_id, event_type, resource_digest,
-                             raw_body_sha256, status, created_at, updated_at)
+                             raw_body_sha256, route_digest, status, created_at, updated_at)
                         values
                             (9870013, 'REFUND', 'notify-old', 'TRADE-9870001', 'REFUND-9870001',
                              'WX-TRADE-9870001', 'WX-REFUND-9870001', 'REFUND.SUCCESS', '',
-                             'body-sha', 'SUCCESS', :oldAt, :oldAt)
+                             'body-sha',
+                             'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+                             'SUCCESS', :oldAt, :oldAt)
                         """)
                 .param("oldAt", oldAt())
                 .update();
@@ -916,10 +918,11 @@ class OrderAggregateCleanupServiceTest {
     private void seedOrderOnly(long orderId, String status) {
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              receiver_name, receiver_phone, receiver_address, created_at, updated_at)
                         values
                             (:id, :orderNo, 6001, :status, 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              'Archive User', '13800000000', 'Archive Address', :oldAt, :oldAt)
                         """)
                 .param("id", orderId)
@@ -951,11 +954,14 @@ class OrderAggregateCleanupServiceTest {
     private void insertPayment(String status) {
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, out_trade_no, transaction_id, status, amount_cent,
+                            (id, order_id, payment_config_id, payment_config_fingerprint,
+                             out_trade_no, transaction_id, status, amount_cent,
                              expires_at, notification_route_token, created_at, updated_at)
                         values
-                            (:id, :orderId, 'TRADE-9870001', 'WX-TRADE-9870001', :status, 1000,
-                             :oldAt, 'pppppppppppppppppppppppppppppppppppppppppppppppp',
+                            (:id, :orderId, 9999001,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                             'TRADE-9870001', 'WX-TRADE-9870001', :status, 1000,
+                             :oldAt, 'pppppppppppppppppppppppppppppppp',
                              :oldAt, :oldAt)
                         """)
                 .param("id", PAYMENT_ID)
@@ -1208,8 +1214,9 @@ class OrderAggregateCleanupServiceTest {
         jdbcClient.sql("""
                         insert into product_sku
                             (id, spu_id, sku_code, spec_json, spec_text, price_cent,
-                             stock_available, status)
-                        values (:id, :spuId, 'ORDER-CLEANUP-SKU', '{}', 'cleanup', 1000, 3, 'ENABLED')
+                             stock_available, status, combination_key)
+                        values (:id, :spuId, 'ORDER-CLEANUP-SKU', '{}', 'cleanup', 1000, 3, 'ENABLED',
+                                'ORDER-CLEANUP-SKU')
                         """)
                 .param("id", SKU_ID)
                 .param("spuId", SPU_ID)

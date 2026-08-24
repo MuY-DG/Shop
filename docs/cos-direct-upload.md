@@ -187,9 +187,9 @@ Enabled，并实际验证同一对象键第二次 POST 会被
 2. 微信公众平台先把计划使用的自定义源站加入 `uploadFile` 和 `downloadFile` 合法域名，
    并暂时保留默认 COS 域名用于旧版本和回滚。
 3. 先发布能动态接受后端签发的合法 HTTPS 根域名的管理后台、小程序。
-4. 再部署包含 `V73__cos_direct_upload_sessions.sql`、
-   `V75__verify_cos_custom_domain.sql` 及自定义源站上传支持的后端；若后台原先
-   配置的是自定义域名，迁移后立即重新保存一次以完成 COS 控制面验证。
+4. 再部署 generation 2 基线后端；直传会话和 COS 自定义源站约束已经并入
+   `V2__catalog_content_and_storage.sql`。新环境从空库创建，不再执行或依赖
+   旧版本的增量迁移。
 5. 用测试管理员上传 JPG、PNG、WebP、GIF 和视频，确认浏览器文件正文直接
    POST 到配置的自定义源站。
 6. 真机验证头像、售后和买卖双方聊天，确认上传、公开读取和新生成的私有

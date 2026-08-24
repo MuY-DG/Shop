@@ -38,12 +38,6 @@ export function paymentConfigDeleteState(
       reason: '已启用的配置不能删除'
     }
   }
-  if (config.legacySecretFilesPendingImport) {
-    return {
-      disabled: true,
-      reason: '请先迁移旧秘密文件'
-    }
-  }
   return {
     disabled: false,
     reason: ''

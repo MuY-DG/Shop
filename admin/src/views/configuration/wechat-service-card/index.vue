@@ -17,14 +17,6 @@
           </div>
           <div class="section-header__actions">
             <ElButton
-              v-if="config?.legacyEnvironmentImportAvailable"
-              v-auth="'wechat-service-card:config:write'"
-              :loading="configSaving"
-              @click="importLegacyConfig"
-            >
-              等价导入旧环境配置
-            </ElButton>
-            <ElButton
               v-auth="'wechat-service-card:config:write'"
               type="primary"
               :disabled="
@@ -44,7 +36,7 @@
       <ElAlert
         v-if="config?.source !== 'DATABASE'"
         title="数据库尚未接管"
-        description="首次写入要求模板、HTTPS 兜底图和图片域名白名单一次齐全；旧环境导入会在严格校验后保持现有回调启用状态。"
+        description="首次写入要求模板、HTTPS 兜底图和图片域名白名单一次齐全。"
         type="warning"
         :closable="false"
         show-icon
@@ -527,7 +519,6 @@
     fetchWechatServiceCardConfig,
     fetchWechatServiceCardDeliveries,
     fetchWechatServiceCardStatus,
-    importWechatServiceCardLegacyEnvironment,
     updateWechatServiceCardConfig,
     updateWechatServiceCardRuntime
   } from '@/api/wechat-service-card'
@@ -673,7 +664,6 @@
   })
   const configSourceLabel = computed(() => {
     if (config.value?.source === 'DATABASE') return '加密数据库'
-    if (config.value?.source === 'ENVIRONMENT') return '旧部署环境回退'
     return '未配置'
   })
   const runtimeDirty = computed(() => Boolean(status.value && runtimeChanged(status.value, draft)))
@@ -774,37 +764,6 @@
     } catch (error) {
       if (isHttpError(error) && error.httpStatus === 409) {
         ElMessage.warning('接入配置已被其他管理员修改，已刷新为最新状态')
-        await loadConfig()
-        return
-      }
-      throw error
-    } finally {
-      configSaving.value = false
-    }
-  }
-
-  const importLegacyConfig = async () => {
-    if (!config.value?.legacyEnvironmentImportAvailable || !canWriteConfig.value) return
-    try {
-      await ElMessageBox.confirm(
-        '将严格校验并等价迁移当前旧环境配置；已有启用回调会保持启用。导入后数据库立即优先生效，是否继续？',
-        '导入旧环境配置',
-        {
-          type: 'warning',
-          confirmButtonText: '确认导入',
-          cancelButtonText: '取消'
-        }
-      )
-    } catch {
-      return
-    }
-    configSaving.value = true
-    try {
-      applyConfig(await importWechatServiceCardLegacyEnvironment(config.value.version))
-      await loadStatus()
-    } catch (error) {
-      if (isHttpError(error) && error.httpStatus === 409) {
-        ElMessage.warning('接入配置已发生变化，已刷新为最新状态')
         await loadConfig()
         return
       }

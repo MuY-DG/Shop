@@ -122,22 +122,24 @@ class ExternalRefundRegistrationServiceTest {
                             (id, config_name, app_id, mch_id, merchant_serial_no,
                              api_v3_key_ciphertext, private_key_pem_ciphertext,
                              wechat_public_key_pem_ciphertext, verify_mode, notify_url,
-                             refund_notify_url, enabled, status)
+                             refund_notify_url, enabled, status,
+                             secret_cipher_version, secret_key_id)
                         values
                             (:id, 'external-refund', 'wx-test', :mchId, 'serial',
                              'ciphertext', '', '', 'PUBLIC_KEY', 'https://notify.test/pay',
-                             'https://notify.test/refund', true, 'ACTIVE')
+                             'https://notify.test/refund', true, 'ACTIVE', 2, 'test-v1')
                         """)
                 .param("id", configId)
                 .param("mchId", mchId)
                 .update();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              paid_amount_cent, refund_status, refunded_amount_cent,
                              paid_at, completed_at, created_at, updated_at)
                         values
                             (:id, :orderNo, 1, :status, 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              100, 'REFUND_FAILED', 0,
                              :paidAt, :completedAt, :createdAt, :updatedAt)
                         """)
@@ -153,18 +155,19 @@ class ExternalRefundRegistrationServiceTest {
                 .update();
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, payment_config_id, payment_config_fingerprint,
-                             out_trade_no, transaction_id, status, amount_cent, currency,
+                             (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, transaction_id, status, amount_cent, currency,
                              expires_at, paid_at, created_at, updated_at)
                         values
                             (:id, :orderId, :configId, :fingerprint,
-                             :outTradeNo, :transactionId, 'PAID', 100, 'CNY',
+                             :routeToken, :outTradeNo, :transactionId, 'PAID', 100, 'CNY',
                              :expiresAt, :paidAt, :createdAt, :updatedAt)
                         """)
                 .param("id", paymentId)
                 .param("orderId", orderId)
                 .param("configId", configId)
                 .param("fingerprint", "7".repeat(64))
+                .param("routeToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(paymentId))
                 .param("outTradeNo", outTradeNo)
                 .param("transactionId", transactionId)
                 .param("expiresAt", OCCURRED_AT.minusHours(23))
@@ -176,11 +179,11 @@ class ExternalRefundRegistrationServiceTest {
             jdbcClient.sql("""
                             insert into after_sale_request
                                 (id, after_sale_no, order_id, user_id, after_sale_type, status, reason,
-                                 requested_amount_cent, flow_version, source_order_status,
+                                 requested_amount_cent, source_order_status,
                                  created_at, updated_at)
                             values
                                 (:id, :afterSaleNo, :orderId, 1, 'REFUND_ONLY', 'REFUND_FAILED', '退款失败',
-                                 100, 2, 'COMPLETED', :createdAt, :updatedAt)
+                                 100, 'COMPLETED', :createdAt, :updatedAt)
                             """)
                     .param("id", afterSaleId)
                     .param("afterSaleNo", "AS" + afterSaleId)

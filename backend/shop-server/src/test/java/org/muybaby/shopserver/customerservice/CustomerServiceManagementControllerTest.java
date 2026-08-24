@@ -262,9 +262,13 @@ class CustomerServiceManagementControllerTest {
                 .query(Integer.class)
                 .single()).isEqualTo(1);
 
-        String superToken = loginAndExtractToken();
+        String agentManagerToken = AdminTokenTestSupport.issueAdminToken(
+                jdbcClient,
+                opaqueTokenService,
+                List.of("customer-service:management:read", "customer-service:agent:manage")
+        );
         mockMvc.perform(put("/admin/customer-service/management/identity")
-                        .header("Authorization", bearer(superToken))
+                        .header("Authorization", bearer(agentManagerToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"defaultServiceName\":\"越权修改\",\"avatarFileId\":null}"))
                 .andExpect(status().isForbidden());

@@ -11,7 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Component
-@Profile({"dev", "test"})
+@Profile({"local", "test"})
 @ConditionalOnProperty(
         prefix = "shop.auth.admin-login-protection",
         name = "store",

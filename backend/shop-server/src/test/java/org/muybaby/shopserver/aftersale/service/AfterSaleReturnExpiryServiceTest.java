@@ -28,6 +28,7 @@ class AfterSaleReturnExpiryServiceTest extends PaymentTestSupport {
 
     @Test
     void overdueReturnIsClosedOnceAndNoLongerBlocksAnotherApplication() throws Exception {
+        seedEnabledPaymentConfig();
         AppLoginSession user = appLogin("return-expiry-user");
         SeedPaidOrder order = seedPaidOrder(user, 6980L, "PAID", "return-expiry-transaction");
         long afterSaleId = order.orderId() + 20;
@@ -35,10 +36,10 @@ class AfterSaleReturnExpiryServiceTest extends PaymentTestSupport {
                         insert into after_sale_request (
                             id, after_sale_no, order_id, user_id, after_sale_type, status,
                             reason, description, requested_amount_cent, approved_amount_cent,
-                            flow_version, request_digest, source_order_status, return_deadline_at
+                            request_digest, source_order_status, return_deadline_at
                         ) values (
                             :id, :afterSaleNo, :orderId, :userId, 'RETURN_REFUND', 'WAITING_RETURN',
-                            '退货退款', '', 6980, 6980, 2, 'expiry-digest', 'PAID',
+                            '退货退款', '', 6980, 6980, 'expiry-digest', 'PAID',
                             dateadd('MINUTE', -1, current_timestamp)
                         )
                         """)

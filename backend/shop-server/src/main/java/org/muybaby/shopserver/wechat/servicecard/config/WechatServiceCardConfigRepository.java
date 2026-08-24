@@ -29,7 +29,7 @@ public class WechatServiceCardConfigRepository {
                                callback_token_cipher_version, callback_token_key_id,
                                callback_token_secret_revision, callback_aes_key_ciphertext,
                                callback_aes_key_cipher_version, callback_aes_key_key_id,
-                               callback_aes_key_secret_revision, revision, imported_from_env_at,
+                               callback_aes_key_secret_revision, revision,
                                created_by, updated_by, callback_token_reencrypted_at,
                                callback_aes_key_reencrypted_at, created_at, updated_at
                         from wechat_service_card_config
@@ -42,8 +42,7 @@ public class WechatServiceCardConfigRepository {
 
     public boolean insert(
             StoredConfig config,
-            Long operatorId,
-            boolean importedFromEnvironment
+            Long operatorId
     ) {
         try {
             return jdbcClient.sql("""
@@ -54,7 +53,7 @@ public class WechatServiceCardConfigRepository {
                                 callback_token_cipher_version, callback_token_key_id,
                                 callback_token_secret_revision, callback_aes_key_ciphertext,
                                 callback_aes_key_cipher_version, callback_aes_key_key_id,
-                                callback_aes_key_secret_revision, revision, imported_from_env_at,
+                                callback_aes_key_secret_revision, revision,
                                 created_by, updated_by, created_at, updated_at
                             ) values (
                                 :id, :templateId, :fallbackImage,
@@ -63,7 +62,7 @@ public class WechatServiceCardConfigRepository {
                                 :tokenCipherVersion, :tokenKeyId,
                                 :tokenRevision, :aesCiphertext,
                                 :aesCipherVersion, :aesKeyId,
-                                :aesRevision, 1, :importedAt,
+                                :aesRevision, 1,
                                 :operatorId, :operatorId, current_timestamp, current_timestamp
                             )
                             """)
@@ -81,7 +80,6 @@ public class WechatServiceCardConfigRepository {
                     .param("aesCipherVersion", cipherVersion(config.callbackAesKey()))
                     .param("aesKeyId", keyId(config.callbackAesKey()))
                     .param("aesRevision", config.callbackAesKey() == null ? 0L : 1L)
-                    .param("importedAt", importedFromEnvironment ? LocalDateTime.now() : null)
                     .param("operatorId", operatorId)
                     .update() == 1;
         } catch (DuplicateKeyException ex) {
@@ -273,7 +271,6 @@ public class WechatServiceCardConfigRepository {
                 rs.getString("callback_aes_key_key_id"),
                 rs.getLong("callback_aes_key_secret_revision"),
                 rs.getLong("revision"),
-                rs.getObject("imported_from_env_at", LocalDateTime.class),
                 rs.getObject("created_by", Long.class),
                 rs.getObject("updated_by", Long.class),
                 rs.getObject("callback_token_reencrypted_at", LocalDateTime.class),

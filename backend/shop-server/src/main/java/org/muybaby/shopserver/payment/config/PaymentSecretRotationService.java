@@ -13,8 +13,6 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
@@ -31,30 +29,22 @@ public class PaymentSecretRotationService {
     private static final Logger log = LoggerFactory.getLogger(PaymentSecretRotationService.class);
     private static final int MAX_BATCH_SIZE = 200;
     private static final String PAYMENT_CONFIG_CHECKPOINT = "payment-config";
-    private static final String SNAPSHOT_CHECKPOINT = "payment-config-snapshot";
     private static final String STORAGE_CHECKPOINT = "storage-runtime-setting";
     private static final String NUMERIC_CURSOR_START = "0";
-    private static final String TEXT_CURSOR_START = "";
 
     private final JdbcClient jdbcClient;
     private final PaymentSecretCipher secretCipher;
-    private final PaymentConfigSnapshotStore snapshotStore;
-    private final PaymentConfigResolver paymentConfigResolver;
     private final SecretEncryptionProperties properties;
     private final TransactionTemplate requiresNewTransaction;
 
     public PaymentSecretRotationService(
             JdbcClient jdbcClient,
             PaymentSecretCipher secretCipher,
-            PaymentConfigSnapshotStore snapshotStore,
-            PaymentConfigResolver paymentConfigResolver,
             SecretEncryptionProperties properties,
             PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
         this.secretCipher = secretCipher;
-        this.snapshotStore = snapshotStore;
-        this.paymentConfigResolver = paymentConfigResolver;
         this.properties = properties;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -66,9 +56,6 @@ public class PaymentSecretRotationService {
      * damaged rows and process restarts cannot hold the cursor or starve later rows.
      */
     public synchronized int rotateBatch() {
-        if (properties.effectiveWriteVersion() != 2) {
-            return 0;
-        }
         int batchSize = properties.effectiveRotationBatchSize();
         if (batchSize < 1 || batchSize > MAX_BATCH_SIZE) {
             throw new IllegalStateException("Payment secret rotation batch size must be between 1 and 200");
@@ -83,11 +70,6 @@ public class PaymentSecretRotationService {
             rotated += rotateSafely(
                     PAYMENT_CONFIG_CHECKPOINT, Long.toString(candidate.id()), candidate.keyId(),
                     () -> rotatePaymentConfig(candidate));
-        }
-        for (SnapshotEnvelope candidate : snapshotCandidates(batchSize)) {
-            rotated += rotateSafely(
-                    SNAPSHOT_CHECKPOINT, candidate.fingerprint(), candidate.keyId(),
-                    () -> rotateSnapshot(candidate));
         }
         for (StorageEnvelope candidate : storageCandidates(batchSize)) {
             rotated += rotateSafely(
@@ -286,85 +268,6 @@ public class PaymentSecretRotationService {
         return secretCipher.encrypt(context, plaintext);
     }
 
-    private List<SnapshotEnvelope> snapshotCandidates(int batchSize) {
-        return claimCandidates(
-                SNAPSHOT_CHECKPOINT,
-                TEXT_CURSOR_START,
-                cursor -> querySnapshotCandidates(cursor, batchSize),
-                SnapshotEnvelope::fingerprint
-        );
-    }
-
-    private List<SnapshotEnvelope> querySnapshotCandidates(String afterFingerprint, int batchSize) {
-        return jdbcClient.sql("""
-                        select fingerprint, api_v3_key_ciphertext, private_key_pem_ciphertext,
-                               wechat_public_key_pem_ciphertext, secret_cipher_version, secret_key_id,
-                               secret_revision
-                        from payment_config_snapshot
-                        where fingerprint > :afterFingerprint
-                        order by fingerprint
-                        limit :batchSize
-                        """)
-                .param("afterFingerprint", afterFingerprint)
-                .param("batchSize", batchSize)
-                .query((rs, rowNum) -> new SnapshotEnvelope(
-                        rs.getString("fingerprint"),
-                        rs.getString("api_v3_key_ciphertext"),
-                        rs.getString("private_key_pem_ciphertext"),
-                        rs.getString("wechat_public_key_pem_ciphertext"),
-                        rs.getInt("secret_cipher_version"),
-                        rs.getString("secret_key_id"),
-                        rs.getLong("secret_revision")))
-                .list();
-    }
-
-    private int rotateSnapshot(SnapshotEnvelope candidate) {
-        if (!secretCipher.shouldReencrypt(candidate.version(), candidate.keyId())) {
-            return 0;
-        }
-        ResolvedPaymentConfig config = snapshotStore.findHistoricalSnapshot(candidate.fingerprint())
-                .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED));
-        if (!constantTimeEquals(candidate.fingerprint(), paymentConfigResolver.fingerprint(config))) {
-            throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
-        }
-        if (!secretCipher.shouldReencrypt(candidate.version(), candidate.keyId())) {
-            return 0;
-        }
-
-        PaymentSecretCipher.EncryptedSecret apiV3Key = secretCipher.encrypt(
-                PaymentConfigSnapshotStore.secretContext(candidate.fingerprint(), "api-v3-key"),
-                config.apiV3Key());
-        PaymentSecretCipher.EncryptedSecret privateKeyPem = secretCipher.encrypt(
-                PaymentConfigSnapshotStore.secretContext(candidate.fingerprint(), "private-key-pem"),
-                config.privateKeyPem());
-        PaymentSecretCipher.EncryptedSecret publicKeyPem = secretCipher.encrypt(
-                PaymentConfigSnapshotStore.secretContext(
-                        candidate.fingerprint(), "wechat-public-key-pem"),
-                config.wechatPublicKeyPem());
-        requireSameTargetEnvelope(apiV3Key, privateKeyPem, publicKeyPem);
-
-        return jdbcClient.sql("""
-                        update payment_config_snapshot
-                        set api_v3_key_ciphertext = :newApiV3Key,
-                            private_key_pem_ciphertext = :newPrivateKeyPem,
-                            wechat_public_key_pem_ciphertext = :newPublicKeyPem,
-                            secret_cipher_version = :newVersion,
-                            secret_key_id = :newKeyId,
-                            secret_revision = secret_revision + 1,
-                            secret_reencrypted_at = current_timestamp
-                        where fingerprint = :fingerprint
-                          and secret_revision = :oldRevision
-                        """)
-                .param("newApiV3Key", apiV3Key.ciphertext())
-                .param("newPrivateKeyPem", privateKeyPem.ciphertext())
-                .param("newPublicKeyPem", publicKeyPem.ciphertext())
-                .param("newVersion", apiV3Key.version())
-                .param("newKeyId", apiV3Key.keyId())
-                .param("fingerprint", candidate.fingerprint())
-                .param("oldRevision", candidate.revision())
-                .update();
-    }
-
     private List<StorageEnvelope> storageCandidates(int batchSize) {
         return claimCandidates(
                 STORAGE_CHECKPOINT,
@@ -498,29 +401,12 @@ public class PaymentSecretRotationService {
         }
     }
 
-    private boolean constantTimeEquals(String left, String right) {
-        return MessageDigest.isEqual(
-                normalizeKeyId(left).getBytes(StandardCharsets.UTF_8),
-                normalizeKeyId(right).getBytes(StandardCharsets.UTF_8));
-    }
-
     private String normalizeKeyId(String value) {
         return value == null ? "" : value.trim();
     }
 
     private record PaymentConfigEnvelope(
             long id,
-            String apiV3KeyCiphertext,
-            String privateKeyPemCiphertext,
-            String publicKeyPemCiphertext,
-            int version,
-            String keyId,
-            long revision
-    ) {
-    }
-
-    private record SnapshotEnvelope(
-            String fingerprint,
             String apiV3KeyCiphertext,
             String privateKeyPemCiphertext,
             String publicKeyPemCiphertext,

@@ -4,7 +4,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.logistics.ShippingProperties;
 import org.muybaby.shopserver.logistics.dto.AdminWechatShippingRuntimeUpdateRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -24,16 +23,12 @@ class WechatShippingRuntimeSettingServiceTest {
     private WechatShippingRuntimeSettingService service;
 
     @Autowired
-    private ShippingProperties shippingProperties;
-
-    @Autowired
     private JdbcClient jdbcClient;
 
     @BeforeEach
     void clean() {
         jdbcClient.sql("delete from wechat_shipping_runtime_audit").update();
         jdbcClient.sql("delete from wechat_shipping_runtime_setting").update();
-        shippingProperties.setUploadEnabled(false);
     }
 
     @Test
@@ -60,8 +55,7 @@ class WechatShippingRuntimeSettingServiceTest {
     }
 
     @Test
-    void databaseSettingOverridesLegacyEnvironmentDefault() {
-        shippingProperties.setUploadEnabled(true);
+    void databaseSettingOverridesSafeDefault() {
         service.update(request(false, false, false, 0, "数据库关闭外部调用"), 1L);
 
         assertThat(service.uploadEnabledFailClosed()).isFalse();

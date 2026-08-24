@@ -26,8 +26,6 @@ public record AdminAfterSaleDetailResponse(
         List<AfterSaleEvidenceFileResponse> evidenceFiles,
         RefundOrderResponse refundOrder,
         AfterSaleOrderContextResponse orderContext,
-        Integer flowVersion,
-        Boolean legacyFullOrder,
         List<AfterSaleItemResponse> items,
         AfterSaleReturnResponse returnInfo,
         List<String> allowedActions
@@ -58,8 +56,6 @@ public record AdminAfterSaleDetailResponse(
                 afterSale.evidenceFiles(),
                 afterSale.refundOrder(),
                 orderContext,
-                afterSale.flowVersion(),
-                afterSale.legacyFullOrder(),
                 afterSale.items(),
                 afterSale.returnInfo(),
                 afterSale.allowedActions()

@@ -350,9 +350,7 @@
               </ElTable>
               <ElEmpty v-else description="暂无商品信息" :image-size="64" />
               <div class="product-summary">
-                <strong>{{
-                  currentDetail.legacyFullOrder ? '历史整单售后' : '按商品与数量售后'
-                }}</strong>
+                <strong>按商品与数量售后</strong>
                 <div class="product-summary__amounts">
                   <span class="product-summary__refund">
                     申请退款：<strong>{{ formatMoney(currentDetail.requestedAmountCent) }}</strong>
@@ -1086,7 +1084,6 @@
     orderNo: string
     requestedAmountCent: number
     afterSaleType: string
-    flowVersion: number
     items: Api.AfterSale.AfterSaleItem[]
   }
 
@@ -1891,7 +1888,7 @@
   const openAuditDialog = async (
     mode: AuditMode,
     row: Pick<Api.AfterSale.Summary, 'id' | 'afterSaleNo' | 'orderNo' | 'requestedAmountCent'> &
-      Partial<Pick<Api.AfterSale.Item, 'afterSaleType' | 'flowVersion' | 'items'>>
+      Partial<Pick<Api.AfterSale.Item, 'afterSaleType' | 'items'>>
   ) => {
     auditMode.value = mode
     let detail: Api.AfterSale.Detail
@@ -1909,7 +1906,6 @@
       orderNo: detail.orderNo,
       requestedAmountCent: detail.requestedAmountCent,
       afterSaleType: detail.afterSaleType,
-      flowVersion: detail.flowVersion,
       items: detail.items || []
     }
     auditForm.approvedAmountYuan = (detail.requestedAmountCent || 0) / 100
@@ -2187,7 +2183,6 @@
     try {
       if (isApprove) {
         await approveAfterSale(target.id, {
-          approvedAmountCent: target.flowVersion <= 1 ? target.requestedAmountCent : undefined,
           auditNote,
           returnAddressId:
             target.afterSaleType === 'RETURN_REFUND' ? auditForm.returnAddressId : undefined,

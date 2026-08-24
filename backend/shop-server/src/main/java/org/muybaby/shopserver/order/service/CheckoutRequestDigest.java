@@ -15,7 +15,7 @@ public final class CheckoutRequestDigest {
     private CheckoutRequestDigest() {
     }
 
-    public static String digest(CheckoutRequest request) {
+    public static String initialOwnershipDigest(CheckoutRequest request) {
         return digestCanonical(canonical(request));
     }
 

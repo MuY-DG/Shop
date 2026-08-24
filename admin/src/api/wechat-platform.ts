@@ -13,11 +13,3 @@ export function updateWechatPlatformConfig(data: Api.WechatPlatform.ConfigUpdate
     showSuccessMessage: true
   })
 }
-
-export function importWechatPlatformLegacyEnvironment(version: number) {
-  return request.post<Api.WechatPlatform.Config>({
-    url: `${baseUrl}/legacy-env-import`,
-    data: { version },
-    showSuccessMessage: true
-  })
-}

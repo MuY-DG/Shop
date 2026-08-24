@@ -29,7 +29,7 @@
     <ElAlert
       v-if="runtime && !runtime.runtimePersisted"
       title="当前仍使用部署时默认值"
-      description="先核对开关并写入数据库，再从 ENV 删除旧微信发货开关。"
+      description="运行开关持久化在数据库并记录版本；启用前先完成配置与真实能力核验。"
       type="warning"
       :closable="false"
       show-icon

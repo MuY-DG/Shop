@@ -124,12 +124,13 @@ class ShipmentTrackingStateStoreTest {
         LocalDateTime now = LocalDateTime.of(2026, 8, 9, 12, 0);
         jdbcClient.sql("""
                         insert into shop_order(
-                            id, order_no, user_id, status, source, idempotency_key,
+                            id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             receiver_name, receiver_phone, receiver_address,
                             payment_transaction_id, merchant_trade_no, paid_at, shipped_at,
                             created_at, updated_at)
                         values (
                             :orderId, :orderNo, :userId, 'SHIPPED', 'CART', :key,
+                            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                             '轨迹测试用户', '13800138000', '广东省深圳市南山区测试路2号',
                             :transactionId, :outTradeNo, :now, :now, :now, :now)
                         """)
@@ -143,13 +144,18 @@ class ShipmentTrackingStateStoreTest {
                 .update();
         jdbcClient.sql("""
                         insert into payment_order(
-                            order_id, out_trade_no, transaction_id, payer_openid,
+                            order_id, payment_config_id, payment_config_fingerprint,
+                            notification_route_token, out_trade_no, transaction_id, payer_openid,
                             status, amount_cent, expires_at, paid_at, created_at, updated_at)
                         values (
-                            :orderId, :outTradeNo, :transactionId, :openid,
+                            :orderId, :paymentConfigId, :paymentConfigFingerprint,
+                            :notificationRouteToken, :outTradeNo, :transactionId, :openid,
                             'PAID', 100, :now, :now, :now, :now)
                         """)
                 .param("orderId", ORDER_ID)
+                .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(ORDER_ID))
                 .param("outTradeNo", "MCH-TRACKING-" + ORDER_ID)
                 .param("transactionId", "WX-TRACKING-" + ORDER_ID)
                 .param("openid", "tracking-openid-" + ORDER_ID)

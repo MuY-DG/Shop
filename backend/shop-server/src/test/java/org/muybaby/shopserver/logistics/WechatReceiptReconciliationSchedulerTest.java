@@ -44,7 +44,6 @@ class WechatReceiptReconciliationSchedulerTest {
     void enabledSchedulerBindsLimitsAndInvokesConfiguredBatch() {
         contextRunner
                 .withPropertyValues(
-                        "shop.wechat.shipping.receipt-reconciliation.enabled=true",
                         "shop.wechat.shipping.receipt-reconciliation.delay=1h",
                         "shop.wechat.shipping.receipt-reconciliation.initial-delay=1h",
                         "shop.wechat.shipping.receipt-reconciliation.batch-size=7",
@@ -56,7 +55,6 @@ class WechatReceiptReconciliationSchedulerTest {
                     assertThat(context).hasSingleBean(WechatReceiptReconciliationScheduler.class);
                     WechatReceiptReconciliationProperties properties = context.getBean(
                             WechatReceiptReconciliationProperties.class);
-                    assertThat(properties.enabled()).isTrue();
                     assertThat(properties.delay()).isEqualTo(Duration.ofHours(1));
                     assertThat(properties.batchSize()).isEqualTo(7);
                     assertThat(properties.minShippedAge()).isEqualTo(Duration.ofHours(2));

@@ -9,9 +9,7 @@ import org.muybaby.shopserver.common.secret.SecretEncryptionProperties;
 import org.muybaby.shopserver.payment.config.AesGcmPaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.support.AdminTokenTestSupport;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
 import org.muybaby.shopserver.wechat.platform.dto.AdminWechatPlatformConfigUpdateRequest;
-import org.muybaby.shopserver.wechat.platform.dto.AdminWechatPlatformEnvironmentImportRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -27,15 +25,11 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(properties = {
-        "shop.wechat.mini-program.app-id=wx-legacy-env",
-        "shop.wechat.mini-program.app-secret=legacy-env-secret"
-})
+@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
@@ -62,69 +56,30 @@ class AdminWechatPlatformConfigControllerTest {
     }
 
     @Test
-    void endpointsProtectLegacyImportAndNeverReturnTheSecret() throws Exception {
+    void endpointReturnsOnlyDatabaseStateAndNeverReturnsTheSecret() throws Exception {
         String readToken = token(List.of("wechat-platform:config:read"));
-        String writeToken = token(List.of("wechat-platform:config:write"));
 
         mockMvc.perform(get("/admin/wechat/platform-config"))
                 .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/admin/wechat/platform-config")
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("ENVIRONMENT"))
-                .andExpect(jsonPath("$.data.appId").value("wx-legacy-env"))
-                .andExpect(jsonPath("$.data.appSecretMasked").value("********"))
-                .andExpect(jsonPath("$.data.appSecretConfigured").value(true))
+                .andExpect(jsonPath("$.data.source").value("NONE"))
+                .andExpect(jsonPath("$.data.appId").value(""))
+                .andExpect(jsonPath("$.data.appSecretMasked").value(""))
+                .andExpect(jsonPath("$.data.appSecretConfigured").value(false))
                 .andExpect(jsonPath("$.data.appSecret").doesNotExist())
-                .andExpect(jsonPath("$.data.legacyEnvironmentImportAvailable").value(true))
+                .andExpect(jsonPath("$.data.legacyEnvironmentImportAvailable").doesNotExist())
                 .andExpect(jsonPath("$.data.version").value(0));
-
-        mockMvc.perform(post("/admin/wechat/platform-config/legacy-env-import")
-                        .header("Authorization", "Bearer " + readToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":0}"))
-                .andExpect(status().isForbidden());
-
-        mockMvc.perform(post("/admin/wechat/platform-config/legacy-env-import")
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":0}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.source").value("DATABASE"))
-                .andExpect(jsonPath("$.data.appSecretMasked").value("********"))
-                .andExpect(jsonPath("$.data.appSecret").doesNotExist())
-                .andExpect(jsonPath("$.data.legacyEnvironmentImportAvailable").value(false))
-                .andExpect(jsonPath("$.data.version").value(1));
-
-        SecretRow row = secretRow();
-        assertThat(row.ciphertext())
-                .startsWith("v1:")
-                .doesNotContain("legacy-env-secret");
-        assertThat(row.cipherVersion()).isOne();
-        assertThat(row.keyId()).isEmpty();
-        WechatPlatformCredentials resolved = configService.resolve();
-        assertThat(resolved)
-                .isEqualTo(new WechatPlatformCredentials(
-                        "wx-legacy-env",
-                        "legacy-env-secret",
-                        WechatPlatformCredentials.Source.DATABASE));
-        assertThat(resolved.toString()).doesNotContain("legacy-env-secret");
-
-        mockMvc.perform(post("/admin/wechat/platform-config/legacy-env-import")
-                        .header("Authorization", "Bearer " + writeToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"version\":0}"))
-                .andExpect(status().isConflict());
     }
 
     @Test
     void persistedDamageFailsClosedWithoutFallingBackToLegacyEnvironment() {
-        configService.importLegacyEnvironment(
-                new AdminWechatPlatformEnvironmentImportRequest(0L),
-                1L);
+        configService.update(new AdminWechatPlatformConfigUpdateRequest(
+                "wx-created", "created-secret", 0L), 1L);
         jdbcClient.sql("""
                         update wechat_platform_config
-                        set secret_cipher_version = 2, secret_key_id = 'tampered'
+                        set secret_key_id = 'tampered'
                         where id = 1
                         """)
                 .update();
@@ -137,8 +92,7 @@ class AdminWechatPlatformConfigControllerTest {
         jdbcClient.sql("""
                         update wechat_platform_config
                         set app_secret_ciphertext = 'damaged-envelope',
-                            secret_cipher_version = 1,
-                            secret_key_id = ''
+                            secret_cipher_version = 2
                         where id = 1
                         """)
                 .update();
@@ -238,50 +192,42 @@ class AdminWechatPlatformConfigControllerTest {
     }
 
     @Test
-    void legacyAndMasterEncryptionPropertiesRedactSecretsFromToString() {
-        WechatMiniProgramProperties miniProgram = new WechatMiniProgramProperties(
-                "wx-sensitive-id", "sensitive-app-secret", false);
+    void encryptionPropertiesRedactSecretsFromToString() {
         SecretEncryptionProperties encryption = new SecretEncryptionProperties(
-                2,
                 "active-key-id",
                 "active-key-id=base64:sensitive-key-ring-material",
-                "sensitive-legacy-key",
                 true,
                 Duration.ofMinutes(1),
                 50);
 
-        assertThat(miniProgram.toString())
-                .doesNotContain("wx-sensitive-id", "sensitive-app-secret");
         assertThat(encryption.toString())
-                .doesNotContain("sensitive-key-ring-material", "sensitive-legacy-key");
+                .doesNotContain("sensitive-key-ring-material");
     }
 
     @Test
     void rotationRewrapsTheSecretWithTheActiveV2KeyAndKeepsConfigVersionStable() {
-        WechatMiniProgramProperties noEnvironment =
-                new WechatMiniProgramProperties("", "", false);
-        PaymentSecretCipher legacyCipher = new AesGcmPaymentSecretCipher(
+        PaymentSecretCipher oldCipher = new AesGcmPaymentSecretCipher(
                 new SecretEncryptionProperties(
-                        1, "", "", "0123456789abcdef0123456789abcdef",
+                        "old-2025",
+                        "old-2025=base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
                         false, Duration.ofMinutes(1), 50));
-        WechatPlatformConfigService legacyService = new WechatPlatformConfigService(
-                repository, legacyCipher, noEnvironment);
-        legacyService.update(
+        WechatPlatformConfigService oldService = new WechatPlatformConfigService(
+                repository, oldCipher);
+        oldService.update(
                 new AdminWechatPlatformConfigUpdateRequest(
                         "wx-rotate", "rotate-secret", 0L),
                 1L);
 
         PaymentSecretCipher activeCipher = new AesGcmPaymentSecretCipher(
                 new SecretEncryptionProperties(
-                        2,
                         "new-2026",
-                        "new-2026=base64:bmV3LWtleS1tYXRlcmlhbC0zMi1ieXRlcy0wMDAwMDA=",
-                        "0123456789abcdef0123456789abcdef",
+                        "old-2025=base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=;"
+                                + "new-2026=base64:ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA=",
                         false,
                         Duration.ofMinutes(1),
                         50));
         WechatPlatformConfigService rotatingService = new WechatPlatformConfigService(
-                repository, activeCipher, noEnvironment);
+                repository, activeCipher);
 
         assertThat(rotatingService.rotateSecretIfNeeded()).isOne();
         assertThat(rotatingService.rotateSecretIfNeeded()).isZero();

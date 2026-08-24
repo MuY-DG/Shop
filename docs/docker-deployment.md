@@ -1,335 +1,240 @@
-# Docker 生产部署
+# 后端 Docker 部署
 
-生产环境采用“1Panel 负责运维入口，Docker Compose 负责应用栈”的结构：
+本文只描述 Shop 后端在 `txcloud`（开发/集成）和 `shop`（正式生产）上的当前部署方式。两台服务器使用同一套 Compose、同一个 `server` Profile 和同一种运行时清单结构，差异只存在于各自的秘密和业务数据库配置。
+
+> 当前 Flyway generation 2 只有 V1-V7。这是一条不兼容旧数据库的全新基线，不能把它直接启动在旧 schema 上。切换时必须先确认数据确实可丢弃，再删除目标环境的 MySQL/Redis 数据卷并从空库启动。Git 历史仅用于查阅，不参与新环境迁移。
+
+## 1. 边界与前置条件
+
+仓库负责：
+
+- 构建后端镜像；
+- 上传 Compose、运行时清单和部署脚本；
+- 启动 MySQL、Redis、后端容器；
+- 在切换前执行测试、静态门禁和 MySQL 备份；
+- 校验容器健康状态以及 `/actuator/info` 的版本信息。
+
+服务器管理员负责：
+
+- 安装和升级 Docker Engine、Docker Compose；
+- 安装、升级和保护 1Panel（如使用）；
+- 配置 OpenResty、域名、HTTPS 证书、防火墙和云安全组；
+- 监控、异机备份和操作系统安全。
+
+仓库不再提供 Docker/1Panel 安装脚本，也不保存或轮换 1Panel 密码。
+
+本机还需满足：
+
+- `ssh txcloud` 与 `ssh shop` 可用；
+- JDK/Maven Wrapper、Docker/Testcontainers、Git、`tar` 可用；
+- 工作区已提交且无未跟踪改动；
+- 服务器至少有 `docker`、Compose 插件、`curl`、`gzip`、`flock`、`sha256sum`，远程构建模式还需能构建 Docker 镜像。
+
+## 2. 配置模型
+
+唯一受版本控制的模板是：
 
 ```text
-Internet
-  -> 1Panel OpenResty :80/:443
-  -> 宿主机 127.0.0.1:8080
-  -> shop-server 容器 :8080
-       -> mysql 容器 :3306（内部网络）
-       -> redis 容器 :6379（内部网络）
-
-Local Mac
-  -> SSH tunnel
-       -> 宿主机 127.0.0.1:3306 -> mysql 容器 :3306
-       -> 宿主机 127.0.0.1:6379 -> redis 容器 :6379
+backend/shop-server/config/runtime/runtime.env.example
 ```
 
-MySQL 和 Redis 只发布到宿主机回环地址，公网不能直接访问 `3306`/`6379`。
-Spring Boot 通过隔离的 `data` 网络访问；`ops` 网络只负责 Docker 回环端口发布所需的
-默认网关，本机数据库工具必须通过 SSH 隧道访问。
+本机生成三个互不复用、且被 Git 忽略的清单：
 
-## 文件分工
+```text
+backend/shop-server/config/runtime/local.env
+backend/shop-server/config/runtime/txcloud.env
+backend/shop-server/config/runtime/shop.env
+```
 
-- `compose.prod.yaml`：完整声明后端、MySQL、Redis、持久卷、健康检查和资源限制。
-- `.env.prod.local`：只含数据库/Redis、可信代理、通用主加密密钥和首次引导值。
-- `.env.infrastructure.local`：只给 MySQL/Redis 使用的基础设施密码。
-- `secrets/`：当前生产 Compose 不再挂载；只允许旧部署在第一阶段过渡版本中临时使用。
-- `backups/`：本机 MySQL 备份目录。
-- `scripts/deploy-prod.sh`：本地测试、精简源码上传、服务器缓存构建和远程切换的一条命令。
-- `scripts/backup-mysql.sh`：供 1Panel 计划任务调用的 MySQL 备份脚本。
+清单仅允许以下启动边界：
 
-所有 `.env.*.local`、历史 `secrets/` 和 `backups/` 均被 Git 忽略。对象存储、微信平台、
-支付和服务动态业务配置由后台数据库管理；生产校验会拒绝微信业务凭据或旧运行开关
-重新进入 `.env.prod.local`。
+```text
+SHOP_DB_PASSWORD
+SHOP_DB_ROOT_PASSWORD
+SHOP_REDIS_PASSWORD
+SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID
+SHOP_SECRET_ENCRYPTION_KEY_RING
+```
 
-## 首次准备生产配置
+三个密码固定使用初始化脚本生成的 64 位小写十六进制格式；key ring 允许 1-16 个条目。
+微信小程序、微信支付、COS、服务动态、发货和财务对账的凭据与业务开关必须在 Admin 中配置并加密写入数据库，不得放入运行时清单。
 
-现有生产配置只需运行一次初始化脚本。它会生成独立的 MySQL 业务密码、
-MySQL root 密码和 Redis 密码，并同步应用侧的对应值：
+生成并校验服务器清单：
 
 ```bash
-cd /Users/muybaby/Project/Production/Shop/backend/shop-server
-./scripts/init-prod-env.sh
-./scripts/validate-prod-env.sh
+cd backend/shop-server
+./scripts/config/init-runtime-env.sh txcloud
+./scripts/config/init-runtime-env.sh shop
+
+./scripts/config/validate-runtime-env.sh txcloud
+./scripts/config/validate-runtime-env.sh shop
 ```
 
-如果明确不保留现有容器数据，需要重新生成整套基础设施密码：
+初始化脚本拒绝覆盖已有文件。普通部署要求服务器当前清单与待部署清单的全部 5 项秘密逐字一致；任何密码或主密钥变化都必须走独立维护流程。密钥轮换时应保留旧 key ID 和原 key bytes，直到数据库密文完成重加密，不能直接丢弃仍被引用的 key。
+
+## 3. 可信代理
+
+Compose 只把后端端口发布到宿主机 `127.0.0.1:8080`。OpenResty 应反向代理到该地址，并覆盖而不是追加来源头：
+
+```nginx
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $remote_addr;
+proxy_set_header X-Forwarded-Proto $scheme;
+```
+
+Compose 为三张网络固定独立 `/24`：`data=172.22.0.0/24`、`edge=172.23.0.0/24`、
+`ops=172.24.0.0/24`。`application-server.yaml` 只额外信任精确的 edge 网关
+`172.23.0.1/32`，不再接受环境变量覆盖；local 只信任回环地址。
+
+首次重建前必须用 `ip route` 和 Docker network inspect 确认宿主机没有占用这三个网段。
+固定 IPAM 避免网络重建后网关漂移，也消除了“先部署网络还是先填写清单”的循环依赖。
+
+建议在服务器上查看：
 
 ```bash
-./scripts/init-prod-env.sh --rotate-infrastructure
+cd /opt/shop/shop-server
+ip route
+sudo docker network inspect shop_edge
 ```
 
-脚本不会打印密码，并会把两个本地环境文件权限设为 `600`。
+## 4. 首次 generation 2 切换
 
-升级已有环境时，初始化脚本会把旧的密钥、写入版本、active key、key ring 和轮换开关
-迁移到 `SHOP_SECRET_ENCRYPTION_*`（其中旧 `SHOP_PAYMENT_SECRET_KEY` 改为
-`SHOP_SECRET_ENCRYPTION_LEGACY_KEY`）。轮换延迟/批量与支付过期时间已经改为受版本控制的
-技术默认值，脚本会删除对应旧覆盖。它还会删除所有
-`SHOP_STORAGE_PROVIDER`、`SHOP_STORAGE_PUBLIC_BASE_URL`、
-`SHOP_STORAGE_LOCAL_ROOT`、`SHOP_STORAGE_TENCENT_COS_*` 和
-`SHOP_DIRECT_UPLOAD_*` 行。COS 区域、存储桶和凭证只在管理后台保存；上传限额等
-技术默认值位于 `application.yaml`。校验脚本会拒绝仍含这些已移除变量的生产文件。
+这一节包含破坏性操作。执行前确认目标是 `txcloud` 还是 `shop`，确认该目标的数据可以丢弃，并保留一份可恢复备份。不要把目标名、省略的 SSH 别名或 Compose 项目名交给通配符。
 
-`.env.prod.example` 不再列出 `WECHAT_MINI_PROGRAM_*`、`WECHAT_PAY_*` 或微信发货开关。
-新部署通过后台数据库配置这些业务值，真实值不得复制回 example、镜像或文档。
+推荐顺序：
 
-支付运行时和日常 Admin 都只使用数据库配置：创建、编辑、启用和软删除。代码不再提供
-支付 ENV/AUTO 解析、环境导入或来源切换接口。删除只会让非当前配置退出日常列表；当前启用
-配置必须先切换到其他配置，仍有旧私有文件 ID 的配置必须先完成秘密文件迁移。历史支付、
-退款、回调和对账仍按原配置 ID 或加密 ENV snapshot 回放，禁止手工物理删除对应数据库行、
-密文或 snapshot。
+1. 在本机完成第 5 节的全部校验并提交发布版本。
+2. 在服务器停止旧应用，导出一份最后备份。
+3. 明确删除该目标旧 Compose 的 MySQL/Redis 命名卷。
+4. 用新的目标清单执行部署；Flyway 从空库运行 V1-V7。
+5. 确认 `/actuator/health`、`/actuator/info` 和 Flyway 版本。
+6. 运行一次性 Super 管理员引导。
+7. 登录 Admin 修改临时密码，再录入业务配置。
+8. 依次完成微信登录、支付、退款、COS、发货和对账的真实平台验收。
 
-### 微信平台与服务动态旧部署迁移
+删除旧数据卷的命令必须根据服务器上 `docker volume ls` 的实际结果人工确认，本文不提供可直接复制的通配删除命令。代码整理或普通发布也不等于已经授权删除线上数据。
 
-微信平台与服务动态若仍有旧部署需要迁移，必须先使用仍保留 `.env.prod.local` 兼容值的
-V99-V101 过渡版本完成第一阶段；当前主 Compose 已进入第二阶段，不再提供 PEM 挂载。
-支付不再支持旧 ENV 部署升级，必须直接在数据库创建完整配置。微信平台与服务动态的
-第一阶段只部署和迁移，不代表已经操作生产数据库：
-
-1. 发布包含 V99、V100、V101 的版本，确认 Flyway 完成且微信平台与服务动态仍可用旧 ENV 回退启动。
-2. 支付只接受数据库配置。已有 DB 配置仍引用旧私有文件 ID 时，对每个待迁移行调用
-   `POST /admin/pay/configs/{configId}/import-legacy-secret-files`。后者把 PEM 正文校验、加密
-   后写入 `payment_config`，并清空旧私有文件引用。确认列表中的
-   `legacySecretFilesPendingImport=false`，必要时启用目标行。该入口只维护已有数据库行，
-   不读取 ENV，也不恢复任何 ENV 支付升级能力。
-3. 先 `GET /admin/wechat/platform-config`；仅当返回
-   `legacyEnvironmentImportAvailable=true` 时，以 `{"version":0}` 调用
-   `POST /admin/wechat/platform-config/legacy-env-import`。再次 GET 必须显示
-   `source=DATABASE` 且不再提供 legacy import。
-4. 读取 `GET /admin/wechat-service-cards/config`；仅当返回
-   `legacyEnvironmentImportAvailable=true` 时，以 `{"version":0}` 调用
-   `POST /admin/wechat-service-cards/config/legacy-env-import`。导入会严格校验模板、公开图、
-   host、Token/AESKey，并保持旧环境中已验证的 callback enabled 值；数据库行写入后立即
-   优先生效。再次 GET 必须显示 `source=DATABASE`，但只能看到密钥掩码和 configured 状态。
-5. 从 `GET /admin/wechat-service-cards/status` 读取当前 Capture/Worker 生效值和 version，
-   用相同值及真实原因调用 `PUT /admin/wechat-service-cards/runtime`；从
-   `GET /admin/wechat-shipping/runtime` 读取上传/投递/收货三个生效值和 version，再用相同
-   值及真实原因 PUT 回去。这样先持久化旧开关，不在迁移时改变行为。
-6. 依次验证小程序登录、服务动态 GET 握手/失败回调、低金额沙箱或受控真实支付、历史支付查询/退款解析、发货跳过或
-   沙箱路径。核对支付 effective 配置、平台 source、两个 runtime 的 persisted/version
-   与审计记录；健康检查或单元测试不能替代这些外部证据。
-
-后端长期保留历史 ENV snapshot 的只读解析，以处理旧支付的查询、退款、回调和对账；它不
-允许创建新的 ENV 支付，也不提供实时 ENV 凭据解析。
-
-第二阶段必须等上述验证、支付回调重试窗口、历史 ENV 支付快照和回滚窗口都满足后再做：
-
-1. 从真实 `.env.prod.local` 删除 `WECHAT_PAY_*`、`WECHAT_MINI_PROGRAM_*`，以及已持久化的
-   `SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED`、`SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED`、
-   `SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED`、`SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED`、
-   `SHOP_WECHAT_SERVICE_CARD_WORKER_ENABLED`、`SHOP_WECHAT_SERVICE_CARD_CALLBACK_ENABLED`、
-   `SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID`、`SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE`、
-   `SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS`、`SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN` 和
-   `SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY`。
-2. 只有所有支付配置都显示 `legacySecretFilesPendingImport=false` 且不再需要旧版本回滚时，
-   才移除 Compose 的 `secrets/` 挂载和服务器旧 PEM。删除服务器文件前先按运维策略留存
-   受控备份；不要删除 `SHOP_SECRET_ENCRYPTION_*` 主密钥环。
-3. 删除服务动态旧环境值前，确认 V101 配置 source 为 `DATABASE`、回调密钥 configured、
-   handshake 与失败回调均通过，并保留满足回滚窗口的受控备份；不要输出密钥明文。
-
-当前主部署要求第二阶段已经完成：生产校验脚本拒绝上述 26 个 legacy key，Compose 不再
-挂载 `secrets/`。本地开发与生产一致，`.env.dev.local` 也不得保存支付业务值；需要本地
-真支付时，先在本地数据库创建配置，再通过 HTTPS 内网穿透接收回调。
-
-全新部署不执行 legacy import：先准备通用主密钥环，启动后直接在 Admin 创建微信平台和
-支付 DB 配置，再一次性创建完整的服务动态接入配置，最后保存服务动态/发货运行开关。
-
-全新数据库默认不会启用公共 Super。确实需要首次引导账号时：
-
-1. 运行 `AdminPasswordHashTool` 为唯一的临时强密码生成 BCrypt 哈希。
-2. 在 `.env.prod.local` 中临时设置
-   `SHOP_DEFAULT_ADMIN_STATUS=ENABLED` 和生成的哈希。
-3. 首次登录后立即创建正式管理员或修改密码。
-4. 将状态恢复为 `DISABLED`；哈希继续留作受控的首次建库占位值。Flyway 已执行的迁移
-   不会重复创建账号。
-
-## 一条命令部署
-
-服务器首次使用时，先按 1Panel 官方脚本安装 Docker 与 1Panel V2：
+## 5. 发布前校验
 
 ```bash
-backend/shop-server/scripts/bootstrap-1panel.sh txcloud
+cd backend/shop-server
+
+./scripts/ci/verify-flyway-migrations.sh
+./scripts/ci/verify-test-layers.sh
+
+# 快速单元/H2 层；不包含 Testcontainers。
+./mvnw test
+
+# MySQL/Redis Testcontainers 层；要求 Docker 可用且零跳过。
+./mvnw -Pintegration verify
+./scripts/ci/assert-integration-test-results.sh target/failsafe-reports
 ```
 
-随机安全入口和密码保存在被 Git 忽略的
-`backend/shop-server/.1panel.local`，文件权限为 `600`，脚本不会打印密码。
-官方安装器首次显示登录信息后，脚本会立即轮换一次随机密码。以后如需再次轮换可运行：
+还应按 [smoke-checks.md](smoke-checks.md) 校验 Admin 和小程序。`SHOP_DEPLOY_SKIP_TESTS=true` 仅用于已经取得同一提交完整测试证据的受控重试，不应作为日常捷径。
+
+## 6. 部署 txcloud 或 shop
+
+部署命令必须显式指定目标：
 
 ```bash
-backend/shop-server/scripts/secure-1panel.sh txcloud
+backend/shop-server/scripts/deploy/deploy-backend.sh txcloud
+backend/shop-server/scripts/deploy/deploy-backend.sh shop
 ```
 
-然后在项目根目录运行完整应用部署：
-
-```bash
-backend/shop-server/scripts/deploy-prod.sh shop
-```
-
-脚本会依次执行：
-
-1. 校验两个生产环境文件及重复密码是否一致。
-2. 运行后端完整测试。
-3. 默认只上传精简源码，由服务器构建 `linux/amd64` 分层镜像。
-4. 通过 SSH 安全上传 Compose、环境文件和运维脚本。
-5. 先启动并等待 MySQL/Redis 健康。
-6. 停止旧 systemd Java 服务，启动 `prod` Profile 容器。
-7. 检查 `127.0.0.1:8080/actuator/health`。
-8. 健康后禁用旧 Java 服务；失败则自动恢复旧服务。
-
-只有在已经单独运行过测试时，才可跳过测试：
-
-```bash
-SHOP_DEPLOY_SKIP_TESTS=true backend/shop-server/scripts/deploy-prod.sh shop
-```
-
-服务器是 x86-64；如果将来更换 ARM 服务器，可显式覆盖：
-
-```bash
-SHOP_DEPLOY_PLATFORM=linux/arm64 backend/shop-server/scripts/deploy-prod.sh shop
-```
-
-## Spring Boot Layers 的实际作用
-
-Dockerfile 使用 Spring Boot `jarmode=tools` 将可执行 JAR 拆成：
-
-1. `dependencies`
-2. `spring-boot-loader`
-3. `snapshot-dependencies`
-4. `application`
-
-业务代码变化时，同一构建端会复用前三层。使用私有镜像仓库 push/pull 时，网络也只传输
-变化的层。默认 `remote-build` 模式只上传精简源码，并复用服务器 Maven 与 Docker
-缓存，适合本机到服务器上传较慢的情况。
-
-如需改回本机构建并通过 SSH 传输完整压缩镜像：
-
-```bash
-SHOP_DEPLOY_TRANSPORT=image-stream backend/shop-server/scripts/deploy-prod.sh shop
-```
-
-该模式先生成本地压缩镜像包，再使用 rsync 显示传输百分比、速度和预计剩余时间。
-连接中断时默认自动尝试 3 次，并从远端已经收到的位置继续；传输完成后执行 SHA-256
-校验，再由 `docker load` 加载镜像。可按需调整：
+默认 `remote-build` 会上传精简源码并在目标服务器构建镜像。网络条件允许时也可在本机构建并流式上传完整镜像：
 
 ```bash
 SHOP_DEPLOY_TRANSPORT=image-stream \
-SHOP_DEPLOY_TRANSFER_ATTEMPTS=5 \
-SHOP_DEPLOY_TRANSFER_RETRY_DELAY_SECONDS=10 \
-backend/shop-server/scripts/deploy-prod.sh shop
+  backend/shop-server/scripts/deploy/deploy-backend.sh shop
 ```
 
-本地和服务器需要额外容纳一份临时压缩包，成功加载后会自动清理。该模式仍会传输完整
-镜像，不会只发送变化层。以后需要分层传输时，可接入腾讯云 TCR 或 GHCR，Compose
-本身无需重构。
-
-## 1Panel 与 OpenResty
-
-1Panel 只负责 Docker 可视化、日志、监控、计划任务、证书和 OpenResty；项目的真实
-部署定义仍以仓库中的 `compose.prod.yaml` 为准。
-
-不要在 1Panel 中再次新建或导入同名编排，否则脚本与面板会同时拥有容器生命周期，
-容易出现配置漂移。脚本负责 `docker compose` 的创建与更新；容器启动后仍可在 1Panel
-的容器列表中查看状态、资源与日志。
-
-OpenResty 在 1Panel 应用商店安装。创建“反向代理”网站：
-
-- 主域名：生产域名。
-- 代理地址：`http://127.0.0.1:8080`。
-- HTTPS：选择 1Panel 申请或导入的证书并开启自动续签。
-- WebSocket：开启或保留升级头，项目包含 WebSocket 接口。
-- 覆盖客户端来源头：`proxy_set_header X-Forwarded-For $remote_addr;`，不要直接透传
-  客户端提交的 `X-Forwarded-For`。
-
-Docker 发布端口转发到容器后，应用看到的对端通常是 bridge 网关而不是
-`127.0.0.1`。部署完成后先定位 `shop-server` 容器，再检查它所在网络的 `Gateway`：
+目标架构默认是 `linux/amd64`，确需 ARM 时显式覆盖：
 
 ```bash
-shop_container_id="$(sudo docker compose -f compose.prod.yaml ps -q shop-server)"
-sudo docker inspect "$shop_container_id" --format '{{json .NetworkSettings.Networks}}'
+SHOP_DEPLOY_PLATFORM=linux/arm64 \
+  backend/shop-server/scripts/deploy/deploy-backend.sh shop
 ```
 
-将实际承载宿主机转发流量的单个网关地址以 `/32` 写入 `.env.prod.local`，并把转发跳数
-限制为 1，例如：
+脚本会：
 
-```properties
-SHOP_TRUSTED_PROXY_CIDRS=127.0.0.0/8,::1/128,<核验出的网关-IP>/32
-SHOP_MAX_FORWARDED_HOPS=1
+1. 在测试前以及测试后、构建前后重复拒绝脏工作区，避免镜像内容与 Git SHA 不一致；
+2. 校验目标清单、Flyway 文件和测试分层；
+3. 默认运行后端两层测试；
+4. 生成包含 Git SHA、UTC 时间和随机后缀的唯一 `deploy_id`，把目标清单、Compose 和调用脚本上传为带该 ID 的候选文件；远端在修改任何 canonical 文件、镜像标签或数据服务前先解析候选 Compose；
+5. 构建并标记独立版本镜像；
+6. 已有容器或数据卷时，先用部署前的 canonical Compose/runtime 启动旧 MySQL 并强制备份，再切换候选清单；首次部署则先初始化数据服务，再生成空库基线备份；
+7. 对应备份成功后，以同目录原子 `mv` 切换 runtime/Compose，再切换后端容器；
+8. 检查健康状态、Git SHA、构建时间和 Flyway 版本，成功后才提升 canonical 运维脚本；
+9. 在服务器取得非阻塞发布锁后才允许修改 canonical 清单和 `shop-server:local`；另一条发布或人工备份正在占用同一目标锁时立即失败，各自只清理自己的候选文件；
+10. 任一步骤失败或收到 HUP/INT/TERM 时先停止候选应用，再恢复部署前 Compose/runtime、运维脚本、数据服务和应用镜像（如果存在），并要求旧应用重新通过健康检查。
+
+部署脚本不会发布 Admin，也不会删除旧数据卷。
+
+## 7. 首次管理员引导
+
+空库基线会创建停用且不可登录的 `Super` 哨兵账号。引导脚本同时校验第二代 schema marker
+与 Flyway V7 历史，不能拿旧 V1-V107 数据库的相似账号状态绕过。后端健康启动后，从本机执行：
+
+```bash
+backend/shop-server/scripts/config/bootstrap-admin.sh txcloud
+backend/shop-server/scripts/config/bootstrap-admin.sh shop
 ```
 
-不要信任整个 `172.16.0.0/12`、整个 bridge 子网或 `0.0.0.0/0`。Docker 网络重建后
-应重新核验网关。上线烟测时，从公网携带伪造的 `X-Forwarded-For` 请求一次后台接口，
-日志中仍必须显示真实客户端 IP；验证失败时保留网关 IP，也不要临时放宽可信网段。
+脚本先把明文临时密码写入同目录、被 Git 忽略且权限为 `0600` 的临时文件，密码通过 stdin 交给 `htpasswd`；只有哨兵状态完全匹配并完成 CAS 更新及系统日志后，才把临时文件原子发布为：
 
-同一时刻只能有一个服务监听 `80/443`。当前 OpenResty 已接管这两个端口，Caddy 的
-配置仍保留但服务已禁用，可作为人工回滚方案。1Panel 应用安装后的 OpenResty 主端口
-不要直接改动；如需重新迁移，应先在备用端口验证，再停止 Caddy，并以 `80/443`
-重新安装或重建 OpenResty。
-
-生产后端必须继续使用：
-
-```yaml
-server:
-  address: ${SERVER_ADDRESS:127.0.0.1}
+```text
+backend/shop-server/config/runtime/bootstrap-admin.<target>.txt
 ```
 
-Compose 只在容器内部覆盖为 `0.0.0.0`，宿主机端口仍绑定
-`127.0.0.1:8080`。不得将其改成 `0.0.0.0:8080`。
+首次登录后立即修改密码并删除该文件。脚本拒绝覆盖已有凭据，也不能用于普通密码重置。
 
-## MySQL 与 Redis 持久化
+## 8. 部署后验收
 
-- `shop_mysql-data` 保存 MySQL 数据。
-- `shop_redis-data` 保存 Redis AOF/快照。
-- Redis 使用 AOF `everysec`。
-- 删除或重建容器不会删除命名卷。
-- `docker compose down -v` 会删除数据库和 Redis 数据，生产环境禁止执行。
-
-查看状态：
+服务器本机：
 
 ```bash
 cd /opt/shop/shop-server
-sudo docker compose -f compose.prod.yaml ps
-sudo docker compose -f compose.prod.yaml logs --tail=200 shop-server
+sudo docker compose \
+  --env-file config/runtime/runtime.env \
+  -f compose.prod.yaml ps
+curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health
+curl --fail --silent --show-error http://127.0.0.1:8080/actuator/info
 ```
 
-## 自动备份
+公网侧还要检查：
 
-手动验证一次：
+- HTTPS 证书链、域名和反向代理；
+- 后台和小程序不暴露内网端口；
+- 未认证请求不泄露配置或运维信息；
+- 真实客户端 IP 解析符合预期；
+- Admin 能登录、保存配置并留下审计日志；
+- 外部平台验收使用真实测试订单，自动化测试结果不能替代平台结果。
+
+## 9. 备份与回滚
+
+手工备份：
 
 ```bash
-sudo /opt/shop/shop-server/scripts/backup-mysql.sh
+ssh shop 'sudo /opt/shop/shop-server/scripts/deploy/backup-mysql.sh'
 ```
 
-默认保留 14 天，可通过环境变量调整：
+每个 `.sql.gz` 同时生成同名 `.sql.gz.sha256` sidecar；默认将备份及 sidecar 成对保留 14 天。手工备份与发布共用目标级发布锁，并另有备份写锁，因此不会在数据服务切换期间并发导出。可在受控计划任务中覆盖保留天数：
 
 ```bash
-sudo SHOP_BACKUP_RETENTION_DAYS=30 /opt/shop/shop-server/scripts/backup-mysql.sh
+sudo SHOP_BACKUP_RETENTION_DAYS=30 \
+  /opt/shop/shop-server/scripts/deploy/backup-mysql.sh
 ```
 
-在 1Panel“计划任务”中新建 Shell 任务，每天低峰期执行：
+本机磁盘上的备份不能防止整机或磁盘故障，应另行复制到受控的异机/对象存储，并定期执行恢复演练。
+
+可在备份目录验证 sidecar：
 
 ```bash
-/opt/shop/shop-server/scripts/backup-mysql.sh
+cd /opt/shop/shop-server/backups/mysql
+sha256sum --check hotpot_shop-<timestamp>.sql.gz.sha256
 ```
 
-本机备份只能防止误操作，不能防止整机或磁盘故障。后续应在 1Panel 中增加对象存储
-备份，或由云厂商备份 `/opt/shop/shop-server/backups` 和 Docker 数据卷。
+普通代码发布会先把新清单上传为 `runtime.env.next.<deploy_id>`，并以同一 ID 隔离 Compose 候选和调用脚本。检测到已有容器或数据卷时，远程脚本在切换候选清单前先使用旧 canonical Compose/runtime 完成 MySQL 备份；首次部署则在初始化数据服务后生成空库基线备份。Compose 校验、数据服务、强制备份、应用健康或版本核对任一步失败，都会先停止候选应用，再尝试恢复旧清单、旧数据服务和上一个镜像，并验证旧应用健康。
 
-## 检查与回滚
-
-生产检查：
-
-```bash
-curl --fail http://127.0.0.1:8080/actuator/health
-curl --fail http://127.0.0.1:8080/actuator/info
-curl --fail https://api.junxiangshiping.cn/actuator/health
-curl --fail https://api.junxiangshiping.cn/actuator/info
-sudo docker compose -f /opt/shop/shop-server/compose.prod.yaml ps
-```
-
-`/actuator/info` 只允许出现 `gitSha`、`buildTime`、`version` 和
-`flywayVersion`。标准部署脚本会在切换后核对 Git SHA 与 UTC 构建时间，
-不一致时触发回滚。
-
-每次部署都会保留形如 `shop-server:<git-sha>-<timestamp>` 的镜像。需要回滚时，将已验证
-旧镜像重新标记为 `shop-server:local`，然后只重建应用容器：
-
-```bash
-sudo docker tag shop-server:<old-version> shop-server:local
-cd /opt/shop/shop-server
-sudo docker compose -f compose.prod.yaml up -d --no-deps --force-recreate shop-server
-```
-
-数据库迁移通常不可由旧二进制自动回滚。回滚应用前必须先确认该版本能读取当前数据库
-结构；高风险升级应先创建 MySQL 备份。
+该恢复明确不撤销已经执行的数据库迁移，也不会自动回灌备份。若旧应用恢复健康失败，发布输出会给出严重告警，执行人必须停止继续发布，结合部署前备份人工判断是否恢复数据库。generation 2 首次切换使用空库，因此恢复旧系统必须同时恢复旧镜像、旧 Compose 配置和对应数据库备份，不能让旧二进制连接新基线。

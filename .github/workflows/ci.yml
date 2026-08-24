@@ -30,10 +30,10 @@ jobs:
           cache-dependency-path: backend/shop-server/pom.xml
       - name: Verify Flyway migration sequence
         working-directory: backend/shop-server
-        run: ./scripts/verify-flyway-migrations.sh
+        run: ./scripts/ci/verify-flyway-migrations.sh
       - name: Verify backend test-layer contract
         working-directory: backend/shop-server
-        run: ./scripts/verify-test-layers.sh
+        run: ./scripts/ci/verify-test-layers.sh
       - name: Run Docker-free unit and H2 tests
         working-directory: backend/shop-server
         run: ./mvnw --batch-mode --no-transfer-progress test
@@ -59,7 +59,7 @@ jobs:
         run: ./mvnw --batch-mode --no-transfer-progress -Pintegration verify
       - name: Require every integration suite and zero skipped tests
         working-directory: backend/shop-server
-        run: ./scripts/assert-integration-test-results.sh target/failsafe-reports
+        run: ./scripts/ci/assert-integration-test-results.sh target/failsafe-reports
 
   admin:
     name: Admin check and build

@@ -299,12 +299,9 @@ public class ExternalRefundRegistrationService {
                 select payment.id, payment.order_id, payment.out_trade_no,
                        payment.transaction_id, payment.amount_cent, payment.currency,
                        payment.status,
-                       case when payment.payment_config_id is not null
-                            then config.mch_id else snapshot.mch_id end as mch_id
+                       config.mch_id
                 from payment_order payment
-                left join payment_config config on config.id = payment.payment_config_id
-                left join payment_config_snapshot snapshot
-                  on snapshot.fingerprint = payment.payment_config_fingerprint
+                join payment_config config on config.id = payment.payment_config_id
                 """;
     }
 

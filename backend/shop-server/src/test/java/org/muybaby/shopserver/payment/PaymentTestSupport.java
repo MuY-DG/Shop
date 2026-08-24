@@ -8,15 +8,15 @@ import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
+import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
+import org.muybaby.shopserver.payment.config.PaymentNotificationRouteService;
+import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
-import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.io.ByteArrayInputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -44,13 +44,16 @@ public abstract class PaymentTestSupport {
     protected PaymentSecretCipher paymentSecretCipher;
 
     @Autowired
+    protected PaymentConfigResolver paymentConfigResolver;
+
+    @Autowired
+    protected PaymentNotificationRouteService paymentNotificationRouteService;
+
+    @Autowired
     protected MockWechatPayProvider mockWechatPayProvider;
 
     @Autowired
     protected OpaqueTokenService opaqueTokenService;
-
-    @Autowired
-    private StorageProvider storageProvider;
 
     @BeforeEach
     void clearPaymentFlowState() {
@@ -132,48 +135,95 @@ public abstract class PaymentTestSupport {
     }
 
     protected void seedEnabledPaymentConfig(String privateKeyPem, String publicKeyPem) {
-        long privateKeyFileId = System.nanoTime();
-        long publicKeyFileId = privateKeyFileId + 1;
-        insertPrivatePaymentFile(privateKeyFileId, "merchant-private.pem", privateKeyPem);
-        insertPrivatePaymentFile(publicKeyFileId, "wechat-public.pem", publicKeyPem);
+        long configId = 91001L;
+        PaymentSecretCipher.EncryptedSecret apiV3Key = paymentSecretCipher.encrypt(
+                org.muybaby.shopserver.payment.config.PaymentConfigResolver.apiV3KeyContext(configId),
+                "api_v3_secret_test"
+        );
+        PaymentSecretCipher.EncryptedSecret privateKey = paymentSecretCipher.encrypt(
+                org.muybaby.shopserver.payment.config.PaymentConfigResolver.privateKeyPemContext(configId),
+                privateKeyPem
+        );
+        PaymentSecretCipher.EncryptedSecret publicKey = paymentSecretCipher.encrypt(
+                org.muybaby.shopserver.payment.config.PaymentConfigResolver.wechatPublicKeyPemContext(configId),
+                publicKeyPem
+        );
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                              private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
-                             private_key_file_id, merchant_certificate_file_id, verify_mode,
-                             wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
-                             enabled, status)
+                             verify_mode, wechat_public_key_id, notify_url, refund_notify_url,
+                             enabled, status, secret_cipher_version, secret_key_id, secret_revision)
                         values
                             (91001, 'Payment Flow Test', 'wx_payment_test_app', 'mch_payment_test',
-                             'serial_payment_test', :ciphertext, '', '', :privateKeyFileId, null, 'PUBLIC_KEY',
-                             'pub_key_payment_test', :publicKeyFileId, 'https://pay.test/wxpay/pay/notify',
-                             'https://pay.test/wxpay/refund/notify', true, 'ACTIVE')
+                             'serial_payment_test', :apiV3Key, :privateKey, :publicKey, 'PUBLIC_KEY',
+                             'pub_key_payment_test', 'https://pay.test/wxpay/pay/notify',
+                             'https://pay.test/wxpay/refund/notify', true, 'ACTIVE',
+                             :cipherVersion, :keyId, 1)
                         """)
-                .param("ciphertext", paymentSecretCipher.encrypt("api_v3_secret_test"))
-                .param("privateKeyFileId", privateKeyFileId)
-                .param("publicKeyFileId", publicKeyFileId)
+                .param("apiV3Key", apiV3Key.ciphertext())
+                .param("privateKey", privateKey.ciphertext())
+                .param("publicKey", publicKey.ciphertext())
+                .param("cipherVersion", apiV3Key.version())
+                .param("keyId", apiV3Key.keyId())
                 .update();
     }
 
     protected void switchToClonedPaymentConfig(long replacementConfigId) {
+        PaymentCiphertextRow original = jdbcClient.sql("""
+                        select api_v3_key_ciphertext, private_key_pem_ciphertext,
+                               wechat_public_key_pem_ciphertext
+                        from payment_config where id = 91001
+                        """)
+                .query((rs, rowNum) -> new PaymentCiphertextRow(
+                        rs.getString("api_v3_key_ciphertext"),
+                        rs.getString("private_key_pem_ciphertext"),
+                        rs.getString("wechat_public_key_pem_ciphertext")
+                ))
+                .single();
+        PaymentSecretCipher.EncryptedSecret apiV3Key = paymentSecretCipher.encrypt(
+                org.muybaby.shopserver.payment.config.PaymentConfigResolver.apiV3KeyContext(replacementConfigId),
+                paymentSecretCipher.decrypt(
+                        org.muybaby.shopserver.payment.config.PaymentConfigResolver.apiV3KeyContext(91001L),
+                        original.apiV3KeyCiphertext()
+                ).plaintext()
+        );
+        PaymentSecretCipher.EncryptedSecret privateKey = paymentSecretCipher.encrypt(
+                org.muybaby.shopserver.payment.config.PaymentConfigResolver.privateKeyPemContext(replacementConfigId),
+                paymentSecretCipher.decrypt(
+                        org.muybaby.shopserver.payment.config.PaymentConfigResolver.privateKeyPemContext(91001L),
+                        original.privateKeyPemCiphertext()
+                ).plaintext()
+        );
+        PaymentSecretCipher.EncryptedSecret publicKey = paymentSecretCipher.encrypt(
+                org.muybaby.shopserver.payment.config.PaymentConfigResolver.wechatPublicKeyPemContext(
+                        replacementConfigId),
+                paymentSecretCipher.decrypt(
+                        org.muybaby.shopserver.payment.config.PaymentConfigResolver.wechatPublicKeyPemContext(91001L),
+                        original.wechatPublicKeyPemCiphertext()
+                ).plaintext()
+        );
         jdbcClient.sql("update payment_config set enabled = false where enabled = true").update();
         jdbcClient.sql("""
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                              private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
-                             private_key_file_id, merchant_certificate_file_id, verify_mode,
-                             wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
-                             enabled, status)
+                             verify_mode, wechat_public_key_id, notify_url, refund_notify_url,
+                             enabled, status, secret_cipher_version, secret_key_id, secret_revision)
                         select :replacementConfigId, 'Replacement Payment Flow Test', app_id,
-                               concat(mch_id, '_replacement'), merchant_serial_no, api_v3_key_ciphertext,
-                               private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
-                               private_key_file_id, merchant_certificate_file_id, verify_mode,
-                               wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
-                               true, status
+                               concat(mch_id, '_replacement'), merchant_serial_no, :apiV3Key,
+                               :privateKey, :publicKey,
+                               verify_mode, wechat_public_key_id, notify_url, refund_notify_url,
+                               true, status, :cipherVersion, :keyId, secret_revision
                         from payment_config
                         where id = 91001
                         """)
                 .param("replacementConfigId", replacementConfigId)
+                .param("apiV3Key", apiV3Key.ciphertext())
+                .param("privateKey", privateKey.ciphertext())
+                .param("publicKey", publicKey.ciphertext())
+                .param("cipherVersion", apiV3Key.version())
+                .param("keyId", apiV3Key.keyId())
                 .update();
     }
 
@@ -186,12 +236,13 @@ public abstract class PaymentTestSupport {
 
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, user_coupon_id, coupon_name,
                              coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent,
                              receiver_name, receiver_phone, receiver_address, created_at, updated_at)
                         values
                             (:orderId, :orderNo, :userId, 'CREATED', 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              :originalAmount, :productAmount, :userCouponId, :couponName,
                              :couponDiscount, 0, :payableAmount, 0,
                              'Pay User', '13800000000', 'Pay Test Address',
@@ -256,6 +307,9 @@ public abstract class PaymentTestSupport {
         SeedOrder order = seedCreatedOrder(session.userId(), paidAmountCent, false);
         String outTradeNo = "MCH" + order.orderId();
         LocalDateTime paidAt = LocalDateTime.of(2026, 7, 8, 12, 0);
+        ResolvedPaymentConfig config = paymentConfigResolver.resolve();
+        String configFingerprint = paymentConfigResolver.fingerprint(config);
+        String notificationRouteToken = paymentNotificationRouteService.issueToken();
         jdbcClient.sql("""
                         update shop_order
                         set status = :status,
@@ -285,16 +339,21 @@ public abstract class PaymentTestSupport {
                 .update();
         jdbcClient.sql("""
                         insert into payment_order
-                            (order_id, payment_config_id, out_trade_no, prepay_id, transaction_id,
+                            (order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, prepay_id, transaction_id,
                              payer_openid, status, amount_cent, request_digest, callback_digest,
                              expires_at, paid_at, created_at, updated_at)
                         values
-                            (:orderId, 91001, :outTradeNo, :prepayId, :transactionId,
+                            (:orderId, :paymentConfigId, :paymentConfigFingerprint,
+                             :notificationRouteToken, :outTradeNo, :prepayId, :transactionId,
                              :openid, 'PAID', :paidAmountCent, 'seed-refund-request-digest',
                              'seed-refund-callback-digest', timestamp '2026-07-08 12:15:00',
                              :paidAt, :paidAt, :paidAt)
                         """)
                 .param("orderId", order.orderId())
+                .param("paymentConfigId", config.configId())
+                .param("paymentConfigFingerprint", configFingerprint)
+                .param("notificationRouteToken", notificationRouteToken)
                 .param("outTradeNo", outTradeNo)
                 .param("prepayId", "mock-prepay-" + outTradeNo)
                 .param("transactionId", transactionId)
@@ -441,6 +500,9 @@ public abstract class PaymentTestSupport {
     }
 
     protected void insertExpiredPayingPayment(SeedOrder order, String outTradeNo, String openid, long amountCent) {
+        ResolvedPaymentConfig config = paymentConfigResolver.resolve();
+        String configFingerprint = paymentConfigResolver.fingerprint(config);
+        String notificationRouteToken = paymentNotificationRouteService.issueToken();
         jdbcClient.sql("""
                         update shop_order
                         set status = 'PAYING', merchant_trade_no = :outTradeNo, updated_at = current_timestamp
@@ -451,14 +513,19 @@ public abstract class PaymentTestSupport {
                 .update();
         jdbcClient.sql("""
                         insert into payment_order
-                            (order_id, payment_config_id, out_trade_no, prepay_id, payer_openid, status,
+                            (order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, prepay_id, payer_openid, status,
                              amount_cent, request_digest, expires_at, created_at, updated_at)
                         values
-                            (:orderId, 91001, :outTradeNo, :prepayId, :openid, 'PAYING',
+                            (:orderId, :paymentConfigId, :paymentConfigFingerprint,
+                             :notificationRouteToken, :outTradeNo, :prepayId, :openid, 'PAYING',
                              :amountCent, 'seed-digest', timestamp '2026-07-07 09:00:00',
                              timestamp '2026-07-07 08:45:00', timestamp '2026-07-07 08:45:00')
                         """)
                 .param("orderId", order.orderId())
+                .param("paymentConfigId", config.configId())
+                .param("paymentConfigFingerprint", configFingerprint)
+                .param("notificationRouteToken", notificationRouteToken)
                 .param("outTradeNo", outTradeNo)
                 .param("prepayId", "mock-prepay-" + outTradeNo)
                 .param("openid", openid)
@@ -481,25 +548,6 @@ public abstract class PaymentTestSupport {
                 .param("paymentOrderId", paymentOrderId)
                 .param("outTradeNo", outTradeNo)
                 .param("amountCent", amountCent)
-                .update();
-    }
-
-    private void insertPrivatePaymentFile(long fileId, String originalFilename, String content) {
-        String objectKey = "private/payment-flow/" + fileId + "-" + originalFilename;
-        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
-        storageProvider.put(objectKey, "text/plain", new ByteArrayInputStream(bytes), bytes.length);
-        jdbcClient.sql("""
-                        insert into storage_asset
-                            (id, scope, media_kind, visibility, provider, storage_container, object_key, original_filename,
-                             content_type, extension, size_bytes, sha256, status, uploaded_by_type, uploaded_by_id)
-                        values
-                            (:id, 'SECRET', 'DOCUMENT', 'PRIVATE', 'TENCENT_COS', '', :objectKey, :originalFilename,
-                             'text/plain', 'pem', :sizeBytes, '', 'ACTIVE', 'ADMIN', 1)
-                        """)
-                .param("id", fileId)
-                .param("objectKey", objectKey)
-                .param("originalFilename", originalFilename)
-                .param("sizeBytes", bytes.length)
                 .update();
     }
 
@@ -536,10 +584,10 @@ public abstract class PaymentTestSupport {
         jdbcClient.sql("""
                         insert into product_sku
                             (spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                             stock_available, weight_gram, image, status, sort_order)
+                             stock_available, weight_gram, image, status, sort_order, combination_key)
                         values
                             (:spuId, :skuCode, '{"规格":"300g"}', :specText, 3990, 3990,
-                             8, 300, 'https://example.test/pay-sku.jpg', 'ENABLED', 1)
+                             8, 300, 'https://example.test/pay-sku.jpg', 'ENABLED', 1, :skuCode)
                         """)
                 .param("spuId", spuId)
                 .param("skuCode", skuCode)
@@ -602,5 +650,12 @@ public abstract class PaymentTestSupport {
     }
 
     protected record SeedPaidOrder(long orderId, String orderNo, String outTradeNo, String transactionId, long paidAmountCent) {
+    }
+
+    private record PaymentCiphertextRow(
+            String apiV3KeyCiphertext,
+            String privateKeyPemCiphertext,
+            String wechatPublicKeyPemCiphertext
+    ) {
     }
 }

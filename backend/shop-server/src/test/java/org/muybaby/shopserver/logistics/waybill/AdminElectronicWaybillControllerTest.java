@@ -640,7 +640,7 @@ class AdminElectronicWaybillControllerTest {
         String orderNo = "WB-" + suffix + "-" + orderId;
         jdbcClient.sql("""
                         insert into shop_order(
-                            id, order_no, user_id, status, source, idempotency_key,
+                            id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             product_original_amount_cent, product_amount_cent,
                             coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent,
                             receiver_name, receiver_phone, receiver_address,
@@ -649,6 +649,7 @@ class AdminElectronicWaybillControllerTest {
                             payment_transaction_id, merchant_trade_no, paid_at, created_at, updated_at)
                         values(
                             :id, :orderNo, 900001, 'PAID', 'CART', :key,
+                            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                             3980, 3980, 0, 0, 3980, 3980,
                             '测试买家', '13900139000', '广东省深圳市南山区学苑大道南山智园A座101',
                             '广东省', '深圳市', '南山区', '学苑大道', '南山智园', 'A座101',
@@ -679,14 +680,19 @@ class AdminElectronicWaybillControllerTest {
                 .update();
         jdbcClient.sql("""
                         insert into payment_order(
-                            order_id, payment_config_id, out_trade_no, prepay_id, transaction_id,
+                            order_id, payment_config_id, payment_config_fingerprint,
+                            notification_route_token, out_trade_no, prepay_id, transaction_id,
                             payer_openid, status, amount_cent, expires_at, paid_at, created_at, updated_at)
                         values(
-                            :orderId, null, :outTradeNo, :prepayId, :transactionId,
+                            :orderId, :paymentConfigId, :paymentConfigFingerprint,
+                            :notificationRouteToken, :outTradeNo, :prepayId, :transactionId,
                             :openid, 'PAID', 3980, current_timestamp, current_timestamp,
                             current_timestamp, current_timestamp)
                         """)
                 .param("orderId", orderId)
+                .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(orderId))
                 .param("outTradeNo", "MCH-" + orderId)
                 .param("prepayId", "PREPAY-" + orderId)
                 .param("transactionId", "wx-" + orderId)

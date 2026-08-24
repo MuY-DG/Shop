@@ -23,7 +23,7 @@ public class WechatServiceCardOutboxHook {
 
     /**
      * A savepoint isolates this non-critical integration from its commerce transaction. Successful
-     * intents still commit atomically with the parent; a payload or V94 write failure rolls the
+     * intents still commit atomically with the parent; a payload or outbox write failure rolls the
      * complete intent back to the savepoint before the caller catches it.
      */
     @Transactional(propagation = Propagation.NESTED)

@@ -11,17 +11,12 @@ import org.springframework.util.unit.DataSize;
 
 import java.net.URI;
 import java.time.Duration;
-import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Validated
 @ConfigurationProperties(prefix = "shop.wechat.service-card-2001")
 public record WechatServiceCardProperties(
-        @DefaultValue("false") boolean enabled,
-        @DefaultValue("false") boolean workerEnabled,
-        @DefaultValue("") String accountTemplateRecordId,
         @DefaultValue("15s") @NotNull Duration delay,
         @DefaultValue("50") @Min(1) @Max(200) int batchSize,
         @DefaultValue("2m") @NotNull Duration claimTimeout,
@@ -35,9 +30,6 @@ public record WechatServiceCardProperties(
         @DefaultValue("15s") @NotNull Duration readTimeout,
         @DefaultValue("1MB") @NotNull DataSize maxResponseSize,
         @DefaultValue("64KB") @NotNull DataSize maxPayloadSize,
-        @DefaultValue("") String fallbackProductImage,
-        @DefaultValue("false") boolean preferOrderSnapshotImages,
-        @DefaultValue List<String> allowedImageHosts,
         @DefaultValue Callback callback
 ) {
     public WechatServiceCardProperties {
@@ -68,16 +60,12 @@ public record WechatServiceCardProperties(
                 || maxPayloadSize.toBytes() > 1024L * 1024L) {
             throw new IllegalArgumentException("payload limit must be between 1 byte and 1 MB");
         }
-        allowedImageHosts = allowedImageHosts == null ? List.of() : List.copyOf(allowedImageHosts);
-        callback = callback == null ? new Callback(false, "", "", Duration.ofMinutes(5)) : callback;
+        callback = callback == null ? new Callback(Duration.ofMinutes(5)) : callback;
     }
 
     @Override
     public String toString() {
-        return "WechatServiceCardProperties[enabled=" + enabled
-                + ", workerEnabled=" + workerEnabled
-                + ", accountTemplateRecordIdConfigured=" + StringUtils.hasText(accountTemplateRecordId)
-                + ", delay=" + delay
+        return "WechatServiceCardProperties[delay=" + delay
                 + ", batchSize=" + batchSize
                 + ", claimTimeout=" + claimTimeout
                 + ", maxAttempts=" + maxAttempts
@@ -90,9 +78,6 @@ public record WechatServiceCardProperties(
                 + ", readTimeout=" + readTimeout
                 + ", maxResponseSize=" + maxResponseSize
                 + ", maxPayloadSize=" + maxPayloadSize
-                + ", fallbackProductImageConfigured=" + StringUtils.hasText(fallbackProductImage)
-                + ", preferOrderSnapshotImages=" + preferOrderSnapshotImages
-                + ", allowedImageHostsConfigured=" + !allowedImageHosts.isEmpty()
                 + ", callback=" + callback + "]";
     }
 
@@ -149,22 +134,6 @@ public record WechatServiceCardProperties(
         return Math.toIntExact(maxPayloadSize.toBytes());
     }
 
-    public Set<String> normalizedAllowedImageHosts() {
-        return allowedImageHosts.stream()
-                .filter(StringUtils::hasText)
-                .map(value -> value.trim().toLowerCase(Locale.ROOT))
-                .collect(Collectors.toUnmodifiableSet());
-    }
-
-    public boolean imageConfigurationReady() {
-        return validPublicImage(fallbackProductImage, normalizedAllowedImageHosts());
-    }
-
-    public boolean templateConfigurationReady() {
-        return StringUtils.hasText(accountTemplateRecordId)
-                && accountTemplateRecordId.trim().length() <= 128;
-    }
-
     public static boolean validPublicImage(String value, Set<String> allowedHosts) {
         if (!StringUtils.hasText(value) || allowedHosts == null || allowedHosts.isEmpty()) {
             return false;
@@ -190,9 +159,6 @@ public record WechatServiceCardProperties(
     }
 
     public record Callback(
-            @DefaultValue("false") boolean enabled,
-            @DefaultValue("") String token,
-            @DefaultValue("") String encodingAesKey,
             @DefaultValue("5m") Duration maxTimestampSkew
     ) {
         public Callback {
@@ -200,28 +166,9 @@ public record WechatServiceCardProperties(
             requirePositive(maxTimestampSkew, "callback timestamp skew");
         }
 
-        public boolean secureReady() {
-            String normalizedToken = token == null ? "" : token.trim();
-            String normalizedAesKey = encodingAesKey == null ? "" : encodingAesKey.trim();
-            if (!enabled
-                    || !normalizedToken.matches("[A-Za-z0-9]{3,32}")
-                    || !normalizedAesKey.matches("[A-Za-z0-9]{43}")) {
-                return false;
-            }
-            try {
-                return java.util.Base64.getDecoder()
-                        .decode(normalizedAesKey + "=").length == 32;
-            } catch (IllegalArgumentException ex) {
-                return false;
-            }
-        }
-
         @Override
         public String toString() {
-            return "Callback[enabled=" + enabled
-                    + ", token=<redacted>"
-                    + ", encodingAesKey=<redacted>"
-                    + ", maxTimestampSkew=" + maxTimestampSkew + "]";
+            return "Callback[maxTimestampSkew=" + maxTimestampSkew + "]";
         }
     }
 }

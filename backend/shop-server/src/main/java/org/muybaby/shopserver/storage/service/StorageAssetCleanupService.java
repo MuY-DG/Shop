@@ -160,14 +160,6 @@ public class StorageAssetCleanupService {
                               where asset_usage.asset_id = asset.id
                                 and asset_usage.status = 'ACTIVE'
                           )
-                          and not exists (
-                              select 1
-                              from payment_config config
-                              where config.status = 'ACTIVE'
-                                and (config.private_key_file_id = asset.id
-                                  or config.merchant_certificate_file_id = asset.id
-                                  or config.wechat_public_key_file_id = asset.id)
-                          )
                         order by asset.expires_at asc, asset.id asc
                         limit :limit
                         """)
@@ -447,18 +439,7 @@ public class StorageAssetCleanupService {
         if (usageCount != null && usageCount > 0) {
             return true;
         }
-        Integer paymentCount = jdbcClient.sql("""
-                        select count(*)
-                        from payment_config
-                        where status = 'ACTIVE'
-                          and (private_key_file_id = :assetId
-                            or merchant_certificate_file_id = :assetId
-                            or wechat_public_key_file_id = :assetId)
-                        """)
-                .param("assetId", assetId)
-                .query(Integer.class)
-                .single();
-        return paymentCount != null && paymentCount > 0;
+        return false;
     }
 
     private CleanupAsset mapCleanupAsset(ResultSet rs, int rowNum) throws SQLException {

@@ -9,16 +9,13 @@ spring:
   flyway:
     enabled: true # 应用启动时自动校验并执行尚未运行的迁移脚本。
     locations: classpath:db/migration # 从 jar 内的 db/migration 目录读取迁移脚本。
-    placeholders: # 为 Flyway SQL 脚本提供可被替换的占位符。
-      seed_super_status: ${SHOP_DEFAULT_ADMIN_STATUS:DISABLED} # 仅控制全新数据库执行 V36 时的 Super 状态，默认停用。
-      seed_super_password_hash: "${SHOP_DEFAULT_ADMIN_PASSWORD_HASH:$2a$10$dSCU.t56l8Z7MPya89bXnuiMIjScayWL.KeTgc92TqlfLu.woUoYm}" # 默认写入不可公开登录的安全占位哈希，生产首次引导值由 .env.prod.local 覆盖。
   data:
     redis:
-      host: ${SHOP_REDIS_HOST:127.0.0.1} # 所有环境默认连接本机 Redis，可由各自环境文件覆盖。
-      port: ${SHOP_REDIS_PORT:6379} # 所有环境默认使用 Redis 6379 端口。
-      database: ${SHOP_REDIS_DATABASE:0} # 所有环境默认使用 Redis 逻辑数据库 0。
-      username: ${SHOP_REDIS_USERNAME:} # Redis 启用 ACL 后从环境文件读取用户名，默认留空。
-      password: ${SHOP_REDIS_PASSWORD:} # Redis 启用认证后从环境文件读取密码，默认留空。
+      host: 127.0.0.1 # local 默认连接本机；server Profile 固定覆盖为 Compose 服务名 redis。
+      port: 6379
+      database: 0
+      username: '' # 当前仅使用 requirepass，不启用 Redis ACL 用户名。
+      password: ${SHOP_REDIS_PASSWORD} # 三套环境的 Redis 密码均只从各自 ignored manifest 读取。
       repositories: # 控制是否启用 Redis Repository 自动实现。
         enabled: false # 项目直接使用 RedisTemplate，因此关闭未使用的 Repository 扫描。
   servlet: # Servlet Web 容器的相关配置入口。
@@ -54,11 +51,9 @@ shop: # 商城项目自定义业务配置的统一入口。
   compliance: # 商家资质、法律文档与用户同意留痕。
     privacy-consent-required: false # 登录使用微信小程序平台隐私保护指引，不依赖后台环境变量。
   secret-encryption: # 后台持久化敏感配置共用的信封加密与轮换配置。
-    write-version: ${SHOP_SECRET_ENCRYPTION_WRITE_VERSION:1} # 新写入密文使用的加密格式版本。
-    active-key-id: ${SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID:} # 指定当前用于加密新数据的主密钥 ID。
-    key-ring: ${SHOP_SECRET_ENCRYPTION_KEY_RING:} # 配置可读取历史密文的 AES-256 主密钥集合。
-    legacy-key: ${SHOP_SECRET_ENCRYPTION_LEGACY_KEY:} # 仅用于读取和迁移历史 v1 密文。
-    rotation-enabled: ${SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED:false} # 默认关闭后台自动密钥轮换任务。
+    active-key-id: ${SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID} # 指定当前用于加密新数据的主密钥 ID。
+    key-ring: ${SHOP_SECRET_ENCRYPTION_KEY_RING} # 配置可读取当前与历史 v2 密文的 AES-256 主密钥集合。
+    rotation-enabled: false # 新环境没有待迁移密文，默认关闭自动轮换。
     rotation-delay: 1m # 密钥轮换任务每批之间等待 1 分钟。
     rotation-batch-size: 50 # 每批最多处理 50 条记录。
   content: # 首页和联系信息等内容模块的缓存配置。
@@ -86,8 +81,8 @@ shop: # 商城项目自定义业务配置的统一入口。
       memory-max-entries: 100000 # 使用内存存储时最多保留 100000 个计数项。
   security: # 商城应用层安全配置入口。
     client-ip: # 可信代理链和真实客户端 IP 解析配置。
-      trusted-proxy-cidrs: ${SHOP_TRUSTED_PROXY_CIDRS:127.0.0.0/8,::1/128} # 默认只信任本机反向代理写入的代理头；容器生产网关必须显式配置精确 /32。
-      max-forwarded-hops: ${SHOP_MAX_FORWARDED_HOPS:20} # 最多解析 20 层代理转发地址。
+      trusted-proxy-cidrs: 127.0.0.0/8,::1/128 # local 只信任本机代理；server Profile 增加固定 Docker edge 网关。
+      max-forwarded-hops: 20 # local 最多解析 20 层；server Profile 固定收紧为 1 跳。
       max-forwarded-header-length: 2048 # 限制转发头最大长度为 2048 字符。
   analytics: # 访问统计和限流配置。
     rate-limit: # 访问统计事件写入的限流配置。
@@ -115,18 +110,8 @@ shop: # 商城项目自定义业务配置的统一入口。
       video-max-size: 50MB # 单个视频最大允许 50MB。
   wechat: # 微信平台相关功能配置入口。
     mini-program: # 微信小程序登录和接口调用配置。
-      # 仅供 V99 legacy-env-import 读取旧部署值；数据库导入和验证完成前不得删除。
-      app-id: ${WECHAT_MINI_PROGRAM_APP_ID:} # 从环境变量读取小程序 AppID。
-      app-secret: ${WECHAT_MINI_PROGRAM_APP_SECRET:} # 从环境变量读取小程序 AppSecret。
       mock-enabled: false # 基础配置强制关闭小程序模拟模式。
     service-card-2001: # 新版“购物（实体物流）服务动态”，不使用传统订阅消息接口。
-      enabled: ${SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED:false} # 只控制事务内可靠意图采集，默认关闭。
-      worker-enabled: ${SHOP_WECHAT_SERVICE_CARD_WORKER_ENABLED:false} # 独立控制 set/get 外呼，便于先验收队列再放量。
-      # 以下业务字段仅供 V101 在“尚无 DB 行”时回退和显式 legacy-env-import；新部署不再设置。
-      account-template-record-id: ${SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID:}
-      fallback-product-image: ${SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE:}
-      prefer-order-snapshot-images: false
-      allowed-image-hosts: ${SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS:}
       delay: 15s
       batch-size: 50
       claim-timeout: 2m
@@ -140,10 +125,7 @@ shop: # 商城项目自定义业务配置的统一入口。
       read-timeout: 15s
       max-response-size: 1MB
       max-payload-size: 64KB
-      callback: # enabled/token/key 仅供 V101 旧部署回退与显式导入；时间偏差仍是技术参数。
-        enabled: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_ENABLED:false}
-        token: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN:}
-        encoding-aes-key: ${SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY:}
+      callback:
         max-timestamp-skew: 5m
     express: # 微信物流助手与电子面单接口的独立 HTTP 安全边界。
       http:
@@ -155,13 +137,11 @@ shop: # 商城项目自定义业务配置的统一入口。
         claim-timeout: 5m # 进程中断后允许下一次请求接管同步占用。
         max-path-items: 200 # 单次最多接受 200 个规范化轨迹节点。
     shipping: # 微信小程序发货信息管理配置。
-      upload-enabled: ${SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED:false} # 旧部署兼容开关；新的运行时开关由数据库审计配置接管。
       http:
         connect-timeout: 3s
         read-timeout: 15s
         max-response-size: 1MB
       delivery: # 本地发货提交后的可靠微信投递与未知结果对账。
-        enabled: ${SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED:true} # 旧部署迁移默认；数据库运行时开关优先。
         delay: 15s
         batch-size: 50
         claim-timeout: 1m
@@ -171,7 +151,6 @@ shop: # 商城项目自定义业务配置的统一入口。
         unknown-recheck-interval: 1m
         not-uploaded-confirmations: 2
       receipt-reconciliation: # 微信自动收货后，将微信状态安全同步回本地订单。
-        enabled: ${SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED:true} # 旧部署迁移默认；数据库运行时开关优先。
         delay: 5m # 每 5 分钟扫描一批候选订单。
         batch-size: 50 # 单轮最多向微信查询 50 笔。
         min-shipped-age: 1h # 发货满 1 小时后才进入后台对账。
@@ -182,8 +161,6 @@ shop: # 商城项目自定义业务配置的统一入口。
     mock-enabled: false # 是否启用支付模拟实现；测试环境可在 application-test.yaml 中覆盖。
     notification: # 微信支付回调请求校验配置。
       max-timestamp-skew: 5m # 回调时间戳与服务器时间最多允许相差 5 分钟。
-    notification-route: # 多商户支付回调路由配置。
-      enabled: ${SHOP_PAY_NOTIFICATION_ROUTE_ENABLED:false} # 发布期显式开关，默认关闭按商户配置路由回调的能力。
     initiation: # 创建微信预支付单时的并发占用配置。
       claim-timeout: 2m # 预支付创建占用超过 2 分钟后允许恢复。
     timeout-scan-enabled: true # 启用超时支付订单自动核查任务。
@@ -201,8 +178,6 @@ shop: # 商城项目自定义业务配置的统一入口。
     expire-minutes: 15 # 订单提交时固化支付截止时间，后续发起支付不得延长。
   finance:
     reconciliation: # 微信支付交易账单对账；本阶段不包含资金账单或银行流水对账。
-      worker-enabled: false # 尚无数据库覆盖记录时保持关闭。
-      daily-enabled: false # 尚无数据库覆盖记录时保持关闭。
       daily-cron: "0 30 10 * * *" # 北京时间 10:30，避开微信昨日账单生成窗口。
       worker-delay: 30s
       claim-timeout: 15m

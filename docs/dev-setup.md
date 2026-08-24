@@ -1,760 +1,244 @@
-# Development Setup
+# Shop 开发环境
 
-## Runtime Targets
+本文是当前开发入口。过往迁移过程与阶段计划保留在 `docs/superpowers/`，不应作为今天的启动或部署手册。
 
-- Java source target: 21
-- Node.js target for admin tooling: 20.19.0 or newer
-- Package manager: pnpm
+## 1. 环境模型
 
-## Repository Layout
+项目只有三个 Spring Profile：
+
+| Profile | 使用位置 | 数据服务 |
+| --- | --- | --- |
+| `local` | 本机开发 | `127.0.0.1` 上的 MySQL/Redis |
+| `server` | txcloud 与 shop | Compose 服务 `mysql`、`redis` |
+| `test` | 自动化测试 | H2 或 Testcontainers |
+
+txcloud 和 shop 不再各维护一套应用 YAML。它们共用 `application-server.yaml`，仅通过各自运行时清单提供不可提交的启动秘密。
+
+## 2. 前置依赖
+
+- JDK 21；
+- Node.js `>=20.19.0`；
+- pnpm；
+- MySQL 8.4；
+- Redis 7.4；
+- Docker（运行 Testcontainers 和本地容器时需要）；
+- 微信开发者工具（小程序真机/模拟器验证时需要）。
+
+后端使用 Maven Wrapper，不要求全局安装 Maven。
+
+## 3. 运行时清单
+
+唯一受版本控制的模板：
 
 ```text
-Shop/
-  backend/shop-server/  Spring Boot backend
-  admin/                Art Design Pro admin console
-  miniprogram/          Native WeChat mini program
-  docs/                 Design and implementation docs
+backend/shop-server/config/runtime/runtime.env.example
 ```
 
-## Backend Checks
-
-Environment-specific secrets are selected by the active Spring profile:
-
-- `dev` imports the optional ignored file `backend/shop-server/.env.dev.local`; existing
-  WeChat/payment values in that file are migration-only compatibility inputs.
-- `prod` requires the ignored file `backend/shop-server/.env.prod.local`. The tracked template
-  contains only database/Redis startup values, trusted-proxy boundaries, the application master
-  key ring, and first-bootstrap values.
-- `test` uses `src/test/resources/application-test.yaml`.
-
-Choose the profile externally rather than storing `spring.profiles.active` in either
-environment file:
+本机初始化：
 
 ```bash
 cd backend/shop-server
-./mvnw -Dspring-boot.run.profiles=dev spring-boot:run
+./scripts/config/init-runtime-env.sh local
+./scripts/config/validate-runtime-env.sh local
 ```
 
-Production systemd must pass `--spring.profiles.active=prod`. Do not edit the common
-`application.yaml` when switching environments.
+生成的 `config/runtime/local.env` 权限为 `0600` 且被 Git 忽略。脚本拒绝覆盖已有文件。
 
-Focused authentication/RBAC tests:
+清单只允许：
+
+- MySQL 业务账号密码；
+- MySQL root 密码；
+- Redis 密码；
+- v2 AES-256 主密钥 ID 与 key ring。
+
+微信小程序、微信支付、COS、服务动态、发货和财务对账属于业务配置：在 Admin 中保存、加密入库、按权限和审计流程修改。它们不属于应用启动条件，也不应出现在运行时清单或 tracked YAML。
+
+### 为什么 `application.yaml` 仍有很多值
+
+YAML 中保留的是代码行为的安全默认值和技术参数，例如超时、批量大小、缓存 TTL、重试节奏、上传上限和登录保护阈值。它们适合随代码评审、测试和发布，不适合全部做成可即时修改的后台开关。
+
+判断标准：
+
+- 需要产品/运营随时调整、且修改应留下权限与审计记录的业务配置：放数据库和 Admin；
+- 决定进程能否安全连接基础设施或解密数据库密文的秘密：放运行时清单；
+- 与算法、资源上限、超时、重试和安全边界绑定的技术参数：保留在 YAML/代码，随版本发布。
+
+不要把所有 YAML 参数搬到数据库，否则应用会出现“读取配置本身还需要先连接数据库和解密”的循环依赖，也会失去代码评审、类型校验和可重复部署。
+
+## 4. 本机 MySQL 与 Redis
+
+本机服务的账号和密码必须与 `local.env` 一致。当前数据库基线只支持全新空库；如果本机仍是旧 schema，先确认数据可丢弃，再用明确的实例/数据库名重建 `hotpot_shop`。不要把旧表保留在同一 schema 中尝试继续迁移。
+
+Redis 也应在切换时清空，避免旧会话、登录失败计数和缓存污染新基线。重建动作是破坏性的，执行前先核对目标是本机而不是 txcloud/shop。
+
+## 5. Flyway generation 2
+
+`src/main/resources/db/migration` 只有七个按业务域拆分的迁移：
+
+```text
+V1__identity_and_access.sql
+V2__catalog_content_and_storage.sql
+V3__commerce_and_orders.sql
+V4__payments_refunds_and_after_sales.sql
+V5__fulfillment_and_wechat.sql
+V6__operations_finance_service_and_compliance.sql
+V7__reference_and_bootstrap_data.sql
+```
+
+它们表示当前最终模型，不是旧数据库的升级补丁。首次启动时：
+
+- Flyway 从空库创建最终 schema；
+- 写入 RBAC、菜单、字典与必要的安全默认行；
+- 创建停用且使用哨兵密码哈希的 `Super`；
+- 以关闭状态创建必要的运行时控制行；
+- 不写入微信、支付、COS 等真实业务凭据。
+
+迁移文件已发布后仍应遵守 Flyway 不可改写原则。generation 2 的断代只做这一次；后续 schema 变化从 V8 继续追加。
+
+静态校验：
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest='OpaqueTokenServiceTest,InMemoryTokenStoreTest,PathTokenKindResolverTest,SecurityConfigTest,AdminRbacSchemaTest,AdminAuthControllerTest,AdminMenuControllerTest,AppAuthControllerTest' test
+./scripts/ci/verify-flyway-migrations.sh
 ```
 
-Focused product catalog tests:
+## 6. 启动后端
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest='ProductCatalogSchemaTest,AdminProductServiceTest,AdminProductCategoryControllerTest,AdminProductSpuControllerTest,AppProductControllerTest,SecurityConfigTest' test
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
-Focused cart tests:
+健康与接口文档：
+
+```text
+http://127.0.0.1:8080/actuator/health
+http://127.0.0.1:8080/swagger-ui/index.html
+```
+
+Swagger 只在 `local` 开启。`server` 使用收紧后的日志和运维端点设置。
+
+## 7. 本机 Super 引导
+
+本机空库启动成功后执行：
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest='CartSchemaTest,AppCartControllerTest,AppAuthControllerTest,SecurityConfigTest,PathTokenKindResolverTest' test
+./scripts/config/bootstrap-admin.sh local
 ```
 
-Focused coupon tests:
+脚本只在 `id=1` 的 `Super` 仍处于基线哨兵状态时写入新的 BCrypt 哈希、启用账号并记录
+系统日志。临时密码仅保存到 ignored、`0600` 的
+`config/runtime/bootstrap-admin.local.txt`，不会打印；首次登录并修改密码后删除该文件。
+普通密码找回应走后台账户安全流程，不能反复套用首次引导。
+
+## 8. 管理后台
 
 ```bash
-cd backend/shop-server
-./mvnw -Dtest=CouponSchemaTest,AdminCouponTemplateControllerTest,AppCouponControllerTest,CouponDiscountCalculatorTest test
+cd admin
+pnpm install
+pnpm dev
 ```
 
-Docker-free backend unit/H2 layer:
+`.env.development` 只保留一个 `VITE_API_PROXY_URL`，默认把 `/api`、`/admin` 和
+`/realtime` 全部代理到 `http://127.0.0.1:8080`；本机开发不再混用 Apifox 与
+txcloud 后端。
+
+完整校验：
+
+```bash
+pnpm check
+CI=true pnpm build
+pnpm check:generated-imports
+```
+
+业务凭据录入后的响应只应返回脱敏状态或“是否已配置”，不能回传明文。修改当前支付配置前要考虑尚未完成的支付、退款和渠道回调；历史数据库配置通过软删除保留，供已绑定业务记录继续解析。
+
+## 9. 微信小程序
+
+```bash
+cd miniprogram
+pnpm install
+pnpm check
+```
+
+随后在微信开发者工具中导入 `miniprogram/`。真实登录、手机号授权、支付、物流、服务动态和订阅能力依赖微信平台状态，自动化检查不能替代真机和真实测试订单验收。
+
+## 10. 后端测试分层
+
+快速默认层：
 
 ```bash
 cd backend/shop-server
 ./mvnw test
 ```
 
-This is the default fast layer. It intentionally excludes every JUnit 5 test tagged
-`integration`, so `BUILD SUCCESS` here does not claim that MySQL, Redis, Testcontainers,
-or database concurrency behavior was exercised.
+该命令运行单元/H2 测试，明确不包含标记为 `integration` 的 Testcontainers 测试。
 
-Docker/Testcontainers integration layer:
+完整集成层：
 
 ```bash
-cd backend/shop-server
-docker info
+./scripts/ci/verify-test-layers.sh
 ./mvnw -Pintegration verify
-./scripts/assert-integration-test-results.sh target/failsafe-reports
-./scripts/verify-test-layers.sh
+./scripts/ci/assert-integration-test-results.sh target/failsafe-reports
 ```
 
-The integration profile runs the tagged suite through Maven Failsafe against the pinned
-`mysql:8.4.10` and `redis:7.4.9-alpine` images. The report gate requires all current
-integration suites to produce XML results, a non-zero executed test count, and zero
-skipped tests. A missing Docker daemon is a failure, not an accepted skip.
+集成层要求 Docker 可用，MySQL/Redis 镜像版本固定，所有带 `integration` 标签的套件都生成报告，且执行数非零、跳过数为零。Docker 不可用是此层失败，不是可接受的跳过。
 
-Flyway file naming, uniqueness, and continuous integer versions are checked separately:
+## 11. 敏感配置规则
 
-```bash
-cd backend/shop-server
-./scripts/verify-flyway-migrations.sh
-```
+### 应用主密钥
 
-Expected result for each executed layer:
+数据库敏感字段只使用 `v2:<keyId>:<nonce>:<ciphertext+tag>` 信封格式。`SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID` 必须存在于 `SHOP_SECRET_ENCRYPTION_KEY_RING`，每个 key 解码后必须是 32 字节。
 
-```text
-BUILD SUCCESS
-```
+轮换时：
 
-## V85-V97 Focused Gates
+1. 先在 key ring 中加入新 key，同时保留旧 key；
+2. 把 active key ID 切到新 key；
+3. 部署并验证新写入使用新 key；
+4. 完成数据库密文轮换并核对无旧 key 引用；
+5. 最后才移除旧 key。
 
-Run the focused backend slices from `backend/shop-server` before both test layers. These
-commands validate H2/Flyway and application behavior; they do not replace a disposable
-MySQL migration/concurrency run or any production-provider smoke check.
+不同环境必须使用不同的数据库/Redis密码和主密钥。复制环境时只复制结构，不复制秘密。
 
-```bash
-# V85 fixed order deadline and timeout close
-./mvnw -Dtest='OrderSchemaTest,CreatedOrderTimeoutCloseServiceTest,CreatedOrderTimeoutCloseSchedulerTest,PaymentInitiationServiceTest' test
+### 支付配置历史
 
-# V86 verified refund finalization and inventory disposition
-./mvnw -Dtest='AfterSaleSchemaTest,RefundCallbackServiceTest,RefundRecoveryServiceTest' test
+新支付必须绑定数据库中的有效配置 ID 和不可逆指纹。已被业务记录引用的商户身份与密钥材料不应原地覆盖；新建一个配置版本并启用它。停用配置可以软删除，但历史行仍需保留以处理已创建支付、退款、查单、关闭、回调和对账。
 
-# V87 recoverable WeChat shipment delivery and truthful receipt behavior
-./mvnw -Dtest='ShipmentSchemaTest,WechatShippingUploadCoordinatorTest,WechatShippingUploadRecoveryTest,WechatShippingDeliverySchedulerTest,WechatReceiptReconciliationServiceTest,AppOrderWechatReceiptTest' test
+Admin 中填写支付 `/wxpay/pay/notify` 和退款 `/wxpay/refund/notify` 的公网 HTTPS 基址，
+不手工添加固定 token。系统为每笔支付或退款追加 `/r/{routeToken}`，用不可猜测的 token
+精确绑定业务记录和历史数据库配置。部署前需确认最终路由地址可达、长度满足限制，并对未知路由和异常频率做监控。
 
-# V88 immutable merchant/legal publication and exact privacy consent
-./mvnw -Dtest='ComplianceControllerTest' test
+### 微信与 COS
 
-# V89 product food disclosure and publication gate
-./mvnw -Dtest='ProductFoodComplianceSchemaTest,ProductFoodComplianceServiceTest,ProductFoodComplianceControllerTest' test
+微信平台、服务动态、发货控制和 COS 凭据均从数据库读取。缺少配置时应明确失败或按安全默认值关闭，不能静默从进程变量兜底。录入后按 [smoke-checks.md](smoke-checks.md) 做真实平台验收。
 
-# V105 self-service cancellation, immutable record, and active-obligation gate
-./mvnw -Dtest='AccountCancellationSchemaTest,AccountCancellationControllerTest' test
+## 12. 日常开发流程
 
-# V106 customer disable/enable and read-only cancellation records
-./mvnw -Dtest='AdminCustomerControllerTest,AdminAccountCancellationControllerTest,AccountCancellationSchemaTest' test
+1. `git status --short`，确认工作区范围。
+2. 启动本机 MySQL/Redis。
+3. 校验 `local.env`，用 `local` Profile 启动后端。
+4. 启动 Admin 与小程序开发工具。
+5. 修改代码并运行最接近改动的测试。
+6. 运行后端默认层、Admin `pnpm check`、小程序 `pnpm check`。
+7. 涉及 schema、事务、锁、MySQL 方言或 Redis 时，再运行完整集成层。
+8. 执行 `git diff --check`，审查是否误提交秘密或生成物。
+9. 提交后先部署到 txcloud 做集成验证，再按发布清单切换 shop。
 
-# V93 and V97 WeChat trade-bill reconciliation and Admin runtime control
-./mvnw -Dtest='*FinanceReconciliation*Test,AdminFinanceReconciliationControllerTest' test
+## 13. 常见问题
 
-# V94-V95 WeChat 2001 service-card delivery and Admin runtime control
-./mvnw -Dtest='*WechatServiceCard*Test' test
-```
+### 启动时报缺少 `config/runtime/local.env`
 
-Cross-surface gates:
+运行 `./scripts/config/init-runtime-env.sh local`。不要创建第二套本机配置文件，也不要把服务器清单改名复用。
 
-```bash
-cd admin
-pnpm check
-CI=true pnpm build
-pnpm check:generated-imports
+### 数据库提示 Flyway 校验或版本冲突
 
-cd ../miniprogram
-pnpm check
-```
+generation 2 不兼容旧 schema。确认连接目标后重建空库；不要对旧表执行 repair 来伪装兼容。
 
-The Mini Program gate includes runtime environment, explicit privacy-consent ordering,
-customer-service order routing, public compliance rendering, food disclosure,
-account cancellation, and the source contract that preserves the current profile V frame,
-crown, `金牌会员` text, member-card assets, and logged-in display condition.
+### 应用能启动但微信/支付/COS 不可用
 
-## V87-V106 Runtime And Publication Controls
+先检查 Admin 中相应配置和安全运行开关，再检查外部平台权限、域名、证书与回调。不要向运行时清单添加业务凭据绕过缺失配置。
 
-### V87 WeChat Shipment Delivery
+### txcloud 和 shop 配置是否应完全相同
 
-The tracked `application.yaml` owns the bounded HTTP, lease, retry, batch, and reconciliation
-defaults. They are technical safety limits rather than environment-file inventory. Migration
-`V100` adds audited database runtime switches for upload, durable delivery, and receipt
-reconciliation. Read or update them through `GET/PUT /admin/wechat-shipping/runtime`; every
-write requires the current version and a change reason. Until the first runtime row is saved,
-the old `SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED`, `SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED`, and
-`SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED` values are accepted only as migration defaults.
-
-When upload is enabled for a verified real Mini Program and paid order, local shipment creation
-writes durable delivery work; the immediate provider call is only an optimization.
-
-Do not blindly retry `UNKNOWN`: reconcile provider identity and shipment facts first.
-`FAILED` remains an operator decision. `REAL + UPLOADED` keeps WeChat as receipt
-authority; an ambiguous `UPLOADING/UNKNOWN` blocks local receipt, while audited local
-confirmation is available for states that are truthfully not uploaded. A test-profile or
-mock result is not evidence that the production WeChat order accepted shipment data.
-
-### V88 Runtime Environment And Legal Publication
-
-Mini Program privacy disclosure is owned by the WeChat Mini Program platform. The login
-page reads the platform contract name with `wx.getPrivacySetting`, opens the read-only
-contract with `wx.openPrivacyContract`, and does not send a backend legal-document version
-to `/app/auth/login`. Login preloading starts only after the user checks the agreement.
-The production profile therefore keeps `shop.compliance.privacy-consent-required=false`.
-
-No merchant qualification or legal document is seeded. Use the admin compliance pages
-to create, preview, and publish immutable revisions only after real data and managed
-license images have been verified. Backend privacy revisions may be retained as independent
-business records, but the Mini Program privacy entry does not use them. The anonymous read
-routes are:
-
-```text
-GET /app/compliance/merchant
-GET /app/compliance/documents/PRIVACY_POLICY/current
-GET /app/compliance/documents/USER_AGREEMENT/current
-GET /app/compliance/documents/AFTER_SALE_POLICY/current
-```
-
-The Mini Program resolves `develop`, `trial`, and `release` separately. The checked-in
-development API is `https://api.muybaby6.icu`, while the checked-in release API is
-`https://api.junxiangshiping.cn`; release still rejects missing/placeholder, localhost,
-loopback, non-HTTPS, and the development host and never falls back to development.
-The production Admin hostname is `https://admin.junxiangshiping.cn`. DNS and TLS have been established,
-but every release must still recheck ingress, WeChat legal domains, callbacks, and a real
-device against the deployed Git SHA.
-
-### V89 Product Publication
-
-Every migrated product starts as `UNCLASSIFIED`. New publication is blocked until an
-operator records `NON_FOOD` for a genuinely non-food item or `FOOD` with verified
-structured facts, managed label images, truthful net content on every enabled SKU, and a
-current published merchant food qualification. Rich-text detail is supplemental and does
-not satisfy the gate.
-
-`V89` does not invent classifications and does not automatically take historical
-`ON_SALE + UNCLASSIFIED` rows off sale. Run the read-only report in
-[smoke-checks.md](smoke-checks.md#v89-product-classification-gate) and resolve every row
-before enabling production traffic. Never copy the document's non-food fixture
-classification onto a real food.
-
-### V105 Self-Service Account Cancellation
-
-`V105` removes the V90 request/audit tables, Admin menu and approval permissions. The Mini
-Program now exposes only `/app/account-cancellation/eligibility` and
-`POST /app/account-cancellation`. The final request must include a newly obtained WeChat
-code plus the exact current `ACCOUNT_CANCELLATION_NOTICE` version and SHA-256. A changed
-notice forces the user to read and acknowledge it again.
-
-Cancellation is one transaction and cannot run while active orders, payments, refunds or
-after-sales exist. It invalidates access and refresh sessions, unbinds the original WeChat
-identity, clears optional identity, addresses, cart, favorites, browse history and unused
-coupons, and anonymizes the user's reviews. Completed commerce, refund, after-sale,
-customer-service, review, security and audit data follow the reviewed retention policies.
-Only an immutable completion record remains; there is no Admin approval queue.
-
-### V106 Admin Customer Status And Cancellation Records
-
-The Admin customer list excludes `CANCELLED` accounts by default. Operators with
-`customer:user:status` may disable or re-enable an ordinary customer only after recording a
-reason; every real transition invalidates existing sessions and writes an append-only status
-audit. A cancelled customer can never be re-enabled by this endpoint.
-
-Use the explicit `CANCELLED` filter only when investigating an account. The read-only
-**Compliance → Account Cancellations** page is backed by
-`GET /admin/compliance/account-cancellations` and shows the immutable completion facts without
-restoring identity fields or offering review, approval, deletion, or rollback actions.
-
-### V93/V97 WeChat Trade-Bill Reconciliation
-
-V93 downloads only the WeChat `ALL` trade bill and compares it with local payment and refund
-facts. V97 keeps the worker and daily scheduler installed, but gates each execution through a
-versioned database runtime override exposed on Admin **财务管理 → 财务对账**. The deployment
-properties below are fallback defaults only until the first database override is saved:
-
-```properties
-SHOP_FINANCE_RECONCILIATION_WORKER_ENABLED=false
-SHOP_FINANCE_RECONCILIATION_DAILY_ENABLED=false
-SHOP_FINANCE_RECONCILIATION_DAILY_CRON=0 30 10 * * *
-```
-
-Runtime endpoints are:
-
-```text
-GET /admin/finance/reconciliation/runtime
-PUT /admin/finance/reconciliation/runtime
-```
-
-Reading requires `finance:reconciliation:read`; changing the override requires
-`finance:reconciliation:runtime:write`, which V97 grants only to Super. The PUT body is
-`{workerEnabled, dailyEnabled, version, reason}`. Changes use CAS and an append-only audit.
-Enabling checks usable payment reconciliation credentials and configured private COS storage;
-readiness failures never block emergency shutdown. Enable the worker alone, manually verify a
-real bill, then enable daily scheduling in a later revision. No restart or deployment is required
-for later switch changes.
-
-### V94-V95/V101 WeChat 2001 Shopping Service Dynamic
-
-V94 implements only the new WeChat `notify_type=2001` **购物（实体物流）服务动态**.
-It is not the traditional `wx.requestSubscribeMessage` flow, does not send a private
-template ID in `set_user_notify`, and requires no new Mini Program page or consent call.
-The account template record ID is stored only for readiness/audit. The provider sends the payment's immutable WeChat
-`transaction_id` as `notify_code`; it never substitutes the merchant order number.
-
-V95 adds a database-backed runtime override for Capture and Worker, exposed only through Admin
-**开发配置 → 微信服务动态**. Once an override exists, it survives restarts and takes
-precedence over the two legacy deployment defaults. V101 moves template/image readiness,
-snapshot preference, callback enabled state, Callback Token and EncodingAESKey into a singleton
-database configuration. The two callback secrets are independently AES-GCM encrypted with
-row/field-bound AAD and the API returns only configured flags plus `********`. A database row is
-authoritative; damage fails closed and never falls back to environment values.
-
-Existing ignored `.env.*.local` files may temporarily keep the old
-`SHOP_WECHAT_SERVICE_CARD_*` business values solely for no-row compatibility and the explicit
-Admin legacy import. New deployments do not add them. Import validates the complete template,
-image/host and callback pair, preserves an already enabled callback, writes an audit record, and
-makes the database immediately authoritative. Remove old values only after handshake, capture
-and rollback verification.
-
-Delivery delays, retry limits, HTTP limits and Callback timestamp skew are tracked technical
-defaults in `application.yaml`; they are no longer production environment variables.
-
-Keep order-snapshot preference disabled in the Admin database configuration while current product
-COS images require a Referer and are not safe service-card image inputs. The fallback is the
-merchant-owned Admin static file `admin/public/wechat/service-card-placeholder.png`.
-Before enabling outbound calls, an unauthenticated, no-Referer request to the URL above
-must return `200`, `image/png`, and actual PNG bytes. Only explicitly allowlisted public
-HTTPS image hosts without credentials, query strings, fragments, or temporary signatures
-may be used.
-
-Configure the Mini Program account's single message-push endpoint as follows; this is an
-account-level setting, not a payment callback URL:
-
-```text
-URL: https://api.junxiangshiping.cn/wechat/mini/message
-Message encryption: Safe mode
-Data format: JSON
-Token: exactly the value last written in Admin (the API never reads it back)
-EncodingAESKey: exactly the value last written in Admin (the API never reads it back)
-```
-
-The endpoint validates the GET handshake, `msg_signature`, timestamp window, AES-CBC
-plaintext, and Mini Program AppID. The asynchronous event is a send-failure diagnostic;
-it does not prove successful delivery and must not overwrite an already confirmed remote
-state. `get_user_notify` reconciliation remains the provider-state evidence.
-
-V95 Admin runtime endpoints are:
-
-```text
-GET /admin/wechat-service-cards/status
-GET /admin/wechat-service-cards/deliveries
-PUT /admin/wechat-service-cards/runtime
-```
-
-V101 Admin configuration endpoints are:
-
-```text
-GET /admin/wechat-service-cards/config
-PUT /admin/wechat-service-cards/config
-POST /admin/wechat-service-cards/config/legacy-env-import
-```
-
-They require the dedicated `wechat-service-card:config:read` or
-`wechat-service-card:config:write` permission; V101 grants these only to `R_SUPER`.
-
-Read operations require `wechat-service-card:read`; changing the runtime override requires
-`wechat-service-card:runtime:write`. The PUT body is
-`{captureEnabled, workerEnabled, version, reason}`. It uses CAS, records the before/after values,
-operator, reason and revision in an append-only audit table, rejects unknown fields, and never
-accepts callback credentials. Enabling is deliberately staged: a disabled installation must
-first save `capture=true, worker=false`, inspect the Repair Scanner candidates and durable queue,
-then save a later revision with `worker=true`. Readiness failures block only enabling; an operator
-can always perform an emergency disable. No application restart is required.
-
-For a first-time installation, use this three-stage release order; do not enable all three
-switches at once. Current production has already completed the Safe+JSON GET handshake, so a
-V95 rollout must preserve the environment-only Callback credentials and follow the current-state
-runbook in `ops/README.md` instead of regenerating them.
-
-1. Deploy V94-V95 and the Admin placeholder with capture, worker, and callback disabled. Verify
-   Flyway, readiness configuration, Admin asset bytes, and that no outbound request occurs.
-2. Supply a newly generated Token/AES key, enable only the callback, configure SAFE+JSON in
-   the WeChat console, and complete the public GET handshake. Before enabling capture, list
-   every complete paid payment from the preceding 24 hours that has no card: the repair
-   scanner will enqueue those real payments as well as new events. In Admin, save a capture-only
-   revision while the worker remains off, create a controlled new paid order, and inspect all durable cards
-   and ordered delivery intents without sending them.
-3. In Admin, enable the worker in a later revision only after the queue, AppID identity,
-   immutable payment facts, image,
-   callback, and monitoring are ready and no unintended repaired card remains eligible for
-   outbound work. Activate one controlled real payment within 24 hours of its WeChat payment
-   time, then verify shipped/signed/after-sale transitions and active `get_user_notify`
-   reconciliation. Updates are allowed only during the provider's 30-day window; expired
-   rows must remain truthful instead of being force-sent.
-
-The 24-hour activation window belongs to WeChat 2001 and is separate from the Shop order's
-15-minute payment deadline. Automated/mock tests cannot prove the account template is live,
-the callback setting is accepted, WeChat displays the card, or a real failure callback is
-delivered. Preserve those as explicit external release evidence.
-
-The complete external release gate is [production-release-checklist.md](production-release-checklist.md).
-
-## Seeded Administrator Safety
-
-The historical `Super / 123456` account is enabled only by the `dev` and `test` profiles for local smoke checks. The default/production profile disables that known credential during Flyway migration `V36` and replaces its hash unless the password was already rotated.
-
-For a controlled first-time deployment, provide a BCrypt hash and explicitly enable the seed only for the migration run:
-
-```properties
-SHOP_DEFAULT_ADMIN_STATUS=ENABLED
-SHOP_DEFAULT_ADMIN_PASSWORD_HASH=<bcrypt-hash-for-a-unique-bootstrap-password>
-```
-
-Log in once, rotate the password or create the real administrator, then restore
-`SHOP_DEFAULT_ADMIN_STATUS=DISABLED`; retain only a controlled placeholder hash for future clean
-database bootstrap checks. Never enable the documented local password on a shared environment.
-
-OpenAPI is disabled in the common configuration and enabled only by `application-dev.yaml`.
-
-Administrator login protection is enabled by default and uses Redis in non-test profiles. Its
-pair/account/IP limits and time windows are tracked technical defaults in `application.yaml`. A
-Redis outage intentionally rejects login with HTTP 503 instead of bypassing the protection.
-
-Spring's container-level forwarded-header rewriting is disabled so the application has one IP trust model. Configure every real reverse proxy or load balancer network in `SHOP_TRUSTED_PROXY_CIDRS`; the edge proxy must replace or safely append `X-Forwarded-For`. Do not trust broad application or cluster networks merely for convenience.
-
-Every new order snapshots one immutable 15-minute payment deadline at submission, and payment initiation inherits that exact timestamp instead of extending the buyer's window. Expired `CREATED` orders without any payment row and expired `PREPARING`/`PAYING` payment orders are scanned every 60 seconds by default. Both paths use leased claims; the `CREATED` path refuses to release an anomalous order that already has payment evidence, while the payment path queries WeChat first and only closes a verified unpaid order. These technical defaults live in `application.yaml`.
-
-`V85` intentionally leaves historical `CREATED` deadlines null. Before any one-time assignment, run the read-only classification and invariant queries in [transaction-reconciliation.md](transaction-reconciliation.md); never bulk-close or blindly backfill historical orders.
-
-Refunds left in `PROCESSING` are reconciled with WeChat after one minute by default. The fixed retry, batch, age, and claim limits live in `application.yaml` rather than the environment files.
-
-When a refund is prepared for a `PAID` order that has neither `shipped_at` nor an `order_shipment`, `V86` snapshots an immutable restock requirement. A verified successful refund then restores each confirmed SKU quantity, transitions the order's stock locks to `RESTOCKED`, writes one unique `REFUND_RESTOCK` log per SKU, and finalizes refund/after-sale/order state in one transaction. Shipped and completed refunds never increase sellable inventory. Historical successful refunds remain report-only; use [transaction-reconciliation.md](transaction-reconciliation.md) and never auto-restock them.
-
-A refund that WeChat definitively closes is not resubmitted under the old merchant refund number. After resolving the cause (for example, recharging the merchant account), an administrator with `aftersale:audit` can call `POST /admin/after-sales/{afterSaleId}/refund-retry` with `{"note":"..."}`. The note is mandatory and stored in the operator audit trail. The endpoint accepts only the latest `FAILED/CLOSED` attempt without an active recovery lease, safely clears an expired orphan lease by its token, preserves the old attempt, creates a new merchant refund number, and leaves an indeterminate provider response in `PROCESSING/REQUEST_UNKNOWN` for the recovery job. A callback or query can finalize only the latest refund attempt for that after-sale record.
-
-For the latest `PROCESSING` or `FAILED` attempt, the same permission can use `.../refunds/{refundOrderId}/provider-query`, `.../provider-resubmit`, or `.../manual-intervention`. Every request requires a nonblank operation note of at most 180 characters and produces audit records. Resubmit always queries WeChat first and submits the original merchant refund number only when WeChat reports `NOT_FOUND`; it never resubmits a known `PROCESSING`, `SUCCESS`, `CLOSED`, or `ABNORMAL` refund. Manual intervention records `FAILED/MANUAL_INTERVENTION` and stops automatic recovery without fabricating a successful refund, but it cannot overwrite a provider `CLOSED` terminal state. Operator notes stay in the admin audit log and are not returned through App refund error fields. The admin after-sale drawer exposes only the actions valid for the current state.
-
-Once a database payment configuration has been referenced by a payment order, its merchant identity and key material are immutable. Create and enable a new configuration revision instead of editing the historical one; outstanding payment queries, closes, callbacks, and refunds continue to use their original merchant configuration. New payment orders also store a non-reversible configuration fingerprint, and every provider result is bound to that ID/fingerprint before local state changes. The normal Admin payment screen manages database configurations only. Deleting an inactive configuration is a soft delete: it disappears from the Admin list but retains the encrypted historical credential row required by payment queries, closes, callbacks, refunds, and reconciliation. The currently enabled configuration cannot be deleted, and a legacy row whose private-file IDs have not yet been imported must be migrated before deletion.
-
-Migration `V41` retains content-addressed encrypted snapshots for payments that were historically created from environment credentials. They are read-only recovery records: current code cannot create a new ENV-sourced payment, but query, close, refund, recovery, and callback processing can still restore the exact credential revision for an old order. New payments always use an enabled DB configuration, which is locked and revalidated in the payment transaction before its identity reference is inserted. Snapshot business content is append-only; only a verified envelope rewrap may update ciphertext metadata. A row whose decrypted contents no longer match its fingerprint fails closed with `PAYMENT_CONFIGURATION_CHANGED` and is not re-encrypted.
-
-Migration `V44` adds a nullable opaque callback route to each payment/refund. New routes are 192-bit random Base64URL values and produce `/wxpay/pay/notify/r/{token}` or `/wxpay/refund/notify/r/{token}`. They reveal neither row IDs nor configuration fingerprints. The routed handler resolves the exact historical configuration before decrypting, compares the persisted token byte-for-byte after the database lookup, and compares the decrypted merchant number with the routed row. Existing token-null rows keep using the legacy fixed endpoints. Invalid, unknown, unverified, or unbound callback input is rejected without growing `payment_callback_log`. Because the fixed endpoints must still scan a bounded set of historical configurations, rate-limit and alert on them at ingress until token-null inventory has drained; then retire them after the provider retry window.
-
-Migration `V45` adds envelope metadata and a monotonic secret revision for DB payment APIv3 keys, ENV snapshots, persisted COS credentials, and other database-managed secrets. Version 2 uses AES-256-GCM as `v2:<keyId>:<base64url nonce>:<base64url ciphertext+tag>` and AAD binds every ciphertext to its domain, row, and field. `SHOP_SECRET_ENCRYPTION_LEGACY_KEY` remains the legacy v1 read key during transition. This application master key is generated independently; it is not a Tencent COS SecretId or SecretKey. Version 2 keys are supplied explicitly as semicolon-separated `id=base64:<32-byte-key>` entries; key IDs must use canonical lowercase ASCII, and an unknown key ID never falls back to trial-decryption with other keys. Background rotation verifies metadata and snapshot fingerprints, atomically claims each domain's next keyset range through a durable database checkpoint, and uses revision compare-and-set updates so process restarts, another node, or an administrator update cannot starve or overwrite healthy work.
-
-Use this rolling deployment order:
-
-1. Deploy V44/V45 and all callback handlers with `SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false`, `SHOP_SECRET_ENCRYPTION_WRITE_VERSION=1`, and rotation disabled.
-2. After every application instance accepts routed paths, verify configured callback bases pass routed readiness (public HTTPS, valid port, no user-info/query/fragment, and at most 220 characters after trailing-slash normalization), then enable `SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=true` for newly created payments/refunds. Keep the two ingress-limited legacy handlers while token-null work can still receive retries.
-3. Put the active and any old v2 keys in `SHOP_SECRET_ENCRYPTION_KEY_RING`; keep the existing key available as `SHOP_SECRET_ENCRYPTION_LEGACY_KEY` for v1 rows. After every instance can read v2 and the rollback window to a v1-only binary has closed, set write version 2. Once any v2 row exists, do not roll back to a binary that understands only v1; use the current dual-reader binary with write version temporarily returned to 1, or roll forward.
-4. Enable the small-batch rotation. Remove an old key only after all three tables have zero inventory for it and the replica, database backup, and restore retention windows have expired.
-
-## Local WeChat Mini Program Credentials
-
-New setups configure the Mini Program AppID/AppSecret through Admin **微信平台配置**. The
-`dev` profile still imports the optional ignored file `backend/shop-server/.env.dev.local` so an
-existing deployment can start long enough to import its legacy values:
-
-```properties
-WECHAT_MINI_PROGRAM_APP_ID=your-app-id
-WECHAT_MINI_PROGRAM_APP_SECRET=your-app-secret
-```
-
-Call `GET /admin/wechat/platform-config` first. When it reports
-`legacyEnvironmentImportAvailable=true`, call
-`POST /admin/wechat/platform-config/legacy-env-import` with `{"version":0}`. Verify the next GET
-reports `source=DATABASE` and no longer offers the legacy import before removing the two variables.
-The `dev` profile uses the real WeChat client. The `test` profile keeps the mock client for tests.
-
-## Local WeChat Pay Credentials
-
-Local and production runtimes use the same DB-only payment configuration path. Configure WeChat Pay
-through `开发配置 -> 支付配置`, save the merchant private-key PEM and WeChat Pay public-key PEM
-contents, then enable the selected database row. Neither `.env.dev.local` nor `.env.prod.local`
-accepts payment merchant credentials, file paths, callback URLs, source selectors, or payment feature
-switches. The production validator rejects every legacy payment environment key.
-
-```properties
-SHOP_SECRET_ENCRYPTION_LEGACY_KEY=<local-32-byte-application-master-key>
-SHOP_PAY_NOTIFICATION_ROUTE_ENABLED=false
-SHOP_SECRET_ENCRYPTION_WRITE_VERSION=1
-SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID=
-SHOP_SECRET_ENCRYPTION_KEY_RING=
-SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED=false
-SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED=false
-```
-
-The configured callback bases must be complete public HTTPS paths with no query, fragment, or user-info. With route issuance disabled, callbacks use `/wxpay/pay/notify` and `/wxpay/refund/notify`. With it enabled, the backend gives WeChat the corresponding `/r/{token}` path per payment/refund; do not pre-append a token in configuration. A real local WeChat Pay smoke check needs an HTTPS tunnel to the local backend.
-
-The daily `开发配置 -> 支付配置` screen lists, creates, edits, enables, and soft-deletes database
-payment configurations only. The backend exposes no environment configuration, environment import,
-or runtime source API. Internal historical recovery uses the explicit `HISTORICAL_SNAPSHOT` marker;
-it is not a selectable live source and never reads environment variables.
-
-For a new DB config, the Admin file picker reads the merchant private key and WeChat Pay public
-key PEM as text and submits `privateKeyPem`/`wechatPublicKeyPem` to `/admin/pay/configs`. The
-backend validates the RSA material and stores only context-bound encrypted ciphertext in
-`payment_config`; it does not create a storage asset or persist an upload path, and responses never
-return plaintext. The merchant certificate file is no longer stored because this PUBLIC_KEY flow
-uses its certificate serial number (`merchantSerialNo`) rather than certificate contents.
-
-For an existing DB row that still points at old private-file IDs, call
-`POST /admin/pay/configs/{configId}/import-legacy-secret-files`; this validates and encrypts the PEM
-contents, clears the three old payment file IDs and releases their storage usage. Verify the list
-response reports `privateKeyConfigured=true`, `wechatPublicKeyConfigured=true` and
-`legacySecretFilesPendingImport=false`, then enable the chosen row if necessary. This legacy file-ID
-conversion is a database-row maintenance action, not an ENV configuration path.
-
-Deleting a payment configuration through Admin never removes the credential row needed by an
-existing payment identity. It marks an inactive, fully migrated row as deleted so it no longer
-appears in the configuration list. The enabled configuration must first be replaced by another
-configuration, and a row with `legacySecretFilesPendingImport=true` must first complete
-`import-legacy-secret-files`. Historical DB configurations and encrypted ENV snapshots remain
-resolvable after the Admin entry is removed; do not manually delete those rows or ciphertexts.
-
-Never commit `.env.*.local`, merchant certificates, private keys, APIv3 keys, public-key files, or screenshots/logs containing merchant IDs, AppIDs, serial numbers, API keys, certificate paths, public key IDs, callback domains, or other secret material.
-
-## Object Storage
-
-The application supports Tencent Cloud COS only. Configure the region, bucket,
-SecretId, and SecretKey through `开发配置 -> 对象存储配置`. The COS client
-domain can be left empty for the bucket's default COS origin, or set to the
-HTTPS custom origin that COS has bound to the same bucket. It must be a legal
-root hostname without credentials, a port, path, query, or fragment. The backend
-verifies the configured origin, while both clients consume the upload origin
-dynamically from the signed upload-session response and enforce the same URL
-shape. This COS custom origin points directly to the bucket and does not require
-or enable CDN. The values are read
-from `storage_runtime_setting` and take effect without restarting the backend.
-There is no local provider and no storage environment-file fallback; uploads
-fail with `STORAGE_NOT_CONFIGURED` until the database configuration is complete.
-
-Only non-provider upload policy remains in the tracked application defaults.
-Retention, cleanup batch size, schedule, and upload-pending grace are stored in
-`data_cleanup_task_setting` and are managed from **配置管理 → 数据清理配置**:
-
-```yaml
-shop:
-  storage:
-    direct-upload:
-      max-active-sessions-per-principal: 10
-      max-sessions-per-hour-app: 60
-      max-sessions-per-hour-admin: 600
-    limits:
-      image-max-size: 5MB
-      image-max-width: 8192
-      image-max-height: 8192
-      image-max-pixels: 25000000
-      video-max-size: 50MB
-      private-file-max-size: 10MB
-```
-
-JPEG, PNG, WebP, and GIF now use a signed COS POST upload session. The browser or
-mini program sends the source object directly to a private staging key. The
-completion request performs only COS HEAD, Cloud Infinite processing, metadata
-writes, and database updates; the application JVM never reads the image body.
-Cloud Infinite reports the decoded source format, dimensions, and frame count,
-which are checked against the same storage limits before the WebP output becomes
-an active asset.
-
-Tinify, its environment variables, runtime configuration page, quota probe, and
-database-managed key are no longer used. SVG remains on the legacy Multipart
-endpoint because it requires the application safety parser and is not part of
-the normal Cloud Infinite raster pipeline. Legacy clients can temporarily keep
-using the Multipart endpoints during rollout, but those requests no longer call
-Tinify.
-
-All persistent raster outputs use WebP. Library images use a 2560px longest
-edge, avatars 1024px, after-sale evidence 4096px, and chat display images
-1920px. Chat completion creates a 720px thumbnail in the same Cloud Infinite
-request. The sender keeps an immediate local preview, while the mini program
-caches downloaded thumbnails for seven days. AVIF and CDN delivery are
-intentionally not used.
-
-For the current bucket, direct POST uploads, public file URLs, and private signed
-image URLs all use the configured COS origin (custom or default), without a CDN
-layer. The POST Policy remains scoped to one bucket/key/type/size, while private
-URLs are signed for the configured Host rather than rewritten after signing.
-Historical locations from a different bucket or region retain their own default
-COS origin. Every asset records the COS bucket and region used at upload time;
-current credentials must retain access to every recorded bucket. Private files,
-including payment certificates and keys, never receive a public URL. COS
-credentials are envelope-encrypted in the database
-with the independent `SHOP_SECRET_ENCRYPTION_*` master key configuration and are
-never returned in full.
-
-If production data predates this migration and already embeds a CDN URL in
-product HTML, order snapshots, avatars, or historical asset rows, inventory and
-rewrite those stored strings to their matching COS origin before disabling the
-CDN. The application intentionally does not perform a blind migration because
-those values can belong to different historical buckets or unrelated domains.
-
-Before enabling direct upload, configure the admin Origin in the COS bucket's
-CORS rules and add the configured COS origin to the mini program `uploadFile`
-and `downloadFile` allowlists. Keep the default COS origin in both allowlists
-during client rollout for old versions, historical objects, and rollback. Also
-verify that the bucket is bound to
-Cloud Infinite. A one-day lifecycle deletion rule for
-`private/direct-upload/` is recommended as defense in depth. The exact
-permissions, CORS values, output profiles, rollout order, and smoke checklist
-are documented in
-[`docs/cos-direct-upload.md`](./cos-direct-upload.md).
-
-Migration `V69` removes the local runtime-setting columns and adds a database constraint that permits only `TENCENT_COS` assets. It intentionally fails when any `storage_asset.provider = 'LOCAL'` row remains. Before deploying it to an existing installation, copy those objects to COS and migrate every stored URL/reference plus the asset provider, bucket, and region metadata; do not delete the old files until the migrated application and backups have been verified.
-
-Unclaimed after-sale evidence expires after 24 hours; staged payment secrets expire after two hours, and replaced secrets receive a 24-hour release window. These windows, their validation, and cleanup all use the database clock, so the JVM and database may safely run in different time zones. The cleanup job leases expired, unreferenced private assets and retries provider failures with bounded backoff; fresh expirations use a separate batch so failed deletions cannot block them.
-
-File storage and home banner smoke checks are documented in `docs/smoke-checks.md#file-storage-and-home-banner-smoke-checks`.
-
-### WeChat Integration Notes
-
-Mini program login and phone authorization use two different WeChat exchanges:
-
-- Login: `wx.login()` returns a code, and the backend exchanges it through `jscode2session`.
-- Phone authorization: `getPhoneNumber` returns a phone code, and the backend obtains a stable access token before calling `getuserphonenumber`.
-
-WeChat can return JSON with `Content-Type: text/plain`, so the backend reads WeChat responses as strings before parsing JSON. WeChat's `stable_token` endpoint also rejects chunked request bodies with `HTTP 412 PRECONDITION_FAILED` and an empty response body. The backend serializes WeChat POST request bodies to JSON strings before sending them so the request has a concrete content length.
-
-Relevant safe diagnostic logs:
-
-```text
-WeChat code2Session failed: errcode=40029, errmsg=invalid code
-WeChat stableToken request failed: status=412 PRECONDITION_FAILED, empty response body
-WeChat getPhoneNumber failed: errcode=40029, errmsg=invalid code
-```
-
-These logs intentionally do not print `WECHAT_MINI_PROGRAM_APP_SECRET`, access tokens, login codes, or phone codes. If `stableToken` returns `412 PRECONDITION_FAILED`, verify the backend is running the current code that sends non-chunked JSON request bodies. If `getPhoneNumber` returns `40029 invalid code`, retry with a fresh one-time phone authorization code from WeChat DevTools or a real device.
-
-### WeChat Electronic Waybill And Logistics Query
-
-Electronic-waybill configuration is stored in the database and managed from
-`订单管理 / 电子面单配置` (or `GET/PUT
-/admin/logistics/wechat-express/config`). It has three modes:
-
-- `DISABLED`: keep the existing manual shipment path only.
-- `SANDBOX`: the backend forces the official `TEST`, `test_biz_id`, service
-  type `1`, and `test_service_name` values regardless of any saved production
-  draft.
-- `PRODUCTION`: use the saved carrier, customer number, and service values.
-
-Configure a complete structured sender and the default single-parcel weight and
-dimensions before enabling sandbox or production. Production carrier passwords
-are intentionally neither requested nor stored; a future carrier-account bind
-must forward any one-time credential directly to WeChat and discard it.
-
-The sandbox still calls the real WeChat express-business APIs. It is limited to
-10 waybills per day, and its recipient OpenID must belong to a Mini Program
-administrator, operator, or developer. Creating a label keeps the Shop order in
-`PAID`; only the explicit “确认发货” action creates `order_shipment` and changes
-the order to `SHIPPED`.
-
-The Mini Program declares the official logistics plugin. A saved physical
-shipment always renders its carrier and tracking number locally. Opening the
-official trajectory additionally requires a successful server-side
-`trace_waybill` or `follow_waybill` registration for the real paid order,
-recipient phone, payer OpenID, transaction ID, carrier, and waybill. A fabricated
-tracking number can test only the local card and copy action.
-
-The order detail also renders a Shop-owned logistics data area. Its two sources
-are deliberately independent:
-
-- `query_trace` or `query_follow_trace` reads the WeChat summary status from the
-  registered `waybill_token`.
-- Electronic-waybill `getPath` reads `path_item_list` from the saved upstream
-  order ID, payer OpenID, carrier ID, and waybill ID.
-
-An empty or failed `getPath` response does not hide the area, and a failure from
-one source does not discard a successful result from the other. The admin order
-drawer exposes both source statuses, safe errors, and stored path nodes; manual
-refresh requires `order:shipping:tracking:sync`. Tracking synchronization does
-**not** change `shop_order.status` or write order status logs. The official Mini
-Program “查看全部物流” plugin entry remains available when token registration
-succeeds.
-
-Optional runtime bounds keep repeated reads and provider responses controlled:
-
-```env
-SHOP_WECHAT_TRACKING_REFRESH_INTERVAL=5m
-SHOP_WECHAT_TRACKING_CLAIM_TIMEOUT=5m
-SHOP_WECHAT_TRACKING_MAX_PATH_ITEMS=200
-```
-
-## Authentication Smoke Checks
-
-Backend test profile uses an in-memory token store and a mock WeChat mini program client. Use this only for local smoke checks, not on a shared or exposed environment. The smoke command opts into Maven's test classpath so H2 and `src/test/resources/application-test.yaml` are available at runtime.
-
-```bash
-cd backend/shop-server
-./mvnw -Dspring-boot.run.profiles=test \
-  -Dspring-boot.run.useTestClasspath=true \
-  -Dspring-boot.run.arguments=--spring.config.additional-location=file:src/test/resources/ \
-  spring-boot:run
-```
-
-Admin login:
-
-Run the remaining commands in a second terminal while the backend is running.
-
-```bash
-ADMIN_TOKEN=$(
-  curl -s -X POST http://localhost:8080/admin/auth/login \
-    -H 'Content-Type: application/json' \
-    -d '{"userName":"Super","password":"123456"}' \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
-)
-```
-
-Mini program login:
-
-```bash
-APP_TOKEN=$(
-  curl -s -X POST http://localhost:8080/app/auth/login \
-    -H 'Content-Type: application/json' \
-    -d '{"code":"test-login-code"}' \
-  | node -e 'let b=""; process.stdin.on("data", c => b += c); process.stdin.on("end", () => console.log(JSON.parse(b).data.token));'
-)
-```
-
-Admin and app tokens are intentionally isolated. The issued app access token must receive HTTP 401 on `/admin/**`, and the issued admin access token must receive HTTP 401 on `/app/**`.
-
-```bash
-curl -i http://localhost:8080/admin/auth/current-user \
-  -H "Authorization: Bearer ${APP_TOKEN}"
-
-curl -i -X POST http://localhost:8080/app/auth/phone \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer ${ADMIN_TOKEN}" \
-  -d '{"code":"phone-code"}'
-```
-
-Expected result: both isolation checks return HTTP 401.
-
-## Product Catalog Smoke Checks
-
-Product catalog smoke checks are documented in `docs/smoke-checks.md#product-catalog-smoke-checks`. They run against the local backend on the `test` profile and the local test database path. The `test` profile still uses the mock WeChat mini program client for login, but category, SPU, SKU, publish/unpublish, and mini program product list/detail requests go through the real local backend product APIs, not product mocks.
-
-## Coupon Checks
-
-Run automated checks with:
-
-```bash
-cd backend/shop-server
-./mvnw -Dtest=CouponSchemaTest,AdminCouponTemplateControllerTest,AppCouponControllerTest,CouponDiscountCalculatorTest test
-cd ../../miniprogram
-pnpm typecheck
-cd ../admin
-pnpm build
-```
-
-For real local coupon smoke, follow `docs/smoke-checks.md#coupon-smoke-checks`.
-
-## Admin Checks
-
-```bash
-cd admin
-pnpm install --frozen-lockfile
-pnpm check
-CI=true pnpm build
-pnpm check:generated-imports
-```
-
-Expected result: type checking, lint, tests, and the Vite production build pass, and rebuilding
-does not change the committed auto-import declarations or ESLint globals metadata. A clean clone
-must not depend on a previous Vite dev-server run.
-
-## Mini Program Checks
-
-```bash
-cd miniprogram
-pnpm install
-pnpm typecheck
-```
-
-Expected result: TypeScript completes without diagnostics.
-
-## Local Secret Policy
-
-Do not commit real WeChat app secrets, merchant certificates, private keys, database passwords, Redis passwords, or production URLs. Use local environment files ignored by Git.
+结构相同，值不同。两者都使用 `server` Profile，但必须拥有独立数据库密码、Redis 密码、主密钥和 Admin 业务配置；可信代理边界由固定 Compose IPAM 与 `application-server.yaml` 共同管理。

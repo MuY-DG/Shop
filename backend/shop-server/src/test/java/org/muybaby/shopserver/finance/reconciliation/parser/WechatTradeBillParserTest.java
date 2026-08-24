@@ -186,8 +186,6 @@ class WechatTradeBillParserTest {
 
     private FinanceReconciliationProperties properties() {
         return new FinanceReconciliationProperties(
-                false,
-                false,
                 null,
                 null,
                 null,

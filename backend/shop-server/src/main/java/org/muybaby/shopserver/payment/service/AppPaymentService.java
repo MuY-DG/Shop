@@ -160,7 +160,7 @@ public class AppPaymentService {
         return new PaymentOrderRow(
                 rs.getLong("id"),
                 rs.getLong("order_id"),
-                nullableLong(rs, "payment_config_id"),
+                rs.getLong("payment_config_id"),
                 rs.getString("payment_config_fingerprint"),
                 rs.getString("out_trade_no"),
                 rs.getString("prepay_id"),
@@ -196,11 +196,6 @@ public class AppPaymentService {
             long amountCent,
             LocalDateTime expiresAt
     ) {
-    }
-
-    private Long nullableLong(ResultSet rs, String columnLabel) throws SQLException {
-        long value = rs.getLong(columnLabel);
-        return rs.wasNull() ? null : value;
     }
 
 }

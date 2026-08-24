@@ -2,7 +2,6 @@ package org.muybaby.shopserver.payment.config;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.payment.PaymentNotificationRouteProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -22,17 +21,8 @@ public class PaymentNotificationRouteService {
     private static final Pattern TOKEN_PATTERN = Pattern.compile("[A-Za-z0-9_-]{32}");
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private final PaymentNotificationRouteProperties properties;
-
-    public PaymentNotificationRouteService(PaymentNotificationRouteProperties properties) {
-        this.properties = properties;
-    }
-
-    /** Returns null while new route issuance is disabled; existing persisted tokens remain usable. */
+    /** Routed callbacks are the only supported callback shape for newly issued operations. */
     public String issueToken() {
-        if (!properties.enabled()) {
-            return null;
-        }
         byte[] bytes = new byte[TOKEN_BYTES];
         SECURE_RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
@@ -62,9 +52,6 @@ public class PaymentNotificationRouteService {
     }
 
     private String routedUrl(String baseUrl, String routeToken) {
-        if (!StringUtils.hasText(routeToken)) {
-            return baseUrl;
-        }
         String normalizedBase = normalizeBaseUrl(baseUrl);
         String normalizedToken = requireRouteToken(routeToken);
         String routed = normalizedBase + "/r/" + normalizedToken;

@@ -20,7 +20,7 @@ class ApplicationYamlSafetyTest {
     private static final Pattern ENV_PLACEHOLDER = Pattern.compile("\\$\\{([A-Z0-9_]+)(?=[:}])");
 
     @Test
-    void baseApplicationYamlDoesNotActivateDevProfileOrMockWechat() {
+    void baseApplicationYamlDoesNotActivateLocalProfileOrMockWechat() {
         YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
         yaml.setResources(new ClassPathResource("application.yaml"));
         Properties properties = yaml.getObject();
@@ -28,22 +28,15 @@ class ApplicationYamlSafetyTest {
         assertThat(properties)
                 .doesNotContainKeys("spring.profiles.active", "spring.config.import")
                 .containsEntry("shop.wechat.mini-program.mock-enabled", false)
-                .containsEntry("spring.data.redis.host", "${SHOP_REDIS_HOST:127.0.0.1}")
-                .containsEntry("spring.data.redis.port", "${SHOP_REDIS_PORT:6379}")
-                .containsEntry("spring.data.redis.database", "${SHOP_REDIS_DATABASE:0}")
+                .containsEntry("spring.data.redis.host", "127.0.0.1")
+                .containsEntry("spring.data.redis.port", 6379)
+                .containsEntry("spring.data.redis.database", 0)
+                .containsEntry("spring.data.redis.password", "${SHOP_REDIS_PASSWORD}")
+                .containsEntry("shop.security.client-ip.trusted-proxy-cidrs", "127.0.0.0/8,::1/128")
                 .containsEntry("spring.servlet.multipart.max-file-size", "50MB")
                 .containsEntry("shop.storage.direct-upload.max-active-sessions-per-principal", 10)
                 .containsEntry("shop.pay.timeout-scan-enabled", true)
                 .containsEntry("shop.pay.expire-minutes", 15)
-                .containsEntry("shop.finance.reconciliation.worker-enabled", false)
-                .containsEntry(
-                        "shop.wechat.shipping.delivery.enabled",
-                        "${SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED:true}"
-                )
-                .containsEntry(
-                        "shop.wechat.shipping.receipt-reconciliation.enabled",
-                        "${SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED:true}"
-                )
                 .doesNotContainKeys(
                         "shop.storage.direct-upload.session-retention",
                         "shop.storage.direct-upload.cleanup-initial-delay",
@@ -53,38 +46,60 @@ class ApplicationYamlSafetyTest {
                         "shop.customer-service.retention.batch-size"
                 )
                 .containsEntry("logging.pattern.level", "%5p [requestId=%X{requestId:-}]")
-                .containsEntry(
+                .doesNotContainKeys(
                         "spring.flyway.placeholders.seed_super_status",
-                        "${SHOP_DEFAULT_ADMIN_STATUS:DISABLED}"
+                        "spring.flyway.placeholders.seed_super_password_hash",
+                        "shop.pay.notification-route.enabled",
+                        "shop.secret-encryption.write-version",
+                        "shop.secret-encryption.legacy-key",
+                        "shop.wechat.service-card-2001.enabled",
+                        "shop.wechat.service-card-2001.worker-enabled",
+                        "shop.wechat.service-card-2001.callback.enabled",
+                        "shop.wechat.shipping.upload-enabled",
+                        "shop.wechat.shipping.delivery.enabled",
+                        "shop.wechat.shipping.receipt-reconciliation.enabled",
+                        "shop.finance.reconciliation.worker-enabled",
+                        "shop.finance.reconciliation.daily-enabled"
                 );
-        assertThat(properties.getProperty("spring.flyway.placeholders.seed_super_password_hash"))
-                .doesNotContain("VtYIL778Ftr75pHOJ3dV0efoMsPK20vZncmZ/vB6tkYj3aW9fqT.i");
     }
 
     @Test
-    void developmentApplicationYamlImportsOnlyDevelopmentEnvironment() {
+    void localApplicationYamlImportsOnlyLocalRuntimeManifest() {
         YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
-        yaml.setResources(new ClassPathResource("application-dev.yaml"));
+        yaml.setResources(new ClassPathResource("application-local.yaml"));
         Properties properties = yaml.getObject();
 
         assertThat(properties)
                 .doesNotContainKeys("spring.profiles.active", "server.address")
-                .containsEntry("spring.config.import", "optional:file:.env.dev.local[.properties]")
-                .containsEntry("spring.flyway.placeholders.seed_super_status", "ENABLED")
+                .containsEntry("spring.config.import", "file:config/runtime/local.env[.properties]")
+                .containsEntry("spring.datasource.username", "root")
+                .containsEntry("spring.datasource.password", "${SHOP_DB_ROOT_PASSWORD}")
                 .containsEntry("logging.level.org.muybaby.shopserver", "debug")
-                .containsEntry("springdoc.api-docs.enabled", true);
+                .containsEntry("springdoc.api-docs.enabled", true)
+                .doesNotContainKeys(
+                        "spring.flyway.placeholders.seed_super_status",
+                        "spring.flyway.placeholders.seed_super_password_hash"
+                );
     }
 
     @Test
-    void productionApplicationYamlUsesLoopbackAndSafeOperationalDefaults() {
+    void serverApplicationYamlUsesComposeTopologyAndSafeOperationalDefaults() {
         YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
-        yaml.setResources(new ClassPathResource("application-prod.yaml"));
+        yaml.setResources(new ClassPathResource("application-server.yaml"));
         Properties properties = yaml.getObject();
 
         assertThat(properties)
-                .doesNotContainKey("spring.profiles.active")
-                .containsEntry("spring.config.import", "file:.env.prod.local[.properties]")
-                .containsEntry("server.address", "${SERVER_ADDRESS:127.0.0.1}")
+                .doesNotContainKeys("spring.profiles.active", "spring.config.import")
+                .containsEntry("server.address", "0.0.0.0")
+                .containsEntry("spring.datasource.username", "shop")
+                .containsEntry("spring.datasource.password", "${SHOP_DB_PASSWORD}")
+                .containsEntry("spring.data.redis.host", "redis")
+                .containsEntry("spring.data.redis.password", "${SHOP_REDIS_PASSWORD}")
+                .containsEntry("shop.security.client-ip.max-forwarded-hops", 1)
+                .containsEntry(
+                        "shop.security.client-ip.trusted-proxy-cidrs",
+                        "127.0.0.0/8,::1/128,172.23.0.1/32"
+                )
                 .containsEntry("management.info.defaults.enabled", false)
                 .containsEntry("management.info.build.enabled", false)
                 .containsEntry("management.info.git.enabled", false)
@@ -98,41 +113,26 @@ class ApplicationYamlSafetyTest {
                         "logging.level.org.muybaby.shopserver",
                         "springdoc.api-docs.enabled",
                         "springdoc.swagger-ui.enabled",
-                        "spring.flyway.placeholders.seed_super_status"
+                        "spring.flyway.placeholders.seed_super_status",
+                        "spring.flyway.placeholders.seed_super_password_hash"
                 );
-        assertThat(properties.getProperty("spring.datasource.username"))
-                .isEqualTo("${SHOP_DB_USERNAME}");
-        assertThat(properties.getProperty("spring.datasource.password"))
-                .isEqualTo("${SHOP_DB_PASSWORD}");
     }
 
     @Test
-    void productionEnvironmentExampleContainsOnlyStartupBoundaryKeys() throws IOException {
-        Properties properties = loadEnvironmentExample(".env.prod.example");
+    void runtimeEnvironmentExampleContainsOnlyPerEnvironmentBoundaryKeys() throws IOException {
+        Properties properties = loadEnvironmentExample("config/runtime/runtime.env.example");
 
         assertThat(properties.stringPropertyNames()).containsExactlyInAnyOrder(
-                "SHOP_DB_URL",
-                "SHOP_DB_USERNAME",
                 "SHOP_DB_PASSWORD",
-                "SHOP_REDIS_HOST",
-                "SHOP_REDIS_PORT",
-                "SHOP_REDIS_DATABASE",
-                "SHOP_REDIS_USERNAME",
+                "SHOP_DB_ROOT_PASSWORD",
                 "SHOP_REDIS_PASSWORD",
-                "SHOP_TRUSTED_PROXY_CIDRS",
-                "SHOP_MAX_FORWARDED_HOPS",
-                "SHOP_SECRET_ENCRYPTION_WRITE_VERSION",
                 "SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID",
-                "SHOP_SECRET_ENCRYPTION_KEY_RING",
-                "SHOP_SECRET_ENCRYPTION_LEGACY_KEY",
-                "SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED",
-                "SHOP_DEFAULT_ADMIN_STATUS",
-                "SHOP_DEFAULT_ADMIN_PASSWORD_HASH"
+                "SHOP_SECRET_ENCRYPTION_KEY_RING"
         );
     }
 
     @Test
-    void baseApplicationYamlKeepsOnlyStartupAndLegacyMigrationPlaceholders() throws IOException {
+    void baseApplicationYamlKeepsOnlyRuntimeSecretPlaceholders() throws IOException {
         Matcher matcher = ENV_PLACEHOLDER.matcher(
                 Files.readString(Path.of("src/main/resources/application.yaml"))
         );
@@ -142,48 +142,36 @@ class ApplicationYamlSafetyTest {
         }
 
         assertThat(variables).containsExactlyInAnyOrder(
-                "SHOP_DEFAULT_ADMIN_PASSWORD_HASH",
-                "SHOP_DEFAULT_ADMIN_STATUS",
-                "SHOP_MAX_FORWARDED_HOPS",
-                "SHOP_PAY_NOTIFICATION_ROUTE_ENABLED",
-                "SHOP_REDIS_DATABASE",
-                "SHOP_REDIS_HOST",
                 "SHOP_REDIS_PASSWORD",
-                "SHOP_REDIS_PORT",
-                "SHOP_REDIS_USERNAME",
                 "SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID",
-                "SHOP_SECRET_ENCRYPTION_KEY_RING",
-                "SHOP_SECRET_ENCRYPTION_LEGACY_KEY",
-                "SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED",
-                "SHOP_SECRET_ENCRYPTION_WRITE_VERSION",
-                "SHOP_TRUSTED_PROXY_CIDRS",
-                "SHOP_WECHAT_RECEIPT_RECONCILIATION_ENABLED",
-                "SHOP_WECHAT_SERVICE_CARD_CALLBACK_AES_KEY",
-                "SHOP_WECHAT_SERVICE_CARD_CALLBACK_ENABLED",
-                "SHOP_WECHAT_SERVICE_CARD_CALLBACK_TOKEN",
-                "SHOP_WECHAT_SERVICE_CARD_CAPTURE_ENABLED",
-                "SHOP_WECHAT_SERVICE_CARD_FALLBACK_IMAGE",
-                "SHOP_WECHAT_SERVICE_CARD_IMAGE_HOSTS",
-                "SHOP_WECHAT_SERVICE_CARD_TEMPLATE_RECORD_ID",
-                "SHOP_WECHAT_SERVICE_CARD_WORKER_ENABLED",
-                "SHOP_WECHAT_SHIPPING_DELIVERY_ENABLED",
-                "SHOP_WECHAT_SHIPPING_UPLOAD_ENABLED",
-                "WECHAT_MINI_PROGRAM_APP_ID",
-                "WECHAT_MINI_PROGRAM_APP_SECRET"
+                "SHOP_SECRET_ENCRYPTION_KEY_RING"
         );
     }
 
     @Test
-    void infrastructureEnvironmentExampleRemainsIsolated() throws IOException {
-        Properties properties = loadEnvironmentExample(".env.infrastructure.example");
+    void composeUsesOneManifestAndExplicitPerServiceWhitelists() throws IOException {
+        String compose = Files.readString(Path.of("compose.prod.yaml"));
 
-        assertThat(properties.stringPropertyNames()).containsExactlyInAnyOrder(
-                "MYSQL_DATABASE",
-                "MYSQL_USER",
-                "MYSQL_PASSWORD",
-                "MYSQL_ROOT_PASSWORD",
-                "REDIS_PASSWORD"
-        );
+        assertThat(compose)
+                .contains("SPRING_PROFILES_ACTIVE: server")
+                .contains("MYSQL_PASSWORD: ${SHOP_DB_PASSWORD:")
+                .contains("REDIS_PASSWORD: ${SHOP_REDIS_PASSWORD:")
+                .contains("SHOP_SECRET_ENCRYPTION_KEY_RING: ${SHOP_SECRET_ENCRYPTION_KEY_RING:")
+                .contains("gateway: 172.23.0.1")
+                .doesNotContain("env_file:")
+                .doesNotContain(".env.prod.local")
+                .doesNotContain(".env.infrastructure.local");
+    }
+
+    @Test
+    void bootstrapAdminRequiresTheGenerationTwoMarkerAndFlywayHistory() throws IOException {
+        String bootstrap = Files.readString(Path.of("scripts/config/bootstrap-admin.sh"));
+
+        assertThat(bootstrap)
+                .contains("marker_value = 'generation-2'")
+                .contains("version = '7'")
+                .contains("description = 'reference and bootstrap data'")
+                .contains("WHERE @schema_generation_ready = 1 AND id = 1");
     }
 
     private Properties loadEnvironmentExample(String filename) throws IOException {

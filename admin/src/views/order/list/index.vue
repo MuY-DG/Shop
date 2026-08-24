@@ -1372,6 +1372,10 @@
     REFUNDING: 'refunding',
     REFUND_FAILED: 'failed'
   }
+  const afterSaleTypeMap: Record<string, string> = {
+    REFUND_ONLY: '仅退款',
+    RETURN_REFUND: '退货退款'
+  }
 
   const formatAfterSaleStatus = (status: string) => afterSaleStatusMap[status] || status
   const formatAfterSaleHoldTitle = (orderStatus: Api.Order.OrderStatus) => {
@@ -1382,7 +1386,7 @@
     return '订单存在进行中售后，退款流程处理中'
   }
   const formatAfterSaleHold = (afterSale: Api.Order.ActiveAfterSaleSummary) =>
-    `售后单 ${afterSale.afterSaleNo} · 整单仅退款 · ${formatAfterSaleStatus(afterSale.status)} · ${formatMoney(afterSale.requestedAmountCent)}`
+    `售后单 ${afterSale.afterSaleNo} · ${afterSaleTypeMap[afterSale.afterSaleType] || afterSale.afterSaleType} · ${formatAfterSaleStatus(afterSale.status)} · ${formatMoney(afterSale.requestedAmountCent)}`
 
   const shippingUploadStatusMap: Record<
     Api.Order.WechatShippingUploadStatus,

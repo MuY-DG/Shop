@@ -7,6 +7,7 @@ target
 
 # 所有环境变量文件和密钥材料都必须留在构建上下文之外。
 .env*
+config/runtime/*
 secrets
 *.pem
 *.key
@@ -17,6 +18,7 @@ secrets
 var
 logs
 tmp
+backups
 *.log
 
 # 开发工具与操作系统生成文件不需要进入镜像。

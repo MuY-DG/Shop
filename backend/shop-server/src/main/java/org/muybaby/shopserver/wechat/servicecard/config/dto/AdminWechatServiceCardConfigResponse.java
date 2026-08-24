@@ -17,7 +17,6 @@ public record AdminWechatServiceCardConfigResponse(
         boolean callbackTokenConfigured,
         String callbackEncodingAesKeyMasked,
         boolean callbackEncodingAesKeyConfigured,
-        boolean legacyEnvironmentImportAvailable,
         long version,
         @JsonStringId Long updatedBy,
         LocalDateTime updatedAt

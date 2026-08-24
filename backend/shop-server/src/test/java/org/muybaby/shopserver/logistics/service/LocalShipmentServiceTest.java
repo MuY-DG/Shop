@@ -8,7 +8,6 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.logistics.LogisticsType;
-import org.muybaby.shopserver.logistics.ShippingProperties;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.AdminShipOrderRequest;
@@ -44,9 +43,6 @@ class LocalShipmentServiceTest {
     @Autowired
     private JdbcClient jdbcClient;
 
-    @Autowired
-    private ShippingProperties shippingProperties;
-
     @BeforeEach
     void clearShipmentState() {
         jdbcClient.sql("delete from order_shipment").update();
@@ -57,7 +53,6 @@ class LocalShipmentServiceTest {
         insertCarrier("SF", "顺丰速运", true);
         insertCarrier("JD", "京东物流", true);
         insertCarrier("OFF", "停用物流", false);
-        shippingProperties.setUploadEnabled(false);
     }
 
     @Test
@@ -288,13 +283,14 @@ class LocalShipmentServiceTest {
                 .update();
         jdbcClient.sql("""
                         insert into shop_order(
-                            id, order_no, user_id, status, source, idempotency_key,
+                            id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             product_original_amount_cent, product_amount_cent, coupon_name,
                             coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent,
                             receiver_name, receiver_phone, receiver_address,
                             payment_transaction_id, merchant_trade_no, paid_at, created_at, updated_at)
                         values (
                             :id, :orderNo, :id, 'PAID', 'CART', :idempotencyKey,
+                            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                             100, 100, '', 0, 0, 100, 100,
                             'Receiver', :receiverPhone, 'Address',
                             :transactionId, :outTradeNo, :now, :now, :now)

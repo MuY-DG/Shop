@@ -150,10 +150,11 @@ class WechatServiceCardCallbackServiceIntegrationTest {
         LocalDateTime now = LocalDateTime.of(2026, 8, 10, 12, 0);
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              payable_amount_cent, paid_amount_cent, paid_at, created_at, updated_at)
                         values
                             (:id, :orderNo, 1, 'PAID', 'DIRECT', :key,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              100, 100, :now, :now, :now)
                         """)
                 .param("id", orderId)
@@ -163,14 +164,19 @@ class WechatServiceCardCallbackServiceIntegrationTest {
                 .update();
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, out_trade_no, transaction_id, payer_openid,
+                            (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, transaction_id, payer_openid,
                              status, amount_cent, expires_at, paid_at, created_at, updated_at)
                         values
-                            (:id, :orderId, :outTradeNo, :transactionId, :openid,
+                            (:id, :orderId, :paymentConfigId, :paymentConfigFingerprint,
+                             :notificationRouteToken, :outTradeNo, :transactionId, :openid,
                              'PAID', 100, :expiresAt, :now, :now, :now)
                         """)
                 .param("id", paymentId)
                 .param("orderId", orderId)
+                .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(paymentId))
                 .param("outTradeNo", "CALLBACK-OUT-" + orderId)
                 .param("transactionId", transactionId)
                 .param("openid", openid)

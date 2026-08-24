@@ -68,8 +68,6 @@ function afterSale(
           successAt: status === "REFUNDED" ? "2026-07-21T10:35:00Z" : undefined
         }
       : undefined,
-    flowVersion: 2,
-    legacyFullOrder: false,
     items: [{
       id: 91,
       orderItemId: 201,

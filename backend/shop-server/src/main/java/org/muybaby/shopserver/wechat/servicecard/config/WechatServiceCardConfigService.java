@@ -8,7 +8,6 @@ import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigR
 import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigRepository.StoredConfig;
 import org.muybaby.shopserver.wechat.servicecard.config.dto.AdminWechatServiceCardConfigResponse;
 import org.muybaby.shopserver.wechat.servicecard.config.dto.AdminWechatServiceCardConfigUpdateRequest;
-import org.muybaby.shopserver.wechat.servicecard.config.dto.AdminWechatServiceCardEnvironmentImportRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -37,30 +36,19 @@ public class WechatServiceCardConfigService implements WechatServiceCardConfigRe
 
     private final WechatServiceCardConfigRepository repository;
     private final PaymentSecretCipher secretCipher;
-    private final WechatServiceCardProperties legacyEnvironment;
 
     public WechatServiceCardConfigService(
             WechatServiceCardConfigRepository repository,
-            PaymentSecretCipher secretCipher,
-            WechatServiceCardProperties legacyEnvironment
+            PaymentSecretCipher secretCipher
     ) {
         this.repository = repository;
         this.secretCipher = secretCipher;
-        this.legacyEnvironment = legacyEnvironment;
     }
 
     @Override
     @Transactional(readOnly = true)
     public WechatServiceCardConfig resolve() {
-        Optional<WechatServiceCardConfigEntity> persisted = repository.find();
-        if (persisted.isPresent()) {
-            return resolvePersisted(persisted.orElseThrow());
-        }
-        WechatServiceCardConfig environment = environmentConfigOrNull();
-        if (environment == null) {
-            throw unavailable();
-        }
-        return environment;
+        return repository.find().map(this::resolvePersisted).orElseThrow(this::unavailable);
     }
 
     @Transactional(readOnly = true)
@@ -68,16 +56,11 @@ public class WechatServiceCardConfigService implements WechatServiceCardConfigRe
         Optional<WechatServiceCardConfigEntity> persisted = repository.find();
         if (persisted.isPresent()) {
             WechatServiceCardConfigEntity row = persisted.orElseThrow();
-            return response(resolvePersisted(row), true, false,
-                    row.revision(), row.updatedBy(), row.updatedAt());
+            return response(resolvePersisted(row), row.revision(), row.updatedBy(), row.updatedAt());
         }
-        WechatServiceCardConfig environment = environmentConfigOrNull();
-        if (environment == null) {
-            return new AdminWechatServiceCardConfigResponse(
-                    false, "NONE", "", "", List.of(), false, false,
-                    "", false, "", false, false, 0, null, null);
-        }
-        return response(environment, true, true, 0, null, null);
+        return new AdminWechatServiceCardConfigResponse(
+                false, "NONE", "", "", List.of(), false, false,
+                "", false, "", false, 0, null, null);
     }
 
     @Transactional
@@ -106,7 +89,7 @@ public class WechatServiceCardConfigService implements WechatServiceCardConfigRe
             String aesKey = optionalAesKey(request.callbackEncodingAesKey());
             requireCallbackPair(request.callbackEnabled(), token, aesKey);
             StoredConfig stored = stored(fields, request.callbackEnabled(), token, aesKey);
-            if (!repository.insert(stored, operatorId, false)) {
+            if (!repository.insert(stored, operatorId)) {
                 throw conflict();
             }
             repository.appendAudit(1, "CREATE", AuditState.empty(), audit(stored), operatorId);
@@ -135,40 +118,6 @@ public class WechatServiceCardConfigService implements WechatServiceCardConfigRe
             }
             repository.appendAudit(row.revision() + 1, "UPDATE", audit(row), audit(stored), operatorId);
         }
-        return current();
-    }
-
-    @Transactional
-    public AdminWechatServiceCardConfigResponse importLegacyEnvironment(
-            AdminWechatServiceCardEnvironmentImportRequest request,
-            Long operatorId
-    ) {
-        requireOperator(operatorId);
-        if (request == null || request.version() == null || request.version() != 0
-                || repository.find().isPresent()) {
-            throw conflict();
-        }
-        WechatServiceCardConfig environment = environmentConfigOrNull();
-        if (environment == null) {
-            throw validation();
-        }
-        // This is an explicit, behavior-preserving cut-over. The legacy callback is only
-        // retained when its token/key pair passed the same strict validation as a DB update.
-        StoredConfig stored = stored(
-                new StaticFields(
-                        environment.accountTemplateRecordId(),
-                        environment.fallbackProductImage(),
-                        joinHosts(environment.allowedImageHosts()),
-                        environment.preferOrderSnapshotImages()),
-                environment.callbackEnabled(),
-                validTokenOrNull(environment.callbackToken()),
-                validAesKeyOrNull(environment.callbackEncodingAesKey())
-        );
-        if (!repository.insert(stored, operatorId, true)) {
-            throw conflict();
-        }
-        repository.appendAudit(
-                1, "LEGACY_IMPORT", AuditState.empty(), audit(stored), operatorId);
         return current();
     }
 
@@ -228,35 +177,6 @@ public class WechatServiceCardConfigService implements WechatServiceCardConfigRe
                     WechatServiceCardConfig.Source.DATABASE);
         } catch (BusinessException ex) {
             throw unavailable();
-        } catch (RuntimeException ex) {
-            throw unavailable();
-        }
-    }
-
-    private WechatServiceCardConfig environmentConfigOrNull() {
-        boolean anyConfigured = StringUtils.hasText(legacyEnvironment.accountTemplateRecordId())
-                || StringUtils.hasText(legacyEnvironment.fallbackProductImage())
-                || !legacyEnvironment.allowedImageHosts().isEmpty()
-                || StringUtils.hasText(legacyEnvironment.callback().token())
-                || StringUtils.hasText(legacyEnvironment.callback().encodingAesKey())
-                || legacyEnvironment.callback().enabled();
-        if (!anyConfigured) {
-            return null;
-        }
-        try {
-            StaticFields fields = normalizeStaticFields(
-                    legacyEnvironment.accountTemplateRecordId(),
-                    legacyEnvironment.fallbackProductImage(),
-                    legacyEnvironment.allowedImageHosts(),
-                    legacyEnvironment.preferOrderSnapshotImages());
-            String token = optionalToken(legacyEnvironment.callback().token());
-            String aesKey = optionalAesKey(legacyEnvironment.callback().encodingAesKey());
-            requireCallbackPair(legacyEnvironment.callback().enabled(), token, aesKey);
-            return new WechatServiceCardConfig(
-                    fields.accountTemplateRecordId(), fields.fallbackProductImage(),
-                    Set.copyOf(splitHosts(fields.allowedImageHosts())),
-                    fields.preferOrderSnapshotImages(), legacyEnvironment.callback().enabled(),
-                    token, aesKey, WechatServiceCardConfig.Source.ENVIRONMENT);
         } catch (RuntimeException ex) {
             throw unavailable();
         }
@@ -361,14 +281,6 @@ public class WechatServiceCardConfigService implements WechatServiceCardConfigRe
         return normalized;
     }
 
-    private String validTokenOrNull(String value) {
-        try {
-            return StringUtils.hasText(value) ? requiredToken(value) : null;
-        } catch (RuntimeException ex) {
-            return null;
-        }
-    }
-
     private String optionalAesKey(String value) {
         if (!StringUtils.hasText(value)) {
             return "";
@@ -386,14 +298,6 @@ public class WechatServiceCardConfigService implements WechatServiceCardConfigRe
             return normalized;
         } catch (IllegalArgumentException ex) {
             throw validation();
-        }
-    }
-
-    private String validAesKeyOrNull(String value) {
-        try {
-            return StringUtils.hasText(value) ? requiredAesKey(value) : null;
-        } catch (RuntimeException ex) {
-            return null;
         }
     }
 
@@ -508,8 +412,6 @@ public class WechatServiceCardConfigService implements WechatServiceCardConfigRe
 
     private AdminWechatServiceCardConfigResponse response(
             WechatServiceCardConfig config,
-            boolean configured,
-            boolean importAvailable,
             long version,
             Long updatedBy,
             java.time.LocalDateTime updatedAt
@@ -517,12 +419,12 @@ public class WechatServiceCardConfigService implements WechatServiceCardConfigRe
         boolean tokenConfigured = StringUtils.hasText(config.callbackToken());
         boolean aesConfigured = StringUtils.hasText(config.callbackEncodingAesKey());
         return new AdminWechatServiceCardConfigResponse(
-                configured, config.source().name(), config.accountTemplateRecordId(),
+                true, config.source().name(), config.accountTemplateRecordId(),
                 config.fallbackProductImage(), config.allowedImageHosts().stream().sorted().toList(),
                 config.preferOrderSnapshotImages(), config.callbackEnabled(),
                 tokenConfigured ? MASKED_SECRET : "", tokenConfigured,
                 aesConfigured ? MASKED_SECRET : "", aesConfigured,
-                importAvailable, version, updatedBy, updatedAt);
+                version, updatedBy, updatedAt);
     }
 
     private AuditState audit(StoredConfig config) {

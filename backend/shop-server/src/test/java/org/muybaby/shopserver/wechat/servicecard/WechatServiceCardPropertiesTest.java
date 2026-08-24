@@ -1,10 +1,11 @@
 package org.muybaby.shopserver.wechat.servicecard;
 
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfig;
 import org.springframework.util.unit.DataSize;
 
 import java.time.Duration;
-import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,50 +44,41 @@ public class WechatServiceCardPropertiesTest {
     }
 
     @Test
-    void callbackCredentialsRequireWechatAlphanumericCharacterSet() {
-        var valid = new WechatServiceCardProperties.Callback(
-                true, "Token2026", "A".repeat(43), Duration.ofMinutes(5)
-        );
-        var invalidToken = new WechatServiceCardProperties.Callback(
-                true, "token-with-dash", "A".repeat(43), Duration.ofMinutes(5)
-        );
-        var invalidAesKey = new WechatServiceCardProperties.Callback(
-                true, "Token2026", "A".repeat(20) + "/" + "A".repeat(22), Duration.ofMinutes(5)
-        );
-
-        assertThat(valid.secureReady()).isTrue();
-        assertThat(invalidToken.secureReady()).isFalse();
-        assertThat(invalidAesKey.secureReady()).isFalse();
+    void databaseCallbackCredentialsRequireWechatAlphanumericCharacterSet() {
+        assertThat(config("Token2026", "A".repeat(43)).callbackSecureReady()).isTrue();
+        assertThat(config("token-with-dash", "A".repeat(43)).callbackSecureReady()).isFalse();
+        assertThat(config("Token2026", "A".repeat(20) + "/" + "A".repeat(22))
+                .callbackSecureReady()).isFalse();
     }
 
     @Test
-    void toStringRedactsCallbackSecretsAndNonPublicIntegrationValues() {
+    void databaseConfigToStringRedactsCallbackSecretsAndIntegrationValues() {
         String sensitive = "sensitive-service-card-value";
-        WechatServiceCardProperties.Callback callback = new WechatServiceCardProperties.Callback(
-                true, sensitive, "A".repeat(43), Duration.ofMinutes(5));
-        WechatServiceCardProperties properties = new WechatServiceCardProperties(
-                false, false, sensitive, Duration.ofSeconds(15), 50,
-                Duration.ofMinutes(2), 8, Duration.ofMinutes(1), Duration.ofMinutes(30),
-                Duration.ofMinutes(1), Duration.ofHours(6), 2,
-                Duration.ofSeconds(3), Duration.ofSeconds(15),
-                DataSize.ofMegabytes(1), DataSize.ofKilobytes(64),
-                "https://" + sensitive + ".example/image.png", false,
-                List.of(sensitive + ".example"), callback);
+        WechatServiceCardConfig config = new WechatServiceCardConfig(
+                sensitive, "https://" + sensitive + ".example/image.png",
+                Set.of(sensitive + ".example"), false, true, sensitive,
+                "A".repeat(43), WechatServiceCardConfig.Source.DATABASE
+        );
 
-        assertThat(callback.toString()).doesNotContain(sensitive, "A".repeat(43));
-        assertThat(properties.toString()).doesNotContain(sensitive, "A".repeat(43));
+        assertThat(config.toString()).doesNotContain(sensitive, "A".repeat(43));
     }
 
     public static WechatServiceCardProperties properties(Duration unknown, Duration maxUnknown) {
         return new WechatServiceCardProperties(
-                true, true, "template-record",
                 Duration.ofSeconds(15), 50, Duration.ofMinutes(2), 8,
                 Duration.ofMinutes(1), Duration.ofMinutes(30), unknown, maxUnknown, 2,
                 Duration.ofSeconds(3), Duration.ofSeconds(15),
                 DataSize.ofMegabytes(1), DataSize.ofKilobytes(64),
+                new WechatServiceCardProperties.Callback(Duration.ofMinutes(5))
+        );
+    }
+
+    private static WechatServiceCardConfig config(String token, String aesKey) {
+        return new WechatServiceCardConfig(
+                "template-record",
                 "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
-                false, List.of("admin.junxiangshiping.cn"),
-                new WechatServiceCardProperties.Callback(false, "", "", Duration.ofMinutes(5))
+                Set.of("admin.junxiangshiping.cn"), false, true, token, aesKey,
+                WechatServiceCardConfig.Source.DATABASE
         );
     }
 }

@@ -48,16 +48,6 @@ public class RefundCallbackService {
     }
 
     public void handleRefundNotification(
-            String timestamp,
-            String nonce,
-            String serial,
-            String signature,
-            String body
-    ) {
-        handleRefundNotification(null, timestamp, nonce, serial, signature, body);
-    }
-
-    public void handleRefundNotification(
             String routeToken,
             String timestamp,
             String nonce,
@@ -209,12 +199,12 @@ public class RefundCallbackService {
         int insertedRows = jdbcClient.sql("""
                         insert into payment_callback_log
                             (callback_type, notify_id, out_trade_no, out_refund_no, refund_id, event_type,
-                             resource_digest, raw_body_sha256, route_mode, route_digest,
+                             resource_digest, raw_body_sha256, route_digest,
                              status, error_code, error_message,
                              created_at, updated_at)
                         values
                             (:callbackType, :notifyId, :outTradeNo, :outRefundNo, :refundId, :eventType,
-                             :resourceDigest, :rawBodySha256, :routeMode, :routeDigest,
+                             :resourceDigest, :rawBodySha256, :routeDigest,
                              :status, :errorCode, :errorMessage,
                              :createdAt, :updatedAt)
                         """)
@@ -226,8 +216,7 @@ public class RefundCallbackService {
                 .param("eventType", nullToEmpty(eventType))
                 .param("resourceDigest", nullToEmpty(resourceDigest))
                 .param("rawBodySha256", rawBodySha256)
-                .param("routeMode", StringUtils.hasText(routeToken) ? "ROUTED" : "LEGACY")
-                .param("routeDigest", StringUtils.hasText(routeToken) ? sha256(routeToken.trim()) : "")
+                .param("routeDigest", sha256(routeToken))
                 .param("status", status)
                 .param("errorCode", nullToEmpty(errorCode))
                 .param("errorMessage", nullToEmpty(errorMessage))

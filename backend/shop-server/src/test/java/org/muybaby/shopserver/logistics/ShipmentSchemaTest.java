@@ -25,11 +25,12 @@ class ShipmentSchemaTest {
 
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent, paid_at, shipped_at)
                         values
                             (19201, 'SHIP-SCHEMA-ORDER', 1, 'SHIPPED', 'CART', 'ship-schema-order',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              5980, 5980, 0, 0, 5980, 5980, current_timestamp, current_timestamp)
                         """)
                 .update();
@@ -71,12 +72,14 @@ class ShipmentSchemaTest {
 
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent, paid_at, shipped_at)
                         values
                             (19221, 'RELIABLE-SHIP-SCHEMA', 1, 'SHIPPED', 'CART',
-                             'reliable-ship-schema', 5980, 5980, 0, 0, 5980, 5980,
+                             'reliable-ship-schema',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                             5980, 5980, 0, 0, 5980, 5980,
                              current_timestamp, current_timestamp)
                         """).update();
         jdbcClient.sql("""
@@ -123,12 +126,14 @@ class ShipmentSchemaTest {
     void nonExpressShipmentAllowsNullCarrierAndTrackingNumber() {
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent, paid_at, shipped_at)
                         values
                             (19211, 'NON-EXPRESS-SCHEMA-ORDER', 1, 'SHIPPED', 'CART',
-                             'non-express-schema-order', 5980, 5980, 0, 0, 5980, 5980,
+                             'non-express-schema-order',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                             5980, 5980, 0, 0, 5980, 5980,
                              current_timestamp, current_timestamp)
                         """)
                 .update();

@@ -33,11 +33,12 @@ class OrderSchemaTest {
                 .update();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent)
                         values
                             (8001, 'ORD-SCHEMA-001', 1, 'CREATED', 'CART', 'schema-order-001',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              9980, 7980, 500, 0, 7480, 0)
                         """)
                 .update();

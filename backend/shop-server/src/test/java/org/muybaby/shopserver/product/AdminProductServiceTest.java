@@ -634,40 +634,40 @@ class AdminProductServiceTest {
     }
 
     @Test
-    void legacyUpdatePreservesOmittedV2CollectionsAndSkuMappingsWhileExplicitEmptyListsClearThem() {
+    void publishedAdminPayloadPreservesOmittedCollectionsAndSkuMappingsWhileExplicitEmptyListsClearThem() {
         Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(
-                0L, "Legacy V2 Preservation Category", "", null, 1, "ENABLED"));
+                0L, "Compatibility Payload Category", "", null, 1, "ENABLED"));
         jdbcClient.sql("""
                         insert into product_guarantee_service
                             (terms_name, content_description, icon, sort_order, visible)
-                        values ('Legacy V2 Guarantee', 'legacy guarantee', '', 0, true)
+                        values ('Compatibility Guarantee', 'compatibility guarantee', '', 0, true)
                         """)
                 .update();
         Long guaranteeServiceId = jdbcClient.sql("""
                         select id from product_guarantee_service
-                        where terms_name = 'Legacy V2 Guarantee'
+                        where terms_name = 'Compatibility Guarantee'
                         """)
                 .query(Long.class)
                 .single();
         AdminSpuSpecGroupUpsertRequest colorGroup = new AdminSpuSpecGroupUpsertRequest(
                 null,
-                "legacy-color",
+                "compat-color",
                 "颜色",
                 true,
                 0,
                 List.of(
-                        new AdminSpuSpecValueUpsertRequest(null, "legacy-red", "红色", "", null, 0),
-                        new AdminSpuSpecValueUpsertRequest(null, "legacy-blue", "蓝色", "", null, 1)
+                        new AdminSpuSpecValueUpsertRequest(null, "compat-red", "红色", "", null, 0),
+                        new AdminSpuSpecValueUpsertRequest(null, "compat-blue", "蓝色", "", null, 1)
                 )
         );
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
-                categoryId, "Legacy V2 Preservation SPU", "", "https://example.test/legacy-v2-main.jpg", null,
+                categoryId, "Compatibility Payload SPU", "", "https://example.test/compat-main.jpg", null,
                 "", null, "MULTI", 1L, 0L, "", "", 0, List.of(),
                 List.of(
-                        new AdminSkuUpsertRequest(null, "LEGACY-V2-RED", null, null, 1990L, 0L, 2, null,
-                                null, null, "", null, "ENABLED", 0, true, null, List.of("legacy-red"), false),
-                        new AdminSkuUpsertRequest(null, "LEGACY-V2-BLUE", null, null, 2090L, 0L, 3, null,
-                                null, null, "", null, "ENABLED", 1, false, null, List.of("legacy-blue"), false)
+                        new AdminSkuUpsertRequest(null, "COMPAT-RED", null, null, 1990L, 0L, 2, null,
+                                null, null, "", null, "ENABLED", 0, true, null, List.of("compat-red"), false),
+                        new AdminSkuUpsertRequest(null, "COMPAT-BLUE", null, null, 2090L, 0L, 3, null,
+                                null, null, "", null, "ENABLED", 1, false, null, List.of("compat-blue"), false)
                 ),
                 List.of(colorGroup), "热卖", "ORANGE", List.of(guaranteeServiceId),
                 false, false, true
@@ -676,9 +676,9 @@ class AdminProductServiceTest {
 
         adminProductService.updateSpu(spuId, new AdminSpuUpsertRequest(
                 categoryId,
-                "Legacy V2 Preservation SPU Updated",
+                "Compatibility Payload SPU Updated",
                 "",
-                "https://example.test/legacy-v2-main.jpg",
+                "https://example.test/compat-main.jpg",
                 null,
                 "",
                 "",
@@ -694,16 +694,16 @@ class AdminProductServiceTest {
         ));
 
         var preserved = productReadMapper.adminSpuDetail(spuId);
-        assertThat(preserved.title()).isEqualTo("Legacy V2 Preservation SPU Updated");
+        assertThat(preserved.title()).isEqualTo("Compatibility Payload SPU Updated");
         assertThat(preserved.specGroups()).hasSize(1);
         assertThat(preserved.specGroups().getFirst().values())
                 .extracting("valueKey")
-                .containsExactly("legacy-red", "legacy-blue");
+                .containsExactly("compat-red", "compat-blue");
         assertThat(preserved.displayBadgeText()).isEqualTo("热卖");
         assertThat(preserved.displayBadgeTone()).isEqualTo("ORANGE");
         assertThat(preserved.guaranteeServiceIds()).containsExactly(guaranteeServiceId);
         assertThat(preserved.skus()).extracting("specValueKeys")
-                .containsExactly(List.of("legacy-red"), List.of("legacy-blue"));
+                .containsExactly(List.of("compat-red"), List.of("compat-blue"));
 
         adminProductService.updateSpu(spuId, new AdminSpuUpsertRequest(
                 categoryId, preserved.title(), preserved.subtitle(), preserved.mainImage(), preserved.mainImageFileId(),

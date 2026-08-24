@@ -285,7 +285,7 @@ public class PaymentFinalizationService {
         return new PaymentOrderRow(
                 rs.getLong("id"),
                 rs.getLong("order_id"),
-                rs.getObject("payment_config_id", Long.class),
+                rs.getLong("payment_config_id"),
                 rs.getString("payment_config_fingerprint"),
                 rs.getString("out_trade_no"),
                 rs.getString("transaction_id"),

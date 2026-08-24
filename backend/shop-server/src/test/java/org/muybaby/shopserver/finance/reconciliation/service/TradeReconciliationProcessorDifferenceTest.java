@@ -168,11 +168,13 @@ class TradeReconciliationProcessorDifferenceTest {
         long orderId = 9_350_011L;
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              created_at, updated_at)
                         values
                             (:id, 'ORDER-PROCESSOR-DIFF', 1, 'PAID', 'CART',
-                             'processor-diff-order', :now, :now)
+                             'processor-diff-order',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                             :now, :now)
                         """)
                 .param("id", orderId)
                 .param("now", LocalDateTime.of(2026, 8, 1, 1, 0))

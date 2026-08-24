@@ -19,11 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 小程序端售后读路径：列表、详情、按订单查询统一走这里，
- * 行数据由 {@link AfterSaleV2ReadService} 装饰，同时渲染 V1 整单
- * 与 V2 按件两种 flow_version 的历史与新增售后单。
- */
+/** 小程序端售后读路径：列表、详情、按订单查询统一走这里。 */
 @Service
 public class AppAfterSaleQueryService {
 

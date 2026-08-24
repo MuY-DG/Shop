@@ -975,9 +975,12 @@ class AdminProductSpuControllerTest {
         if (paid) {
             jdbcClient.sql("""
                             insert into shop_order
-                                (order_no, user_id, status, source, idempotency_key, paid_at)
+                                (order_no, user_id, status, source, idempotency_key,
+                                 checkout_request_digest, paid_at)
                             values
-                                (:orderNo, 1, :status, 'DIRECT', :idempotencyKey, current_timestamp)
+                                (:orderNo, 1, :status, 'DIRECT', :idempotencyKey,
+                                 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                                 current_timestamp)
                             """)
                     .param("orderNo", orderNo)
                     .param("status", orderStatus)
@@ -986,9 +989,10 @@ class AdminProductSpuControllerTest {
         } else {
             jdbcClient.sql("""
                             insert into shop_order
-                                (order_no, user_id, status, source, idempotency_key)
+                                (order_no, user_id, status, source, idempotency_key, checkout_request_digest)
                             values
-                                (:orderNo, 1, :status, 'DIRECT', :idempotencyKey)
+                                (:orderNo, 1, :status, 'DIRECT', :idempotencyKey,
+                                 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
                             """)
                     .param("orderNo", orderNo)
                     .param("status", orderStatus)

@@ -43,8 +43,8 @@ class CartSchemaTest {
                 .param(categoryId)
                 .update();
         jdbcClient.sql("""
-                        insert into product_sku (id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent, stock_available, weight_gram, image, status, sort_order)
-                        values (?, ?, 'CART-SCHEMA-SKU', '{\"规格\":\"300g\"}', '300g', 3990, 4990, 10, 300, 'https://example.test/sku.jpg', 'ENABLED', 1)
+                        insert into product_sku (id, spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent, stock_available, weight_gram, image, status, sort_order, combination_key)
+                        values (?, ?, 'CART-SCHEMA-SKU', '{\"规格\":\"300g\"}', '300g', 3990, 4990, 10, 300, 'https://example.test/sku.jpg', 'ENABLED', 1, 'CART-SCHEMA-SKU')
                         """)
                 .param(skuId)
                 .param(spuId)

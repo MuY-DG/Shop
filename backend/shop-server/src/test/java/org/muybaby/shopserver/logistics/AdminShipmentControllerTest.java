@@ -59,9 +59,6 @@ class AdminShipmentControllerTest {
     private OpaqueTokenService opaqueTokenService;
 
     @Autowired
-    private ShippingProperties shippingProperties;
-
-    @Autowired
     private ControllableWechatShippingProvider wechatShippingProvider;
 
     @BeforeEach
@@ -80,11 +77,11 @@ class AdminShipmentControllerTest {
         jdbcClient.sql("delete from coupon_claim_record").update();
         jdbcClient.sql("delete from coupon_template").update();
         jdbcClient.sql("delete from wechat_delivery_company").update();
+        setShippingRuntime(false);
         jdbcClient.sql("""
                         insert into wechat_delivery_company(delivery_id, delivery_name, enabled, synced_at)
                         values ('SF', '顺丰速运', true, timestamp '2026-07-08 09:00:00')
                         """).update();
-        shippingProperties.setUploadEnabled(false);
         wechatShippingProvider.reset();
     }
 
@@ -513,7 +510,7 @@ class AdminShipmentControllerTest {
 
     @Test
     void adminAndAppShipmentResponsesExposeExactlyTheirPublicContracts() throws Exception {
-        shippingProperties.setUploadEnabled(true);
+        setShippingRuntime(true);
         String adminToken = adminLoginAndExtractToken();
         AppLoginSession session = appLogin("ship-exact-contract-user");
         long orderId = insertPaidOrder(session, "SHIP-EXACT-CONTRACT", "wx-exact-contract");
@@ -577,7 +574,7 @@ class AdminShipmentControllerTest {
 
     @Test
     void mockUploadEnabledUploadsAndCapturesProviderRequest() throws Exception {
-        shippingProperties.setUploadEnabled(true);
+        setShippingRuntime(true);
         String adminToken = adminLoginAndExtractToken();
         AppLoginSession session = appLogin("ship-upload-user");
         long orderId = insertPaidOrder(session, "SHIP-UPLOADED", "wx-ship-uploaded");
@@ -604,7 +601,7 @@ class AdminShipmentControllerTest {
 
     @Test
     void providerBusinessExceptionWhenUploadEnabledKeepsShipmentAndRecordsFailedUpload() throws Exception {
-        shippingProperties.setUploadEnabled(true);
+        setShippingRuntime(true);
         wechatShippingProvider.failWith(new BusinessException(ErrorCode.WECHAT_PHONE_FAILED));
         String adminToken = adminLoginAndExtractToken();
         long orderId = insertPaidOrder(appLogin("ship-provider-business-failure-user"), "SHIP-PROVIDER-BUSINESS", "wx-provider-business");
@@ -629,7 +626,7 @@ class AdminShipmentControllerTest {
 
     @Test
     void providerRuntimeExceptionWhenUploadEnabledKeepsShipmentAndRecordsSafeFailure() throws Exception {
-        shippingProperties.setUploadEnabled(true);
+        setShippingRuntime(true);
         AppLoginSession session = appLogin("ship-provider-runtime-failure-user");
         wechatShippingProvider.failWith(new IllegalStateException(
                 "synthetic token=sensitive-token openid=" + session.openid() + " tracking=SF1234567890 payload={secret}"
@@ -671,7 +668,7 @@ class AdminShipmentControllerTest {
 
     @Test
     void unavailableProviderResultIsNotCollapsedIntoFailed() throws Exception {
-        shippingProperties.setUploadEnabled(true);
+        setShippingRuntime(true);
         wechatShippingProvider.respondWith(WechatShippingUploadResult.unavailable(
                 "TRADE_NOT_MANAGED", "WeChat shipping capability is unavailable"
         ));
@@ -697,7 +694,7 @@ class AdminShipmentControllerTest {
 
     @Test
     void unknownProviderResultIsNotCollapsedIntoFailedOrMarkedUploaded() throws Exception {
-        shippingProperties.setUploadEnabled(true);
+        setShippingRuntime(true);
         wechatShippingProvider.respondWith(WechatShippingUploadResult.unknown(
                 "REQUEST_AMBIGUOUS", "WeChat shipping upload result is unknown"
         ));
@@ -724,7 +721,7 @@ class AdminShipmentControllerTest {
 
     @Test
     void missingTransactionIdWhenUploadEnabledKeepsShipmentAndRecordsFailedUpload() throws Exception {
-        shippingProperties.setUploadEnabled(true);
+        setShippingRuntime(true);
         String adminToken = adminLoginAndExtractToken();
         long orderId = insertPaidOrder(appLogin("ship-missing-transaction-user"), "SHIP-MISSING-TX", "");
 
@@ -748,7 +745,7 @@ class AdminShipmentControllerTest {
 
     @Test
     void retryIncrementsRetryCountAndDoesNotDuplicateShipmentRows() throws Exception {
-        shippingProperties.setUploadEnabled(true);
+        setShippingRuntime(true);
         String adminToken = adminLoginAndExtractToken();
         long orderId = insertPaidOrder(appLogin("ship-retry-user"), "SHIP-RETRY", "");
 
@@ -882,7 +879,6 @@ class AdminShipmentControllerTest {
         String adminToken = adminLoginAndExtractToken();
         AppLoginSession adminDetailUser = appLogin("ship-stale-admin-detail-user");
         long adminOrderId = insertPaidOrder(adminDetailUser, "SHIP-STALE-ADMIN", "wx-stale-admin");
-        shippingProperties.setUploadEnabled(false);
         mockMvc.perform(post("/admin/orders/{orderId}/ship", adminOrderId)
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -930,6 +926,18 @@ class AdminShipmentControllerTest {
                         """)
                 .param("attempt", LocalDateTime.now().minusMinutes(11))
                 .param("orderId", orderId)
+                .update();
+    }
+
+    private void setShippingRuntime(boolean enabled) {
+        jdbcClient.sql("""
+                        update wechat_shipping_runtime_setting
+                        set upload_enabled = :enabled,
+                            delivery_enabled = false,
+                            receipt_reconciliation_enabled = false
+                        where id = 1
+                        """)
+                .param("enabled", enabled)
                 .update();
     }
 
@@ -1056,15 +1064,20 @@ class AdminShipmentControllerTest {
         long orderId = insertOrder(session, orderNo, "PAID", orderNo + "-MCH", transactionId);
         jdbcClient.sql("""
                         insert into payment_order
-                            (order_id, payment_config_id, out_trade_no, prepay_id, transaction_id,
+                            (order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, prepay_id, transaction_id,
                              payer_openid, status, amount_cent, expires_at, paid_at, created_at, updated_at)
                         values
-                            (:orderId, null, :outTradeNo, :prepayId, :transactionId,
+                            (:orderId, :paymentConfigId, :paymentConfigFingerprint,
+                             :notificationRouteToken, :outTradeNo, :prepayId, :transactionId,
                              :openid, 'PAID', 3980, timestamp '2026-07-08 11:00:00',
                              timestamp '2026-07-08 10:10:00', timestamp '2026-07-08 10:00:00',
                              timestamp '2026-07-08 10:10:00')
                         """)
                 .param("orderId", orderId)
+                .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(orderId))
                 .param("outTradeNo", orderNo + "-MCH")
                 .param("prepayId", "mock-prepay-" + orderNo)
                 .param("transactionId", transactionId)
@@ -1077,13 +1090,14 @@ class AdminShipmentControllerTest {
         long orderId = Math.abs((orderNo + System.nanoTime()).hashCode()) + 100000L;
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_name,
                              coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent,
                              receiver_name, receiver_phone, receiver_address, payment_transaction_id,
                              merchant_trade_no, paid_at, created_at, updated_at)
                         values
                             (:orderId, :orderNo, :userId, :status, 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              3980, 3980, '', 0, 0, 3980, :paidAmount,
                              'Ship User', '13800000000', 'Ship Test Address', :transactionId,
                              :outTradeNo, :paidAt, timestamp '2026-07-08 10:00:00',

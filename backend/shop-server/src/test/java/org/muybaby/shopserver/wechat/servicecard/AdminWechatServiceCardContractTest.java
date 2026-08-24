@@ -15,7 +15,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
-import java.time.Duration;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -93,7 +92,7 @@ class AdminWechatServiceCardContractTest {
     void invalidPaginationOrderAndStateFailAsBusinessValidationBeforeSql() {
         WechatServiceCardAdminReadService service = new WechatServiceCardAdminReadService(
                 mock(JdbcClient.class),
-                () -> WechatServiceCardTestConfigs.fromProperties(disabledProperties()),
+                WechatServiceCardTestConfigs::disabledConfig,
                 () -> new WechatPlatformCredentials(
                         "app-id", "secret", WechatPlatformCredentials.Source.DATABASE),
                 mock(WechatServiceCardRuntimeSettingService.class),
@@ -135,18 +134,4 @@ class AdminWechatServiceCardContractTest {
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
     }
 
-    private WechatServiceCardProperties disabledProperties() {
-        return new WechatServiceCardProperties(
-                false, false, "", Duration.ofSeconds(15), 50,
-                Duration.ofMinutes(2), 8, Duration.ofMinutes(1), Duration.ofMinutes(30),
-                Duration.ofMinutes(1), Duration.ofHours(6), 2,
-                Duration.ofSeconds(3), Duration.ofSeconds(15),
-                org.springframework.util.unit.DataSize.ofMegabytes(1),
-                org.springframework.util.unit.DataSize.ofKilobytes(64),
-                "", false, List.of(),
-                new WechatServiceCardProperties.Callback(
-                        false, "", "", Duration.ofMinutes(5)
-                )
-        );
-    }
 }

@@ -34,10 +34,11 @@ class WechatWaybillSchemaTest {
 
         jdbcClient.sql("""
                         insert into shop_order(
-                            id, order_no, user_id, status, source, idempotency_key,
+                            id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             receiver_name, receiver_phone, receiver_address)
                         values (
                             198301, 'WAYBILL-LEGACY-ADDRESS', 1, 'PAID', 'CART', 'waybill-legacy-address',
+                            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                             '历史收货人', '13800138000', '北京市北京市朝阳区历史路1号')
                         """)
                 .update();
@@ -113,18 +114,28 @@ class WechatWaybillSchemaTest {
                         select count(*)
                         from information_schema.indexes
                         where lower(index_name) in (
-                            'uk_order_electronic_waybill_provider_order',
-                            'uk_order_electronic_waybill_attempt',
-                            'uk_order_electronic_waybill_idempotency',
                             'idx_order_electronic_waybill_order_status',
                             'idx_order_electronic_waybill_status_attempt',
-                            'uk_order_shipment_electronic_waybill',
-                            'uk_shipment_waybill_registration_shipment',
                             'idx_shipment_waybill_registration_status_claim'
                         )
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(8);
+                .single()).isEqualTo(3);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.table_constraints
+                        where lower(constraint_type) = 'unique'
+                          and lower(constraint_name) in (
+                            'uk_order_electronic_waybill_provider_order',
+                            'uk_order_electronic_waybill_attempt',
+                            'uk_order_electronic_waybill_idempotency',
+                            'uk_order_shipment_electronic_waybill',
+                            'uk_shipment_waybill_registration_shipment'
+                          )
+                        """)
+                .query(Integer.class)
+                .single()).isEqualTo(5);
 
         assertThat(jdbcClient.sql("""
                         select count(*)
@@ -220,12 +231,20 @@ class WechatWaybillSchemaTest {
                         from information_schema.indexes
                         where lower(index_name) in (
                             'idx_shipment_tracking_claim',
-                            'uk_shipment_tracking_event_identity',
                             'idx_shipment_tracking_event_display'
                         )
                         """)
                 .query(Integer.class)
-                .single()).isEqualTo(3);
+                .single()).isEqualTo(2);
+
+        assertThat(jdbcClient.sql("""
+                        select count(*)
+                        from information_schema.table_constraints
+                        where lower(constraint_name) = 'uk_shipment_tracking_event_identity'
+                          and lower(constraint_type) = 'unique'
+                        """)
+                .query(Integer.class)
+                .single()).isOne();
 
         assertThat(jdbcClient.sql("""
                         select count(*)

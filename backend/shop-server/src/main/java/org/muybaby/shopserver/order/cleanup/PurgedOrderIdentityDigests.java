@@ -19,10 +19,6 @@ public final class PurgedOrderIdentityDigests {
         return sha256(nullToEmpty(value));
     }
 
-    public static String nullableValue(String value) {
-        return value == null || value.isBlank() ? null : value(value.trim());
-    }
-
     private static String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

@@ -17,7 +17,6 @@ import org.muybaby.shopserver.maintenance.cleanup.dto.DataCleanupTaskUpdateReque
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
-import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
 import org.muybaby.shopserver.storage.service.StorageAssetCleanupService;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,9 +90,6 @@ class StorageAssetTimezoneTest {
     private StorageService storageService;
 
     @Autowired
-    private PrivateStorageFileService privateStorageFileService;
-
-    @Autowired
     private StorageProvider storageProvider;
 
     @Autowired
@@ -127,11 +123,12 @@ class StorageAssetTimezoneTest {
                 .update();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent,
                              coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent)
                         values
                             (:orderId, 'TZ-ASSET-ORDER', :userId, 'PAID', 'CART', 'tz-asset-order',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              1000, 1000, 0, 0, 1000, 1000)
                         """)
                 .param("orderId", ORDER_ID)
@@ -162,9 +159,6 @@ class StorageAssetTimezoneTest {
 
             assertTtlMinutes(secretId, 119, 120);
             assertTtlMinutes(evidence.id(), 1_439, 1_440);
-            var inspectedSecret = privateStorageFileService.inspectPaymentSecrets(List.of(secretId));
-            assertThatCode(() -> privateStorageFileService.lockAndRevalidatePaymentSecrets(
-                    inspectedSecret, List.of())).doesNotThrowAnyException();
             assertThat(cleanupService.cleanupExpiredAssets(100, Duration.ofMinutes(30)).cleanedCount())
                     .isZero();
 
@@ -175,10 +169,6 @@ class StorageAssetTimezoneTest {
                             """)
                     .param("assetIds", List.of(secretId, evidence.id()))
                     .update();
-
-            assertThatThrownBy(() -> privateStorageFileService.inspectPaymentSecrets(List.of(secretId)))
-                    .isInstanceOfSatisfying(BusinessException.class, exception ->
-                    assertThat(exception.errorCode()).isEqualTo(ErrorCode.STORAGE_FILE_UNAVAILABLE));
 
             assertThatThrownBy(() -> appAfterSaleV2Service.apply(
                     APP_USER,

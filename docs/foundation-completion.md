@@ -1,55 +1,71 @@
 # 当前工程基线
 
-> 本文替代早期的“下一阶段做认证和 RBAC”交接。认证、会话隔离、RBAC 和
-> 后端驱动菜单已是当前基线，不再是待实施计划。
+本文描述代码仓库当前具备的能力和证据边界。早期按迁移版本编写的阶段报告保留在 `docs/superpowers/`，不再作为部署说明。
 
 ## 系统定位
 
-当前是可运行的单商家、单仓为主、微信小程序渠道自营电商 V1。已具备：
+Shop 是单商家、单仓为主的微信小程序自营电商，包含 Spring Boot 后端、Vue Admin 和原生微信小程序。
 
-- SPU/SKU、购物车、优惠券、库存锁定、下单和超时关单。
-- 微信支付、退款、回调、异常恢复和按售后商品数量幂等库存回补。
-- V93 微信交易账单（`ALL`）下载、完整性校验、与本地成功支付/退款的日对账、
-  差异处理和受控 CSV 导出。
-- V97 财务对账 Admin 运行控制：数据库覆盖、处理器/每日任务分阶段启用、CAS、追加审计、
-  支付与私有 COS readiness，以及不依赖重启的即时停用。
-- 后台发货、微信发货可靠投递、物流轨迹和电子面单。
-- V94 微信新版 `notify_type=2001` “购物（实体物流）服务动态”：交易状态意图可靠
-  入库、顺序外呼、未知结果主动对账和 SAFE+JSON 失败回调审计。
-- V95/V101 Admin “微信服务动态”运维页：数据库运行时 Capture/Worker 开关、两阶段开启、
-  CAS 防覆盖、append-only 变更审计、修复候选与投递队列只读诊断；模板/图片/Callback
-  接入项由数据库接管，Token/AESKey 字段级加密且只返回掩码与 configured 状态。
-- 售后 V2：商品/数量级申请与审批、服务端退款金额计算、部分/累计退款、仅退款、
-  退货退款、商家退货地址、用户退货物流、商家验收/拒收和退货超时关闭。
-- 历史整单 V1 售后数据及在途退款回调兼容。
-- 评价、收藏、足迹、客服、用户管理与账号自助注销。
-- 商家资质、法律文档、食品披露、COS 存储、运营统计和数据清理。
-- 管理员认证、会话管理、登录保护、RBAC 和后端驱动菜单。
+当前代码覆盖：
+
+- 管理员认证、Redis 会话、登录保护、RBAC、后端驱动菜单和系统日志；
+- SPU/SKU、分类、素材、库存、购物车、优惠券、首页装修和内容管理；
+- 下单、超时关闭、微信支付、回调、退款恢复和售后；
+- 部分退款、商品数量级售后、库存回补和人工异常处置；
+- 拆分包裹、微信发货、物流轨迹、电子面单和收货对账；
+- 微信服务动态、客服、用户状态与账号权利请求；
+- COS 直传与清理、商家资质、法律文档和食品披露；
+- 运营统计、交易账单对账、差异处置和受控导出。
+
+“代码覆盖”不等于正式平台已经配置或验收。真实微信、支付、COS、物流、证照和恢复演练仍要逐环境取得外部证据。
+
+## 数据库 generation 2
+
+当前 Flyway 基线是按领域拆分的 V1-V7，只接受全新空库：
+
+| 版本 | 领域 |
+| --- | --- |
+| V1 | 身份、认证与权限 |
+| V2 | 商品、内容与存储 |
+| V3 | 交易、购物车与订单 |
+| V4 | 支付、退款与售后 |
+| V5 | 履约、物流与微信能力 |
+| V6 | 运营、财务、客服与合规 |
+| V7 | RBAC、字典和安全引导数据 |
+
+该基线与旧 schema 不兼容，不提供存量升级路径。本机、txcloud 和 shop 都已被业务方确认数据可清理，但真正删除各目标数据库/数据卷仍应在明确目标、完成备份和发布门禁后分别执行。
+
+首次启动只写结构、参考数据、安全关闭的运行时控制行和停用的 `Super` 哨兵账号；不会写入真实微信、支付或 COS 凭据。
+
+## 配置基线
+
+- Spring Profile 只有 `local`、`server`、`test`；
+- txcloud/shop 共用 `server` Profile；
+- 唯一 tracked 模板是 `config/runtime/runtime.env.example`；
+- ignored 目标清单是 `local.env`、`txcloud.env`、`shop.env`；
+- 清单只承载 DB/Redis 和应用主密钥；
+- 可信代理由固定 Compose edge IPAM 与 server Profile 精确 `/32` 管理；
+- 业务凭据与业务运行开关由 Admin 写入加密数据库；
+- 数据库敏感字段只接受 v2 key-ring 加密格式；
+- 缺少业务配置时明确失败或保持安全关闭，不从进程变量兜底。
 
 ## 验证矩阵
 
 | 层级 | 命令 | 证明范围 |
 | --- | --- | --- |
-| 后端单元/H2 | `cd backend/shop-server && ./mvnw test` | 无 Docker 的快速默认层，刻意排除 `integration` 标签 |
-| 后端集成 | `./mvnw -Pintegration verify` | Testcontainers 中的 MySQL 8.4.10、Redis 7.4.9-alpine、并发锁与迁移 |
-| 集成报告 | `./scripts/assert-integration-test-results.sh target/failsafe-reports` | 当前必需套件全部出现，执行数非零，跳过数为零 |
-| 测试分层 | `./scripts/verify-test-layers.sh` | Testcontainers 必须带 `integration` 标签，不允许无 Docker 静默跳过，镜像版本固定 |
-| Flyway 静态 | `./scripts/verify-flyway-migrations.sh` | 文件命名合规、版本从 V1 连续且无重复 |
-| 管理后台 | `cd admin && pnpm check && CI=true pnpm build && pnpm check:generated-imports` | 类型、lint、测试、生产构建和生成元数据一致性 |
-| 小程序 | `cd miniprogram && pnpm check` | 运行时与测试类型检查、行为测试 |
+| Flyway 静态 | `cd backend/shop-server && ./scripts/ci/verify-flyway-migrations.sh` | V1-V7 连续、无重复、命名合规 |
+| 测试分层 | `./scripts/ci/verify-test-layers.sh` | Testcontainers 标签、禁止静默跳过、固定镜像版本 |
+| 后端单元/H2 | `./mvnw test` | 无 Docker 的快速默认层 |
+| 后端集成 | `./mvnw -Pintegration verify` | MySQL/Redis、迁移、事务、锁和并发路径 |
+| 集成报告 | `./scripts/ci/assert-integration-test-results.sh target/failsafe-reports` | 所有 integration 套件实际执行且零跳过 |
+| Admin | `cd admin && pnpm check && CI=true pnpm build && pnpm check:generated-imports` | 类型、lint、测试、生产构建和生成元数据 |
+| 小程序 | `cd miniprogram && pnpm check` | 运行时/测试类型与行为测试 |
 
-`./mvnw test` 绿色只能声明单元/H2 层通过，不得书写为“后端全部测试通过”。
-发布候选版必须同时保存两层结果。GitHub Actions 已经把两层分开为独立作业。
-
-2026-08-12 当前 V97 基线已在 GitHub Actions 实际执行：后端默认单元/H2 层、
-MySQL/Redis Testcontainers 集成层和小程序门禁均通过。Flyway V1-V97 共 97 个版本连续
-且无重复。Admin 的自动导入声明和 ESLint globals 元数据作为可重复构建输入纳入版本库；
-CI 在生产构建后校验生成结果无差异，避免本地已生成文件掩盖干净 clone 的类型或 lint
-失败。
+`./mvnw test` 绿色只能声明默认层通过，不能写成“后端全部测试通过”。发布候选必须同时保存集成层报告。
 
 ## 发布识别
 
-镜像构建固化 Git SHA 和 UTC 构建时间。生产 `/actuator/info` 的公开白名单只有：
+镜像构建固化 Git SHA 和 UTC 构建时间。`/actuator/info` 只公开：
 
 ```text
 gitSha
@@ -58,31 +74,17 @@ version
 flywayVersion
 ```
 
-部署脚本在健康后核对 Git SHA、构建时间、应用版本和已执行 Flyway 版本。该端点不得
-加入路径、分支、环境变量、连接串、商户号或密钥摘要。
+服务器部署脚本会核对这些字段。不得向该端点加入路径、分支、清单内容、连接串、商户号或密钥摘要。
 
-## 仍未由自动化证明的事项
+## 自动化未证明的事项
 
-- 真实微信登录、支付、售后 V2 部分/累计退款及退款回调、发货信息、物流插件和电子面单打印。
-- V92-V97 在生产 MySQL 实际存量数据上的升级、锁竞争与回滚/恢复演练；Testcontainers
-  的 MySQL 8.4.10 通过不能替代生产环境发布验证。
-- `api.junxiangshiping.cn` / `admin.junxiangshiping.cn` 的 DNS 与 TLS 基线已建立，小程序
-  `request`、`uploadFile`、`downloadFile` 合法域名仍需在微信公众平台配置；每次发布仍需
-  用正式配置包在真机发起实际请求，并核对真实生产回调和完整链路。
-- 真实商家资质、法律文本、食品标签事实和商品逐一审核。
-- V93 真实商户交易账单的下载、摘要校验、差异处置、导出权限和每日调度尚未由生产
-  证据证明。V93 只核对微信交易账单 `ALL` 与本地支付/退款，不下载微信资金账单，
-  也不证明结算或银行到账。
-- V93 首版单商户单日账单默认最多 50,000 行；明细与新差异采用分块 SQL 写入，但整批
-  证据发布仍是一个数据库事务，不应被描述为已完成 staging/分段提交架构。
-- V94/V95 代码实现和 Admin 开关不等于已完成生产送达验收：生产账号已完成
-  `/wechat/mini/message` SAFE+JSON 配置和 GET 握手，但支付后 24 小时内的真实激活、
-  30 天更新窗口、失败事件 POST 回调和微信客户端展示仍需外部验收。
-  它不是传统 `wx.requestSubscribeMessage` 订阅消息；支付成功、客服回复、低库存等其他通知
-  仍未实现真实模板授权、用户同意和送达验收。
-- 发票、采购入库、盘点、多包裹和多仓仍属后续能力。
-- 线上告警、备份失败告警和恢复演练属于外部运营证据，不能由仓库测试代替。
+- 真实微信登录、手机号授权、支付、部分/累计退款及回调；
+- 微信发货、服务动态、物流插件、电子面单和客户端展示；
+- COS 桶权限、CORS、自定义域名、数据万象和对象生命周期；
+- 正式域名、TLS、微信合法域名和真机行为；
+- 商家证照、法律文本、食品标签与商品事实；
+- 真实商户交易账单、差异处置和资金/银行到账；
+- 线上告警、异机备份、恢复演练和故障切换；
+- 高并发和长时间运行下的容量边界。
 
-完整发布前置条件见 [production-release-checklist.md](production-release-checklist.md)。
-日常开发命令见 [dev-setup.md](dev-setup.md)，可执行本地检查见
-[smoke-checks.md](smoke-checks.md)。早期 `docs/superpowers` 设计/计划文档仅作为历史证据。
+完整发布门禁见 [production-release-checklist.md](production-release-checklist.md)，开发入口见 [dev-setup.md](dev-setup.md)，验收步骤见 [smoke-checks.md](smoke-checks.md)。

@@ -18,7 +18,6 @@ public record WechatServiceCardConfigEntity(
         String callbackAesKeyKeyId,
         long callbackAesKeySecretRevision,
         long revision,
-        LocalDateTime importedFromEnvAt,
         Long createdBy,
         Long updatedBy,
         LocalDateTime callbackTokenReencryptedAt,

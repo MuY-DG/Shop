@@ -70,7 +70,6 @@ public record WechatServiceCardConfig(
     }
 
     public enum Source {
-        DATABASE,
-        ENVIRONMENT
+        DATABASE
     }
 }

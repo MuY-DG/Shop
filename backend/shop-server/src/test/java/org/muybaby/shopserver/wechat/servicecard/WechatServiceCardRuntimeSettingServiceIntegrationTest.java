@@ -6,16 +6,13 @@ import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentialResolver;
 import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentials;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.muybaby.shopserver.wechat.servicecard.dto.AdminWechatServiceCardRuntimeUpdateRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.unit.DataSize;
-
-import java.time.Duration;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,7 +31,7 @@ class WechatServiceCardRuntimeSettingServiceIntegrationTest {
     void resetRuntimeOverride() {
         jdbcClient.sql("delete from wechat_service_card_runtime_audit").update();
         jdbcClient.sql("delete from wechat_service_card_runtime_setting").update();
-        readyService = service(readyProperties(), readyMiniProgram());
+        readyService = service(readyMiniProgram(), WechatServiceCardTestConfigs::readyConfig);
     }
 
     @Test
@@ -103,9 +100,9 @@ class WechatServiceCardRuntimeSettingServiceIntegrationTest {
         readyService.update(request(true, true, 1, "enable worker after review"), 1L);
 
         WechatServiceCardRuntimeSettingService brokenService = service(
-                disabledProperties(), () -> {
+                () -> {
                     throw new IllegalStateException("missing credentials");
-                }
+                }, WechatServiceCardTestConfigs::disabledConfig
         );
         WechatServiceCardRuntimeSettingService.RuntimeSetting disabled = brokenService.update(
                 request(false, false, 2, "emergency provider shutdown"), 1L
@@ -129,12 +126,11 @@ class WechatServiceCardRuntimeSettingServiceIntegrationTest {
     }
 
     private WechatServiceCardRuntimeSettingService service(
-            WechatServiceCardProperties properties,
-            WechatPlatformCredentialResolver credentialResolver
+            WechatPlatformCredentialResolver credentialResolver,
+            WechatServiceCardConfigResolver configResolver
     ) {
         return new WechatServiceCardRuntimeSettingService(
-                jdbcClient, properties, credentialResolver,
-                () -> WechatServiceCardTestConfigs.fromProperties(properties)
+                jdbcClient, credentialResolver, configResolver
         );
     }
 
@@ -159,45 +155,6 @@ class WechatServiceCardRuntimeSettingServiceIntegrationTest {
         assertThatThrownBy(action::run)
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
-    }
-
-    private WechatServiceCardProperties readyProperties() {
-        return properties(
-                "template-record",
-                "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
-                List.of("admin.junxiangshiping.cn"),
-                new WechatServiceCardProperties.Callback(
-                        true,
-                        "callbackToken123",
-                        "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY",
-                        Duration.ofMinutes(5)
-                )
-        );
-    }
-
-    private WechatServiceCardProperties disabledProperties() {
-        return properties(
-                "", "", List.of(),
-                new WechatServiceCardProperties.Callback(
-                        false, "", "", Duration.ofMinutes(5)
-                )
-        );
-    }
-
-    private WechatServiceCardProperties properties(
-            String template,
-            String image,
-            List<String> imageHosts,
-            WechatServiceCardProperties.Callback callback
-    ) {
-        return new WechatServiceCardProperties(
-                false, false, template, Duration.ofSeconds(15), 50,
-                Duration.ofMinutes(2), 8, Duration.ofMinutes(1), Duration.ofMinutes(30),
-                Duration.ofMinutes(1), Duration.ofHours(6), 2,
-                Duration.ofSeconds(3), Duration.ofSeconds(15),
-                DataSize.ofMegabytes(1), DataSize.ofKilobytes(64),
-                image, false, imageHosts, callback
-        );
     }
 
     private WechatPlatformCredentialResolver readyMiniProgram() {

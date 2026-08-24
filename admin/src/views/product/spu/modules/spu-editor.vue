@@ -151,7 +151,6 @@
   import { createDefaultFoodDisclosure, normalizeFoodDisclosureForSave } from './food-compliance'
   import { autoSingleSpecText, resolveSingleSpecText } from './sku-derivation'
   import {
-    buildCombinationKey,
     createEditorKey,
     createEmptySku,
     hydrateSkuImageFallbacks,
@@ -260,67 +259,6 @@
     otherTabRef.value
   ])
 
-  const parseSpecJson = (value: string) => {
-    try {
-      const parsed = JSON.parse(value || '{}')
-      if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') return {}
-      return Object.fromEntries(
-        Object.entries(parsed).map(([key, item]) => [key, String(item ?? '')])
-      ) as Record<string, string>
-    } catch {
-      return {}
-    }
-  }
-
-  const deriveLegacyMultiSpec = (skus: ProductEditorSku[]) => {
-    const parsedRows = skus.map((sku) => parseSpecJson(sku.specJson))
-    const groupNames = Array.from(new Set(parsedRows.flatMap((row) => Object.keys(row))))
-    if (!groupNames.length) return { groups: [] as ProductEditorSpecGroup[], skus }
-
-    const groups = groupNames.map<ProductEditorSpecGroup>((name, groupIndex) => {
-      const valueNames = Array.from(
-        new Set(
-          parsedRows.map((row) => row[name]).filter((value): value is string => Boolean(value))
-        )
-      )
-      return {
-        groupKey: `legacy_group_${groupIndex + 1}`,
-        name,
-        imageEnabled: groupIndex === 0,
-        sortOrder: groupIndex,
-        values: valueNames.map((valueName, valueIndex) => {
-          const sourceSku = skus.find((_, skuIndex) => parsedRows[skuIndex][name] === valueName)
-          return {
-            valueKey: `legacy_value_${groupIndex + 1}_${valueIndex + 1}`,
-            valueName,
-            image: groupIndex === 0 ? sourceSku?.image || '' : '',
-            imageFileId: groupIndex === 0 ? sourceSku?.imageFileId || null : null,
-            sortOrder: valueIndex
-          }
-        })
-      }
-    })
-
-    const normalizedSkus = skus.map((sku, skuIndex) => {
-      const row = parsedRows[skuIndex]
-      const parts = groups
-        .map((group) => ({
-          group,
-          value: group.values.find((value) => value.valueName === row[group.name])
-        }))
-        .filter((part): part is { group: ProductEditorSpecGroup; value: ProductEditorSpecValue } =>
-          Boolean(part.value)
-        )
-      return {
-        ...sku,
-        combinationKey: buildCombinationKey(parts),
-        specValueKeys: parts.map((part) => part.value.valueKey)
-      }
-    })
-    normalizeDefaultSku(normalizedSkus)
-    return { groups, skus: normalizedSkus }
-  }
-
   const mapSku = (sku: DetailSku, index: number): ProductEditorSku => ({
     id: sku.id,
     skuCode: sku.skuCode || '',
@@ -340,7 +278,7 @@
     imageFileId: sku.imageFileId ?? null,
     status: (sku.status || 'ENABLED') as ProductSkuStatus,
     defaultSelected: sku.defaultSelected ?? index === 0,
-    combinationKey: sku.combinationKey || (index === 0 ? 'SINGLE' : `LEGACY:${sku.id || index}`),
+    combinationKey: sku.combinationKey,
     specValueKeys: sku.specValueKeys || [],
     wholesaleTiers: (sku.wholesaleTiers || []).map((tier) => ({ ...tier })),
     sortOrder: sku.sortOrder ?? index
@@ -374,13 +312,7 @@
 
     let skus = (detail.skus || []).map((sku, index) => mapSku(sku as DetailSku, index))
     let specGroups = mapSpecGroups(detail.specGroups || [])
-    let specType = detail.specType || 'SINGLE'
-    if (!specGroups.length && skus.length > 1) {
-      const legacy = deriveLegacyMultiSpec(skus)
-      specGroups = legacy.groups
-      skus = legacy.skus
-      if (specGroups.length) specType = 'MULTI'
-    }
+    const specType = detail.specType || 'SINGLE'
     if (specType === 'SINGLE') {
       const single = skus[0] || createEmptySku()
       const storedSpecText = normalizeSingleSpecText(single.specText)

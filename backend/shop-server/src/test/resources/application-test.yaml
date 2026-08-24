@@ -10,12 +10,10 @@ spring:
     redis:
       host: 127.0.0.1
       port: 6379
+      password: ''
   flyway:
     enabled: true
     locations: classpath:db/migration,classpath:db/testmigration
-    placeholders:
-      seed_super_status: ENABLED
-      seed_super_password_hash: "$2y$10$VtYIL778Ftr75pHOJ3dV0efoMsPK20vZncmZ/vB6tkYj3aW9fqT.i"
   servlet:
     multipart:
       max-file-size: 50MB
@@ -23,8 +21,8 @@ spring:
 
 shop:
   secret-encryption:
-    write-version: 1
-    legacy-key: 0123456789abcdef0123456789abcdef
+    active-key-id: test-main
+    key-ring: test-main=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     rotation-enabled: false
   customer-service:
     transfer-timeout-job-enabled: false
@@ -53,17 +51,8 @@ shop:
     mini-program:
       mock-enabled: true
     shipping:
-      upload-enabled: false
       delivery:
-        enabled: false
         claim-timeout: 10m
-      receipt-reconciliation:
-        enabled: false
-    service-card-2001:
-      enabled: false
-      worker-enabled: false
-      callback:
-        enabled: false
   pay:
     mock-enabled: true
     initiation:

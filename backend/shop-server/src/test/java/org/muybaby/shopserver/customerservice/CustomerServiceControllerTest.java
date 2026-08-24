@@ -687,9 +687,12 @@ class CustomerServiceControllerTest {
     private long insertOrder(long userId, String orderNo) {
         jdbcClient.sql("""
                         insert into shop_order
-                            (order_no, user_id, status, idempotency_key, payable_amount_cent, created_at, updated_at)
+                            (order_no, user_id, status, idempotency_key, checkout_request_digest,
+                             payable_amount_cent, created_at, updated_at)
                         values
-                            (:orderNo, :userId, 'PAID', :idempotencyKey, 3990, current_timestamp, current_timestamp)
+                            (:orderNo, :userId, 'PAID', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                             3990, current_timestamp, current_timestamp)
                         """)
                 .param("orderNo", orderNo)
                 .param("userId", userId)
@@ -719,10 +722,10 @@ class CustomerServiceControllerTest {
         jdbcClient.sql("""
                         insert into product_sku
                             (spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                             stock_available, status, created_at, updated_at)
+                             stock_available, status, combination_key, created_at, updated_at)
                         values
                             (:productId, :skuCode, '{}', '', :priceCent, :priceCent,
-                             10, 'ENABLED', current_timestamp, current_timestamp)
+                             10, 'ENABLED', :skuCode, current_timestamp, current_timestamp)
                         """)
                 .param("productId", productId)
                 .param("skuCode", "CS-" + productId)

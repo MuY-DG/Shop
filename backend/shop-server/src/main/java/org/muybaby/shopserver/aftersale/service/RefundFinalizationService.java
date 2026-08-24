@@ -180,7 +180,6 @@ public class RefundFinalizationService {
                                ro.restock_required,
                                ro.restocked_at,
                                ro.recovery_claim_token,
-                               asr.flow_version,
                                o.status as order_status,
                                o.paid_amount_cent,
                                o.refunded_amount_cent,
@@ -189,7 +188,6 @@ public class RefundFinalizationService {
                                po.out_trade_no
                         from refund_order ro
                         join payment_order po on po.id = ro.payment_order_id
-                        join after_sale_request asr on asr.id = ro.after_sale_id
                         join shop_order o on o.id = ro.order_id
                         where ro.out_refund_no = :outRefundNo
                         for update
@@ -295,12 +293,11 @@ public class RefundFinalizationService {
                 .param("expectedStatus", AfterSaleStatus.REFUND_FAILED.name())
                 .update();
         requireUpdated(afterSaleRows, "after-sale resumed refunding state");
-        if (refund.flowVersion() >= 2) {
-            long refundAfter = refund.refundedAmountCent() + refund.refundAmountCent();
-            if (refundAfter > refund.paidAmountCent()) {
-                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-            }
-            requireUpdated(jdbcClient.sql("""
+        long refundAfter = refund.refundedAmountCent() + refund.refundAmountCent();
+        if (refundAfter > refund.paidAmountCent()) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        requireUpdated(jdbcClient.sql("""
                             update shop_order
                             set refund_status = :refundStatus, updated_at = :now
                             where id = :orderId
@@ -315,31 +312,14 @@ public class RefundFinalizationService {
                     .param("orderStatus", refund.orderStatus())
                     .param("refundedAmountCent", refund.refundedAmountCent())
                     .update(), "order resumed refunding state");
-            afterSaleStatusLogService.record(
-                    refund.afterSaleId(), AfterSaleStatus.REFUND_FAILED.name(),
-                    AfterSaleStatus.REFUNDING.name(), "REFUND_RECOVERY_RESUMED",
-                    "SYSTEM", null, "渠道确认退款仍在处理中", now);
-            orderStatusLogService.record(
-                    refund.orderId(), refund.afterSaleId(), refund.orderStatus(), refund.orderStatus(),
-                    "REFUND_RECOVERY_RESUMED", "SYSTEM", null,
-                    "渠道确认退款仍在处理中", now);
-        } else {
-            requireUpdated(jdbcClient.sql("""
-                            update shop_order
-                            set refund_status = :refundStatus, updated_at = :now
-                            where id = :orderId and status = :orderStatus
-                            """)
-                    .param("refundStatus", OrderRefundStatus.FULL_REFUNDING.name())
-                    .param("now", now)
-                    .param("orderId", refund.orderId())
-                    .param("orderStatus", OrderStatus.REFUNDING.name())
-                    .update(), "legacy order resumed refunding state");
-            orderStatusLogService.record(
-                    refund.orderId(), refund.afterSaleId(),
-                    OrderStatus.REFUNDING.name(), OrderStatus.REFUNDING.name(),
-                    "REFUND_RECOVERY_RESUMED", "SYSTEM", null,
-                    "渠道确认退款仍在处理中", now);
-        }
+        afterSaleStatusLogService.record(
+                refund.afterSaleId(), AfterSaleStatus.REFUND_FAILED.name(),
+                AfterSaleStatus.REFUNDING.name(), "REFUND_RECOVERY_RESUMED",
+                "SYSTEM", null, "渠道确认退款仍在处理中", now);
+        orderStatusLogService.record(
+                refund.orderId(), refund.afterSaleId(), refund.orderStatus(), refund.orderStatus(),
+                "REFUND_RECOVERY_RESUMED", "SYSTEM", null,
+                "渠道确认退款仍在处理中", now);
         return Outcome.PROCESSING;
     }
 
@@ -352,9 +332,7 @@ public class RefundFinalizationService {
         LocalDateTime successAt = providerState.successAt() == null ? now : providerState.successAt();
         refundInventoryRestockService.restockIfRequired(
                 refund.id(), refund.orderId(), refund.restockRequired(), now);
-        if (refund.flowVersion() >= 2) {
-            applyV2ItemRefundSuccess(refund);
-        }
+        applyItemRefundSuccess(refund);
         int refundRows = jdbcClient.sql("""
                         update refund_order
                         set status = :status,
@@ -396,21 +374,20 @@ public class RefundFinalizationService {
                         AfterSaleStatus.REFUNDING.name(), AfterSaleStatus.REFUND_FAILED.name()))
                 .update();
         requireUpdated(afterSaleRows, "after-sale refunded state");
-        if (refund.flowVersion() >= 2) {
-            long refundedAmountCent;
-            try {
-                refundedAmountCent = Math.addExact(
-                        refund.refundedAmountCent(), refund.refundAmountCent());
-            } catch (ArithmeticException exception) {
-                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-            }
-            if (refundedAmountCent > refund.paidAmountCent()) {
-                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-            }
-            boolean fullyRefunded = refundedAmountCent == refund.paidAmountCent();
-            String targetOrderStatus = fullyRefunded
-                    ? OrderStatus.REFUNDED.name() : refund.orderStatus();
-            int orderRows = jdbcClient.sql("""
+        long refundedAmountCent;
+        try {
+            refundedAmountCent = Math.addExact(
+                    refund.refundedAmountCent(), refund.refundAmountCent());
+        } catch (ArithmeticException exception) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        if (refundedAmountCent > refund.paidAmountCent()) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        boolean fullyRefunded = refundedAmountCent == refund.paidAmountCent();
+        String targetOrderStatus = fullyRefunded
+                ? OrderStatus.REFUNDED.name() : refund.orderStatus();
+        int orderRows = jdbcClient.sql("""
                             update shop_order
                             set status = :status,
                                 refund_status = :refundStatus,
@@ -434,50 +411,18 @@ public class RefundFinalizationService {
                     .param("expectedStatus", refund.orderStatus())
                     .param("expectedRefundedAmountCent", refund.refundedAmountCent())
                     .update();
-            requireUpdated(orderRows, "order partial refund state");
-            afterSaleStatusLogService.record(
-                    refund.afterSaleId(), AfterSaleStatus.REFUNDING.name(),
-                    AfterSaleStatus.REFUNDED.name(), "REFUND_SUCCEEDED",
-                    "WECHAT", null, "微信退款成功", successAt);
-            orderStatusLogService.record(
-                    refund.orderId(), refund.afterSaleId(), refund.orderStatus(), targetOrderStatus,
-                    "REFUND_SUCCEEDED", "WECHAT", null, "微信退款成功", successAt);
-        } else {
-            jdbcClient.sql("""
-                            update order_item
-                            set refunded_quantity = quantity
-                            where order_id = :orderId and refunded_quantity < quantity
-                            """)
-                    .param("orderId", refund.orderId())
-                    .update();
-            int orderRows = jdbcClient.sql("""
-                            update shop_order
-                            set status = :status,
-                                refund_status = :refundStatus,
-                                refunded_amount_cent = paid_amount_cent,
-                                last_refund_success_at = :refundedAt,
-                                refunded_at = :refundedAt,
-                                updated_at = :updatedAt
-                            where id = :orderId
-                              and status = :expectedStatus
-                            """)
-                    .param("status", OrderStatus.REFUNDED.name())
-                    .param("refundStatus", OrderRefundStatus.FULLY_REFUNDED.name())
-                    .param("refundedAt", successAt)
-                    .param("updatedAt", now)
-                    .param("orderId", refund.orderId())
-                    .param("expectedStatus", OrderStatus.REFUNDING.name())
-                    .update();
-            requireUpdated(orderRows, "order refunded state");
-            orderStatusLogService.record(
-                    refund.orderId(), refund.afterSaleId(),
-                    OrderStatus.REFUNDING.name(), OrderStatus.REFUNDED.name(),
-                    "REFUND_SUCCEEDED", "WECHAT", null, "微信退款成功", successAt);
-        }
+        requireUpdated(orderRows, "order partial refund state");
+        afterSaleStatusLogService.record(
+                refund.afterSaleId(), AfterSaleStatus.REFUNDING.name(),
+                AfterSaleStatus.REFUNDED.name(), "REFUND_SUCCEEDED",
+                "WECHAT", null, "微信退款成功", successAt);
+        orderStatusLogService.record(
+                refund.orderId(), refund.afterSaleId(), refund.orderStatus(), targetOrderStatus,
+                "REFUND_SUCCEEDED", "WECHAT", null, "微信退款成功", successAt);
         return Outcome.SUCCESS;
     }
 
-    private void applyV2ItemRefundSuccess(RefundState refund) {
+    private void applyItemRefundSuccess(RefundState refund) {
         java.util.List<RefundedItemState> items = jdbcClient.sql("""
                         select asi.order_item_id, asi.refunded_quantity_before,
                                asi.approved_quantity, oi.quantity, oi.refunded_quantity
@@ -571,8 +516,7 @@ public class RefundFinalizationService {
                 .param("expectedStatus", AfterSaleStatus.REFUNDING.name())
                 .update();
         requireUpdated(afterSaleRows, "after-sale refund failure state");
-        if (refund.flowVersion() >= 2) {
-            requireUpdated(jdbcClient.sql("""
+        requireUpdated(jdbcClient.sql("""
                             update shop_order
                             set refund_status = :refundStatus, updated_at = :now
                             where id = :orderId
@@ -585,25 +529,13 @@ public class RefundFinalizationService {
                     .param("orderStatus", refund.orderStatus())
                     .param("refundedAmountCent", refund.refundedAmountCent())
                     .update(), "order refund failure state");
-            afterSaleStatusLogService.record(
-                    refund.afterSaleId(), AfterSaleStatus.REFUNDING.name(),
-                    AfterSaleStatus.REFUND_FAILED.name(), "REFUND_FAILED",
-                    "WECHAT", null, "微信退款失败：" + providerStatus, now);
-            orderStatusLogService.record(
-                    refund.orderId(), refund.afterSaleId(), refund.orderStatus(), refund.orderStatus(),
-                    "REFUND_FAILED", "WECHAT", null, "微信退款失败：" + providerStatus, now);
-        } else {
-            requireUpdated(jdbcClient.sql("""
-                            update shop_order
-                            set refund_status = :refundStatus, updated_at = :now
-                            where id = :orderId and status = :orderStatus
-                            """)
-                    .param("refundStatus", OrderRefundStatus.REFUND_FAILED.name())
-                    .param("now", now)
-                    .param("orderId", refund.orderId())
-                    .param("orderStatus", OrderStatus.REFUNDING.name())
-                    .update(), "legacy order refund failure state");
-        }
+        afterSaleStatusLogService.record(
+                refund.afterSaleId(), AfterSaleStatus.REFUNDING.name(),
+                AfterSaleStatus.REFUND_FAILED.name(), "REFUND_FAILED",
+                "WECHAT", null, "微信退款失败：" + providerStatus, now);
+        orderStatusLogService.record(
+                refund.orderId(), refund.afterSaleId(), refund.orderStatus(), refund.orderStatus(),
+                "REFUND_FAILED", "WECHAT", null, "微信退款失败：" + providerStatus, now);
         return Outcome.FAILED;
     }
 
@@ -666,7 +598,6 @@ public class RefundFinalizationService {
                 rs.getBoolean("restock_required"),
                 rs.getObject("restocked_at", LocalDateTime.class),
                 rs.getString("recovery_claim_token"),
-                rs.getInt("flow_version"),
                 rs.getString("order_status"),
                 rs.getLong("paid_amount_cent"),
                 rs.getLong("refunded_amount_cent"),
@@ -705,7 +636,6 @@ public class RefundFinalizationService {
             boolean restockRequired,
             LocalDateTime restockedAt,
             String recoveryClaimToken,
-            int flowVersion,
             String orderStatus,
             long paidAmountCent,
             long refundedAmountCent,

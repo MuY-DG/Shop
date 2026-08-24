@@ -16,27 +16,25 @@ class PaymentConfigIdentityValidatorTest {
     private final PaymentConfigIdentityValidator validator = new PaymentConfigIdentityValidator(resolver);
 
     @Test
-    void acceptsMatchingVersionedConfigurationAndLegacyDatabaseIdentity() {
+    void acceptsOnlyMatchingCompleteDatabaseIdentity() {
         ResolvedPaymentConfig config = config(91001L);
         when(resolver.fingerprint(config)).thenReturn("a".repeat(64));
 
         assertThatCode(() -> validator.validate(91001L, "a".repeat(64), config))
                 .doesNotThrowAnyException();
-        assertThatCode(() -> validator.validate(91001L, "", config))
-                .doesNotThrowAnyException();
+        assertConfigurationChanged(() -> validator.validate(91001L, "", config));
     }
 
     @Test
-    void acceptsVersionedEnvironmentConfiguration() {
+    void rejectsConfigurationWithoutDatabaseIdentity() {
         ResolvedPaymentConfig config = config(null);
         when(resolver.fingerprint(config)).thenReturn("b".repeat(64));
 
-        assertThatCode(() -> validator.validate(null, "b".repeat(64), config))
-                .doesNotThrowAnyException();
+        assertConfigurationChanged(() -> validator.validate(null, "b".repeat(64), config));
     }
 
     @Test
-    void rejectsMismatchedConfigurationIdOrFingerprintAndLegacyEnvironmentRows() {
+    void rejectsMismatchedConfigurationIdOrFingerprint() {
         ResolvedPaymentConfig databaseConfig = config(91002L);
         ResolvedPaymentConfig environmentConfig = config(null);
         when(resolver.fingerprint(databaseConfig)).thenReturn("c".repeat(64));

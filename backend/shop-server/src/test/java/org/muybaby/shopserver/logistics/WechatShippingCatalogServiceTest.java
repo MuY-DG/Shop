@@ -45,15 +45,12 @@ class WechatShippingCatalogServiceTest {
     private JdbcClient jdbcClient;
 
     @Autowired
-    private ShippingProperties shippingProperties;
-
-    @Autowired
     private ControllableCatalogProvider provider;
 
     @BeforeEach
     void resetState() {
         jdbcClient.sql("delete from wechat_delivery_company").update();
-        shippingProperties.setUploadEnabled(true);
+        setUploadEnabled(false);
         provider.reset();
     }
 
@@ -68,7 +65,6 @@ class WechatShippingCatalogServiceTest {
 
     @Test
     void disabledConfigurationReportsDisabledWithoutQueryingProvider() {
-        shippingProperties.setUploadEnabled(false);
         provider.capability = WechatShippingCapabilityResult.available();
 
         var response = service.capability(ADMIN);
@@ -84,6 +80,7 @@ class WechatShippingCatalogServiceTest {
 
     @Test
     void enabledRealConfigurationExposesProviderCapability() {
+        setUploadEnabled(true);
         provider.mode = WechatProviderMode.REAL;
         provider.capability = WechatShippingCapabilityResult.available();
 
@@ -100,6 +97,7 @@ class WechatShippingCatalogServiceTest {
 
     @Test
     void mockModeCannotBePresentedAsAvailableEvenIfProviderMisbehaves() {
+        setUploadEnabled(true);
         provider.mode = WechatProviderMode.MOCK;
         provider.capability = WechatShippingCapabilityResult.available();
 
@@ -235,6 +233,18 @@ class WechatShippingCatalogServiceTest {
         return jdbcClient.sql("select count(*) from wechat_delivery_company")
                 .query(Integer.class)
                 .single();
+    }
+
+    private void setUploadEnabled(boolean enabled) {
+        jdbcClient.sql("""
+                        update wechat_shipping_runtime_setting
+                        set upload_enabled = :enabled,
+                            delivery_enabled = false,
+                            receipt_reconciliation_enabled = false
+                        where id = 1
+                        """)
+                .param("enabled", enabled)
+                .update();
     }
 
     @TestConfiguration(proxyBeanMethods = false)

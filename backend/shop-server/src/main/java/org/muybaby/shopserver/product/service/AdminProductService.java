@@ -439,7 +439,6 @@ public class AdminProductService {
         findSkusBySpuIdForUpdate(spuId);
         LocalDateTime restoredAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
 
-        restoreLegacyDeletedChildren(spuId, recycledSpu.deletedAt(), restoredAt);
         int updatedRows = jdbcClient.sql("""
                         update product_spu
                         set status = :status,
@@ -516,60 +515,6 @@ public class AdminProductService {
             throw new BusinessException(ErrorCode.PRODUCT_NOT_IN_RECYCLE_BIN);
         }
         publishHomeChanged();
-    }
-
-    private void restoreLegacyDeletedChildren(Long spuId, LocalDateTime productDeletedAt, LocalDateTime restoredAt) {
-        if (productDeletedAt == null) {
-            return;
-        }
-        jdbcClient.sql("""
-                        update product_sku
-                        set deleted_at = null,
-                            updated_at = :restoredAt
-                        where spu_id = :spuId
-                          and deleted_at = :productDeletedAt
-                        """)
-                .param("restoredAt", restoredAt)
-                .param("spuId", spuId)
-                .param("productDeletedAt", productDeletedAt)
-                .update();
-
-        List<Long> legacyDeletedGroupIds = jdbcClient.sql("""
-                        select id
-                        from product_spu_spec_group
-                        where spu_id = :spuId
-                          and deleted_at >= :productDeletedAt
-                        order by id
-                        for update
-                        """)
-                .param("spuId", spuId)
-                .param("productDeletedAt", productDeletedAt)
-                .query(Long.class)
-                .list();
-        for (Long groupId : legacyDeletedGroupIds) {
-            jdbcClient.sql("""
-                            update product_spu_spec_value
-                            set deleted_at = null,
-                                updated_at = :restoredAt
-                            where group_id = :groupId
-                              and deleted_at >= :productDeletedAt
-                            """)
-                    .param("restoredAt", restoredAt)
-                    .param("groupId", groupId)
-                    .param("productDeletedAt", productDeletedAt)
-                    .update();
-            jdbcClient.sql("""
-                            update product_spu_spec_group
-                            set deleted_at = null,
-                                updated_at = :restoredAt
-                            where id = :groupId
-                              and deleted_at >= :productDeletedAt
-                            """)
-                    .param("restoredAt", restoredAt)
-                    .param("groupId", groupId)
-                    .param("productDeletedAt", productDeletedAt)
-                    .update();
-        }
     }
 
     private void restoreProductFileUsages(ProductSpu spu) {
@@ -1672,7 +1617,9 @@ public class AdminProductService {
             } else if (ProductSpecType.SINGLE.name().equals(product.specType())) {
                 combinationKey = "SINGLE";
             } else {
-                combinationKey = "legacy-" + UUID.nameUUIDFromBytes(
+                // Compatibility for the published Admin payload that can omit structured spec keys.
+                // The generated key keeps new rows valid without depending on any historical row shape.
+                combinationKey = "generated-" + UUID.nameUUIDFromBytes(
                         (specJson + "\u0000" + specText).getBytes(StandardCharsets.UTF_8)
                 );
             }

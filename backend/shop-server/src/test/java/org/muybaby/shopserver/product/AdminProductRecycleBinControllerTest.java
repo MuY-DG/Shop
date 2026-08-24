@@ -677,9 +677,10 @@ class AdminProductRecycleBinControllerTest {
         String orderNo = "RECYCLE" + System.nanoTime();
         jdbcClient.sql("""
                         insert into shop_order
-                            (order_no, user_id, status, source, idempotency_key)
+                            (order_no, user_id, status, source, idempotency_key, checkout_request_digest)
                         values
-                            (:orderNo, 1, 'PAID', 'DIRECT', :idempotencyKey)
+                            (:orderNo, 1, 'PAID', 'DIRECT', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
                         """)
                 .param("orderNo", orderNo)
                 .param("idempotencyKey", "recycle-" + orderNo)

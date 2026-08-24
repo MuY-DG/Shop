@@ -127,13 +127,14 @@ class WechatShippingUploadRecoveryTest {
                 .update();
         jdbcClient.sql("""
                         insert into shop_order(
-                            id, order_no, user_id, status, source, idempotency_key,
+                            id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             product_original_amount_cent, product_amount_cent, coupon_name,
                             coupon_discount_cent, freight_cent, payable_amount_cent,
                             paid_amount_cent, receiver_name, receiver_phone, receiver_address,
                             created_at, updated_at)
                         values (
                             :id, :orderNo, :id, 'SHIPPED', 'CART', :idempotencyKey,
+                            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                             100, 100, '', 0, 0, 100,
                             100, 'Receiver', '13800008000', 'Address',
                             :createdAt, :createdAt)

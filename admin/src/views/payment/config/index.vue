@@ -1,7 +1,7 @@
 <template>
   <div class="payment-config">
     <ElAlert
-      title="选择配置后可直接在下方编辑。正在使用的配置不能重复启用；切换到其他配置后，点击“使用此配置”即可立即生效。"
+      title="选择配置后可直接在下方编辑。回调项填写 HTTPS 基址，系统会为每笔支付或退款自动追加 /r/{随机令牌}。"
       type="info"
       :closable="false"
       show-icon
@@ -23,7 +23,7 @@
             <ElButton
               type="primary"
               v-auth="'payment:config:write'"
-              :disabled="creating || loading || saving || using || importing || deleting"
+              :disabled="creating || loading || saving || using || deleting"
               @click="openCreateForm"
             >
               新增配置
@@ -111,14 +111,14 @@
               "
             />
           </ElFormItem>
-          <ElFormItem label="支付回调 URL" prop="notifyUrl">
+          <ElFormItem label="支付回调基址" prop="notifyUrl">
             <ElInput
               v-model="formData.notifyUrl"
               maxlength="255"
               placeholder="https://域名/wxpay/pay/notify"
             />
           </ElFormItem>
-          <ElFormItem label="退款回调 URL" prop="refundNotifyUrl">
+          <ElFormItem label="退款回调基址" prop="refundNotifyUrl">
             <ElInput
               v-model="formData.refundNotifyUrl"
               maxlength="255"
@@ -158,7 +158,7 @@
               type="primary"
               v-auth="'payment:config:write'"
               :loading="saving"
-              :disabled="using || importing || deleting"
+              :disabled="using || deleting"
               @click="handleSave"
             >
               {{ creating ? '保存配置' : '保存修改' }}
@@ -167,25 +167,14 @@
               type="success"
               v-auth="'payment:config:enable'"
               :loading="using"
-              :disabled="currentUseState.disabled || saving || importing || deleting"
+              :disabled="currentUseState.disabled || saving || deleting"
               @click="handleUse"
             >
               {{ creating ? '保存并使用' : currentUseState.label }}
             </ElButton>
             <ElButton
-              v-if="selectedConfig?.legacySecretFilesPendingImport"
-              v-auth="'payment:config:write'"
-              type="warning"
-              plain
-              :loading="importing"
-              :disabled="saving || using || deleting"
-              @click="handleImportLegacySecrets"
-            >
-              迁移旧秘密文件
-            </ElButton>
-            <ElButton
               v-if="!creating"
-              :disabled="!dirty || saving || using || importing || deleting"
+              :disabled="!dirty || saving || using || deleting"
               @click="resetSelectedForm"
             >
               撤销未保存修改
@@ -197,14 +186,14 @@
               plain
               :title="deleteState.reason || '删除配置'"
               :loading="deleting"
-              :disabled="deleteState.disabled || saving || using || importing || deleting"
+              :disabled="deleteState.disabled || saving || using || deleting"
               @click="handleDelete"
             >
               删除配置
             </ElButton>
             <ElButton
               v-if="creating && configs.length > 0"
-              :disabled="saving || using || importing || deleting"
+              :disabled="saving || using || deleting"
               @click="cancelCreate"
             >
               取消新增
@@ -226,7 +215,6 @@
     enablePaymentConfig,
     fetchEffectivePaymentConfig,
     fetchPaymentConfigs,
-    importLegacyPaymentSecretFiles,
     updatePaymentConfig
   } from '@/api/payment'
   import { paymentConfigDeleteState, paymentConfigUseState } from './payment-config-state'
@@ -238,7 +226,6 @@
   const loading = ref(false)
   const saving = ref(false)
   const using = ref(false)
-  const importing = ref(false)
   const deleting = ref(false)
   const creating = ref(false)
   const configs = ref<Api.Payment.Config[]>([])
@@ -507,27 +494,6 @@
     if (creating.value) return createPaymentConfig(payload, showSuccessMessage)
     if (!selectedConfig.value) throw new Error('请选择支付配置')
     return updatePaymentConfig(selectedConfig.value.id, payload, showSuccessMessage)
-  }
-
-  const handleImportLegacySecrets = async () => {
-    if (!selectedConfig.value) return
-    await ElMessageBox.confirm(
-      '将读取旧私有存储中的密钥正文，加密写入支付配置，并解除旧文件引用。支付来源和启用状态不会改变。',
-      '迁移旧秘密文件',
-      {
-        type: 'warning',
-        confirmButtonText: '确认迁移',
-        cancelButtonText: '取消'
-      }
-    )
-    importing.value = true
-    try {
-      const imported = await importLegacyPaymentSecretFiles(selectedConfig.value.id, false)
-      await loadData(imported.id)
-      ElMessage.success('旧秘密文件已迁移为数据库加密正文')
-    } finally {
-      importing.value = false
-    }
   }
 
   const handleSave = async () => {

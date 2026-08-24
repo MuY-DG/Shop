@@ -7,7 +7,6 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.logistics.LogisticsType;
-import org.muybaby.shopserver.logistics.ShippingProperties;
 import org.muybaby.shopserver.logistics.WechatProviderMode;
 import org.muybaby.shopserver.logistics.WechatShippingUploadStatus;
 import org.muybaby.shopserver.logistics.dto.AdminShipOrderRequest;
@@ -85,9 +84,6 @@ class ShipmentWorkflowMySqlConcurrencyTest {
     private WechatShippingUploadCoordinator coordinator;
 
     @Autowired
-    private ShippingProperties shippingProperties;
-
-    @Autowired
     private BlockingProvider provider;
 
     @BeforeEach
@@ -100,8 +96,14 @@ class ShipmentWorkflowMySqlConcurrencyTest {
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from order_item").update();
         jdbcClient.sql("delete from shop_order").update();
+        assertThat(jdbcClient.sql("""
+                        update wechat_shipping_runtime_setting
+                        set upload_enabled=true,
+                            delivery_enabled=false,
+                            receipt_reconciliation_enabled=false
+                        where id=1
+                        """).update()).isOne();
         provider.reset();
-        shippingProperties.setUploadEnabled(true);
     }
 
     @Test
@@ -229,13 +231,14 @@ class ShipmentWorkflowMySqlConcurrencyTest {
                 .param("id", id).param("openid", "mysql-openid-" + id).update();
         jdbcClient.sql("""
                         insert into shop_order(
-                            id, order_no, user_id, status, source, idempotency_key,
+                            id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             product_original_amount_cent, product_amount_cent, coupon_name,
                             coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent,
                             receiver_name, receiver_phone, receiver_address,
                             payment_transaction_id, merchant_trade_no, paid_at, created_at, updated_at)
                         values (
                             :id, :orderNo, :id, 'PAID', 'CART', :key,
+                            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                             100, 100, '', 0, 0, 100, 100,
                             'Receiver', '13800008000', 'Address',
                             :transactionId, :outTradeNo, :now, :now, :now)
@@ -245,13 +248,19 @@ class ShipmentWorkflowMySqlConcurrencyTest {
                 .param("now", now).update();
         jdbcClient.sql("""
                         insert into payment_order(
-                            order_id, payment_config_id, out_trade_no, prepay_id, transaction_id,
+                            order_id, payment_config_id, payment_config_fingerprint,
+                            notification_route_token, out_trade_no, prepay_id, transaction_id,
                             payer_openid, status, amount_cent, expires_at, paid_at, created_at, updated_at)
                         values (
-                            :id, null, :outTradeNo, :prepayId, :transactionId,
+                            :id, :paymentConfigId, :paymentConfigFingerprint,
+                            :notificationRouteToken, :outTradeNo, :prepayId, :transactionId,
                             :openid, 'PAID', 100, :now, :now, :now, :now)
                         """)
-                .param("id", id).param("outTradeNo", "mch-mysql-" + id)
+                .param("id", id)
+                .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(id))
+                .param("outTradeNo", "mch-mysql-" + id)
                 .param("prepayId", "prepay-mysql-" + id).param("transactionId", "wx-mysql-" + id)
                 .param("openid", "mysql-openid-" + id).param("now", now).update();
         jdbcClient.sql("""

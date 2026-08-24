@@ -1,76 +1,62 @@
-# Shop edge and deployment environments
+# Shop 环境与边缘入口
 
-The two public environments are intentionally isolated:
+项目只保留三套明确目标。txcloud 与 shop 的容器结构和 Spring 配置完全相同，差异只存在
+于各自的 runtime manifest、域名和外部平台配置。
 
-| SSH target | Purpose | API | Admin | Local secret files |
-| --- | --- | --- | --- | --- |
-| `txcloud` | development/integration | `https://api.muybaby6.icu` | `https://admin.muybaby6.icu` | existing `.env.prod.local` and `.env.infrastructure.local` |
-| `shop` | production | `https://api.junxiangshiping.cn` | `https://admin.junxiangshiping.cn` | `.env.shop.local` and `.env.infrastructure.shop.local` |
+| 目标 | 用途 | Spring Profile | 本机私密文件 |
+| --- | --- | --- | --- |
+| `local` | 本机开发 | `local` | `backend/shop-server/config/runtime/local.env` |
+| `txcloud` | 开发/集成服务器 | `server` | `backend/shop-server/config/runtime/txcloud.env` |
+| `shop` | 正式生产服务器 | `server` | `backend/shop-server/config/runtime/shop.env` |
 
-Do not copy the txcloud database, Docker volumes, environment files, WeChat
-credentials, payment configuration, COS credentials, or encryption keys into the
-fresh production environment.
+上述三个私密文件结构一致、互不复制且不会提交 Git。微信、小程序、支付、COS、服务动态
+和业务运行开关均在 Admin 中配置；runtime manifest 只保存数据库、Redis 和数据库敏感
+字段的主加密密钥。
 
-## OpenResty routing
+## OpenResty
 
-The 1Panel website records remain the owner of the domain and certificate. The
-versioned files under `ops/openresty/` document the effective custom configuration;
-updating these files alone does not change a server.
+1Panel 网站记录继续负责域名和证书，版本化的参考配置位于 `ops/openresty/`。修改仓库
+文件不会自动修改服务器。
 
-- The API host sends normal HTTP traffic to `127.0.0.1:8080` and gives
-  `/realtime` a WebSocket upgrade path.
-- The Admin host serves the built SPA. `/admin/**` goes to the backend,
-  `/realtime` upgrades to WebSocket, and every other unknown route falls back to
-  `index.html` so refreshing a Vue route does not return 404.
-- OpenResty overwrites `X-Forwarded-For` with `$remote_addr`. The backend trusts
-  exactly one verified Docker bridge gateway, not arbitrary client-supplied proxy
-  headers.
+- API 域名把普通 HTTP 流量转发到 `127.0.0.1:8080`，`/realtime` 支持 WebSocket。
+- Admin 域名提供 SPA 静态文件，把 `/admin/**` 和 `/realtime` 转给后端，并对前端路由
+  回退到 `index.html`。
+- OpenResty 必须覆盖 `X-Forwarded-For`；后端只信任 Compose 固定 edge 网关
+  `172.23.0.1/32`，该边界受版本控制而不再由环境变量覆盖。
 
-## Fresh production bootstrap
+1Panel、Docker 的安装以及 1Panel 密码轮换由服务器管理员完成，仓库不再提供相关脚本。
 
-Prepare independent production files and a one-time Super credential:
+## 新环境
+
+在本机生成并校验目标清单：
 
 ```bash
-backend/shop-server/scripts/init-prod-env.sh --environment shop
-backend/shop-server/scripts/init-bootstrap-admin.sh shop
+cd backend/shop-server
+./scripts/config/init-runtime-env.sh shop
+./scripts/config/validate-runtime-env.sh shop
 ```
 
-Set the verified Docker bridge gateway in `.env.shop.local`, then deploy a clean,
-committed revision:
+txcloud 把参数改成 `txcloud`。不要把一个环境的数据库密码或主加密密钥复制到另一个环境。
+
+这次第二代 Flyway 基线与旧 V1-V107 数据库不兼容。只有在确认目标数据可以全部丢弃时，
+才可在对应服务器删除旧 Compose 数据卷；该动作不由常规部署脚本自动执行。重建后，从
+已提交且工作区干净的版本部署：
 
 ```bash
-backend/shop-server/scripts/deploy-prod.sh shop
+backend/shop-server/scripts/deploy/deploy-backend.sh shop
 pnpm --dir admin check
 CI=true pnpm --dir admin build
 pnpm --dir admin check:generated-imports
 ops/deploy-admin.sh shop
+backend/shop-server/scripts/config/bootstrap-admin.sh shop
 ```
 
-The bootstrap credential is stored only in the ignored, mode-600 file
-`backend/shop-server/.env.bootstrap-admin.shop.local`. After the first login,
-change the password and remove the plaintext credential file.
+一次性 Super 凭据只写到本机 ignored 文件
+`backend/shop-server/config/runtime/bootstrap-admin.shop.txt`，不会在终端打印。首次登录并
+修改密码后删除该文件。txcloud 使用相同命令并把目标替换为 `txcloud`。
 
-For development deployments, use `txcloud`. The backend script retains backward
-compatibility with the existing canonical txcloud secret filenames, while Admin
-selects the development host automatically:
+## 外部平台
 
-```bash
-backend/shop-server/scripts/deploy-prod.sh txcloud
-ops/deploy-admin.sh txcloud
-```
-
-Never commit certificates, API credentials, database passwords, encryption keys,
-bootstrap credentials, or built `dist` output.
-
-## Provider-side configuration
-
-The production Mini Program message-push URL is
-`https://api.junxiangshiping.cn/wechat/mini/message`. WeChat request/socket/upload/
-download legal domains, the Mini Program AppID/secret, payment merchant binding and
-callback approval, ICP filing, COS CNAME, COS CORS, and COS Referer rules are
-provider-console actions; server deployment does not prove those external settings
-or real payment/message delivery.
-
-The service-card fallback image, when enabled later, is published from
-`https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png`. Verify its
-real PNG response before enabling outbound service-card work.
+小程序合法域名、AppID/Secret、微信支付商户绑定与回调、ICP、COS CNAME/CORS/Referer
+都需要在相应平台人工核验。后端健康、Flyway 成功或 Admin 页面可访问，都不能替代真实
+登录、支付、退款、发货、服务动态和对象存储验收。

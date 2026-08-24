@@ -174,7 +174,7 @@ class FinanceReconciliationCommandServiceTest {
 
     private FinanceReconciliationCommandService service() {
         FinanceReconciliationProperties properties = new FinanceReconciliationProperties(
-                true, false, null, null, null, null, null,
+                null, null, null, null, null,
                 0, 0, null, 0, 0, 0, 0);
         FinanceReconciliationRuntimeSettingService runtime = mock(
                 FinanceReconciliationRuntimeSettingService.class

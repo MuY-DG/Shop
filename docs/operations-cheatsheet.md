@@ -1,234 +1,169 @@
-# Shop 操作命令速查
+# Shop 运维速查
 
-以下命令默认从项目根目录执行：
+## 环境对应关系
 
-```bash
-cd /Users/muybaby/Project/Production/Shop
-```
+| 目标 | Spring Profile | 运行时清单 | 用途 |
+| --- | --- | --- | --- |
+| 本机 | `local` | `config/runtime/local.env` | 日常开发与快速调试 |
+| txcloud | `server` | 本机 `config/runtime/txcloud.env`，部署后为服务器 `config/runtime/runtime.env` | 开发/集成验证 |
+| shop | `server` | 本机 `config/runtime/shop.env`，部署后为服务器 `config/runtime/runtime.env` | 正式生产 |
+| 自动化测试 | `test` | `src/test/resources/application-test.yaml` | H2 与 Testcontainers |
 
-## 日常开发
+三个真实清单均被 Git 忽略，不得互相复制。唯一模板是 `config/runtime/runtime.env.example`。
 
-IDEA 直接运行 `ShopServerApplication`，有效配置文件填写 `dev`。
-
-终端启动后端：
-
-```bash
-cd backend/shop-server
-./mvnw -Dspring-boot.run.profiles=dev spring-boot:run
-```
-
-停止前台进程使用 `Ctrl+C`。
-
-## 测试
-
-只运行相关测试，适合日常开发：
+## 初始化与校验清单
 
 ```bash
 cd backend/shop-server
-./mvnw -Dtest=具体测试类名 test
+
+./scripts/config/init-runtime-env.sh local
+./scripts/config/init-runtime-env.sh txcloud
+./scripts/config/init-runtime-env.sh shop
+
+./scripts/config/validate-runtime-env.sh local
+./scripts/config/validate-runtime-env.sh txcloud
+./scripts/config/validate-runtime-env.sh shop
 ```
 
-正式发布前分别运行无 Docker 层和 Testcontainers 层：
+初始化脚本拒绝覆盖已有文件。Compose 固定 `edge` 网关，清单不再需要代理地址占位符。
+
+运行时清单只保存数据库、Redis 和应用主密钥。微信、支付、COS、服务动态、发货和财务对账都在 Admin 配置。
+
+## 本机启动后端
+
+先确保本机 MySQL/Redis 的密码与 `local.env` 一致，再执行：
 
 ```bash
 cd backend/shop-server
-# 仅单元/H2，明确排除 integration 标签
+./mvnw spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+常用地址：
+
+| 地址 | 用途 |
+| --- | --- |
+| `http://127.0.0.1:8080/actuator/health` | 健康检查 |
+| `http://127.0.0.1:8080/swagger-ui/index.html` | 仅 `local` 开启的接口文档 |
+
+## 测试门禁
+
+```bash
+cd backend/shop-server
+
+./scripts/ci/verify-flyway-migrations.sh
+./scripts/ci/verify-test-layers.sh
+
+# 无 Docker 单元/H2 层
 ./mvnw test
 
-# 必须有 Docker，执行 MySQL/Redis 集成测试
+# Docker/Testcontainers MySQL/Redis 层
 ./mvnw -Pintegration verify
-./scripts/assert-integration-test-results.sh target/failsafe-reports
-./scripts/verify-test-layers.sh
+./scripts/ci/assert-integration-test-results.sh target/failsafe-reports
 ```
 
-测试源码位于 `backend/shop-server/src/test/java`。默认报告在 `target/surefire-reports`，
-集成报告在 `target/failsafe-reports`。不得用第一条命令的结果代替完整后端门禁。
-
-## Git
-
-先确认改动范围：
+管理后台：
 
 ```bash
-git status --short
-git diff
+cd admin
+pnpm check
+CI=true pnpm build
+pnpm check:generated-imports
 ```
 
-只暂存准备提交的文件：
+小程序：
 
 ```bash
-git add <文件或目录>
-git commit -m "类型(范围): 简要说明"
+cd miniprogram
+pnpm check
 ```
 
-生产环境变量、1Panel 凭据、证书、上传文件和备份已由 `.gitignore` 排除，不得使用
-强制添加参数将它们提交到 Git。
+## 部署后端
 
-## 生产部署
-
-推荐方式：完整测试、上传精简源码、服务器缓存构建并自动切换容器。
+必须显式写目标：
 
 ```bash
-backend/shop-server/scripts/deploy-prod.sh shop
+backend/shop-server/scripts/deploy/deploy-backend.sh txcloud
+backend/shop-server/scripts/deploy/deploy-backend.sh shop
 ```
 
-已经对完全相同的代码运行过完整测试时，可在本次部署中跳过重复测试：
-
-```bash
-SHOP_DEPLOY_SKIP_TESTS=true \
-backend/shop-server/scripts/deploy-prod.sh shop
-```
-
-可选的本地镜像构建模式需要本机 Docker Hub 网络正常，并会上传完整压缩镜像：
+默认在服务器构建镜像。可选本地镜像传输：
 
 ```bash
 SHOP_DEPLOY_TRANSPORT=image-stream \
-backend/shop-server/scripts/deploy-prod.sh shop
+  backend/shop-server/scripts/deploy/deploy-backend.sh shop
 ```
 
-该模式显示传输百分比、速度和预计剩余时间；中断后默认自动重试 3 次，并对已经上传的
-部分执行断点续传。需要增加尝试次数时：
+脚本要求工作区干净，默认会执行后端两层测试，并在测试后、构建前后再次检查；目标架构只允许 `linux/amd64` 或 `linux/arm64`。远端使用唯一候选文件和非阻塞发布锁，常规部署不允许 5 项 runtime secret 发生变化。它只部署后端，不部署 Admin，也不删除数据卷。
+
+## 服务器状态
 
 ```bash
-SHOP_DEPLOY_TRANSPORT=image-stream \
-SHOP_DEPLOY_TRANSFER_ATTEMPTS=5 \
-backend/shop-server/scripts/deploy-prod.sh shop
-```
-
-部署脚本会拒绝包含未提交改动的工作区；发布前必须完成验证和 Git 提交，并确认
-`git status --short` 没有输出，确保运行版本可以由 `/actuator/info` 中的 Git SHA 追溯。
-
-## 生产状态与日志
-
-公网健康检查：
-
-```bash
-curl --fail https://api.junxiangshiping.cn/actuator/health
-curl --fail https://api.junxiangshiping.cn/actuator/info
-```
-
-`/actuator/info` 应只包含 `gitSha`、`buildTime`、`version` 和 `flywayVersion`。
-
-查看全部容器：
-
-```bash
-ssh txcloud
+ssh shop
 cd /opt/shop/shop-server
-sudo docker compose -f compose.prod.yaml ps
+
+sudo docker compose \
+  --env-file config/runtime/runtime.env \
+  -f compose.prod.yaml ps
+
+sudo docker compose \
+  --env-file config/runtime/runtime.env \
+  -f compose.prod.yaml logs --tail=200 shop-server
+
+curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health
+curl --fail --silent --show-error http://127.0.0.1:8080/actuator/info
 ```
 
-持续查看后端日志：
+不要把 `docker compose config` 的完整结果粘贴到工单或聊天中；它可能展开秘密。
+
+## 首次 Super 引导
+
+仅限全新空库、后端健康后执行：
 
 ```bash
-sudo docker compose -f compose.prod.yaml logs -f --tail=200 shop-server
+backend/shop-server/scripts/config/bootstrap-admin.sh local
+backend/shop-server/scripts/config/bootstrap-admin.sh txcloud
+backend/shop-server/scripts/config/bootstrap-admin.sh shop
 ```
 
-只重启后端，不构建新版本：
+临时凭据写入 `config/runtime/bootstrap-admin.<target>.txt`，不会打印到终端。首次登录并修改密码后删除该文件。脚本不是通用密码重置工具。
+
+## MySQL 备份
 
 ```bash
-sudo docker compose -f compose.prod.yaml restart shop-server
+ssh shop 'sudo /opt/shop/shop-server/scripts/deploy/backup-mysql.sh'
 ```
 
-## 1Panel、MySQL 与 Redis 隧道
+备份目录为 `/opt/shop/shop-server/backups/mysql`，每个 `.sql.gz` 都有同名 `.sha256` sidecar，默认成对保留 14 天。手工备份与发布共用目标级锁，发布期间会被拒绝。本机备份仍需复制到受控异机或对象存储并进行恢复演练；sidecar 校验成功不等于实际恢复成功。
 
-本地用一条命令同时建立 1Panel、MySQL 和 Redis 安全隧道：
+## SSH 隧道
+
+服务器的 MySQL、Redis 和后端端口都只绑定回环地址。需要本机诊断时建立临时隧道：
 
 ```bash
-ssh -o ExitOnForwardFailure=yes -N \
-  -L 18080:127.0.0.1:18080 \
+ssh -N \
   -L 13306:127.0.0.1:3306 \
   -L 16379:127.0.0.1:6379 \
-  txcloud
+  -L 18080:127.0.0.1:8080 \
+  shop
 ```
 
-登录地址和凭据保存在 `backend/shop-server/.1panel.local`。使用结束后在隧道终端按
-`Ctrl+C`。1Panel 负责 OpenResty、HTTPS 证书、日志和监控；不要在其中重复创建同名
-Compose 编排。
+用完按 `Ctrl+C` 关闭。数据库工具连接 `127.0.0.1:13306`，Redis 工具连接 `127.0.0.1:16379`。从目标清单读取凭据时不要回显、截图或提交文件。
 
-隧道运行期间，本机连接地址如下：
+## 配置文件职责
 
-| 服务 | 本机地址 |
-| --- | --- |
-| 1Panel | `127.0.0.1:18080` |
-| MySQL | `127.0.0.1:13306` |
-| Redis | `127.0.0.1:16379` |
-
-## MySQL
-
-本地查看数据库名、业务账号和两类密码：
-
-```bash
-grep -E '^MYSQL_(DATABASE|USER|PASSWORD|ROOT_PASSWORD)=' \
-  backend/shop-server/.env.infrastructure.local
-```
-
-进入生产 MySQL，密码使用 `MYSQL_PASSWORD`：
-
-```bash
-ssh txcloud
-cd /opt/shop/shop-server
-sudo docker compose -f compose.prod.yaml exec mysql \
-  mysql -ushop -p hotpot_shop
-```
-
-使用 DataGrip 或 IDEA 时填写：
-
-```text
-Host: 127.0.0.1
-Port: 13306
-Database: hotpot_shop
-User: shop
-Password: MYSQL_PASSWORD 的值
-```
-
-Redis GUI 使用 `127.0.0.1:16379`，密码为 `.env.infrastructure.local` 中
-`REDIS_PASSWORD` 的值。
-
-手动备份：
-
-```bash
-ssh txcloud \
-  'sudo /opt/shop/shop-server/scripts/backup-mysql.sh'
-```
-
-## 配置文件
-
-| 文件 | 用途 | 是否提交 |
+| 文件 | 是否提交 | 职责 |
 | --- | --- | --- |
-| `application.yaml` | 所有环境公共配置 | 是 |
-| `application-dev.yaml` | 本地开发配置 | 是 |
-| `application-prod.yaml` | 生产 Profile 规则 | 是 |
-| `.env.dev.local` | 本机微信平台兼容值、加密主密钥及发货开关；不允许支付商户配置 | 否 |
-| `.env.prod.local` | 新部署为最小启动配置；旧微信值仅在两阶段迁移期间暂留 | 否 |
-| `.env.infrastructure.local` | 仅 MySQL、Redis 基础设施密码 | 否 |
-| `.1panel.local` | 1Panel 登录信息 | 否 |
-| `.env.*.example` | 无真实秘密的最小启动模板；不含微信/支付业务凭据 | 是 |
+| `src/main/resources/application.yaml` | 是 | 全环境安全默认值和非秘密技术参数 |
+| `src/main/resources/application-local.yaml` | 是 | 本机地址、DEBUG、Swagger |
+| `src/main/resources/application-server.yaml` | 是 | Compose 服务地址、可信代理和服务器日志策略 |
+| `src/test/resources/application-test.yaml` | 是 | 自动化测试覆盖 |
+| `config/runtime/runtime.env.example` | 是 | 唯一运行时清单结构 |
+| `config/runtime/local.env` | 否 | 本机秘密 |
+| `config/runtime/txcloud.env` | 否 | txcloud 秘密 |
+| `config/runtime/shop.env` | 否 | shop 秘密 |
 
-修改普通生产配置后重新执行部署命令。已经初始化的 MySQL 密码不能只靠修改环境文件
-完成轮换，必须同时修改数据库内部账号密码。
+1Panel 和 Docker 的安装、升级、账户与密码安全由服务器管理员维护，仓库脚本不接管这些职责。
 
-## 人工回滚
+## generation 2 断代
 
-先查看保留的版本镜像：
-
-```bash
-sudo docker images shop-server
-```
-
-确认目标版本与当前数据库结构兼容后：
-
-```bash
-sudo docker tag shop-server:<旧版本标签> shop-server:local
-cd /opt/shop/shop-server
-sudo docker compose -f compose.prod.yaml \
-  up -d --no-deps --force-recreate shop-server
-```
-
-数据库迁移可能无法由旧应用自动回滚，高风险发布前应先创建 MySQL 备份。
-
-## 禁止事项
-
-- 不执行 `docker compose down -v`，它会删除 MySQL 和 Redis 数据卷。
-- 不向 Git 提交 `.env.*.local`、`.1panel.local`、PEM、私钥或生产密码。
-- 不将 MySQL `3306`、Redis `6379` 或应用 `8080` 暴露到公网。
-- 不同时启动 Caddy 与 OpenResty，它们会争用 `80/443`。
-- 不在未检查工作区和未验证健康检查的情况下发布。
+当前数据库基线是 V1-V7，只接受空库。旧 schema 不做升级兼容；要切换本机、txcloud 或 shop，必须在明确确认目标数据可丢弃并完成备份后，人工重建对应 MySQL/Redis 数据卷。普通部署命令不会代替这项破坏性确认。

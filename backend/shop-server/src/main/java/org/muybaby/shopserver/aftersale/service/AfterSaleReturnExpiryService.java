@@ -64,8 +64,7 @@ public class AfterSaleReturnExpiryService {
         LocalDateTime now = LocalDateTime.now(clock);
         List<Long> ids = jdbcClient.sql("""
                         select id from after_sale_request
-                        where flow_version >= 2
-                          and status = :status
+                        where status = :status
                           and return_deadline_at is not null
                           and return_deadline_at <= :now
                         order by return_deadline_at, id
@@ -91,7 +90,6 @@ public class AfterSaleReturnExpiryService {
         List<Long> ids = jdbcClient.sql("""
                         select id from after_sale_request
                         where order_id = :orderId
-                          and flow_version >= 2
                           and status = :status
                           and return_deadline_at is not null
                           and return_deadline_at <= :now

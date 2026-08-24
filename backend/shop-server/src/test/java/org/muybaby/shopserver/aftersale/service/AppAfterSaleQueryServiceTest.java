@@ -170,7 +170,7 @@ class AppAfterSaleQueryServiceTest {
         int manyRecordQueries = sqlCounter.count();
 
         assertThat(many.records()).hasSize(6);
-        assertThat(singleRecordQueries).isEqualTo(7);
+        assertThat(singleRecordQueries).isEqualTo(6);
         assertThat(manyRecordQueries).isEqualTo(singleRecordQueries);
         assertThat(many.records())
                 .filteredOn(record -> record.id().equals(afterSaleId))
@@ -214,11 +214,12 @@ class AppAfterSaleQueryServiceTest {
         long orderId = SEQUENCE.incrementAndGet();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent, created_at, updated_at)
                         values
                             (:orderId, :orderNo, :userId, :status, 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              1000, 1000, 0, 0, 1000, 1000, :createdAt, :createdAt)
                         """)
                 .param("orderId", orderId)
@@ -293,17 +294,20 @@ class AppAfterSaleQueryServiceTest {
         long refundOrderId = SEQUENCE.incrementAndGet();
         jdbcClient.sql("""
                         insert into refund_order
-                            (id, after_sale_id, order_id, payment_order_id, out_refund_no, refund_id,
+                            (id, after_sale_id, order_id, payment_order_id, notification_route_token,
+                             out_refund_no, refund_id,
                              refund_amount_cent, status, callback_status, last_error_code,
                              last_error_message, requested_at, created_at, updated_at)
                         values
-                            (:refundOrderId, :afterSaleId, :orderId, :paymentOrderId, :outRefundNo, '',
+                            (:refundOrderId, :afterSaleId, :orderId, :paymentOrderId,
+                             :routeToken, :outRefundNo, '',
                              100, :status, 'PENDING', '', '', :requestedAt, :requestedAt, :requestedAt)
                         """)
                 .param("refundOrderId", refundOrderId)
                 .param("afterSaleId", afterSaleId)
                 .param("orderId", orderId)
                 .param("paymentOrderId", SEQUENCE.incrementAndGet())
+                .param("routeToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(refundOrderId))
                 .param("outRefundNo", "AS-QUERY-COUNT-REFUND-" + refundOrderId)
                 .param("status", status)
                 .param("requestedAt", requestedAt)

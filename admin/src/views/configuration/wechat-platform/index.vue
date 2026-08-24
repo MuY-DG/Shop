@@ -2,7 +2,7 @@
   <div class="wechat-platform-config">
     <ElAlert
       title="AppSecret 使用应用主密钥加密保存到数据库；后台不会返回明文。"
-      description="加密主密钥仍由服务器管理。如当前仍来自旧 ENV，请先显式导入数据库，验证后再删除 ENV。"
+      description="业务凭据统一在后台维护；加密主密钥仍由服务器运行环境管理。"
       type="info"
       :closable="false"
       show-icon
@@ -54,15 +54,7 @@
           >
             保存配置
           </ElButton>
-          <ElButton
-            v-if="config?.legacyEnvironmentImportAvailable"
-            v-auth="'wechat-platform:config:write'"
-            :loading="importing"
-            @click="handleImportEnvironment"
-          >
-            导入旧 ENV 配置
-          </ElButton>
-          <ElButton :disabled="!dirty || loading || saving || importing" @click="resetForm">
+          <ElButton :disabled="!dirty || loading || saving" @click="resetForm">
             撤销未保存修改
           </ElButton>
         </ElFormItem>
@@ -73,12 +65,8 @@
 
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
-  import { ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-  import {
-    fetchWechatPlatformConfig,
-    importWechatPlatformLegacyEnvironment,
-    updateWechatPlatformConfig
-  } from '@/api/wechat-platform'
+  import { type FormInstance, type FormRules } from 'element-plus'
+  import { fetchWechatPlatformConfig, updateWechatPlatformConfig } from '@/api/wechat-platform'
   import {
     buildWechatPlatformUpdate,
     canRetainWechatPlatformSecret,
@@ -90,7 +78,6 @@
   const formRef = ref<FormInstance>()
   const loading = ref(false)
   const saving = ref(false)
-  const importing = ref(false)
   const config = ref<Api.WechatPlatform.Config | null>(null)
   const formData = reactive<Api.WechatPlatform.ConfigForm>(createWechatPlatformForm())
   const baseline = ref('')
@@ -100,12 +87,10 @@
   const canRetainSecret = computed(() => canRetainWechatPlatformSecret(config.value))
   const sourceLabel = computed(() => {
     if (config.value?.source === 'DATABASE') return '数据库配置'
-    if (config.value?.source === 'ENVIRONMENT') return '待导入的旧 ENV'
     return '待配置'
   })
   const sourceTagType = computed(() => {
     if (config.value?.source === 'DATABASE') return 'success'
-    if (config.value?.source === 'ENVIRONMENT') return 'warning'
     return 'danger'
   })
   const secretPlaceholder = computed(() =>
@@ -124,7 +109,7 @@
       {
         validator: (_rule, value, callback) => {
           if (String(value || '').trim() || canRetainSecret.value) callback()
-          else callback(new Error('请输入 AppSecret，或使用旧 ENV 导入'))
+          else callback(new Error('请输入 AppSecret'))
         },
         trigger: 'blur'
       }
@@ -162,22 +147,6 @@
       fillForm(config.value)
     } finally {
       saving.value = false
-    }
-  }
-
-  const handleImportEnvironment = async () => {
-    if (!config.value?.legacyEnvironmentImportAvailable) return
-    await ElMessageBox.confirm(
-      '仅当数据库尚无微信平台配置时才会导入；导入后应先验证真实微信功能，再删除服务器 ENV。',
-      '确认导入旧 ENV',
-      { type: 'warning', confirmButtonText: '确认导入', cancelButtonText: '取消' }
-    )
-    importing.value = true
-    try {
-      config.value = await importWechatPlatformLegacyEnvironment(config.value.version)
-      fillForm(config.value)
-    } finally {
-      importing.value = false
     }
   }
 

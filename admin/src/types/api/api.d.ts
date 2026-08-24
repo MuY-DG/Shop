@@ -1528,7 +1528,7 @@ declare namespace Api {
   }
 
   namespace Payment {
-    /** Only PUBLIC_KEY is selectable; legacy DB values can still appear through Config.verifyMode as string. */
+    /** The generation 2 payment schema only supports WeChat public-key verification. */
     type VerifyMode = 'PUBLIC_KEY'
 
     type ConfigList = Api.Common.PaginatedResponse<Config>
@@ -1541,10 +1541,9 @@ declare namespace Api {
       merchantSerialNoMasked: string
       apiV3KeyConfigured: boolean
       privateKeyConfigured: boolean
-      verifyMode: VerifyMode | string
+      verifyMode: VerifyMode
       wechatPublicKeyIdMasked?: string | null
       wechatPublicKeyConfigured: boolean
-      legacySecretFilesPendingImport: boolean
       notifyUrl: string
       refundNotifyUrl: string
       enabled: boolean
@@ -1660,8 +1659,6 @@ declare namespace Api {
       evidenceFileIds: number[]
       evidenceFiles?: EvidenceFile[]
       refundOrder?: RefundOrder | null
-      flowVersion: number
-      legacyFullOrder: boolean
       items: AfterSaleItem[]
       returnInfo?: AfterSaleReturn | null
       allowedActions: string[]

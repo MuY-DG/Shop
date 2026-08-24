@@ -21,13 +21,6 @@ export function createPaymentConfig(data: Api.Payment.ConfigForm, showSuccessMes
   })
 }
 
-export function importLegacyPaymentSecretFiles(configId: number, showSuccessMessage = true) {
-  return request.post<Api.Payment.Config>({
-    url: `/admin/pay/configs/${configId}/import-legacy-secret-files`,
-    showSuccessMessage
-  })
-}
-
 export function updatePaymentConfig(
   configId: number,
   data: Api.Payment.ConfigForm,

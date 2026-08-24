@@ -179,7 +179,7 @@ public class AppOrderService {
                     orderNo,
                     checkoutRequest.source(),
                     request.idempotencyKey(),
-                    CheckoutRequestDigest.digest(checkoutRequest),
+                    CheckoutRequestDigest.initialOwnershipDigest(checkoutRequest),
                     analyticsVisitorId,
                     analyticsSessionId,
                     analyticsEntryScene,
@@ -991,10 +991,7 @@ public class AppOrderService {
 
     private OrderSubmitResponse replayExisting(ExistingOrder existing, CheckoutRequest request) {
         String freightAwareDigest = CheckoutRequestDigest.digest(request, existing.freightCent());
-        String legacyDigest = CheckoutRequestDigest.digest(request);
-        if (!StringUtils.hasText(existing.checkoutRequestDigest())
-                || existing.checkoutRequestDigest().equals(freightAwareDigest)
-                || existing.checkoutRequestDigest().equals(legacyDigest)) {
+        if (existing.checkoutRequestDigest().equals(freightAwareDigest)) {
             return existing.response();
         }
         throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);

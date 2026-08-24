@@ -18,7 +18,6 @@ const config = (overrides: Partial<Api.Payment.Config> = {}): Api.Payment.Config
   verifyMode: 'PUBLIC_KEY',
   wechatPublicKeyIdMasked: 'PUB***KEY',
   wechatPublicKeyConfigured: true,
-  legacySecretFilesPendingImport: false,
   notifyUrl: 'https://example.com/wxpay/pay/notify',
   refundNotifyUrl: 'https://example.com/wxpay/refund/notify',
   enabled: true,
@@ -79,19 +78,6 @@ test('an inactive DB config can be deleted', () => {
     disabled: false,
     reason: ''
   })
-})
-
-test('a config with legacy secret files cannot be deleted before migration', () => {
-  assert.deepEqual(
-    paymentConfigDeleteState(
-      config({ enabled: false, legacySecretFilesPendingImport: true }),
-      effective({ id: 9 })
-    ),
-    {
-      disabled: true,
-      reason: '请先迁移旧秘密文件'
-    }
-  )
 })
 
 test('an edited inactive config remains deletable based on persisted state', () => {

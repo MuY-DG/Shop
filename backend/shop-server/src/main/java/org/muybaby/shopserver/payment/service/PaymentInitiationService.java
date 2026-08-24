@@ -545,24 +545,9 @@ public class PaymentInitiationService {
                 || payment.expiresAt() == null
                 || (order.paymentExpiresAt() != null
                     && !order.paymentExpiresAt().equals(payment.expiresAt()))
-                || !(expectedDigest.equals(payment.requestDigest())
-                    || isLegacyCompletedPaymentDigest(payment))) {
+                || !expectedDigest.equals(payment.requestDigest())) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-    }
-
-    private boolean isLegacyCompletedPaymentDigest(PaymentInitiationRow payment) {
-        // V39 backfills existing rows with zero, while every payment created by this service starts
-        // at one. This keeps the legacy digest escape hatch limited to rolling-upgrade data.
-        if (!OrderStatus.PAYING.name().equals(payment.status()) || payment.prepayAttempts() != 0) {
-            return false;
-        }
-        String legacyDigest = sha256(String.join("|",
-                payment.outTradeNo(),
-                Long.toString(payment.amountCent()),
-                payment.payerOpenid()
-        ));
-        return legacyDigest.equals(payment.requestDigest());
     }
 
     private ClaimedPayment toClaimedPayment(

@@ -13,7 +13,6 @@ public record AdminPaymentConfigResponse(
         String verifyMode,
         String wechatPublicKeyIdMasked,
         boolean wechatPublicKeyConfigured,
-        boolean legacySecretFilesPendingImport,
         String notifyUrl,
         String refundNotifyUrl,
         boolean enabled,

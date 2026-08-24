@@ -1966,23 +1966,23 @@ public class OperationsStatisticsService {
     }
 
     private LocalDateTime analyticsCollectionStartedAt() {
-        return collectionStartedAt("select min(received_at) as started_at from analytics_event");
+        return collectionStartedAt("3", "select min(received_at) as started_at from analytics_event");
     }
 
     private LocalDateTime activityCollectionStartedAt() {
-        return collectionStartedAt("select min(first_active_at) as started_at from app_user_daily_activity");
+        return collectionStartedAt("1", "select min(first_active_at) as started_at from app_user_daily_activity");
     }
 
     private LocalDateTime paymentAttemptCollectionStartedAt() {
-        return collectionStartedAt("select min(started_at) as started_at from payment_attempt");
+        return collectionStartedAt("4", "select min(started_at) as started_at from payment_attempt");
     }
 
     private LocalDateTime phoneAuthorizationCollectionStartedAt() {
-        return collectionStartedAt("select min(phone_authorized_at) as started_at from app_user");
+        return collectionStartedAt("1", "select min(phone_authorized_at) as started_at from app_user");
     }
 
     private LocalDateTime orderCostCollectionStartedAt() {
-        return collectionStartedAt("""
+        return collectionStartedAt("3", """
                 select min(o.paid_at) as started_at
                 from order_item oi
                 join shop_order o on o.id = oi.order_id
@@ -1991,16 +1991,17 @@ public class OperationsStatisticsService {
                 """);
     }
 
-    private LocalDateTime collectionStartedAt(String factMinimumSql) {
+    private LocalDateTime collectionStartedAt(String generationVersion, String factMinimumSql) {
         LocalDateTime factStartedAt = minimumTimestamp(factMinimumSql);
         LocalDateTime migrationStartedAt = jdbcClient.sql("""
                         select installed_on
                         from flyway_schema_history
-                        where version = '32'
+                        where version = :generationVersion
                           and success = true
                         order by installed_rank
                         limit 1
                         """)
+                .param("generationVersion", generationVersion)
                 .query(LocalDateTime.class)
                 .optional()
                 .orElse(null);

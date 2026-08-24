@@ -24,10 +24,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.LocalDateTime;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -193,43 +190,6 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
     }
 
     @Test
-    void upgradeLegacyPayingPaymentReturnsItsExistingPrepayParameters() throws Exception {
-        seedEnabledPaymentConfig();
-        AppLoginSession session = appLogin("payment-initiation-legacy-user");
-        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, false);
-        String outTradeNo = "P" + order.orderNo();
-        String prepayId = "legacy-prepay-" + order.orderId();
-        insertLegacyDigestPayingPayment(order, session.openid(), outTradeNo, prepayId, 6980L, 0);
-
-        WechatPaymentParamsResponse response = paymentInitiationService.initiate(
-                session.userId(), order.orderId());
-
-        assertThat(response.packageValue()).isEqualTo("prepay_id=" + prepayId);
-        assertThat(transactionProbeWechatPayProvider.requests()).isEmpty();
-        assertThat(preparationSnapshot(order.orderId()).prepayAttempts()).isZero();
-    }
-
-    @Test
-    void newPayingPaymentCannotUseLegacyDigestCompatibilityPath() throws Exception {
-        seedEnabledPaymentConfig();
-        AppLoginSession session = appLogin("payment-initiation-new-digest-guard-user");
-        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, false);
-        String outTradeNo = "P" + order.orderNo();
-        insertLegacyDigestPayingPayment(
-                order,
-                session.openid(),
-                outTradeNo,
-                "new-prepay-" + order.orderId(),
-                6980L,
-                1
-        );
-
-        assertThatThrownBy(() -> paymentInitiationService.initiate(session.userId(), order.orderId()))
-                .isInstanceOf(BusinessException.class);
-        assertThat(transactionProbeWechatPayProvider.requests()).isEmpty();
-    }
-
-    @Test
     void freshPreparingLeaseRejectsConcurrentInitiationWithoutSecondProviderCall() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-initiation-concurrent-user");
@@ -322,8 +282,9 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
         assertThat(storedConfig.notifyUrl()).isEqualTo(replacementNotifyUrl);
         assertThat(transactionProbeWechatPayProvider.requests())
                 .singleElement()
-                .extracting(WechatJsapiPrepayRequest::notifyUrl)
-                .isEqualTo(replacementNotifyUrl);
+                .satisfies(request -> assertThat(request.notifyUrl())
+                        .matches(java.util.regex.Pattern.quote(replacementNotifyUrl)
+                                + "/r/[A-Za-z0-9_-]{32}"));
         assertThat(transactionProbeWechatPayProvider.configIds()).containsExactly(91001L);
     }
 
@@ -435,60 +396,6 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
                         rs.getInt("prepay_attempts")
                 ))
                 .single();
-    }
-
-    private void insertLegacyDigestPayingPayment(
-            SeedOrder order,
-            String payerOpenid,
-            String outTradeNo,
-            String prepayId,
-            long amountCent,
-            int prepayAttempts
-    ) {
-        LocalDateTime now = LocalDateTime.now().withNano(0);
-        jdbcClient.sql("""
-                        update shop_order
-                        set status = 'PAYING',
-                            merchant_trade_no = :outTradeNo,
-                            updated_at = :updatedAt
-                        where id = :orderId
-                          and status = 'CREATED'
-                        """)
-                .param("outTradeNo", outTradeNo)
-                .param("updatedAt", now)
-                .param("orderId", order.orderId())
-                .update();
-        jdbcClient.sql("""
-                        insert into payment_order
-                            (order_id, payment_config_id, out_trade_no, prepay_id, payer_openid, status,
-                             amount_cent, currency, request_digest, expires_at, prepay_attempts,
-                             created_at, updated_at)
-                        values
-                            (:orderId, 91001, :outTradeNo, :prepayId, :payerOpenid, 'PAYING',
-                             :amountCent, 'CNY', :requestDigest, :expiresAt, :prepayAttempts,
-                             :createdAt, :updatedAt)
-                        """)
-                .param("orderId", order.orderId())
-                .param("outTradeNo", outTradeNo)
-                .param("prepayId", prepayId)
-                .param("payerOpenid", payerOpenid)
-                .param("amountCent", amountCent)
-                .param("requestDigest", legacyRequestDigest(outTradeNo, amountCent, payerOpenid))
-                .param("expiresAt", now.plusMinutes(10))
-                .param("prepayAttempts", prepayAttempts)
-                .param("createdAt", now.minusMinutes(1))
-                .param("updatedAt", now)
-                .update();
-    }
-
-    private String legacyRequestDigest(String outTradeNo, long amountCent, String payerOpenid) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            String source = outTradeNo + "|" + amountCent + "|" + payerOpenid;
-            return HexFormat.of().formatHex(digest.digest(source.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception ex) {
-            throw new IllegalStateException("SHA-256 unavailable", ex);
-        }
     }
 
     private String orderStatus(long orderId) {

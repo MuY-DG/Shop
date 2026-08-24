@@ -32,6 +32,7 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
 
     @Test
     void appUploadsOrderScopedPrivateEvidenceThroughTheAfterSaleEndpoint() throws Exception {
+        seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("after-sale-evidence-upload");
         SeedPaidOrder order = seedPaidOrder(session, 6980L, "PAID", "wx-evidence-upload");
 

@@ -6,6 +6,7 @@ import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.StockLockStatus;
 import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
+import org.muybaby.shopserver.support.PaymentFixtureIdentity;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataAccessException;
@@ -32,11 +33,12 @@ class AfterSaleSchemaTest {
 
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent, paid_at, refunding_at)
                         values
                             (19301, 'AFTER-SALE-SCHEMA-ORDER', 1, 'REFUNDING', 'CART', 'after-sale-schema-order',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              6980, 6980, 0, 0, 6980, 6980, current_timestamp, current_timestamp)
                         """)
                 .update();
@@ -73,33 +75,43 @@ class AfterSaleSchemaTest {
                         insert into payment_config
                             (id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                              private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
-                             notify_url, refund_notify_url, enabled, status)
+                             notify_url, refund_notify_url, enabled, status, secret_key_id)
                         values
                             (19305, 'After Sale Schema Config', 'wx-schema-app', '1900000001',
                              'schema-serial', 'ciphertext-placeholder', '', '',
                              'https://example.test/wxpay/pay/notify',
-                             'https://example.test/wxpay/refund/notify', true, 'ACTIVE')
+                             'https://example.test/wxpay/refund/notify', true, 'ACTIVE', 'test-2026')
                         """)
                 .update();
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, payment_config_id, out_trade_no, prepay_id, transaction_id,
+                            (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, prepay_id, transaction_id,
                              payer_openid, status, amount_cent, expires_at, paid_at)
                         values
-                            (19306, 19301, 19305, 'AFTER-SALE-SCHEMA-TRADE', 'prepay-after-sale',
+                            (19306, 19301, 19305,
+                             'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                             :paymentRouteToken,
+                             'AFTER-SALE-SCHEMA-TRADE', 'prepay-after-sale',
                              'transaction-after-sale', 'openid-schema', 'PAID', 6980,
                              dateadd('MINUTE', 15, current_timestamp), current_timestamp)
                         """)
+                .param("paymentRouteToken", PaymentFixtureIdentity.routeToken(
+                        "AfterSaleSchemaTest#representativePayment"))
                 .update();
         jdbcClient.sql("""
                         insert into refund_order
-                            (id, after_sale_id, order_id, payment_order_id, out_refund_no, refund_id, provider_reason,
+                            (id, after_sale_id, order_id, payment_order_id, notification_route_token,
+                             out_refund_no, refund_id, provider_reason,
                              refund_amount_cent, status, callback_status, callback_digest, requested_at)
                         values
-                            (19307, 19303, 19301, 19306, 'AFTER-SALE-SCHEMA-REFUND',
+                            (19307, 19303, 19301, 19306, :refundRouteToken,
+                             'AFTER-SALE-SCHEMA-REFUND',
                              'refund-schema', '', 6980, 'PROCESSING', 'ACCEPTED',
                              'refund-callback-digest-schema', current_timestamp)
                         """)
+                .param("refundRouteToken", PaymentFixtureIdentity.routeToken(
+                        "AfterSaleSchemaTest#representativeRefund"))
                 .update();
 
         Integer refundCount = jdbcClient.sql("""
@@ -146,9 +158,9 @@ class AfterSaleSchemaTest {
                 .single();
         Integer uniqueIndexCount = jdbcClient.sql("""
                         select count(*)
-                        from information_schema.indexes
+                        from information_schema.table_constraints
                         where lower(table_name) = 'stock_log'
-                          and lower(index_name) = 'uk_stock_log_refund_sku_change'
+                          and lower(constraint_name) = 'uk_stock_log_refund_sku_change'
                         """)
                 .query(Integer.class)
                 .single();
@@ -160,7 +172,7 @@ class AfterSaleSchemaTest {
     }
 
     @Test
-    void afterSaleV2SchemaPersistsItemReturnAndRestockStateWithQuantityGuards() {
+    void currentAfterSaleSchemaPersistsItemReturnAndRestockStateWithQuantityGuards() {
         assertThat(AfterSaleStatus.valueOf("WAITING_RETURN"))
                 .isSameAs(AfterSaleStatus.WAITING_RETURN);
         assertThat(StockLockStatus.valueOf("PARTIALLY_RESTOCKED"))
@@ -178,6 +190,14 @@ class AfterSaleSchemaTest {
                 .query(Integer.class)
                 .single();
         assertThat(tableCount).isEqualTo(5);
+        Integer flowVersionColumnCount = jdbcClient.sql("""
+                        select count(*) from information_schema.columns
+                        where lower(table_name) = 'after_sale_request'
+                          and lower(column_name) = 'flow_version'
+                        """)
+                .query(Integer.class)
+                .single();
+        assertThat(flowVersionColumnCount).isZero();
 
         assertThatThrownBy(() -> jdbcClient.sql("""
                         insert into after_sale_item (

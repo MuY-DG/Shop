@@ -208,18 +208,24 @@ class AdminOperationsControllerTest {
         seedBusinessFacts();
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, out_trade_no, status, amount_cent, expires_at, created_at, updated_at)
+                            (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, status, amount_cent,
+                             expires_at, created_at, updated_at)
                         values
-                            (96004, 94004, 'OPS-PAY-FAILED', 'FAILED', 5000,
+                            (96004, 94004, 9999001,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                             'dddddddddddddddddddddddddddddddd', 'OPS-PAY-FAILED', 'FAILED', 5000,
                              timestamp '2026-07-05 12:45:00', timestamp '2026-07-05 12:00:00',
                              timestamp '2026-07-05 12:30:00')
                         """).update();
         jdbcClient.sql("""
                         insert into refund_order
-                            (id, after_sale_id, order_id, payment_order_id, out_refund_no,
+                            (id, after_sale_id, order_id, payment_order_id,
+                             notification_route_token, out_refund_no,
                              refund_amount_cent, status, requested_at, created_at, updated_at)
                         values
-                            (98002, 97002, 94003, 96003, 'OPS-REFUND-FAILED', 5000, 'FAILED',
+                            (98002, 97002, 94003, 96003,
+                             'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', 'OPS-REFUND-FAILED', 5000, 'FAILED',
                              timestamp '2026-07-07 11:00:00', timestamp '2026-07-07 11:00:00',
                              timestamp '2026-07-07 11:30:00')
                         """).update();
@@ -298,13 +304,15 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, idempotency_key,
+                            (id, order_no, user_id, status, idempotency_key, checkout_request_digest,
                              payable_amount_cent, paid_amount_cent, paid_at, created_at, updated_at)
                         values
                             (88011, 'OPS-REPEAT-OLD', 88001, 'COMPLETED', 'ops-repeat-old',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              1000, 1000, timestamp '2026-06-20 09:00:00',
                              timestamp '2026-06-20 08:55:00', timestamp '2026-06-20 09:00:00'),
                             (88012, 'OPS-REPEAT-CURRENT', 88001, 'PAID', 'ops-repeat-current',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              2000, 2000, timestamp '2026-07-02 09:00:00',
                              timestamp '2026-07-02 08:55:00', timestamp '2026-07-02 09:00:00')
                         """).update();
@@ -490,7 +498,7 @@ class AdminOperationsControllerTest {
     }
 
     @Test
-    void v32InstallationMarksZeroFactPeriodsAsCollected() throws Exception {
+    void generationTwoInstallationMarksZeroFactPeriodsAsCollected() throws Exception {
         String today = LocalDate.now(ZoneId.of("Asia/Shanghai")).toString();
 
         mockMvc.perform(get("/admin/operations/trade-statistics")
@@ -650,14 +658,17 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, idempotency_key, payable_amount_cent,
+                            (id, order_no, user_id, status, idempotency_key, checkout_request_digest,
+                             payable_amount_cent,
                              paid_amount_cent, analytics_visitor_id, analytics_session_id,
                              paid_at, created_at, updated_at)
                         values
-                            (88521, 'OPS-FUNNEL-A', 88531, 'PAID', 'ops-funnel-a', 1000,
+                            (88521, 'OPS-FUNNEL-A', 88531, 'PAID', 'ops-funnel-a',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', 1000,
                              1000, 'funnel-a', 'session-a', timestamp '2026-07-02 08:25:00',
                              timestamp '2026-07-02 08:20:00', timestamp '2026-07-02 08:25:00'),
-                            (88522, 'OPS-FUNNEL-B', 88532, 'PAID', 'ops-funnel-b', 1000,
+                            (88522, 'OPS-FUNNEL-B', 88532, 'PAID', 'ops-funnel-b',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', 1000,
                              1000, 'funnel-b', 'session-b', timestamp '2026-07-02 08:25:00',
                              timestamp '2026-07-02 08:20:00', timestamp '2026-07-02 08:25:00')
                         """).update();
@@ -722,12 +733,15 @@ class AdminOperationsControllerTest {
     void productTrendIsAggregatedIntoDatabaseBuckets() {
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, idempotency_key, paid_at, created_at, updated_at)
+                            (id, order_no, user_id, status, idempotency_key, checkout_request_digest,
+                             paid_at, created_at, updated_at)
                         values
                             (88901, 'OPS-PRODUCT-TREND-JULY', 88900, 'PAID', 'ops-product-trend-july',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              timestamp '2026-07-31 15:00:00', timestamp '2026-07-31 14:00:00',
                              timestamp '2026-07-31 15:00:00'),
                             (88902, 'OPS-PRODUCT-TREND-AUGUST', 88900, 'PAID', 'ops-product-trend-august',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              timestamp '2026-07-31 17:00:00', timestamp '2026-07-31 16:30:00',
                              timestamp '2026-07-31 17:00:00')
                         """).update();
@@ -922,9 +936,10 @@ class AdminOperationsControllerTest {
     void legacyOrderItemsRemainAvailableAsPaidItemGrossAmount() throws Exception {
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, idempotency_key,
+                            (id, order_no, user_id, status, idempotency_key, checkout_request_digest,
                              payable_amount_cent, paid_amount_cent, paid_at, created_at, updated_at)
                         values (88401, 'OPS-LEGACY-AMOUNT', 88400, 'PAID', 'ops-legacy-amount',
+                                'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                                 9000, 9000, timestamp '2026-07-02 09:00:00',
                                 timestamp '2026-07-02 08:55:00', timestamp '2026-07-02 09:00:00')
                         """).update();
@@ -1001,25 +1016,29 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent,
                              paid_at, shipped_at, completed_at, refunded_at, created_at, updated_at)
                         values
                             (94001, 'OPS-ORDER-1', 90001, 'PAID', 'CART', 'ops-order-1',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              10000, 10000, 500, 0, 9500, 9500,
                              timestamp '2026-07-02 09:30:00', null, null, null,
                              timestamp '2026-07-02 09:00:00', timestamp '2026-07-02 09:30:00'),
                             (94002, 'OPS-ORDER-2', 90001, 'REFUNDED', 'BUY_NOW', 'ops-order-2',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              20000, 20000, 0, 0, 20000, 20000,
                              timestamp '2026-07-03 10:30:00', timestamp '2026-07-04 10:00:00', null,
                              timestamp '2026-07-06 12:00:00',
                              timestamp '2026-07-03 10:00:00', timestamp '2026-07-06 12:00:00'),
                             (94003, 'OPS-ORDER-3', 90002, 'PAID', 'CART', 'ops-order-3',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              5000, 5000, 0, 0, 5000, 5000,
                              timestamp '2026-07-04 11:30:00', null, null, null,
                              timestamp '2026-07-04 11:00:00', timestamp '2026-07-04 11:30:00'),
                             (94004, 'OPS-ORDER-4', 90003, 'CREATED', 'CART', 'ops-order-4',
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              5000, 5000, 0, 0, 5000, 0,
                              null, null, null, null,
                              timestamp '2026-07-05 12:00:00', timestamp '2026-07-05 12:00:00')
@@ -1044,13 +1063,21 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, out_trade_no, status, amount_cent, expires_at, paid_at, created_at, updated_at)
+                            (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, status, amount_cent,
+                             expires_at, paid_at, created_at, updated_at)
                         values
-                            (96001, 94001, 'OPS-PAY-1', 'PAID', 9500, timestamp '2026-07-02 09:45:00',
+                            (96001, 94001, 9999001,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                             'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'OPS-PAY-1', 'PAID', 9500, timestamp '2026-07-02 09:45:00',
                              timestamp '2026-07-02 09:30:00', timestamp '2026-07-02 09:00:00', timestamp '2026-07-02 09:30:00'),
-                            (96002, 94002, 'OPS-PAY-2', 'PAID', 20000, timestamp '2026-07-03 10:45:00',
+                            (96002, 94002, 9999001,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                             'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'OPS-PAY-2', 'PAID', 20000, timestamp '2026-07-03 10:45:00',
                              timestamp '2026-07-03 10:30:00', timestamp '2026-07-03 10:00:00', timestamp '2026-07-03 10:30:00'),
-                            (96003, 94003, 'OPS-PAY-3', 'PAID', 5000, timestamp '2026-07-04 11:45:00',
+                            (96003, 94003, 9999001,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+                             'cccccccccccccccccccccccccccccccc', 'OPS-PAY-3', 'PAID', 5000, timestamp '2026-07-04 11:45:00',
                              timestamp '2026-07-04 11:30:00', timestamp '2026-07-04 11:00:00', timestamp '2026-07-04 11:30:00')
                         """).update();
         jdbcClient.sql("""
@@ -1067,10 +1094,12 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into refund_order
-                            (id, after_sale_id, order_id, payment_order_id, out_refund_no,
+                            (id, after_sale_id, order_id, payment_order_id,
+                             notification_route_token, out_refund_no,
                              refund_amount_cent, status, requested_at, success_at, created_at, updated_at)
                         values
-                            (98001, 97001, 94002, 96002, 'OPS-REFUND-1', 20000, 'SUCCESS',
+                            (98001, 97001, 94002, 96002,
+                             'ffffffffffffffffffffffffffffffff', 'OPS-REFUND-1', 20000, 'SUCCESS',
                              timestamp '2026-07-05 11:00:00', timestamp '2026-07-06 12:00:00',
                              timestamp '2026-07-05 11:00:00', timestamp '2026-07-06 12:00:00')
                         """).update();

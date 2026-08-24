@@ -69,15 +69,15 @@ class AdminFinanceReconciliationControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + readToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.workerEnabled").value(false))
-                .andExpect(jsonPath("$.data.runtimePersisted").value(false))
-                .andExpect(jsonPath("$.data.version").value(0));
+                .andExpect(jsonPath("$.data.runtimePersisted").value(true))
+                .andExpect(jsonPath("$.data.version").value(1));
 
         mockMvc.perform(put("/admin/finance/reconciliation/runtime")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + readToken)
                         .contentType("application/json")
                         .content("""
                                 {"workerEnabled":false,"dailyEnabled":false,
-                                 "version":0,"reason":"read cannot write"}
+                                 "version":1,"reason":"read cannot write"}
                                 """))
                 .andExpect(status().isForbidden());
 
@@ -86,16 +86,16 @@ class AdminFinanceReconciliationControllerTest {
                         .contentType("application/json")
                         .content("""
                                 {"workerEnabled":false,"dailyEnabled":false,
-                                 "version":0,"reason":"initial safe override"}
+                                 "version":1,"reason":"initial safe override"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.runtimePersisted").value(true))
-                .andExpect(jsonPath("$.data.version").value(1))
+                .andExpect(jsonPath("$.data.version").value(2))
                 .andExpect(jsonPath("$.data.updatedBy").isString());
 
         assertThat(jdbcClient.sql("""
                         select count(*) from finance_reconciliation_runtime_audit
-                        where revision = 1 and change_reason = 'initial safe override'
+                        where revision = 2 and change_reason = 'initial safe override'
                         """)
                 .query(Long.class)
                 .single()).isOne();

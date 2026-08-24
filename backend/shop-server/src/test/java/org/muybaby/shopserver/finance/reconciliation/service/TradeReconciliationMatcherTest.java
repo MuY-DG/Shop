@@ -36,27 +36,33 @@ class TradeReconciliationMatcherTest {
     private ObjectMapper objectMapper;
 
     @Test
-    void resolvesDbAndEnvironmentMerchantOwnershipWithoutMixingIdentities() {
+    void resolvesActiveAndDeletedDatabaseConfigOwnershipWithoutMixingIdentities() {
         insertDbConfig(93101L, "mch-db");
-        insertEnvironmentSnapshot("e".repeat(64), "mch-env");
+        insertDbConfig(93102L, "mch-history");
+        jdbcClient.sql("""
+                        update payment_config
+                        set enabled = false, status = 'DELETED', deleted_at = current_timestamp,
+                            deleted_by = 1
+                        where id = 93102
+                        """).update();
         insertOrder(93111L, "ORDER-DB");
-        insertOrder(93112L, "ORDER-ENV");
+        insertOrder(93112L, "ORDER-HISTORY");
         insertPayment(93121L, 93111L, 93101L, "d".repeat(64),
                 "trade-db", "tx-db", "PAID", 1_000L, BUSINESS_TIME);
-        insertPayment(93122L, 93112L, null, "e".repeat(64),
-                "trade-env", "tx-env", "PAID", 2_000L, BUSINESS_TIME);
+        insertPayment(93122L, 93112L, 93102L, "e".repeat(64),
+                "trade-history", "tx-history", "PAID", 2_000L, BUSINESS_TIME);
 
         TradeReconciliationResult db = matcher().compare(
                 "mch-db", BILL_DATE, ParsedTradeBill.of(List.of(
                         paymentRow(1, "tx-db", "trade-db", 1_000L, "SUCCESS"))));
-        TradeReconciliationResult env = matcher().compare(
-                "mch-env", BILL_DATE, ParsedTradeBill.of(List.of(
-                        paymentRow(1, "tx-env", "trade-env", 2_000L, "SUCCESS"))));
+        TradeReconciliationResult history = matcher().compare(
+                "mch-history", BILL_DATE, ParsedTradeBill.of(List.of(
+                        paymentRow(1, "tx-history", "trade-history", 2_000L, "SUCCESS"))));
 
         assertThat(db.differences()).isEmpty();
         assertThat(db.localPaymentAmountCent()).isEqualTo(1_000L);
-        assertThat(env.differences()).isEmpty();
-        assertThat(env.localPaymentAmountCent()).isEqualTo(2_000L);
+        assertThat(history.differences()).isEmpty();
+        assertThat(history.localPaymentAmountCent()).isEqualTo(2_000L);
     }
 
     @Test
@@ -280,31 +286,13 @@ class TradeReconciliationMatcherTest {
                             (id, config_name, app_id, mch_id, merchant_serial_no,
                              api_v3_key_ciphertext, private_key_pem_ciphertext,
                              wechat_public_key_pem_ciphertext, verify_mode, notify_url, refund_notify_url,
-                             enabled, status)
+                             enabled, status, secret_cipher_version, secret_key_id)
                         values
                             (:id, 'reconciliation', 'wx-test', :mchId, 'serial',
                              'ciphertext', '', '', 'PUBLIC_KEY', 'https://notify.test/pay',
-                             'https://notify.test/refund', true, 'ACTIVE')
+                             'https://notify.test/refund', true, 'ACTIVE', 2, 'test-v1')
                         """)
                 .param("id", id)
-                .param("mchId", mchId)
-                .update();
-    }
-
-    private void insertEnvironmentSnapshot(String fingerprint, String mchId) {
-        jdbcClient.sql("""
-                        insert into payment_config_snapshot
-                            (fingerprint, config_source, config_name, app_id, mch_id,
-                             merchant_serial_no, api_v3_key_ciphertext,
-                             private_key_pem_ciphertext, notify_url, refund_notify_url,
-                             verify_mode, wechat_public_key_id,
-                             wechat_public_key_pem_ciphertext)
-                        values
-                            (:fingerprint, 'ENV', 'environment', 'wx-test', :mchId,
-                             'serial', 'ciphertext', 'private', 'https://notify.test/pay',
-                             'https://notify.test/refund', 'PUBLIC_KEY', 'public-key-id', 'public')
-                        """)
-                .param("fingerprint", fingerprint)
                 .param("mchId", mchId)
                 .update();
     }
@@ -312,10 +300,11 @@ class TradeReconciliationMatcherTest {
     private void insertOrder(long id, String orderNo) {
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              paid_amount_cent, created_at, updated_at)
                         values
                             (:id, :orderNo, 1, 'PAID', 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              10000, :createdAt, :updatedAt)
                         """)
                 .param("id", id)
@@ -329,7 +318,7 @@ class TradeReconciliationMatcherTest {
     private void insertPayment(
             long id,
             long orderId,
-            Long configId,
+            long configId,
             String fingerprint,
             String outTradeNo,
             String transactionId,
@@ -339,11 +328,11 @@ class TradeReconciliationMatcherTest {
     ) {
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, payment_config_id, payment_config_fingerprint,
-                             out_trade_no, transaction_id, status, amount_cent, expires_at,
+                             (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, transaction_id, status, amount_cent, expires_at,
                              paid_at, created_at, updated_at)
                         values
-                            (:id, :orderId, :configId, :fingerprint, :outTradeNo,
+                            (:id, :orderId, :configId, :fingerprint, :routeToken, :outTradeNo,
                              :transactionId, :status, :amountCent, :expiresAt,
                              :paidAt, :createdAt, :updatedAt)
                         """)
@@ -351,6 +340,7 @@ class TradeReconciliationMatcherTest {
                 .param("orderId", orderId)
                 .param("configId", configId)
                 .param("fingerprint", fingerprint)
+                .param("routeToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(id))
                 .param("outTradeNo", outTradeNo)
                 .param("transactionId", transactionId)
                 .param("status", status)
@@ -387,10 +377,10 @@ class TradeReconciliationMatcherTest {
         jdbcClient.sql("""
                         insert into refund_order
                             (id, after_sale_id, order_id, payment_order_id,
-                             out_refund_no, refund_id, refund_amount_cent, status,
+                             notification_route_token, out_refund_no, refund_id, refund_amount_cent, status,
                              requested_at, created_at, updated_at)
                         values
-                            (:id, :afterSaleId, :orderId, :paymentId,
+                            (:id, :afterSaleId, :orderId, :paymentId, :routeToken,
                              :outRefundNo, :refundId, :amountCent, :status,
                              :requestedAt, :createdAt, :updatedAt)
                         """)
@@ -398,6 +388,7 @@ class TradeReconciliationMatcherTest {
                 .param("afterSaleId", id + 10_000)
                 .param("orderId", orderId)
                 .param("paymentId", paymentId)
+                .param("routeToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(outRefundNo))
                 .param("outRefundNo", outRefundNo)
                 .param("refundId", refundId)
                 .param("amountCent", amountCent)

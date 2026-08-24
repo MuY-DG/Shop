@@ -211,10 +211,11 @@ class AccountCancellationControllerTest {
     private void insertOrder(long orderId, long userId, String orderStatus) {
         jdbcClient.sql("""
                         insert into shop_order(
-                            id, order_no, user_id, status, source, idempotency_key,
+                            id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             receiver_name, receiver_phone, receiver_address)
                         values(
                             :id, :orderNo, :userId, :status, 'CART', :idempotencyKey,
+                            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                             '测试用户', '13800138000', '测试地址')
                         """)
                 .param("id", orderId)

@@ -2,7 +2,6 @@ package org.muybaby.shopserver.payment.config;
 
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
-import org.muybaby.shopserver.storage.service.PrivateStorageFileService;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -15,26 +14,22 @@ import java.sql.SQLException;
 import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 @Service
 public class PaymentConfigResolver {
 
+    private static final Pattern CONFIG_FINGERPRINT_PATTERN = Pattern.compile("[0-9a-f]{64}");
 
     private final JdbcClient jdbcClient;
     private final PaymentSecretCipher secretCipher;
-    private final PrivateStorageFileService privateStorageFileService;
-    private final PaymentConfigSnapshotStore snapshotStore;
 
     public PaymentConfigResolver(
             JdbcClient jdbcClient,
-            PaymentSecretCipher secretCipher,
-            PrivateStorageFileService privateStorageFileService,
-            PaymentConfigSnapshotStore snapshotStore
+            PaymentSecretCipher secretCipher
     ) {
         this.jdbcClient = jdbcClient;
         this.secretCipher = secretCipher;
-        this.privateStorageFileService = privateStorageFileService;
-        this.snapshotStore = snapshotStore;
     }
 
     public ResolvedPaymentConfig resolve() {
@@ -51,8 +46,7 @@ public class PaymentConfigResolver {
 
     /**
      * Resolves the configuration persisted on a payment order. Historical database configurations
-     * remain usable after they are no longer the enabled/current configuration. A null id is only
-     * valid for historical environment snapshots and must be resolved with its fingerprint.
+     * remain usable after they are no longer the enabled/current configuration.
      */
     public ResolvedPaymentConfig resolveForPaymentConfigId(Long paymentConfigId) {
         if (paymentConfigId == null) {
@@ -61,8 +55,7 @@ public class PaymentConfigResolver {
         PaymentConfigRow row = jdbcClient.sql("""
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                                private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
-                               private_key_file_id, merchant_certificate_file_id, verify_mode,
-                               wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                               verify_mode, wechat_public_key_id, notify_url, refund_notify_url,
                                enabled, secret_cipher_version, secret_key_id
                         from payment_config
                         where id = :paymentConfigId
@@ -75,41 +68,27 @@ public class PaymentConfigResolver {
     }
 
     /**
-     * Resolves the immutable configuration identity captured by a payment order. Database-backed
-     * legacy orders remain safe because their referenced row cannot be mutated. Historical ENV
-     * orders are restored only from their encrypted snapshots; live ENV payment configuration is
-     * no longer supported. Upgrade-era ENV rows without a fingerprint still fail closed.
+     * Resolves the immutable database configuration identity captured by a payment order.
      */
     public ResolvedPaymentConfig resolveForPayment(
             Long paymentConfigId,
             String expectedFingerprint
     ) {
-        if (!StringUtils.hasText(expectedFingerprint)) {
-            if (paymentConfigId == null) {
-                throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
-            }
-            return resolveForPaymentConfigId(paymentConfigId);
-        }
-        String normalizedFingerprint = expectedFingerprint.trim();
-        if (paymentConfigId != null) {
-            return requireFingerprint(
-                    resolveForPaymentConfigId(paymentConfigId),
-                    normalizedFingerprint
-            );
-        }
-
-        try {
-            ResolvedPaymentConfig snapshot = snapshotStore.findHistoricalSnapshot(normalizedFingerprint)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED));
-            return requireFingerprint(snapshot, normalizedFingerprint);
-        } catch (BusinessException ex) {
+        if (paymentConfigId == null) {
             throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
         }
+        if (!StringUtils.hasText(expectedFingerprint)) {
+            throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
+        }
+        String normalizedFingerprint = expectedFingerprint.trim();
+        if (!CONFIG_FINGERPRINT_PATTERN.matcher(normalizedFingerprint).matches()) {
+            throw new BusinessException(ErrorCode.PAYMENT_CONFIGURATION_CHANGED);
+        }
+        return requireFingerprint(resolveForPaymentConfigId(paymentConfigId), normalizedFingerprint);
     }
 
     /**
-     * New payment orders may only capture an enabled database configuration. Historical ENV
-     * snapshots remain readable but cannot be created through the runtime path.
+     * New payment orders may only capture an enabled database configuration.
      */
     public String captureForPayment(ResolvedPaymentConfig config) {
         if (config == null || config.source() != PaymentConfigSource.DB || config.configId() == null) {
@@ -121,8 +100,7 @@ public class PaymentConfigResolver {
     /**
      * Linearizes creation of a DB-backed payment against administrator configuration updates.
      * Secret material was already read outside the transaction; under the row lock we compare the
-     * provider-significant database fields and either the encrypted material or immutable legacy
-     * file ids with that resolved object. The
+     * provider-significant database fields and encrypted material with that resolved object. The
      * payment insert then runs in the same transaction, so a concurrent update either happens
      * first and forces a retry, or waits and is rejected after the configuration becomes referenced.
      */
@@ -137,8 +115,7 @@ public class PaymentConfigResolver {
         PaymentConfigRow locked = jdbcClient.sql("""
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                                private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
-                               private_key_file_id, merchant_certificate_file_id, verify_mode,
-                               wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                               verify_mode, wechat_public_key_id, notify_url, refund_notify_url,
                                enabled, secret_cipher_version, secret_key_id
                         from payment_config
                         where id = :paymentConfigId
@@ -157,10 +134,15 @@ public class PaymentConfigResolver {
                     && Objects.equals(locked.mchId(), config.mchId())
                     && Objects.equals(locked.merchantSerialNo(), config.merchantSerialNo())
                     && fingerprintsEqual(decryptApiV3Key(locked), config.apiV3Key())
-                    && privateKeyMatches(locked, config)
+                    && fingerprintsEqual(decryptMaterial(
+                            privateKeyPemContext(locked.id()),
+                            locked.privateKeyPemCiphertext(), locked), config.privateKeyPem())
                     && locked.verifyMode() == config.verifyMode()
                     && Objects.equals(locked.wechatPublicKeyId(), config.wechatPublicKeyId())
-                    && publicKeyMatches(locked, config)
+                    && fingerprintsEqual(decryptMaterial(
+                            wechatPublicKeyPemContext(locked.id()),
+                            locked.wechatPublicKeyPemCiphertext(), locked),
+                            config.wechatPublicKeyPem())
                     && Objects.equals(locked.notifyUrl(), config.notifyUrl())
                     && Objects.equals(locked.refundNotifyUrl(), config.refundNotifyUrl());
         } catch (BusinessException ex) {
@@ -217,8 +199,7 @@ public class PaymentConfigResolver {
         PaymentConfigRow row = jdbcClient.sql("""
                         select id, config_name, app_id, mch_id, merchant_serial_no, api_v3_key_ciphertext,
                                private_key_pem_ciphertext, wechat_public_key_pem_ciphertext,
-                               private_key_file_id, merchant_certificate_file_id, verify_mode,
-                               wechat_public_key_id, wechat_public_key_file_id, notify_url, refund_notify_url,
+                               verify_mode, wechat_public_key_id, notify_url, refund_notify_url,
                                enabled, secret_cipher_version, secret_key_id
                         from payment_config
                         where enabled = true
@@ -260,32 +241,12 @@ public class PaymentConfigResolver {
                 row.refundNotifyUrl(),
                 verifyMode,
                 requiredPublicKeyId(verifyMode, row.wechatPublicKeyId()),
-                readPublicKey(verifyMode, row),
-                row.privateKeyFileId(),
-                row.merchantCertificateFileId(),
-                row.wechatPublicKeyFileId()
+                readPublicKey(verifyMode, row)
         );
     }
 
-    private String readPrivateFile(Long fileId) {
-        if (fileId == null) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-        return privateStorageFileService.readSecretText(fileId);
-    }
-
     private String readPrivateKey(PaymentConfigRow row) {
-        if (StringUtils.hasText(row.privateKeyPemCiphertext())) {
-            return decryptMaterial(privateKeyPemContext(row.id()), row.privateKeyPemCiphertext(), row);
-        }
-        return readPrivateFile(row.privateKeyFileId());
-    }
-
-    private String readOptionalPrivateFile(Long fileId) {
-        if (fileId == null) {
-            return "";
-        }
-        return privateStorageFileService.readSecretText(fileId);
+        return decryptMaterial(privateKeyPemContext(row.id()), row.privateKeyPemCiphertext(), row);
     }
 
     private String requiredPublicKeyId(PaymentVerifyMode verifyMode, String publicKeyId) {
@@ -297,13 +258,10 @@ public class PaymentConfigResolver {
 
     private String readPublicKey(PaymentVerifyMode verifyMode, PaymentConfigRow row) {
         if (verifyMode == PaymentVerifyMode.PUBLIC_KEY) {
-            if (StringUtils.hasText(row.wechatPublicKeyPemCiphertext())) {
-                return decryptMaterial(
-                        wechatPublicKeyPemContext(row.id()), row.wechatPublicKeyPemCiphertext(), row);
-            }
-            return readPrivateFile(row.wechatPublicKeyFileId());
+            return decryptMaterial(
+                    wechatPublicKeyPemContext(row.id()), row.wechatPublicKeyPemCiphertext(), row);
         }
-        return readOptionalPrivateFile(row.wechatPublicKeyFileId());
+        return "";
     }
 
     private PaymentVerifyMode normalizeVerifyMode(PaymentVerifyMode verifyMode) {
@@ -341,11 +299,8 @@ public class PaymentConfigResolver {
                 rs.getString("api_v3_key_ciphertext"),
                 rs.getString("private_key_pem_ciphertext"),
                 rs.getString("wechat_public_key_pem_ciphertext"),
-                nullableLong(rs, "private_key_file_id"),
-                nullableLong(rs, "merchant_certificate_file_id"),
                 normalizeVerifyMode(PaymentVerifyMode.valueOf(rs.getString("verify_mode"))),
                 rs.getString("wechat_public_key_id"),
-                nullableLong(rs, "wechat_public_key_file_id"),
                 rs.getString("notify_url"),
                 rs.getString("refund_notify_url"),
                 rs.getBoolean("enabled"),
@@ -398,32 +353,6 @@ public class PaymentConfigResolver {
         }
     }
 
-    private boolean privateKeyMatches(PaymentConfigRow row, ResolvedPaymentConfig config) {
-        if (!StringUtils.hasText(row.privateKeyPemCiphertext())) {
-            return Objects.equals(row.privateKeyFileId(), config.privateKeyFileId());
-        }
-        return fingerprintsEqual(
-                decryptMaterial(privateKeyPemContext(row.id()), row.privateKeyPemCiphertext(), row),
-                config.privateKeyPem()
-        );
-    }
-
-    private boolean publicKeyMatches(PaymentConfigRow row, ResolvedPaymentConfig config) {
-        if (!StringUtils.hasText(row.wechatPublicKeyPemCiphertext())) {
-            return Objects.equals(row.wechatPublicKeyFileId(), config.wechatPublicKeyFileId());
-        }
-        return fingerprintsEqual(
-                decryptMaterial(
-                        wechatPublicKeyPemContext(row.id()), row.wechatPublicKeyPemCiphertext(), row),
-                config.wechatPublicKeyPem()
-        );
-    }
-
-    private Long nullableLong(ResultSet rs, String columnLabel) throws SQLException {
-        long value = rs.getLong(columnLabel);
-        return rs.wasNull() ? null : value;
-    }
-
     private record PaymentConfigRow(
             Long id,
             String configName,
@@ -433,11 +362,8 @@ public class PaymentConfigResolver {
             String apiV3KeyCiphertext,
             String privateKeyPemCiphertext,
             String wechatPublicKeyPemCiphertext,
-            Long privateKeyFileId,
-            Long merchantCertificateFileId,
             PaymentVerifyMode verifyMode,
             String wechatPublicKeyId,
-            Long wechatPublicKeyFileId,
             String notifyUrl,
             String refundNotifyUrl,
             boolean enabled,

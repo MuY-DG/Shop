@@ -81,7 +81,7 @@ declare namespace Api {
 
     interface Config {
       configured: boolean
-      source: 'DATABASE' | 'ENVIRONMENT' | 'NONE'
+      source: 'DATABASE' | 'NONE'
       accountTemplateRecordId: string
       fallbackProductImage: string
       allowedImageHosts: string[]
@@ -91,7 +91,6 @@ declare namespace Api {
       callbackTokenConfigured: boolean
       callbackEncodingAesKeyMasked: string
       callbackEncodingAesKeyConfigured: boolean
-      legacyEnvironmentImportAvailable: boolean
       version: number
       updatedBy: Identifier | null
       updatedAt: string | null

@@ -18,6 +18,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,6 +32,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class RefundCallbackServiceTest extends PaymentTestSupport {
+
+    private static final Pattern OUT_REFUND_NO_PATTERN =
+            Pattern.compile("\\\"out_refund_no\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"");
 
     @Autowired
     private RefundCallbackService refundCallbackService;
@@ -336,7 +341,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
     }
 
     @Test
-    void refundCallbackFallsBackToOriginalPaymentConfigurationAfterRotation() throws Exception {
+    void routedRefundCallbackUsesThePaymentsBoundConfigurationAfterRotation() throws Exception {
         ApprovedRefund approved = approveRefund("after-sale-refund-old-config", 6980L, 6980L);
         switchToClonedPaymentConfig(91002L);
         mockWechatPayProvider.requireRefundNotificationConfig(approved.outRefundNo(), 91001L);
@@ -355,11 +360,11 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
 
         assertRefundSuccessState(approved, "wx-refund-old-config");
         assertThat(mockWechatPayProvider.refundNotificationConfigAttempts(approved.outRefundNo()))
-                .containsExactly(91002L, 91001L);
+                .containsExactly(91001L);
     }
 
     @Test
-    void refundCallbackReparsesWithExactStoredIdentityWhenCurrentRevisionCanAlsoParse() throws Exception {
+    void routedRefundCallbackParsesExactlyOnceWithTheBoundConfiguration() throws Exception {
         ApprovedRefund approved = approveRefund("after-sale-refund-shared-key", 6980L, 6980L);
         switchToClonedPaymentConfig(91002L);
 
@@ -377,11 +382,11 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
 
         assertRefundSuccessState(approved, "wx-refund-shared-key");
         assertThat(mockWechatPayProvider.refundNotificationConfigAttempts(approved.outRefundNo()))
-                .containsExactly(91002L, 91001L);
+                .containsExactly(91001L);
     }
 
     @Test
-    void verifiedRefundNotificationConfigurationMustMatchOriginalPaymentIdentity() throws Exception {
+    void routedRefundNotificationNeverFallsBackToTheCurrentConfiguration() throws Exception {
         ApprovedRefund approved = approveRefund("after-sale-refund-config-mismatch", 6980L, 6980L);
         switchToClonedPaymentConfig(91002L);
         mockWechatPayProvider.requireRefundNotificationConfig(approved.outRefundNo(), 91002L);
@@ -397,7 +402,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                         6980L
                 ), "mock-valid-signature")
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(500002));
+                .andExpect(jsonPath("$.code").value(100400));
 
         assertThat(jdbcClient.sql("select status from refund_order where out_refund_no = :outRefundNo")
                 .param("outRefundNo", approved.outRefundNo())
@@ -418,7 +423,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                 .query(Integer.class)
                 .single()).isZero();
         assertThat(mockWechatPayProvider.refundNotificationConfigAttempts(approved.outRefundNo()))
-                .containsExactly(91002L, 91001L);
+                .containsExactly(91001L);
     }
 
     @Test
@@ -453,6 +458,7 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                         throw new IllegalStateException("Concurrent callback was interrupted", ex);
                     }
                     refundCallbackService.handleRefundNotification(
+                            refundRouteToken(approved.outRefundNo()),
                             notificationTimestamp,
                             "mock-refund-notify-nonce",
                             "mock-refund-serial",
@@ -576,9 +582,11 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
                 .update();
         jdbcClient.sql("""
                         insert into refund_order
-                            (after_sale_id, order_id, payment_order_id, out_refund_no, refund_id,
+                            (after_sale_id, order_id, payment_order_id, notification_route_token,
+                             out_refund_no, refund_id,
                              refund_amount_cent, status, callback_status, requested_at, created_at, updated_at)
-                        select after_sale_id, order_id, payment_order_id, :newerOutRefundNo, '',
+                        select after_sale_id, order_id, payment_order_id,
+                               'NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN', :newerOutRefundNo, '',
                                refund_amount_cent, 'PROCESSING', 'PROCESSING',
                                current_timestamp, current_timestamp, current_timestamp
                         from refund_order
@@ -770,13 +778,32 @@ class RefundCallbackServiceTest extends PaymentTestSupport {
             String signature,
             String timestamp
     ) throws Exception {
-        return mockMvc.perform(post("/wxpay/refund/notify")
+        String outRefundNo = requiredJsonField(OUT_REFUND_NO_PATTERN, body);
+        return mockMvc.perform(post("/wxpay/refund/notify/r/{routeToken}", refundRouteToken(outRefundNo))
                 .contentType(MediaType.APPLICATION_JSON)
                 .header("Wechatpay-Timestamp", timestamp)
                 .header("Wechatpay-Nonce", "mock-refund-notify-nonce")
                 .header("Wechatpay-Serial", "mock-refund-serial")
                 .header("Wechatpay-Signature", signature)
                 .content(body));
+    }
+
+    private String refundRouteToken(String outRefundNo) {
+        return jdbcClient.sql("""
+                        select notification_route_token from refund_order
+                        where out_refund_no = :outRefundNo
+                        """)
+                .param("outRefundNo", outRefundNo)
+                .query(String.class)
+                .single();
+    }
+
+    private String requiredJsonField(Pattern pattern, String body) {
+        Matcher matcher = pattern.matcher(body);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("Required notification identity is missing");
+        }
+        return matcher.group(1);
     }
 
     private String applyBody(String type, String reason, long requestedAmountCent, String description, long... fileIds) {

@@ -294,9 +294,9 @@ class AdminProductReviewControllerTest {
         jdbcClient.sql("""
                         INSERT INTO product_sku (
                             id, spu_id, sku_code, spec_json, spec_text, price_cent,
-                            stock_available, image, status
+                            stock_available, image, status, combination_key
                         ) VALUES (:id, :spuId, :skuCode, '{}', '默认规格', 100,
-                                  1, '', 'ENABLED')
+                                  1, '', 'ENABLED', :skuCode)
                         """)
                 .param("id", skuId)
                 .param("spuId", spuId)
@@ -304,8 +304,10 @@ class AdminProductReviewControllerTest {
                 .update();
         jdbcClient.sql("""
                         INSERT INTO shop_order (
-                            id, order_no, user_id, status, idempotency_key, completed_at
+                            id, order_no, user_id, status, idempotency_key,
+                            checkout_request_digest, completed_at
                         ) VALUES (:id, :orderNo, :userId, 'COMPLETED', :idempotencyKey,
+                                  'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                                   CURRENT_TIMESTAMP)
                         """)
                 .param("id", orderId)

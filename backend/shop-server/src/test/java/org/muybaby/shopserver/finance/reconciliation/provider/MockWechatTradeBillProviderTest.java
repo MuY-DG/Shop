@@ -17,7 +17,7 @@ class MockWechatTradeBillProviderTest {
     @Test
     void deterministicMockSourcePassesDownloadIntegrityAndStrictSummaryParsing() throws Exception {
         FinanceReconciliationProperties properties = new FinanceReconciliationProperties(
-                false, false, null, null, null, null, null,
+                null, null, null, null, null,
                 8, 90, DataSize.ofMegabytes(1), 100, 4_096, 31, 1_000);
         TradeBillDownloadService downloadService = new TradeBillDownloadService(
                 new MockWechatTradeBillProvider(), properties);

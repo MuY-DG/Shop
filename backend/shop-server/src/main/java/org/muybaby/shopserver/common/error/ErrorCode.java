@@ -59,7 +59,6 @@ public enum ErrorCode {
     PAYMENT_CONFIGURATION_CHANGED(500002, "Payment configuration changed; manual reconciliation required"),
     PAYMENT_CONFIG_UNAVAILABLE(500003, "支付配置不存在或已删除"),
     PAYMENT_CONFIG_ENABLED_DELETE_FORBIDDEN(500004, "当前启用的支付配置不能删除，请先启用其他配置"),
-    PAYMENT_CONFIG_LEGACY_SECRET_IMPORT_REQUIRED(500005, "请先将旧支付密钥文件导入加密数据库后再删除配置"),
     PAYMENT_CONFIG_CONFLICT(500006, "支付配置已被其他管理员修改，请刷新后重试"),
     WECHAT_SHIPPING_UPLOAD_FAILED(600001, "WeChat shipping upload failed"),
     WECHAT_RECEIPT_NOT_CONFIRMED(600002, "微信尚未确认收货，请完成确认后重试"),

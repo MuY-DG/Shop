@@ -20,11 +20,16 @@ class WechatServiceCardRuntimeSchemaTest {
     JdbcClient jdbcClient;
 
     @Test
-    void migrationLeavesEnvironmentDefaultsUnshadowedAndEnforcesSingletonInvariant() {
+    void migrationSeedsFailClosedRuntimeAndEnforcesSingletonInvariant() {
         assertThat(jdbcClient.sql(
                         "select count(*) from wechat_service_card_runtime_setting")
                 .query(Long.class)
-                .single()).isZero();
+                .single()).isOne();
+        assertThat(jdbcClient.sql("""
+                        select count(*) from wechat_service_card_runtime_setting
+                        where id = 1 and capture_enabled = false and worker_enabled = false
+                          and revision = 1 and change_reason = 'INITIAL_FAIL_CLOSED'
+                        """).query(Long.class).single()).isOne();
         assertThat(jdbcClient.sql(
                         "select count(*) from wechat_service_card_runtime_audit")
                 .query(Long.class)
@@ -36,9 +41,9 @@ class WechatServiceCardRuntimeSchemaTest {
                         values (2, false, false, 1, 'invalid singleton')
                         """).update()).isInstanceOf(DataAccessException.class);
         assertThatThrownBy(() -> jdbcClient.sql("""
-                        insert into wechat_service_card_runtime_setting
-                            (id, capture_enabled, worker_enabled, revision, change_reason)
-                        values (1, false, true, 1, 'invalid worker')
+                        update wechat_service_card_runtime_setting
+                        set capture_enabled = false, worker_enabled = true
+                        where id = 1
                         """).update()).isInstanceOf(DataAccessException.class);
     }
 

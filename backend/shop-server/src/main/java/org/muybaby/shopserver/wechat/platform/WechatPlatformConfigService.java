@@ -3,10 +3,8 @@ package org.muybaby.shopserver.wechat.platform;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
-import org.muybaby.shopserver.wechat.WechatMiniProgramProperties;
 import org.muybaby.shopserver.wechat.platform.dto.AdminWechatPlatformConfigResponse;
 import org.muybaby.shopserver.wechat.platform.dto.AdminWechatPlatformConfigUpdateRequest;
-import org.muybaby.shopserver.wechat.platform.dto.AdminWechatPlatformEnvironmentImportRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -23,30 +21,19 @@ public class WechatPlatformConfigService implements WechatPlatformCredentialReso
 
     private final WechatPlatformConfigRepository repository;
     private final PaymentSecretCipher secretCipher;
-    private final WechatMiniProgramProperties legacyEnvironment;
 
     public WechatPlatformConfigService(
             WechatPlatformConfigRepository repository,
-            PaymentSecretCipher secretCipher,
-            WechatMiniProgramProperties legacyEnvironment
+            PaymentSecretCipher secretCipher
     ) {
         this.repository = repository;
         this.secretCipher = secretCipher;
-        this.legacyEnvironment = legacyEnvironment;
     }
 
     @Override
     @Transactional(readOnly = true)
     public WechatPlatformCredentials resolve() {
-        Optional<WechatPlatformConfigEntity> persisted = repository.find();
-        if (persisted.isPresent()) {
-            return resolvePersisted(persisted.orElseThrow());
-        }
-        WechatPlatformCredentials environment = environmentCredentials();
-        if (environment == null) {
-            throw unavailable();
-        }
-        return environment;
+        return repository.find().map(this::resolvePersisted).orElseThrow(this::unavailable);
     }
 
     @Transactional(readOnly = true)
@@ -55,16 +42,10 @@ public class WechatPlatformConfigService implements WechatPlatformCredentialReso
         if (persisted.isPresent()) {
             WechatPlatformConfigEntity row = persisted.orElseThrow();
             WechatPlatformCredentials resolved = resolvePersisted(row);
-            return response(
-                    resolved, true, false, row.revision(), row.updatedBy(), row.updatedAt());
+            return response(resolved, row.revision(), row.updatedBy(), row.updatedAt());
         }
-        WechatPlatformCredentials environment = environmentCredentials();
-        if (environment == null) {
-            return new AdminWechatPlatformConfigResponse(
-                    false, "NONE", "", "", false,
-                    false, 0, null, null);
-        }
-        return response(environment, true, true, 0, null, null);
+        return new AdminWechatPlatformConfigResponse(
+                false, "NONE", "", "", false, 0, null, null);
     }
 
     @Transactional
@@ -99,32 +80,9 @@ public class WechatPlatformConfigService implements WechatPlatformCredentialReso
                 throw validation();
             }
             appSecret = requiredAppSecret(request.appSecret());
-            if (!repository.insert(appId, encrypt(appSecret), operatorId, false)) {
+            if (!repository.insert(appId, encrypt(appSecret), operatorId)) {
                 throw conflict();
             }
-        }
-        return current();
-    }
-
-    @Transactional
-    public AdminWechatPlatformConfigResponse importLegacyEnvironment(
-            AdminWechatPlatformEnvironmentImportRequest request,
-            Long operatorId
-    ) {
-        requireOperator(operatorId);
-        if (request == null || request.version() == null || request.version() != 0) {
-            throw conflict();
-        }
-        if (repository.find().isPresent()) {
-            throw conflict();
-        }
-        WechatPlatformCredentials environment = environmentCredentials();
-        if (environment == null) {
-            throw validation();
-        }
-        if (!repository.insert(
-                environment.appId(), encrypt(environment.appSecret()), operatorId, true)) {
-            throw conflict();
         }
         return current();
     }
@@ -180,35 +138,18 @@ public class WechatPlatformConfigService implements WechatPlatformCredentialReso
         return secretCipher.encrypt(secretContext(), appSecret);
     }
 
-    private WechatPlatformCredentials environmentCredentials() {
-        String appId = normalizedTextOrNull(
-                legacyEnvironment.appId(), MAX_APP_ID_LENGTH);
-        String appSecret = normalizedAppSecretOrNull(legacyEnvironment.appSecret());
-        if (appId == null || appSecret == null) {
-            return null;
-        }
-        return new WechatPlatformCredentials(
-                appId,
-                appSecret,
-                WechatPlatformCredentials.Source.ENVIRONMENT
-        );
-    }
-
     private AdminWechatPlatformConfigResponse response(
             WechatPlatformCredentials credentials,
-            boolean configured,
-            boolean importAvailable,
             long version,
             Long updatedBy,
             java.time.LocalDateTime updatedAt
     ) {
         return new AdminWechatPlatformConfigResponse(
-                configured,
+                true,
                 credentials.source().name(),
                 credentials.appId(),
                 MASKED_SECRET,
                 true,
-                importAvailable,
                 version,
                 updatedBy,
                 updatedAt

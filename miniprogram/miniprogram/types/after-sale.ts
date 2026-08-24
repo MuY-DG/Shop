@@ -162,8 +162,6 @@ export interface AfterSaleResponse {
   evidenceFileIds: number[]
   evidenceFiles: AfterSaleEvidenceFile[]
   refundOrder?: RefundOrderResponse
-  flowVersion: number
-  legacyFullOrder: boolean
   items: AfterSaleItemResponse[]
   returnInfo?: AfterSaleReturnResponse
   allowedActions: AfterSaleAction[]

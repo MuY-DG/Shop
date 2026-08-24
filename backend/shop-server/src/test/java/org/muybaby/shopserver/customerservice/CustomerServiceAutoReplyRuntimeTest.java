@@ -496,11 +496,11 @@ class CustomerServiceAutoReplyRuntimeTest {
         jdbcClient.sql("""
                         insert into product_sku
                             (spu_id, sku_code, spec_json, spec_text, price_cent,
-                             original_price_cent, stock_available, status,
+                             original_price_cent, stock_available, status, combination_key,
                              created_at, updated_at)
                         values
                             (:productId, :skuCode, '{}', '', :priceCent,
-                             :priceCent, 10, 'ENABLED', current_timestamp, current_timestamp)
+                             :priceCent, 10, 'ENABLED', :skuCode, current_timestamp, current_timestamp)
                         """)
                 .param("productId", productId)
                 .param("skuCode", "AUTO-REPLY-" + productId)

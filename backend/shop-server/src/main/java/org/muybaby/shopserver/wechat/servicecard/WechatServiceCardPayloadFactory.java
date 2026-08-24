@@ -51,13 +51,10 @@ public class WechatServiceCardPayloadFactory {
                         select payment.id, payment.transaction_id, payment.payer_openid,
                                payment.amount_cent, payment.paid_at,
                                payment.payment_config_id, payment.payment_config_fingerprint,
-                               coalesce(db_config.app_id, env_snapshot.app_id) as payment_app_id
+                               db_config.app_id as payment_app_id
                         from payment_order payment
-                        left join payment_config db_config
+                        join payment_config db_config
                           on db_config.id = payment.payment_config_id
-                        left join payment_config_snapshot env_snapshot
-                          on payment.payment_config_id is null
-                         and env_snapshot.fingerprint = payment.payment_config_fingerprint
                         where payment.order_id = :orderId
                           and payment.status = 'PAID'
                           and payment.transaction_id <> ''

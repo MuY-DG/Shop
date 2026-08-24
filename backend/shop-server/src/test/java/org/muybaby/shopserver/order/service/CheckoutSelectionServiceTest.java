@@ -329,9 +329,9 @@ class CheckoutSelectionServiceTest {
         jdbcClient.sql("""
                         insert into product_sku
                             (spu_id, sku_code, spec_json, spec_text, price_cent, original_price_cent,
-                             stock_available, weight_gram, image, status, sort_order)
+                             stock_available, weight_gram, image, status, sort_order, combination_key)
                         values (:spuId, :skuCode, '{}', '300g', :priceCent, :originalPriceCent,
-                                :stock, 300, :image, :status, 1)
+                                :stock, 300, :image, :status, 1, :skuCode)
                         """)
                 .param("spuId", spuId)
                 .param("skuCode", skuCode)

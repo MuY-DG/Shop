@@ -17,7 +17,7 @@ class PaymentSecretRecordRedactionTest {
         ResolvedPaymentConfig resolved = new ResolvedPaymentConfig(
                 PaymentConfigSource.DB, 1L, "config", true, SENSITIVE, SENSITIVE, SENSITIVE,
                 SENSITIVE, SENSITIVE, SENSITIVE, SENSITIVE, PaymentVerifyMode.PUBLIC_KEY,
-                SENSITIVE, SENSITIVE, 2L, 3L, 4L);
+                SENSITIVE, SENSITIVE);
         PaymentSecretCipher.EncryptedSecret encrypted =
                 new PaymentSecretCipher.EncryptedSecret(SENSITIVE, 2, SENSITIVE);
         PaymentSecretCipher.DecryptedSecret decrypted =

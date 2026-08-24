@@ -470,7 +470,7 @@ class WechatWaybillRegistrationCoordinatorTest {
         LocalDateTime now = LocalDateTime.of(2026, 8, 8, 12, 0);
         jdbcClient.sql("""
                         insert into shop_order(
-                            id, order_no, user_id, status, source, idempotency_key,
+                            id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                             product_original_amount_cent, product_amount_cent, coupon_name,
                             coupon_discount_cent, freight_cent, payable_amount_cent, paid_amount_cent,
                             receiver_name, receiver_phone, receiver_address,
@@ -478,6 +478,7 @@ class WechatWaybillRegistrationCoordinatorTest {
                             created_at, updated_at)
                         values (
                             :id, :orderNo, :id, :status, 'CART', :key,
+                            'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                             100, 100, '', 0, 0, 100, 100,
                             '测试买家', '13800138000', '广东省深圳市南山区测试路2号',
                             :transactionId, :outTradeNo, :now, :shippedAt, :now, :now)
@@ -510,15 +511,20 @@ class WechatWaybillRegistrationCoordinatorTest {
         if (paymentComplete) {
             jdbcClient.sql("""
                             insert into payment_order(
-                                order_id, payment_config_id, out_trade_no, prepay_id,
+                                order_id, payment_config_id, payment_config_fingerprint,
+                                notification_route_token, out_trade_no, prepay_id,
                                 transaction_id, payer_openid, status, amount_cent,
                                 expires_at, paid_at, created_at, updated_at)
                             values (
-                                :orderId, null, :outTradeNo, :prepayId,
+                                :orderId, :paymentConfigId, :paymentConfigFingerprint,
+                                :notificationRouteToken, :outTradeNo, :prepayId,
                                 :transactionId, :openid, 'PAID', 100,
                                 :now, :now, :now, :now)
                             """)
                     .param("orderId", orderId)
+                    .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                    .param("paymentConfigFingerprint", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                    .param("notificationRouteToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(orderId))
                     .param("outTradeNo", "merchant-" + orderId)
                     .param("prepayId", "prepay-" + orderId)
                     .param("transactionId", "paid-transaction-" + orderId)

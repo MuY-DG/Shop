@@ -26,8 +26,6 @@ public record AfterSaleResponse(
         List<Long> evidenceFileIds,
         List<AfterSaleEvidenceFileResponse> evidenceFiles,
         RefundOrderResponse refundOrder,
-        Integer flowVersion,
-        Boolean legacyFullOrder,
         List<AfterSaleItemResponse> items,
         AfterSaleReturnResponse returnInfo,
         List<String> allowedActions
@@ -59,6 +57,6 @@ public record AfterSaleResponse(
                 requestedAmountCent, approvedAmountCent, auditNote,
                 reviewedBy, reviewedAt, createdAt,
                 evidenceFileIds, evidenceFiles, refundOrder,
-                1, true, List.of(), null, List.of());
+                List.of(), null, List.of());
     }
 }

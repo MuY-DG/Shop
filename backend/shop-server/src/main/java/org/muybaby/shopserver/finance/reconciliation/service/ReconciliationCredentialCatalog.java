@@ -99,7 +99,7 @@ public class ReconciliationCredentialCatalog {
                 .param("startAt", start)
                 .param("endAt", end)
                 .query((rs, rowNum) -> new CredentialIdentity(
-                        rs.getObject("payment_config_id", Long.class),
+                        rs.getLong("payment_config_id"),
                         rs.getString("payment_config_fingerprint")
                 ))
                 .list();

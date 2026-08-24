@@ -206,15 +206,10 @@ public class TradeReconciliationMatcher {
                         select payment.id, payment.order_id, payment.out_trade_no,
                                payment.transaction_id, payment.amount_cent, payment.status
                         from payment_order payment
-                        left join payment_config config on config.id = payment.payment_config_id
-                        left join payment_config_snapshot snapshot
-                          on snapshot.fingerprint = payment.payment_config_fingerprint
+                        join payment_config config on config.id = payment.payment_config_id
                         where payment.status = 'PAID'
                           and payment.paid_at >= :startAt and payment.paid_at < :endAt
-                          and case
-                                  when payment.payment_config_id is not null then config.mch_id
-                                  else snapshot.mch_id
-                              end = :mchId
+                          and config.mch_id = :mchId
                         order by payment.id
                         """)
                 .param("startAt", start)
@@ -236,14 +231,9 @@ public class TradeReconciliationMatcher {
                                refund.refund_amount_cent, refund.status
                         from refund_order refund
                         join payment_order payment on payment.id = refund.payment_order_id
-                        left join payment_config config on config.id = payment.payment_config_id
-                        left join payment_config_snapshot snapshot
-                          on snapshot.fingerprint = payment.payment_config_fingerprint
+                        join payment_config config on config.id = payment.payment_config_id
                         where refund.requested_at >= :startAt and refund.requested_at < :endAt
-                          and case
-                                  when payment.payment_config_id is not null then config.mch_id
-                                  else snapshot.mch_id
-                              end = :mchId
+                          and config.mch_id = :mchId
                         order by refund.id
                         """)
                 .param("startAt", start)
@@ -264,17 +254,12 @@ public class TradeReconciliationMatcher {
                             select payment.id, payment.order_id, payment.out_trade_no,
                                    payment.transaction_id, payment.amount_cent, payment.status
                             from payment_order payment
-                            left join payment_config config on config.id = payment.payment_config_id
-                            left join payment_config_snapshot snapshot
-                              on snapshot.fingerprint = payment.payment_config_fingerprint
+                            join payment_config config on config.id = payment.payment_config_id
                             where (
                                     payment.out_trade_no in (:outTradeNos)
                                     or payment.transaction_id in (:transactionIds)
                                 )
-                              and case
-                                      when payment.payment_config_id is not null then config.mch_id
-                                      else snapshot.mch_id
-                                  end = :mchId
+                              and config.mch_id = :mchId
                             order by payment.id
                             """)
                     .param("outTradeNos", outTradeNos)
@@ -315,16 +300,11 @@ public class TradeReconciliationMatcher {
                                    refund.refund_amount_cent, refund.status
                             from refund_order refund
                             join payment_order payment on payment.id = refund.payment_order_id
-                            left join payment_config config on config.id = payment.payment_config_id
-                            left join payment_config_snapshot snapshot
-                              on snapshot.fingerprint = payment.payment_config_fingerprint
+                            join payment_config config on config.id = payment.payment_config_id
                             where (
                                     %s
                                 )
-                              and case
-                                      when payment.payment_config_id is not null then config.mch_id
-                                      else snapshot.mch_id
-                                  end = :mchId
+                              and config.mch_id = :mchId
                             order by refund.id
                             """.formatted(String.join("\n                                    or ", candidateConditions));
             JdbcClient.StatementSpec statement = jdbcClient.sql(sql).param("mchId", mchId);

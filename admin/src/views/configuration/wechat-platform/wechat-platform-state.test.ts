@@ -12,7 +12,6 @@ const config = (overrides: Partial<Api.WechatPlatform.Config> = {}): Api.WechatP
   appId: 'wx-platform-app',
   appSecretMasked: '********',
   appSecretConfigured: true,
-  legacyEnvironmentImportAvailable: false,
   version: 3,
   updatedBy: null,
   updatedAt: null,
@@ -26,9 +25,8 @@ test('form never copies a masked or plaintext secret from the response', () => {
   })
 })
 
-test('only a database-backed secret can be retained by leaving the field blank', () => {
+test('only a configured database secret can be retained by leaving the field blank', () => {
   assert.equal(canRetainWechatPlatformSecret(config()), true)
-  assert.equal(canRetainWechatPlatformSecret(config({ source: 'ENVIRONMENT', version: 0 })), false)
   assert.equal(canRetainWechatPlatformSecret(config({ source: 'NONE', configured: false })), false)
 })
 

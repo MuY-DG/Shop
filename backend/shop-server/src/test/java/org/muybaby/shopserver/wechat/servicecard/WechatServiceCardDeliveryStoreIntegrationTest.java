@@ -514,16 +514,18 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
     }
 
     private CardFixture seedCard(Integer remoteStatus, LocalDateTime activatedAt) {
+        ensurePaymentConfig();
         long orderId = IDS.incrementAndGet();
         long paymentId = IDS.incrementAndGet();
         long cardId = IDS.incrementAndGet();
         LocalDateTime paidAt = LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1).withNano(0);
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              payable_amount_cent, paid_amount_cent, paid_at, created_at, updated_at)
                         values
                             (:id, :orderNo, 1, 'PAID', 'DIRECT', :key,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              100, 100, :paidAt, :paidAt, :paidAt)
                         """)
                 .param("id", orderId)
@@ -533,14 +535,19 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
                 .update();
         jdbcClient.sql("""
                         insert into payment_order
-                            (id, order_id, out_trade_no, transaction_id, payer_openid,
+                            (id, order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, transaction_id, payer_openid,
                              status, amount_cent, expires_at, paid_at, created_at, updated_at)
                         values
-                            (:id, :orderId, :outTradeNo, :transactionId, :openid,
+                            (:id, :orderId, :paymentConfigId, :paymentConfigFingerprint,
+                             :notificationRouteToken, :outTradeNo, :transactionId, :openid,
                              'PAID', 100, :expiresAt, :paidAt, :paidAt, :paidAt)
                         """)
                 .param("id", paymentId)
                 .param("orderId", orderId)
+                .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(paymentId))
                 .param("outTradeNo", "STORE-OUT-" + orderId)
                 .param("transactionId", "4200" + orderId)
                 .param("openid", "store-openid-" + orderId)
@@ -564,6 +571,25 @@ class WechatServiceCardDeliveryStoreIntegrationTest {
                 .param("paidAt", paidAt)
                 .update();
         return new CardFixture(cardId);
+    }
+
+    private void ensurePaymentConfig() {
+        jdbcClient.sql("""
+                        insert into payment_config
+                            (id, config_name, app_id, mch_id, merchant_serial_no,
+                             api_v3_key_ciphertext, private_key_pem_ciphertext,
+                             wechat_public_key_pem_ciphertext, verify_mode,
+                             wechat_public_key_id, notify_url, refund_notify_url,
+                             enabled, status, secret_cipher_version, secret_key_id)
+                        select :id, 'service-card-fixture', 'wx-service-card-test',
+                               'mch-service-card-test', 'serial-service-card-test',
+                               'ciphertext', '', '', 'PUBLIC_KEY', 'public-key-test',
+                               'https://notify.test/pay', 'https://notify.test/refund',
+                               false, 'ACTIVE', 2, 'test-v1'
+                        where not exists (select 1 from payment_config where id = :id)
+                        """)
+                .param("id", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .update();
     }
 
     private long insertDelivery(

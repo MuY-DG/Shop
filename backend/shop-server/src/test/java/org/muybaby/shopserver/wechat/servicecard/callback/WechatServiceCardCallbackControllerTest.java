@@ -5,11 +5,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.wechat.platform.WechatPlatformCredentials;
 import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardProperties;
-import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardTestConfigs;
+import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardPropertiesTest;
+import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfig;
 import org.muybaby.shopserver.wechat.servicecard.config.WechatServiceCardConfigResolver;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.util.unit.DataSize;
 
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -48,8 +49,7 @@ class WechatServiceCardCallbackControllerTest {
         encodingAesKey = "A".repeat(43);
         aesKey = Base64.getDecoder().decode(encodingAesKey + "=");
         WechatServiceCardProperties properties = properties();
-        WechatServiceCardConfigResolver configResolver =
-                () -> WechatServiceCardTestConfigs.fromProperties(properties);
+        WechatServiceCardConfigResolver configResolver = this::config;
         WechatServiceCardCallbackCrypto crypto = new WechatServiceCardCallbackCrypto(
                 configResolver, () -> credentials()
         );
@@ -140,7 +140,7 @@ class WechatServiceCardCallbackControllerTest {
     @Test
     void cryptoRejectsInvalidPkcs7Padding() throws Exception {
         WechatServiceCardCallbackCrypto crypto = new WechatServiceCardCallbackCrypto(
-                () -> WechatServiceCardTestConfigs.fromProperties(properties()),
+                this::config,
                 () -> credentials()
         );
         byte[] invalidPlaintext = new byte[32];
@@ -154,17 +154,16 @@ class WechatServiceCardCallbackControllerTest {
     }
 
     private WechatServiceCardProperties properties() {
-        return new WechatServiceCardProperties(
-                true, true, "template-record", Duration.ofSeconds(15), 50,
-                Duration.ofMinutes(2), 8, Duration.ofMinutes(1), Duration.ofMinutes(30),
-                Duration.ofMinutes(1), Duration.ofHours(6), 2,
-                Duration.ofSeconds(3), Duration.ofSeconds(15),
-                DataSize.ofMegabytes(1), DataSize.ofKilobytes(64),
+        return WechatServiceCardPropertiesTest.properties(
+                Duration.ofMinutes(1), Duration.ofHours(6));
+    }
+
+    private WechatServiceCardConfig config() {
+        return new WechatServiceCardConfig(
+                "template-record",
                 "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
-                false, List.of("admin.junxiangshiping.cn"),
-                new WechatServiceCardProperties.Callback(
-                        true, TOKEN, encodingAesKey, Duration.ofMinutes(5)
-                )
+                Set.of("admin.junxiangshiping.cn"), false, true, TOKEN, encodingAesKey,
+                WechatServiceCardConfig.Source.DATABASE
         );
     }
 

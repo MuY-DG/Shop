@@ -109,8 +109,7 @@ class PaymentNotificationRouteIssuanceTest extends PaymentTestSupport {
                         select count(*)
                         from payment_callback_log
                         where out_trade_no = :outTradeNo
-                          and route_mode = 'ROUTED'
-                          and route_digest <> ''
+                          and char_length(route_digest) = 64
                           and status = 'SUCCESS'
                         """)
                 .param("outTradeNo", paymentRoute.outTradeNo())
@@ -199,8 +198,7 @@ class PaymentNotificationRouteIssuanceTest extends PaymentTestSupport {
                         select count(*)
                         from payment_callback_log
                         where out_refund_no = :outRefundNo
-                          and route_mode = 'ROUTED'
-                          and route_digest <> ''
+                          and char_length(route_digest) = 64
                           and status = 'SUCCESS'
                         """)
                 .param("outRefundNo", refundRoute.outRefundNo())

@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.muybaby.shopserver.support.PaymentFixtureIdentity;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.LocalDateTime;
@@ -681,11 +682,13 @@ class AdminOrderControllerTest {
     ) {
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key, coupon_name,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
+                             coupon_name,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent, created_at, updated_at)
                         values
-                            (:orderId, :orderNo, :userId, :status, 'CART', :idempotencyKey, 'Seed Coupon',
+                            (:orderId, :orderNo, :userId, :status, 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', 'Seed Coupon',
                              9980, 7980, 500, 0, 7480, 0,
                              timestamp '2026-07-07 12:30:00', timestamp '2026-07-07 12:30:00')
                         """)
@@ -724,13 +727,18 @@ class AdminOrderControllerTest {
     ) {
         jdbcClient.sql("""
                         insert into payment_order
-                            (order_id, out_trade_no, prepay_id, transaction_id, status,
+                            (order_id, payment_config_id, payment_config_fingerprint,
+                             notification_route_token, out_trade_no, prepay_id, transaction_id, status,
                              amount_cent, expires_at, paid_at, created_at, updated_at)
                         values
-                            (:orderId, :outTradeNo, :prepayId, :transactionId, :status,
+                            (:orderId, :paymentConfigId, :paymentConfigFingerprint,
+                             :notificationRouteToken, :outTradeNo, :prepayId, :transactionId, :status,
                              7480, timestamp '2026-07-08 12:50:00', :paidAt, :paidAt, :paidAt)
                         """)
                 .param("orderId", orderId)
+                .param("paymentConfigId", PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint", PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken", PaymentFixtureIdentity.routeToken(outTradeNo))
                 .param("outTradeNo", outTradeNo)
                 .param("prepayId", "prepay-" + outTradeNo)
                 .param("transactionId", transactionId)

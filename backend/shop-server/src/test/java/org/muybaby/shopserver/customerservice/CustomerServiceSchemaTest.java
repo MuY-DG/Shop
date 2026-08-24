@@ -102,11 +102,16 @@ class CustomerServiceSchemaTest {
 
         assertThat(jdbcClient.sql("""
                         select count(*)
-                        from information_schema.indexes
-                        where index_name in (
-                          'uk_customer_service_transfer_pending',
-                          'idx_customer_service_transfer_target'
-                        )
+                        from (
+                          select index_name as object_name
+                          from information_schema.indexes
+                          where index_name = 'idx_customer_service_transfer_target'
+                          union all
+                          select constraint_name as object_name
+                          from information_schema.table_constraints
+                          where constraint_name = 'uk_customer_service_transfer_pending'
+                            and constraint_type = 'UNIQUE'
+                        ) schema_objects
                         """)
                 .query(Integer.class)
                 .single()).isEqualTo(2);
@@ -133,15 +138,24 @@ class CustomerServiceSchemaTest {
 
         assertThat(jdbcClient.sql("""
                         select count(*)
-                        from information_schema.indexes
-                        where index_name in (
-                          'uk_customer_service_conversation_user',
-                          'idx_customer_service_conversation_queue',
-                          'idx_customer_service_message_conversation',
-                          'uk_customer_service_message_client',
-                          'idx_customer_service_assignment_conversation',
-                          'uk_customer_service_conversation_order'
-                        )
+                        from (
+                          select index_name as object_name
+                          from information_schema.indexes
+                          where index_name in (
+                            'idx_customer_service_conversation_queue',
+                            'idx_customer_service_message_conversation',
+                            'idx_customer_service_assignment_conversation'
+                          )
+                          union all
+                          select constraint_name as object_name
+                          from information_schema.table_constraints
+                          where constraint_name in (
+                            'uk_customer_service_conversation_user',
+                            'uk_customer_service_message_client',
+                            'uk_customer_service_conversation_order'
+                          )
+                            and constraint_type = 'UNIQUE'
+                        ) schema_objects
                         """)
                 .query(Integer.class)
                 .single()).isEqualTo(6);
@@ -227,8 +241,9 @@ class CustomerServiceSchemaTest {
 
         assertThat(jdbcClient.sql("""
                         select count(*)
-                        from information_schema.indexes
-                        where index_name = 'uk_customer_service_message_automation'
+                        from information_schema.table_constraints
+                        where constraint_name = 'uk_customer_service_message_automation'
+                          and constraint_type = 'UNIQUE'
                         """)
                 .query(Integer.class)
                 .single()).isEqualTo(1);
@@ -448,10 +463,10 @@ class CustomerServiceSchemaTest {
                         from admin_role_permission role_permission
                         join admin_role role_item on role_item.id = role_permission.role_id
                         where role_permission.permission_id = 16011
-                          and role_item.code <> 'R_CUSTOMER_SERVICE_MANAGER'
+                          and role_item.code in ('R_SUPER', 'R_CUSTOMER_SERVICE_MANAGER')
                         """)
                 .query(Integer.class)
-                .single()).isZero();
+                .single()).isEqualTo(2);
 
         assertThat(jdbcClient.sql("""
                         select count(*)

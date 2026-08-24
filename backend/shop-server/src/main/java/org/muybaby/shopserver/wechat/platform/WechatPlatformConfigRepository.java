@@ -7,7 +7,6 @@ import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Repository
@@ -25,7 +24,7 @@ public class WechatPlatformConfigRepository {
         return jdbcClient.sql("""
                         select id, app_id, app_secret_ciphertext,
                                secret_cipher_version, secret_key_id, secret_revision,
-                               revision, imported_from_env_at, created_by, updated_by,
+                               revision, created_by, updated_by,
                                secret_reencrypted_at, created_at, updated_at
                         from wechat_platform_config
                         where id = :id
@@ -38,20 +37,19 @@ public class WechatPlatformConfigRepository {
     public boolean insert(
             String appId,
             PaymentSecretCipher.EncryptedSecret encryptedSecret,
-            Long operatorId,
-            boolean importedFromEnvironment
+            Long operatorId
     ) {
         try {
             return jdbcClient.sql("""
                             insert into wechat_platform_config (
                                 id, app_id, app_secret_ciphertext,
                                 secret_cipher_version, secret_key_id,
-                                secret_revision, revision, imported_from_env_at,
+                                secret_revision, revision,
                                 created_by, updated_by, created_at, updated_at
                             ) values (
                                 :id, :appId, :ciphertext,
                                 :cipherVersion, :keyId,
-                                1, 1, :importedAt,
+                                1, 1,
                                 :operatorId, :operatorId, current_timestamp, current_timestamp
                             )
                             """)
@@ -60,7 +58,6 @@ public class WechatPlatformConfigRepository {
                     .param("ciphertext", encryptedSecret.ciphertext())
                     .param("cipherVersion", encryptedSecret.version())
                     .param("keyId", encryptedSecret.keyId())
-                    .param("importedAt", importedFromEnvironment ? LocalDateTime.now() : null)
                     .param("operatorId", operatorId)
                     .update() == 1;
         } catch (DuplicateKeyException ex) {
@@ -131,12 +128,11 @@ public class WechatPlatformConfigRepository {
                 rs.getString("secret_key_id"),
                 rs.getLong("secret_revision"),
                 rs.getLong("revision"),
-                rs.getObject("imported_from_env_at", LocalDateTime.class),
                 rs.getObject("created_by", Long.class),
                 rs.getObject("updated_by", Long.class),
-                rs.getObject("secret_reencrypted_at", LocalDateTime.class),
-                rs.getObject("created_at", LocalDateTime.class),
-                rs.getObject("updated_at", LocalDateTime.class)
+                rs.getObject("secret_reencrypted_at", java.time.LocalDateTime.class),
+                rs.getObject("created_at", java.time.LocalDateTime.class),
+                rs.getObject("updated_at", java.time.LocalDateTime.class)
         );
     }
 }

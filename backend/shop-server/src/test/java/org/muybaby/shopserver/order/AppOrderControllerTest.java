@@ -1163,11 +1163,12 @@ class AppOrderControllerTest {
     private void insertOrderSnapshot(long orderId, String orderNo, long userId, long skuId, long orderItemId, String productTitle) {
         jdbcClient.sql("""
                         insert into shop_order
-                            (id, order_no, user_id, status, source, idempotency_key,
+                            (id, order_no, user_id, status, source, idempotency_key, checkout_request_digest,
                              product_original_amount_cent, product_amount_cent, coupon_discount_cent,
                              freight_cent, payable_amount_cent, paid_amount_cent, created_at, updated_at)
                         values
                             (:orderId, :orderNo, :userId, 'CREATED', 'CART', :idempotencyKey,
+                             'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
                              9980, 7980, 500, 0, 7480, 0,
                              timestamp '2026-07-07 12:30:00', timestamp '2026-07-07 12:30:00')
                         """)
@@ -1199,9 +1200,11 @@ class AppOrderControllerTest {
     private void insertActiveElectronicWaybill(long orderId) {
         jdbcClient.sql("""
                         insert into payment_order(
-                            order_id, out_trade_no, prepay_id, transaction_id, payer_openid,
+                            order_id, payment_config_id, payment_config_fingerprint,
+                            notification_route_token, out_trade_no, prepay_id, transaction_id, payer_openid,
                             status, amount_cent, expires_at, paid_at)
-                        select :orderId, :outTradeNo, :prepayId, :transactionId, u.openid,
+                        select :orderId, :paymentConfigId, :paymentConfigFingerprint,
+                               :notificationRouteToken, :outTradeNo, :prepayId, :transactionId, u.openid,
                                'PAID', o.payable_amount_cent,
                                timestamp '2026-07-08 11:00:00', timestamp '2026-07-08 10:00:00'
                         from shop_order o
@@ -1209,6 +1212,9 @@ class AppOrderControllerTest {
                         where o.id = :orderId
                         """)
                 .param("orderId", orderId)
+                .param("paymentConfigId", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_ID)
+                .param("paymentConfigFingerprint", org.muybaby.shopserver.support.PaymentFixtureIdentity.CONFIG_FINGERPRINT)
+                .param("notificationRouteToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(orderId))
                 .param("outTradeNo", "WB-MCH-" + orderId)
                 .param("prepayId", "WB-PREPAY-" + orderId)
                 .param("transactionId", "WB-TX-" + orderId)
