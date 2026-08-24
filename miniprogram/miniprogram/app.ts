@@ -1,6 +1,7 @@
 import {
   APP_CONFIG,
   APP_ENV_VERSION,
+  APP_MINI_PROGRAM_APP_ID,
   assertRuntimeConfig
 } from "./config/app-config";
 import {
@@ -17,7 +18,11 @@ App<IAppOption>({
     layout: getAppLayoutMetrics()
   },
   onLaunch() {
-    assertRuntimeConfig(APP_ENV_VERSION, APP_CONFIG);
+    assertRuntimeConfig(
+      APP_MINI_PROGRAM_APP_ID,
+      APP_ENV_VERSION,
+      APP_CONFIG
+    );
     restoreSession();
     onSessionExpired(() => {
       replaceWithExpiredSessionLogin();
