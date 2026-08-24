@@ -30,12 +30,12 @@ public class WechatServiceCardPropertiesTest {
 
     @Test
     void publicImageRejectsQueriesUserInfoAndUnapprovedHosts() {
-        var allowed = java.util.Set.of("admin.muybaby6.icu");
+        var allowed = java.util.Set.of("admin.junxiangshiping.cn");
         assertThat(WechatServiceCardProperties.validPublicImage(
-                "https://admin.muybaby6.icu/wechat/service-card-placeholder.png", allowed
+                "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png", allowed
         )).isTrue();
         assertThat(WechatServiceCardProperties.validPublicImage(
-                "https://admin.muybaby6.icu/image.png?sign=temporary", allowed
+                "https://admin.junxiangshiping.cn/image.png?sign=temporary", allowed
         )).isFalse();
         assertThat(WechatServiceCardProperties.validPublicImage(
                 "https://other.example/image.png", allowed
@@ -84,8 +84,8 @@ public class WechatServiceCardPropertiesTest {
                 Duration.ofMinutes(1), Duration.ofMinutes(30), unknown, maxUnknown, 2,
                 Duration.ofSeconds(3), Duration.ofSeconds(15),
                 DataSize.ofMegabytes(1), DataSize.ofKilobytes(64),
-                "https://admin.muybaby6.icu/wechat/service-card-placeholder.png",
-                false, List.of("admin.muybaby6.icu"),
+                "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
+                false, List.of("admin.junxiangshiping.cn"),
                 new WechatServiceCardProperties.Callback(false, "", "", Duration.ofMinutes(5))
         );
     }

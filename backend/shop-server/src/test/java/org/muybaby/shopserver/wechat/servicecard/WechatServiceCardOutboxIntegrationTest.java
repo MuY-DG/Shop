@@ -21,8 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
         "shop.wechat.service-card-2001.enabled=true",
         "shop.wechat.service-card-2001.worker-enabled=false",
         "shop.wechat.service-card-2001.account-template-record-id=template-record",
-        "shop.wechat.service-card-2001.fallback-product-image=https://admin.muybaby6.icu/wechat/service-card-placeholder.png",
-        "shop.wechat.service-card-2001.allowed-image-hosts=admin.muybaby6.icu"
+        "shop.wechat.service-card-2001.fallback-product-image=https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
+        "shop.wechat.service-card-2001.allowed-image-hosts=admin.junxiangshiping.cn"
 })
 @ActiveProfiles("test")
 class WechatServiceCardOutboxIntegrationTest {
@@ -212,7 +212,7 @@ class WechatServiceCardOutboxIntegrationTest {
                 .isEqualTo("pages/product/detail/detail?id=123")
                 .doesNotStartWith("/");
         assertThat(product.path("product_img").asText())
-                .isEqualTo("https://admin.muybaby6.icu/wechat/service-card-placeholder.png");
+                .isEqualTo("https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png");
         assertThat(check.path("pay_amount").longValue()).isEqualTo(100L);
         assertThat(check.path("pay_time").longValue()).isPositive();
     }

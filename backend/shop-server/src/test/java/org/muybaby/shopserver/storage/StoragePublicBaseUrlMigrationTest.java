@@ -18,8 +18,8 @@ class StoragePublicBaseUrlMigrationTest {
     void backfillsTheLegacyUrlIntoTheActiveProviderColumn() throws Exception {
         assertBackfill(
                 "LOCAL",
-                "https://pay-dev.muybaby6.icu",
-                "https://pay-dev.muybaby6.icu",
+                "https://legacy-storage.example.test",
+                "https://legacy-storage.example.test",
                 ""
         );
         assertBackfill(

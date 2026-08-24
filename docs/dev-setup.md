@@ -200,9 +200,10 @@ GET /app/compliance/documents/AFTER_SALE_POLICY/current
 ```
 
 The Mini Program resolves `develop`, `trial`, and `release` separately. The checked-in
-release API is `https://api.muybaby6.icu`; release still rejects missing/placeholder,
-localhost, loopback, non-HTTPS, and `pay-dev` hosts and never falls back to development.
-The admin hostname is `https://admin.muybaby6.icu`. DNS and SAN TLS have been established,
+development API is `https://api.muybaby6.icu`, while the checked-in release API is
+`https://api.junxiangshiping.cn`; release still rejects missing/placeholder, localhost,
+loopback, non-HTTPS, and the development host and never falls back to development.
+The production Admin hostname is `https://admin.junxiangshiping.cn`. DNS and TLS have been established,
 but every release must still recheck ingress, WeChat legal domains, callbacks, and a real
 device against the deployed Git SHA.
 
@@ -313,7 +314,7 @@ Configure the Mini Program account's single message-push endpoint as follows; th
 account-level setting, not a payment callback URL:
 
 ```text
-URL: https://api.muybaby6.icu/wechat/mini/message
+URL: https://api.junxiangshiping.cn/wechat/mini/message
 Message encryption: Safe mode
 Data format: JSON
 Token: exactly the value last written in Admin (the API never reads it back)

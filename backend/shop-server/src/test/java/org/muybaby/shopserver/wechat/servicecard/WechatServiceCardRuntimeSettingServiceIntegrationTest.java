@@ -164,8 +164,8 @@ class WechatServiceCardRuntimeSettingServiceIntegrationTest {
     private WechatServiceCardProperties readyProperties() {
         return properties(
                 "template-record",
-                "https://admin.muybaby6.icu/wechat/service-card-placeholder.png",
-                List.of("admin.muybaby6.icu"),
+                "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
+                List.of("admin.junxiangshiping.cn"),
                 new WechatServiceCardProperties.Callback(
                         true,
                         "callbackToken123",

@@ -6,12 +6,27 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 service_dir="$(cd -- "${script_dir}/.." && pwd)"
 repository_dir="$(cd -- "${service_dir}/../.." && pwd)"
 ssh_target="${1:-txcloud}"
+deploy_environment="${SHOP_DEPLOY_ENVIRONMENT:-$ssh_target}"
 platform="${SHOP_DEPLOY_PLATFORM:-linux/amd64}"
 transport="${SHOP_DEPLOY_TRANSPORT:-remote-build}"
 revision="$(git -C "$repository_dir" rev-parse --short=12 HEAD)"
 timestamp="$(date -u +%Y%m%d%H%M%S)"
 build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 release_image="shop-server:${revision}-${timestamp}"
+
+if [[ ! "$deploy_environment" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+  printf '部署环境名称只能包含小写字母、数字、点、下划线和连字符。\n' >&2
+  exit 2
+fi
+
+prod_file="${SHOP_DEPLOY_PROD_ENV_FILE:-${service_dir}/.env.${deploy_environment}.local}"
+infra_file="${SHOP_DEPLOY_INFRA_ENV_FILE:-${service_dir}/.env.infrastructure.${deploy_environment}.local}"
+
+# 兼容既有 txcloud 文件；新环境必须使用以目标名隔离的独立文件。
+if [[ "$deploy_environment" == txcloud && ! -f "$prod_file" && ! -f "$infra_file" ]]; then
+  prod_file="${service_dir}/.env.prod.local"
+  infra_file="${service_dir}/.env.infrastructure.local"
+fi
 
 case "$transport" in
   remote-build|image-stream) ;;
@@ -35,7 +50,9 @@ if [[ -n "$(git -C "$repository_dir" status --porcelain --untracked-files=normal
   exit 1
 fi
 
-"${script_dir}/validate-prod-env.sh"
+SHOP_PROD_ENV_FILE="$prod_file" \
+SHOP_INFRA_ENV_FILE="$infra_file" \
+  "${script_dir}/validate-prod-env.sh"
 "${script_dir}/verify-flyway-migrations.sh"
 "${script_dir}/verify-test-layers.sh"
 
@@ -48,13 +65,25 @@ if [[ "${SHOP_DEPLOY_SKIP_TESTS:-false}" != true ]]; then
 fi
 
 printf '正在通过 SSH 上传部署配置。\n'
+config_stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/shop-deploy-config.XXXXXX")"
+cleanup_config_stage() {
+  case "$config_stage_dir" in
+    "${TMPDIR:-/tmp}"/shop-deploy-config.*) rm -rf -- "$config_stage_dir" ;;
+    *) printf '拒绝清理异常部署配置目录：%s\n' "$config_stage_dir" >&2 ;;
+  esac
+}
+trap cleanup_config_stage EXIT
+install -m 600 "$prod_file" "$config_stage_dir/.env.prod.local"
+install -m 600 "$infra_file" "$config_stage_dir/.env.infrastructure.local"
+
 COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
-  -C "$service_dir" -czf - \
+  -C "$service_dir" -cf - \
   compose.prod.yaml \
-  .env.prod.local \
-  .env.infrastructure.local \
   scripts/remote-deploy.sh \
-  scripts/backup-mysql.sh |
+  scripts/backup-mysql.sh \
+  -C "$config_stage_dir" \
+  .env.prod.local \
+  .env.infrastructure.local | gzip -c |
   ssh "$ssh_target" '
     set -eu
     stage_dir="$(mktemp -d /tmp/shop-deploy.XXXXXX)"
@@ -68,6 +97,10 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
     sudo install -o root -g root -m 755 "$stage_dir/scripts/remote-deploy.sh" /opt/shop/shop-server/scripts/remote-deploy.sh
     sudo install -o root -g root -m 755 "$stage_dir/scripts/backup-mysql.sh" /opt/shop/shop-server/scripts/backup-mysql.sh
   '
+
+cleanup_config_stage
+config_stage_dir=''
+trap - EXIT
 
 case "$transport" in
   remote-build)

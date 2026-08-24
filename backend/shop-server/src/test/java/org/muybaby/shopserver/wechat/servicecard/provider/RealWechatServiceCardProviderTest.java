@@ -51,7 +51,7 @@ class RealWechatServiceCardProviderTest {
                         "openid", "420000000000000001",
                         "{\"cur_status\":2,\"wxa_path_query\":\"pages/order/detail/detail?order_id=68\","
                                 + "\"product_count\":1,\"product_list\":{\"info_list\":[{\"product_img\":"
-                                + "\"https://admin.muybaby6.icu/wechat/service-card-placeholder.png\","
+                                + "\"https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png\","
                                 + "\"product_name\":\"商品\",\"product_path_query\":"
                                 + "\"pages/product/detail/detail?id=1\"}]}}",
                         "{\"pay_amount\":100,\"pay_time\":1786400000}"

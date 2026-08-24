@@ -4,15 +4,41 @@ set -Eeuo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 service_dir="$(cd -- "${script_dir}/.." && pwd)"
-prod_file="${service_dir}/.env.prod.local"
-infra_file="${service_dir}/.env.infrastructure.local"
+environment=""
 rotate=false
 
-if [[ "${1:-}" == "--rotate-infrastructure" ]]; then
-  rotate=true
-elif [[ $# -gt 0 ]]; then
-  printf '用法：%s [--rotate-infrastructure]\n' "$0" >&2
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --environment)
+      [[ $# -ge 2 ]] || {
+        printf '%s 缺少环境名称。\n' "$1" >&2
+        exit 2
+      }
+      environment="$2"
+      shift 2
+      ;;
+    --rotate-infrastructure)
+      rotate=true
+      shift
+      ;;
+    *)
+      printf '用法：%s [--environment <name>] [--rotate-infrastructure]\n' "$0" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -n "$environment" && ! "$environment" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+  printf '环境名称只能包含小写字母、数字、点、下划线和连字符。\n' >&2
   exit 2
+fi
+
+if [[ -n "$environment" ]]; then
+  prod_file="${service_dir}/.env.${environment}.local"
+  infra_file="${service_dir}/.env.infrastructure.${environment}.local"
+else
+  prod_file="${service_dir}/.env.prod.local"
+  infra_file="${service_dir}/.env.infrastructure.local"
 fi
 
 command -v openssl >/dev/null 2>&1 || {
@@ -43,6 +69,15 @@ is_usable_secret() {
 
 generate_secret() {
   openssl rand -hex 32
+}
+
+generate_legacy_aes_secret() {
+  # 32 个 ASCII 字节，可直接被应用作为 AES-256 legacy key 使用。
+  openssl rand -hex 16
+}
+
+generate_base64_aes_secret() {
+  openssl rand -base64 32 | tr -d '\n'
 }
 
 upsert_property() {
@@ -194,6 +229,26 @@ upsert_property "$prod_file" SHOP_REDIS_DATABASE 0 "生产 Redis 逻辑数据库
 upsert_property "$prod_file" SHOP_REDIS_USERNAME '' "当前 requirepass 模式不使用 Redis ACL 用户名。"
 upsert_property "$prod_file" SHOP_REDIS_PASSWORD "$redis_password" "生产 Redis 密码。"
 
+active_key_id="$(read_property "$prod_file" SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID)"
+key_ring="$(read_property "$prod_file" SHOP_SECRET_ENCRYPTION_KEY_RING)"
+if ! is_usable_secret "$active_key_id" && ! is_usable_secret "$key_ring"; then
+  active_key_id="k$(date -u +%Y%m%d)-$(openssl rand -hex 4)"
+  key_ring="${active_key_id}=base64:$(generate_base64_aes_secret)"
+elif ! is_usable_secret "$active_key_id" || ! is_usable_secret "$key_ring"; then
+  printf '%s 的主密钥 ID 与密钥环必须同时有效，拒绝覆盖已有一侧。\n' "$prod_file" >&2
+  exit 1
+fi
+upsert_property "$prod_file" SHOP_SECRET_ENCRYPTION_WRITE_VERSION 2 "敏感配置新写入密文使用的格式版本。"
+upsert_property "$prod_file" SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID "$active_key_id" "当前用于加密新敏感配置的主密钥 ID。"
+upsert_property "$prod_file" SHOP_SECRET_ENCRYPTION_KEY_RING "$key_ring" "可读取当前及历史敏感配置密文的 AES-256 主密钥集合。"
+
+legacy_key="$(read_property "$prod_file" SHOP_SECRET_ENCRYPTION_LEGACY_KEY)"
+if ! is_usable_secret "$legacy_key"; then
+  legacy_key="$(generate_legacy_aes_secret)"
+fi
+upsert_property "$prod_file" SHOP_SECRET_ENCRYPTION_LEGACY_KEY "$legacy_key" "仅用于读取或迁移旧版 v1 密文的兼容 AES-256 主密钥。"
+upsert_property "$prod_file" SHOP_SECRET_ENCRYPTION_ROTATION_ENABLED false "全新数据库默认关闭敏感配置主密钥轮换任务。"
+
 if [[ -z "$(read_property "$prod_file" SHOP_TRUSTED_PROXY_CIDRS)" ]]; then
   upsert_property \
     "$prod_file" \
@@ -211,4 +266,5 @@ fi
 
 chmod 600 "$prod_file" "$infra_file"
 
-printf '生产环境文件已准备并设为 600 权限；敏感值未打印。\n'
+printf '生产环境文件已准备并设为 600 权限：%s；敏感值未打印。\n' \
+  "${environment:-default}"

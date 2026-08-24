@@ -66,8 +66,8 @@ flywayVersion
 - 真实微信登录、支付、售后 V2 部分/累计退款及退款回调、发货信息、物流插件和电子面单打印。
 - V92-V97 在生产 MySQL 实际存量数据上的升级、锁竞争与回滚/恢复演练；Testcontainers
   的 MySQL 8.4.10 通过不能替代生产环境发布验证。
-- `api.muybaby6.icu` / `admin.muybaby6.icu` 的 DNS 与 SAN TLS 基线已建立，小程序
-  `request`、`uploadFile`、`downloadFile` 合法域名已在微信公众平台配置；每次发布仍需
+- `api.junxiangshiping.cn` / `admin.junxiangshiping.cn` 的 DNS 与 TLS 基线已建立，小程序
+  `request`、`uploadFile`、`downloadFile` 合法域名仍需在微信公众平台配置；每次发布仍需
   用正式配置包在真机发起实际请求，并核对真实生产回调和完整链路。
 - 真实商家资质、法律文本、食品标签事实和商品逐一审核。
 - V93 真实商户交易账单的下载、摘要校验、差异处置、导出权限和每日调度尚未由生产

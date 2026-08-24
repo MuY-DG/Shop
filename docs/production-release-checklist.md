@@ -1,10 +1,10 @@
 # Shop 生产发布检查清单
 
-**适用范围：** 包含 Flyway `V85` 至 `V106` 的商家自营电商版本
-**最后更新：** 2026-08-21
+**适用范围：** 包含 Flyway `V85` 至 `V107` 的商家自营电商版本
+**最后更新：** 2026-08-24
 
 本清单是发布门禁，不是“示例配置”。每一项只有在真实环境执行并保存证据后才能
-勾选。正式 API `api.muybaby6.icu` 与后台 `admin.muybaby6.icu` 已建立 DNS 和 SAN TLS
+勾选。正式 API `api.junxiangshiping.cn` 与后台 `admin.junxiangshiping.cn` 已建立 DNS 和 TLS
 基线，但仓库仍没有可以自动确认的商家主体证照、正式法律文本或商品标签事实。
 这些项目和真实微信验收未补齐前，不能用测试证照、占位协议或虚构食品信息代替。
 
@@ -152,17 +152,15 @@ order by installed_rank;
 
 ## 4. 真实域名、网关和微信平台
 
-当前正式 API 为 `https://api.muybaby6.icu`，正式后台为
-`https://admin.muybaby6.icu`。两者的 DNS 与 SAN TLS 已建立；小程序 release 配置、
-服务器忽略的生产支付/退款回调，以及微信公众平台的 `request`、`uploadFile`、
-`downloadFile` 合法域名均已配置。这些是已完成的配置基线，不代表本次候选版已经
-在真机发出成功请求，也不代表支付、退款或其他真实交易链路已经验收。
+当前正式 API 为 `https://api.junxiangshiping.cn`，正式后台为
+`https://admin.junxiangshiping.cn`。DNS 与 TLS 已建立；微信公众平台合法域名、支付、
+COS 和真机链路仍须分别完成外部配置与验收，不能由服务器健康检查替代。
 
-- [ ] 重新验证 `api.muybaby6.icu` 和 `admin.muybaby6.icu` 仍解析到受控网关，HTTPS
+- [ ] 重新验证 `api.junxiangshiping.cn` 和 `admin.junxiangshiping.cn` 仍解析到受控网关，HTTPS
       证书有效、自动续期正常，HSTS/代理策略和路由符合当前发布。
 - [ ] `miniprogram/miniprogram/config/app-config.ts` 的 release 配置仍为
-      `https://api.muybaby6.icu`；不得使用空值、localhost、loopback、`pay-dev`
-      开发主机或临时隧道。
+      `https://api.junxiangshiping.cn`；不得使用空值、localhost、loopback、
+      `api.muybaby6.icu` 开发主机或临时隧道。
 - [ ] `trial` 当前明确复用开发 API 且仅隔离会话命名空间；它不是独立预发布环境，不能
       用体验版连接开发后端的结果替代生产验收。
 - [ ] 微信公众平台配置与实际请求完全一致：`request` 业务 API，`uploadFile` COS 客户端
@@ -170,12 +168,12 @@ order by installed_rank;
 - [ ] 反向代理只信任明确 CIDR，替换而非盲目信任外部 `X-Forwarded-For`；MySQL/Redis
       只暴露在回环或内部网络。
 - [ ] 微信支付 AppID、商户号、证书/公钥、APIv3、回调和运行来源配置均来自受控生产
-      存储；支付/退款回调均使用 `api.muybaby6.icu`，不把值写入仓库、日志、
+      存储；支付/退款回调均使用 `api.junxiangshiping.cn`，不把值写入仓库、日志、
       截图或发布证据。
 - [ ] 当前生产决策为新支付使用数据库配置；Admin 只展示数据库候选和当前配置，不展示
       ENV/AUTO 来源或环境导入接口。用切换后的第一笔新真实支付确认 `payment_config_id`
       指向启用的 DB 配置、不可变指纹正确，且支付/退款回调基址均为
-      `api.muybaby6.icu`；不得仅根据页面标签或运行开关推断已生效。
+      `api.junxiangshiping.cn`；不得仅根据页面标签或运行开关推断已生效。
 - [ ] 使用无删除权限、仅编辑权限和具备 `payment:config:delete` 的三个角色核对 Admin
       按钮和 `DELETE /admin/pay/configs/{configId}`：未授权请求为 403；当前配置和
       `legacySecretFilesPendingImport=true` 的配置拒绝删除；非当前且已迁移配置软删除后
@@ -183,9 +181,8 @@ order by installed_rank;
       退款、回调和对账仍能使用保留的加密配置回放。
 - [ ] 回调公网路径能够到达当前应用，支付和退款签名/解密成功；若启用按单路由，所有
       实例先支持 `/r/{opaque-token}`，旧固定回调在渠道重试窗口内继续受限保留。
-- [ ] `pay-dev.muybaby6.icu` 只保留给历史支付/退款回调兼容和微信重试；不将它配置
-      为新支付回调、小程序 release API 或 V94 账号消息推送 URL。历史回调库存和
-      渠道重试窗口未排空前不拆除该兼容路由。
+- [ ] 本次为全新生产数据库，不导入 txcloud 的支付配置、回调地址、OpenID 或历史交易；
+      所有新支付和退款回调只配置正式 API 域名。
 - [ ] 微信小程序后台的隐私保护指引、服务类目、支付、客服、物流助手/发货信息管理、
       物流插件和所需消息能力与本次实际功能一致。
 - [ ] 使用正式配置包在真机分别完成至少一次业务 `request`、COS `uploadFile` 和
@@ -390,7 +387,7 @@ V94 的激活条件是支付后 24 小时内，激活后更新窗口是 30 天�
       已添加模板；通过请求审计确认 `set_user_notify` 不含 `priTmplId` 或该记录 ID。
 - [ ] 先发布 Admin 静态资产 `admin/public/wechat/service-card-placeholder.png`，然后以无认证、
       无 Referer 请求验证
-      `https://admin.muybaby6.icu/wechat/service-card-placeholder.png` 返回 `200`/`image/png`
+      `https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png` 返回 `200`/`image/png`
       且文件内容是 PNG；失败时不得开 Worker。
 - [ ] 保持订单快照图优先开关为 `false`，并确认
       数据库兜底图片 URL 的 host 在同一配置的显式白名单中。当前带 Referer 防盗链的 COS
@@ -399,8 +396,8 @@ V94 的激活条件是支付后 24 小时内，激活后更新窗口是 30 天�
 ### 11.2 第二阶段：回调验证与只采集
 
 - [ ] 复核微信小程序后台唯一的账号级消息推送 URL：
-      `https://api.muybaby6.icu/wechat/mini/message`；消息加密方式选 **安全模式**，
-      数据格式选 **JSON**。不使用 `pay-dev`、支付回调路径或临时 URL。
+      `https://api.junxiangshiping.cn/wechat/mini/message`；消息加密方式选 **安全模式**，
+      数据格式选 **JSON**。不使用开发 API、支付回调路径或临时 URL。
 - [ ] 当前生产复核已有 GET 握手证据，不重新显示、复制或无故轮换已验证的 Token/AESKey。
       旧部署通过 V101 显式 legacy import 等价迁移；首次安装或凭据确认泄露时，在 Admin
       覆盖写入新值，且两者严格使用微信后台允许的纯字母数字字符，再开启并重新握手。

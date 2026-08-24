@@ -154,7 +154,7 @@ backend/shop-server/scripts/secure-1panel.sh txcloud
 然后在项目根目录运行完整应用部署：
 
 ```bash
-backend/shop-server/scripts/deploy-prod.sh txcloud
+backend/shop-server/scripts/deploy-prod.sh shop
 ```
 
 脚本会依次执行：
@@ -171,13 +171,13 @@ backend/shop-server/scripts/deploy-prod.sh txcloud
 只有在已经单独运行过测试时，才可跳过测试：
 
 ```bash
-SHOP_DEPLOY_SKIP_TESTS=true backend/shop-server/scripts/deploy-prod.sh txcloud
+SHOP_DEPLOY_SKIP_TESTS=true backend/shop-server/scripts/deploy-prod.sh shop
 ```
 
 服务器是 x86-64；如果将来更换 ARM 服务器，可显式覆盖：
 
 ```bash
-SHOP_DEPLOY_PLATFORM=linux/arm64 backend/shop-server/scripts/deploy-prod.sh txcloud
+SHOP_DEPLOY_PLATFORM=linux/arm64 backend/shop-server/scripts/deploy-prod.sh shop
 ```
 
 ## Spring Boot Layers 的实际作用
@@ -196,7 +196,7 @@ Dockerfile 使用 Spring Boot `jarmode=tools` 将可执行 JAR 拆成：
 如需改回本机构建并通过 SSH 传输完整压缩镜像：
 
 ```bash
-SHOP_DEPLOY_TRANSPORT=image-stream backend/shop-server/scripts/deploy-prod.sh txcloud
+SHOP_DEPLOY_TRANSPORT=image-stream backend/shop-server/scripts/deploy-prod.sh shop
 ```
 
 该模式先生成本地压缩镜像包，再使用 rsync 显示传输百分比、速度和预计剩余时间。
@@ -207,7 +207,7 @@ SHOP_DEPLOY_TRANSPORT=image-stream backend/shop-server/scripts/deploy-prod.sh tx
 SHOP_DEPLOY_TRANSPORT=image-stream \
 SHOP_DEPLOY_TRANSFER_ATTEMPTS=5 \
 SHOP_DEPLOY_TRANSFER_RETRY_DELAY_SECONDS=10 \
-backend/shop-server/scripts/deploy-prod.sh txcloud
+backend/shop-server/scripts/deploy-prod.sh shop
 ```
 
 本地和服务器需要额外容纳一份临时压缩包，成功加载后会自动清理。该模式仍会传输完整
@@ -313,8 +313,8 @@ sudo SHOP_BACKUP_RETENTION_DAYS=30 /opt/shop/shop-server/scripts/backup-mysql.sh
 ```bash
 curl --fail http://127.0.0.1:8080/actuator/health
 curl --fail http://127.0.0.1:8080/actuator/info
-curl --fail https://api.muybaby6.icu/actuator/health
-curl --fail https://api.muybaby6.icu/actuator/info
+curl --fail https://api.junxiangshiping.cn/actuator/health
+curl --fail https://api.junxiangshiping.cn/actuator/info
 sudo docker compose -f /opt/shop/shop-server/compose.prod.yaml ps
 ```
 

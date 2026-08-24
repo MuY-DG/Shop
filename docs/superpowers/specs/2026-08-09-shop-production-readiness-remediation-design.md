@@ -41,7 +41,7 @@ Account-rights and compliance entry points belong in the account profile/setting
 - Admin: typecheck and build passed; lint had 7 errors; 137/138 manually discovered tests passed, with one timezone-dependent expectation.
 - Backend: 1061 tests started; 1052 passed and 9 Testcontainers tests errored because Docker was unavailable. No business assertion failed, but the full gate was not green.
 - No local backend, MySQL, Redis, or Docker runtime was available during the audit.
-- The repository contains only the development API hostname `pay-dev.muybaby6.icu`; no confirmed production API/admin hostname is available.
+- The repository contains only a legacy development API hostname; no confirmed production API/admin hostname is available.
 - No confirmed legal-entity, business-license, food-license/filing, or product-label data exists in the repository.
 
 ## 4. Scope
@@ -152,7 +152,7 @@ Runtime configuration resolves from `develop`, `trial`, or `release` explicitly.
 - until a real staging hostname exists, `trial` explicitly reuses the development API while
   keeping a separate local-session namespace; it is not production proof.
 - `release` requires its own explicit value.
-- release rejects missing/placeholder values, non-HTTPS, localhost, loopback, and hostnames containing `pay-dev`.
+- release rejects missing/placeholder values, non-HTTPS, localhost, loopback, and known development hostnames.
 - release never falls back to development.
 
 Because no production hostname is known, the checked-in release value remains intentionally unconfigured and fails closed until the merchant supplies it.

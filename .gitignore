@@ -26,6 +26,7 @@ backend/shop-server/secrets/
 backend/shop-server/*.tar
 backend/shop-server/backups/
 backend/shop-server/.1panel.local
+backend/shop-server/.env.bootstrap-admin.*.local
 
 # Java / Spring Boot
 target/

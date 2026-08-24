@@ -373,8 +373,8 @@ class WechatServiceCardDeliveryCoordinatorTest {
                 Duration.ofMinutes(1), Duration.ofHours(6), 2,
                 Duration.ofSeconds(3), Duration.ofSeconds(15),
                 DataSize.ofMegabytes(1), DataSize.ofKilobytes(64),
-                "https://admin.muybaby6.icu/wechat/service-card-placeholder.png",
-                false, List.of("admin.muybaby6.icu"),
+                "https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png",
+                false, List.of("admin.junxiangshiping.cn"),
                 new WechatServiceCardProperties.Callback(
                         false, "", "", Duration.ofMinutes(5)
                 )

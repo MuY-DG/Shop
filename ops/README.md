@@ -1,72 +1,76 @@
-# Production edge configuration
+# Shop edge and deployment environments
 
-The files in this directory are the versioned source of truth for the public
-Shop edge. DNS records are managed in DNSPod and point both production hosts to
-`43.138.4.55`:
+The two public environments are intentionally isolated:
 
-- `api.muybaby6.icu` proxies the Mini Program and callback API to
-  `127.0.0.1:8080`.
-- `admin.muybaby6.icu` serves the Admin SPA and proxies `/admin/**` plus
-  `/realtime` to the backend.
+| SSH target | Purpose | API | Admin | Local secret files |
+| --- | --- | --- | --- | --- |
+| `txcloud` | development/integration | `https://api.muybaby6.icu` | `https://admin.muybaby6.icu` | existing `.env.prod.local` and `.env.infrastructure.local` |
+| `shop` | production | `https://api.junxiangshiping.cn` | `https://admin.junxiangshiping.cn` | `.env.shop.local` and `.env.infrastructure.shop.local` |
 
-V94 uses the account-level Mini Program message-push URL
-`https://api.muybaby6.icu/wechat/mini/message` in **Safe mode + JSON**. This is
-not a WeChat Pay callback and must never point at `pay-dev`. The backend route
-is intentionally absent unless the effective service-card database configuration
-enables it. Since V101, its Token and 43-character EncodingAESKey are encrypted in
-the database and must exactly match the WeChat console. The ignored production
-environment remains only as a legacy fallback until the explicit import, production
-verification, and rollback window are complete.
+Do not copy the txcloud database, Docker volumes, environment files, WeChat
+credentials, payment configuration, COS credentials, or encryption keys into the
+fresh production environment.
 
-The V94 product fallback image is the merchant-owned static file
-`admin/public/wechat/service-card-placeholder.png`, published as
-`https://admin.muybaby6.icu/wechat/service-card-placeholder.png`. Deploy the
-Admin release and verify an unauthenticated GET without Referer returns
-`200`, `image/png`, and actual PNG bytes before enabling service-card outbound
-work. Current COS product images require Referer and therefore are not the
-default 2001 image source.
+## OpenResty routing
 
-The production COS bucket keeps an explicit CORS rule for
-`https://admin.muybaby6.icu` with `POST, GET, HEAD`, wildcard request headers,
-the upload response headers documented in `docs/cos-direct-upload.md`, a
-600-second preflight cache, and `Vary: Origin`. Do not replace it with `*`.
-The bucket Referer allowlist also includes the exact `admin.muybaby6.icu`
-hostname alongside the Mini Program and local-development entries; empty
-Referer requests remain denied.
+The 1Panel website records remain the owner of the domain and certificate. The
+versioned files under `ops/openresty/` document the effective custom configuration;
+updating these files alone does not change a server.
 
-`shop-production-acme-bootstrap.conf` is only used while issuing the first
-certificate. The live OpenResty configuration uses the two host-specific files.
-The certificate is stored below `/opt/1panel/www/certbot` and is checked twice
-daily by `shop-certbot-renew.timer`. The renewal unit pins the exact Certbot
-image digest used for the initial issuance; update that digest deliberately
-when upgrading Certbot.
+- The API host sends normal HTTP traffic to `127.0.0.1:8080` and gives
+  `/realtime` a WebSocket upgrade path.
+- The Admin host serves the built SPA. `/admin/**` goes to the backend,
+  `/realtime` upgrades to WebSocket, and every other unknown route falls back to
+  `index.html` so refreshing a Vue route does not return 404.
+- OpenResty overwrites `X-Forwarded-For` with `$remote_addr`. The backend trusts
+  exactly one verified Docker bridge gateway, not arbitrary client-supplied proxy
+  headers.
 
-Never commit certificate private keys, DNSPod credentials, application secrets,
-or a built Admin `dist` directory.
+## Fresh production bootstrap
 
-Current production routing decision (recorded 2026-08-10): new payments use
-runtime source `ENV`, whose new payment/refund callbacks use
-`api.muybaby6.icu`. The `pay-dev.muybaby6.icu` route remains only for legacy
-payment/refund callback retries and must not be removed until the historical
-callback inventory and provider retry window are drained. It is not the Mini
-Program release API or the V94 message-push host.
-
-After the backend contract and Admin checks are green, deploy the already-built
-SPA atomically with:
+Prepare independent production files and a one-time Super credential:
 
 ```bash
+backend/shop-server/scripts/init-prod-env.sh --environment shop
+backend/shop-server/scripts/init-bootstrap-admin.sh shop
+```
+
+Set the verified Docker bridge gateway in `.env.shop.local`, then deploy a clean,
+committed revision:
+
+```bash
+backend/shop-server/scripts/deploy-prod.sh shop
+pnpm --dir admin check
+CI=true pnpm --dir admin build
+pnpm --dir admin check:generated-imports
+ops/deploy-admin.sh shop
+```
+
+The bootstrap credential is stored only in the ignored, mode-600 file
+`backend/shop-server/.env.bootstrap-admin.shop.local`. After the first login,
+change the password and remove the plaintext credential file.
+
+For development deployments, use `txcloud`. The backend script retains backward
+compatibility with the existing canonical txcloud secret filenames, while Admin
+selects the development host automatically:
+
+```bash
+backend/shop-server/scripts/deploy-prod.sh txcloud
 ops/deploy-admin.sh txcloud
 ```
 
-The script creates an immutable release directory and switches the public
-`index` symlink. It deliberately does not delete older releases.
+Never commit certificates, API credentials, database passwords, encryption keys,
+bootstrap credentials, or built `dist` output.
 
-Deploying the placeholder does not enable V94. Production already has the
-account callback enabled and its Safe+JSON GET handshake verified; a V95 rollout
-must not replace or expose that environment-only Token/AES material. Capture and
-worker remain disabled until an operator uses **开发配置 → 微信服务动态** to save a database-backed
-capture-only revision, inspect candidates and the durable queue, and only then
-save a later revision that enables the worker for one controlled real payment within WeChat's 24-hour
-activation window. The 30-day update window, callback receipt, and WeChat-side
-display remain external acceptance evidence; a healthy edge or successful SPA
-deployment does not prove message delivery.
+## Provider-side configuration
+
+The production Mini Program message-push URL is
+`https://api.junxiangshiping.cn/wechat/mini/message`. WeChat request/socket/upload/
+download legal domains, the Mini Program AppID/secret, payment merchant binding and
+callback approval, ICP filing, COS CNAME, COS CORS, and COS Referer rules are
+provider-console actions; server deployment does not prove those external settings
+or real payment/message delivery.
+
+The service-card fallback image, when enabled later, is published from
+`https://admin.junxiangshiping.cn/wechat/service-card-placeholder.png`. Verify its
+real PNG response before enabling outbound service-card work.

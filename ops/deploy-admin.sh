@@ -6,9 +6,26 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_dir="$(cd -- "${script_dir}/.." && pwd)"
 dist_dir="${repository_dir}/admin/dist"
 ssh_target="${1:-txcloud}"
+case "$ssh_target" in
+  txcloud) default_admin_host="admin.muybaby6.icu" ;;
+  shop) default_admin_host="admin.junxiangshiping.cn" ;;
+  *) default_admin_host="" ;;
+esac
+admin_host="${SHOP_ADMIN_HOST:-$default_admin_host}"
 revision="$(git -C "$repository_dir" rev-parse --short=12 HEAD)"
 release_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 release_id="${revision}-${release_stamp}"
+
+if [[ -z "$admin_host" ]]; then
+  printf '未知 SSH 目标 %s；请通过 SHOP_ADMIN_HOST 明确指定 Admin 域名。\n' "$ssh_target" >&2
+  exit 2
+fi
+if [[ ! "$admin_host" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ \
+   || "$admin_host" != *.* \
+   || "$admin_host" == *..* ]]; then
+  printf 'Admin 域名格式无效：%s\n' "$admin_host" >&2
+  exit 2
+fi
 
 for command in curl git ssh tar; do
   command -v "$command" >/dev/null 2>&1 || {
@@ -35,7 +52,7 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
   -C "$dist_dir" -czf - . |
   ssh "$ssh_target" "
     set -Eeuo pipefail
-    site_root=/opt/1panel/www/sites/admin.muybaby6.icu
+    site_root=/opt/1panel/www/sites/$admin_host
     release_root=\"\$site_root/releases\"
     release_dir=\"\$release_root/$release_id\"
     stage_dir=\"\$(mktemp -d /tmp/shop-admin-release.XXXXXX)\"
@@ -104,14 +121,14 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
 
     curl --fail --silent --show-error \
       --retry 3 --retry-delay 1 \
-      --resolve admin.muybaby6.icu:443:127.0.0.1 \
-      https://admin.muybaby6.icu/ >/dev/null
+      --resolve $admin_host:443:127.0.0.1 \
+      https://$admin_host/ >/dev/null
 
     trap - EXIT
   "
 
 curl --fail --silent --show-error \
   --retry 3 --retry-delay 1 \
-  https://admin.muybaby6.icu/ >/dev/null
+  https://$admin_host/ >/dev/null
 
 printf 'Admin 已部署并通过 HTTPS 首页检查：%s\n' "$release_id"

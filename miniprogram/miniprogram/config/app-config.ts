@@ -11,9 +11,11 @@ export interface AppRuntimeConfig {
 
 export type MiniProgramEnvVersion = "develop" | "trial" | "release";
 
-const DEVELOPMENT_API_BASE_URL = "https://pay-dev.muybaby6.icu";
+const DEVELOPMENT_API_BASE_URL = "https://api.muybaby6.icu";
 
-const RELEASE_API_BASE_URL = "https://api.muybaby6.icu";
+const RELEASE_API_BASE_URL = "https://api.junxiangshiping.cn";
+
+const DEVELOPMENT_API_HOSTNAME = httpsHostname(DEVELOPMENT_API_BASE_URL);
 
 function runtimeConfig(
   stage: AppStage,
@@ -92,11 +94,11 @@ function httpsHostname(value: string): string {
 }
 
 function isDevelopmentHostname(hostname: string): boolean {
-  return hostname === "localhost"
+  return hostname === DEVELOPMENT_API_HOSTNAME
+    || hostname === "localhost"
     || hostname.endsWith(".localhost")
     || hostname === "0.0.0.0"
-    || /^127(?:\.\d{1,3}){3}$/.test(hostname)
-    || hostname.includes("pay-dev");
+    || /^127(?:\.\d{1,3}){3}$/.test(hostname);
 }
 
 export function assertRuntimeConfig(

@@ -4,8 +4,8 @@ set -Eeuo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 service_dir="$(cd -- "${script_dir}/.." && pwd)"
-prod_file="${service_dir}/.env.prod.local"
-infra_file="${service_dir}/.env.infrastructure.local"
+prod_file="${SHOP_PROD_ENV_FILE:-${service_dir}/.env.prod.local}"
+infra_file="${SHOP_INFRA_ENV_FILE:-${service_dir}/.env.infrastructure.local}"
 
 for file in "$prod_file" "$infra_file"; do
   if [[ ! -f "$file" ]]; then

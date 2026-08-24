@@ -68,21 +68,21 @@ git commit -m "类型(范围): 简要说明"
 推荐方式：完整测试、上传精简源码、服务器缓存构建并自动切换容器。
 
 ```bash
-backend/shop-server/scripts/deploy-prod.sh txcloud
+backend/shop-server/scripts/deploy-prod.sh shop
 ```
 
 已经对完全相同的代码运行过完整测试时，可在本次部署中跳过重复测试：
 
 ```bash
 SHOP_DEPLOY_SKIP_TESTS=true \
-backend/shop-server/scripts/deploy-prod.sh txcloud
+backend/shop-server/scripts/deploy-prod.sh shop
 ```
 
 可选的本地镜像构建模式需要本机 Docker Hub 网络正常，并会上传完整压缩镜像：
 
 ```bash
 SHOP_DEPLOY_TRANSPORT=image-stream \
-backend/shop-server/scripts/deploy-prod.sh txcloud
+backend/shop-server/scripts/deploy-prod.sh shop
 ```
 
 该模式显示传输百分比、速度和预计剩余时间；中断后默认自动重试 3 次，并对已经上传的
@@ -91,7 +91,7 @@ backend/shop-server/scripts/deploy-prod.sh txcloud
 ```bash
 SHOP_DEPLOY_TRANSPORT=image-stream \
 SHOP_DEPLOY_TRANSFER_ATTEMPTS=5 \
-backend/shop-server/scripts/deploy-prod.sh txcloud
+backend/shop-server/scripts/deploy-prod.sh shop
 ```
 
 部署脚本会拒绝包含未提交改动的工作区；发布前必须完成验证和 Git 提交，并确认
@@ -102,8 +102,8 @@ backend/shop-server/scripts/deploy-prod.sh txcloud
 公网健康检查：
 
 ```bash
-curl --fail https://api.muybaby6.icu/actuator/health
-curl --fail https://api.muybaby6.icu/actuator/info
+curl --fail https://api.junxiangshiping.cn/actuator/health
+curl --fail https://api.junxiangshiping.cn/actuator/info
 ```
 
 `/actuator/info` 应只包含 `gitSha`、`buildTime`、`version` 和 `flywayVersion`。

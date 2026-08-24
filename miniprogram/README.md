@@ -83,10 +83,10 @@ pnpm check
 - `develop` 指向现有开发 API，并使用开发会话命名空间；
 - `trial` 当前显式复用开发 API，但使用独立会话命名空间，因此只能作为连接开发后端的体验版，不能作为独立预发布或生产验收；
 - `release` 使用独立生产会话命名空间，并固定连接已启用 TLS 的
-  `https://api.muybaby6.icu`；不会回退到开发 API。
+  `https://api.junxiangshiping.cn`；不会回退到开发 API。
 
 不要把示例域名、开发域名或临时隧道当作生产配置。正式版会拒绝空值、非
-HTTPS、无效主机、localhost/loopback 和包含 `pay-dev` 的开发主机。变更
+HTTPS、无效主机、localhost/loopback 和 `api.muybaby6.icu` 开发主机。变更
 `RELEASE_API_BASE_URL` 前，必须同时核对网关路由、证书、支付/退款回调地址及
 微信公众平台合法域名。
 
