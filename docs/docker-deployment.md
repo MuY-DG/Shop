@@ -56,7 +56,7 @@ SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID
 SHOP_SECRET_ENCRYPTION_KEY_RING
 ```
 
-三个密码固定使用初始化脚本生成的 64 位小写十六进制格式；key ring 允许 1-16 个条目。
+txcloud/shop 的三个密码固定使用初始化脚本生成的 64 位小写十六进制格式；local 可以改成已有本机 MySQL/Redis 实际使用的非空密码。key ring 允许 1-16 个条目。
 微信小程序、微信支付、COS、服务动态、发货和财务对账的凭据与业务开关必须在 Admin 中配置并加密写入数据库，不得放入运行时清单。
 
 生成并校验服务器清单：

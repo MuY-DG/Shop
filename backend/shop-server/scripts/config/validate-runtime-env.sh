@@ -80,20 +80,22 @@ done < <(awk -F= '/^[A-Z][A-Z0-9_]*=/ { print $1 }' "$runtime_file" | sort -u)
 
 for required_key in "${allowed_keys[@]}"; do
   value="$(read_property "$required_key")"
-  if [[ -z "$value" || "$value" == *'<'* || "$value" == *'>'* ]]; then
+  if [[ -z "$value" || "$value" == '<generated-'*'>' ]]; then
     printf 'runtime manifest 中的 %s 尚未填写有效值。\n' "$required_key" >&2
     exit 1
   fi
 done
 
-for password_key in SHOP_DB_PASSWORD SHOP_DB_ROOT_PASSWORD SHOP_REDIS_PASSWORD; do
-  password_value="$(read_property "$password_key")"
-  if [[ ! "$password_value" =~ ^[0-9a-f]{64}$ ]]; then
-    printf 'runtime manifest 中的 %s 必须是 init 脚本生成的 64 位小写十六进制值。\n' \
-      "$password_key" >&2
-    exit 1
-  fi
-done
+if [[ "$target" != local ]]; then
+  for password_key in SHOP_DB_PASSWORD SHOP_DB_ROOT_PASSWORD SHOP_REDIS_PASSWORD; do
+    password_value="$(read_property "$password_key")"
+    if [[ ! "$password_value" =~ ^[0-9a-f]{64}$ ]]; then
+      printf '%s runtime manifest 中的 %s 必须是 init 脚本生成的 64 位小写十六进制值。\n' \
+        "$target" "$password_key" >&2
+      exit 1
+    fi
+  done
+fi
 
 active_key_id="$(read_property SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID)"
 if [[ ! "$active_key_id" =~ ^[a-z0-9][a-z0-9._-]{2,63}$ ]]; then
