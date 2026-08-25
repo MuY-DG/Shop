@@ -102,4 +102,4 @@ chmod 600 "$runtime_file"
 trap - EXIT
 
 printf 'runtime manifest 已生成：%s（秘密未打印）。\n' "$runtime_file"
-printf '请使用该文件的数据库/Redis 密码重建或对齐目标服务。\n'
+printf '该文件供本机或部署脚本使用；不要提交 Git，也不要跨环境复制。\n'

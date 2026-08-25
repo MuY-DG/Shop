@@ -13,7 +13,7 @@ services:
       MYSQL_PASSWORD: ${SHOP_DB_PASSWORD:?SHOP_DB_PASSWORD is required}
       MYSQL_ROOT_PASSWORD: ${SHOP_DB_ROOT_PASSWORD:?SHOP_DB_ROOT_PASSWORD is required}
       TZ: UTC
-    # 使用 utf8mb4，并按当前 4 GB 服务器限制连接数与 InnoDB 缓冲池。
+    # 使用 utf8mb4，并限制连接数与 InnoDB 缓冲池，避免数据库挤占应用资源。
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
@@ -44,7 +44,7 @@ services:
     # 禁止容器进程获得额外 Linux 权限。
     security_opt:
       - no-new-privileges:true
-    # 限制单个容器日志大小，避免填满 40 GB 系统盘。
+    # 限制单个容器日志大小，避免持续占用系统盘。
     logging:
       driver: json-file
       options:
@@ -95,9 +95,9 @@ services:
         max-file: "5"
 
   shop-server:
-    # 一键脚本把每个版本保留为独立标签，再将已验证版本指向 shop-server:local。
+    # 部署脚本在服务器构建并更新这个本地镜像标签。
     image: shop-server:local
-    # SSH 直传模式不访问公开镜像仓库。
+    # 镜像只在目标服务器构建，不访问公开镜像仓库。
     pull_policy: never
     # MySQL 和 Redis 均通过健康检查后才启动应用。
     depends_on:
@@ -179,7 +179,7 @@ networks:
         - subnet: 172.24.0.0/24
           gateway: 172.24.0.1
 
-# 命名卷由 Docker 管理，并可由 1Panel 进行查看和备份。
+# 命名卷由 Docker 管理，日常部署不会主动删除。
 volumes:
   mysql-data:
   redis-data:

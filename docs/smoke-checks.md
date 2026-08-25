@@ -1,296 +1,113 @@
 # Shop 验收清单
 
-这份清单区分三类证据：自动化测试、本机/服务器运行态检查、真实外部平台验收。三者不能互相替代。
+自动化只能证明代码和基础集成链路，不能代替真实微信、支付、物流、COS 和真机验收。
 
-## 1. 记录验收上下文
+## 1. 记录版本
 
-开始前记录：
+```bash
+git status --short --branch
+git rev-parse HEAD
+```
 
-- Git SHA 与工作区是否干净；
-- 目标：`local`、`txcloud` 或 `shop`；
-- 后端、Admin、小程序的发布版本；
-- 数据库是否为 generation 2 空库初始化；
-- 执行人、开始/结束时间；
-- 是否允许创建真实订单、支付、退款和物流记录。
+记录目标环境、Git SHA、API 域名、Admin 域名、小程序 AppID 与验收账号。
 
-未经授权不要改动 shop 的真实数据。只读健康检查与真实业务写操作必须分开记录。
-
-## 2. 自动化门禁
-
-### 后端
+## 2. 自动化
 
 ```bash
 cd backend/shop-server
-
-./scripts/ci/verify-flyway-migrations.sh
-./scripts/ci/verify-test-layers.sh
-
-# 单元/H2；不包含 Testcontainers。
 ./mvnw test
-
-# MySQL/Redis Testcontainers；Docker 不可用即失败。
 ./mvnw -Pintegration verify
 ./scripts/ci/assert-integration-test-results.sh target/failsafe-reports
-```
+./scripts/ci/verify-test-layers.sh
+./scripts/ci/verify-flyway-migrations.sh
 
-通过标准：
-
-- Flyway 文件从 V1 到 V7 连续、无重复、命名合规；
-- Testcontainers 测试都带 `integration` 标签；
-- 两层测试零失败、零错误；
-- 集成报告执行数非零、跳过数为零。
-
-### Admin
-
-```bash
-cd admin
-pnpm check
-CI=true pnpm build
-pnpm check:generated-imports
-```
-
-### 小程序
-
-```bash
-cd miniprogram
-pnpm check
-```
-
-自动化通过只证明代码与测试契约通过，不证明微信、支付、COS、证书、域名或物流平台真实可用。
-
-## 3. 配置与秘密
-
-```bash
-cd backend/shop-server
-./scripts/config/validate-runtime-env.sh local
-./scripts/config/validate-runtime-env.sh txcloud
-./scripts/config/validate-runtime-env.sh shop
-```
-
-按实际目标运行对应一条即可。确认：
-
-- 清单只有白名单中的五个键；
-- 三个目标使用独立密码和主密钥；
-- `local` 只信任回环地址；
-- txcloud/shop 都只信任固定 Docker `edge` 网关 `172.23.0.1/32`；
-- Git 中不存在真实清单、临时 Super 凭据、证书私钥、上传文件或备份；
-- 微信、支付、COS 等业务凭据只在 Admin/数据库中存在；
-- API 响应和日志只显示脱敏状态，不回传密钥正文。
-
-可用以下命令审查待提交范围，但不要把搜索结果中的秘密复制到聊天或工单：
-
-```bash
-git status --short
+cd ../../
+pnpm --dir admin check
+CI=true pnpm --dir admin build
+pnpm --dir admin check:generated-imports
+pnpm --dir miniprogram check
 git diff --check
-git diff --cached --check
 ```
 
-## 4. generation 2 空库
+## 3. 部署健康
 
-只在明确可丢弃的数据环境执行首次初始化。验收标准：
-
-- 空 MySQL schema 启动后完整执行 V1-V7；
-- 再次启动不重复写入基线数据；
-- `/actuator/info` 报告 Flyway 当前版本为 `7`；
-- RBAC、菜单、字典和必要运行时控制行存在且不重复；
-- 运行时业务控制默认关闭；
-- `Super` 默认停用且哨兵哈希不可登录；
-- 微信、支付、COS 等真实业务配置表没有被写入示例秘密；
-- H2 默认层与 MySQL 集成层都覆盖最终 schema，而不是依赖旧迁移链。
-
-旧 schema 报校验冲突是预期保护，不应通过 Flyway repair 绕过。目标必须重建为空库。
-
-## 5. 进程与网络健康
-
-本机：
+部署命令：
 
 ```bash
-curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health
+./deploy.sh txcloud
+# 或
+./deploy.sh shop
 ```
 
-服务器：
+服务器检查：
 
 ```bash
-ssh shop '
-  cd /opt/shop/shop-server
-  sudo docker compose \
-    --env-file config/runtime/runtime.env \
-    -f compose.prod.yaml ps
-  curl --fail --silent --show-error http://127.0.0.1:8080/actuator/health
-  curl --fail --silent --show-error http://127.0.0.1:8080/actuator/info
-'
+ssh shop 'cd /opt/shop/shop-server && sudo docker compose --env-file config/runtime/runtime.env -f compose.prod.yaml ps'
+ssh shop 'curl -fsS http://127.0.0.1:8080/actuator/health'
+ssh shop 'curl -fsS http://127.0.0.1:8080/actuator/info'
 ```
 
-对 txcloud 验收时把 SSH 目标替换为 `txcloud`。确认：
+确认：
 
-- MySQL、Redis、后端均为 healthy；
-- `/actuator/info` 的 Git SHA 与待验收提交一致；
-- 公网只能通过 HTTPS 域名访问，8080/3306/6379 不对公网开放；
-- `server` 不暴露 Swagger；
-- 未认证访问 Admin API 返回明确的 401/403；
-- 真实客户端 IP 不是固定 Docker 网关，也不接受伪造的多跳代理头；
-- 日志包含 request ID，且不打印密码、token、APIv3 key、PEM 或主密钥。
+- MySQL、Redis 和 `shop-server` 均为 healthy。
+- 8080、3306、6379 只绑定 `127.0.0.1`。
+- `/actuator/info` 的 Git SHA 与发布提交一致，Flyway 版本是当前最高迁移。
+- API 与 Admin HTTPS 可访问，Admin 前端路由刷新不返回 404。
+- API 与 Admin 两个域名的 `/realtime` WebSocket 都能完成握手并到达后端。
+- 容器没有持续重启，日志没有 Flyway、密钥或连接错误。
 
-## 6. 首次 Super 引导
+## 4. Admin
 
-仅对新的 txcloud/shop 空库执行：
+全新空库时，读取本机
+`backend/shop-server/config/runtime/bootstrap-admin.<target>.txt` 登录 Super，立即修改
+临时密码并删除该文件。
 
-```bash
-backend/shop-server/scripts/config/bootstrap-admin.sh txcloud
-backend/shop-server/scripts/config/bootstrap-admin.sh shop
-```
+逐项确认：
 
-每个目标只运行对应命令。确认：
+- Super、普通管理员、禁用账号和权限菜单符合预期。
+- 商家主体、法律文档、售后规则和退货地址使用真实内容。
+- 微信平台、微信支付、COS、物流和服务动态配置属于当前环境。
+- 商品、SKU、库存、运费模板、优惠券和首页装修可以保存并重新读取。
+- 敏感配置页面不回显私钥、APIv3 Key 或 COS Secret 明文。
 
-- 只有哨兵状态完全匹配时才成功一次；
-- 第二次执行被拒绝，数据库不再变化；
-- 明文密码未出现在终端或日志；
-- `config/runtime/bootstrap-admin.<target>.txt` 权限为 `0600`；
-- 首次登录后能修改密码；
-- 修改成功后删除临时凭据文件；
-- `admin_system_log` 能查到引导与密码修改事件。
+## 5. 小程序基础流程
 
-## 7. Admin 基础流程
+- 使用正确 AppID 和版本打开，确认请求进入对应 API。
+- 新用户登录、手机号授权、刷新令牌和再次进入均正常。
+- 首页、分类、搜索、商品详情、购物车和收藏使用真实数据。
+- 地址新增、微信地址导入、地图选点、编辑和默认地址正常。
+- 订单预览的商品、优惠、运费、地址和应付金额一致。
+- 取消、软删除、再次购买、评价、售后申请和售后详情符合状态限制。
 
-使用最小权限账号和 Super 分别检查：
+## 6. 真实平台流程
 
-- 登录、刷新会话、退出；
-- 多设备会话上限与踢出；
-- 连续错误密码触发限流/锁定，等待或解锁后恢复；
-- 菜单只显示有权限的模块；
-- 无权限访问接口返回 403，而不是依赖前端隐藏；
-- 创建、停用、启用管理员；
-- 关键配置写入系统日志，敏感值脱敏；
-- 浏览器刷新后路由、权限与登录状态一致。
+必须使用测试商品、测试账号和可核对的真实平台记录：
 
-## 8. 业务配置首录
+- 微信登录：Code 只能由对应环境的 AppID/Secret 换取。
+- 支付：下单、拉起支付、回调、主动查单和订单落账金额一致。
+- 退款：部分/累计退款、回调或查单恢复、本地记录和商户平台金额一致。
+- COS：Admin 与小程序直传、公开读取、私有签名读取和图片处理成功。
+- 发货：拆分包裹、部分发货、微信发货上传、轨迹与确认收货正常。
+- 服务动态：先验证 Capture，再按当前运行配置验证 Worker 和微信端展示。
+- 财务对账：账单下载、差异展示、处理备注和审计记录正确。
+- 客服：消息、图片、转接、离线恢复和订单/商品上下文正常。
 
-全新数据库应按依赖顺序配置：
+## 7. 结论
 
-1. COS 存储与自定义域名；
-2. 微信小程序平台凭据；
-3. 微信支付商户配置与回调基址；
-4. 微信物流/服务动态所需模板与控制开关；
-5. 财务对账运行开关；
-6. 商家资质、法律文档、客服电话和首页内容。
-
-每项确认：
-
-- 未配置时功能明确失败或保持安全关闭；
-- 保存后页面只显示脱敏状态；
-- 数据库保存的是 v2 密文和 key ID，不是明文；
-- 更新使用版本/CAS，旧页面提交不能覆盖新值；
-- 删除被历史业务引用的支付配置受到限制或转为软删除；
-- 所有启停操作都有权限校验和审计日志。
-
-## 9. 商品、库存与购物车
-
-准备一个有规格商品和一个无规格商品：
-
-- Admin 创建分类、商品、SKU、图片、参数和阶梯价；
-- 上架后小程序列表、详情、搜索和首页卡片一致；
-- 下架或软删除后不再被新购买，但历史订单仍能展示快照；
-- 加入购物车、改数量、勾选、删除与缓存恢复正确；
-- 超出库存、无效 SKU、已下架商品不能结算；
-- 两个并发结算不能造成负库存或重复扣减；
-- 失败/取消流程按业务规则释放库存。
-
-## 10. 下单、支付与退款
-
-### 自动化/模拟流程
-
-- 创建订单时固化商品、价格、收货地址和支付截止时间；
-- 重复提交使用幂等键，不创建重复订单；
-- 金额在服务端重算，客户端篡改无效；
-- 超时关闭、支付恢复、退款恢复任务可重复执行且不重复落账；
-- 支付/退款回调 token 精确定位业务记录与数据库配置；
-- 未知、过期、验签失败或商户身份不匹配的回调不推进业务状态；
-- 全额和部分退款金额、库存回补、售后状态与订单汇总一致；
-- 渠道侧已有退款而本地缺失时进入可审计人工处理，不盲目重试。
-
-### 真实微信支付验收
-
-使用获准的最小金额测试订单，记录商户订单号、微信支付单号、退款单号和时间。确认：
-
-- JSAPI 下单成功，金额、AppID、OpenID、商户号匹配；
-- HTTPS 回调可达，重复通知幂等；
-- 查单、关单和超时场景符合预期；
-- 部分退款、全额退款和重复退款保护正确；
-- Admin、小程序、本地数据库与微信商户平台状态一致；
-- 验收后按业务约定清理或标记测试订单。
-
-仅看到接口 200 或渠道 `REFUND` 字样不能证明本地已正确全额退款，必须核对金额和本地退款记录。
-
-## 11. 发货、物流与收货
-
-- Admin 可按商品数量拆分包裹，分配总量不能超过订单项数量；
-- 部分发货与全部发货状态区分正确；
-- 物流公司、运单号、自配送/无需物流规则正确；
-- 重复提交不会生成重复包裹或重复推进状态；
-- 微信发货失败进入可重试/待对账状态，不伪装成功；
-- 微信物流轨迹与本地快照可刷新并限制频率；
-- 收货对账不会把异常订单直接推进为完成；
-- 小程序展示每个包裹和轨迹，而不是只展示第一单号。
-
-真实平台验收需在微信后台核对发货信息、服务动态和收货状态。自动化测试不能证明模板 ID、平台权限或线上回调已经配置。
-
-## 12. COS 与素材
-
-- Admin 上传图片/视频并完成直传会话；
-- MIME、扩展名、尺寸、像素和大小限制生效；
-- 未完成或过期会话不能持久化为素材；
-- 私有对象使用短期访问地址，公开对象使用配置域名；
-- 删除在用素材被拒绝或进入受控清理；
-- 清理任务重试幂等，不删除仍被业务引用的对象；
-- COS CORS、自定义域名、HTTPS 和数据万象规则在真实平台验证。
-
-不要把能上传本地 mock 当成 COS 已验收。
-
-## 13. 客服、优惠券与内容
-
-- 客服会话创建、分配、转接、关闭和历史分页正确；
-- 未读数、草稿、图片消息和快捷回复一致；
-- 用户只能访问自己的会话；
-- 优惠券领取、门槛、适用范围、冻结、核销和释放正确；
-- 首页装修发布后小程序缓存按预期刷新；
-- 联系方式、资质和法律文档版本可追溯；
-- 注销、禁用和恢复的权限/状态语义不混淆。
-
-## 14. 财务对账
-
-- 运行开关默认关闭，启用需要明确权限；
-- 同一商户、账单日期和账单类型不会重复生成并发任务；
-- 下载失败、格式错误、金额不一致和未知记录进入明确状态；
-- 任务重试幂等，人工标记解决不暗改订单/退款业务状态；
-- 导出结果受权限、日期范围和行数限制；
-- 渠道账单金额、本地支付/退款记录和订单汇总三方可追溯。
-
-## 15. 发布后观察
-
-至少观察一个完整业务窗口：
-
-- 容器重启次数、CPU、内存、磁盘、日志增长；
-- MySQL 连接数、慢查询、Flyway 版本；
-- Redis 内存、AOF、认证失败；
-- 401/403/429/5xx 比例；
-- 支付、退款、发货、服务动态和对账失败队列；
-- COS 上传/清理失败；
-- 回调未知路由、验签失败和重试频率。
-
-## 16. 验收结论模板
+验收结果至少记录：
 
 ```text
-目标：local / txcloud / shop
+目标：
 Git SHA：
-数据库：generation 2 V1-V7 / 其他（说明）
-自动化：后端默认层 / 集成层 / Admin / 小程序
-运行态：health / info / 容器 / HTTPS / 代理
-真实平台：微信登录 / 支付 / 退款 / COS / 发货 / 对账
-写入的数据：
-未验证项：
-发现的问题：
-回滚点：
-结论：通过 / 有条件通过 / 不通过
+Flyway：
+自动化：
+后端/Admin：
+小程序：
+支付/退款：
+COS：
+发货/服务动态：
+未通过项：
+结论：通过 / 不通过
 ```
 
-没有执行的项目必须写“未验证”，不能从自动化结果推断为已通过。
+部署前置与日常命令见 [deployment-guide.md](deployment-guide.md)。

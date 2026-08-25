@@ -24,7 +24,6 @@ logs/
 *.jks
 backend/shop-server/secrets/
 backend/shop-server/*.tar
-backend/shop-server/backups/
 
 # Java / Spring Boot
 target/

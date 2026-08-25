@@ -72,8 +72,8 @@ src/
 ## 相关文档
 
 - [开发环境与命令](../docs/dev-setup.md)
-- [生产发布检查清单](../docs/production-release-checklist.md)
-- [后端架构与演进规则](../docs/backend-architecture.md)
+- [服务器部署](../docs/deployment-guide.md)
+- [业务验收](../docs/smoke-checks.md)
 
 ## 许可
 

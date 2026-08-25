@@ -17,11 +17,10 @@
 | 合规 | 商家资质、法律文档版本、食品标签和上架门禁 | 仓库不提供虚构生产资质，发布前必须录入真实主体与商品事实 |
 | 后台 | RBAC、商品/订单/用户/客服/运营管理、COS 素材 | 部分大文件和 Art Design Pro 模板残留待分阶段清理 |
 
-数据库使用 Flyway 只向前迁移。当前是一次不兼容旧数据库的第二代基线（V1-V7）；首次把
-local、txcloud 或 shop 切换到这一代时必须重建对应数据库卷，不能把旧的 V1-V107
-`flyway_schema_history` 继续交给新版本。完成首次切换后，普通 V8+ 发布不得再次删除数据卷。请以
+数据库使用 Flyway 只向前迁移，当前基线从 V1 开始。全新环境由 Compose 创建空数据库并
+自动执行迁移；日常部署复用现有数据卷并继续执行新增迁移。实际版本以
 `backend/shop-server/src/main/resources/db/migration` 和已部署应用的
-`/actuator/info.flywayVersion` 为准，不从旧设计文档推测当前版本。
+`/actuator/info.flywayVersion` 为准。
 
 ## 工程门禁
 
@@ -74,21 +73,17 @@ GitHub 远程仓库和 `.github/workflows/ci.yml` 已实际启用；仍需在仓
 
 ```text
 Shop/
-  backend/shop-server/  Spring Boot 后端、Flyway、Docker 部署脚本
+  backend/shop-server/  Spring Boot 后端、Flyway、Docker Compose
   admin/                Vue 3 管理后台
   miniprogram/          原生微信小程序
-  docs/                 架构、运维、发布和历史设计文档
+  docs/                 开发、部署、验收和专项说明
+  deploy.sh             txcloud/shop 统一部署入口
 ```
 
 ## 文档入口
 
-- [当前工程基线](docs/foundation-completion.md)
 - [开发环境与命令](docs/dev-setup.md)
-- [本地 Smoke 检查](docs/smoke-checks.md)
-- [txcloud 与 shop 部署教程](docs/deployment-guide.md)
-- [生产发布检查清单](docs/production-release-checklist.md)
-- [Docker 生产部署](docs/docker-deployment.md)
-- [运维速查](docs/operations-cheatsheet.md)
-- [后端架构与演进规则](docs/backend-architecture.md)
-
-`docs/superpowers/specs` 和 `docs/superpowers/plans` 保留历史设计与实施证据，不代表当前待办。
+- [txcloud 与 shop 部署](docs/deployment-guide.md)
+- [验收清单](docs/smoke-checks.md)
+- [后端架构约定](docs/backend-architecture.md)
+- [COS 图片直传](docs/cos-direct-upload.md)

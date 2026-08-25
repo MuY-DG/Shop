@@ -18,7 +18,6 @@ secrets
 var
 logs
 tmp
-backups
 *.log
 
 # 开发工具与操作系统生成文件不需要进入镜像。
