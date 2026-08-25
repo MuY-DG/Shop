@@ -1,4 +1,4 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type ConfigEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -11,7 +11,7 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import tailwindcss from '@tailwindcss/vite'
 // import { visualizer } from 'rollup-plugin-visualizer'
 
-export default ({ mode }: { mode: string }) => {
+export default ({ command, mode }: ConfigEnv) => {
   const root = process.cwd()
   const env = loadEnv(mode, root)
   const { VITE_VERSION, VITE_PORT, VITE_BASE_URL, VITE_API_URL, VITE_API_PROXY_URL } = env
@@ -90,7 +90,9 @@ export default ({ mode }: { mode: string }) => {
       }),
       // 自动按需导入组件
       Components({
-        dts: 'src/types/import/components.d.ts',
+        // 开发服务器只读取已提交的声明，避免按已访问页面反复改写 Git 工作区。
+        dts: command === 'build' ? 'src/types/import/components.d.ts' : false,
+        syncMode: 'overwrite',
         resolvers: [ElementPlusResolver()]
       }),
       // 按需定制主题配置
