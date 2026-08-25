@@ -22,18 +22,6 @@ Redis、微信、支付或 COS 的用户名、入口、密码、Secret、私钥�
 | `txcloud` | 开发/集成 | `ssh txcloud` / `server` | `api.muybaby6.icu` | `admin.muybaby6.icu` | `wx2c59f00275b9057a` |
 | `shop` | 正式生产 | `ssh shop` / `server` | `api.junxiangshiping.cn` | `admin.junxiangshiping.cn` | `wxd2c02e4864389d80` |
 
-两台服务器的数据库、Redis、runtime 清单、主加密密钥、微信、支付和 COS 配置必须独立。
-禁止在 `txcloud` 与 `shop` 之间复制 runtime 文件、数据库、数据卷、OpenID 或业务凭据。
-
-固定发布顺序是：
-
-```text
-本机门禁 -> txcloud 部署与验收 -> 单独批准 shop -> shop 部署与正式验收
-```
-
-不能因为 txcloud 正常就直接认定 shop 正常；shop 使用正式 AppID、正式商户和正式资源，
-必须重新验收。
-
 ## 2. 区分首次重建和日常发布
 
 ### 2.1 Generation 2 首次重建
@@ -109,7 +97,7 @@ Admin 第一次部署到 1Panel 新建的空静态网站时，会把原 `index` 
 `index.bootstrap-<时间>`，然后把 `index` 切换为新版本软链接。以后发布只切换该软链接，
 不会改变网站记录、域名、证书或 OpenResty 配置。
 
-## 4. runtime 清单
+## 4. 初始化运行runtime
 
 受版本控制的唯一模板是：
 
@@ -130,6 +118,7 @@ backend/shop-server/config/runtime/shop.env
 ```bash
 backend/shop-server/scripts/config/init-runtime-env.sh txcloud
 backend/shop-server/scripts/config/init-runtime-env.sh shop
+backend/shop-server/scripts/config/init-runtime-env.sh local
 ```
 
 每次部署前只校验目标文件，不打印值：
