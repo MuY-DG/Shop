@@ -309,4 +309,4 @@ backend/shop-server/scripts/config/bootstrap-admin.sh shop
 - [ ] 结论为“通过 / 有条件通过 / 不通过”，有条件通过必须写清限制与截止时间。
 - [ ] 只有回滚点、观察窗口和真实平台证据均满足后才恢复全部流量。
 
-详细部署步骤见 [docker-deployment.md](docker-deployment.md)，执行性验收见 [smoke-checks.md](smoke-checks.md)。
+端到端顺序见 [deployment-guide.md](deployment-guide.md)，后端细节见 [docker-deployment.md](docker-deployment.md)，执行性验收见 [smoke-checks.md](smoke-checks.md)。

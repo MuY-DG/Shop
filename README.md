@@ -85,8 +85,10 @@ Shop/
 - [当前工程基线](docs/foundation-completion.md)
 - [开发环境与命令](docs/dev-setup.md)
 - [本地 Smoke 检查](docs/smoke-checks.md)
+- [txcloud 与 shop 部署教程](docs/deployment-guide.md)
 - [生产发布检查清单](docs/production-release-checklist.md)
 - [Docker 生产部署](docs/docker-deployment.md)
+- [运维速查](docs/operations-cheatsheet.md)
 - [后端架构与演进规则](docs/backend-architecture.md)
 
 `docs/superpowers/specs` 和 `docs/superpowers/plans` 保留历史设计与实施证据，不代表当前待办。

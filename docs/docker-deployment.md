@@ -1,6 +1,6 @@
 # 后端 Docker 部署
 
-本文只描述 Shop 后端在 `txcloud`（开发/集成）和 `shop`（正式生产）上的当前部署方式。两台服务器使用同一套 Compose、同一个 `server` Profile 和同一种运行时清单结构，差异只存在于各自的秘密和业务数据库配置。
+本文只描述 Shop 后端在 `txcloud`（开发/集成）和 `shop`（正式生产）上的当前部署方式。两台服务器使用同一套 Compose、同一个 `server` Profile 和同一种运行时清单结构，差异只存在于各自的秘密和业务数据库配置。面向操作者的完整发布顺序见 [deployment-guide.md](deployment-guide.md)。
 
 > 当前 Flyway generation 2 只有 V1-V7。这是一条不兼容旧数据库的全新基线，不能把它直接启动在旧 schema 上。切换时必须先确认数据确实可丢弃，再删除目标环境的 MySQL/Redis 数据卷并从空库启动。Git 历史仅用于查阅，不参与新环境迁移。
 
