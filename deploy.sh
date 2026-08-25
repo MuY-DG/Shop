@@ -346,6 +346,78 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
       exit 1
     fi
 
+    admin_route_sha=\$(curl --fail --silent --show-error \
+      --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 1 \
+      --resolve '$admin_host:443:127.0.0.1' \
+      'https://$admin_host/__shop_deploy_spa_probe__/$release_id' | \
+      sha256sum | awk '{print \$1}')
+    if [ \"\$admin_route_sha\" != '$admin_index_sha' ]; then
+      printf 'Admin SPA 回退校验失败：随机深链没有返回当前 index.html。\n' >&2
+      printf '请按 docs/deployment-guide.md 配置 Admin 的 location /。\n' >&2
+      exit 1
+    fi
+
+    if ! backend_admin_api_response=\$(curl --fail --silent --show-error \
+      --connect-timeout 5 --max-time 30 \
+      'http://127.0.0.1:8080/admin/auth/registration'); then
+      printf 'Admin API 校验失败：后端注册配置接口不可用。\n' >&2
+      exit 1
+    fi
+    if ! admin_api_response=\$(curl --fail --silent --show-error \
+      --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 1 \
+      --resolve '$admin_host:443:127.0.0.1' \
+      'https://$admin_host/admin/auth/registration'); then
+      printf 'Admin API 校验失败：/admin/ 没有正确反向代理到后端。\n' >&2
+      printf '请按 docs/deployment-guide.md 配置 Admin 的 location ^~ /admin/。\n' >&2
+      exit 1
+    fi
+    if [ \"\$admin_api_response\" != \"\$backend_admin_api_response\" ] || \
+        ! printf '%s' \"\$admin_api_response\" | grep -F '\"code\":200' >/dev/null || \
+        ! printf '%s' \"\$admin_api_response\" | grep -F '\"msg\":\"success\"' >/dev/null || \
+        ! printf '%s' \"\$admin_api_response\" | grep -E '\"enabled\":(true|false)' >/dev/null; then
+      printf 'Admin API 校验失败：/admin/auth/registration 未返回后端 JSON。\n' >&2
+      printf '请检查 proxy_pass 是否保留 /admin/ 路径。\n' >&2
+      exit 1
+    fi
+
+    if ! api_websocket_status=\$(curl --http1.1 --silent --show-error \
+      --output /dev/null --write-out '%{http_code}' \
+      --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 1 \
+      --resolve '$api_host:443:127.0.0.1' \
+      --header 'Connection: Upgrade' \
+      --header 'Upgrade: websocket' \
+      --header 'Sec-WebSocket-Version: 13' \
+      --header 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+      'https://$api_host/realtime?ticket=__shop.deploy-probe.invalid__-$release_id'); then
+      printf 'API WebSocket 路由校验失败：无法访问 /realtime。\n' >&2
+      exit 1
+    fi
+    if [ \"\$api_websocket_status\" != 401 ]; then
+      printf 'API WebSocket 路由校验失败：无效 ticket 应返回 401，实际为 %s。\n' \
+        \"\$api_websocket_status\" >&2
+      printf '请按 docs/deployment-guide.md 配置 API 的 WebSocket 代理。\n' >&2
+      exit 1
+    fi
+
+    if ! admin_websocket_status=\$(curl --http1.1 --silent --show-error \
+      --output /dev/null --write-out '%{http_code}' \
+      --connect-timeout 5 --max-time 30 --retry 3 --retry-delay 1 \
+      --resolve '$admin_host:443:127.0.0.1' \
+      --header 'Connection: Upgrade' \
+      --header 'Upgrade: websocket' \
+      --header 'Sec-WebSocket-Version: 13' \
+      --header 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+      'https://$admin_host/realtime?ticket=__shop.deploy-probe.invalid__-$release_id'); then
+      printf 'Admin WebSocket 路由校验失败：无法访问 /realtime。\n' >&2
+      exit 1
+    fi
+    if [ \"\$admin_websocket_status\" != 401 ]; then
+      printf 'Admin WebSocket 路由校验失败：无效 ticket 应返回 401，实际为 %s。\n' \
+        \"\$admin_websocket_status\" >&2
+      printf '请按 docs/deployment-guide.md 配置 Admin 的 WebSocket 代理。\n' >&2
+      exit 1
+    fi
+
     sudo find \"\$admin_release_root\" \
       -mindepth 1 -maxdepth 1 -type d ! -name '$release_id' \
       -exec rm -rf -- {} +
