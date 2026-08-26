@@ -33,8 +33,8 @@ class SchemaGenerationBaselineMySqlTest {
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword()));
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("7");
-        assertThat(flyway.info().applied()).hasSize(7);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("8");
+        assertThat(flyway.info().applied()).hasSize(8);
         assertThat(jdbc.sql("""
                         select count(*)
                         from information_schema.tables

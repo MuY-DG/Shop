@@ -318,9 +318,8 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into app_user_daily_activity
-                            (user_id, activity_date, first_active_at, last_active_at, request_count)
-                        values (88001, date '2026-06-20', timestamp '2026-06-20 08:00:00',
-                                timestamp '2026-06-20 08:00:00', 1)
+                            (user_id, activity_date, first_active_at)
+                        values (88001, date '2026-06-20', timestamp '2026-06-20 08:00:00')
                         """).update();
 
         String token = token("operation:user:read");
@@ -367,18 +366,13 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into app_user_daily_activity
-                            (user_id, activity_date, first_active_at, last_active_at, request_count)
+                            (user_id, activity_date, first_active_at)
                         values
-                            (88600, date '2026-01-01', timestamp '2026-01-01 00:00:00',
-                             timestamp '2026-01-01 00:00:00', 1),
-                            (88601, date '2026-01-02', timestamp '2026-01-02 08:00:00',
-                             timestamp '2026-01-02 08:00:00', 1),
-                            (88601, date '2026-01-08', timestamp '2026-01-08 08:00:00',
-                             timestamp '2026-01-08 08:00:00', 1),
-                            (88601, date '2026-01-31', timestamp '2026-01-31 08:00:00',
-                             timestamp '2026-01-31 08:00:00', 1),
-                            (88602, date '2026-01-02', timestamp '2026-01-02 09:00:00',
-                             timestamp '2026-01-02 09:00:00', 1)
+                            (88600, date '2026-01-01', timestamp '2026-01-01 00:00:00'),
+                            (88601, date '2026-01-02', timestamp '2026-01-02 08:00:00'),
+                            (88601, date '2026-01-08', timestamp '2026-01-08 08:00:00'),
+                            (88601, date '2026-01-31', timestamp '2026-01-31 08:00:00'),
+                            (88602, date '2026-01-02', timestamp '2026-01-02 09:00:00')
                         """).update();
         String token = token("operation:user:read");
 
@@ -986,10 +980,10 @@ class AdminOperationsControllerTest {
                         """).update();
         jdbcClient.sql("""
                         insert into app_user_daily_activity
-                            (user_id, activity_date, first_active_at, last_active_at, request_count)
+                            (user_id, activity_date, first_active_at)
                         values
-                            (90001, date '2026-07-02', timestamp '2026-07-02 09:00:00', timestamp '2026-07-02 10:00:00', 3),
-                            (90002, date '2026-07-03', timestamp '2026-07-03 09:00:00', timestamp '2026-07-03 09:30:00', 2)
+                            (90001, date '2026-07-02', timestamp '2026-07-02 09:00:00'),
+                            (90002, date '2026-07-03', timestamp '2026-07-03 09:00:00')
                         """).update();
         jdbcClient.sql("""
                         insert into product_category (id, parent_id, name, status)

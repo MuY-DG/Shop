@@ -150,7 +150,7 @@ class AppAnalyticsControllerTest {
     }
 
     @Test
-    void authenticatedBusinessRequestsIncrementTheShanghaiDailyActivityFact() throws Exception {
+    void authenticatedBusinessRequestsCreateOneShanghaiDailyActivityFact() throws Exception {
         String token = appToken();
 
         mockMvc.perform(get("/app/cart/items").header("Authorization", "Bearer " + token))
@@ -159,36 +159,32 @@ class AppAnalyticsControllerTest {
                 .andExpect(status().isOk());
 
         assertThat(jdbcClient.sql("""
-                        select request_count
+                        select count(*)
                         from app_user_daily_activity
                         where user_id = :userId
                         """)
                 .param("userId", USER_ID)
                 .query(Long.class)
-                .single()).isEqualTo(2L);
+                .single()).isOne();
     }
 
     @Test
-    void dailyActivityKeepsChronologicalBoundsWhenRequestsArriveOutOfOrder() {
+    void dailyActivityFactRemainsUnchangedAfterTheFirstWrite() {
         Instant earlier = Instant.parse("2026-07-15T01:00:00Z");
         Instant later = Instant.parse("2026-07-15T02:00:00Z");
 
         dailyActivityService.record(USER_ID, later);
         dailyActivityService.record(USER_ID, earlier);
 
-        ActivityRow activity = jdbcClient.sql("""
-                        select first_active_at, last_active_at, updated_at, request_count
+        Instant firstActiveAt = jdbcClient.sql("""
+                        select first_active_at
                         from app_user_daily_activity
                         where user_id = :userId
                         """)
                 .param("userId", USER_ID)
-                .query((rs, rowNum) -> new ActivityRow(
-                        rs.getTimestamp("first_active_at").toInstant(),
-                        rs.getTimestamp("last_active_at").toInstant(),
-                        rs.getTimestamp("updated_at").toInstant(),
-                        rs.getLong("request_count")))
+                .query((rs, rowNum) -> rs.getTimestamp("first_active_at").toInstant())
                 .single();
-        assertThat(activity).isEqualTo(new ActivityRow(earlier, later, later, 2L));
+        assertThat(firstActiveAt).isEqualTo(later);
     }
 
     private org.springframework.test.web.servlet.ResultActions postBatch(
@@ -230,6 +226,4 @@ class AppAnalyticsControllerTest {
                 .accessToken();
     }
 
-    private record ActivityRow(Instant firstActiveAt, Instant lastActiveAt, Instant updatedAt, long requestCount) {
-    }
 }

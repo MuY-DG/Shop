@@ -30,8 +30,8 @@ class OperationsAnalyticsSchemaTest {
                 .update();
         jdbcClient.sql("""
                         insert into app_user_daily_activity
-                            (user_id, activity_date, first_active_at, last_active_at, request_count)
-                        values (990032, current_date, current_timestamp, current_timestamp, 1)
+                            (user_id, activity_date, first_active_at)
+                        values (990032, current_date, current_timestamp)
                         """)
                 .update();
         jdbcClient.sql("""
