@@ -110,7 +110,9 @@ export function rawRequest<
       fail: (error) => {
         reject(new ApiError({
           kind: "NETWORK",
-          message: error.errMsg.includes("timeout") ? "请求超时，请稍后重试" : "网络连接失败，请检查网络",
+          message: error.errMsg.includes("timeout")
+            ? "服务响应有点慢，请稍后再试"
+            : "暂时没有连接上服务，请检查网络或稍后再试",
           cause: error
         }));
       }

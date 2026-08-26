@@ -28,6 +28,7 @@ Page({
     pageTitle: "协议与政策",
     loading: true,
     loaded: false,
+    unconfigured: false,
     errorText: "",
     document: null as LegalDocumentView | null
   },
@@ -39,6 +40,7 @@ Page({
       this.setData({
         loading: false,
         loaded: false,
+        unconfigured: false,
         errorText: "无效的法律文档类型"
       });
       return;
@@ -64,21 +66,44 @@ Page({
       return;
     }
     const requestId = ++latestRequest;
-    this.setData({ loading: true, loaded: false, errorText: "", document: null });
+    this.setData({
+      loading: true,
+      loaded: false,
+      unconfigured: false,
+      errorText: "",
+      document: null
+    });
     try {
       const response = await getCurrentLegalDocument(type);
+      if (response === null) {
+        if (requestId === latestRequest && currentType === type) {
+          this.setData({
+            loading: false,
+            loaded: true,
+            unconfigured: true,
+            document: null
+          });
+        }
+        return;
+      }
       const document = buildLegalDocumentView(response, type);
       if (!document) {
         throw new Error("法律文档内容不完整");
       }
       if (requestId === latestRequest && currentType === type) {
-        this.setData({ loading: false, loaded: true, document });
+        this.setData({
+          loading: false,
+          loaded: true,
+          unconfigured: false,
+          document
+        });
       }
     } catch (error) {
       if (requestId === latestRequest && currentType === type) {
         this.setData({
           loading: false,
           loaded: false,
+          unconfigured: false,
           errorText: errorMessage(error),
           document: null
         });

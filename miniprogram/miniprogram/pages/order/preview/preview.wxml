@@ -27,10 +27,8 @@
     <view wx:elif="{{!loaded && errorText}}" class="preview-state">
       <ui-state
         type="error"
-        title="订单预览失败"
+        title="当前服务繁忙"
         description="{{errorText}}"
-        action-text="重新加载"
-        bindaction="onRetry"
       />
     </view>
 

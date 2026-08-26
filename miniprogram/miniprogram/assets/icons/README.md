@@ -31,7 +31,6 @@
 - 分类、购物车和个人中心的底部导航图标由 WXML/CSS 绘制，不再使用 SVG。
 - `service-phone.svg`：[Iconify Material Symbols `material-symbols:phone-in-talk-outline-rounded`](https://icon-sets.iconify.design/material-symbols/phone-in-talk-outline-rounded/)，Apache 2.0，用于读取公开联系电话后发起微信拨号。
 - `member-crown.svg`：[Iconify Material Symbols `material-symbols:crown-rounded`](https://icon-sets.iconify.design/material-symbols/crown-rounded/)，Apache 2.0，用于昵称右侧的金牌会员标签。
-- `member-v-diamond.svg`：用户提供的钻石 V 会员 SVG，用于头像右下角的会员身份标识。
 - `navigation-back.svg`：用户提供的全局导航返回 SVG。
 - `edit-square-outline-mdi-iconify.svg`：[Iconify Material Design Icons `mdi:square-edit-outline`](https://icon-sets.iconify.design/mdi/square-edit-outline/)，Apache 2.0，用于编辑收货地址。
 - `check-rounded-material-symbols-iconify.svg`：[Iconify Material Symbols `material-symbols:check-rounded`](https://icon-sets.iconify.design/material-symbols/check-rounded/)，Apache 2.0，用于购物车商品选中状态。

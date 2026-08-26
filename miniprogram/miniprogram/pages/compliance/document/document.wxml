@@ -7,10 +7,14 @@
   <view wx:elif="{{errorText}}" class="legal-document-state">
     <ui-state
       type="error"
-      title="{{pageTitle}}暂不可用"
+      title="当前服务繁忙"
       description="{{errorText}}"
-      action-text="重新加载"
-      bindaction="onRetry"
+    />
+  </view>
+  <view wx:elif="{{unconfigured}}" class="legal-document-state">
+    <ui-state
+      type="empty"
+      description="当前还没有配置{{pageTitle}}，请稍后查看"
     />
   </view>
 

@@ -23,10 +23,8 @@
   <view wx:elif="{{errorText && !loaded}}" class="chat-state">
     <ui-state
       type="error"
-      title="客服暂时无法接入"
+      title="当前服务繁忙"
       description="{{errorText}}"
-      action-text="重新加载"
-      bindaction="onRetry"
     />
   </view>
 

@@ -15,14 +15,11 @@
   </block>
 
   <block wx:else>
-    <view class="ui-state__visual">
-      <view class="ui-state__error-mark"></view>
-    </view>
     <view wx:if="{{title}}" class="ui-state__title">{{title}}</view>
     <view wx:if="{{description}}" class="ui-state__description">{{description}}</view>
     <view wx:if="{{actionText}}" class="ui-state__action">
       <ui-button
-        variant="danger"
+        variant="secondary"
         size="small"
         bindtap="handleAction"
       >{{actionText}}</ui-button>

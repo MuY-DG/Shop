@@ -13,12 +13,10 @@ import { clearSession, getSessionState } from "../../../services/session";
 import type { AccountCancellationEligibilityResponse } from "../../../types/account-cancellation";
 import type { LegalDocumentResponse } from "../../../types/compliance";
 import { isApiError } from "../../../utils/api-error";
-import { openLoginPage } from "../../../utils/login-navigation";
 
 const NOTICE_TYPE = "ACCOUNT_CANCELLATION_NOTICE" as const;
 
 let latestRequest = 0;
-let loginRequested = false;
 
 function errorMessage(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -26,6 +24,13 @@ function errorMessage(error: unknown, fallback: string): string {
     : error instanceof Error
       ? error.message
       : fallback;
+}
+
+function hasAuthenticatedSession(): boolean {
+  const session = getSessionState();
+  return Boolean(
+    session.user && (session.accessToken || session.refreshToken)
+  );
 }
 
 function requestFreshWechatCode(): Promise<string> {
@@ -48,6 +53,8 @@ Page({
   data: {
     loading: true,
     loaded: false,
+    unconfigured: false,
+    loggedIn: false,
     errorText: "",
     notice: null as LegalDocumentResponse | null,
     blockers: [] as AccountCancellationBlocker[],
@@ -59,35 +66,12 @@ Page({
   },
 
   onLoad() {
-    loginRequested = false;
+    this.setData({ loggedIn: hasAuthenticatedSession() });
+    void this.loadNotice();
   },
 
   onShow() {
-    const session = getSessionState();
-    if (!session.user || (!session.accessToken && !session.refreshToken)) {
-      if (loginRequested) {
-        if (getCurrentPages().length > 1) {
-          wx.navigateBack();
-        } else {
-          wx.switchTab({ url: "/pages/profile/profile" });
-        }
-        return;
-      }
-      loginRequested = openLoginPage("/pages/account/cancellation/cancellation");
-      return;
-    }
-    loginRequested = false;
-    if (!this.data.loaded && !this.data.loading) {
-      void this.loadNotice();
-    }
-  },
-
-  onReady() {
-    if (getSessionState().user) {
-      void this.loadNotice();
-    } else {
-      this.setData({ loading: false });
-    }
+    this.setData({ loggedIn: hasAuthenticatedSession() });
   },
 
   onUnload() {
@@ -103,7 +87,9 @@ Page({
     this.setData({
       loading: true,
       loaded: false,
+      unconfigured: false,
       errorText: "",
+      notice: null,
       blockers: [],
       blockersVisible: false
     });
@@ -112,12 +98,18 @@ Page({
       if (requestId !== latestRequest) {
         return;
       }
-      this.setData({ loading: false, loaded: true, notice });
+      this.setData({
+        loading: false,
+        loaded: true,
+        unconfigured: notice === null,
+        notice
+      });
     } catch (error) {
       if (requestId === latestRequest) {
         this.setData({
           loading: false,
           loaded: false,
+          unconfigured: false,
           errorText: errorMessage(error, "注销须知加载失败，请稍后重试")
         });
       }
@@ -132,7 +124,12 @@ Page({
   },
 
   onCancelAccountTap() {
-    if (this.data.checking || this.data.submitting || !this.data.notice) {
+    if (
+      !this.data.loggedIn
+      || this.data.checking
+      || this.data.submitting
+      || !this.data.notice
+    ) {
       return;
     }
     this.setData({ confirmOpen: true, noticeAcknowledged: false });
@@ -162,6 +159,7 @@ Page({
     const notice = this.data.notice;
     if (
       !notice
+      || !this.data.loggedIn
       || this.data.checking
       || this.data.submitting
       || !this.data.noticeAcknowledged
@@ -202,7 +200,11 @@ Page({
         miniProgramEnv: APP_ENV_VERSION
       });
       clearSession();
-      this.setData({ submitting: false, confirmOpen: false });
+      this.setData({
+        submitting: false,
+        confirmOpen: false,
+        loggedIn: false
+      });
       wx.showModal({
         title: "账号已注销",
         content: "注销已立即生效，再次登录将创建新账号。",

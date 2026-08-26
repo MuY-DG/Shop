@@ -101,18 +101,30 @@ test("登录页展示微信原生隐私指引，勾选后预加载且点击按�
   );
 });
 
-test("我的页面保留金牌会员头像框、皇冠、文字和登录态条件", () => {
+test("我的页面保留登录态头像框、金牌会员皇冠和游客头像边框", () => {
   const profileTemplate = readFileSync(
     resolve(sourceRoot, "pages/profile/profile.wxml"),
+    "utf8"
+  );
+  const profileStyle = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.less"),
     "utf8"
   );
 
   assert.match(
     profileTemplate,
-    /<image\s+wx:if="\{\{loggedIn\}\}"\s+class="member-card__avatar-frame"[\s\S]*?src="\/assets\/images\/member-avatar-frame-v\.png"/
+    /<image\s+wx:if="\{\{loggedIn\}\}"\s+class="member-card__avatar-frame"[\s\S]*?src="\/assets\/images\/member-avatar-frame\.png"[\s\S]*?aria-label="头像框"/
   );
   assert.match(
     profileTemplate,
     /<view wx:if="\{\{loggedIn\}\}" class="member-card__member-badge" aria-label="金牌会员">[\s\S]*?src="\/assets\/icons\/member-crown\.svg"[\s\S]*?<text>金牌会员<\/text>/
+  );
+  assert.match(
+    profileTemplate,
+    /class="member-card__avatar \{\{loggedIn \? '' : 'member-card__avatar--guest'\}\}"/
+  );
+  assert.match(
+    profileStyle,
+    /\.member-card__avatar--guest\s*\{[\s\S]*?border: 4rpx solid rgba\(181, 128, 71, 0\.62\);/
   );
 });

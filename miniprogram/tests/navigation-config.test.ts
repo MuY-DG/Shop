@@ -642,7 +642,8 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   assert.match(profileTemplate, /profile-watercolor-background\.jpg/);
   assert.match(profileTemplate, /<navigation-bar[\s\S]*?background="transparent"/);
   assert.match(profileTemplate, /class="member-card__avatar-frame"/);
-  assert.match(profileTemplate, /src="\/assets\/images\/member-avatar-frame-v\.png"/);
+  assert.match(profileTemplate, /src="\/assets\/images\/member-avatar-frame\.png"/);
+  assert.match(profileTemplate, /aria-label="头像框"/);
   assert.equal(
     existsSync(resolve(sourceRoot, "assets/images/profile-default-avatar.png")),
     true
@@ -652,7 +653,7 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   assert.equal(defaultAvatar.readUInt32BE(16), 256);
   assert.equal(defaultAvatar.readUInt32BE(20), 256);
   assert.ok(defaultAvatar.byteLength <= 32 * 1024);
-  const avatarFrame = readFileSync(resolve(sourceRoot, "assets/images/member-avatar-frame-v.png"));
+  const avatarFrame = readFileSync(resolve(sourceRoot, "assets/images/member-avatar-frame.png"));
   assert.equal(avatarFrame.subarray(1, 4).toString("ascii"), "PNG");
   assert.equal(avatarFrame.readUInt32BE(16), 512);
   assert.equal(avatarFrame.readUInt32BE(20), 512);
@@ -901,6 +902,50 @@ test("全局空状态统一使用黑色图标和灰色说明文字", () => {
   );
 });
 
+test("全局服务繁忙状态使用中性样式和统一文案", () => {
+  const appConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "app.json"), "utf8")
+  ) as AppConfig;
+  const uiStateTemplate = readFileSync(
+    resolve(sourceRoot, "components/ui-state/ui-state.wxml"),
+    "utf8"
+  );
+  const uiStateStyle = readFileSync(
+    resolve(sourceRoot, "components/ui-state/ui-state.less"),
+    "utf8"
+  );
+  const homeStyle = readFileSync(
+    resolve(sourceRoot, "pages/index/index.less"),
+    "utf8"
+  );
+  const templatePaths = [
+    ...configuredPagePaths(appConfig).map((pagePath) => `${pagePath}.wxml`),
+    "components/catalog-browser/catalog-browser.wxml"
+  ];
+
+  assert.doesNotMatch(uiStateTemplate, /ui-state__error-mark|variant="danger"/);
+  assert.match(uiStateTemplate, /variant="secondary"/);
+  assert.doesNotMatch(uiStateStyle, /ui-state__error-mark|@color-danger/);
+  assert.match(
+    homeStyle,
+    /\.home-state-shell,[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/
+  );
+
+  templatePaths.forEach((templatePath) => {
+    const template = readFileSync(resolve(sourceRoot, templatePath), "utf8");
+    const stateTags = template.match(/<ui-state\b[\s\S]*?\/>/g) ?? [];
+    stateTags
+      .filter((tag) => (
+        /type="error"/.test(tag)
+        && /description="\{\{(?:errorText|loadErrorText)\}\}"/.test(tag)
+      ))
+      .forEach((tag) => {
+        assert.match(tag, /title="当前服务繁忙"/, templatePath);
+        assert.doesNotMatch(tag, /action-text=|bindaction=/, templatePath);
+      });
+  });
+});
+
 test("图片缺失与加载占位背景统一为白色", () => {
   const placeholderSelectors = new Map<string, string[]>([
     ["components/home-banner/home-banner.less", ["hero-section", "hero-swiper", "hero-placeholder"]],
@@ -1145,7 +1190,7 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
     /<view wx:elif="\{\{reviewPreview\.length\}\}"[\s\S]*?<view wx:else class="review-empty-preview">/
   )?.[0] ?? "";
   assert.match(reviewPreviewTemplate, /src="\/assets\/images\/profile-default-avatar\.png"/);
-  assert.match(reviewPreviewTemplate, /src="\/assets\/images\/member-avatar-frame-v\.png"/);
+  assert.match(reviewPreviewTemplate, /src="\/assets\/images\/member-avatar-frame\.png"/);
   assert.doesNotMatch(
     reviewPreviewTemplate,
     /reviewerInitial|review-stars|review-item__date|review-item__meta|verifiedPurchase|skuSpecText/

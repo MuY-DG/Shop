@@ -101,10 +101,8 @@
     <view wx:elif="{{!loaded && errorText}}" class="catalog-state">
       <ui-state
         type="error"
-        title="商品加载失败"
+        title="当前服务繁忙"
         description="{{errorText}}"
-        action-text="重新加载"
-        bindaction="onRetry"
       />
     </view>
 

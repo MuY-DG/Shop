@@ -39,7 +39,7 @@ function errorFromResult<T>(result: RawHttpResult<T>): ApiError {
       status === 401
         ? "登录状态已失效"
         : status >= 500
-          ? "服务暂时不可用，请稍后重试"
+          ? "服务正在准备中，请稍后再试"
           : "请求失败"
     ),
     httpStatus: status,

@@ -7,10 +7,14 @@
   <view wx:elif="{{errorText}}" class="merchant-state">
     <ui-state
       type="error"
-      title="商家资质暂不可用"
+      title="当前服务繁忙"
       description="{{errorText}}"
-      action-text="重新加载"
-      bindaction="onRetry"
+    />
+  </view>
+  <view wx:elif="{{unconfigured}}" class="merchant-state">
+    <ui-state
+      type="empty"
+      description="商家经营资质暂未配置，相关信息完善后将在这里展示"
     />
   </view>
 

@@ -22,7 +22,10 @@ import { isApiError } from "../miniprogram/utils/api-error";
 import { request } from "../miniprogram/utils/request";
 import { uploadFile as uploadAuthenticatedFile } from "../miniprogram/utils/upload";
 import { getHome } from "../miniprogram/services/home";
-import { getCurrentLegalDocument } from "../miniprogram/services/compliance";
+import {
+  getCurrentLegalDocument,
+  getCurrentMerchantPublication
+} from "../miniprogram/services/compliance";
 import {
   saveAvatar,
   updateMyProfile
@@ -310,7 +313,7 @@ test("当前隐私政策匿名加载且拒绝非已发布修订", async () => {
       status: "PUBLISHED"
     }
   });
-  assert.equal((await loading).version, "2026.08.09");
+  assert.equal((await loading)?.version, "2026.08.09");
 
   const rejecting = getCurrentLegalDocument("PRIVACY_POLICY");
   await flushTasks();
@@ -333,6 +336,26 @@ test("当前隐私政策匿名加载且拒绝非已发布修订", async () => {
   await assert.rejects(rejecting, (error: unknown) => (
     isApiError(error) && error.kind === "PROTOCOL"
   ));
+});
+
+test("未发布的公开合规内容返回正常空配置状态", async () => {
+  const documentLoading = getCurrentLegalDocument("USER_AGREEMENT");
+  await flushTasks();
+  respond(
+    takeRequest("/app/compliance/documents/USER_AGREEMENT/current"),
+    200,
+    { code: 200, msg: "success" }
+  );
+  assert.equal(await documentLoading, null);
+
+  const merchantLoading = getCurrentMerchantPublication();
+  await flushTasks();
+  respond(
+    takeRequest("/app/compliance/merchant"),
+    200,
+    { code: 200, msg: "success" }
+  );
+  assert.equal(await merchantLoading, null);
 });
 
 test("未确认的登录可以撤销且不会改变全局会话", async () => {

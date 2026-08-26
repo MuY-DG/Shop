@@ -16,10 +16,13 @@
   <ui-state
     wx:elif="{{errorText}}"
     type="error"
-    title="注销须知暂不可用"
+    title="当前服务繁忙"
     description="{{errorText}}"
-    action-text="重新加载"
-    bindaction="onRetry"
+  />
+  <ui-state
+    wx:elif="{{unconfigured}}"
+    type="empty"
+    description="账号注销须知暂未配置，配置完成后即可使用"
   />
 
   <scroll-view
@@ -63,12 +66,12 @@
     </view>
   </scroll-view>
 
-  <view wx:if="{{loaded}}" class="cancellation-footer">
+  <view wx:if="{{loaded && !unconfigured}}" class="cancellation-footer">
     <button
       class="cancellation-button"
-      disabled="{{!notice}}"
+      disabled="{{!notice || !loggedIn}}"
       bindtap="onCancelAccountTap"
-    >注销账号</button>
+    >{{loggedIn ? '注销账号' : '登录后可注销'}}</button>
   </view>
 
   <view wx:if="{{confirmOpen}}" class="confirm-mask" bindtap="onCloseConfirm">

@@ -22,26 +22,17 @@
     >
       <view class="member-card__avatar-shell">
         <image
-          class="member-card__avatar"
+          class="member-card__avatar {{loggedIn ? '' : 'member-card__avatar--guest'}}"
           src="{{avatarUrl}}"
           mode="{{avatarMode}}"
         />
         <image
           wx:if="{{loggedIn}}"
           class="member-card__avatar-frame"
-          src="/assets/images/member-avatar-frame-v.png"
+          src="/assets/images/member-avatar-frame.png"
           mode="aspectFit"
-          aria-label="V 会员头像框"
+          aria-label="头像框"
         />
-        <!-- 旧版独立钻石会员图标暂时停用，保留以便快速恢复。
-        <image
-          wx:if="{{loggedIn}}"
-          class="member-card__vip-mark"
-          src="/assets/icons/member-v-diamond.svg"
-          mode="aspectFit"
-          aria-label="钻石 V 会员"
-        />
-        -->
       </view>
       <view class="member-card__body">
         <view class="member-card__identity">

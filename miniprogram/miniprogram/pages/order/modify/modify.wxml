@@ -29,10 +29,8 @@
     <view wx:elif="{{!loaded && errorText}}" class="modify-state">
       <ui-state
         type="error"
-        title="页面加载失败"
+        title="当前服务繁忙"
         description="{{errorText}}"
-        action-text="重新加载"
-        bindaction="onRetry"
       />
     </view>
     <view wx:elif="{{blockingText}}" class="modify-state">

@@ -23,7 +23,7 @@
       <ui-state type="loading" title="正在加载地址" description="请稍候" />
     </view>
     <view wx:elif="{{!loaded && errorText}}" class="address-state">
-      <ui-state type="error" title="地址加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
+      <ui-state type="error" title="当前服务繁忙" description="{{errorText}}" />
     </view>
     <view wx:elif="{{loaded && !addresses.length}}" class="address-state address-state--empty">
       <ui-state type="empty" icon="/assets/icons/empty-addresses.svg" description="还没有收货地址" />

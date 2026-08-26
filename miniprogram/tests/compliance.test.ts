@@ -121,6 +121,32 @@ test("小程序注册公开合规页并从我的页面提供免登录设置入�
   assert.match(profileLogic, /kind === "public-route"[\s\S]{0,180}wx\.navigateTo/);
 });
 
+test("未发布的商家资料和法律文档使用未配置空状态", () => {
+  const merchantLogic = readFileSync(
+    resolve(sourceRoot, "pages/compliance/merchant/merchant.ts"),
+    "utf8"
+  );
+  const merchantTemplate = readFileSync(
+    resolve(sourceRoot, "pages/compliance/merchant/merchant.wxml"),
+    "utf8"
+  );
+  const documentLogic = readFileSync(
+    resolve(sourceRoot, "pages/compliance/document/document.ts"),
+    "utf8"
+  );
+  const documentTemplate = readFileSync(
+    resolve(sourceRoot, "pages/compliance/document/document.wxml"),
+    "utf8"
+  );
+
+  assert.match(merchantLogic, /unconfigured: publication === null/);
+  assert.match(merchantTemplate, /wx:elif="\{\{unconfigured\}\}"[\s\S]{0,120}type="empty"/);
+  assert.match(merchantTemplate, /商家经营资质暂未配置/);
+  assert.match(documentLogic, /response === null[\s\S]{0,220}unconfigured: true/);
+  assert.match(documentTemplate, /wx:elif="\{\{unconfigured\}\}"[\s\S]{0,120}type="empty"/);
+  assert.match(documentTemplate, /当前还没有配置\{\{pageTitle\}\}/);
+});
+
 test("小程序隐私入口使用微信原生只读指引且登录不依赖后台政策", () => {
   const loginLogic = readFileSync(resolve(sourceRoot, "pages/auth/login/login.ts"), "utf8");
   const loginTemplate = readFileSync(resolve(sourceRoot, "pages/auth/login/login.wxml"), "utf8");

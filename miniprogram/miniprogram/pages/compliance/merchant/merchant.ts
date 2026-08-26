@@ -25,6 +25,7 @@ Page({
   data: {
     loading: true,
     loaded: false,
+    unconfigured: false,
     errorText: "",
     publication: null as MerchantPublicationView | null
   },
@@ -44,17 +45,30 @@ Page({
 
   async loadPublication() {
     const requestId = ++latestRequest;
-    this.setData({ loading: true, loaded: false, errorText: "", publication: null });
+    this.setData({
+      loading: true,
+      loaded: false,
+      unconfigured: false,
+      errorText: "",
+      publication: null
+    });
     try {
       const publication = await getCurrentMerchantPublication();
-      if (requestId === latestRequest) {
-        this.setData({ loading: false, loaded: true, publication });
+      if (requestId !== latestRequest) {
+        return;
       }
+      this.setData({
+        loading: false,
+        loaded: true,
+        unconfigured: publication === null,
+        publication
+      });
     } catch (error) {
       if (requestId === latestRequest) {
         this.setData({
           loading: false,
           loaded: false,
+          unconfigured: false,
           errorText: errorMessage(error),
           publication: null
         });

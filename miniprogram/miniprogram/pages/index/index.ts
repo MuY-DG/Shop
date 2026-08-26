@@ -53,19 +53,19 @@ function homeErrorMessage(error: unknown): string {
   if (!isApiError(error)) {
     return error instanceof Error && error.message.startsWith("暂不支持首页")
       ? error.message
-      : "首页数据暂时不可用，请稍后重试";
+      : "暂时没有拿到首页内容，请稍后再试";
   }
   switch (error.kind) {
     case "NETWORK":
-      return "网络连接失败，请检查网络后重试";
+      return "暂时没有连接上服务，请检查网络或稍后再试";
     case "RATE_LIMIT":
-      return "请求有点频繁，请稍后再试";
+      return "操作有点频繁，请稍后再试";
     case "SERVER":
-      return "服务暂时开小差，请稍后重试";
+      return "服务正在准备中，请稍后再试";
     case "PROTOCOL":
-      return "首页数据格式异常，请稍后重试";
+      return "首页内容还在准备中，请稍后再试";
     default:
-      return error.message || "首页加载失败，请稍后重试";
+      return "暂时没有拿到首页内容，请稍后再试";
   }
 }
 

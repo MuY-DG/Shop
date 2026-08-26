@@ -18,10 +18,8 @@
   <view wx:elif="{{!loaded && errorText}}" class="home-state-shell">
     <ui-state
       type="error"
-      title="首页加载失败"
+      title="当前服务繁忙"
       description="{{errorText}}"
-      action-text="重新加载"
-      bindaction="onRetry"
     />
   </view>
 

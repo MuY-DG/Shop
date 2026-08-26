@@ -97,14 +97,10 @@
   width: 174rpx;
   height: 164rpx;
   padding: 0;
-  // 旧版 CSS 金色圆边框暂时停用，由 WebP 头像框接管。
-  // border: 5rpx solid #d6a04a;
-  // border-radius: 50%;
   flex: none;
   align-items: center;
   justify-content: center;
   background: transparent;
-  // box-shadow: 12rpx 12rpx 28rpx rgba(82, 40, 16, 0.2);
 }
 
 .member-card__avatar {
@@ -112,8 +108,15 @@
   z-index: 1;
   width: 138rpx;
   height: 138rpx;
+  box-sizing: border-box;
   border-radius: 50%;
   overflow: hidden;
+}
+
+.member-card__avatar--guest {
+  border: 4rpx solid rgba(181, 128, 71, 0.62);
+  background: rgba(255, 250, 242, 0.72);
+  box-shadow: 0 8rpx 22rpx rgba(82, 40, 16, 0.14);
 }
 
 .member-card__avatar-frame {
@@ -124,17 +127,6 @@
   width: 228rpx;
   height: 228rpx;
   transform: translate(-50%, -46%);
-}
-
-// 与上方 WXML 中注释掉的旧版独立钻石图标配套，暂时保留。
-.member-card__vip-mark {
-  position: absolute;
-  right: -10rpx;
-  bottom: -9rpx;
-  z-index: 3;
-  width: 40rpx;
-  height: 40rpx;
-  filter: drop-shadow(0 3rpx 5rpx rgba(54, 30, 8, 0.22));
 }
 
 .member-card__body {

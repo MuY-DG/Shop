@@ -43,10 +43,8 @@
   <view wx:elif="{{!loaded && errorText}}" class="detail-state">
     <ui-state
       type="error"
-      title="商品详情加载失败"
+      title="当前服务繁忙"
       description="{{errorText}}"
-      action-text="重新加载"
-      bindaction="onRetry"
     />
   </view>
 
@@ -225,7 +223,7 @@
                     />
                     <image
                       class="review-user__avatar-frame"
-                      src="/assets/images/member-avatar-frame-v.png"
+                      src="/assets/images/member-avatar-frame.png"
                       mode="aspectFit"
                       aria-hidden="true"
                     />
@@ -816,7 +814,7 @@
                     />
                     <image
                       class="review-user__avatar-frame"
-                      src="/assets/images/member-avatar-frame-v.png"
+                      src="/assets/images/member-avatar-frame.png"
                       mode="aspectFit"
                       aria-hidden="true"
                     />

@@ -26,15 +26,6 @@
   padding: 32rpx 24rpx;
 }
 
-.ui-state__visual {
-  display: flex;
-  width: 112rpx;
-  height: 112rpx;
-  margin-bottom: 24rpx;
-  align-items: center;
-  justify-content: center;
-}
-
 .ui-state__title {
   color: @color-text-primary;
   font-size: 30rpx;
@@ -97,36 +88,6 @@
   color: @color-text-gray;
   font-size: 26rpx;
   line-height: 1.5;
-}
-
-.ui-state__error-mark {
-  position: relative;
-  box-sizing: border-box;
-  width: 80rpx;
-  height: 80rpx;
-  border: 5rpx solid @color-danger;
-  border-radius: 50%;
-  background: @color-danger-soft;
-}
-
-.ui-state__error-mark::before,
-.ui-state__error-mark::after {
-  position: absolute;
-  top: 35rpx;
-  left: 18rpx;
-  width: 36rpx;
-  height: 5rpx;
-  border-radius: @radius-pill;
-  background: @color-danger;
-  content: '';
-}
-
-.ui-state__error-mark::before {
-  transform: rotate(45deg);
-}
-
-.ui-state__error-mark::after {
-  transform: rotate(-45deg);
 }
 
 @keyframes ui-state-spin {

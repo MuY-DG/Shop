@@ -19,7 +19,7 @@
         <ui-state type="loading" title="正在加载地址" description="请稍候" />
       </view>
       <view wx:elif="{{!loaded && loadErrorText}}" class="edit-state">
-        <ui-state type="error" title="地址加载失败" description="{{loadErrorText}}" action-text="重新加载" bindaction="onRetry" />
+        <ui-state type="error" title="当前服务繁忙" description="{{loadErrorText}}" />
       </view>
 
       <view wx:else class="address-form">

@@ -59,7 +59,7 @@
         <ui-state type="loading" title="正在加载订单" description="订单状态与支付结果正在同步" />
       </view>
       <view wx:elif="{{!loaded && errorText}}" class="orders-state">
-        <ui-state type="error" title="订单加载失败" description="{{errorText}}" action-text="重新加载" bindaction="onRetry" />
+        <ui-state type="error" title="当前服务繁忙" description="{{errorText}}" />
       </view>
       <view wx:elif="{{loaded && !orders.length}}" class="orders-state orders-state--empty">
         <ui-state type="empty" icon="/assets/icons/empty-orders.svg" description="{{keyword ? '没有找到相关订单' : '暂无相关订单'}}" />
