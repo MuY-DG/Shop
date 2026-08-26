@@ -647,10 +647,10 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
     /<image[\s\S]*?class="profile-page__header-background"[\s\S]*?profile-member-background\.png[\s\S]*?mode="widthFix"[\s\S]*?<navigation-bar/
   );
   assert.match(profileTemplate, /<navigation-bar[\s\S]*?background="transparent"/);
-  assert.match(profileStyle, /\.profile-page\s*\{[\s\S]*?background-color: #fbf1e3/);
+  assert.match(profileStyle, /\.profile-page\s*\{[\s\S]*?background-color: @color-page/);
   assert.match(
     profileStyle,
-    /\.profile-page__header-background\s*\{[\s\S]*?top: 0;[\s\S]*?width: 100%;[\s\S]*?height: auto;[\s\S]*?linear-gradient\(180deg, #fffaf3 0%, #fdf5e9 52%, #fbf1e3 100%\)/
+    /\.profile-page__header-background\s*\{[\s\S]*?top: 0;[\s\S]*?width: 100%;[\s\S]*?height: auto;[\s\S]*?linear-gradient\(180deg, #fff8ef 0%, @color-page 100%\)/
   );
   assert.match(profileStyle, /\.profile-content\s*\{[\s\S]*?margin-top: -96rpx;[\s\S]*?padding: 8rpx 34rpx/);
   assert.match(profileStyle, /\.member-card\s*\{[\s\S]*?padding: 30rpx 34rpx 30rpx 0;[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none/);
