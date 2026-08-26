@@ -101,7 +101,7 @@ test("登录页展示微信原生隐私指引，勾选后预加载且点击按�
   );
 });
 
-test("我的页面保留登录态头像框、金牌会员皇冠和游客头像边框", () => {
+test("我的页面保留会员装饰、游客头像边框并统一提示文字颜色", () => {
   const profileTemplate = readFileSync(
     resolve(sourceRoot, "pages/profile/profile.wxml"),
     "utf8"
@@ -126,5 +126,9 @@ test("我的页面保留登录态头像框、金牌会员皇冠和游客头像�
   assert.match(
     profileStyle,
     /\.member-card__avatar--guest\s*\{[\s\S]*?border: 4rpx solid rgba\(181, 128, 71, 0\.62\);/
+  );
+  assert.match(
+    profileStyle,
+    /\.member-card__copy\s*\{[\s\S]*?color: #000000;/
   );
 });
