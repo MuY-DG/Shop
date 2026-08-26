@@ -436,6 +436,10 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(pageSource, /messageRenderKeyById\.set\(message\.messageId, pendingView\.renderKey\)/);
   assert.match(template, /wx:key="renderKey"/);
   assert.doesNotMatch(template, /<text wx:else>我<\/text>|item\.avatarText/);
+  const messageAvatarStyle = style.match(/\.message-avatar\s*\{[\s\S]*?\}/)?.[0] ?? "";
+  assert.match(messageAvatarStyle, /border-radius: 50%;/);
+  assert.doesNotMatch(messageAvatarStyle, /background:/);
+  assert.doesNotMatch(template, /message-avatar--image/);
   const defaultServiceAvatarPath = resolve(
     sourceRoot,
     "assets/images/customer-service-default-avatar.jpg"

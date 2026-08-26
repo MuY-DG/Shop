@@ -77,7 +77,7 @@
             id="message-{{item.messageId}}"
             class="message-row {{item.isMine ? 'message-row--mine' : ''}}"
           >
-            <view wx:if="{{!item.isMine}}" class="message-avatar message-avatar--image">
+            <view wx:if="{{!item.isMine}}" class="message-avatar">
               <image
                 src="{{item.senderAvatar}}"
                 mode="aspectFill"
@@ -269,7 +269,7 @@
 
             <view
               wx:if="{{item.isMine}}"
-              class="message-avatar message-avatar--image"
+              class="message-avatar"
             >
               <image
                 src="{{item.senderAvatar}}"

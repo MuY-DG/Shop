@@ -13,17 +13,12 @@
           :class="{ 'is-online': isOnline }"
           aria-label="客服状态与退出"
         >
-          <img v-if="profileAvatar" :src="profileAvatar" alt="" />
-          <UserRound v-else :size="22" />
+          <img :src="profileAvatar" alt="" />
           <span class="profile-status" />
         </button>
         <template #dropdown>
           <ElDropdownMenu class="profile-menu">
             <li class="profile-menu__identity" role="presentation">
-              <span class="profile-menu__avatar">
-                <img v-if="profileAvatar" :src="profileAvatar" alt="" />
-                <UserRound v-else :size="17" />
-              </span>
               <span class="profile-menu__identity-copy">
                 <small>客服名称</small>
                 <strong :title="profileServiceName">{{ profileServiceName }}</strong>
@@ -74,8 +69,9 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
   import { ElMessage, ElMessageBox } from 'element-plus'
-  import { BarChart3, LogOut, MessageCircle, Settings, UserRound, Wifi, WifiOff } from '@lucide/vue'
+  import { BarChart3, LogOut, MessageCircle, Settings, Wifi, WifiOff } from '@lucide/vue'
   import { useRoute } from 'vue-router'
+  import defaultCustomerServiceAvatar from '@/assets/images/customer-service/default-avatar.jpg'
   import {
     fetchCustomerServiceAgentProfile,
     fetchCustomerServiceAgentState,
@@ -102,7 +98,7 @@
     () => roles.value.includes('R_SUPER') || roles.value.includes('R_CUSTOMER_SERVICE_MANAGER')
   )
   const canViewSettings = computed(() => isAgent.value || canManageSettings.value)
-  const profileAvatar = computed(() => agentProfile.value?.avatar || userStore.info.avatar || '')
+  const profileAvatar = computed(() => agentProfile.value?.avatar || defaultCustomerServiceAvatar)
   const profileServiceName = computed(
     () => agentProfile.value?.serviceName || userStore.info.userName || '客服'
   )
@@ -367,30 +363,11 @@
   :global(.profile-menu__identity) {
     box-sizing: border-box;
     display: flex;
-    gap: 10px;
     align-items: center;
     min-width: 190px;
     padding: 10px 14px 12px;
     list-style: none;
     border-bottom: 1px solid #eeeeee;
-  }
-
-  :global(.profile-menu__avatar) {
-    display: grid;
-    flex: 0 0 auto;
-    place-items: center;
-    width: 32px;
-    height: 32px;
-    overflow: hidden;
-    color: #08ad58;
-    background: #eef8f2;
-    border-radius: 50%;
-  }
-
-  :global(.profile-menu__avatar img) {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
   }
 
   :global(.profile-menu__identity-copy) {
