@@ -654,6 +654,23 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   );
   assert.match(profileStyle, /\.profile-content\s*\{[\s\S]*?margin-top: -96rpx;[\s\S]*?padding: 8rpx 34rpx/);
   assert.match(profileStyle, /\.member-card\s*\{[\s\S]*?padding: 30rpx 34rpx 30rpx 0;[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none/);
+  assert.match(
+    profileStyle,
+    /\.account-metrics,[\s\S]*?\.service-card\s*\{[\s\S]*?margin-right: -8rpx;[\s\S]*?margin-left: -8rpx;/
+  );
+  assert.match(
+    profileStyle,
+    /\.member-card__avatar-shell\s*\{[\s\S]*?width: 160rpx;[\s\S]*?height: 150rpx;/
+  );
+  assert.match(
+    profileStyle,
+    /\.member-card__avatar\s*\{[\s\S]*?width: 124rpx;[\s\S]*?height: 124rpx;/
+  );
+  assert.match(
+    profileStyle,
+    /\.member-card__avatar-frame\s*\{[\s\S]*?width: 206rpx;[\s\S]*?height: 206rpx;/
+  );
+  assert.match(profileStyle, /\.account-metrics\s*\{[\s\S]*?margin-top: 12rpx;/);
   assert.match(profileTemplate, /class="member-card__avatar-frame"/);
   assert.match(profileTemplate, /src="\/assets\/images\/member-avatar-frame\.png"/);
   assert.match(profileTemplate, /aria-label="头像框"/);
