@@ -5,35 +5,19 @@
   position: relative;
   min-height: 100vh;
   overflow: hidden;
-  background-color: @color-page;
+  background-color: #fbf1e3;
 }
 
-.profile-page::after {
-  position: fixed;
-  z-index: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: calc(@tab-bar-height + 80rpx + @tab-bar-bottom-inset);
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(214, 193, 170, 0.18) 50%,
-    rgba(200, 170, 138, 0.25) 100%
-  );
-  content: "";
-  pointer-events: none;
-}
-
-.profile-page__background {
+.profile-page__header-background {
   position: absolute;
   top: 0;
   right: 0;
-  bottom: 0;
   left: 0;
   z-index: 0;
+  display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
+  background: linear-gradient(180deg, #fffaf3 0%, #fdf5e9 52%, #fbf1e3 100%);
   pointer-events: none;
 }
 
@@ -41,10 +25,10 @@
   position: relative;
   z-index: 1;
   min-height: calc(100vh - @navigation-height);
-  padding: 92rpx 34rpx calc(@tab-bar-height + @space-12 + @tab-bar-bottom-inset);
+  margin-top: -96rpx;
+  padding: 8rpx 34rpx calc(@tab-bar-height + @space-12 + @tab-bar-bottom-inset);
 }
 
-.member-card,
 .account-metrics,
 .order-center-card,
 .service-card {
@@ -57,29 +41,15 @@
   position: relative;
   display: flex;
   min-height: 226rpx;
-  padding: 30rpx 34rpx;
+  padding: 30rpx 34rpx 30rpx 0;
+  border: 0;
+  border-radius: @radius-lg;
   overflow: hidden;
   align-items: center;
-  gap: 28rpx;
+  gap: 12rpx;
   background: transparent;
+  box-shadow: none;
   transition: opacity @duration-fast @ease-standard;
-}
-
-.member-card::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 78%;
-  border-radius: @radius-lg 0 0 @radius-lg;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 250, 240, 0.9) 0%,
-    rgba(255, 248, 236, 0.76) 62%,
-    rgba(255, 248, 236, 0) 100%
-  );
-  content: "";
-  pointer-events: none;
 }
 
 .member-card--pressed,
@@ -184,7 +154,7 @@
 .member-card__copy {
   margin-top: 16rpx;
   overflow: hidden;
-  color: rgba(76, 53, 42, 0.76);
+  color: #5b3f32;
   font-size: 23rpx;
   line-height: 1.5;
   text-overflow: ellipsis;
@@ -532,7 +502,7 @@
 
   .member-card {
     padding-right: 26rpx;
-    padding-left: 26rpx;
+    padding-left: 0;
   }
 
   .account-metric {

@@ -1,8 +1,8 @@
 <view class="profile-page">
   <image
-    class="profile-page__background"
-    src="/assets/images/profile-watercolor-background.jpg"
-    mode="aspectFill"
+    class="profile-page__header-background"
+    src="/assets/images/profile-member-background.png"
+    mode="widthFix"
     aria-hidden="true"
   />
   <navigation-bar

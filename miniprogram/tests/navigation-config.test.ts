@@ -91,12 +91,11 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
   });
 });
 
-test("除登录页外所有页面主体统一引用 @color-page 背景变量", () => {
+test("通用页面主体统一引用 @color-page 背景变量", () => {
   const pageStyles = [
     ["pages/index/index.less", "home-page"],
     ["pages/category/category.less", "category-page"],
     ["pages/cart/cart.less", "cart-page"],
-    ["pages/profile/profile.less", "profile-page"],
     ["pages/account/profile/profile.less", "user-profile-page"],
     ["pages/account/settings/settings.less", "settings-page"],
     ["styles/account-products.less", "account-page"],
@@ -631,6 +630,10 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
     resolve(sourceRoot, "pages/profile/profile.ts"),
     "utf8"
   );
+  const profileStyle = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.less"),
+    "utf8"
+  );
   assert.match(profileLogic, /收货地址/);
   assert.match(profileLogic, /优惠券/);
   assert.match(profileLogic, /我的收藏/);
@@ -639,8 +642,18 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   assert.match(profileLogic, /customerService/);
   assert.match(profileLogic, /accountNavigationPath/);
   assert.match(profileLogic, /profile-default-avatar\.png/);
-  assert.match(profileTemplate, /profile-watercolor-background\.jpg/);
+  assert.match(
+    profileTemplate,
+    /<image[\s\S]*?class="profile-page__header-background"[\s\S]*?profile-member-background\.png[\s\S]*?mode="widthFix"[\s\S]*?<navigation-bar/
+  );
   assert.match(profileTemplate, /<navigation-bar[\s\S]*?background="transparent"/);
+  assert.match(profileStyle, /\.profile-page\s*\{[\s\S]*?background-color: #fbf1e3/);
+  assert.match(
+    profileStyle,
+    /\.profile-page__header-background\s*\{[\s\S]*?top: 0;[\s\S]*?width: 100%;[\s\S]*?height: auto;[\s\S]*?linear-gradient\(180deg, #fffaf3 0%, #fdf5e9 52%, #fbf1e3 100%\)/
+  );
+  assert.match(profileStyle, /\.profile-content\s*\{[\s\S]*?margin-top: -96rpx;[\s\S]*?padding: 8rpx 34rpx/);
+  assert.match(profileStyle, /\.member-card\s*\{[\s\S]*?padding: 30rpx 34rpx 30rpx 0;[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none/);
   assert.match(profileTemplate, /class="member-card__avatar-frame"/);
   assert.match(profileTemplate, /src="\/assets\/images\/member-avatar-frame\.png"/);
   assert.match(profileTemplate, /aria-label="头像框"/);
@@ -659,12 +672,16 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   assert.equal(avatarFrame.readUInt32BE(20), 512);
   assert.ok(avatarFrame.byteLength <= 64 * 1024);
   assert.equal(
-    existsSync(resolve(sourceRoot, "assets/images/profile-watercolor-background.jpg")),
+    existsSync(resolve(sourceRoot, "assets/images/profile-member-background.png")),
     true
   );
-  assert.ok(
-    readFileSync(resolve(sourceRoot, "assets/images/profile-watercolor-background.jpg")).byteLength <= 200 * 1024
+  const profileMemberBackground = readFileSync(
+    resolve(sourceRoot, "assets/images/profile-member-background.png")
   );
+  assert.equal(profileMemberBackground.subarray(1, 4).toString("ascii"), "PNG");
+  assert.equal(profileMemberBackground.readUInt32BE(16), 1774);
+  assert.equal(profileMemberBackground.readUInt32BE(20), 887);
+  assert.ok(profileMemberBackground.byteLength <= 320 * 1024);
 });
 
 test("收藏复用分类卡片并支持批量取消，足迹支持管理、批量删除和加购", () => {
