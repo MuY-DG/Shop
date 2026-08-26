@@ -1,5 +1,5 @@
-<view class="catalog-browser {{tabPage || scrollPage ? 'catalog-browser--fixed' : ''}} {{tabPage ? 'catalog-browser--tab' : ''}}">
-  <view class="catalog-tools">
+<view class="catalog-browser {{tabPage || scrollPage ? 'catalog-browser--fixed' : ''}} {{tabPage ? 'catalog-browser--tab' : ''}} {{embedded ? 'catalog-browser--embedded' : ''}}">
+  <view wx:if="{{!embedded}}" class="catalog-tools">
     <view class="sort-bar">
       <view
         class="sort-item {{sortMode === 'COMPREHENSIVE' ? 'sort-item--active' : ''}}"
@@ -110,7 +110,7 @@
       <ui-state
         type="empty"
         icon="/assets/icons/empty-search.svg"
-        description="{{hasFilters ? '没有符合当前筛选的商品' : activeKeyword ? '没有找到相关商品' : '这个分类还没有商品'}}"
+        description="{{embedded ? '暂时没有可展示的商品' : hasFilters ? '没有符合当前筛选的商品' : activeKeyword ? '没有找到相关商品' : '这个分类还没有商品'}}"
       />
     </view>
 
@@ -153,7 +153,7 @@
   </scroll-view>
 
   <view
-    wx:if="{{filterVisible}}"
+    wx:if="{{!embedded && filterVisible}}"
     class="filter-mask"
     bindtap="onFilterClose"
     catchtouchmove="noop"

@@ -57,8 +57,7 @@
 .member-card--pressed,
 .account-metric--pressed,
 .order-shortcut--pressed,
-.service-item--pressed,
-.order-center-card__heading--pressed {
+.service-item--pressed {
   opacity: 0.7;
 }
 
@@ -245,44 +244,11 @@
 
 .order-center-card {
   margin-top: 24rpx;
-  padding: 28rpx 26rpx 26rpx;
-}
-
-.order-center-card__heading {
-  display: flex;
-  min-height: 48rpx;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24rpx;
-  transition: opacity @duration-fast @ease-standard;
-}
-
-.order-center-card__title {
-  color: #241711;
-  font-family: "Songti SC", "STSong", @font-family-base;
-  font-size: 28rpx;
-  font-weight: 700;
-  letter-spacing: 1rpx;
-}
-
-.order-center-card__all {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  color: @color-text-secondary;
-  font-size: 23rpx;
-  gap: 8rpx;
-}
-
-.order-center-card__chevron {
-  width: 28rpx;
-  height: 28rpx;
-  flex: none;
+  padding: 26rpx;
 }
 
 .order-shortcuts {
   display: grid;
-  padding-top: 28rpx;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 4rpx;
 }
@@ -340,57 +306,51 @@
 
 .service-card {
   margin-top: 24rpx;
-  padding: 14rpx 26rpx 12rpx;
+  padding: 26rpx;
 }
 
 .service-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4rpx;
 }
 
 .service-item {
   position: relative;
   display: flex;
-  width: 100%;
   min-width: 0;
-  min-height: 96rpx;
   margin: 0;
-  padding: 14rpx 0;
+  padding: 10rpx 0 6rpx;
   border: 0;
+  flex-direction: column;
   align-items: center;
+  justify-content: center;
   color: @color-text-primary;
   background: transparent;
   line-height: 1.4;
   transition: opacity @duration-fast @ease-standard;
 }
 
-.service-item + .service-item::before {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 1rpx;
-  background: @color-divider;
-  content: "";
-}
-
 .service-item__icon {
-  width: 36rpx;
-  height: 36rpx;
+  width: 52rpx;
+  height: 52rpx;
   flex: none;
 }
 
 .service-item__visual {
   position: relative;
-  width: 36rpx;
-  height: 36rpx;
+  display: flex;
+  width: 62rpx;
+  height: 62rpx;
   flex: none;
+  align-items: center;
+  justify-content: center;
 }
 
 .service-presence {
   position: absolute;
-  right: -12rpx;
-  bottom: -7rpx;
+  right: -3rpx;
+  bottom: -3rpx;
   display: flex;
   width: 30rpx;
   height: 30rpx;
@@ -436,8 +396,8 @@
 
 .service-item__badge {
   position: absolute;
-  top: -10rpx;
-  right: -20rpx;
+  top: -7rpx;
+  right: -13rpx;
   display: flex;
   min-width: 29rpx;
   height: 29rpx;
@@ -480,20 +440,14 @@
 }
 
 .service-item__label {
-  min-width: 0;
-  margin-left: 26rpx;
+  max-width: 100%;
+  margin-top: 16rpx;
   overflow: hidden;
-  flex: 1;
-  font-size: 26rpx;
+  font-size: 22rpx;
+  line-height: 1.4;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.service-item__chevron {
-  width: 28rpx;
-  height: 28rpx;
-  margin-left: 20rpx;
-  flex: none;
 }
 
 @media (max-width: 340px) {

@@ -1,6 +1,8 @@
 {
   "usingComponents": {
-    "navigation-bar": "/components/navigation-bar/navigation-bar"
+    "navigation-bar": "/components/navigation-bar/navigation-bar",
+    "catalog-browser": "/components/catalog-browser/catalog-browser"
   },
-  "backgroundColor": "#f6f6f6"
+  "backgroundColor": "#f6f6f6",
+  "onReachBottomDistance": 160
 }

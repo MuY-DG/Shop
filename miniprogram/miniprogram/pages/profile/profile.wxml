@@ -78,23 +78,6 @@
     </view>
 
     <view class="order-center-card">
-      <view
-        class="order-center-card__heading"
-        bindtap="onAllOrdersTap"
-        hover-class="order-center-card__heading--pressed"
-        aria-role="button"
-      >
-        <view class="order-center-card__title">我的订单</view>
-        <view class="order-center-card__all">
-          <text>查看全部订单</text>
-          <image
-            class="order-center-card__chevron"
-            src="/assets/icons/chevron-right-light.svg"
-            mode="aspectFit"
-            aria-hidden="true"
-          />
-        </view>
-      </view>
       <view class="order-shortcuts">
         <view
           wx:for="{{orderShortcuts}}"
@@ -152,14 +135,15 @@
             <text wx:if="{{item.badge}}" class="service-item__badge">{{item.badge}}</text>
           </view>
           <text class="service-item__label">{{item.label}}</text>
-          <image
-            class="service-item__chevron"
-            src="/assets/icons/chevron-right-service.svg"
-            mode="aspectFit"
-            aria-hidden="true"
-          />
         </view>
       </view>
     </view>
+
+    <catalog-browser
+      id="profile-catalog"
+      embedded="{{true}}"
+      bindproductselect="onProductSelect"
+      bindcartchange="onCartChange"
+    />
   </view>
 </view>

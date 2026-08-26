@@ -14,7 +14,6 @@
 - `favorite-clarity-solid.svg`：[Iconify Clarity `clarity:favorite-solid`](https://icon-sets.iconify.design/clarity/favorite-solid/)，MIT，收藏后使用的黄色实心星形。
 - `chevron-right-light.svg`：[Iconify MDI Light `mdi-light:chevron-right`](https://icon-sets.iconify.design/mdi-light/chevron-right/)，OFL，用于批发价与地址入口。
 - `chevron-right-detail.svg`：同一 MDI Light 图标的深色版本，用于商品和订单详情入口。
-- `chevron-right-service.svg`：同一 MDI Light 图标的深灰版本，用于个人中心常用服务列表入口。
 - `close-material-symbols.svg`：[Iconify Material Symbols `material-symbols:close`](https://icon-sets.iconify.design/material-symbols/close/)，Apache 2.0，用于规格弹层关闭按钮。
 - `view-grid-outline.svg`：[Iconify Material Design Icons `mdi:view-grid-outline`](https://icon-sets.iconify.design/mdi/view-grid-outline/)，Apache 2.0，用于切换规格大图模式。
 - `view-list-rounded.svg`：[Iconify Material Symbols `material-symbols:view-list-rounded`](https://icon-sets.iconify.design/material-symbols/view-list-rounded/)，Apache 2.0，用于切换规格列表模式。
@@ -25,8 +24,8 @@
 - `order-package.svg`：用户提供的待发货 SVG，仅用于个人中心订单入口。
 - `order-receive.svg`：用户提供的待收货 SVG，仅用于个人中心订单入口。
 - `order-review.svg`：用户提供的评价 SVG，仅用于个人中心订单入口。
-- `order-after-sale.svg`：用户提供的售后 SVG，仅用于个人中心订单入口。
-- `account-after-sale.svg`：[Iconify Material Design Icons `mdi:cash-refund`](https://icon-sets.iconify.design/mdi/cash-refund/)，Apache 2.0，用于退款与售后入口。
+- `order-all.svg`：[Iconify Material Symbols `material-symbols:receipt-long-outline-rounded`](https://icon-sets.iconify.design/material-symbols/receipt-long-outline-rounded/)，Apache 2.0，用于个人中心全部订单入口。
+- `order-after-sale.svg`：用户提供的售后 SVG，用于个人中心退款售后入口及订单售后状态。
 - `tab-home.svg` / `tab-home-active.svg`：[Iconify Material Symbols Light `material-symbols-light:home-outline`](https://icon-sets.iconify.design/material-symbols-light/home-outline/)，Apache 2.0，底部首页导航的默认与选中版本。
 - 分类、购物车和个人中心的底部导航图标由 WXML/CSS 绘制，不再使用 SVG。
 - `service-phone.svg`：[Iconify Material Symbols `material-symbols:phone-in-talk-outline-rounded`](https://icon-sets.iconify.design/material-symbols/phone-in-talk-outline-rounded/)，Apache 2.0，用于读取公开联系电话后发起微信拨号。
