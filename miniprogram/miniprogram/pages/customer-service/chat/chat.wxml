@@ -77,13 +77,11 @@
             id="message-{{item.messageId}}"
             class="message-row {{item.isMine ? 'message-row--mine' : ''}}"
           >
-            <view wx:if="{{!item.isMine}}" class="message-avatar">
+            <view wx:if="{{!item.isMine}}" class="message-avatar message-avatar--image">
               <image
-                wx:if="{{item.senderAvatar}}"
                 src="{{item.senderAvatar}}"
                 mode="aspectFill"
               />
-              <text wx:else>{{item.avatarText}}</text>
             </view>
 
             <view class="message-body">
@@ -271,14 +269,12 @@
 
             <view
               wx:if="{{item.isMine}}"
-              class="message-avatar {{item.senderAvatar ? 'message-avatar--image' : 'message-avatar--mine'}}"
+              class="message-avatar message-avatar--image"
             >
               <image
-                wx:if="{{item.senderAvatar}}"
                 src="{{item.senderAvatar}}"
                 mode="aspectFill"
               />
-              <text wx:else>我</text>
             </view>
           </view>
         </block>

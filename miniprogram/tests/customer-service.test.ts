@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
@@ -421,10 +421,30 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(pageSource, /stableMessageTimeVisibility/);
   assert.match(pageSource, /rememberMessageTimeVisibility\(message, pendingView\.showTime\)/);
   assert.match(pageSource, /const currentUser = getSessionState\(\)\.user/);
-  assert.match(pageSource, /const senderAvatar = isMine \? currentUserAvatar \|\| avatar : avatar/);
+  assert.match(
+    pageSource,
+    /const DEFAULT_USER_AVATAR = "\/assets\/images\/profile-default-avatar\.png"/
+  );
+  assert.match(
+    pageSource,
+    /const DEFAULT_CUSTOMER_SERVICE_AVATAR =[\s\S]*"\/assets\/images\/customer-service-default-avatar\.jpg"/
+  );
+  assert.match(
+    pageSource,
+    /const senderAvatar = isMine[\s\S]*currentUserAvatar \|\| DEFAULT_USER_AVATAR[\s\S]*avatar \|\| DEFAULT_CUSTOMER_SERVICE_AVATAR/
+  );
   assert.match(pageSource, /messageRenderKeyById\.set\(message\.messageId, pendingView\.renderKey\)/);
   assert.match(template, /wx:key="renderKey"/);
-  assert.match(template, /item\.senderAvatar \? 'message-avatar--image' : 'message-avatar--mine'/);
+  assert.doesNotMatch(template, /<text wx:else>我<\/text>|item\.avatarText/);
+  const defaultServiceAvatarPath = resolve(
+    sourceRoot,
+    "assets/images/customer-service-default-avatar.jpg"
+  );
+  assert.ok(existsSync(defaultServiceAvatarPath));
+  assert.deepEqual(
+    readFileSync(defaultServiceAvatarPath).subarray(0, 2),
+    Buffer.from([0xff, 0xd8])
+  );
   assert.match(pageSource, /consultationNo: currentConsultationNo \|\| 1/);
   assert.doesNotMatch(style, /composer--keyboard-open|keyboard-spacer/);
   assert.match(pageSource, /nextPersistedMessageId !== latestPersistedMessageId/);

@@ -112,7 +112,7 @@
             <span v-if="compactSize !== 'small'">素材库</span>
           </button>
           <button
-            v-if="allowClear && previewUrl && !disabled && !uploading"
+            v-if="allowClear && hasExplicitValue && !disabled && !uploading"
             type="button"
             class="asset-picker__compact-clear"
             :aria-label="`清除${mediaKindLabel}`"
@@ -351,6 +351,7 @@
     defaultFolderId?: number | null
     disabled?: boolean
     allowClear?: boolean
+    fallbackUrl?: string
     compact?: boolean
     compactSize?: 'default' | 'small'
     multiple?: boolean
@@ -368,6 +369,7 @@
     defaultFolderId: null,
     disabled: false,
     allowClear: true,
+    fallbackUrl: '',
     compact: false,
     compactSize: 'default',
     multiple: false,
@@ -402,7 +404,10 @@
   )
   const uploadAccept = computed(() => assetUploadAccept(mediaKind.value))
   const modelValue = computed(() => props.modelValue || { fileId: null, url: '' })
-  const previewUrl = computed(() => modelValue.value.url || resolveAssetUrl(selectedAsset.value))
+  const hasExplicitValue = computed(() => Boolean(modelValue.value.fileId || modelValue.value.url))
+  const previewUrl = computed(
+    () => modelValue.value.url || resolveAssetUrl(selectedAsset.value) || props.fallbackUrl
+  )
 
   const folderOptions = computed<TreeOption[]>(() => {
     const walk = (items: Api.Storage.AssetFolder[]): TreeOption[] =>

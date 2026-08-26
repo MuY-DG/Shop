@@ -182,7 +182,7 @@
                     class="capacity-row"
                   >
                     <span class="agent-cell">
-                      <i>{{ avatarText(agent.serviceName) }}</i>
+                      <i><img :src="effectiveAvatarUrl" alt="" /></i>
                       <span>
                         <strong>{{ agent.serviceName }}</strong>
                         <small>@{{ agent.username }}</small>
@@ -230,18 +230,29 @@
               <div class="personal-info-row avatar-row">
                 <span class="personal-info-label">客服头像</span>
                 <div class="personal-info-control avatar-field">
-                  <AssetPicker
-                    v-if="canManageIdentity"
-                    v-model="avatarAsset"
-                    media-kind="IMAGE"
-                    compact
-                    :disabled="loading || saving"
-                  />
-                  <div v-else class="readonly-avatar" aria-label="客服头像">
-                    <img v-if="effectiveAvatarUrl" :src="effectiveAvatarUrl" alt="客服头像" />
-                    <Headset v-else :size="23" />
+                  <div v-if="canManageIdentity" class="avatar-picker-row">
+                    <AssetPicker
+                      v-model="avatarAsset"
+                      media-kind="IMAGE"
+                      compact
+                      :fallback-url="defaultCustomerServiceAvatar"
+                      :disabled="loading || saving"
+                    />
+                    <ElButton
+                      type="primary"
+                      link
+                      :disabled="loading || saving || !hasCustomAvatar"
+                      @click="restoreDefaultAvatar"
+                    >
+                      恢复默认头像
+                    </ElButton>
                   </div>
-                  <small v-if="canManageIdentity">所有客服共用此头像。</small>
+                  <div v-else class="readonly-avatar" aria-label="客服头像">
+                    <img :src="effectiveAvatarUrl" alt="客服头像" />
+                  </div>
+                  <small v-if="canManageIdentity">
+                    未上传时使用默认机器人头像；上传后，小程序与后台将展示自定义头像。
+                  </small>
                 </div>
               </div>
 
@@ -292,7 +303,6 @@
     Bot,
     ChartNoAxesColumnIncreasing,
     GitBranch,
-    Headset,
     ListRestart,
     LoaderCircle,
     MessagesSquare,
@@ -304,6 +314,7 @@
     Zap
   } from '@lucide/vue'
   import { useRoute, useRouter } from 'vue-router'
+  import defaultCustomerServiceAvatar from '@/assets/images/customer-service/default-avatar.jpg'
   import AssetPicker from '@/components/business/asset-picker/index.vue'
   import CsSwitch from '@/components/customer-ui/CsSwitch.vue'
   import { useAuth } from '@/hooks/core/useAuth'
@@ -432,13 +443,14 @@
     avatarFileId: null
   })
   const avatarAsset = ref<Api.Common.AssetValue>({ fileId: null, url: '' })
+  const hasCustomAvatar = computed(() => avatarAsset.value.fileId !== null)
   const effectiveDefaultServiceName = computed(() =>
     canManageIdentity.value
       ? identityForm.defaultServiceName || '商城客服'
       : personalIdentity.defaultServiceName || '商城客服'
   )
-  const effectiveAvatarUrl = computed(() =>
-    canManageIdentity.value ? avatarAsset.value.url : personalIdentity.avatar
+  const effectiveAvatarUrl = computed(
+    () => avatarAsset.value.url || personalIdentity.avatar || defaultCustomerServiceAvatar
   )
   const personalServiceName = computed({
     get: () => personalForm.serviceName ?? effectiveDefaultServiceName.value,
@@ -635,6 +647,12 @@
     return requests.length > 0
   }
 
+  function restoreDefaultAvatar() {
+    avatarAsset.value = { fileId: null, url: '' }
+    identityForm.avatarFileId = null
+    ElMessage.info('已切换为默认头像，点击保存后生效')
+  }
+
   async function save() {
     saving.value = true
     try {
@@ -663,10 +681,6 @@
   function updateRoutingCapacity(agent: Api.CustomerService.RoutingAgent, event: Event) {
     const value = (event.target as HTMLInputElement).value
     agent.maxActiveConversations = value === '' ? null : Number(value)
-  }
-
-  function avatarText(name: string) {
-    return name.trim().slice(0, 1).toUpperCase() || '客'
   }
 
   function formatWeightPercent(value: number) {
@@ -1061,6 +1075,13 @@
     color: #087c42;
     background: #e8f8f0;
     border-radius: 50%;
+    overflow: hidden;
+  }
+
+  .agent-cell > i img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .agent-cell > span,
@@ -1181,6 +1202,12 @@
     width: 84px;
     height: 84px;
     border-radius: 50%;
+  }
+
+  .avatar-picker-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
   }
 
   .readonly-avatar {

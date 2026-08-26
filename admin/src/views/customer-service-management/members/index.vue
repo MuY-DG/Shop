@@ -27,9 +27,7 @@
       >
         <template #member="{ row }">
           <div class="member-identity">
-            <ElAvatar :size="40" :src="row.serviceAvatar">
-              {{ avatarText(row.serviceName) }}
-            </ElAvatar>
+            <ElAvatar :size="40" :src="row.serviceAvatar || defaultCustomerServiceAvatar" />
             <div class="member-copy">
               <div class="member-name">
                 <strong>{{ row.serviceName }}</strong>
@@ -167,6 +165,7 @@
   import { computed, h, onMounted, ref } from 'vue'
   import { ElMessage, ElMessageBox } from 'element-plus'
   import { Search, ShieldCheck } from '@lucide/vue'
+  import defaultCustomerServiceAvatar from '@/assets/images/customer-service/default-avatar.jpg'
   import type { SearchFormItem } from '@/components/core/forms/art-search-bar/index.vue'
   import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import type { ButtonMoreItem } from '@/components/core/forms/art-button-more/index.vue'

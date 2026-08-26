@@ -104,7 +104,6 @@ interface MessageView {
   isSystem: boolean;
   senderName: string;
   senderAvatar: string;
-  avatarText: string;
   messageType: string;
   content: string;
   showTime: boolean;
@@ -149,6 +148,9 @@ type PickerKind = "" | "order" | "product";
 type ProductSource = "browse" | "favorite" | "cart";
 
 const FALLBACK_POLL_INTERVAL_MS = 15_000;
+const DEFAULT_USER_AVATAR = "/assets/images/profile-default-avatar.png";
+const DEFAULT_CUSTOMER_SERVICE_AVATAR =
+  "/assets/images/customer-service-default-avatar.jpg";
 const HISTORY_PAGE_SIZE = 30;
 const MESSAGE_SCROLL_CONTEXT_ATTEMPTS = 6;
 const MESSAGE_LATEST_RETRY_ATTEMPTS = 10;
@@ -419,7 +421,9 @@ function messageViews(
     const senderName = isMine
       ? currentUserName || cleanText(message.senderName) || "我"
       : cleanText(message.senderName) || "在线客服";
-    const senderAvatar = isMine ? currentUserAvatar || avatar : avatar;
+    const senderAvatar = isMine
+      ? currentUserAvatar || DEFAULT_USER_AVATAR
+      : avatar || DEFAULT_CUSTOMER_SERVICE_AVATAR;
     const renderKey = messageRenderKeyById.get(message.messageId) ??
       (clientMessageId
         ? `client-${clientMessageId}`
@@ -442,7 +446,6 @@ function messageViews(
       isSystem: message.messageType === "SYSTEM",
       senderName,
       senderAvatar,
-      avatarText: (senderName || "客服").slice(0, 1),
       messageType: message.messageType,
       content: cleanText(message.content),
       showTime,
