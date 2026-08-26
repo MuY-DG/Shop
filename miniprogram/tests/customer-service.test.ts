@@ -437,6 +437,8 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(template, /wx:key="renderKey"/);
   assert.doesNotMatch(template, /<text wx:else>我<\/text>|item\.avatarText/);
   const messageAvatarStyle = style.match(/\.message-avatar\s*\{[\s\S]*?\}/)?.[0] ?? "";
+  assert.match(messageAvatarStyle, /box-sizing: border-box;/);
+  assert.match(messageAvatarStyle, /border: 2rpx solid #ffffff;/);
   assert.match(messageAvatarStyle, /border-radius: 50%;/);
   assert.doesNotMatch(messageAvatarStyle, /background:/);
   assert.doesNotMatch(template, /message-avatar--image/);
