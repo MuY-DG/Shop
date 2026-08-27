@@ -104,7 +104,7 @@ index index.html;
 在同一个 `server {}` 内加入以下四个块；已有同名 `location` 时替换旧块：
 
 ```nginx
-location = /realtime {
+		location = /realtime {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
 
@@ -117,9 +117,9 @@ location = /realtime {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_read_timeout 75s;
-}
+		}
 
-location ^~ /admin/ {
+		location ^~ /admin/ {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
 
@@ -131,15 +131,15 @@ location ^~ /admin/ {
 
     proxy_set_header Connection "";
     proxy_read_timeout 75s;
-}
+		}
 
-location ^~ /assets/ {
+		location ^~ /assets/ {
     try_files $uri =404;
-}
+		}
 
-location / {
+		location / {
     try_files $uri $uri/ /index.html;
-}
+		}
 ```
 
 所有 `proxy_pass` 末尾都不能再加 `/`，否则可能剥掉后端需要的 `/admin/` 路径。
