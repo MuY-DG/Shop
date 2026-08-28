@@ -47,7 +47,15 @@
             <text>金牌会员</text>
           </view>
         </view>
-        <view class="member-card__copy">{{memberCopy}}</view>
+        <view
+          wx:if="{{loggedIn}}"
+          class="member-card__copy member-card__copy--id"
+          aria-label="用户 ID {{userId}}"
+        >
+          <view class="member-card__id-label" aria-hidden="true">ID</view>
+          <text class="member-card__id-value">{{userId}}</text>
+        </view>
+        <view wx:else class="member-card__copy">登录后查看订单与会员服务</view>
       </view>
     </view>
 

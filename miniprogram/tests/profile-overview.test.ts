@@ -25,10 +25,59 @@ test("我的页面登录后展示用户 ID，未登录保留登录提示", () =>
 
   assert.match(
     pageSource,
-    /memberCopy: loggedIn && session\.user\s*\? `ID：\$\{session\.user\.userId\}`\s*: "登录后查看订单与会员服务"/
+    /userId: loggedIn && session\.user \? session\.user\.userId : ""/
   );
+  assert.match(pageSource, /userId: ""/);
   assert.doesNotMatch(pageSource, /已绑定手机|phoneNumberMasked|欢迎回来，会员服务已为你开启/);
-  assert.match(template, /class="member-card__copy">\{\{memberCopy\}\}<\/view>/);
+  assert.doesNotMatch(pageSource + template, /ID[:：]/);
+  assert.match(
+    template,
+    /<view\s+wx:if="\{\{loggedIn\}\}"\s+class="member-card__copy member-card__copy--id"\s+aria-label="用户 ID \{\{userId\}\}"/
+  );
+  assert.match(template, /class="member-card__id-label" aria-hidden="true">ID<\/view>/);
+  assert.match(template, /class="member-card__id-value">\{\{userId\}\}<\/text>/);
+  assert.match(template, /<view wx:else class="member-card__copy">登录后查看订单与会员服务<\/view>/);
+});
+
+test("用户 ID 使用独立圆形徽标与小号编号，保留黑金渐变和长编号溢出保护", () => {
+  const style = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.less"),
+    "utf8"
+  );
+  const baseCopyStyle = style.match(/\.member-card__copy\s*\{([^}]+)\}/)?.[1] || "";
+  const idStyle = style.match(/\.member-card__copy--id\s*\{([^}]+)\}/)?.[1] || "";
+  const labelStyle = style.match(/\.member-card__id-label\s*\{([^}]+)\}/)?.[1] || "";
+  const valueStyle = style.match(/\.member-card__id-value\s*\{([^}]+)\}/)?.[1] || "";
+
+  assert.match(baseCopyStyle, /color: #000000;/);
+  assert.doesNotMatch(baseCopyStyle, /background:|box-shadow:|padding:/);
+  assert.match(baseCopyStyle, /overflow: hidden;/);
+  assert.match(baseCopyStyle, /text-overflow: ellipsis;/);
+  assert.match(baseCopyStyle, /white-space: nowrap;/);
+  assert.match(idStyle, /display: inline-flex;/);
+  assert.match(idStyle, /max-width: 100%;/);
+  assert.match(idStyle, /box-sizing: border-box;/);
+  assert.match(idStyle, /margin-top: 8rpx;/);
+  assert.match(idStyle, /padding: 0 9rpx 0 0;/);
+  assert.match(idStyle, /gap: 6rpx;/);
+  assert.match(idStyle, /font-size: 17rpx;/);
+  assert.match(idStyle, /font-weight: 600;/);
+  assert.match(idStyle, /line-height: 1\.2;/);
+  assert.match(idStyle, /color: #e9cf9b;/);
+  assert.match(idStyle, /border: 1rpx solid rgba\(212, 170, 91, 0\.42\);/);
+  assert.match(idStyle, /background: linear-gradient\(90deg, #1c1b19 0%, #3a3224 52%, #26231d 100%\);/);
+  assert.match(labelStyle, /width: 28rpx;/);
+  assert.match(labelStyle, /height: 28rpx;/);
+  assert.match(labelStyle, /border-radius: 50%;/);
+  assert.match(labelStyle, /border: 1rpx solid #f7dfa9;/);
+  assert.match(labelStyle, /flex: none;/);
+  assert.match(labelStyle, /font-size: 20rpx;/);
+  assert.match(labelStyle, /color: #342817;/);
+  assert.match(labelStyle, /background: linear-gradient\(135deg, #f8e6bd 0%, #d3ad68 100%\);/);
+  assert.match(valueStyle, /min-width: 0;/);
+  assert.match(valueStyle, /overflow: hidden;/);
+  assert.match(valueStyle, /text-overflow: ellipsis;/);
+  assert.match(valueStyle, /white-space: nowrap;/);
 });
 
 test("未登录概览隐藏个人数量且优惠券保留单位", () => {

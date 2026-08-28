@@ -168,7 +168,7 @@ Page({
     nickname: "点击登录",
     avatarUrl: DEFAULT_AVATAR_URL,
     avatarMode: "aspectFill",
-    memberCopy: "登录后查看订单与会员服务",
+    userId: "",
     contactLoading: false,
     catalogShown: false,
     overviewOwnerKey: "guest",
@@ -208,9 +208,7 @@ Page({
         : DEFAULT_AVATAR_URL,
       avatarMode: "aspectFill",
       catalogShown: true,
-      memberCopy: loggedIn && session.user
-        ? `ID：${session.user.userId}`
-        : "登录后查看订单与会员服务",
+      userId: loggedIn && session.user ? session.user.userId : "",
       ...overviewState
     });
     if (loggedIn) {
