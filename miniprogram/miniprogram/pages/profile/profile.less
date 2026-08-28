@@ -34,11 +34,12 @@
 .account-metrics,
 .order-center-card,
 .service-card {
+  height: 180rpx;
   margin-right: -8rpx;
   margin-left: -8rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.72);
-  border-radius: @radius-lg;
-  box-shadow: 0 14rpx 38rpx rgba(90, 55, 28, 0.09);
+  border: 0;
+  border-radius: @radius-md;
+  box-shadow: none;
 }
 
 .member-card {
@@ -221,7 +222,6 @@
 
 .account-metrics {
   display: grid;
-  min-height: 164rpx;
   margin-top: -4rpx;
   padding: 22rpx 10rpx;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -296,6 +296,8 @@
 
 .order-center-card,
 .service-card {
+  display: grid;
+  align-items: center;
   background: @color-surface-white;
 }
 

@@ -193,6 +193,25 @@ test("我的页面从聚合接口取数并统一角标颜色", () => {
   assert.match(tabStyle, /\.tab-bar__badge[\s\S]*background: #ff172b/);
 });
 
+test("我的页面三个快捷容器统一高度和圆角并移除外层阴影边框", () => {
+  const style = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.less"),
+    "utf8"
+  );
+  const tokens = readFileSync(resolve(sourceRoot, "styles/tokens.less"), "utf8");
+  const cardStyle = style.match(
+    /\.account-metrics,\s*\.order-center-card,\s*\.service-card\s*\{([^}]+)\}/
+  )?.[1] || "";
+  const metricsStyle = style.match(/\.account-metrics\s*\{([^}]+)\}/)?.[1] || "";
+
+  assert.match(cardStyle, /height: 180rpx;/);
+  assert.match(cardStyle, /border: 0;/);
+  assert.match(cardStyle, /border-radius: @radius-md;/);
+  assert.match(cardStyle, /box-shadow: none;/);
+  assert.doesNotMatch(metricsStyle, /(?:min-|max-)?height:/);
+  assert.match(tokens, /@radius-md: 20rpx;/);
+});
+
 test("我的页面不再注册底部商品列表或保留商品加载与交互逻辑", () => {
   const pageSource = readFileSync(
     resolve(sourceRoot, "pages/profile/profile.ts"),
