@@ -120,6 +120,7 @@ test("个人资料头像独立于信息列表并衔接白色导航，保存按�
   assert.match(styles, /@profile-camera-background: #e5e5e5;/);
   assert.match(styles, /\.avatar-camera\s*\{[^}]*?right: 0;[^}]*?bottom: 0;[^}]*?background: @profile-camera-background;[^}]*?pointer-events: none;/);
   assert.doesNotMatch(styles, /\.avatar-camera\s*\{[^}]*?border\s*:/);
+  assert.match(styles, /\.avatar-camera__icon\s*\{[^}]*?width: 28rpx;[^}]*?height: 28rpx;/);
   assert.match(styles, /\.user-profile-content\s*\{[^}]*?padding: @space-6 @page-gutter/);
   assert.match(styles, /\.profile-card\s*\{[^}]*?margin-right: -@page-gutter;[^}]*?margin-left: -@page-gutter;[^}]*?padding: 0 @space-6;[^}]*?border-radius: 0;[^}]*?box-shadow: none;/);
   assert.match(styles, /\.profile-actions\s*\{[^}]*?margin-top: @space-6;/);
