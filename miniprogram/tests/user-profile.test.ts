@@ -83,7 +83,7 @@ test("个人资料按昵称、手机号、ID 排列并紧凑展示同色描边�
   assert.match(logic, /userId: ""/);
   assert.match(logic, /userId: profile\.userId/);
   assert.match(logic, /onCopyUserIdTap\(\)[\s\S]*?if \(this\.data\.loggingOut\)\s*\{\s*return;\s*\}[\s\S]*?copyUserId\(this\.data\.userId\)/);
-  assert.match(styles, /\.profile-field__copy\s*\{[^}]*?width: auto !important;[^}]*?height: 44rpx;[^}]*?margin: 0;[^}]*?border: 1rpx solid currentColor;[^}]*?flex: none;[^}]*?color: @profile-save;/);
+  assert.match(styles, /\.profile-field__copy\s*\{[^}]*?width: auto !important;[^}]*?height: 40rpx;[^}]*?margin: 0;[^}]*?border: 1rpx solid currentColor;[^}]*?flex: none;[^}]*?color: @profile-save;/);
   assert.match(idField, /!userId \|\| loggingOut \? 'profile-field__copy--disabled' : ''/);
   assert.match(styles, /\.profile-field__copy--disabled\s*\{[^}]*?color: @color-text-muted;/);
   assert.doesNotMatch(styles, /button\.profile-field__copy|\.profile-field__copy\[disabled\]|\.avatar-button\[disabled\]/);

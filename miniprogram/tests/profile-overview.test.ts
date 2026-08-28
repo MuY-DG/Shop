@@ -71,7 +71,7 @@ test("用户 ID 使用独立圆形徽标与小号编号，保留黑金渐变和�
   assert.match(idStyle, /max-width: 100%;/);
   assert.match(idStyle, /box-sizing: border-box;/);
   assert.match(idStyle, /margin-top: 12rpx;/);
-  assert.match(idStyle, /padding: 0 9rpx 0 4rpx;/);
+  assert.match(idStyle, /padding: 2rpx 9rpx 2rpx 2rpx;/);
   assert.match(idStyle, /gap: 6rpx;/);
   assert.match(idStyle, /font-size: 17rpx;/);
   assert.match(idStyle, /font-weight: 600;/);
