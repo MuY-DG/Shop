@@ -494,7 +494,7 @@ public class AdminProductService {
                             virtual_sales = 0,
                             selling_points = '',
                             detail_html = '',
-                            compliance_type = 'UNCLASSIFIED',
+                            compliance_type = 'NON_FOOD',
                             display_badge_text = '',
                             display_badge_tone = 'NEUTRAL',
                             sort_order = 0,

@@ -9,7 +9,7 @@ const POSITIVE_NET_CONTENT_PATTERN =
   /(?:^|\D)(?:0*[1-9]\d*(?:\.\d+)?|0\.\d*[1-9]\d*)\s*(?:kg|g|mg|l|ml|克|千克|公斤|毫升|升|枚|个|袋|包|盒|罐|瓶|支)(?:\D|$)/i
 
 export const createDefaultFoodDisclosure = (): ProductEditorFoodDisclosure => ({
-  complianceType: 'UNCLASSIFIED',
+  complianceType: 'NON_FOOD',
   foodName: '',
   ingredients: '',
   allergenInformation: '',

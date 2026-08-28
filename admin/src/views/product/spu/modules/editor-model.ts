@@ -51,7 +51,7 @@ export interface ProductEditorSku {
   sortOrder: number
 }
 
-export type ProductComplianceType = 'UNCLASSIFIED' | 'FOOD' | 'NON_FOOD'
+export type ProductComplianceType = 'NON_FOOD' | 'FOOD'
 
 export interface ProductEditorFoodLabelAsset {
   fileId: number | null
@@ -184,7 +184,7 @@ export const createDefaultForm = (): ProductEditorForm => ({
   couponTemplateIds: [],
   parameterValues: [],
   foodDisclosure: {
-    complianceType: 'UNCLASSIFIED',
+    complianceType: 'NON_FOOD',
     foodName: '',
     ingredients: '',
     allergenInformation: '',

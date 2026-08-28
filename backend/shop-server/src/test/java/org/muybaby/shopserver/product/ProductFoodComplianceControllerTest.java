@@ -2,6 +2,8 @@ package org.muybaby.shopserver.product;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.compliance.service.MerchantComplianceService;
@@ -72,7 +74,7 @@ class ProductFoodComplianceControllerTest {
         mockMvc.perform(get("/admin/product/spus/" + product.spuId() + "/food-disclosure")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.complianceType").value("UNCLASSIFIED"))
+                .andExpect(jsonPath("$.data.complianceType").value("NON_FOOD"))
                 .andExpect(jsonPath("$.data.labelAssets").isEmpty());
 
         mockMvc.perform(put("/admin/product/spus/" + product.spuId() + "/food-disclosure")
@@ -143,5 +145,27 @@ class ProductFoodComplianceControllerTest {
                 .isGreaterThanOrEqualTo(0)
                 .isLessThan(appDetail.indexOf("\"detailHtml\""));
         assertThat(appDetail).doesNotContain("untrusted.example.test");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"UNCLASSIFIED", "OTHER"})
+    void rejectsRemovedOrUnknownComplianceTypes(String complianceType) throws Exception {
+        String token = issueAdminToken(jdbcClient, opaqueTokenService, List.of("product:spu:update"));
+        ProductFoodComplianceTestSupport.CreatedProduct product =
+                createDraftProduct(adminProductService, jdbcClient, "");
+
+        mockMvc.perform(put("/admin/product/spus/" + product.spuId() + "/food-disclosure")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"complianceType": "%s"}
+                                """.formatted(complianceType)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(ErrorCode.VALIDATION_FAILED.code()));
+
+        mockMvc.perform(get("/admin/product/spus/" + product.spuId() + "/food-disclosure")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.complianceType").value("NON_FOOD"));
     }
 }

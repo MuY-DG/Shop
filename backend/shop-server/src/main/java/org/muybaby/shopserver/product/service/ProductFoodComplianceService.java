@@ -108,9 +108,6 @@ public class ProductFoodComplianceService {
     public void requirePublishable(Long spuId, List<ProductSku> enabledSkus) {
         ProductRow product = requireProduct(spuId, false);
         ProductComplianceType complianceType = parseComplianceType(product.complianceType());
-        if (complianceType == ProductComplianceType.UNCLASSIFIED) {
-            throw new BusinessException(ErrorCode.PRODUCT_UNAVAILABLE);
-        }
         if (complianceType == ProductComplianceType.NON_FOOD) {
             return;
         }

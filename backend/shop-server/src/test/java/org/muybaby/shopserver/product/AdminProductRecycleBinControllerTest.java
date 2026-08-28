@@ -241,7 +241,7 @@ class AdminProductRecycleBinControllerTest {
         Map<String, Object> tombstone = jdbcClient.sql("""
                         select category_id, freight_template_id, title, subtitle,
                                main_image, main_image_file_id, main_video, main_video_file_id,
-                               virtual_sales, selling_points, detail_html, sort_order,
+                               virtual_sales, selling_points, detail_html, compliance_type, sort_order,
                                status, deleted_at, purged_at
                         from product_spu
                         where id = :spuId
@@ -261,6 +261,7 @@ class AdminProductRecycleBinControllerTest {
                 .containsEntry("VIRTUAL_SALES", 0L)
                 .containsEntry("SELLING_POINTS", "")
                 .containsEntry("DETAIL_HTML", "")
+                .containsEntry("COMPLIANCE_TYPE", "NON_FOOD")
                 .containsEntry("SORT_ORDER", 0)
                 .containsEntry("STATUS", "OFF_SALE");
         assertThat(tombstone.get("DELETED_AT")).isNotNull();

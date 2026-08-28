@@ -1,7 +1,7 @@
 <template>
   <div class="food-compliance-tab">
     <ElAlert
-      title="食品信息必须来自真实标签与资质原件；禁止填写示例、占位或推测数据。历史商品默认为未分类，未完成分类前后端会阻止重新上架。"
+      title="商品合规分类默认为非食品，请按商品真实属性选择。食品信息必须来自真实标签与资质原件；禁止填写示例、占位或推测数据。"
       type="warning"
       :closable="false"
       show-icon
@@ -23,19 +23,10 @@
             :disabled="disabled"
             @update:model-value="patch({ complianceType: $event as ProductComplianceType })"
           >
-            <ElRadioButton value="UNCLASSIFIED">未分类</ElRadioButton>
-            <ElRadioButton value="FOOD">食品</ElRadioButton>
             <ElRadioButton value="NON_FOOD">非食品</ElRadioButton>
+            <ElRadioButton value="FOOD">食品</ElRadioButton>
           </ElRadioGroup>
         </ElFormItem>
-
-        <ElAlert
-          v-if="modelValue.complianceType === 'UNCLASSIFIED'"
-          title="未分类商品可以保存草稿，但不能上架。请按商品真实属性选择食品或非食品。"
-          type="info"
-          :closable="false"
-          show-icon
-        />
 
         <template v-if="modelValue.complianceType === 'FOOD'">
           <ElDivider content-position="left">标签结构化信息</ElDivider>

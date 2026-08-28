@@ -3,6 +3,7 @@ package org.muybaby.shopserver.support;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.containers.MySQLContainer;
@@ -10,6 +11,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Testcontainers
 @Tag("integration")
@@ -27,14 +29,41 @@ class SchemaGenerationBaselineMySqlTest {
             .withUrlParam("serverTimezone", "UTC");
 
     @Test
-    void generationTwoBaselineRunsOnProductionMySql() {
-        Flyway flyway = MigrationTestSupport.migrateToLatest(
-                MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+    void generationTwoBaselineAndProductComplianceUpgradeRunOnProductionMySql() {
+        Flyway.configure()
+                .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
+                .target("8")
+                .load()
+                .migrate();
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword()));
+        jdbc.sql("""
+                        insert into product_spu
+                            (id, category_id, title, selling_points, detail_html, compliance_type, status)
+                        values
+                            (9890021, 1, 'Legacy unclassified', '', '', 'UNCLASSIFIED', 'DRAFT'),
+                            (9890022, 1, 'Existing food', '', '', 'FOOD', 'DRAFT'),
+                            (9890023, 1, 'Existing non-food', '', '', 'NON_FOOD', 'DRAFT')
+                        """).update();
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("8");
-        assertThat(flyway.info().applied()).hasSize(8);
+        Flyway flyway = MigrationTestSupport.migrateToLatest(
+                MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
+
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("9");
+        assertThat(flyway.info().applied()).hasSize(9);
+        assertThat(jdbc.sql("select compliance_type from product_spu order by id")
+                .query(String.class).list()).containsExactly("NON_FOOD", "FOOD", "NON_FOOD");
+        jdbc.sql("""
+                        insert into product_spu (id, category_id, title, selling_points, detail_html, status)
+                        values (9890024, 1, 'New default', '', '', 'DRAFT')
+                        """).update();
+        assertThat(jdbc.sql("select compliance_type from product_spu where id = 9890024")
+                .query(String.class).single()).isEqualTo("NON_FOOD");
+        assertThatThrownBy(() -> jdbc.sql("""
+                        update product_spu set compliance_type = 'UNCLASSIFIED' where id = 9890024
+                        """).update())
+                .isInstanceOf(DataAccessException.class)
+                .hasMessageContaining("chk_product_spu_compliance_type");
         assertThat(jdbc.sql("""
                         select count(*)
                         from information_schema.tables

@@ -253,7 +253,7 @@ declare namespace Api {
     type FreightChargeMode = 'FREE' | 'FIXED'
     type FreightTemplateStatus = 'ENABLED' | 'DISABLED'
     type ProductReviewStatus = 'PUBLISHED' | 'HIDDEN'
-    type ProductComplianceType = 'UNCLASSIFIED' | 'FOOD' | 'NON_FOOD'
+    type ProductComplianceType = 'NON_FOOD' | 'FOOD'
 
     interface Category {
       id: number

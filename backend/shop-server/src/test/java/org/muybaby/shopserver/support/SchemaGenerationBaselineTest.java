@@ -24,8 +24,8 @@ class SchemaGenerationBaselineTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("8");
-        assertThat(flyway.info().applied()).hasSize(8);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("9");
+        assertThat(flyway.info().applied()).hasSize(9);
         assertThat(tableCount(jdbc)).isEqualTo(130);
 
         assertThat(tableExists(jdbc, "payment_config_snapshot")).isFalse();

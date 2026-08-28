@@ -266,7 +266,7 @@
 
   const props = withDefaults(defineProps<Props>(), {
     coverImage: '',
-    complianceType: 'UNCLASSIFIED',
+    complianceType: 'NON_FOOD',
     disabled: false,
     stockDisabled: false
   })

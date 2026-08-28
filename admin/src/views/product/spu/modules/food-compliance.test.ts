@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import type { ProductEditorSku } from './editor-model'
 import {
@@ -46,14 +47,22 @@ const completeFood = () => ({
   labelAssets: [{ fileId: 91, url: 'https://assets.example.test/label.jpg', sortOrder: 8 }]
 })
 
-test('unclassified and non-food drafts may save while publish enforcement stays server-side', () => {
-  assert.equal(validateFoodDisclosure(createDefaultFoodDisclosure(), [enabledSku()]), null)
-  assert.equal(
-    validateFoodDisclosure({ ...createDefaultFoodDisclosure(), complianceType: 'NON_FOOD' }, [
-      enabledSku()
-    ]),
-    null
+test('compliance classification offers only non-food and food', () => {
+  const source = readFileSync(new URL('./product-food-compliance-tab.vue', import.meta.url), 'utf8')
+  const options = Array.from(
+    source.matchAll(/<ElRadioButton value="([^"]+)">([^<]+)</g),
+    (match) => [match[1], match[2]]
   )
+  assert.deepEqual(options, [
+    ['NON_FOOD', '非食品'],
+    ['FOOD', '食品']
+  ])
+})
+
+test('default non-food disclosure saves without food facts or SKU net content', () => {
+  const disclosure = createDefaultFoodDisclosure()
+  assert.equal(normalizeFoodDisclosureForSave(disclosure).complianceType, 'NON_FOOD')
+  assert.equal(validateFoodDisclosure(disclosure, [{ ...enabledSku(), netContentText: '' }]), null)
 })
 
 test('food disclosure rejects missing, placeholder, unmanaged-label and net-content gaps', () => {

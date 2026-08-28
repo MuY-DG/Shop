@@ -56,16 +56,28 @@ class ProductFoodComplianceServiceTest {
     }
 
     @Test
-    void unclassifiedProductsFailClosedWhileNonFoodProductsCanPublish() {
+    void newProductsDefaultToNonFoodAndCanPublishWithoutFoodDisclosure() {
         ProductFoodComplianceTestSupport.CreatedProduct product =
                 createDraftProduct(adminProductService, jdbcClient, "");
 
         ProductFoodDisclosureResponse initial = productFoodComplianceService.get(product.spuId());
-        assertThat(initial.complianceType()).isEqualTo(ProductComplianceType.UNCLASSIFIED.name());
+        assertThat(initial.complianceType()).isEqualTo(ProductComplianceType.NON_FOOD.name());
         assertThat(initial.labelAssets()).isEmpty();
-        assertThatThrownBy(() -> adminProductService.publishSpu(product.spuId()))
-                .isInstanceOfSatisfying(BusinessException.class, exception ->
-                        assertThat(exception.errorCode()).isEqualTo(ErrorCode.PRODUCT_UNAVAILABLE));
+        assertThat(productFoodComplianceService.publicDisclosure(product.spuId())).isNull();
+
+        adminProductService.publishSpu(product.spuId());
+
+        assertThat(productStatus(product.spuId())).isEqualTo(ProductStatus.ON_SALE.name());
+    }
+
+    @Test
+    void switchingFoodToNonFoodClearsFoodDisclosureAndLabels() {
+        ProductFoodComplianceTestSupport.CreatedProduct product =
+                createDraftProduct(adminProductService, jdbcClient, "");
+        ProductFoodComplianceTestSupport.StoredFile label = insertPublicImage(jdbcClient, "switch-label.png");
+        productFoodComplianceService.update(
+                product.spuId(),
+                completeFoodDisclosure(label.id(), "生产日期及批次见包装喷码"));
 
         ProductFoodDisclosureResponse nonFood = productFoodComplianceService.update(
                 product.spuId(),
@@ -87,6 +99,17 @@ class ProductFoodComplianceServiceTest {
         assertThat(nonFood.complianceType()).isEqualTo(ProductComplianceType.NON_FOOD.name());
         assertThat(nonFood.foodName()).isEmpty();
         assertThat(nonFood.ingredients()).isEmpty();
+        assertThat(nonFood.labelAssets()).isEmpty();
+        assertThat(productFoodComplianceService.publicDisclosure(product.spuId())).isNull();
+        assertThat(jdbcClient.sql("""
+                        select count(*) from storage_asset_usage
+                        where owner_type = 'PRODUCT_FOOD_DISCLOSURE'
+                          and owner_id = :spuId
+                          and status = 'ACTIVE'
+                        """)
+                .param("spuId", product.spuId())
+                .query(Integer.class)
+                .single()).isZero();
 
         adminProductService.publishSpu(product.spuId());
 
