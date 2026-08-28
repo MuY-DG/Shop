@@ -5,7 +5,6 @@ import {
 import { normalizeContactPhone } from "../../features/contact";
 import { COMPLIANCE_ROUTES } from "../../features/compliance";
 import { buildOrderListUrl, parseOrderStatusGroup } from "../../features/order-center";
-import { parsePositiveId } from "../../features/product-catalog";
 import {
   guestProfileOverviewDisplay,
   loadingProfileOverviewDisplay,
@@ -18,10 +17,7 @@ import { getCustomerServicePresence } from "../../services/customer-service";
 import { getSessionState } from "../../services/session";
 import { getMyOverview } from "../../services/user-profile";
 import { openLoginPage } from "../../utils/login-navigation";
-import {
-  refreshCustomTabBarCartCount,
-  syncCustomTabBar
-} from "../../utils/tab-bar";
+import { syncCustomTabBar } from "../../utils/tab-bar";
 
 interface DatasetEvent {
   currentTarget: {
@@ -30,17 +26,6 @@ interface DatasetEvent {
       kind?: string;
       path?: string;
     };
-  };
-}
-
-interface CatalogBrowserInstance {
-  silentRefresh(): Promise<void>;
-  loadMore(): Promise<void>;
-}
-
-interface ProductSelectEvent {
-  detail: {
-    spuId?: number | string;
   };
 }
 
@@ -170,7 +155,6 @@ Page({
     avatarMode: "aspectFill",
     userId: "",
     contactLoading: false,
-    catalogShown: false,
     overviewOwnerKey: "guest",
     overviewFingerprint: profileOverviewFingerprint(GUEST_OVERVIEW_DISPLAY),
     ...GUEST_OVERVIEW_STATE
@@ -178,7 +162,6 @@ Page({
 
   onShow() {
     syncCustomTabBar(this, 3);
-    const catalogShown = this.data.catalogShown;
     const session = getSessionState();
     const loggedIn = Boolean(
       session.user && (session.accessToken || session.refreshToken)
@@ -207,7 +190,6 @@ Page({
         ? session.user.avatarUrl
         : DEFAULT_AVATAR_URL,
       avatarMode: "aspectFill",
-      catalogShown: true,
       userId: loggedIn && session.user ? session.user.userId : "",
       ...overviewState
     });
@@ -216,28 +198,6 @@ Page({
     } else {
       void this.loadCustomerServicePresence(requestId, overviewOwnerKey);
     }
-    if (catalogShown) {
-      void this.catalog()?.silentRefresh();
-    }
-  },
-
-  onReachBottom() {
-    void this.catalog()?.loadMore();
-  },
-
-  onProductSelect(event: ProductSelectEvent) {
-    const spuId = parsePositiveId(event.detail.spuId);
-    if (spuId) {
-      wx.navigateTo({ url: `/pages/product/detail/detail?id=${spuId}` });
-    }
-  },
-
-  onCartChange() {
-    void refreshCustomTabBarCartCount(this);
-  },
-
-  catalog(): CatalogBrowserInstance | undefined {
-    return this.selectComponent("#profile-catalog") as unknown as CatalogBrowserInstance | undefined;
   },
 
   async loadCustomerServicePresence(requestId: number, overviewOwnerKey: string) {

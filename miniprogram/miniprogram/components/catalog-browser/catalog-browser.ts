@@ -113,10 +113,6 @@ Component({
     scrollPage: {
       type: Boolean,
       value: false
-    },
-    embedded: {
-      type: Boolean,
-      value: false
     }
   },
 
@@ -157,10 +153,6 @@ Component({
         activeKeyword,
         categoryTabs: buildCategoryTabs([], activeCategoryId)
       });
-      if (this.data.embedded) {
-        void this.loadFirstPage();
-        return;
-      }
       void Promise.all([
         this.loadCategories(),
         this.loadFilterFacets(activeCategoryId, {}),
@@ -194,10 +186,6 @@ Component({
     },
 
     async refresh() {
-      if (this.data.embedded) {
-        await this.loadFirstPage(true);
-        return;
-      }
       await Promise.all([
         this.loadCategories(true),
         this.loadFilterFacets(
@@ -223,19 +211,15 @@ Component({
       }
       this.setData({ silentRefreshing: true });
       try {
-        if (this.data.embedded) {
-          await this.loadFirstPage(true, true);
-        } else {
-          await Promise.all([
-            this.loadCategories(true),
-            this.loadFilterFacets(
-              this.data.activeCategoryId,
-              this.data.selectedParameterValues,
-              true
-            ),
-            this.loadFirstPage(true, true)
-          ]);
-        }
+        await Promise.all([
+          this.loadCategories(true),
+          this.loadFilterFacets(
+            this.data.activeCategoryId,
+            this.data.selectedParameterValues,
+            true
+          ),
+          this.loadFirstPage(true, true)
+        ]);
       } finally {
         this.setData({ silentRefreshing: false });
       }

@@ -146,12 +146,5 @@
         </view>
       </view>
     </view>
-
-    <catalog-browser
-      id="profile-catalog"
-      embedded="{{true}}"
-      bindproductselect="onProductSelect"
-      bindcartchange="onCartChange"
-    />
   </view>
 </view>

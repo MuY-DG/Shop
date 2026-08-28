@@ -373,6 +373,16 @@ test("分类页固定工具区并统一搜索、排序和分类视觉", () => {
   assert.match(categoryLogic, /this\.data\.shown[\s\S]*this\.catalog\(\)\?\.silentRefresh\(\)/);
   assert.match(catalogLogic, /async silentRefresh\(\)[\s\S]*this\.loadFirstPage\(true, true\)/);
   assert.match(catalogLogic, /onContentLower\(\)[\s\S]*this\.loadMore\(\)/);
+  assert.doesNotMatch(catalogLogic + catalogTemplate + catalogStyle, /embedded/);
+  assert.match(catalogLogic, /sortMode: "COMPREHENSIVE"/);
+  assert.match(catalogLogic, /viewMode: "grid"/);
+  assert.match(
+    catalogLogic,
+    /attached\(\)[\s\S]*?Promise\.all\(\[\s*this\.loadCategories\(\),\s*this\.loadFilterFacets\(activeCategoryId, \{\}\),\s*this\.loadFirstPage\(\)/
+  );
+  assert.match(catalogTemplate, /<view class="catalog-tools">/);
+  assert.match(catalogTemplate, /catalog-grid catalog-grid--\{\{viewMode\}\}/);
+  assert.match(catalogTemplate, /wx:if="\{\{filterVisible\}\}"\s+class="filter-mask"/);
 });
 
 test("商品搜索使用内嵌按钮和最近搜索样式", () => {
@@ -679,7 +689,7 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
     profileStyle,
     /\.member-card__avatar-frame\s*\{[\s\S]*?width: 206rpx;[\s\S]*?height: 206rpx;/
   );
-  assert.match(profileStyle, /\.account-metrics\s*\{[\s\S]*?margin-top: 12rpx;/);
+  assert.match(profileStyle, /\.account-metrics\s*\{[^}]*?margin-top: -4rpx;/);
   assert.match(profileTemplate, /class="member-card__avatar-frame"/);
   assert.match(profileTemplate, /src="\/assets\/images\/member-avatar-frame\.png"/);
   assert.match(profileTemplate, /aria-label="头像框"/);

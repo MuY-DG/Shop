@@ -39,6 +39,17 @@ test("我的页面登录后展示用户 ID，未登录保留登录提示", () =>
   assert.match(template, /<view wx:else class="member-card__copy">登录后查看订单与会员服务<\/view>/);
 });
 
+test("用户名和 ID 整组下移且不改变头像与下方容器的布局占位", () => {
+  const style = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.less"),
+    "utf8"
+  );
+  const bodyStyle = style.match(/\.member-card__body\s*\{([^}]+)\}/)?.[1] || "";
+
+  assert.match(bodyStyle, /position: relative;/);
+  assert.match(bodyStyle, /top: 8rpx;/);
+});
+
 test("用户 ID 使用独立圆形徽标与小号编号，保留黑金渐变和长编号溢出保护", () => {
   const style = readFileSync(
     resolve(sourceRoot, "pages/profile/profile.less"),
@@ -54,11 +65,13 @@ test("用户 ID 使用独立圆形徽标与小号编号，保留黑金渐变和�
   assert.match(baseCopyStyle, /overflow: hidden;/);
   assert.match(baseCopyStyle, /text-overflow: ellipsis;/);
   assert.match(baseCopyStyle, /white-space: nowrap;/);
+  assert.match(idStyle, /position: relative;/);
+  assert.match(idStyle, /top: 4rpx;/);
   assert.match(idStyle, /display: inline-flex;/);
   assert.match(idStyle, /max-width: 100%;/);
   assert.match(idStyle, /box-sizing: border-box;/);
-  assert.match(idStyle, /margin-top: 8rpx;/);
-  assert.match(idStyle, /padding: 0 9rpx 0 0;/);
+  assert.match(idStyle, /margin-top: 12rpx;/);
+  assert.match(idStyle, /padding: 0 9rpx 0 4rpx;/);
   assert.match(idStyle, /gap: 6rpx;/);
   assert.match(idStyle, /font-size: 17rpx;/);
   assert.match(idStyle, /font-weight: 600;/);
@@ -137,21 +150,6 @@ test("我的页面从聚合接口取数并统一角标颜色", () => {
     resolve(sourceRoot, "pages/profile/profile.less"),
     "utf8"
   );
-  const pageConfig = JSON.parse(
-    readFileSync(resolve(sourceRoot, "pages/profile/profile.json"), "utf8")
-  ) as { usingComponents?: Record<string, string>; onReachBottomDistance?: number };
-  const catalogSource = readFileSync(
-    resolve(sourceRoot, "components/catalog-browser/catalog-browser.ts"),
-    "utf8"
-  );
-  const catalogTemplate = readFileSync(
-    resolve(sourceRoot, "components/catalog-browser/catalog-browser.wxml"),
-    "utf8"
-  );
-  const catalogStyle = readFileSync(
-    resolve(sourceRoot, "components/catalog-browser/catalog-browser.less"),
-    "utf8"
-  );
   const tabStyle = readFileSync(
     resolve(sourceRoot, "custom-tab-bar/index.less"),
     "utf8"
@@ -193,31 +191,30 @@ test("我的页面从聚合接口取数并统一角标颜色", () => {
   assert.match(style, /\.order-shortcut__badge[\s\S]*background: #ff172b/);
   assert.match(style, /\.service-item__badge[\s\S]*background: #ff172b/);
   assert.match(tabStyle, /\.tab-bar__badge[\s\S]*background: #ff172b/);
-  assert.equal(
-    pageConfig.usingComponents?.["catalog-browser"],
-    "/components/catalog-browser/catalog-browser"
+});
+
+test("我的页面不再注册底部商品列表或保留商品加载与交互逻辑", () => {
+  const pageSource = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.ts"),
+    "utf8"
   );
-  assert.equal(pageConfig.onReachBottomDistance, 160);
-  assert.match(
-    template,
-    /<catalog-browser[\s\S]*id="profile-catalog"[\s\S]*embedded="\{\{true\}\}"[\s\S]*bindproductselect="onProductSelect"[\s\S]*bindcartchange="onCartChange"/
+  const template = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.wxml"),
+    "utf8"
   );
-  assert.match(pageSource, /onReachBottom\(\)[\s\S]{0,100}catalog\(\)\?\.loadMore\(\)/);
-  assert.match(pageSource, /onProductSelect[\s\S]{0,220}pages\/product\/detail\/detail\?id=/);
-  assert.match(pageSource, /onCartChange\(\)[\s\S]{0,100}refreshCustomTabBarCartCount\(this\)/);
-  assert.match(catalogSource, /embedded:\s*\{[\s\S]{0,100}type: Boolean/);
-  assert.match(catalogSource, /sortMode: "COMPREHENSIVE"/);
-  assert.match(catalogSource, /viewMode: "grid"/);
-  assert.match(
-    catalogSource,
-    /attached\(\)[\s\S]{0,500}this\.data\.embedded[\s\S]{0,120}this\.loadFirstPage\(\)/
+  const pageConfig = JSON.parse(
+    readFileSync(resolve(sourceRoot, "pages/profile/profile.json"), "utf8")
+  ) as { usingComponents?: Record<string, string>; onReachBottomDistance?: number };
+
+  assert.equal(pageConfig.usingComponents?.["catalog-browser"], undefined);
+  assert.equal(pageConfig.onReachBottomDistance, undefined);
+  assert.doesNotMatch(template, /catalog-browser|product-card|profile-catalog/);
+  assert.doesNotMatch(
+    pageSource,
+    /CatalogBrowserInstance|ProductSelectEvent|catalogShown|onProductSelect|onCartChange|onReachBottom|selectComponent|loadMore|silentRefresh|refreshCustomTabBarCartCount/
   );
-  assert.match(catalogTemplate, /<view wx:if="\{\{!embedded\}\}" class="catalog-tools">/);
-  assert.match(catalogTemplate, /catalog-grid catalog-grid--\{\{viewMode\}\}/);
-  assert.match(
-    catalogStyle,
-    /\.catalog-browser--embedded \.catalog-content\s*\{[\s\S]*min-height: 0;[\s\S]*padding: 24rpx 0 0;/
-  );
+  assert.doesNotMatch(pageSource, /features\/product-catalog|services\/product/);
+  assert.match(pageSource, /syncCustomTabBar\(this, 3\)/);
 });
 
 test("我的页面返回时保留同一用户的已有概览并静默刷新", () => {
