@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
@@ -45,6 +45,20 @@ interface DetailPageConfig {
 }
 
 const sourceRoot = resolve(process.cwd(), "miniprogram");
+
+test("小程序本地图标引用均有效，清理旧资源不会留下失效路径", () => {
+  const sourcePaths = readdirSync(sourceRoot, { recursive: true, encoding: "utf8" })
+    .filter((path) => /\.(?:ts|wxml|less|json)$/.test(path));
+  sourcePaths.forEach((path) => {
+    const source = readFileSync(resolve(sourceRoot, path), "utf8");
+    for (const [iconPath] of source.matchAll(/\/assets\/icons\/[A-Za-z0-9_-]+\.svg/g)) {
+      assert.ok(
+        existsSync(resolve(sourceRoot, iconPath.slice(1))),
+        `${path} references missing icon ${iconPath}`
+      );
+    }
+  });
+});
 
 test("自定义底部导航注册四个可用的 Tab 根页面", () => {
   const appConfig = JSON.parse(
@@ -224,14 +238,6 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
     resolve(sourceRoot, "custom-tab-bar/index.less"),
     "utf8"
   );
-  const tabHomeIcon = readFileSync(
-    resolve(sourceRoot, "assets/icons/tab-home.svg"),
-    "utf8"
-  );
-  const tabHomeActiveIcon = readFileSync(
-    resolve(sourceRoot, "assets/icons/tab-home-active.svg"),
-    "utf8"
-  );
   assert.match(cartLogic, /syncTabBar: true/);
   assert.match(cartPageLogic, /syncCustomTabBar\(this, 2\)/);
   assert.match(profileLogic, /syncCustomTabBar\(this, 3\)/);
@@ -240,13 +246,30 @@ test("Tab 页面显示时同步自定义导航选中项", () => {
   assert.doesNotMatch(tabLogic, /this\.setData\(\{ selected: index \}\)/);
   assert.match(tabLogic, /wx\.switchTab\(\{ url: item\.pagePath \}\)/);
   assert.match(tabLogic, /getCartItems\(\{ preferCache: true \}\)/);
-  assert.match(tabTemplate, /src="\/assets\/icons\/tab-home\.svg"/);
-  assert.match(tabTemplate, /src="\/assets\/icons\/tab-home-active\.svg"/);
+  assert.match(tabTemplate, /src="\{\{item\.iconPath\}\}"/);
+  assert.match(tabTemplate, /src="\{\{item\.selectedIconPath\}\}"/);
   assert.doesNotMatch(tabTemplate, /src="\{\{selected === index/);
+  assert.doesNotMatch(tabTemplate, /wx:(?:if|elif)="\{\{(?:selected|item\.icon)/);
+  assert.doesNotMatch(tabTemplate + tabStyle, /tab-bar__(?:category-square|cart-handle|cart-basket|cart-wheel|profile-head|profile-body)/);
   assert.match(tabStyle, /\.tab-bar__item\s*\{[\s\S]*color: #000000;/);
   assert.match(tabStyle, /\.tab-bar__item--selected\s*\{[\s\S]*color: @color-action-primary;/);
-  assert.match(tabHomeIcon, /fill="#000000"/);
-  assert.match(tabHomeActiveIcon, /fill="#ff172b"/);
+  ["home", "category", "cart", "profile"].forEach((name) => {
+    const iconPath = `/assets/icons/tab-${name}.svg`;
+    const selectedIconPath = `/assets/icons/tab-${name}-active.svg`;
+    const tabItem = tabLogic.match(new RegExp(`icon: "${name}",[^}]+`))?.[0] || "";
+    assert.ok(tabItem.includes(`iconPath: "${iconPath}"`));
+    assert.ok(tabItem.includes(`selectedIconPath: "${selectedIconPath}"`));
+    const icon = readFileSync(resolve(sourceRoot, iconPath.slice(1)), "utf8");
+    const activeIcon = readFileSync(resolve(sourceRoot, selectedIconPath.slice(1)), "utf8");
+    assert.match(icon, /fill="#000000"/);
+    assert.match(activeIcon, /fill="#f70517"/);
+    assert.match(icon, /viewBox="0 0 96 96"/);
+    assert.match(activeIcon, /viewBox="0 0 96 96"/);
+    assert.notDeepEqual(
+      [...icon.matchAll(/\bd="([^"]+)"/g)].map((match) => match[1]),
+      [...activeIcon.matchAll(/\bd="([^"]+)"/g)].map((match) => match[1])
+    );
+  });
   assert.match(
     tabStyle,
     /\.tab-bar__icon-image\s*\{[\s\S]*position: absolute;[\s\S]*opacity: 0;[\s\S]*\.tab-bar__icon-image--visible\s*\{[\s\S]*opacity: 1;/
@@ -601,9 +624,8 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(catalogLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
   assert.match(catalogTemplate, /<product-card[\s\S]*flat="\{\{true\}\}"/);
   assert.match(tabLogic, /cart\.totalQuantity/);
-  assert.match(tabTemplate, /tab-bar__cart-handle/);
-  assert.match(tabTemplate, /tab-bar__cart-basket/);
-  assert.match(tabTemplate, /tab-bar__cart-wheel/);
+  assert.match(tabLogic, /icon: "cart",[\s\S]*?iconPath: "\/assets\/icons\/tab-cart\.svg",[\s\S]*?selectedIconPath: "\/assets\/icons\/tab-cart-active\.svg"/);
+  assert.match(tabTemplate, /class="tab-bar__badge"/);
   assert.doesNotMatch(tabTemplate, /shopping-cart-outline-iconify\.svg/);
   assert.match(tabStyle, /\.tab-bar\s*\{[\s\S]*border: 0;[\s\S]*background: #ffffff;[\s\S]*box-shadow: none/);
   assert.doesNotMatch(tabStyle, /\.tab-bar::before|backdrop-filter/);
@@ -1213,7 +1235,6 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   const detailInformationIcons = [
     "sell-outline-rounded.svg",
     "location-on-outline-rounded.svg",
-    "verified-user-outline-rounded.svg",
     "local-shipping-outline-rounded.svg"
   ].map((iconName) => readFileSync(resolve(sourceRoot, "assets/icons", iconName), "utf8"));
   const productSummaryStyle = readFileSync(
@@ -1268,7 +1289,10 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   assert.equal((detailTemplate.match(/chevron-right-detail\.svg/g) ?? []).length, 5);
   assert.match(detailChevronIcon, /#a8abb3/i);
   detailInformationIcons.forEach((icon) => assert.match(icon, /#a8abb3/i));
-  assert.match(detailTemplate, /data-sheet="guarantee"[\s\S]{0,260}verified-user-outline-rounded\.svg/);
+  assert.match(detailTemplate, /data-sheet="guarantee"[\s\S]{0,260}profile-about\.svg/);
+  assert.match(detailTemplate, /class="review-toolbar__truth"[\s\S]{0,160}profile-about\.svg/);
+  assert.match(detailTemplate, /class="utility-icon utility-icon--support"[\s\S]{0,100}profile-customer-service\.svg/);
+  assert.match(detailTemplate, /bindtap="onGoToCart"[\s\S]{0,200}src="\/assets\/icons\/tab-cart\.svg"/);
   assert.match(detailTemplate, /data-sheet="freight"[\s\S]{0,260}local-shipping-outline-rounded\.svg/);
   assert.match(detailLogic, /\.join\("｜"\)/);
   assert.match(detailLogic, /summary: `\$\{cleanText\(template\.name\)\}｜\$\{chargeText\}`/);
@@ -1757,7 +1781,7 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(detailLogic, /this\.data\.logisticsOpening/);
   assert.match(detailLogic, /finally\s*\{\s*this\.setData\(\{ logisticsOpening: false \}\)/);
   assert.doesNotMatch(detailLogic, /setData\(\{[^}]*waybillToken/);
-  assert.match(orderService, /waybillToken\(orderId\)[\s\S]*method:\s*"POST"/);
+  assert.match(orderService, /shipmentWaybillToken\(orderId, shipmentId\)[\s\S]*method:\s*"POST"/);
   assert.match(logisticsFeature, /requirePlugin\("logisticsPlugin"\)/);
   assert.doesNotMatch(logisticsFeature, /setStorage|globalData|console\./);
   assert.match(detailLogic, /buildCustomerServiceUrl\("ORDER", detail\.orderId\)/);

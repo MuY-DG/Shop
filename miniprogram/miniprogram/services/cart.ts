@@ -66,29 +66,11 @@ export async function updateCartItemQuantity(
   return item;
 }
 
-export async function deleteCartItem(cartItemId: number): Promise<void> {
-  await request<void>({
-    url: API_ENDPOINTS.cart.item(cartItemId),
-    method: "DELETE",
-    expectData: false
-  });
-  invalidateCartItemsCache();
-}
-
 export async function deleteCartItems(cartItemIds: number[]): Promise<void> {
   await request<void, DeleteCartItemsRequest>({
     url: API_ENDPOINTS.cart.batchDelete,
     method: "DELETE",
     data: { cartItemIds },
-    expectData: false
-  });
-  invalidateCartItemsCache();
-}
-
-export async function clearCart(): Promise<void> {
-  await request<void>({
-    url: API_ENDPOINTS.cart.items,
-    method: "DELETE",
     expectData: false
   });
   invalidateCartItemsCache();

@@ -66,14 +66,6 @@ export function getBrowseHistory(
   });
 }
 
-export function deleteBrowseHistoryItem(spuId: number): Promise<void> {
-  return request<void>({
-    url: API_ENDPOINTS.userProduct.browseRecord(spuId),
-    method: "DELETE",
-    expectData: false
-  });
-}
-
 export function deleteBrowseHistoryItems(spuIds: number[]): Promise<void> {
   return request<void, DeleteBrowseHistoryItemsRequest>({
     url: API_ENDPOINTS.userProduct.browseHistoryBatch,

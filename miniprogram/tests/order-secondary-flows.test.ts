@@ -280,7 +280,7 @@ test("评价与修改订单页面注册真实端点并支持评价图片", () =>
   assert.match(modifyTemplate, /发货前可修改收货地址/);
   assert.match(modifyTemplate, /<navigation-bar[\s\S]*?<scroll-view[\s\S]*?class="modify-scroll"[\s\S]*?scroll-y="\{\{true\}\}"/);
   assert.match(modifyTemplate, /修改收货人信息/);
-  assert.match(modifyTemplate, /class="switch-address"[\s\S]*profile-location\.svg[\s\S]*切换地址/);
+  assert.match(modifyTemplate, /class="switch-address"[\s\S]*profile-address\.svg[\s\S]*切换地址/);
   assert.match(modifyTemplate, /receiver-field__label">收货人/);
   assert.match(modifyTemplate, /receiver-field__label">手机号码/);
   assert.match(modifyTemplate, /receiver-field__label">所在地区/);

@@ -33,13 +33,6 @@ export function getAfterSaleDetail(afterSaleId: number): Promise<AfterSaleRespon
   });
 }
 
-export function getOrderAfterSales(orderId: number): Promise<AfterSaleResponse[]> {
-  return request<AfterSaleResponse[]>({
-    url: API_ENDPOINTS.afterSales.forOrder(orderId),
-    method: "GET"
-  });
-}
-
 export function applyAfterSale(
   orderId: number,
   data: AfterSaleApplyRequest

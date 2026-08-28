@@ -278,7 +278,7 @@
             <view class="order-info__service-icon-frame">
               <image
                 class="order-info__service-icon"
-                src="/assets/icons/support-agent-outline-rounded.svg"
+                src="/assets/icons/profile-customer-service.svg"
                 mode="aspectFit"
                 aria-hidden="true"
               />
@@ -299,7 +299,7 @@
         aria-label="联系订单客服"
       >
         <view class="payment-tool__icon-frame">
-          <image class="payment-tool__icon payment-tool__icon--service" src="/assets/icons/support-agent-outline-rounded.svg" mode="aspectFit" aria-hidden="true" />
+          <image class="payment-tool__icon payment-tool__icon--service" src="/assets/icons/profile-customer-service.svg" mode="aspectFit" aria-hidden="true" />
         </view>
         <text class="payment-tool__label">客服</text>
       </button>

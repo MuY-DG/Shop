@@ -152,7 +152,7 @@
             <view class="service-row__icon-frame">
               <image
                 class="service-row__icon"
-                src="/assets/icons/support-agent-outline-rounded.svg"
+                src="/assets/icons/profile-customer-service.svg"
                 mode="aspectFit"
                 aria-hidden="true"
               />

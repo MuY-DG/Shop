@@ -120,15 +120,6 @@ export function sendCustomerServiceOrder(orderId: number): Promise<CustomerServi
     method: "POST"
   });
 }
-export function getCustomerServiceProductCandidates(
-  keyword?: string
-): Promise<CustomerServiceProduct[]> {
-  return request<CustomerServiceProduct[]>({
-    url: API_ENDPOINTS.customerService.productCandidates,
-    method: "GET",
-    data: keyword?.trim() ? { keyword: keyword.trim() } : undefined
-  });
-}
 
 export function sendCustomerServiceProduct(
   productId: number

@@ -48,6 +48,10 @@
       {
         "value": "**/.DS_Store",
         "type": "glob"
+      },
+      {
+        "value": "**/*.md",
+        "type": "glob"
       }
     ],
     "include": []

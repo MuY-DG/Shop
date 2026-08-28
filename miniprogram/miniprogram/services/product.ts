@@ -9,7 +9,6 @@ import type {
 import type {
   ProductReview,
   ProductReviewCreateRequest,
-  ProductReviewEligibility,
   ProductReviewListQuery,
   ProductReviewPage,
   ProductReviewImageUploadResponse
@@ -108,15 +107,6 @@ export function getProductReviews(
     method: "GET",
     data,
     auth: false
-  });
-}
-
-export function getProductReviewEligibility(
-  spuId: number
-): Promise<ProductReviewEligibility> {
-  return request<ProductReviewEligibility>({
-    url: API_ENDPOINTS.product.reviewEligibility(spuId),
-    method: "GET"
   });
 }
 

@@ -17,35 +17,17 @@
       aria-selected="{{selected === index}}"
     >
       <view class="tab-bar__icon-wrap" aria-hidden="true">
-        <view class="tab-bar__icon tab-bar__icon--{{item.icon}}">
+        <view class="tab-bar__icon">
           <image
-            wx:if="{{item.icon === 'home'}}"
             class="tab-bar__icon-image {{selected === index ? '' : 'tab-bar__icon-image--visible'}}"
-            src="/assets/icons/tab-home.svg"
+            src="{{item.iconPath}}"
             mode="aspectFit"
           />
           <image
-            wx:if="{{item.icon === 'home'}}"
             class="tab-bar__icon-image {{selected === index ? 'tab-bar__icon-image--visible' : ''}}"
-            src="/assets/icons/tab-home-active.svg"
+            src="{{item.selectedIconPath}}"
             mode="aspectFit"
           />
-          <block wx:elif="{{item.icon === 'category'}}">
-            <view class="tab-bar__category-square tab-bar__category-square--one"></view>
-            <view class="tab-bar__category-square tab-bar__category-square--two"></view>
-            <view class="tab-bar__category-square tab-bar__category-square--three"></view>
-            <view class="tab-bar__category-square tab-bar__category-square--four"></view>
-          </block>
-          <block wx:elif="{{item.icon === 'cart'}}">
-            <view class="tab-bar__cart-handle"></view>
-            <view class="tab-bar__cart-basket"></view>
-            <view class="tab-bar__cart-wheel tab-bar__cart-wheel--one"></view>
-            <view class="tab-bar__cart-wheel tab-bar__cart-wheel--two"></view>
-          </block>
-          <block wx:else>
-            <view class="tab-bar__profile-head"></view>
-            <view class="tab-bar__profile-body"></view>
-          </block>
         </view>
         <text wx:if="{{item.badge}}" class="tab-bar__badge">{{item.badge}}</text>
       </view>

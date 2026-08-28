@@ -202,7 +202,7 @@ test("订单详情使用零售金额与真实批发成交价生成可核对明�
   assert.equal(view.canModifyReceiver, true);
   assert.equal(view.paymentActionText, "继续支付");
   assert.equal(view.statusHeadline, "等待付款");
-  assert.equal(view.statusIcon, "/assets/icons/order-wallet.svg");
+  assert.equal(view.statusIcon, "/assets/icons/profile-order-wallet.svg");
   assert.equal(view.receiverPhoneDisplay, "138****0000");
   assert.equal(view.totalQuantity, 3);
   assert.equal(view.orderInfoItemCount, 2);
@@ -308,20 +308,23 @@ test("物流查询条件不完整时保留静态卡但不误开插件", () => {
   assert.equal(buildOrderDetailView(shipped).shipmentView, undefined);
 });
 
-test("订单详情顶部按真实订单状态显示履约标题且完成态不受待评价分组影响", () => {
-  const expected = new Map<OrderStatus, string>([
-    ["CREATED", "等待付款"],
-    ["PAYING", "等待付款"],
-    ["PAID", "正在出库"],
-    ["SHIPPED", "等待收货"],
-    ["COMPLETED", "已完成"],
-    ["CLOSED", "已取消"],
-    ["REFUNDING", "退款中"],
-    ["REFUNDED", "已退款"]
-  ]);
+test("订单详情顶部按真实订单状态显示履约标题和共用图标且完成态不受待评价分组影响", () => {
+  const expected: Array<[OrderStatus, string, string]> = [
+    ["CREATED", "等待付款", "profile-order-wallet.svg"],
+    ["PAYING", "等待付款", "profile-order-wallet.svg"],
+    ["PAID", "正在出库", "profile-order-package.svg"],
+    ["PARTIALLY_SHIPPED", "部分已发货", "profile-order-package.svg"],
+    ["SHIPPED", "等待收货", "profile-order-receive.svg"],
+    ["COMPLETED", "已完成", "profile-about.svg"],
+    ["CLOSED", "已取消", "close-material-symbols.svg"],
+    ["REFUNDING", "退款中", "profile-order-after-sale.svg"],
+    ["REFUNDED", "已退款", "profile-order-after-sale.svg"]
+  ];
 
-  expected.forEach((headline, status) => {
-    assert.equal(buildOrderDetailView(detail(status)).statusHeadline, headline);
+  expected.forEach(([status, headline, icon]) => {
+    const view = buildOrderDetailView(detail(status));
+    assert.equal(view.statusHeadline, headline);
+    assert.equal(view.statusIcon, `/assets/icons/${icon}`);
   });
   assert.equal(buildOrderDetailView(detail("PAID")).canModifyReceiver, true);
   assert.equal(buildOrderDetailView(detail("SHIPPED")).canModifyReceiver, false);

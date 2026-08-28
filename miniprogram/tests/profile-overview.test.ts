@@ -158,7 +158,7 @@ test("我的页面从聚合接口取数并统一角标颜色", () => {
   assert.match(pageSource, /getMyOverview\(\)/);
   assert.match(pageSource, /getCustomerServicePresence\(\)/);
   assert.match(pageSource, /profileOverviewDisplay\(overview\)/);
-  assert.match(pageSource, /label: "收货地址",[\s\S]{0,100}iconPath: "\/assets\/icons\/profile-location\.svg"/);
+  assert.match(pageSource, /label: "收货地址",[\s\S]{0,100}iconPath: "\/assets\/icons\/profile-address\.svg"/);
   assert.doesNotMatch(pageSource, /label: "收货地址",[\s\S]{0,100}location-on-outline-rounded\.svg/);
   assert.doesNotMatch(template, /我的订单|查看全部订单|order-center-card__heading/);
   assert.match(
@@ -167,12 +167,22 @@ test("我的页面从聚合接口取数并统一角标颜色", () => {
   );
   assert.match(
     pageSource,
-    /label: "退款售后",[\s\S]{0,160}order-after-sale\.svg[\s\S]{0,160}ACCOUNT_ROUTES\.afterSales/
+    /label: "退款售后",[\s\S]{0,160}profile-order-after-sale\.svg[\s\S]{0,160}ACCOUNT_ROUTES\.afterSales/
   );
   assert.doesNotMatch(pageSource, /label: "售后服务"|account-after-sale\.svg/);
   assert.equal(existsSync(resolve(sourceRoot, "assets/icons/order-all.svg")), true);
   assert.equal(existsSync(resolve(sourceRoot, "assets/icons/account-after-sale.svg")), false);
   assert.equal(existsSync(resolve(sourceRoot, "assets/icons/chevron-right-service.svg")), false);
+  const iconPaths = [...pageSource.matchAll(/iconPath: "(\/assets\/icons\/[^\"]+\.svg)"/g)]
+    .map((match) => match[1]);
+  assert.equal(new Set(iconPaths).size, 13);
+  iconPaths.forEach((iconPath) => {
+    const icon = readFileSync(resolve(sourceRoot, iconPath.slice(1)), "utf8");
+    assert.match(icon, /viewBox="0 0 96 96"/);
+    assert.match(icon, /fill="#000000"/);
+    assert.match(icon, /fill="#f70517"/);
+    assert.doesNotMatch(icon, /<(?:script|image|foreignObject)\b|(?:href|src)=|currentColor/);
+  });
   assert.match(template, /service-presence--online/);
   assert.match(template, /service-item__badge/);
   assert.doesNotMatch(template, /service-item__chevron|chevron-right-service\.svg/);

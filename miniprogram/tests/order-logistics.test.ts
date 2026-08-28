@@ -24,21 +24,21 @@ test("小程序声明官方物流查询插件", () => {
   });
 });
 
-test("物流 token 端点固定为订单所有者路径", () => {
+test("物流 token 端点定位到订单下的指定包裹", () => {
   assert.equal(
-    API_ENDPOINTS.orders.waybillToken(123),
-    "/app/orders/123/logistics/waybill-token"
+    API_ENDPOINTS.orders.shipmentWaybillToken(123, 456),
+    "/app/orders/123/shipments/456/logistics/waybill-token"
   );
 });
 
-test("物流数据端点区分只读快照和主动同步", () => {
+test("物流主动同步端点按包裹隔离", () => {
   assert.equal(
-    API_ENDPOINTS.orders.tracking(123),
-    "/app/orders/123/logistics/tracking"
+    API_ENDPOINTS.orders.syncShipmentTracking(123, 456),
+    "/app/orders/123/shipments/456/logistics/tracking/sync"
   );
   assert.equal(
-    API_ENDPOINTS.orders.syncTracking(123),
-    "/app/orders/123/logistics/tracking/sync"
+    API_ENDPOINTS.orders.syncShipmentTracking(123, 789),
+    "/app/orders/123/shipments/789/logistics/tracking/sync"
   );
 });
 

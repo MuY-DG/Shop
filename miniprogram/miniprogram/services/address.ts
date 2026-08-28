@@ -42,10 +42,3 @@ export function deleteAddress(addressId: string): Promise<void> {
     expectData: false
   });
 }
-
-export function setDefaultAddress(addressId: string): Promise<AddressResponse> {
-  return request<AddressResponse>({
-    url: API_ENDPOINTS.addresses.setDefault(addressId),
-    method: "POST"
-  });
-}

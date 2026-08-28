@@ -38,7 +38,7 @@
       <view wx:elif="{{completed}}" class="review-state review-state--complete">
         <ui-state
           type="empty"
-          icon="/assets/icons/order-review.svg"
+          icon="/assets/icons/profile-order-review.svg"
           description="这个订单已经没有待评价商品"
           action-text="返回订单"
           bindaction="onBackToOrders"
@@ -80,7 +80,7 @@
             >
               <image
                 class="product-option__image"
-                src="{{item.hasImage ? item.imageUrl : '/assets/icons/order-review.svg'}}"
+                src="{{item.hasImage ? item.imageUrl : '/assets/icons/profile-order-review.svg'}}"
                 mode="aspectFill"
               />
               <view class="product-option__body">
@@ -101,7 +101,7 @@
             <view class="review-product__image-shell">
               <image
                 class="review-product__image {{selectedItem.hasImage ? '' : 'review-product__image--fallback'}}"
-                src="{{selectedItem.hasImage ? selectedItem.imageUrl : '/assets/icons/order-review.svg'}}"
+                src="{{selectedItem.hasImage ? selectedItem.imageUrl : '/assets/icons/profile-order-review.svg'}}"
                 mode="{{selectedItem.hasImage ? 'aspectFill' : 'aspectFit'}}"
                 binderror="onProductImageError"
               />

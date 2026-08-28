@@ -36,7 +36,6 @@ export const API_ENDPOINTS = Object.freeze({
     orderCandidates: "/app/customer-service/conversation/order-candidates",
     order: (orderId: number): string =>
       `/app/customer-service/conversation/orders/${orderId}`,
-    productCandidates: "/app/customer-service/conversation/product-candidates",
     product: (productId: number): string =>
       `/app/customer-service/conversation/products/${productId}`,
     image: (messageId: number): string =>
@@ -52,8 +51,6 @@ export const API_ENDPOINTS = Object.freeze({
     filterFacets: "/app/product/filter-facets",
     detail: (spuId: number): string => `/app/product/spus/${spuId}`,
     reviews: (spuId: number): string => `/app/product/spus/${spuId}/reviews`,
-    reviewEligibility: (spuId: number): string =>
-      `/app/product/spus/${spuId}/review-eligibility`,
     reviewImage: (orderItemId: number): string =>
       `/app/product/order-items/${orderItemId}/review-images`,
     reviewImageUploads: (orderItemId: number): string =>
@@ -70,13 +67,11 @@ export const API_ENDPOINTS = Object.freeze({
   cart: {
     items: "/app/cart/items",
     batchDelete: "/app/cart/items/batch",
-    quantity: (cartItemId: number): string => `/app/cart/items/${cartItemId}/quantity`,
-    item: (cartItemId: number): string => `/app/cart/items/${cartItemId}`
+    quantity: (cartItemId: number): string => `/app/cart/items/${cartItemId}/quantity`
   },
   addresses: {
     list: "/app/addresses",
-    item: (addressId: string): string => `/app/addresses/${addressId}`,
-    setDefault: (addressId: string): string => `/app/addresses/${addressId}/default`
+    item: (addressId: string): string => `/app/addresses/${addressId}`
   },
   coupons: {
     available: "/app/coupons/available",
@@ -95,15 +90,8 @@ export const API_ENDPOINTS = Object.freeze({
     cancel: (orderId: number): string => `/app/orders/${orderId}/cancel`,
     paymentSync: (orderId: number): string => `/app/orders/${orderId}/payment/sync`,
     confirmReceipt: (orderId: number): string => `/app/orders/${orderId}/confirm-receipt`,
-    waybillToken: (orderId: number): string =>
-      `/app/orders/${orderId}/logistics/waybill-token`,
     shipmentWaybillToken: (orderId: number, shipmentId: number): string =>
       `/app/orders/${orderId}/shipments/${shipmentId}/logistics/waybill-token`,
-    tracking: (orderId: number): string => `/app/orders/${orderId}/logistics/tracking`,
-    syncTracking: (orderId: number): string =>
-      `/app/orders/${orderId}/logistics/tracking/sync`,
-    shipmentTracking: (orderId: number, shipmentId: number): string =>
-      `/app/orders/${orderId}/shipments/${shipmentId}/logistics/tracking`,
     syncShipmentTracking: (orderId: number, shipmentId: number): string =>
       `/app/orders/${orderId}/shipments/${shipmentId}/logistics/tracking/sync`
   },

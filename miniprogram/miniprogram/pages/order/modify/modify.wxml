@@ -58,7 +58,7 @@
             bindtap="onAddressSheetOpen"
             aria-label="切换收货地址"
           >
-            <image src="/assets/icons/profile-location.svg" mode="aspectFit" aria-hidden="true" />
+            <image src="/assets/icons/profile-address.svg" mode="aspectFit" aria-hidden="true" />
             <text>切换地址</text>
           </button>
         </view>

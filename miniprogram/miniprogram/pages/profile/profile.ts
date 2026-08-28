@@ -45,7 +45,7 @@ function accountMetrics(display: ProfileOverviewDisplay) {
       label: "收藏",
       ariaLabel: "我的收藏",
       value: display.favoriteValue,
-      iconPath: "/assets/icons/favorite-outline-rounded.svg",
+      iconPath: "/assets/icons/profile-favorite.svg",
       path: ACCOUNT_ROUTES.favorites
     },
     {
@@ -63,25 +63,25 @@ function orderShortcuts(display: ProfileOverviewDisplay) {
     {
       group: "UNPAID",
       label: "待付款",
-      iconPath: "/assets/icons/order-wallet.svg",
+      iconPath: "/assets/icons/profile-order-wallet.svg",
       badge: display.orderBadges[0]
     },
     {
       group: "TO_SHIP",
       label: "待发货",
-      iconPath: "/assets/icons/order-package.svg",
+      iconPath: "/assets/icons/profile-order-package.svg",
       badge: display.orderBadges[1]
     },
     {
       group: "TO_RECEIVE",
       label: "待收货",
-      iconPath: "/assets/icons/order-receive.svg",
+      iconPath: "/assets/icons/profile-order-receive.svg",
       badge: display.orderBadges[2]
     },
     {
       group: "TO_REVIEW",
       label: "待评价",
-      iconPath: "/assets/icons/order-review.svg",
+      iconPath: "/assets/icons/profile-order-review.svg",
       badge: display.orderBadges[3]
     },
     {
@@ -100,14 +100,14 @@ function serviceItems(display: ProfileOverviewDisplay) {
   return [
     {
       label: "收货地址",
-      iconPath: "/assets/icons/profile-location.svg",
+      iconPath: "/assets/icons/profile-address.svg",
       path: ACCOUNT_ROUTES.addresses,
       kind: "route"
     },
     {
       label: "联系客服",
       ariaLabel: `联系客服，${customerServiceState}${customerServiceReply}`,
-      iconPath: "/assets/icons/support-agent-outline-rounded.svg",
+      iconPath: "/assets/icons/profile-customer-service.svg",
       path: ACCOUNT_ROUTES.customerService,
       kind: "route",
       showPresence: true,
@@ -116,7 +116,7 @@ function serviceItems(display: ProfileOverviewDisplay) {
     },
     {
       label: "退款售后",
-      iconPath: "/assets/icons/order-after-sale.svg",
+      iconPath: "/assets/icons/profile-order-after-sale.svg",
       path: ACCOUNT_ROUTES.afterSales,
       kind: "route",
       badge: display.orderBadges[4]
@@ -129,7 +129,7 @@ function serviceItems(display: ProfileOverviewDisplay) {
     },
     {
       label: "关于我们",
-      iconPath: "/assets/icons/verified-user-outline-rounded.svg",
+      iconPath: "/assets/icons/profile-about.svg",
       path: COMPLIANCE_ROUTES.settings,
       kind: "public-route"
     }

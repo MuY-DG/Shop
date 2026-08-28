@@ -5,6 +5,8 @@ interface TabItem {
   pagePath: string;
   text: string;
   icon: "home" | "category" | "cart" | "profile";
+  iconPath: string;
+  selectedIconPath: string;
   badge: string;
   ariaLabel: string;
 }
@@ -22,6 +24,8 @@ const TAB_ITEMS: TabItem[] = [
     pagePath: "/pages/index/index",
     text: "首页",
     icon: "home",
+    iconPath: "/assets/icons/tab-home.svg",
+    selectedIconPath: "/assets/icons/tab-home-active.svg",
     badge: "",
     ariaLabel: "首页"
   },
@@ -29,6 +33,8 @@ const TAB_ITEMS: TabItem[] = [
     pagePath: "/pages/category/category",
     text: "分类",
     icon: "category",
+    iconPath: "/assets/icons/tab-category.svg",
+    selectedIconPath: "/assets/icons/tab-category-active.svg",
     badge: "",
     ariaLabel: "分类"
   },
@@ -36,6 +42,8 @@ const TAB_ITEMS: TabItem[] = [
     pagePath: "/pages/cart/cart",
     text: "购物车",
     icon: "cart",
+    iconPath: "/assets/icons/tab-cart.svg",
+    selectedIconPath: "/assets/icons/tab-cart-active.svg",
     badge: "",
     ariaLabel: "购物车"
   },
@@ -43,6 +51,8 @@ const TAB_ITEMS: TabItem[] = [
     pagePath: "/pages/profile/profile",
     text: "我的",
     icon: "profile",
+    iconPath: "/assets/icons/tab-profile.svg",
+    selectedIconPath: "/assets/icons/tab-profile-active.svg",
     badge: "",
     ariaLabel: "我的"
   }

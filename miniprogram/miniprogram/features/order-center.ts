@@ -435,19 +435,19 @@ function statusIcon(status: OrderStatus): string {
   switch (status) {
     case "CREATED":
     case "PAYING":
-      return "/assets/icons/order-wallet.svg";
+      return "/assets/icons/profile-order-wallet.svg";
     case "PAID":
     case "PARTIALLY_SHIPPED":
-      return "/assets/icons/order-package.svg";
+      return "/assets/icons/profile-order-package.svg";
     case "SHIPPED":
-      return "/assets/icons/order-receive.svg";
+      return "/assets/icons/profile-order-receive.svg";
     case "COMPLETED":
-      return "/assets/icons/verified-user-outline-rounded.svg";
+      return "/assets/icons/profile-about.svg";
     case "CLOSED":
       return "/assets/icons/close-material-symbols.svg";
     case "REFUNDING":
     case "REFUNDED":
-      return "/assets/icons/order-after-sale.svg";
+      return "/assets/icons/profile-order-after-sale.svg";
   }
 }
 
