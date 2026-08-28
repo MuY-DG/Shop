@@ -1,4 +1,5 @@
 import {
+  copyUserId,
   normalizeProfileNickname,
   profileHasChanges,
   validateProfileNickname
@@ -43,6 +44,7 @@ Page({
     saving: false,
     savingAvatar: false,
     loggingOut: false,
+    userId: "",
     nickname: "",
     avatarUrl: DEFAULT_AVATAR,
     hasAvatar: false,
@@ -142,6 +144,13 @@ Page({
     }
   },
 
+  onCopyUserIdTap() {
+    if (this.data.loggingOut) {
+      return;
+    }
+    copyUserId(this.data.userId);
+  },
+
   onNicknameInput(event: WechatMiniprogram.Input) {
     const nickname = event.detail.value;
     this.setData({
@@ -220,6 +229,7 @@ Page({
       loading: false,
       saving: false,
       savingAvatar: false,
+      userId: profile.userId,
       nickname: profile.nickname,
       avatarUrl: profile.avatarUrl || DEFAULT_AVATAR,
       hasAvatar: Boolean(profile.avatarUrl),

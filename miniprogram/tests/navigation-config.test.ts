@@ -650,10 +650,19 @@ test("账户中心注册真实页面、移除消息中心并接入自建在线�
   assert.match(profileStyle, /\.profile-page\s*\{[\s\S]*?background-color: @color-page/);
   assert.match(
     profileStyle,
-    /\.profile-page__header-background\s*\{[\s\S]*?top: 0;[\s\S]*?width: 100%;[\s\S]*?height: auto;[\s\S]*?linear-gradient\(180deg, #fff8ef 0%, @color-page 100%\)/
+    /\.profile-page\s*\{[^}]*?background-image: linear-gradient\(180deg, #fcf3e7 0%, @color-page 100%\);[^}]*?background-repeat: no-repeat;[^}]*?background-size: 100% 640rpx;/
   );
+  assert.match(
+    profileStyle,
+    /\.profile-page__header-background\s*\{[^}]*?top: 0;[^}]*?width: 100%;[^}]*?height: auto;/
+  );
+  assert.doesNotMatch(profileStyle, /\.profile-page__header-background\s*\{[^}]*?linear-gradient/);
   assert.match(profileStyle, /\.profile-content\s*\{[\s\S]*?margin-top: -96rpx;[\s\S]*?padding: 8rpx 34rpx/);
-  assert.match(profileStyle, /\.member-card\s*\{[\s\S]*?padding: 30rpx 34rpx 30rpx 0;[\s\S]*?border: 0;[\s\S]*?background: transparent;[\s\S]*?box-shadow: none/);
+  assert.match(
+    profileStyle,
+    /\.member-card\s*\{[^}]*?position: relative;[^}]*?margin-top: 102rpx;[^}]*?padding: 30rpx 34rpx 30rpx 0;[^}]*?border: 0;[^}]*?background: transparent;[^}]*?box-shadow: none/
+  );
+  assert.doesNotMatch(profileStyle, /\.member-card\s*\{[^}]*?\s(?:top|transform)\s*:/);
   assert.match(
     profileStyle,
     /\.account-metrics,[\s\S]*?\.service-card\s*\{[\s\S]*?margin-right: -8rpx;[\s\S]*?margin-left: -8rpx;/

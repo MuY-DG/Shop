@@ -208,10 +208,8 @@ Page({
         : DEFAULT_AVATAR_URL,
       avatarMode: "aspectFill",
       catalogShown: true,
-      memberCopy: loggedIn
-        ? session.user?.phoneNumberMasked
-          ? `已绑定手机 ${session.user.phoneNumberMasked}`
-          : "欢迎回来，会员服务已为你开启"
+      memberCopy: loggedIn && session.user
+        ? `ID：${session.user.userId}`
         : "登录后查看订单与会员服务",
       ...overviewState
     });

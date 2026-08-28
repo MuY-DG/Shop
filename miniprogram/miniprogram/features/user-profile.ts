@@ -1,6 +1,38 @@
 const MIN_NICKNAME_LENGTH = 2;
 const MAX_NICKNAME_LENGTH = 32;
 
+interface ProfileClipboardRuntime {
+  setClipboardData(options: {
+    data: string;
+    success?: () => void;
+    fail?: () => void;
+  }): void;
+  showToast(options: {
+    title: string;
+    icon: "success" | "none";
+  }): void;
+}
+
+export function copyUserId(
+  value: unknown,
+  runtime: ProfileClipboardRuntime = wx
+): void {
+  const userId = typeof value === "string" ? value.trim() : "";
+  if (!userId) {
+    runtime.showToast({ title: "用户 ID 暂不可用", icon: "none" });
+    return;
+  }
+  runtime.setClipboardData({
+    data: userId,
+    success: () => {
+      runtime.showToast({ title: "用户 ID 已复制", icon: "success" });
+    },
+    fail: () => {
+      runtime.showToast({ title: "复制失败，请稍后重试", icon: "none" });
+    }
+  });
+}
+
 export function normalizeProfileNickname(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }

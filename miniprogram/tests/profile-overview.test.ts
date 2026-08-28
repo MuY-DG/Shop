@@ -13,6 +13,24 @@ import {
 
 const sourceRoot = resolve(process.cwd(), "miniprogram");
 
+test("我的页面登录后展示用户 ID，未登录保留登录提示", () => {
+  const pageSource = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.ts"),
+    "utf8"
+  );
+  const template = readFileSync(
+    resolve(sourceRoot, "pages/profile/profile.wxml"),
+    "utf8"
+  );
+
+  assert.match(
+    pageSource,
+    /memberCopy: loggedIn && session\.user\s*\? `ID：\$\{session\.user\.userId\}`\s*: "登录后查看订单与会员服务"/
+  );
+  assert.doesNotMatch(pageSource, /已绑定手机|phoneNumberMasked|欢迎回来，会员服务已为你开启/);
+  assert.match(template, /class="member-card__copy">\{\{memberCopy\}\}<\/view>/);
+});
+
 test("未登录概览隐藏个人数量且优惠券保留单位", () => {
   const display = guestProfileOverviewDisplay();
 

@@ -41,4 +41,6 @@
 - `empty-products.svg`、`empty-cart.svg`、`empty-orders.svg`、`empty-favorites.svg`、`empty-history.svg`、`empty-coupons.svg`、`empty-addresses.svg`、`empty-after-sale.svg`、`empty-search.svg`：[Iconify Material Symbols](https://icon-sets.iconify.design/material-symbols/)，Apache 2.0；分别使用 `inventory-2-outline-rounded`、`remove-shopping-cart-outline-rounded`、`receipt-long-outline-rounded`、`favorite-outline-rounded`、`history-rounded`、`confirmation-number-outline-rounded`、`location-off-outline-rounded`、`assignment-return-outline-rounded`、`search-off-rounded`，统一为页面空状态的暖灰色线性图标。
 - `chat-add.svg`、`chat-photo.svg`、`chat-camera.svg`、`chat-order.svg`、`chat-product.svg`、`chat-history.svg`、`chat-favorite.svg`、`chat-cart.svg`、`chat-back.svg`、`chat-error.svg`：[Iconify Material Symbols](https://icon-sets.iconify.design/material-symbols/)，Apache 2.0；分别使用 `add-circle-outline-rounded`、`photo-library-outline-rounded`、`photo-camera-outline-rounded`、`receipt-long-outline-rounded`、`inventory-2-outline-rounded`、`history-rounded`、`favorite-outline-rounded`、`shopping-cart-outline-rounded`、`arrow-back-rounded`、`error-outline-rounded`，用于客服输入栏、附件面板及逐条发送状态。
 
+个人资料页头像右下角的相机标记复用 `chat-camera.svg`（`material-symbols:photo-camera-outline-rounded`）。
+
 图标已内置为小程序本地资源；运行时不请求 Iconify，也不需要配置图片域名白名单。

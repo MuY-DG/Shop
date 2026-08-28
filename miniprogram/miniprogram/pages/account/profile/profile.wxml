@@ -4,6 +4,7 @@
     back="{{true}}"
     round-back="{{true}}"
     show-divider="{{false}}"
+    background="#ffffff"
     color="#333333"
   />
 
@@ -15,61 +16,84 @@
     enable-passive="{{true}}"
     show-scrollbar="{{false}}"
   >
-  <view class="user-profile-content">
-    <view class="profile-card">
+    <view class="profile-avatar-section">
       <view class="avatar-slot">
         <image
           class="avatar-button__image"
           src="{{avatarUrl}}"
           mode="aspectFill"
         />
+        <view class="avatar-camera" aria-hidden="true">
+          <image
+            class="avatar-camera__icon"
+            src="/assets/icons/chat-camera.svg"
+            mode="aspectFit"
+          />
+        </view>
         <button
-          class="avatar-button"
+          class="avatar-button {{saving || savingAvatar || loggingOut ? 'avatar-button--disabled' : ''}}"
           open-type="chooseAvatar"
           disabled="{{saving || savingAvatar || loggingOut}}"
           bindchooseavatar="onAvatarChoose"
           aria-label="更换头像"
         ></button>
       </view>
-      <view class="profile-field">
-        <text class="profile-field__label">昵称</text>
-        <input
-          class="profile-field__input"
-          type="nickname"
-          value="{{nickname}}"
-          maxlength="32"
-          confirm-type="done"
+    </view>
+
+    <view class="user-profile-content">
+      <view class="profile-card">
+        <view class="profile-field">
+          <text class="profile-field__label">昵称</text>
+          <input
+            class="profile-field__input"
+            type="nickname"
+            value="{{nickname}}"
+            maxlength="32"
+            confirm-type="done"
+            disabled="{{saving || savingAvatar || loggingOut}}"
+            placeholder="选择微信昵称"
+            placeholder-class="profile-field__placeholder"
+            bindinput="onNicknameInput"
+          />
+        </view>
+        <view class="profile-field">
+          <text class="profile-field__label">手机号</text>
+          <view class="profile-field__value">{{phoneNumberMasked}}</view>
+        </view>
+        <view class="profile-field profile-field--user-id profile-field--last">
+          <text class="profile-field__label">ID</text>
+          <view class="profile-field__id-content">
+            <view class="profile-field__value profile-field__value--id">{{userId || '--'}}</view>
+            <button
+              class="profile-field__copy {{!userId || loggingOut ? 'profile-field__copy--disabled' : ''}}"
+              disabled="{{!userId || loggingOut}}"
+              hover-class="profile-field__copy--pressed"
+              bindtap="onCopyUserIdTap"
+              aria-label="复制用户 ID"
+            >复制</button>
+          </view>
+        </view>
+      </view>
+
+      <view wx:if="{{loadErrorText}}" class="profile-sync-note">{{loadErrorText}}</view>
+      <view wx:if="{{validationErrorText}}" class="profile-error">{{validationErrorText}}</view>
+
+      <view class="profile-actions">
+        <button
+          class="save-button {{saving || savingAvatar || loggingOut ? 'save-button--disabled' : ''}}"
+          loading="{{saving}}"
           disabled="{{saving || savingAvatar || loggingOut}}"
-          placeholder="选择微信昵称"
-          placeholder-class="profile-field__placeholder"
-          bindinput="onNicknameInput"
-        />
-      </view>
-      <view class="profile-field profile-field--last">
-        <text class="profile-field__label">手机号</text>
-        <view class="profile-field__value">{{phoneNumberMasked}}</view>
+          hover-class="save-button--pressed"
+          bindtap="onSaveTap"
+        >保存</button>
+
+        <button
+          class="logout-button {{saving || savingAvatar || loggingOut ? 'logout-button--disabled' : ''}}"
+          loading="{{loggingOut}}"
+          disabled="{{saving || savingAvatar || loggingOut}}"
+          bindtap="onLogoutTap"
+        >退出登录</button>
       </view>
     </view>
-
-    <view wx:if="{{loadErrorText}}" class="profile-sync-note">{{loadErrorText}}</view>
-    <view wx:if="{{validationErrorText}}" class="profile-error">{{validationErrorText}}</view>
-
-    <view class="profile-actions">
-      <button
-        class="save-button {{saving || savingAvatar || loggingOut ? 'save-button--disabled' : ''}}"
-        loading="{{saving}}"
-        disabled="{{saving || savingAvatar || loggingOut}}"
-        hover-class="save-button--pressed"
-        bindtap="onSaveTap"
-      >保存</button>
-
-      <button
-        class="logout-button {{saving || savingAvatar || loggingOut ? 'logout-button--disabled' : ''}}"
-        loading="{{loggingOut}}"
-        disabled="{{saving || savingAvatar || loggingOut}}"
-        bindtap="onLogoutTap"
-      >退出登录</button>
-    </view>
-  </view>
   </scroll-view>
 </view>
