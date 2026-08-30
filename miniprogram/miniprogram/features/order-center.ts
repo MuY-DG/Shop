@@ -479,7 +479,7 @@ function summaryActions(
   const canReview = status === "COMPLETED" && pendingReviewCount > 0;
   const canDelete = status === "COMPLETED" || status === "CLOSED" || status === "REFUNDED";
   const canRebuy = status === "PARTIALLY_SHIPPED" || status === "SHIPPED" || canDelete;
-  const canAfterSale = status === "PAID" || status === "PARTIALLY_SHIPPED"
+  const canAfterSale = status === "PARTIALLY_SHIPPED"
     || status === "SHIPPED" || status === "COMPLETED";
   const canModify = canPay || status === "PAID";
   return {

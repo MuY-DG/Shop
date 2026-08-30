@@ -118,7 +118,7 @@ test("订单状态映射稳定并只开放合法操作", () => {
   assert.equal(paid.hasActions, true);
   assert.equal(paid.canRebuy, false);
   assert.equal(paid.canModify, true);
-  assert.equal(paid.canAfterSale, true);
+  assert.equal(paid.canAfterSale, false);
   assert.equal(paid.afterSaleActionText, "退款|售后");
 
   const shipped = buildOrderSummaryView(summary("SHIPPED"));
