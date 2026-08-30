@@ -157,6 +157,70 @@ class AppOrderServiceTest {
     }
 
     @Test
+    void listIncludesLatestAfterSaleSummaryEvenWhenFinishedRecordIsHiddenFromAfterSaleList() {
+        long userId = insertUser("order-after-sale-summary");
+        LocalDateTime createdAt = LocalDateTime.of(2026, 8, 30, 9, 0);
+        long orderId = insertReadOrder(userId, "REFUNDED", createdAt);
+        insertReadOrderItem(orderId, "售后状态商品", 1, 4540L);
+        insertAfterSale(orderId, userId, "CANCELLED", createdAt.plusMinutes(1));
+        long latestAfterSaleId = insertAfterSale(orderId, userId, "REFUNDED", createdAt.plusMinutes(2));
+        jdbcClient.sql("""
+                        update after_sale_request
+                        set after_sale_type = 'RETURN_REFUND',
+                            requested_amount_cent = 4540,
+                            approved_amount_cent = 4300,
+                            app_deleted_at = :deletedAt
+                        where id = :afterSaleId
+                        """)
+                .param("deletedAt", createdAt.plusMinutes(4))
+                .param("afterSaleId", latestAfterSaleId)
+                .update();
+        insertPayment(orderId, "PAY-AFTER-SALE-" + orderId, "WX-AFTER-SALE-" + orderId,
+                "SUCCEEDED", createdAt.plusMinutes(1), createdAt.plusMinutes(1));
+        long paymentId = jdbcClient.sql("""
+                        select id from payment_order
+                        where order_id = :orderId
+                        order by updated_at desc, id desc
+                        limit 1
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .single();
+        long refundOrderId = SEQUENCE.incrementAndGet();
+        jdbcClient.sql("""
+                        insert into refund_order
+                            (id, after_sale_id, order_id, payment_order_id, notification_route_token,
+                             out_refund_no, refund_id, refund_amount_cent, status, callback_status,
+                             requested_at, success_at, created_at, updated_at)
+                        values
+                            (:refundOrderId, :afterSaleId, :orderId, :paymentOrderId, :routeToken,
+                             :outRefundNo, :refundId, 4200, 'SUCCESS', 'SUCCESS',
+                             :requestedAt, :successAt, :requestedAt, :successAt)
+                        """)
+                .param("refundOrderId", refundOrderId)
+                .param("afterSaleId", latestAfterSaleId)
+                .param("orderId", orderId)
+                .param("paymentOrderId", paymentId)
+                .param("routeToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(refundOrderId))
+                .param("outRefundNo", "ORDER-LIST-REFUND-" + refundOrderId)
+                .param("refundId", "WX-REFUND-" + refundOrderId)
+                .param("requestedAt", createdAt.plusMinutes(3))
+                .param("successAt", createdAt.plusMinutes(4))
+                .update();
+
+        OrderSummaryResponse summary = appOrderService.list(
+                appPrincipal(userId), 1L, 10L, null, OrderStatusGroup.ALL
+        ).records().getFirst();
+
+        assertThat(summary.latestAfterSale()).isNotNull();
+        assertThat(summary.latestAfterSale().afterSaleType()).isEqualTo("RETURN_REFUND");
+        assertThat(summary.latestAfterSale().status()).isEqualTo("REFUNDED");
+        assertThat(summary.latestAfterSale().requestedAmountCent()).isEqualTo(4540L);
+        assertThat(summary.latestAfterSale().approvedAmountCent()).isEqualTo(4300L);
+        assertThat(summary.latestAfterSale().refundAmountCent()).isEqualTo(4200L);
+    }
+
+    @Test
     void pendingReviewRequiresCompletedAtAndVisibleOrder() {
         long userId = insertUser("order-review-visibility");
         LocalDateTime now = LocalDateTime.of(2026, 7, 10, 13, 0);

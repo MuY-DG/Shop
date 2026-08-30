@@ -44,6 +44,8 @@ export interface AfterSaleView extends Omit<AfterSaleResponse, 'items'> {
   statusText: string
   statusTone: AfterSaleStatusTone
   statusDescription: string
+  cardStatusText: string
+  cardStatusDescription: string
   requestedAmountText: string
   approvedAmountText: string
   refundAmountText: string
@@ -71,7 +73,68 @@ function moneyText(value: unknown): string {
 }
 
 export function afterSaleTypeText(type: AfterSaleType): string {
-  return type === 'RETURN_REFUND' ? '退货退款' : '仅退款'
+  return type === 'RETURN_REFUND' ? '退货退款' : '退款（无需退货）'
+}
+
+export interface AfterSaleCardStatusInput {
+  afterSaleType: AfterSaleType
+  status: AfterSaleStatus
+  requestedAmountCent: number
+  approvedAmountCent?: number
+  refundAmountCent?: number
+}
+
+export interface AfterSaleCardStatusView {
+  text: string
+  description: string
+}
+
+export function buildAfterSaleCardStatus(
+  record: AfterSaleCardStatusInput
+): AfterSaleCardStatusView {
+  const isReturn = record.afterSaleType === 'RETURN_REFUND'
+  const applicationKind = isReturn ? '退货' : '退款'
+  const refundAmountCent = [
+    record.refundAmountCent,
+    record.approvedAmountCent,
+    record.requestedAmountCent
+  ].find((value) => Number.isFinite(value) && Number(value) > 0) ?? 0
+
+  switch (record.status) {
+    case 'REQUESTED':
+      return { text: '售后处理中', description: '后台客服正在加速审核' }
+    case 'APPROVED':
+      return {
+        text: isReturn ? '退货处理中' : '退款处理中',
+        description: isReturn
+          ? '退货申请已审核通过，请留意后续寄回提示'
+          : '退款申请已审核通过，正在发起原路退款'
+      }
+    case 'WAITING_RETURN':
+      return { text: '退货处理中', description: '请按售后详情中的地址寄回商品' }
+    case 'RETURNING':
+      return { text: '退货处理中', description: '退货商品运输中，商家收货后将尽快处理' }
+    case 'WAITING_INSPECTION':
+      return { text: '退货处理中', description: '商家正在验收退回商品' }
+    case 'REJECTED':
+      return { text: `${applicationKind}申请已关闭`, description: '因审核不通过' }
+    case 'RETURN_REJECTED':
+      return { text: '退货申请已关闭', description: '因退回商品验收不通过' }
+    case 'CANCELLED':
+      return {
+        text: `${applicationKind}申请已关闭`,
+        description: `因您主动取消${applicationKind}`
+      }
+    case 'REFUNDING':
+      return { text: '退款处理中', description: '退款已提交支付渠道，请耐心等待到账' }
+    case 'REFUNDED':
+      return {
+        text: '退款成功',
+        description: `原路返回支付金额${moneyText(refundAmountCent)}`
+      }
+    case 'REFUND_FAILED':
+      return { text: '售后处理中', description: '后台客服正在加速处理退款异常' }
+  }
 }
 
 export function afterSaleStatusText(status: AfterSaleStatus): string {
@@ -206,7 +269,15 @@ function hasAction(record: AfterSaleResponse, action: AfterSaleAction): boolean 
 export function buildAfterSaleView(record: AfterSaleResponse): AfterSaleView {
   const evidenceFiles = Array.isArray(record.evidenceFiles) ? record.evidenceFiles : []
   const approvedAmount = record.approvedAmountCent ?? 0
-  const refundAmount = record.refundOrder?.refundAmountCent ?? approvedAmount
+  const refundAmount = record.refundOrder?.refundAmountCent
+    ?? (approvedAmount > 0 ? approvedAmount : record.requestedAmountCent)
+  const cardStatus = buildAfterSaleCardStatus({
+    afterSaleType: record.afterSaleType,
+    status: record.status,
+    requestedAmountCent: record.requestedAmountCent,
+    approvedAmountCent: record.approvedAmountCent,
+    refundAmountCent: record.refundOrder?.refundAmountCent
+  })
   const returnInfo = record.returnInfo
   const region = [returnInfo?.province, returnInfo?.city, returnInfo?.district]
     .map(cleanText)
@@ -221,10 +292,12 @@ export function buildAfterSaleView(record: AfterSaleResponse): AfterSaleView {
     evidenceFiles,
     evidenceFileIds: Array.isArray(record.evidenceFileIds) ? record.evidenceFileIds : [],
     typeText: afterSaleTypeText(record.afterSaleType),
-    listTypeText: record.afterSaleType === 'RETURN_REFUND' ? '退货' : '退款（无需退货）',
+    listTypeText: record.afterSaleType === 'RETURN_REFUND' ? '退货' : '退款',
     statusText: afterSaleStatusText(record.status),
     statusTone: afterSaleStatusTone(record.status),
     statusDescription: afterSaleStatusDescription(record.status),
+    cardStatusText: cardStatus.text,
+    cardStatusDescription: cardStatus.description,
     requestedAmountText: moneyText(record.requestedAmountCent),
     approvedAmountText: approvedAmount > 0 ? moneyText(approvedAmount) : '',
     refundAmountText: refundAmount > 0 ? moneyText(refundAmount) : '',

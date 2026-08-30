@@ -1,4 +1,4 @@
-import type { AfterSaleResponse } from "./after-sale";
+import type { AfterSaleResponse, AfterSaleStatus, AfterSaleType } from "./after-sale";
 
 export type OrderStatus =
   | "CREATED"
@@ -40,7 +40,16 @@ export interface OrderSummaryResponse {
   itemCount: number;
   items: OrderSummaryItemResponse[];
   pendingReviewCount: number;
+  latestAfterSale?: OrderAfterSaleSummaryResponse;
   createdAt: string;
+}
+
+export interface OrderAfterSaleSummaryResponse {
+  afterSaleType: AfterSaleType;
+  status: AfterSaleStatus;
+  requestedAmountCent: number;
+  approvedAmountCent?: number;
+  refundAmountCent?: number;
 }
 
 export interface OrderSummaryItemResponse {

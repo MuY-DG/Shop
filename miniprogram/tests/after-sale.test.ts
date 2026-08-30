@@ -6,6 +6,7 @@ import { test } from "node:test";
 import {
   afterSaleItemRefundCeilingCent,
   afterSaleStatusText,
+  afterSaleTypeText,
   buildAfterSaleApplyPayload,
   buildAfterSaleApplyUrl,
   buildAfterSaleDetailUrl,
@@ -145,7 +146,9 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   assert.equal(requested.requestedAmountText, "¥69.80");
   assert.equal(requested.evidenceCountText, "1 张");
   assert.equal(requested.canCancel, true);
-  assert.equal(requested.listTypeText, "退款（无需退货）");
+  assert.equal(requested.listTypeText, "退款");
+  assert.equal(requested.cardStatusText, "售后处理中");
+  assert.equal(requested.cardStatusDescription, "后台客服正在加速审核");
   assert.equal(requested.items[0]?.titleText, "牛油火锅底料");
   assert.equal(requested.items[0]?.specificationText, "500g");
   assert.equal(requested.items[0]?.requestedQuantityText, "申请数量 x1");
@@ -155,11 +158,19 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   const rejected = buildAfterSaleView(afterSale("REJECTED"));
   assert.equal(rejected.auditNote, "请补充清晰凭证");
   assert.equal(rejected.progressSteps[1]?.state, "error");
+  assert.equal(rejected.cardStatusText, "退款申请已关闭");
+  assert.equal(rejected.cardStatusDescription, "因审核不通过");
+
+  const cancelled = buildAfterSaleView(afterSale("CANCELLED"));
+  assert.equal(cancelled.cardStatusText, "退款申请已关闭");
+  assert.equal(cancelled.cardStatusDescription, "因您主动取消退款");
 
   const refunded = buildAfterSaleView(afterSale("REFUNDED"));
   assert.equal(refunded.statusText, "退款已完成");
   assert.equal(refunded.refundAmountText, "¥69.80");
   assert.equal(refunded.refundedAtText, "2026-07-21 10:35");
+  assert.equal(refunded.cardStatusText, "退款成功");
+  assert.equal(refunded.cardStatusDescription, "原路返回支付金额¥69.80");
   assert.deepEqual(refunded.progressSteps.map((step) => step.state), ["done", "done", "done"]);
   assert.equal(refunded.canDelete, true);
   assert.equal(refunded.canReapply, false);
@@ -167,6 +178,7 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   const waitingReturn = buildAfterSaleView(afterSale("WAITING_RETURN", "RETURN_REFUND"));
   assert.equal(waitingReturn.statusText, "待寄回商品");
   assert.equal(waitingReturn.listTypeText, "退货");
+  assert.equal(waitingReturn.cardStatusText, "退货处理中");
   assert.equal(waitingReturn.canSubmitReturnShipment, true);
   assert.equal(waitingReturn.returnAddressText, "售后仓 13800000000 四川省成都市武侯区仓储路 1 号");
   assert.deepEqual(
@@ -184,6 +196,8 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   assert.equal(afterSaleStatusText("APPROVED"), "审核已通过");
 
   assert.equal(afterSaleStatusText("REFUND_FAILED"), "退款处理异常");
+  assert.equal(afterSaleTypeText("REFUND_ONLY"), "退款（无需退货）");
+  assert.equal(afterSaleTypeText("RETURN_REFUND"), "退货退款");
 });
 
 test("进行中售后阻止重复申请并允许终态后重新申请", () => {
@@ -358,7 +372,7 @@ test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
   assert.doesNotMatch(orderDetailTemplate, /退款售后|latestAfterSaleView\.statusDescription/);
   assert.match(afterSaleListTemplate, /订单 \{\{item\.orderNo\}\}/);
   assert.match(afterSaleListTemplate, /\{\{item\.listTypeText\}\}/);
-  assert.match(afterSaleListTemplate, /申请数量|退款：|删除售后单|联系客服|重新申请/);
+  assert.match(afterSaleListTemplate, /申请数量|退款：|cardStatusText|cardStatusDescription|删除售后单|联系客服|重新申请/);
   assert.match(serviceSource, /getAfterSaleEligibility/);
   assert.match(serviceSource, /quoteAfterSale/);
   assert.match(serviceSource, /cancelAfterSale/);

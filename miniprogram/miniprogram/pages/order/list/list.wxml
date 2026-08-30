@@ -131,6 +131,7 @@
                 </view>
                 <view class="order-product__commerce">
                   <text class="order-product__price">{{product.unitPriceText}}</text>
+                  <text wx:if="{{item.afterSaleStatusText}}" class="order-product__after-sale-status">{{item.afterSaleStatusText}}</text>
                 </view>
               </view>
             </view>
@@ -172,6 +173,7 @@
                     <text class="order-product__bundle-amount-label">合计</text>
                     <text class="order-product__price">{{item.amountText}}</text>
                   </view>
+                  <text wx:if="{{item.afterSaleStatusText}}" class="order-product__after-sale-status">{{item.afterSaleStatusText}}</text>
                 </view>
               </view>
             </view>

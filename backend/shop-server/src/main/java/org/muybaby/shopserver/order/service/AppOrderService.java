@@ -28,6 +28,7 @@ import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.OrderStatusGroup;
 import org.muybaby.shopserver.order.StockLockStatus;
 import org.muybaby.shopserver.order.cleanup.PurgedOrderIdentityDigests;
+import org.muybaby.shopserver.order.dto.AppOrderAfterSaleSummaryResponse;
 import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
 import org.muybaby.shopserver.order.dto.AppOrderReceiverUpdateRequest;
@@ -438,9 +439,15 @@ public class AppOrderService {
                     .add(itemRow.item());
         }
 
+        Map<Long, AppOrderAfterSaleSummaryResponse> latestAfterSalesByOrderId = findLatestAfterSaleSummaries(
+                userId,
+                orderIds
+        );
+
         List<OrderSummaryResponse> records = headers.stream()
                 .map(header -> toOrderSummary(header,
-                        itemsByOrderId.getOrDefault(header.orderId(), List.of())))
+                        itemsByOrderId.getOrDefault(header.orderId(), List.of()),
+                        latestAfterSalesByOrderId.get(header.orderId())))
                 .toList();
         return PageResult.of(records, total == null ? 0L : total, pageCurrent, pageSize);
     }
@@ -1451,7 +1458,8 @@ public class AppOrderService {
 
     private OrderSummaryResponse toOrderSummary(
             OrderSummaryHeader header,
-            List<OrderSummaryItemResponse> items
+            List<OrderSummaryItemResponse> items,
+            AppOrderAfterSaleSummaryResponse latestAfterSale
     ) {
         int itemCount = items.stream().mapToInt(OrderSummaryItemResponse::quantity).sum();
         int pendingReviewCount = (int) items.stream()
@@ -1471,8 +1479,63 @@ public class AppOrderService {
                 itemCount,
                 items,
                 pendingReviewCount,
+                latestAfterSale,
                 header.createdAt()
         );
+    }
+
+    private Map<Long, AppOrderAfterSaleSummaryResponse> findLatestAfterSaleSummaries(
+            Long userId,
+            List<Long> orderIds
+    ) {
+        if (orderIds.isEmpty()) {
+            return Map.of();
+        }
+        return jdbcClient.sql("""
+                        select asr.order_id,
+                               asr.after_sale_type,
+                               asr.status,
+                               asr.requested_amount_cent,
+                               asr.approved_amount_cent,
+                               (
+                                   select ro.refund_amount_cent
+                                   from refund_order ro
+                                   where ro.after_sale_id = asr.id
+                                   order by ro.requested_at desc, ro.id desc
+                                   limit 1
+                               ) as refund_amount_cent
+                        from after_sale_request asr
+                        join shop_order o on o.id = asr.order_id
+                        where o.user_id = :userId
+                          and asr.order_id in (:orderIds)
+                          and not exists (
+                              select 1
+                              from after_sale_request newer
+                              where newer.order_id = asr.order_id
+                                and (
+                                    newer.created_at > asr.created_at
+                                    or (newer.created_at = asr.created_at and newer.id > asr.id)
+                                )
+                          )
+                        """)
+                .param("userId", userId)
+                .param("orderIds", orderIds)
+                .query((rs, rowNum) -> Map.entry(
+                        rs.getLong("order_id"),
+                        new AppOrderAfterSaleSummaryResponse(
+                                rs.getString("after_sale_type"),
+                                rs.getString("status"),
+                                rs.getLong("requested_amount_cent"),
+                                rs.getObject("approved_amount_cent", Long.class),
+                                rs.getObject("refund_amount_cent", Long.class)
+                        )
+                ))
+                .list()
+                .stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue
+                ));
     }
 
     private OrderDetailHeader mapOrderDetailHeader(ResultSet rs, int rowNum) throws SQLException {

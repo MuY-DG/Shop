@@ -11,6 +11,7 @@ import type {
 } from "../types/order";
 import {
   buildAfterSaleView,
+  buildAfterSaleCardStatus,
   canApplyAfterSale,
   isActiveAfterSale,
   type AfterSaleView
@@ -250,6 +251,8 @@ export interface OrderSummaryView extends Omit<OrderSummaryResponse, "items">, O
   amountText: string;
   createdAtText: string;
   itemCountText: string;
+  afterSaleStatusText: string;
+  afterSaleStatusDescription: string;
 }
 
 export interface OrderItemView extends OrderItemResponse {
@@ -518,6 +521,9 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     ? Math.max(0, order.pendingReviewCount)
     : 0;
   const orderActions = summaryActions(order.status, pendingReviewCount);
+  const afterSaleStatus = order.latestAfterSale
+    ? buildAfterSaleCardStatus(order.latestAfterSale)
+    : undefined;
   return {
     ...order,
     ...orderActions,
@@ -532,7 +538,9 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
       ? order.paidAmountCent
       : order.payableAmountCent),
     createdAtText: formatLocalDateTime(order.createdAt, "second"),
-    itemCountText: `共 ${Math.max(0, order.itemCount)} 件商品`
+    itemCountText: `共 ${Math.max(0, order.itemCount)} 件商品`,
+    afterSaleStatusText: afterSaleStatus?.text ?? "",
+    afterSaleStatusDescription: afterSaleStatus?.description ?? ""
   };
 }
 

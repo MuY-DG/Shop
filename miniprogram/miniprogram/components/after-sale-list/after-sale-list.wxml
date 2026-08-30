@@ -96,6 +96,10 @@
               </view>
             </view>
             <view wx:else class="after-sale-card__empty-product">商品信息暂不可用</view>
+            <view class="after-sale-card__status-summary">
+              <text class="after-sale-card__status-text">{{item.cardStatusText}}</text>
+              <text class="after-sale-card__status-description">{{item.cardStatusDescription}}</text>
+            </view>
           </view>
 
           <view class="after-sale-card__actions">

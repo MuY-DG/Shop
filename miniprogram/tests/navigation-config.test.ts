@@ -867,6 +867,7 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.doesNotMatch(orderTemplate, /order-more__dot/);
   assert.match(orderTemplate, /\{\{item\.afterSaleActionText\}\}/);
   assert.match(orderTemplate, /class="order-product__quantity"[\s\S]*class="order-product__commerce"/);
+  assert.match(orderTemplate, /class="order-product__price"[\s\S]*class="order-product__after-sale-status">\{\{item\.afterSaleStatusText\}\}/);
   assert.doesNotMatch(orderTemplate, /order-status--\{\{item\.statusTone\}\}/);
   assert.match(orderStyle, /\.status-tab--active\s*\{[\s\S]*border:\s*1rpx solid #fe0000;/);
   assert.match(orderTemplate, /wx:if="\{\{keyword\}\}" class="order-search__text order-search__keyword">\{\{keyword\}\}<\/text>/);
@@ -880,6 +881,8 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderStyle, /\.order-more\s*\{[\s\S]*margin-right:\s*auto;/);
   assert.match(orderStyle, /\.order-product__stack-badge\s*\{[\s\S]*border-radius:\s*@radius-pill;/);
   assert.match(orderStyle, /\.order-product__bundle-amount-label\s*\{[\s\S]*color:\s*@color-text-muted;/);
+  assert.match(orderStyle, /\.order-product__body\s*\{[\s\S]*justify-content:\s*center;/);
+  assert.doesNotMatch(orderStyle, /grid-template-rows:\s*1fr auto;/);
   assert.match(orderTemplate, /wx:elif="\{\{item\.items\.length > 1\}\}"[\s\S]*order-product--bundle[\s\S]*\+?\{\{item\.items\.length - 1\}\}[\s\S]*\{\{item\.amountText\}\}/);
   assert.match(orderStyle, /\.order-menu\s*\{[\s\S]*bottom:\s*76rpx;[\s\S]*background:\s*#ffffff;[\s\S]*box-shadow:/);
   assert.doesNotMatch(orderStyle, /\.order-menu-mask/);
@@ -1230,6 +1233,10 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
   );
   assert.match(afterSaleListComponentTemplate, /refresher-enabled="\{\{true\}\}"/);
   assert.match(afterSaleListComponentTemplate, /bindscrolltolower="onReachBottom"/);
+  assert.match(afterSaleListComponentTemplate, /cardStatusText[\s\S]*cardStatusDescription/);
+  assert.match(afterSaleListComponentStyle, /\.after-sale-product__body\s*\{[\s\S]*justify-content:\s*center;/);
+  assert.match(afterSaleListComponentStyle, /\.after-sale-card__status-text\s*\{[\s\S]*color:\s*@color-text-primary;/);
+  assert.match(afterSaleListComponentStyle, /\.after-sale-card__status-description\s*\{[\s\S]*color:\s*@color-text-secondary;/);
   assert.match(
     afterSaleListComponentStyle,
     /\.after-sale-scroll\s*\{[\s\S]*?height: 0;[\s\S]*?min-height: 0;[\s\S]*?flex: 1;/

@@ -167,6 +167,7 @@
   min-height: 176rpx;
   display: flex;
   flex-direction: column;
+  justify-content: center;
 }
 
 .after-sale-product__title {
@@ -193,7 +194,7 @@
 }
 
 .after-sale-product__quantity {
-  margin-top: auto;
+  margin-top: @space-3;
   color: @color-text-muted;
   font-size: @font-size-sm;
 }
@@ -227,6 +228,26 @@
   font-size: @font-size-sm;
   line-height: 120rpx;
   text-align: center;
+}
+
+.after-sale-card__status-summary {
+  display: flex;
+  margin-top: 24rpx;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.after-sale-card__status-text {
+  color: @color-text-primary;
+  font-size: @font-size-sm;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.after-sale-card__status-description {
+  color: @color-text-secondary;
+  font-size: @font-size-xs;
+  line-height: 1.5;
 }
 
 .after-sale-card__actions {

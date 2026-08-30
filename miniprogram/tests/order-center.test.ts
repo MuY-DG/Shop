@@ -184,6 +184,32 @@ test("订单列表项只格式化后端真实图片、规格、单价与数量",
   assert.equal(buildOrderSummaryView(legacySingle).items[0]?.specificationText, "");
 });
 
+test("订单列表展示最新售后结果并使用真实退款金额", () => {
+  const refunded = summary("REFUNDED");
+  refunded.latestAfterSale = {
+    afterSaleType: "REFUND_ONLY",
+    status: "REFUNDED",
+    requestedAmountCent: 4540,
+    approvedAmountCent: 4300,
+    refundAmountCent: 4200
+  };
+  const refundedView = buildOrderSummaryView(refunded);
+  assert.equal(refundedView.afterSaleStatusText, "退款成功");
+  assert.equal(refundedView.afterSaleStatusDescription, "原路返回支付金额¥42.00");
+
+  const closedReturn = summary("COMPLETED");
+  closedReturn.latestAfterSale = {
+    afterSaleType: "RETURN_REFUND",
+    status: "REJECTED",
+    requestedAmountCent: 4540
+  };
+  const closedReturnView = buildOrderSummaryView(closedReturn);
+  assert.equal(closedReturnView.afterSaleStatusText, "退货申请已关闭");
+  assert.equal(closedReturnView.afterSaleStatusDescription, "因审核不通过");
+
+  assert.equal(buildOrderSummaryView(summary("COMPLETED")).afterSaleStatusText, "");
+});
+
 test("订单详情使用零售金额与真实批发成交价生成可核对明细", () => {
   const view = buildOrderDetailView(detail());
   assert.equal(view.productAmountText, "¥56.40");
