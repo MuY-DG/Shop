@@ -102,10 +102,20 @@
   background: linear-gradient(90deg, fade(@color-gold, 48%), transparent);
 }
 
-.home-skeleton { min-height: 100vh; }
+.home-skeleton {
+  min-height: 100vh;
+  background: @color-surface-white;
+}
 
 .skeleton-block {
-  background: @color-surface-white;
+  background: linear-gradient(
+    105deg,
+    fade(@color-text-black, 7%) 20%,
+    fade(@color-text-black, 3%) 38%,
+    fade(@color-text-black, 7%) 56%
+  );
+  background-size: 320% 100%;
+  animation: skeleton-shimmer 1.35s ease-in-out infinite;
 }
 
 .skeleton-hero { height: 750rpx; }
@@ -155,4 +165,9 @@
   flex: none;
   margin-right: @space-5;
   border-radius: @radius-lg;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
 }

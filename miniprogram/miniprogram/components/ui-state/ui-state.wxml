@@ -1,5 +1,135 @@
-<view class="ui-state ui-state--{{type}}">
-  <view wx:if="{{type === 'loading'}}" class="ui-state__loading-toast" aria-label="{{title || description}}">
+<view class="ui-state ui-state--{{type}} {{type === 'loading' && skeletonType ? 'ui-state--skeleton' : ''}}">
+  <view
+    wx:if="{{type === 'loading' && skeletonType}}"
+    class="loading-skeleton loading-skeleton--{{skeletonType}}"
+    aria-label="{{title || description || '内容加载中'}}"
+  >
+    <view wx:if="{{skeletonType === 'catalog'}}" class="loading-skeleton__catalog-grid">
+      <view
+        wx:for="{{skeletonGridItems}}"
+        wx:key="*this"
+        class="loading-skeleton__card loading-skeleton__catalog-card"
+      >
+        <view class="loading-skeleton__block loading-skeleton__catalog-image"></view>
+        <view class="loading-skeleton__catalog-body">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--wide"></view>
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+          <view class="loading-skeleton__block loading-skeleton__price"></view>
+        </view>
+      </view>
+    </view>
+
+    <block wx:elif="{{skeletonType === 'product-detail'}}">
+      <view class="loading-skeleton__block loading-skeleton__detail-hero"></view>
+      <view class="loading-skeleton__detail-body">
+        <view class="loading-skeleton__card loading-skeleton__summary-card">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--wide"></view>
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+          <view class="loading-skeleton__block loading-skeleton__price loading-skeleton__price--large"></view>
+        </view>
+        <view class="loading-skeleton__card loading-skeleton__info-card">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--wide"></view>
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--short"></view>
+        </view>
+        <view class="loading-skeleton__card loading-skeleton__copy-card">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+          <view class="loading-skeleton__block loading-skeleton__copy-block"></view>
+        </view>
+      </view>
+    </block>
+
+    <view wx:elif="{{skeletonType === 'cart'}}" class="loading-skeleton__list">
+      <view
+        wx:for="{{skeletonListItems}}"
+        wx:key="*this"
+        class="loading-skeleton__card loading-skeleton__cart-card"
+      >
+        <view class="loading-skeleton__block loading-skeleton__check"></view>
+        <view class="loading-skeleton__block loading-skeleton__thumb"></view>
+        <view class="loading-skeleton__row-body">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--wide"></view>
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+          <view class="loading-skeleton__block loading-skeleton__price"></view>
+        </view>
+      </view>
+      <view class="loading-skeleton__card loading-skeleton__settlement-card">
+        <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--short"></view>
+        <view class="loading-skeleton__block loading-skeleton__action"></view>
+      </view>
+    </view>
+
+    <view wx:elif="{{skeletonType === 'record-list'}}" class="loading-skeleton__list">
+      <view
+        wx:for="{{skeletonListItems}}"
+        wx:key="*this"
+        class="loading-skeleton__card loading-skeleton__record-card"
+      >
+        <view class="loading-skeleton__record-header">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--short"></view>
+        </view>
+        <view class="loading-skeleton__record-product">
+          <view class="loading-skeleton__block loading-skeleton__thumb"></view>
+          <view class="loading-skeleton__row-body">
+            <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--wide"></view>
+            <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+          </view>
+        </view>
+        <view class="loading-skeleton__record-footer">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--short"></view>
+          <view class="loading-skeleton__block loading-skeleton__button"></view>
+        </view>
+      </view>
+    </view>
+
+    <block wx:elif="{{skeletonType === 'record-detail'}}">
+      <view class="loading-skeleton__card loading-skeleton__status-card">
+        <view class="loading-skeleton__block loading-skeleton__status-icon"></view>
+        <view class="loading-skeleton__row-body">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--wide"></view>
+        </view>
+      </view>
+      <view class="loading-skeleton__card loading-skeleton__detail-card">
+        <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+        <view class="loading-skeleton__detail-row" wx:for="{{skeletonListItems}}" wx:key="*this">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--short"></view>
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+        </view>
+      </view>
+      <view class="loading-skeleton__card loading-skeleton__record-product loading-skeleton__record-product--card">
+        <view class="loading-skeleton__block loading-skeleton__thumb"></view>
+        <view class="loading-skeleton__row-body">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--wide"></view>
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+          <view class="loading-skeleton__block loading-skeleton__price"></view>
+        </view>
+      </view>
+    </block>
+
+    <block wx:else>
+      <view class="loading-skeleton__card loading-skeleton__workflow-card">
+        <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+        <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--wide"></view>
+        <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--short"></view>
+      </view>
+      <view class="loading-skeleton__card loading-skeleton__record-product loading-skeleton__record-product--card">
+        <view class="loading-skeleton__block loading-skeleton__thumb"></view>
+        <view class="loading-skeleton__row-body">
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--wide"></view>
+          <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+          <view class="loading-skeleton__block loading-skeleton__price"></view>
+        </view>
+      </view>
+      <view class="loading-skeleton__card loading-skeleton__workflow-card">
+        <view class="loading-skeleton__block loading-skeleton__line loading-skeleton__line--medium"></view>
+        <view class="loading-skeleton__block loading-skeleton__field"></view>
+        <view class="loading-skeleton__block loading-skeleton__field"></view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:elif="{{type === 'loading'}}" class="ui-state__loading-toast" aria-label="{{title || description}}">
     <view class="ui-state__loading"></view>
     <text class="ui-state__loading-text">{{title || description}}</text>
   </view>

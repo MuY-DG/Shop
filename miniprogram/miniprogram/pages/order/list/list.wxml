@@ -61,8 +61,8 @@
     bindscrolltolower="onReachBottom"
   >
     <view class="orders-content">
-      <view wx:if="{{!loaded && loading}}" class="orders-state">
-        <ui-state type="loading" title="正在加载订单" description="订单状态与支付结果正在同步" />
+      <view wx:if="{{!loaded && loading}}" class="orders-state orders-state--skeleton">
+        <ui-state type="loading" skeleton-type="record-list" title="正在加载订单" description="订单状态与支付结果正在同步" />
       </view>
       <view wx:elif="{{!loaded && errorText}}" class="orders-state">
         <ui-state type="error" title="当前服务繁忙" description="{{errorText}}" />
@@ -122,14 +122,12 @@
                     aria-hidden="true"
                   />
                 </view>
-                <view class="order-product__body">
+                <view class="order-product__content">
                   <view class="order-product__details">
                     <view class="order-product__title">{{product.titleText}}</view>
                     <view wx:if="{{product.specificationText}}" class="order-product__spec">{{product.specificationText}}</view>
                   </view>
                   <text class="order-product__quantity">{{product.quantityText}}</text>
-                </view>
-                <view class="order-product__commerce">
                   <text class="order-product__price">{{product.unitPriceText}}</text>
                   <text wx:if="{{item.afterSaleStatusText}}" class="order-product__after-sale-status">{{item.afterSaleStatusText}}</text>
                 </view>
@@ -160,15 +158,13 @@
                   />
                   <view class="order-product__stack-badge">+{{item.items.length - 1}}</view>
                 </view>
-                <view class="order-product__body">
+                <view class="order-product__content">
                   <view class="order-product__details">
                     <view class="order-product__title">{{item.items[0].titleText}}</view>
                     <view wx:if="{{item.items[0].specificationText}}" class="order-product__spec">{{item.items[0].specificationText}}</view>
                     <view wx:else class="order-product__spec">共 {{item.items.length}} 种商品</view>
                   </view>
                   <text class="order-product__quantity">{{item.itemCountText}}</text>
-                </view>
-                <view class="order-product__commerce">
                   <view class="order-product__bundle-amount">
                     <text class="order-product__bundle-amount-label">合计</text>
                     <text class="order-product__price">{{item.amountText}}</text>

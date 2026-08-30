@@ -94,8 +94,8 @@
     bindscrolltolower="onContentLower"
     bindrefresherrefresh="onContentRefresh"
   >
-    <view wx:if="{{!loaded && loading}}" class="catalog-state">
-      <ui-state type="loading" title="正在加载商品" description="商品马上就来" />
+    <view wx:if="{{!loaded && loading}}" class="catalog-state catalog-state--skeleton">
+      <ui-state type="loading" skeleton-type="catalog" title="正在加载商品" description="商品马上就来" />
     </view>
 
     <view wx:elif="{{!loaded && errorText}}" class="catalog-state">

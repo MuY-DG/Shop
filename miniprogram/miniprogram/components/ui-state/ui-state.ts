@@ -24,6 +24,15 @@ Component({
       type: String,
       value: '',
     },
+    skeletonType: {
+      type: String,
+      value: '',
+    },
+  },
+
+  data: {
+    skeletonGridItems: [0, 1, 2, 3],
+    skeletonListItems: [0, 1, 2],
   },
 
   methods: {

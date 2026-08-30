@@ -21,7 +21,7 @@
   >
     <view class="preview-content">
     <view wx:if="{{!loaded && loading}}" class="preview-state">
-      <ui-state type="loading" title="正在核对订单" description="价格、库存与优惠正在实时计算" />
+      <ui-state type="loading" skeleton-type="workflow" title="正在核对订单" description="价格、库存与优惠正在实时计算" />
     </view>
 
     <view wx:elif="{{!loaded && errorText}}" class="preview-state">

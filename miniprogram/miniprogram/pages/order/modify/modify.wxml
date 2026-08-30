@@ -23,8 +23,8 @@
   </view>
 
   <view class="modify-content">
-    <view wx:if="{{!loaded && loading}}" class="modify-state">
-      <ui-state type="loading" title="正在加载订单和地址" />
+    <view wx:if="{{!loaded && loading}}" class="modify-state modify-state--skeleton">
+      <ui-state type="loading" skeleton-type="workflow" title="正在加载订单和地址" />
     </view>
     <view wx:elif="{{!loaded && errorText}}" class="modify-state">
       <ui-state

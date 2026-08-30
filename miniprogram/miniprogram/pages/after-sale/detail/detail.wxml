@@ -16,8 +16,8 @@
     show-scrollbar="{{false}}"
   >
     <view class="detail-content">
-      <view wx:if="{{!loaded && loading}}" class="detail-state">
-        <ui-state type="loading" title="正在加载售后进度" description="请稍候" />
+      <view wx:if="{{!loaded && loading}}" class="detail-state detail-state--skeleton">
+        <ui-state type="loading" skeleton-type="record-detail" title="正在加载售后进度" description="请稍候" />
       </view>
       <view wx:elif="{{!loaded && errorText}}" class="detail-state">
         <ui-state

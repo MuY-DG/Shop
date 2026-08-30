@@ -16,8 +16,8 @@
     show-scrollbar="{{false}}"
   >
     <view class="apply-content">
-      <view wx:if="{{!loaded && loading}}" class="apply-state">
-        <ui-state type="loading" title="正在核对售后资格" description="请稍候" />
+      <view wx:if="{{!loaded && loading}}" class="apply-state apply-state--skeleton">
+        <ui-state type="loading" skeleton-type="workflow" title="正在核对售后资格" description="请稍候" />
       </view>
       <view wx:elif="{{!loaded && errorText}}" class="apply-state">
         <ui-state

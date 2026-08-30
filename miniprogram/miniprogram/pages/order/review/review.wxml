@@ -16,8 +16,8 @@
     show-scrollbar="{{false}}"
   >
     <view class="review-content">
-      <view wx:if="{{!loaded && loading}}" class="review-state">
-        <ui-state type="loading" title="正在加载待评价商品" />
+      <view wx:if="{{!loaded && loading}}" class="review-state review-state--skeleton">
+        <ui-state type="loading" skeleton-type="workflow" title="正在加载待评价商品" />
       </view>
       <view wx:elif="{{!loaded && errorText}}" class="review-state">
         <ui-state

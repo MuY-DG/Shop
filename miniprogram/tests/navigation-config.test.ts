@@ -866,7 +866,7 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderTemplate, /class="order-action order-action--more"[\s\S]*aria-label="更多订单操作[\s\S]*>更多<\/button>/);
   assert.doesNotMatch(orderTemplate, /order-more__dot/);
   assert.match(orderTemplate, /\{\{item\.afterSaleActionText\}\}/);
-  assert.match(orderTemplate, /class="order-product__quantity"[\s\S]*class="order-product__commerce"/);
+  assert.match(orderTemplate, /class="order-product__content"[\s\S]*class="order-product__details"[\s\S]*class="order-product__quantity"[\s\S]*class="order-product__price"/);
   assert.match(orderTemplate, /class="order-product__price"[\s\S]*class="order-product__after-sale-status">\{\{item\.afterSaleStatusText\}\}/);
   assert.doesNotMatch(orderTemplate, /order-status--\{\{item\.statusTone\}\}/);
   assert.match(orderStyle, /\.status-tab--active\s*\{[\s\S]*border:\s*1rpx solid #fe0000;/);
@@ -881,7 +881,12 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderStyle, /\.order-more\s*\{[\s\S]*margin-right:\s*auto;/);
   assert.match(orderStyle, /\.order-product__stack-badge\s*\{[\s\S]*border-radius:\s*@radius-pill;/);
   assert.match(orderStyle, /\.order-product__bundle-amount-label\s*\{[\s\S]*color:\s*@color-text-muted;/);
-  assert.match(orderStyle, /\.order-product__body\s*\{[\s\S]*justify-content:\s*center;/);
+  assert.match(orderStyle, /\.order-product__bundle-amount\s*\{[\s\S]*align-items:\s*baseline;[\s\S]*justify-content:\s*flex-end;/);
+  assert.match(orderStyle, /\.order-product__content\s*\{[\s\S]*min-height:\s*176rpx;[\s\S]*grid-column:\s*2 \/ 4;[\s\S]*grid-template-rows:\s*auto auto;[\s\S]*align-content:\s*center;[\s\S]*row-gap:\s*@space-3;/);
+  assert.match(orderStyle, /\.order-product__quantity\s*\{[\s\S]*grid-column:\s*1;[\s\S]*grid-row:\s*2;/);
+  assert.match(orderStyle, /\.order-product__price\s*\{[\s\S]*grid-column:\s*2;[\s\S]*grid-row:\s*1;[\s\S]*justify-self:\s*end;/);
+  assert.match(orderStyle, /\.order-product__after-sale-status\s*\{[\s\S]*grid-column:\s*2;[\s\S]*grid-row:\s*2;[\s\S]*justify-self:\s*end;[\s\S]*color:\s*@color-action-primary;[\s\S]*font-size:\s*@font-size-xs;/);
+  assert.doesNotMatch(orderTemplate, /order-product__body|order-product__commerce/);
   assert.doesNotMatch(orderStyle, /grid-template-rows:\s*1fr auto;/);
   assert.match(orderTemplate, /wx:elif="\{\{item\.items\.length > 1\}\}"[\s\S]*order-product--bundle[\s\S]*\+?\{\{item\.items\.length - 1\}\}[\s\S]*\{\{item\.amountText\}\}/);
   assert.match(orderStyle, /\.order-menu\s*\{[\s\S]*bottom:\s*76rpx;[\s\S]*background:\s*#ffffff;[\s\S]*box-shadow:/);
@@ -1030,7 +1035,6 @@ test("图片缺失与加载占位背景统一为白色", () => {
     ["components/home-category-grid/home-category-grid.less", ["category-placeholder"]],
     ["components/product-card/product-card.less", ["product-card__image-wrap", "product-card__placeholder"]],
     ["components/product-gallery/product-gallery.less", ["gallery-shell", "gallery-image", "gallery-placeholder"]],
-    ["pages/index/index.less", ["skeleton-block"]],
     ["pages/account/history/history.less", ["history-card__image-wrap", "history-card__placeholder"]],
     ["styles/account-products.less", ["account-product__image-wrap", "account-product__placeholder"]],
     ["pages/cart/cart.less", ["cart-card__image-shell"]],
@@ -1061,6 +1065,102 @@ test("图片缺失与加载占位背景统一为白色", () => {
     customerServiceStyle,
     /\.chat-card__image-shell,[\s\S]*?\.candidate__image-shell\s*\{[^}]*background:\s*#ffffff;/
   );
+});
+
+test("首页加载骨架使用白底灰色斜向扫光", () => {
+  const homeStyle = readFileSync(
+    resolve(sourceRoot, "pages/index/index.less"),
+    "utf8"
+  );
+
+  assert.match(
+    homeStyle,
+    /\.home-skeleton\s*\{[^}]*background:\s*@color-surface-white;/
+  );
+  assert.match(
+    homeStyle,
+    /\.skeleton-block\s*\{[\s\S]*?background:\s*linear-gradient\(\s*105deg,[\s\S]*?fade\(@color-text-black,\s*7%\)[\s\S]*?fade\(@color-text-black,\s*3%\)[\s\S]*?background-size:\s*320% 100%;[\s\S]*?animation:\s*skeleton-shimmer 1\.35s ease-in-out infinite;/
+  );
+  assert.match(
+    homeStyle,
+    /@keyframes skeleton-shimmer\s*\{[\s\S]*?0%\s*\{\s*background-position:\s*100% 0;\s*\}[\s\S]*?100%\s*\{\s*background-position:\s*0 0;\s*\}/
+  );
+});
+
+test("核心交易页面首次加载使用共用灰色扫光骨架", () => {
+  const stateLogic = readFileSync(
+    resolve(sourceRoot, "components/ui-state/ui-state.ts"),
+    "utf8"
+  );
+  const stateTemplate = readFileSync(
+    resolve(sourceRoot, "components/ui-state/ui-state.wxml"),
+    "utf8"
+  );
+  const stateStyle = readFileSync(
+    resolve(sourceRoot, "components/ui-state/ui-state.less"),
+    "utf8"
+  );
+
+  assert.match(stateLogic, /skeletonType:\s*\{[\s\S]*?type:\s*String,[\s\S]*?value:\s*''/);
+  ["catalog", "product-detail", "cart", "record-list", "record-detail"].forEach((type) => {
+    assert.match(stateTemplate, new RegExp(`skeletonType === '${type}'`), type);
+  });
+  assert.match(stateTemplate, /type === 'loading' && skeletonType/);
+  assert.match(stateTemplate, /wx:elif="\{\{type === 'loading'\}\}" class="ui-state__loading-toast"/);
+  assert.match(
+    stateStyle,
+    /\.loading-skeleton__block\s*\{[\s\S]*?linear-gradient\(\s*105deg,[\s\S]*?fade\(@color-text-black,\s*7%\)[\s\S]*?fade\(@color-text-black,\s*3%\)[\s\S]*?animation:\s*ui-skeleton-shimmer 1\.35s ease-in-out infinite;/
+  );
+  assert.match(stateStyle, /\.loading-skeleton__card\s*\{[^}]*background:\s*@color-surface-white;/);
+  assert.match(
+    stateStyle,
+    /@keyframes ui-skeleton-shimmer\s*\{[\s\S]*?background-position:\s*100% 0;[\s\S]*?background-position:\s*0 0;/
+  );
+
+  const skeletonBindings = new Map<string, string>([
+    ["components/catalog-browser/catalog-browser.wxml", "catalog"],
+    ["pages/product/detail/detail.wxml", "product-detail"],
+    ["pages/cart/cart.wxml", "cart"],
+    ["pages/order/list/list.wxml", "record-list"],
+    ["pages/order/detail/detail.wxml", "record-detail"],
+    ["pages/order/preview/preview.wxml", "workflow"],
+    ["pages/order/modify/modify.wxml", "workflow"],
+    ["pages/order/review/review.wxml", "workflow"],
+    ["pages/after-sale/apply/apply.wxml", "workflow"],
+    ["components/after-sale-list/after-sale-list.wxml", "record-list"],
+    ["pages/after-sale/detail/detail.wxml", "record-detail"]
+  ]);
+
+  skeletonBindings.forEach((skeletonType, path) => {
+    const template = readFileSync(resolve(sourceRoot, path), "utf8");
+    assert.match(template, /wx:if="\{\{!loaded && loading\}\}"/, path);
+    assert.match(
+      template,
+      new RegExp(`<ui-state\\s+type="loading"\\s+skeleton-type="${skeletonType}"`),
+      path
+    );
+  });
+
+  const categoryTemplate = readFileSync(
+    resolve(sourceRoot, "pages/category/category.wxml"),
+    "utf8"
+  );
+  const productListTemplate = readFileSync(
+    resolve(sourceRoot, "pages/product/list/list.wxml"),
+    "utf8"
+  );
+  const orderListTemplate = readFileSync(
+    resolve(sourceRoot, "pages/order/list/list.wxml"),
+    "utf8"
+  );
+  const afterSalePageTemplate = readFileSync(
+    resolve(sourceRoot, "pages/after-sale/list/list.wxml"),
+    "utf8"
+  );
+  assert.match(categoryTemplate, /<catalog-browser/);
+  assert.match(productListTemplate, /<catalog-browser/);
+  assert.match(orderListTemplate, /<after-sale-list/);
+  assert.match(afterSalePageTemplate, /<after-sale-list/);
 });
 
 test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
@@ -1234,9 +1334,11 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
   assert.match(afterSaleListComponentTemplate, /refresher-enabled="\{\{true\}\}"/);
   assert.match(afterSaleListComponentTemplate, /bindscrolltolower="onReachBottom"/);
   assert.match(afterSaleListComponentTemplate, /cardStatusText[\s\S]*cardStatusDescription/);
-  assert.match(afterSaleListComponentStyle, /\.after-sale-product__body\s*\{[\s\S]*justify-content:\s*center;/);
+  assert.match(afterSaleListComponentStyle, /\.after-sale-product__body\s*\{[\s\S]*min-height:\s*176rpx;[\s\S]*justify-content:\s*space-between;/);
+  assert.match(afterSaleListComponentStyle, /\.after-sale-product__refund\s*\{[\s\S]*min-height:\s*176rpx;[\s\S]*align-items:\s*flex-end;[\s\S]*justify-content:\s*flex-end;[\s\S]*text-align:\s*right;/);
+  assert.match(afterSaleListComponentStyle, /\.after-sale-card__status-summary\s*\{[\s\S]*padding:\s*14rpx 18rpx;[\s\S]*border-radius:\s*@radius-sm;[\s\S]*align-items:\s*center;[\s\S]*background:\s*#f5f5f5;[\s\S]*gap:\s*@space-4;/);
   assert.match(afterSaleListComponentStyle, /\.after-sale-card__status-text\s*\{[\s\S]*color:\s*@color-text-primary;/);
-  assert.match(afterSaleListComponentStyle, /\.after-sale-card__status-description\s*\{[\s\S]*color:\s*@color-text-secondary;/);
+  assert.match(afterSaleListComponentStyle, /\.after-sale-card__status-description\s*\{[\s\S]*color:\s*@color-text-secondary;[\s\S]*text-overflow:\s*ellipsis;[\s\S]*white-space:\s*nowrap;/);
   assert.match(
     afterSaleListComponentStyle,
     /\.after-sale-scroll\s*\{[\s\S]*?height: 0;[\s\S]*?min-height: 0;[\s\S]*?flex: 1;/

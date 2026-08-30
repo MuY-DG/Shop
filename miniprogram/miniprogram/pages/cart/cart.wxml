@@ -47,7 +47,7 @@
     bindrefresherrefresh="onContentRefresh"
   >
     <view wx:if="{{!loaded && loading}}" class="cart-state">
-      <ui-state type="loading" title="正在准备购物车" description="好味道马上就来" />
+      <ui-state type="loading" skeleton-type="cart" title="正在准备购物车" description="好味道马上就来" />
     </view>
 
     <view wx:elif="{{!loaded && errorText}}" class="cart-state">

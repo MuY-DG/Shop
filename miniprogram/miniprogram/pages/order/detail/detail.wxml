@@ -38,8 +38,8 @@
     show-scrollbar="{{false}}"
   >
     <view class="detail-content">
-      <view wx:if="{{!loaded && loading}}" class="detail-state">
-        <ui-state type="loading" title="正在读取订单" description="支付与履约状态正在同步" />
+      <view wx:if="{{!loaded && loading}}" class="detail-state detail-state--skeleton">
+        <ui-state type="loading" skeleton-type="record-detail" title="正在读取订单" description="支付与履约状态正在同步" />
       </view>
       <view wx:elif="{{!loaded && errorText}}" class="detail-state">
         <ui-state type="error" title="当前服务繁忙" description="{{errorText}}" />

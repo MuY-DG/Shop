@@ -57,6 +57,10 @@
   justify-content: center;
 }
 
+.after-sale-state--skeleton {
+  justify-content: flex-start;
+}
+
 .inline-error {
   display: flex;
   margin-bottom: @space-4;
@@ -167,7 +171,7 @@
   min-height: 176rpx;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: space-between;
 }
 
 .after-sale-product__title {
@@ -201,9 +205,12 @@
 
 .after-sale-product__refund {
   min-width: 0;
+  min-height: 176rpx;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: flex-end;
+  align-self: stretch;
+  text-align: right;
   white-space: nowrap;
 }
 
@@ -233,11 +240,16 @@
 .after-sale-card__status-summary {
   display: flex;
   margin-top: 24rpx;
-  flex-direction: column;
-  gap: 6rpx;
+  padding: 14rpx 18rpx;
+  overflow: hidden;
+  border-radius: @radius-sm;
+  align-items: center;
+  background: #f5f5f5;
+  gap: @space-4;
 }
 
 .after-sale-card__status-text {
+  flex: none;
   color: @color-text-primary;
   font-size: @font-size-sm;
   font-weight: 500;
@@ -245,9 +257,13 @@
 }
 
 .after-sale-card__status-description {
+  min-width: 0;
+  overflow: hidden;
   color: @color-text-secondary;
   font-size: @font-size-xs;
   line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .after-sale-card__actions {

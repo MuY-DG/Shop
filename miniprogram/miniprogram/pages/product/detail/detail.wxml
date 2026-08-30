@@ -36,8 +36,8 @@
     </navigation-bar>
   </view>
 
-  <view wx:if="{{!loaded && loading}}" class="detail-state">
-    <ui-state type="loading" title="正在准备商品详情" description="好味道马上呈现" />
+  <view wx:if="{{!loaded && loading}}" class="detail-state detail-state--skeleton">
+    <ui-state type="loading" skeleton-type="product-detail" title="正在准备商品详情" description="好味道马上呈现" />
   </view>
 
   <view wx:elif="{{!loaded && errorText}}" class="detail-state">

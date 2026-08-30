@@ -129,6 +129,10 @@
   justify-content: center;
 }
 
+.orders-state--skeleton {
+  justify-content: flex-start;
+}
+
 .inline-error {
   display: flex;
   margin-bottom: @space-4;
@@ -253,9 +257,9 @@
 
 .order-product__bundle-amount {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2rpx;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 8rpx;
 }
 
 .order-product__bundle-amount-label {
@@ -275,16 +279,22 @@
   opacity: 0.72;
 }
 
-.order-product__body {
+.order-product__content {
   min-width: 0;
   min-height: 176rpx;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  display: grid;
+  grid-column: 2 / 4;
+  grid-template-columns: minmax(0, 1fr) 190rpx;
+  grid-template-rows: auto auto;
+  align-content: center;
+  column-gap: @space-5;
+  row-gap: @space-3;
 }
 
 .order-product__details {
   min-width: 0;
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .order-product__title {
@@ -313,26 +323,21 @@
 }
 
 .order-product__quantity {
-  margin-top: @space-3;
+  grid-column: 1;
+  grid-row: 2;
   color: @color-text-muted;
   font-size: @font-size-sm;
   line-height: 1.4;
 }
 
-.order-product__commerce {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
 .order-product__after-sale-status {
   max-width: 100%;
-  margin-top: 12rpx;
   overflow: hidden;
-  color: @color-text-primary;
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  justify-self: end;
+  color: @color-action-primary;
   font-size: @font-size-xs;
   font-weight: 500;
   line-height: 1.4;
@@ -343,6 +348,10 @@
 .order-product__price {
   max-width: 100%;
   overflow: hidden;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  justify-self: end;
   color: @color-price;
   font-family: @font-family-commerce-price;
   font-size: 30rpx;
@@ -351,6 +360,13 @@
   line-height: @line-height-tight;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.order-product__bundle-amount {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  justify-self: end;
 }
 
 .order-card__empty-product {

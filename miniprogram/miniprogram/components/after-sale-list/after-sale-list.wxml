@@ -27,8 +27,8 @@
     bindscrolltolower="onReachBottom"
   >
     <view class="after-sale-content">
-      <view wx:if="{{!loaded && loading}}" class="after-sale-state">
-        <ui-state type="loading" title="正在加载售后记录" description="请稍候" />
+      <view wx:if="{{!loaded && loading}}" class="after-sale-state after-sale-state--skeleton">
+        <ui-state type="loading" skeleton-type="record-list" title="正在加载售后记录" description="请稍候" />
       </view>
       <view wx:elif="{{!loaded && errorText}}" class="after-sale-state">
         <ui-state type="error" title="当前服务繁忙" description="{{errorText}}" />
