@@ -629,19 +629,19 @@ Page({
     }
   },
 
-  onApplyAfterSaleTap() {
+  onAfterSaleActionTap() {
     const detail = this.data.detail;
-    if (!detail?.canApplyAfterSale || this.data.actionType) {
+    if (!detail?.showAfterSaleAction || this.data.actionType) {
       return;
     }
-    wx.navigateTo({ url: buildAfterSaleApplyUrl(detail.orderId) });
-  },
-
-  onAfterSaleDetailTap() {
-    const afterSaleId = this.data.detail?.latestAfterSaleView?.id;
-    if (!afterSaleId || this.data.actionType) {
+    if (detail.afterSaleActionMode === "APPLY") {
+      if (detail.canApplyAfterSale) {
+        wx.navigateTo({ url: buildAfterSaleApplyUrl(detail.orderId) });
+      }
       return;
     }
+    const afterSaleId = detail.latestAfterSaleView?.id;
+    if (!afterSaleId) return;
     wx.navigateTo({ url: buildAfterSaleDetailUrl(afterSaleId) });
   },
 

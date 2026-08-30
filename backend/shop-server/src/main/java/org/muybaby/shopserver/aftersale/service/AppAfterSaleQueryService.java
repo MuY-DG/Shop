@@ -3,6 +3,7 @@ package org.muybaby.shopserver.aftersale.service;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleEvidenceFileResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.dto.RefundOrderResponse;
+import org.muybaby.shopserver.aftersale.AppAfterSaleStatusGroup;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
@@ -43,34 +44,53 @@ public class AppAfterSaleQueryService {
             Long size,
             String status
     ) {
+        return list(principal, current, size, status, null);
+    }
+
+    public PageResult<AfterSaleResponse> list(
+            AuthenticatedPrincipal principal,
+            Long current,
+            Long size,
+            String status,
+            AppAfterSaleStatusGroup statusGroup
+    ) {
         long userId = requireAppUser(principal);
         long pageCurrent = normalizeCurrent(current);
         long pageSize = normalizeSize(size);
         long offset = (pageCurrent - 1) * pageSize;
         String normalizedStatus = StringUtils.hasText(status) ? status.trim() : null;
+        String groupClause = statusGroup == null ? "" : " and asr.status in (:groupStatuses)";
+        Map<String, Object> queryParameters = new HashMap<>();
+        queryParameters.put("userId", userId);
+        queryParameters.put("status", normalizedStatus);
+        if (statusGroup != null) {
+            queryParameters.put("groupStatuses", statusGroup.statuses());
+        }
 
         Long total = jdbcClient.sql("""
                         select count(*)
                         from after_sale_request asr
                         join shop_order o on o.id = asr.order_id
                         where o.user_id = :userId
+                          and asr.app_deleted_at is null
                           and (:status is null or asr.status = :status)
-                        """)
-                .param("userId", userId)
-                .param("status", normalizedStatus)
+                        """ + groupClause)
+                .params(queryParameters)
                 .query(Long.class)
                 .single();
 
+        Map<String, Object> pageParameters = new HashMap<>(queryParameters);
+        pageParameters.put("limit", pageSize);
+        pageParameters.put("offset", offset);
         List<AfterSaleRow> pageRows = jdbcClient.sql(AFTER_SALE_SELECT + """
                         where o.user_id = :userId
+                          and asr.app_deleted_at is null
                           and (:status is null or asr.status = :status)
+                        """ + groupClause + """
                         order by asr.created_at desc, asr.id desc
                         limit :limit offset :offset
                         """)
-                .param("userId", userId)
-                .param("status", normalizedStatus)
-                .param("limit", pageSize)
-                .param("offset", offset)
+                .params(pageParameters)
                 .query(this::mapAfterSale)
                 .list();
         List<AfterSaleResponse> records = toResponses(pageRows);
@@ -84,6 +104,7 @@ public class AppAfterSaleQueryService {
         List<AfterSaleRow> rows = jdbcClient.sql(AFTER_SALE_SELECT + """
                         where asr.order_id = :orderId
                           and o.user_id = :userId
+                          and asr.app_deleted_at is null
                         order by asr.created_at desc, asr.id desc
                         """)
                 .param("orderId", orderId)

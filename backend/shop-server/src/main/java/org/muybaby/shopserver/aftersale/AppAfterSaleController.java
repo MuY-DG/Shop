@@ -80,6 +80,15 @@ public class AppAfterSaleController {
         return ApiResponse.success(appAfterSaleV2Service.cancel(principal, afterSaleId));
     }
 
+    @DeleteMapping("/app/after-sales/{afterSaleId}")
+    public ApiResponse<Void> delete(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId
+    ) {
+        appAfterSaleV2Service.deleteFinished(principal, afterSaleId);
+        return ApiResponse.success();
+    }
+
     @PutMapping("/app/after-sales/{afterSaleId}/return-shipment")
     public ApiResponse<AfterSaleResponse> submitReturnShipment(
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
@@ -153,8 +162,10 @@ public class AppAfterSaleController {
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             Long current,
             Long size,
-            String status
+            String status,
+            AppAfterSaleStatusGroup statusGroup
     ) {
-        return ApiResponse.success(appAfterSaleQueryService.list(principal, current, size, status));
+        return ApiResponse.success(
+                appAfterSaleQueryService.list(principal, current, size, status, statusGroup));
     }
 }

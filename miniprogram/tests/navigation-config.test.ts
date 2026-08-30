@@ -1127,14 +1127,6 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
       pageable: false
     },
     {
-      path: "pages/after-sale/list/list",
-      rootClass: "after-sale-list-page",
-      scrollClass: "after-sale-list-scroll",
-      stylePath: "pages/after-sale/list/list.less",
-      refreshable: true,
-      pageable: true
-    },
-    {
       path: "pages/after-sale/detail/detail",
       rootClass: "after-sale-detail-page",
       scrollClass: "detail-scroll",
@@ -1218,6 +1210,30 @@ test("账户与订单相关页面固定顶部导航并在内部滚动", () => {
   );
   assert.match(couponTemplate, /class="coupon-section-tabs"[\s\S]*?class="coupon-scroll"/);
   assert.match(orderTemplate, /class="status-tabs"[\s\S]*?class="orders-scroll"/);
+
+  const afterSaleListPageTemplate = readFileSync(
+    resolve(sourceRoot, "pages/after-sale/list/list.wxml"),
+    "utf8"
+  );
+  const afterSaleListComponentTemplate = readFileSync(
+    resolve(sourceRoot, "components/after-sale-list/after-sale-list.wxml"),
+    "utf8"
+  );
+  const afterSaleListComponentStyle = readFileSync(
+    resolve(sourceRoot, "components/after-sale-list/after-sale-list.less"),
+    "utf8"
+  );
+  assert.match(afterSaleListPageTemplate, /<navigation-bar[\s\S]*?<after-sale-list/);
+  assert.match(
+    afterSaleListComponentTemplate,
+    /class="after-sale-tabs"[\s\S]*?<scroll-view[\s\S]*?class="after-sale-scroll"[\s\S]*?scroll-y="\{\{true\}\}"/
+  );
+  assert.match(afterSaleListComponentTemplate, /refresher-enabled="\{\{true\}\}"/);
+  assert.match(afterSaleListComponentTemplate, /bindscrolltolower="onReachBottom"/);
+  assert.match(
+    afterSaleListComponentStyle,
+    /\.after-sale-scroll\s*\{[\s\S]*?height: 0;[\s\S]*?min-height: 0;[\s\S]*?flex: 1;/
+  );
 });
 
 test("商品详情使用自建规格、评价和收货地址弹层", () => {

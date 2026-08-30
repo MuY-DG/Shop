@@ -7,6 +7,7 @@ import type {
   AfterSaleQuoteResponse,
   AfterSaleResponse,
   AfterSaleStatus,
+  AfterSaleStatusGroup,
   ReturnShipmentRequest,
   StorageAssetUploadResponse
 } from "../types/after-sale";
@@ -17,13 +18,27 @@ import { uploadFile } from "../utils/upload";
 export function getAfterSales(
   current = 1,
   size = 10,
-  status?: AfterSaleStatus
+  status?: AfterSaleStatus,
+  statusGroup?: AfterSaleStatusGroup
 ): Promise<AfterSalePage> {
   return request<AfterSalePage>({
     url: API_ENDPOINTS.afterSales.list,
     method: "GET",
-    data: { current, size, ...(status ? { status } : {}) }
+    data: {
+      current,
+      size,
+      ...(status ? { status } : {}),
+      ...(statusGroup ? { statusGroup } : {})
+    }
   });
+}
+
+export function deleteAfterSale(afterSaleId: number): Promise<void> {
+  return request<void>({
+    url: API_ENDPOINTS.afterSales.delete(afterSaleId),
+    method: 'DELETE',
+    expectData: false
+  })
 }
 
 export function getAfterSaleDetail(afterSaleId: number): Promise<AfterSaleResponse> {

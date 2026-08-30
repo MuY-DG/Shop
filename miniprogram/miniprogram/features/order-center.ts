@@ -194,9 +194,11 @@ export function createPageOperationGuard(): PageOperationGuard {
 }
 
 export interface OrderStatusTab {
-  value: OrderStatusGroup;
+  value: OrderCenterGroup;
   label: string;
 }
+
+export type OrderCenterGroup = OrderStatusGroup | "AFTER_SALE";
 
 export const ORDER_STATUS_TABS: readonly OrderStatusTab[] = Object.freeze([
   { value: "ALL", label: "全部" },
@@ -205,7 +207,8 @@ export const ORDER_STATUS_TABS: readonly OrderStatusTab[] = Object.freeze([
   { value: "TO_RECEIVE", label: "待收货" },
   { value: "TO_REVIEW", label: "待评价" },
   { value: "COMPLETED", label: "已完成" },
-  { value: "CANCELLED", label: "已取消" }
+  { value: "CANCELLED", label: "已取消" },
+  { value: "AFTER_SALE", label: "售后" }
 ]);
 
 interface OrderActions {
@@ -301,6 +304,8 @@ export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
   shipmentViews: OrderShipmentView[];
   hasAfterSale: boolean;
   canApplyAfterSale: boolean;
+  showAfterSaleAction: boolean;
+  afterSaleActionMode: "APPLY" | "DETAIL";
   afterSaleActionText: string;
   latestAfterSaleView?: AfterSaleView;
 }
@@ -518,7 +523,9 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     ...orderActions,
     pendingReviewCount,
     items: (Array.isArray(order.items) ? order.items : []).map(buildOrderSummaryItemView),
-    statusText: orderActions.canReview ? "待评价" : orderStatusText(order.status),
+    statusText: orderActions.canReview
+      ? "待评价"
+      : order.status === "REFUNDED" ? "交易关闭" : orderStatusText(order.status),
     statusTone: orderActions.canReview ? "brand" : orderStatusTone(order.status),
     amountText: money(order.status === "PAID" || order.status === "PARTIALLY_SHIPPED"
       || order.paidAmountCent > 0
@@ -587,6 +594,10 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
   const latestAfterSaleView = order.latestAfterSale
     ? buildAfterSaleView(order.latestAfterSale)
     : undefined;
+  const canApply = canApplyAfterSale(order.status, order.latestAfterSale);
+  const afterSaleActionMode = !latestAfterSaleView || latestAfterSaleView.status === "CANCELLED"
+    ? "APPLY"
+    : "DETAIL";
   const orderActions = actions(order.status);
   const fulfillmentBlocked = order.latestAfterSale
     ? isActiveAfterSale(order.latestAfterSale.status)
@@ -641,8 +652,12 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     shipmentViews,
     canConfirmReceipt: orderActions.canConfirmReceipt && !fulfillmentBlocked,
     hasAfterSale: Boolean(latestAfterSaleView),
-    canApplyAfterSale: canApplyAfterSale(order.status, order.latestAfterSale),
-    afterSaleActionText: latestAfterSaleView?.status === "REJECTED" ? "重新申请售后" : "申请售后",
+    canApplyAfterSale: canApply,
+    showAfterSaleAction: afterSaleActionMode === "DETAIL" || canApply,
+    afterSaleActionMode,
+    afterSaleActionText: afterSaleActionMode === "APPLY"
+      ? "申请售后"
+      : latestAfterSaleView?.status === "REFUNDED" ? "退款成功" : "售后详细",
     latestAfterSaleView
   };
 }
@@ -651,6 +666,13 @@ export function parseOrderStatusGroup(value: unknown): OrderStatusGroup {
   const normalized = String(value || "ALL").toUpperCase();
   return ORDER_STATUS_TABS.some((tab) => tab.value === normalized)
     ? normalized as OrderStatusGroup
+    : "ALL";
+}
+
+export function parseOrderCenterGroup(value: unknown): OrderCenterGroup {
+  const normalized = String(value || "ALL").toUpperCase();
+  return ORDER_STATUS_TABS.some((tab) => tab.value === normalized)
+    ? normalized as OrderCenterGroup
     : "ALL";
 }
 

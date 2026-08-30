@@ -198,6 +198,14 @@ class AfterSaleSchemaTest {
                 .query(Integer.class)
                 .single();
         assertThat(flowVersionColumnCount).isZero();
+        Integer appDeletedColumnCount = jdbcClient.sql("""
+                        select count(*) from information_schema.columns
+                        where lower(table_name) = 'after_sale_request'
+                          and lower(column_name) = 'app_deleted_at'
+                        """)
+                .query(Integer.class)
+                .single();
+        assertThat(appDeletedColumnCount).isEqualTo(1);
 
         assertThatThrownBy(() -> jdbcClient.sql("""
                         insert into after_sale_item (

@@ -145,6 +145,12 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   assert.equal(requested.requestedAmountText, "¥69.80");
   assert.equal(requested.evidenceCountText, "1 张");
   assert.equal(requested.canCancel, true);
+  assert.equal(requested.listTypeText, "退款（无需退货）");
+  assert.equal(requested.items[0]?.titleText, "牛油火锅底料");
+  assert.equal(requested.items[0]?.specificationText, "500g");
+  assert.equal(requested.items[0]?.requestedQuantityText, "申请数量 x1");
+  assert.equal(requested.items[0]?.requestedAmountText, "¥69.80");
+  assert.equal(requested.canDelete, false);
 
   const rejected = buildAfterSaleView(afterSale("REJECTED"));
   assert.equal(rejected.auditNote, "请补充清晰凭证");
@@ -155,9 +161,12 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   assert.equal(refunded.refundAmountText, "¥69.80");
   assert.equal(refunded.refundedAtText, "2026-07-21 10:35");
   assert.deepEqual(refunded.progressSteps.map((step) => step.state), ["done", "done", "done"]);
+  assert.equal(refunded.canDelete, true);
+  assert.equal(refunded.canReapply, false);
 
   const waitingReturn = buildAfterSaleView(afterSale("WAITING_RETURN", "RETURN_REFUND"));
   assert.equal(waitingReturn.statusText, "待寄回商品");
+  assert.equal(waitingReturn.listTypeText, "退货");
   assert.equal(waitingReturn.canSubmitReturnShipment, true);
   assert.equal(waitingReturn.returnAddressText, "售后仓 13800000000 四川省成都市武侯区仓储路 1 号");
   assert.deepEqual(
@@ -197,10 +206,23 @@ test("进行中售后阻止重复申请并允许终态后重新申请", () => {
   assert.equal(blockedOrder.canConfirmReceipt, false);
   assert.equal(blockedOrder.hasAfterSale, true);
   assert.equal(blockedOrder.latestAfterSaleView?.statusText, "待商家审核");
+  assert.equal(blockedOrder.showAfterSaleAction, true);
+  assert.equal(blockedOrder.afterSaleActionMode, "DETAIL");
+  assert.equal(blockedOrder.afterSaleActionText, "售后详细");
 
   const retryOrder = buildOrderDetailView(order("COMPLETED", afterSale("REJECTED")));
   assert.equal(retryOrder.canApplyAfterSale, true);
-  assert.equal(retryOrder.afterSaleActionText, "重新申请售后");
+  assert.equal(retryOrder.afterSaleActionMode, "DETAIL");
+  assert.equal(retryOrder.afterSaleActionText, "售后详细");
+
+  const cancelledOrder = buildOrderDetailView(order("COMPLETED", afterSale("CANCELLED")));
+  assert.equal(cancelledOrder.canApplyAfterSale, true);
+  assert.equal(cancelledOrder.afterSaleActionMode, "APPLY");
+  assert.equal(cancelledOrder.afterSaleActionText, "申请售后");
+
+  const refundedOrder = buildOrderDetailView(order("REFUNDED", afterSale("REFUNDED")));
+  assert.equal(refundedOrder.showAfterSaleAction, true);
+  assert.equal(refundedOrder.afterSaleActionText, "退款成功");
 });
 
 test("同一申请意图在响应丢失后复用稳定幂等键", () => {
@@ -325,15 +347,23 @@ test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
 
   const profileLogic = readFileSync(resolve(sourceRoot, "pages/profile/profile.ts"), "utf8");
   const orderDetailTemplate = readFileSync(resolve(sourceRoot, "pages/order/detail/detail.wxml"), "utf8");
+  const afterSaleListTemplate = readFileSync(
+    resolve(sourceRoot, "components/after-sale-list/after-sale-list.wxml"),
+    "utf8"
+  );
   const serviceSource = readFileSync(resolve(sourceRoot, "services/after-sale.ts"), "utf8");
   const detailSource = readFileSync(resolve(sourceRoot, "pages/after-sale/detail/detail.ts"), "utf8");
   assert.match(profileLogic, /退款售后/);
-  assert.match(orderDetailTemplate, /onApplyAfterSaleTap/);
-  assert.match(orderDetailTemplate, /onAfterSaleDetailTap/);
+  assert.match(orderDetailTemplate, /onAfterSaleActionTap/);
+  assert.doesNotMatch(orderDetailTemplate, /退款售后|latestAfterSaleView\.statusDescription/);
+  assert.match(afterSaleListTemplate, /订单 \{\{item\.orderNo\}\}/);
+  assert.match(afterSaleListTemplate, /\{\{item\.listTypeText\}\}/);
+  assert.match(afterSaleListTemplate, /申请数量|退款：|删除售后单|联系客服|重新申请/);
   assert.match(serviceSource, /getAfterSaleEligibility/);
   assert.match(serviceSource, /quoteAfterSale/);
   assert.match(serviceSource, /cancelAfterSale/);
   assert.match(serviceSource, /submitReturnShipment/);
+  assert.match(serviceSource, /deleteAfterSale/);
   assert.match(detailSource, /canSubmitReturnShipment/);
   assert.match(detailSource, /canUpdateReturnShipment/);
 });

@@ -1,6 +1,7 @@
 import type {
   AfterSaleAction,
   AfterSaleApplyRequest,
+  AfterSaleItemResponse,
   AfterSaleItemRequest,
   AfterSaleQuoteResponse,
   AfterSaleResponse,
@@ -8,7 +9,7 @@ import type {
   AfterSaleType
 } from '../types/after-sale'
 import type { OrderStatus } from '../types/order'
-import { formatMoney } from './product-catalog'
+import { displaySpecText, formatMoney } from './product-catalog'
 import { formatLocalDateTime } from '../utils/date-time'
 
 export const AFTER_SALE_REASONS = Object.freeze([
@@ -27,8 +28,19 @@ export interface AfterSaleProgressStep {
   state: AfterSaleProgressState
 }
 
-export interface AfterSaleView extends AfterSaleResponse {
+export interface AfterSaleItemView extends AfterSaleItemResponse {
+  titleText: string
+  specificationText: string
+  imageUrl: string
+  hasImage: boolean
+  requestedQuantityText: string
+  requestedAmountText: string
+}
+
+export interface AfterSaleView extends Omit<AfterSaleResponse, 'items'> {
+  items: AfterSaleItemView[]
   typeText: string
+  listTypeText: string
   statusText: string
   statusTone: AfterSaleStatusTone
   statusDescription: string
@@ -46,6 +58,8 @@ export interface AfterSaleView extends AfterSaleResponse {
   canCancel: boolean
   canSubmitReturnShipment: boolean
   canUpdateReturnShipment: boolean
+  canDelete: boolean
+  canReapply: boolean
 }
 
 function cleanText(value: unknown): string {
@@ -159,6 +173,23 @@ export function isActiveAfterSale(status: AfterSaleStatus): boolean {
   ].includes(status)
 }
 
+export function isCompletedAfterSale(status: AfterSaleStatus): boolean {
+  return ['REJECTED', 'RETURN_REJECTED', 'CANCELLED', 'REFUNDED'].includes(status)
+}
+
+function buildAfterSaleItemView(item: AfterSaleItemResponse): AfterSaleItemView {
+  const imageUrl = cleanText(item.image)
+  return {
+    ...item,
+    titleText: cleanText(item.productTitle) || '售后商品',
+    specificationText: displaySpecText(item.specText),
+    imageUrl,
+    hasImage: Boolean(imageUrl),
+    requestedQuantityText: `申请数量 x${Math.max(0, Number(item.requestedQuantity) || 0)}`,
+    requestedAmountText: moneyText(item.requestedAmountCent)
+  }
+}
+
 export function canApplyAfterSale(
   orderStatus: OrderStatus,
   latestAfterSale?: AfterSaleResponse
@@ -185,11 +216,12 @@ export function buildAfterSaleView(record: AfterSaleResponse): AfterSaleView {
     ...record,
     description: cleanText(record.description),
     auditNote: cleanText(record.auditNote),
-    items: Array.isArray(record.items) ? record.items : [],
+    items: (Array.isArray(record.items) ? record.items : []).map(buildAfterSaleItemView),
     allowedActions: Array.isArray(record.allowedActions) ? record.allowedActions : [],
     evidenceFiles,
     evidenceFileIds: Array.isArray(record.evidenceFileIds) ? record.evidenceFileIds : [],
     typeText: afterSaleTypeText(record.afterSaleType),
+    listTypeText: record.afterSaleType === 'RETURN_REFUND' ? '退货' : '退款（无需退货）',
     statusText: afterSaleStatusText(record.status),
     statusTone: afterSaleStatusTone(record.status),
     statusDescription: afterSaleStatusDescription(record.status),
@@ -210,7 +242,9 @@ export function buildAfterSaleView(record: AfterSaleResponse): AfterSaleView {
       : '',
     canCancel: hasAction(record, 'CANCEL'),
     canSubmitReturnShipment: hasAction(record, 'SUBMIT_RETURN_SHIPMENT'),
-    canUpdateReturnShipment: hasAction(record, 'UPDATE_RETURN_SHIPMENT')
+    canUpdateReturnShipment: hasAction(record, 'UPDATE_RETURN_SHIPMENT'),
+    canDelete: isCompletedAfterSale(record.status),
+    canReapply: ['REJECTED', 'RETURN_REJECTED', 'CANCELLED'].includes(record.status)
   }
 }
 

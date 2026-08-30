@@ -11,6 +11,7 @@ import {
   filterRebuyableOrderItems,
   formatPaymentCountdown,
   ORDER_STATUS_TABS,
+  parseOrderCenterGroup,
   parseOrderStatusGroup,
   positiveOrderId,
   rebuyFailureMessage,
@@ -143,7 +144,7 @@ test("订单状态映射稳定并只开放合法操作", () => {
   assert.equal(completed.canRebuy, true);
 
   const refunded = buildOrderSummaryView(summary("REFUNDED"));
-  assert.equal(refunded.statusText, "已退款");
+  assert.equal(refunded.statusText, "交易关闭");
   assert.equal(refunded.canDelete, true);
   assert.equal(refunded.canRebuy, true);
 
@@ -346,6 +347,7 @@ test("订单中心路由和查询参数拒绝非法订单 ID 与状态组", () =
   assert.equal(parseOrderStatusGroup("to_review"), "TO_REVIEW");
   assert.equal(parseOrderStatusGroup("cancelled"), "CANCELLED");
   assert.equal(parseOrderStatusGroup("unknown"), "ALL");
+  assert.equal(parseOrderCenterGroup("after_sale"), "AFTER_SALE");
   assert.deepEqual(ORDER_STATUS_TABS.map((tab) => tab.value), [
     "ALL",
     "UNPAID",
@@ -353,7 +355,8 @@ test("订单中心路由和查询参数拒绝非法订单 ID 与状态组", () =
     "TO_RECEIVE",
     "TO_REVIEW",
     "COMPLETED",
-    "CANCELLED"
+    "CANCELLED",
+    "AFTER_SALE"
   ]);
   assert.equal(positiveOrderId("101"), 101);
   assert.equal(positiveOrderId("1e2"), 0);

@@ -15,6 +15,8 @@ export type AfterSaleStatus =
   | 'REFUNDED'
   | 'REFUND_FAILED'
 
+export type AfterSaleStatusGroup = 'PROCESSING' | 'COMPLETED'
+
 export type AfterSaleAction =
   | 'CANCEL'
   | 'SUBMIT_RETURN_SHIPMENT'

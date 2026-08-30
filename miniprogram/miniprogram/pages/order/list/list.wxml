@@ -40,7 +40,13 @@
     </view>
   </scroll-view>
 
+  <after-sale-list
+    wx:if="{{activeGroup === 'AFTER_SALE'}}"
+    class="order-after-sale-list"
+  />
+
   <scroll-view
+    wx:else
     class="orders-scroll"
     scroll-y="{{true}}"
     enhanced="{{true}}"

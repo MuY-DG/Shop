@@ -1,7 +1,8 @@
 {
   "usingComponents": {
     "navigation-bar": "/components/navigation-bar/navigation-bar",
-    "ui-state": "/components/ui-state/ui-state"
+    "ui-state": "/components/ui-state/ui-state",
+    "after-sale-list": "/components/after-sale-list/after-sale-list"
   },
   "disableScroll": true,
   "enablePullDownRefresh": false,

@@ -60,6 +60,9 @@ public class AppAfterSaleV2Service {
             AfterSaleStatus.WAITING_RETURN.name(), AfterSaleStatus.RETURNING.name(),
             AfterSaleStatus.WAITING_INSPECTION.name(), AfterSaleStatus.REFUNDING.name(),
             AfterSaleStatus.REFUND_FAILED.name());
+    private static final Set<String> APP_DELETABLE_STATUSES = Set.of(
+            AfterSaleStatus.REJECTED.name(), AfterSaleStatus.RETURN_REJECTED.name(),
+            AfterSaleStatus.CANCELLED.name(), AfterSaleStatus.REFUNDED.name());
     private static final java.time.format.DateTimeFormatter AFTER_SALE_NO_TIME_FORMATTER =
             java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final int AFTER_SALE_NO_RANDOM_BYTES = 9;
@@ -233,6 +236,50 @@ public class AppAfterSaleV2Service {
                 order.orderId(), afterSaleId, order.status(), order.status(),
                 "AFTER_SALE_CANCELLED", "APP", userId, "用户取消售后", now);
         return requireDecorated(afterSaleId, userId);
+    }
+
+    @Transactional
+    public void deleteFinished(
+            AuthenticatedPrincipal principal,
+            long afterSaleId
+    ) {
+        long userId = requireAppUser(principal);
+        AppVisibleAfterSale record = jdbcClient.sql("""
+                        select asr.id, asr.status, asr.app_deleted_at
+                        from after_sale_request asr
+                        join shop_order o on o.id = asr.order_id
+                        where asr.id = :afterSaleId
+                          and o.user_id = :userId
+                        for update
+                        """)
+                .param("afterSaleId", afterSaleId)
+                .param("userId", userId)
+                .query((rs, rowNum) -> new AppVisibleAfterSale(
+                        rs.getLong("id"),
+                        rs.getString("status"),
+                        rs.getObject("app_deleted_at", LocalDateTime.class)))
+                .optional()
+                .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
+        if (!APP_DELETABLE_STATUSES.contains(record.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        if (record.appDeletedAt() != null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        int updated = jdbcClient.sql("""
+                        update after_sale_request
+                        set app_deleted_at = :now,
+                            updated_at = :now
+                        where id = :afterSaleId
+                          and status in (:statuses)
+                          and app_deleted_at is null
+                        """)
+                .param("now", now)
+                .param("afterSaleId", record.afterSaleId())
+                .param("statuses", APP_DELETABLE_STATUSES)
+                .update();
+        requireOne(updated);
     }
 
     @Transactional
@@ -855,6 +902,13 @@ public class AppAfterSaleV2Service {
     }
 
     private record Route(long afterSaleId, long orderId) {
+    }
+
+    private record AppVisibleAfterSale(
+            long afterSaleId,
+            String status,
+            LocalDateTime appDeletedAt
+    ) {
     }
 
     private record AfterSaleState(

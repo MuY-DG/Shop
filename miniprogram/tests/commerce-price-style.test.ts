@@ -30,7 +30,7 @@ test("商品现价统一使用圆润、紧凑的比例数字", () => {
     "pages/order/detail/detail.less",
     "pages/order/created/created.less",
     "pages/after-sale/apply/apply.less",
-    "pages/after-sale/list/list.less",
+    "components/after-sale-list/after-sale-list.less",
     "pages/after-sale/detail/detail.less",
     "pages/customer-service/chat/chat.less"
   ];

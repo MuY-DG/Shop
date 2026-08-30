@@ -7,11 +7,12 @@ import {
   createPageOperationGuard,
   filterRebuyableOrderItems,
   ORDER_STATUS_TABS,
-  parseOrderStatusGroup,
+  parseOrderCenterGroup,
   positiveOrderId,
   REBUY_NO_AVAILABLE_ITEMS_MESSAGE,
   rebuyFailureMessage,
   rebuyPartialMessage,
+  type OrderCenterGroup,
   type OrderSummaryView
 } from "../../../features/order-center";
 import { buildAfterSaleApplyUrl } from "../../../features/after-sale";
@@ -25,7 +26,6 @@ import {
   getOrderDetail,
   getOrders
 } from "../../../services/order";
-import type { OrderStatusGroup } from "../../../types/order";
 import { isApiError } from "../../../utils/api-error";
 
 interface DatasetEvent {
@@ -73,7 +73,7 @@ Page({
   data: {
     lifecycleToken: 0,
     tabs: ORDER_STATUS_TABS,
-    activeGroup: "ALL" as OrderStatusGroup,
+    activeGroup: "ALL" as OrderCenterGroup,
     keyword: "",
     orders: [] as OrderSummaryView[],
     current: 1,
@@ -90,17 +90,23 @@ Page({
   },
 
   onLoad(query: Record<string, string | undefined>) {
+    const activeGroup = parseOrderCenterGroup(query.group);
     this.setData({
       lifecycleToken: rebuyOperationGuard.mount(),
-      activeGroup: parseOrderStatusGroup(query.group),
+      activeGroup,
       keyword: normalizeOrderRouteKeyword(query.keyword)
     });
-    void this.refreshOrders();
+    if (activeGroup !== "AFTER_SALE") {
+      void this.refreshOrders();
+    } else {
+      this.setData({ loading: false, loaded: true });
+    }
   },
 
   onShow() {
     if (
       this.data.loaded
+      && this.data.activeGroup !== "AFTER_SALE"
       && !this.data.loading
       && !this.data.loadingMore
       && !this.data.contentRefreshing
@@ -141,7 +147,7 @@ Page({
   },
 
   onTabTap(event: DatasetEvent) {
-    const group = parseOrderStatusGroup(event.currentTarget.dataset.group);
+    const group = parseOrderCenterGroup(event.currentTarget.dataset.group);
     if (
       group === this.data.activeGroup ||
       this.data.loading ||
@@ -150,11 +156,15 @@ Page({
     ) {
       return;
     }
-    this.setData({ activeGroup: group, orders: [], loaded: false });
-    void this.refreshOrders();
+    this.setData({ activeGroup: group, orders: [], loaded: group === "AFTER_SALE" });
+    if (group !== "AFTER_SALE") {
+      void this.refreshOrders();
+    }
   },
 
   async refreshOrders(options: RefreshOptions = {}) {
+    const activeGroup = this.data.activeGroup;
+    if (activeGroup === "AFTER_SALE") return;
     const requestId = ++latestListRequest;
     const silent = options.silent === true && this.data.loaded;
     if (silent) {
@@ -168,7 +178,7 @@ Page({
       const response = await getOrders({
         current: 1,
         size: PAGE_SIZE,
-        statusGroup: this.data.activeGroup,
+        statusGroup: activeGroup,
         keyword: this.data.keyword
       });
       if (requestId !== latestListRequest) {
@@ -200,7 +210,13 @@ Page({
   },
 
   async loadMoreOrders() {
-    if (!this.data.hasMore || this.data.loading || this.data.loadingMore) {
+    const activeGroup = this.data.activeGroup;
+    if (
+      activeGroup === "AFTER_SALE"
+      || !this.data.hasMore
+      || this.data.loading
+      || this.data.loadingMore
+    ) {
       return;
     }
     const requestId = ++latestListRequest;
@@ -210,7 +226,7 @@ Page({
       const response = await getOrders({
         current: nextPage,
         size: PAGE_SIZE,
-        statusGroup: this.data.activeGroup,
+        statusGroup: activeGroup,
         keyword: this.data.keyword
       });
       if (requestId !== latestListRequest) {

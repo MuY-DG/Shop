@@ -14,6 +14,7 @@ import java.util.Base64;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -318,6 +319,39 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
                         .header("Authorization", "Bearer " + owner.token()))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100400));
+
+        mockMvc.perform(delete("/app/after-sales/{afterSaleId}", ownerAfterSaleId)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400001));
+
+        mockMvc.perform(post("/app/after-sales/{afterSaleId}/cancel", ownerAfterSaleId)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+
+        mockMvc.perform(get("/app/after-sales")
+                        .param("statusGroup", "COMPLETED")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].id").value(ownerAfterSaleId))
+                .andExpect(jsonPath("$.data.total").value(1));
+
+        mockMvc.perform(delete("/app/after-sales/{afterSaleId}", ownerAfterSaleId)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/app/after-sales")
+                        .param("statusGroup", "COMPLETED")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(0))
+                .andExpect(jsonPath("$.data.total").value(0));
+
+        mockMvc.perform(get("/app/after-sales/{afterSaleId}", ownerAfterSaleId)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(ownerAfterSaleId));
     }
 
     private String applyBody(String type, String reason, long requestedAmountCent, String description, long... fileIds) {

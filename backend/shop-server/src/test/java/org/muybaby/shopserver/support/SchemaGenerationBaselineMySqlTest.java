@@ -29,7 +29,7 @@ class SchemaGenerationBaselineMySqlTest {
             .withUrlParam("serverTimezone", "UTC");
 
     @Test
-    void generationTwoBaselineAndProductComplianceUpgradeRunOnProductionMySql() {
+    void generationTwoBaselineAndCurrentUpgradesRunOnProductionMySql() {
         Flyway.configure()
                 .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
                 .target("8")
@@ -49,8 +49,8 @@ class SchemaGenerationBaselineMySqlTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("9");
-        assertThat(flyway.info().applied()).hasSize(9);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("10");
+        assertThat(flyway.info().applied()).hasSize(10);
         assertThat(jdbc.sql("select compliance_type from product_spu order by id")
                 .query(String.class).list()).containsExactly("NON_FOOD", "FOOD", "NON_FOOD");
         jdbc.sql("""
@@ -59,6 +59,13 @@ class SchemaGenerationBaselineMySqlTest {
                         """).update();
         assertThat(jdbc.sql("select compliance_type from product_spu where id = 9890024")
                 .query(String.class).single()).isEqualTo("NON_FOOD");
+        assertThat(jdbc.sql("""
+                        select count(*)
+                        from information_schema.columns
+                        where table_schema = database()
+                          and table_name = 'after_sale_request'
+                          and column_name = 'app_deleted_at'
+                        """).query(Long.class).single()).isEqualTo(1L);
         assertThatThrownBy(() -> jdbc.sql("""
                         update product_spu set compliance_type = 'UNCLASSIFIED' where id = 9890024
                         """).update())

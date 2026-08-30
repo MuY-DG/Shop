@@ -214,25 +214,6 @@
           </view>
         </view>
 
-        <view
-          wx:if="{{detail.hasAfterSale}}"
-          class="detail-card after-sale-card"
-          bindtap="onAfterSaleDetailTap"
-          aria-role="button"
-        >
-          <view class="after-sale-card__heading">
-            <view>
-              <view class="section-heading">退款售后</view>
-              <view class="after-sale-card__meta">{{detail.latestAfterSaleView.typeText}} · <text class="after-sale-card__amount">{{detail.latestAfterSaleView.requestedAmountText}}</text></view>
-            </view>
-            <view class="after-sale-card__status after-sale-card__status--{{detail.latestAfterSaleView.statusTone}}">
-              {{detail.latestAfterSaleView.statusText}}
-            </view>
-          </view>
-          <view class="after-sale-card__description">{{detail.latestAfterSaleView.statusDescription}}</view>
-          <view class="after-sale-card__link">查看处理进度 <text>›</text></view>
-        </view>
-
         <view class="detail-card order-info">
           <view
             class="order-info__heading"
@@ -331,7 +312,7 @@
     ><text class="payment-action__label">继续支付</text></button>
   </view>
 
-  <view wx:elif="{{detail && (detail.canConfirmReceipt || detail.canDelete || detail.canRebuy || detail.canApplyAfterSale)}}" class="detail-actions">
+  <view wx:elif="{{detail && (detail.canConfirmReceipt || detail.canDelete || detail.canRebuy || detail.showAfterSaleAction)}}" class="detail-actions">
     <button
       wx:if="{{detail.canDelete}}"
       class="detail-action detail-action--secondary detail-action--minor"
@@ -347,10 +328,10 @@
       bindtap="onRebuyTap"
     >再次购买</button>
     <button
-      wx:if="{{detail.canApplyAfterSale}}"
+      wx:if="{{detail.showAfterSaleAction}}"
       class="detail-action detail-action--secondary detail-action--minor"
       disabled="{{actionType !== ''}}"
-      bindtap="onApplyAfterSaleTap"
+      bindtap="onAfterSaleActionTap"
     >{{detail.afterSaleActionText}}</button>
     <button
       wx:if="{{detail.canConfirmReceipt}}"

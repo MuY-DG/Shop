@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleEvidenceFileResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
+import org.muybaby.shopserver.aftersale.AppAfterSaleStatusGroup;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.api.PageResult;
 import org.muybaby.shopserver.common.error.BusinessException;
@@ -44,6 +45,9 @@ class AppAfterSaleQueryServiceTest {
 
     @Autowired
     private AppAfterSaleQueryService appAfterSaleQueryService;
+
+    @Autowired
+    private AppAfterSaleV2Service appAfterSaleV2Service;
 
     @Autowired
     private JdbcClient jdbcClient;
@@ -108,6 +112,40 @@ class AppAfterSaleQueryServiceTest {
                 () -> appAfterSaleQueryService.list(appPrincipal(ownerId), 0L, 10L, null));
         assertBusiness(ErrorCode.VALIDATION_FAILED,
                 () -> appAfterSaleQueryService.list(appPrincipal(ownerId), 1L, 0L, null));
+    }
+
+    @Test
+    void statusGroupsSeparateProcessingAndCompletedRecordsAndAppDeletionOnlyHidesCompletedRows() {
+        long ownerId = insertUser("after-sale-groups-owner");
+        LocalDateTime createdAt = LocalDateTime.of(2026, 8, 30, 9, 0);
+        long processingOrderId = insertOrder(ownerId, "SHIPPED", createdAt);
+        long completedOrderId = insertOrder(ownerId, "COMPLETED", createdAt.plusMinutes(1));
+        long processingId = insertAfterSale(
+                processingOrderId, ownerId, "REQUESTED", createdAt.plusMinutes(2));
+        long completedId = insertAfterSale(
+                completedOrderId, ownerId, "CANCELLED", createdAt.plusMinutes(3));
+
+        PageResult<AfterSaleResponse> processing = appAfterSaleQueryService.list(
+                appPrincipal(ownerId), 1L, 10L, null, AppAfterSaleStatusGroup.PROCESSING);
+        PageResult<AfterSaleResponse> completed = appAfterSaleQueryService.list(
+                appPrincipal(ownerId), 1L, 10L, null, AppAfterSaleStatusGroup.COMPLETED);
+
+        assertThat(processing.records()).extracting(AfterSaleResponse::id)
+                .containsExactly(processingId);
+        assertThat(completed.records()).extracting(AfterSaleResponse::id)
+                .containsExactly(completedId);
+        assertBusiness(ErrorCode.ORDER_STATE_CONFLICT,
+                () -> appAfterSaleV2Service.deleteFinished(appPrincipal(ownerId), processingId));
+
+        appAfterSaleV2Service.deleteFinished(appPrincipal(ownerId), completedId);
+        appAfterSaleV2Service.deleteFinished(appPrincipal(ownerId), completedId);
+
+        PageResult<AfterSaleResponse> visibleCompleted = appAfterSaleQueryService.list(
+                appPrincipal(ownerId), 1L, 10L, null, AppAfterSaleStatusGroup.COMPLETED);
+        assertThat(visibleCompleted.records()).isEmpty();
+        assertThat(visibleCompleted.total()).isZero();
+        assertThat(appAfterSaleQueryService.detail(appPrincipal(ownerId), completedId).id())
+                .isEqualTo(completedId);
     }
 
     @Test
