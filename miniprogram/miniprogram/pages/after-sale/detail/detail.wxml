@@ -83,10 +83,10 @@
           <view wx:if="{{detail.returnAddressText}}" class="address-panel">
             <view class="address-panel__label">商家退货地址</view>
             <text>{{detail.returnAddressText}}</text>
-            <view wx:if="{{detail.returnInfo.returnDeadlineAt}}" class="address-panel__deadline">寄回截止：{{detail.returnInfo.returnDeadlineAt}}</view>
+            <view wx:if="{{detail.returnDeadlineAtText}}" class="address-panel__deadline">寄回截止：{{detail.returnDeadlineAtText}}</view>
           </view>
           <view wx:if="{{detail.returnShipmentText}}" class="info-row"><text>退货物流</text><text>{{detail.returnShipmentText}}</text></view>
-          <view wx:if="{{detail.returnInfo.merchantReceivedAt}}" class="info-row"><text>商家收货</text><text>{{detail.returnInfo.merchantReceivedAt}}</text></view>
+          <view wx:if="{{detail.merchantReceivedAtText}}" class="info-row"><text>商家收货</text><text>{{detail.merchantReceivedAtText}}</text></view>
           <view wx:if="{{detail.returnInfo.inspectionResult}}" class="info-row"><text>验收结果</text><text>{{detail.returnInfo.inspectionResult === 'ACCEPTED' ? '验收通过' : '验收未通过'}}</text></view>
           <view wx:if="{{detail.returnInfo.inspectionNote}}" class="description-block"><view>验收说明</view><text>{{detail.returnInfo.inspectionNote}}</text></view>
         </view>

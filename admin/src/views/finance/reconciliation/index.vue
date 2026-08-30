@@ -664,6 +664,7 @@
     updateReconciliationRuntime
   } from '@/api/finance-reconciliation'
   import { useAuth } from '@/hooks/core/useAuth'
+  import { formatLocalDateTime } from '@/utils/date-time'
   import { isHttpError } from '@/utils/http/error'
   import {
     auditActionLabel,
@@ -788,7 +789,7 @@
     !isBillDateWithinLookback(formatBusinessDate(value), businessDate(), 90)
   const isRevisionConflict = (error: unknown) => isHttpError(error) && error.httpStatus === 409
 
-  const formatTime = (value?: string | null) => (value ? new Date(value).toLocaleString() : '-')
+  const formatTime = formatLocalDateTime
   const enabledText = (enabled: boolean) => (enabled ? '开启' : '关闭')
   const formatBytes = (value?: number | null) => {
     if (value == null) return '-'

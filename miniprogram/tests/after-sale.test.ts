@@ -88,6 +88,8 @@ function afterSale(
           city: "成都市",
           district: "武侯区",
           detailAddress: "仓储路 1 号",
+          returnDeadlineAt: "2026-07-28T10:00:00Z",
+          merchantReceivedAt: "2026-07-29T11:15:30Z",
           deliveryCompanyCode: status === "RETURNING" ? "SF" : undefined,
           deliveryCompanyName: status === "RETURNING" ? "顺丰速运" : undefined,
           trackingNo: status === "RETURNING" ? "SF123" : undefined
@@ -168,7 +170,7 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   const refunded = buildAfterSaleView(afterSale("REFUNDED"));
   assert.equal(refunded.statusText, "退款已完成");
   assert.equal(refunded.refundAmountText, "¥69.80");
-  assert.equal(refunded.refundedAtText, "2026-07-21 10:35");
+  assert.equal(refunded.refundedAtText, "2026-07-21 10:35:00");
   assert.equal(refunded.cardStatusText, "退款成功");
   assert.equal(refunded.cardStatusDescription, "原路返回支付金额¥69.80");
   assert.deepEqual(refunded.progressSteps.map((step) => step.state), ["done", "done", "done"]);
@@ -181,6 +183,8 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   assert.equal(waitingReturn.cardStatusText, "退货处理中");
   assert.equal(waitingReturn.canSubmitReturnShipment, true);
   assert.equal(waitingReturn.returnAddressText, "售后仓 13800000000 四川省成都市武侯区仓储路 1 号");
+  assert.equal(waitingReturn.returnDeadlineAtText, "2026-07-28 10:00:00");
+  assert.equal(waitingReturn.merchantReceivedAtText, "2026-07-29 11:15:30");
   assert.deepEqual(
     waitingReturn.progressSteps.map((step) => step.state),
     ["done", "done", "current", "pending", "pending"]
@@ -365,6 +369,10 @@ test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
     resolve(sourceRoot, "components/after-sale-list/after-sale-list.wxml"),
     "utf8"
   );
+  const afterSaleDetailTemplate = readFileSync(
+    resolve(sourceRoot, "pages/after-sale/detail/detail.wxml"),
+    "utf8"
+  );
   const serviceSource = readFileSync(resolve(sourceRoot, "services/after-sale.ts"), "utf8");
   const detailSource = readFileSync(resolve(sourceRoot, "pages/after-sale/detail/detail.ts"), "utf8");
   assert.match(profileLogic, /退款售后/);
@@ -373,6 +381,9 @@ test("售后路由拒绝可疑 ID 并注册三个真实页面", () => {
   assert.match(afterSaleListTemplate, /订单 \{\{item\.orderNo\}\}/);
   assert.match(afterSaleListTemplate, /\{\{item\.listTypeText\}\}/);
   assert.match(afterSaleListTemplate, /申请数量|退款：|cardStatusText|cardStatusDescription|删除售后单|联系客服|重新申请/);
+  assert.match(afterSaleDetailTemplate, /detail\.returnDeadlineAtText/);
+  assert.match(afterSaleDetailTemplate, /detail\.merchantReceivedAtText/);
+  assert.doesNotMatch(afterSaleDetailTemplate, /detail\.returnInfo\.(returnDeadlineAt|merchantReceivedAt)/);
   assert.match(serviceSource, /getAfterSaleEligibility/);
   assert.match(serviceSource, /quoteAfterSale/);
   assert.match(serviceSource, /cancelAfterSale/);

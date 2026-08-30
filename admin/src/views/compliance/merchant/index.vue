@@ -81,10 +81,10 @@
           </template>
         </ElTableColumn>
         <ElTableColumn label="创建时间" width="180">
-          <template #default="{ row }">{{ formatTimestamp(row.createdAt) }}</template>
+          <template #default="{ row }">{{ formatLocalDateTime(row.createdAt) }}</template>
         </ElTableColumn>
         <ElTableColumn label="发布时间" width="180">
-          <template #default="{ row }">{{ formatTimestamp(row.publishedAt) }}</template>
+          <template #default="{ row }">{{ formatLocalDateTime(row.publishedAt) }}</template>
         </ElTableColumn>
         <ElTableColumn label="操作" width="150" fixed="right">
           <template #default="{ row }">
@@ -202,6 +202,7 @@
     fetchMerchantPublicationHistory,
     publishMerchantPublication
   } from '@/api/compliance'
+  import { formatLocalDateTime } from '@/utils/date-time'
 
   defineOptions({ name: 'MerchantCompliance' })
 
@@ -322,9 +323,6 @@
   const normalizeCreditCode = (value: string) => {
     form.unifiedSocialCreditCode = value.toUpperCase().replace(/[^0-9A-Z]/g, '')
   }
-
-  const formatTimestamp = (value?: string | null) =>
-    value ? value.replace('T', ' ').replace(/\.\d+$/, '') : '-'
 
   const statusLabel = (status: Api.Compliance.PublicationStatus) =>
     ({ DRAFT: '草稿', PUBLISHED: '当前发布', SUPERSEDED: '历史版本' })[status]

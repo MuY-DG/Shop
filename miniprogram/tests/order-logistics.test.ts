@@ -61,8 +61,8 @@ test("自定义物流视图格式化摘要状态和 getPath 时间线", () => {
   assert.equal(view.statusTone, "active");
   assert.equal(view.hasPathItems, true);
   assert.equal(view.pathItems[0]?.actionMessage, "快件正在运输中");
-  assert.equal(view.pathItems[0]?.actionTimeText, "2026-08-06 07:06");
-  assert.equal(view.lastSyncedAtText, "2026-08-09 12:30");
+  assert.equal(view.pathItems[0]?.actionTimeText, "2026-08-06 07:06:40");
+  assert.equal(view.lastSyncedAtText, "2026-08-09 12:30:00");
 });
 
 test("getPath 无节点或失败时仍返回可展示的空态", () => {

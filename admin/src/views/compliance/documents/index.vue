@@ -48,7 +48,7 @@
           </template>
         </ElTableColumn>
         <ElTableColumn label="生效时间" width="180">
-          <template #default="{ row }">{{ formatTimestamp(row.effectiveAt) }}</template>
+          <template #default="{ row }">{{ formatLocalDateTime(row.effectiveAt) }}</template>
         </ElTableColumn>
         <ElTableColumn label="操作" width="180" fixed="right">
           <template #default="{ row }">
@@ -85,7 +85,7 @@
           <ElDatePicker
             v-model="form.effectiveAt"
             type="datetime"
-            value-format="YYYY-MM-DDTHH:mm:ss"
+            value-format="YYYY-MM-DDTHH:mm:ssZ"
             placeholder="留空则发布时立即生效；暂不支持预约发布"
             style="width: 100%"
           />
@@ -128,6 +128,7 @@
     fetchLegalDocumentHistory,
     publishLegalDocument
   } from '@/api/compliance'
+  import { formatLocalDateTime } from '@/utils/date-time'
 
   defineOptions({ name: 'LegalDocuments' })
 
@@ -238,9 +239,6 @@
     previewDocument.value = row
     previewVisible.value = true
   }
-
-  const formatTimestamp = (value?: string | null) =>
-    value ? value.replace('T', ' ').replace(/\.\d+$/, '') : '-'
 
   const statusLabel = (status: Api.Compliance.PublicationStatus) =>
     ({ DRAFT: '草稿', PUBLISHED: '当前发布', SUPERSEDED: '历史版本' })[status]

@@ -134,6 +134,7 @@
     updateProductSpu
   } from '@/api/product'
   import { useAuth } from '@/hooks/core/useAuth'
+  import { formatLocalDateTime } from '@/utils/date-time'
   import ProductInfoTab from './product-info-tab.vue'
   import ProductSpecificationTab from './product-specification-tab.vue'
   import ProductDetailTab from './product-detail-tab.vue'
@@ -383,8 +384,7 @@
   const rememberSavedState = async () => {
     await nextTick()
     savedSnapshot.value = JSON.stringify(formData.value)
-    const now = new Date()
-    lastSavedAt.value = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    lastSavedAt.value = formatLocalDateTime(new Date().toISOString())
   }
 
   const loadDetail = async () => {

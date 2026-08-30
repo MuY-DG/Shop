@@ -18,7 +18,7 @@ export function parseApiDateTime(value: unknown): Date | null {
 
 export function formatLocalDateTime(
   value: unknown,
-  precision: "minute" | "second" = "minute"
+  precision: "minute" | "second" = "second"
 ): string {
   const date = parseApiDateTime(value);
   if (!date) {

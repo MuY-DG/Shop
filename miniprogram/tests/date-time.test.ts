@@ -24,13 +24,13 @@ test("shows the same instant in each device timezone", () => {
   const original = process.env.TZ;
   try {
     process.env.TZ = "Asia/Shanghai";
-    assert.equal(formatLocalDateTime("2026-08-01T12:00:00Z"), "2026-08-01 20:00");
+    assert.equal(formatLocalDateTime("2026-08-01T12:00:00Z"), "2026-08-01 20:00:00");
     assert.equal(
       formatLocalDateTime("2026-08-01T12:00:09Z", "second"),
       "2026-08-01 20:00:09"
     );
     process.env.TZ = "America/Los_Angeles";
-    assert.equal(formatLocalDateTime("2026-08-01T12:00:00Z"), "2026-08-01 05:00");
+    assert.equal(formatLocalDateTime("2026-08-01T12:00:00Z"), "2026-08-01 05:00:00");
   } finally {
     if (original === undefined) delete process.env.TZ;
     else process.env.TZ = original;

@@ -57,6 +57,8 @@ export interface AfterSaleView extends Omit<AfterSaleResponse, 'items'> {
   progressSteps: AfterSaleProgressStep[]
   returnAddressText: string
   returnShipmentText: string
+  returnDeadlineAtText: string
+  merchantReceivedAtText: string
   canCancel: boolean
   canSubmitReturnShipment: boolean
   canUpdateReturnShipment: boolean
@@ -313,6 +315,8 @@ export function buildAfterSaleView(record: AfterSaleResponse): AfterSaleView {
     returnShipmentText: returnInfo?.trackingNo
       ? `${cleanText(returnInfo.deliveryCompanyName) || cleanText(returnInfo.deliveryCompanyCode)} ${returnInfo.trackingNo}`.trim()
       : '',
+    returnDeadlineAtText: formatLocalDateTime(returnInfo?.returnDeadlineAt),
+    merchantReceivedAtText: formatLocalDateTime(returnInfo?.merchantReceivedAt),
     canCancel: hasAction(record, 'CANCEL'),
     canSubmitReturnShipment: hasAction(record, 'SUBMIT_RETURN_SHIPMENT'),
     canUpdateReturnShipment: hasAction(record, 'UPDATE_RETURN_SHIPMENT'),
