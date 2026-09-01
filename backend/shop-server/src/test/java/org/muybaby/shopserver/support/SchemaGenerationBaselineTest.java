@@ -24,8 +24,8 @@ class SchemaGenerationBaselineTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("10");
-        assertThat(flyway.info().applied()).hasSize(10);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("11");
+        assertThat(flyway.info().applied()).hasSize(11);
         assertThat(tableCount(jdbc)).isEqualTo(130);
 
         assertThat(tableExists(jdbc, "payment_config_snapshot")).isFalse();
@@ -160,6 +160,8 @@ class SchemaGenerationBaselineTest {
         assertThat(jdbc.sql("select count(*) from admin_role").query(Long.class).single()).isEqualTo(5);
         assertThat(jdbc.sql("select count(*) from admin_permission").query(Long.class).single()).isEqualTo(126);
         assertThat(jdbc.sql("select count(*) from admin_menu").query(Long.class).single()).isEqualTo(57);
+        assertThat(jdbc.sql("select icon from admin_menu where id = 105")
+                .query(String.class).single()).isEqualTo("ri:route-line");
         assertThat(jdbc.sql("select count(*) from admin_role_permission where role_id = 1")
                 .query(Long.class).single()).isEqualTo(126);
         assertThat(jdbc.sql("select count(*) from admin_user_role where user_id = 1 and role_id = 1")

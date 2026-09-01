@@ -1,10 +1,15 @@
 package org.muybaby.shopserver.operation;
 
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.support.MigrationTestSupport;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.ActiveProfiles;
+
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -90,6 +95,32 @@ class OperationsAnalyticsSchemaTest {
         assertThat(superPermissionCount).isEqualTo(7);
         assertThat(adminOverviewGrantCount).isEqualTo(1);
         assertThat(adminSensitiveGrantCount).isZero();
+    }
+
+    @Test
+    void migrationRepairsTheLegacyTrafficMenuIcon() {
+        String jdbcUrl = "jdbc:h2:mem:operations_menu_icon_"
+                + UUID.randomUUID().toString().replace("-", "")
+                + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
+        Flyway.configure()
+                .dataSource(jdbcUrl, "sa", "")
+                .target("10")
+                .load()
+                .migrate();
+        JdbcClient legacyJdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
+
+        assertThat(legacyJdbc.sql("select icon from admin_menu where id = 105")
+                .query(String.class)
+                .single()).isEqualTo("ri:funnel-line");
+
+        MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
+
+        assertThat(legacyJdbc.sql("select icon from admin_menu where id = 105")
+                .query(String.class)
+                .single()).isEqualTo("ri:route-line");
+        assertThat(legacyJdbc.sql("select icon from admin_menu where id = 104")
+                .query(String.class)
+                .single()).isEqualTo("ri:user-heart-line");
     }
 
     @Test
