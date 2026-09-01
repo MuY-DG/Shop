@@ -79,6 +79,43 @@
           </div>
         </template>
 
+        <template v-else-if="activeSection === 'notification'">
+          <div class="setting-block notification-setting-block">
+            <div class="setting-title">
+              <div>
+                <h2>显示消息预览</h2>
+                <p>开启后，站内通知和 macOS 系统通知会显示用户发来的内容。</p>
+              </div>
+              <CsSwitch
+                :model-value="notificationPreviewEnabled"
+                :disabled="loading"
+                @update:model-value="updateNotificationPreview"
+              />
+            </div>
+
+            <div class="notification-preview-example">
+              <img :src="notificationBrandIconUrl" alt="" />
+              <span>
+                <small>俊祥食品客服 · 新消息</small>
+                <strong>用户 959554</strong>
+                <em>
+                  {{
+                    notificationPreviewEnabled
+                      ? '您好，请问这个商品今天可以发货吗？'
+                      : '收到一条新消息，点击查看'
+                  }}
+                </em>
+              </span>
+              <Eye v-if="notificationPreviewEnabled" :size="18" />
+              <EyeOff v-else :size="18" />
+            </div>
+
+            <p class="notification-local-note">
+              此设置只保存在当前浏览器；共享电脑建议关闭，避免锁屏或通知中心显示顾客消息。
+            </p>
+          </div>
+        </template>
+
         <AutoReplySettings
           v-else-if="activeSection === 'auto-reply'"
           ref="autoReplyRef"
@@ -300,8 +337,11 @@
   import { computed, onMounted, reactive, ref, watch } from 'vue'
   import { ElMessage } from 'element-plus'
   import {
+    BellRing,
     Bot,
     ChartNoAxesColumnIncreasing,
+    Eye,
+    EyeOff,
     GitBranch,
     ListRestart,
     LoaderCircle,
@@ -320,6 +360,10 @@
   import { useAuth } from '@/hooks/core/useAuth'
   import { useUserStore } from '@/store/modules/user'
   import {
+    isCustomerServiceNotificationPreviewEnabled,
+    setCustomerServiceNotificationPreviewEnabled
+  } from '@/utils/customer-service-notification-state'
+  import {
     fetchCustomerServiceManagementConfig,
     fetchCustomerServicePersonalSettings,
     updateCustomerServiceManagementIdentity,
@@ -331,7 +375,13 @@
 
   defineOptions({ name: 'CustomerServiceSettings' })
 
-  type SectionKey = 'automatic' | 'auto-reply' | 'quick-reply' | 'routing' | 'identity'
+  type SectionKey =
+    | 'automatic'
+    | 'notification'
+    | 'auto-reply'
+    | 'quick-reply'
+    | 'routing'
+    | 'identity'
   type AutoReplyTab = 'common' | 'welcome' | 'offline' | 'smart'
 
   const route = useRoute()
@@ -359,6 +409,12 @@
       label: '自动接入',
       description: '控制自己的自动接入规则。',
       icon: Zap
+    },
+    notification: {
+      key: 'notification' as const,
+      label: '消息通知',
+      description: '控制当前浏览器里的客服消息预览。',
+      icon: BellRing
     },
     'auto-reply': {
       key: 'auto-reply' as const,
@@ -388,6 +444,7 @@
   const settingItems = computed(() => {
     const items = []
     if (hasPersonalSettings.value) items.push(allSettingItems.automatic)
+    if (hasPersonalSettings.value) items.push(allSettingItems.notification)
     if (canReadAutoReply.value) items.push(allSettingItems['auto-reply'])
     if (canReadQuickReply.value) items.push(allSettingItems['quick-reply'])
     if (canManageRouting.value) items.push(allSettingItems.routing)
@@ -414,8 +471,11 @@
   const showSaveButton = computed(
     () =>
       activeSection.value !== 'quick-reply' &&
+      activeSection.value !== 'notification' &&
       (activeSection.value !== 'auto-reply' || canUpdateCurrentAutoReply.value)
   )
+  const notificationPreviewEnabled = ref(isCustomerServiceNotificationPreviewEnabled())
+  const notificationBrandIconUrl = `${import.meta.env.BASE_URL}pwa/icon-192.png`
   const personalActiveConversationCount = ref(0)
   const personalForm = reactive<Api.CustomerService.PersonalSettingsForm>({
     serviceName: null,
@@ -480,12 +540,19 @@
   ]
 
   function normalizeSection(value: unknown): SectionKey {
-    return value === 'auto-reply' ||
+    return value === 'notification' ||
+      value === 'auto-reply' ||
       value === 'quick-reply' ||
       value === 'routing' ||
       value === 'identity'
       ? value
       : 'automatic'
+  }
+
+  function updateNotificationPreview(enabled: boolean) {
+    notificationPreviewEnabled.value = enabled
+    setCustomerServiceNotificationPreviewEnabled(enabled)
+    ElMessage.success(enabled ? '已显示消息预览' : '已隐藏消息预览')
   }
 
   function resolveAvailableSection(value: unknown): SectionKey {
@@ -805,6 +872,72 @@
     border-radius: 12px;
   }
 
+  .notification-setting-block {
+    max-width: 760px;
+  }
+
+  .notification-preview-example {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 13px;
+    align-items: center;
+    padding: 16px 18px;
+    margin-top: 24px;
+    background: #fbfaf8;
+    border: 1px solid #eee8e3;
+    border-radius: 13px;
+    box-shadow: 0 8px 24px rgb(65 45 35 / 6%);
+  }
+
+  .notification-preview-example > img {
+    width: 46px;
+    height: 46px;
+    object-fit: contain;
+  }
+
+  .notification-preview-example > span {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .notification-preview-example small {
+    font-size: 11px;
+    font-weight: 650;
+    color: #9b2821;
+  }
+
+  .notification-preview-example strong {
+    overflow: hidden;
+    font-size: 14px;
+    color: #272321;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .notification-preview-example em {
+    overflow: hidden;
+    font-size: 12px;
+    font-style: normal;
+    color: #77716d;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .notification-preview-example > svg {
+    color: #aaa29c;
+  }
+
+  .notification-local-note {
+    padding: 11px 13px;
+    margin: 16px 0 0;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #807871;
+    background: #f6f3f0;
+    border-radius: 8px;
+  }
+
   .setting-title {
     display: flex;
     gap: 28px;
@@ -1069,13 +1202,13 @@
     place-items: center;
     width: 34px;
     height: 34px;
+    overflow: hidden;
     font-size: 13px;
     font-style: normal;
     font-weight: 700;
     color: #087c42;
     background: #e8f8f0;
     border-radius: 50%;
-    overflow: hidden;
   }
 
   .agent-cell > i img {

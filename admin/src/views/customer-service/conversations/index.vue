@@ -1,5 +1,10 @@
 <template>
   <div class="customer-service-page art-full-height">
+    <CustomerServiceNotificationStack
+      :notifications="inAppNotifications"
+      @dismiss="dismissInAppNotification"
+      @open="openInAppNotification"
+    />
     <div class="workspace">
       <ElCard class="conversation-panel" shadow="never" body-class="panel-body">
         <div v-loading="listLoading" class="conversation-groups">
@@ -738,8 +743,10 @@
     shouldShowCustomerServiceMessageTime
   } from '@/utils/customer-service-message'
   import { createCustomerServiceNotifier } from '@/utils/customer-service-notification'
+  import type { CustomerServiceInAppNotification } from '@/utils/customer-service-notification-state'
   import { preserveCustomerServicePrependScrollTop } from '@/utils/customer-service-scroll'
   import { formatLocalDateTime } from '@/utils/date-time'
+  import CustomerServiceNotificationStack from './CustomerServiceNotificationStack.vue'
 
   const router = useRouter()
   const userStore = useUserStore()
@@ -818,6 +825,8 @@
   const productCandidatesLoading = ref(false)
   const productCandidates = ref<Api.CustomerService.LinkedProduct[]>([])
   const productKeyword = ref('')
+  const inAppNotifications = ref<CustomerServiceInAppNotification[]>([])
+  const inAppNotificationTimers = new Map<number, ReturnType<typeof setTimeout>>()
   let detailRequestSequence = 0
   let listRequestSequence = 0
   let conversationListLoaded = false
@@ -2170,10 +2179,44 @@
     if (!document.hidden && initialLoadComplete) void refreshAll()
   }
 
+  const dismissInAppNotification = (conversationId: number) => {
+    const timer = inAppNotificationTimers.get(conversationId)
+    if (timer) clearTimeout(timer)
+    inAppNotificationTimers.delete(conversationId)
+    inAppNotifications.value = inAppNotifications.value.filter(
+      (notification) => notification.conversationId !== conversationId
+    )
+  }
+
+  const showInAppNotification = (notification: CustomerServiceInAppNotification) => {
+    dismissInAppNotification(notification.conversationId)
+    inAppNotifications.value = [notification, ...inAppNotifications.value].slice(0, 3)
+
+    const visibleConversationIds = new Set(
+      inAppNotifications.value.map((item) => item.conversationId)
+    )
+    inAppNotificationTimers.forEach((timer, conversationId) => {
+      if (!visibleConversationIds.has(conversationId)) {
+        clearTimeout(timer)
+        inAppNotificationTimers.delete(conversationId)
+      }
+    })
+    inAppNotificationTimers.set(
+      notification.conversationId,
+      setTimeout(() => dismissInAppNotification(notification.conversationId), 8000)
+    )
+  }
+
+  const openInAppNotification = (conversationId: number) => {
+    dismissInAppNotification(conversationId)
+    if (!pageMounted) return
+    void selectConversation(conversationId)
+  }
+
   const incomingMessageNotifier = createCustomerServiceNotifier((conversationId) => {
     if (!pageMounted) return
     void selectConversation(conversationId)
-  })
+  }, showInAppNotification)
 
   const notifyIncomingCustomerMessage = (event: RealtimeEvent) => {
     if (event.data.changeType !== 'MESSAGE_CREATED' || event.data.senderType !== 'APP_USER') return
@@ -2198,10 +2241,12 @@
     )
     incomingMessageNotifier.notify({
       conversationId,
+      messageId,
       senderName:
         typeof event.data.senderName === 'string'
           ? event.data.senderName
           : conversation?.userNickname,
+      senderAvatar: conversation?.userAvatar,
       messageType: typeof event.data.messageType === 'string' ? event.data.messageType : null,
       content: typeof event.data.messageContent === 'string' ? event.data.messageContent : null
     })
@@ -2329,6 +2374,9 @@
     locallyHandledMessageIds.clear()
     notifiedMessageIds.clear()
     localMutationCounts.clear()
+    inAppNotificationTimers.forEach(clearTimeout)
+    inAppNotificationTimers.clear()
+    inAppNotifications.value = []
     incomingMessageNotifier.stop()
     imageUploadAbortController?.abort()
     imageUploadAbortController = null

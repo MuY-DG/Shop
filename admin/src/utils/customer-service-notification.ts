@@ -1,31 +1,18 @@
 import customerMessageSoundUrl from '@/assets/audio/customer-message.mp3'
-
-interface IncomingCustomerMessageNotification {
-  conversationId: number
-  senderName?: string | null
-  messageType?: string | null
-  content?: string | null
-}
+import {
+  customerServiceNotificationBody,
+  customerServiceNotificationTitle,
+  isCustomerServiceNotificationPreviewEnabled,
+  isCustomerServicePageForeground,
+  type CustomerServiceInAppNotification,
+  type IncomingCustomerMessageNotification
+} from '@/utils/customer-service-notification-state'
 
 const SOUND_COOLDOWN_MS = 600
-const NOTIFICATION_BODY_MAX_LENGTH = 160
-
-export const customerServiceNotificationBody = (
-  messageType?: string | null,
-  content?: string | null
-) => {
-  if (messageType === 'IMAGE') return '[图片]'
-  if (messageType === 'ORDER_CARD') return '[订单]'
-  if (messageType === 'PRODUCT_CARD') return '[商品]'
-
-  const normalizedContent = content?.trim().replace(/\s+/g, ' ')
-  if (!normalizedContent) return '收到一条新消息'
-  if (normalizedContent.length <= NOTIFICATION_BODY_MAX_LENGTH) return normalizedContent
-  return `${normalizedContent.slice(0, NOTIFICATION_BODY_MAX_LENGTH)}…`
-}
 
 export const createCustomerServiceNotifier = (
-  openConversation: (conversationId: number) => void
+  openConversation: (conversationId: number) => void,
+  showInAppNotification: (notification: CustomerServiceInAppNotification) => void
 ) => {
   let audio: HTMLAudioElement | null = null
   let lastSoundAt = 0
@@ -112,18 +99,30 @@ export const createCustomerServiceNotifier = (
 
   const notify = (message: IncomingCustomerMessageNotification) => {
     playSound()
+    const previewEnabled = isCustomerServiceNotificationPreviewEnabled()
+    const body = customerServiceNotificationBody(
+      message.messageType,
+      message.content,
+      previewEnabled
+    )
+    if (isCustomerServicePageForeground()) {
+      showInAppNotification({
+        conversationId: message.conversationId,
+        senderName: message.senderName?.trim() || '新用户',
+        senderAvatar: message.senderAvatar,
+        body
+      })
+      return
+    }
     if (!supportsBrowserNotifications() || Notification.permission !== 'granted') return
 
     try {
-      const notification = new Notification(
-        message.senderName ? `${message.senderName} 发来新消息` : '收到新的客服消息',
-        {
-          body: customerServiceNotificationBody(message.messageType, message.content),
-          icon: `${import.meta.env.BASE_URL}favicon.ico`,
-          tag: `customer-service-${message.conversationId}`,
-          silent: true
-        }
-      )
+      const notification = new Notification(customerServiceNotificationTitle(message.senderName), {
+        body,
+        icon: `${import.meta.env.BASE_URL}pwa/icon-192.png`,
+        tag: `customer-service-${message.conversationId}`,
+        silent: true
+      })
       activeNotifications.add(notification)
       const forgetNotification = () => activeNotifications.delete(notification)
       notification.onclose = forgetNotification
