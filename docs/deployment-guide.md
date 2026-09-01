@@ -197,7 +197,7 @@ backend/shop-server/config/runtime/shop.env
 3. 构建 Admin，并确认自动导入声明没有变化。
 4. 上传 Compose、运行密钥、后端构建上下文和 Admin 静态文件。
 5. 在服务器构建 `shop-server:local`。
-6. 启动或更新 MySQL、Redis 和后端；已有 Docker 数据卷会继续复用。
+6. 初始化持久化日志卷权限，再启动或更新 MySQL、Redis 和后端；已有 Docker 数据卷会继续复用。
 7. 用新 Admin 构建产物替换网站 `index` 目录。
 8. 检查后端健康和 Git SHA，并只读验收 API HTTPS、Admin 静态文件、SPA 回退、
    `/admin/` 代理及两个域名的 `/realtime` 后端路由。

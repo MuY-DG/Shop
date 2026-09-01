@@ -94,6 +94,23 @@ services:
         max-size: 10m
         max-file: "5"
 
+  shop-server-log-init:
+    # 命名卷首次创建时默认属于 root；应用以 10001 运行，启动前统一修正目录权限。
+    image: shop-server:local
+    pull_policy: never
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - install -d --owner=10001 --group=10001 --mode=0750 /var/log/shop-server
+    volumes:
+      - shop-server-logs:/var/log/shop-server
+    # 初始化容器不需要密钥、数据库或外网，成功完成后即退出。
+    network_mode: none
+    read_only: true
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
   shop-server:
     # 部署脚本在服务器构建并更新这个本地镜像标签。
     image: shop-server:local
@@ -105,6 +122,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      shop-server-log-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     init: true
     working_dir: /opt/shop/shop-server

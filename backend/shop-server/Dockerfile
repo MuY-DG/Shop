@@ -36,7 +36,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 10001 shop \
     && useradd --system --uid 10001 --gid shop \
-        --home-dir /nonexistent --shell /usr/sbin/nologin shop
+        --home-dir /nonexistent --shell /usr/sbin/nologin shop \
+    && install -d --owner=10001 --group=10001 --mode=0750 /var/log/shop-server
 
 WORKDIR /app
 

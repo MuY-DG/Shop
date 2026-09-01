@@ -299,8 +299,9 @@ COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata \
     }
 
     compose up -d --wait --wait-timeout 300 mysql redis
+    compose run --rm --no-deps shop-server-log-init
     compose up -d --no-deps --force-recreate shop-server
-    compose up -d --wait --wait-timeout 300 shop-server
+    compose up -d --no-deps --wait --wait-timeout 300 shop-server
 
     curl --fail --silent --show-error \
       --connect-timeout 5 --max-time 30 \

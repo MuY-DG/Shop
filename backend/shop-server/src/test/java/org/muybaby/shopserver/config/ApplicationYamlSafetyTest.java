@@ -168,11 +168,25 @@ class ApplicationYamlSafetyTest {
                 .contains("SHOP_SECRET_ENCRYPTION_KEY_RING: ${SHOP_SECRET_ENCRYPTION_KEY_RING:")
                 .contains("gateway: 172.23.0.1")
                 .contains("shop-server-logs:/var/log/shop-server")
+                .contains("shop-server-log-init:")
+                .contains("install -d --owner=10001 --group=10001 --mode=0750 /var/log/shop-server")
+                .contains("condition: service_completed_successfully")
+                .contains("network_mode: none")
                 .contains("driver: local")
                 .contains("compress: \"true\"")
                 .doesNotContain("env_file:")
                 .doesNotContain(".env.prod.local")
                 .doesNotContain(".env.infrastructure.local");
+    }
+
+    @Test
+    void deploymentInitializesTheLogVolumeBeforeStartingTheApplication() throws IOException {
+        String deploy = Files.readString(Path.of("../../deploy.sh"));
+
+        assertThat(deploy)
+                .contains("compose run --rm --no-deps shop-server-log-init")
+                .contains("compose up -d --no-deps --force-recreate shop-server")
+                .contains("compose up -d --no-deps --wait --wait-timeout 300 shop-server");
     }
 
     @Test
