@@ -1,8 +1,10 @@
 package org.muybaby.shopserver.aftersale.service;
 
+import org.muybaby.shopserver.realtime.AfterSaleChangedRealtimeEvent;
 import org.muybaby.shopserver.wechat.servicecard.WechatServiceCardOutboxHook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -17,13 +19,16 @@ public class AfterSaleStatusLogService {
 
     private final JdbcClient jdbcClient;
     private final WechatServiceCardOutboxHook serviceCardOutboxHook;
+    private final ApplicationEventPublisher eventPublisher;
 
     public AfterSaleStatusLogService(
             JdbcClient jdbcClient,
-            WechatServiceCardOutboxHook serviceCardOutboxHook
+            WechatServiceCardOutboxHook serviceCardOutboxHook,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.jdbcClient = jdbcClient;
         this.serviceCardOutboxHook = serviceCardOutboxHook;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -57,6 +62,13 @@ public class AfterSaleStatusLogService {
                 .param("description", truncate(description))
                 .param("createdAt", occurredAt)
                 .update();
+        eventPublisher.publishEvent(new AfterSaleChangedRealtimeEvent(
+                afterSaleId,
+                empty(fromStatus),
+                empty(toStatus),
+                empty(eventType),
+                occurredAt
+        ));
         try {
             serviceCardOutboxHook.onAfterSaleFact(afterSaleId, occurredAt);
         } catch (RuntimeException ex) {

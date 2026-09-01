@@ -618,7 +618,7 @@
                   >
                     <dt>处理建议</dt>
                     <dd
-                      >请先补足微信商户余额，再点击“安全查询并重提”；系统会沿用原商户退款单号，避免重复退款。</dd
+                      >请先补足微信商户余额，再点击“安全重试退款”；系统会先核对微信状态，并沿用原商户退款单号避免重复退款。</dd
                     >
                   </div>
                 </dl>
@@ -709,9 +709,9 @@
             <ElButton
               v-if="canOperateRefund(currentDetail)"
               :loading="refundOperating"
-              @click="openRefundOperationDialog('query')"
+              @click="handleRefundStatusRefresh"
             >
-              查询渠道状态
+              刷新退款状态
             </ElButton>
             <ElButton
               v-if="canResubmitRefund(currentDetail)"
@@ -720,7 +720,7 @@
               :loading="refundOperating"
               @click="openRefundOperationDialog('resubmit')"
             >
-              安全查询并重提
+              安全重试退款
             </ElButton>
             <ElButton
               v-if="canMarkRefundManual(currentDetail)"
@@ -729,7 +729,7 @@
               :loading="refundOperating"
               @click="openRefundOperationDialog('manual')"
             >
-              转人工介入
+              转人工处理
             </ElButton>
             <ElButton
               v-if="canRetryClosedRefund(currentDetail)"
@@ -737,7 +737,7 @@
               :loading="refundOperating"
               @click="handleClosedRefundRetry"
             >
-              CLOSED 新单重试
+              新单重试退款
             </ElButton>
           </template>
         </div>
@@ -1078,6 +1078,11 @@
   import { afterSaleStatusGroupFromQuery } from '@/utils/business-route-query'
   import { formatLocalDateTime as formatDateTime } from '@/utils/date-time'
   import {
+    realtimeClient,
+    type RealtimeConnectionState,
+    type RealtimeEvent
+  } from '@/utils/realtime'
+  import {
     approveAfterSale,
     createAfterSaleReturnAddress,
     disableAfterSaleReturnAddress,
@@ -1097,10 +1102,20 @@
     updateAfterSaleReturnAddress
   } from '@/api/aftersale'
   import { fetchOrderDetail } from '@/api/order'
-  import { ElMessage, ElMessageBox, ElTag, type FormInstance, type FormRules } from 'element-plus'
+  import {
+    ElMessage,
+    ElMessageBox,
+    ElNotification,
+    ElTag,
+    type FormInstance,
+    type FormRules
+  } from 'element-plus'
   import {
     adminAfterSaleActions,
+    afterSaleAuditSuccessMessage,
     canManageReturnAddresses,
+    refundOperationDefaultNote,
+    refundOperationSuccessMessage,
     returnAddressText,
     type AfterSaleAdminAction
   } from './aftersale-workflow'
@@ -1108,7 +1123,7 @@
   defineOptions({ name: 'AfterSaleList' })
 
   type AuditMode = 'approve' | 'reject'
-  type RefundOperationMode = 'query' | 'resubmit' | 'manual'
+  type RefundOperationMode = 'resubmit' | 'manual'
   type TagType = 'success' | 'warning' | 'info' | 'danger'
   type StatusTone = 'pending' | 'refunding' | 'refunded' | 'rejected' | 'failed'
 
@@ -1180,7 +1195,7 @@
   const detailRequestSeq = ref(0)
   const auditFormRef = ref<FormInstance>()
   const refundOperationFormRef = ref<FormInstance>()
-  const refundOperationMode = ref<RefundOperationMode>('query')
+  const refundOperationMode = ref<RefundOperationMode>('resubmit')
   const returnAddresses = ref<Api.AfterSale.ReturnAddress[]>([])
 
   const routeAfterSaleId = () => {
@@ -1208,6 +1223,8 @@
   const statusCounts = reactive<Api.AfterSale.StatusCounts>({
     all: 0,
     pendingReview: 0,
+    returnProcessing: 0,
+    pendingInspection: 0,
     refunding: 0,
     refunded: 0,
     rejected: 0,
@@ -1220,10 +1237,12 @@
   }> = [
     { label: '全部', value: 'ALL', countKey: 'all' },
     { label: '待审核', value: 'PENDING_REVIEW', countKey: 'pendingReview' },
-    { label: '退款处理中', value: 'REFUNDING', countKey: 'refunding' },
-    { label: '已退款', value: 'REFUNDED', countKey: 'refunded' },
-    { label: '已拒绝', value: 'REJECTED', countKey: 'rejected' },
-    { label: '退款失败', value: 'REFUND_FAILED', countKey: 'refundFailed' }
+    { label: '退货处理中', value: 'RETURN_PROCESSING', countKey: 'returnProcessing' },
+    { label: '待验收', value: 'PENDING_INSPECTION', countKey: 'pendingInspection' },
+    { label: '退款中', value: 'REFUNDING', countKey: 'refunding' },
+    { label: '已完成', value: 'REFUNDED', countKey: 'refunded' },
+    { label: '已关闭', value: 'REJECTED', countKey: 'rejected' },
+    { label: '异常', value: 'REFUND_FAILED', countKey: 'refundFailed' }
   ]
 
   const auditForm = reactive<AuditForm>({
@@ -1268,20 +1287,15 @@
     RefundOperationMode,
     { title: string; description: string; confirmation: string }
   > = {
-    query: {
-      title: '查询渠道退款状态',
-      description: '立即查询微信退款状态，并通过现有幂等状态机同步本地结果。',
-      confirmation: '确定立即查询该退款单的渠道状态吗？'
-    },
     resubmit: {
-      title: '安全查询并重提退款',
-      description: '系统会先查询微信，仅在明确返回 NOT_FOUND 时使用原商户退款单号重提。',
-      confirmation: '确定执行“先查询、仅缺失时重提”吗？'
+      title: '安全重试退款',
+      description: '系统会先查微信；只有微信明确没有这笔退款时，才用原退款单号重试。',
+      confirmation: '确定先核对微信状态，并在退款单确实不存在时安全重试吗？'
     },
     manual: {
-      title: '转人工介入',
-      description: '退款将停止自动恢复并标记为人工介入；该动作不会伪造退款成功。',
-      confirmation: '确定停止自动恢复并转为人工介入吗？'
+      title: '转人工处理',
+      description: '系统会暂停自动恢复并记录异常，退款不会被标记为成功。',
+      confirmation: '确定暂停自动恢复并转人工处理吗？'
     }
   }
   const refundOperationTitle = computed(() => refundOperationCopy[refundOperationMode.value].title)
@@ -1341,7 +1355,7 @@
     REFUND_RESUBMIT_REQUESTED: '请求安全重提退款',
     REFUND_RESUBMIT_COMPLETED: '安全重提退款完成',
     REFUND_RESUBMIT_FAILED: '安全重提退款失败',
-    REFUND_MANUAL_INTERVENTION: '退款转人工介入'
+    REFUND_MANUAL_INTERVENTION: '退款转人工处理'
   }
 
   const recordStateLabels: Record<string, string> = {
@@ -1773,7 +1787,7 @@
 
   const applyCurrentSearch = async () => {
     replaceSearchParams(normalizeSearchParams())
-    await Promise.all([getData(), loadStatusCounts()])
+    await Promise.allSettled([getData(), loadStatusCounts()])
   }
 
   const handleSearch = async () => {
@@ -1788,11 +1802,11 @@
 
   const handleStatusChange = async () => {
     replaceSearchParams(normalizeSearchParams())
-    await getData()
+    await Promise.allSettled([getData(), loadStatusCounts()])
   }
 
   const handleRefresh = async () => {
-    await Promise.all([refreshData(), loadStatusCounts()])
+    await Promise.allSettled([refreshData(), loadStatusCounts()])
   }
 
   watch(
@@ -1915,15 +1929,19 @@
       })
   }
 
-  const openDetail = async (afterSaleId: number) => {
+  const openDetail = async (afterSaleId: number, preserveCurrent = false) => {
     detailDrawerVisible.value = true
     const requestId = ++detailRequestSeq.value
     detailLoading.value = true
-    clearEvidencePreviews()
-    currentDetail.value = null
+    const preserveVisibleDetail = preserveCurrent && currentDetail.value?.id === afterSaleId
+    if (!preserveVisibleDetail) {
+      clearEvidencePreviews()
+      currentDetail.value = null
+    }
     try {
       const detail = await hydrateOrderContext(await fetchAfterSaleDetail(afterSaleId))
       if (requestId !== detailRequestSeq.value) return
+      clearEvidencePreviews()
       currentDetail.value = detail
       void loadEvidencePreviews(detail, requestId)
     } finally {
@@ -2172,12 +2190,7 @@
   const canRunRefundOperation = (
     item: Api.AfterSale.Item | null | undefined,
     mode: RefundOperationMode
-  ) =>
-    mode === 'query'
-      ? canOperateRefund(item)
-      : mode === 'resubmit'
-        ? canResubmitRefund(item)
-        : canMarkRefundManual(item)
+  ) => (mode === 'resubmit' ? canResubmitRefund(item) : canMarkRefundManual(item))
 
   const canRetryClosedRefund = (item?: Api.AfterSale.Item | null) =>
     Boolean(
@@ -2189,14 +2202,58 @@
   const openRefundOperationDialog = (mode: RefundOperationMode) => {
     if (!canRunRefundOperation(currentDetail.value, mode)) return
     refundOperationMode.value = mode
-    refundOperationForm.note = ''
+    refundOperationForm.note = refundOperationDefaultNote(
+      mode,
+      currentDetail.value?.refundOrder?.lastErrorCode
+    )
     refundOperationFormRef.value?.clearValidate()
     refundOperationDialogVisible.value = true
   }
 
+  const applyAfterSaleResult = (next: Api.AfterSale.Item) => {
+    data.value = data.value.map((row) => (row.id === next.id ? { ...row, ...next } : row))
+    if (currentDetail.value?.id === next.id) {
+      currentDetail.value = { ...currentDetail.value, ...next }
+    }
+  }
+
+  const refreshAfterSaleSurface = async (changedAfterSaleId?: number) => {
+    const tasks: Promise<unknown>[] = [handleRefresh()]
+    if (
+      changedAfterSaleId &&
+      detailDrawerVisible.value &&
+      currentDetail.value?.id === changedAfterSaleId
+    ) {
+      tasks.push(openDetail(changedAfterSaleId, true))
+    }
+    await Promise.allSettled(tasks)
+  }
+
   const refreshCurrentAfterSale = async (afterSaleId: number) => {
-    await handleRefresh()
-    if (detailDrawerVisible.value) await openDetail(afterSaleId)
+    await refreshAfterSaleSurface(afterSaleId)
+  }
+
+  const handleRefundStatusRefresh = async () => {
+    const detail = currentDetail.value
+    const refundOrder = detail?.refundOrder
+    if (!detail || !refundOrder || !canOperateRefund(detail)) return
+
+    refundOperating.value = true
+    try {
+      const response = await queryRefundProvider(detail.id, refundOrder.id)
+      applyAfterSaleResult(response.afterSale)
+      ElMessage.success(
+        refundOperationSuccessMessage({
+          mode: 'query',
+          result: response.result,
+          providerStatus: response.providerStatus,
+          resubmitted: response.resubmitted
+        })
+      )
+    } finally {
+      await refreshAfterSaleSurface(detail.id)
+      refundOperating.value = false
+    }
   }
 
   const submitRefundOperation = async () => {
@@ -2215,16 +2272,22 @@
     refundOperating.value = true
     try {
       const payload = { note: refundOperationForm.note.trim() }
-      if (refundOperationMode.value === 'query') {
-        await queryRefundProvider(detail.id, refundOrder.id, payload)
-      } else if (refundOperationMode.value === 'resubmit') {
-        await resubmitRefundProvider(detail.id, refundOrder.id, payload)
-      } else {
-        await markRefundManualIntervention(detail.id, refundOrder.id, payload)
-      }
+      const response =
+        refundOperationMode.value === 'resubmit'
+          ? await resubmitRefundProvider(detail.id, refundOrder.id, payload)
+          : await markRefundManualIntervention(detail.id, refundOrder.id, payload)
+      applyAfterSaleResult(response.afterSale)
       refundOperationDialogVisible.value = false
-      await refreshCurrentAfterSale(detail.id)
+      ElMessage.success(
+        refundOperationSuccessMessage({
+          mode: refundOperationMode.value,
+          result: response.result,
+          providerStatus: response.providerStatus,
+          resubmitted: response.resubmitted
+        })
+      )
     } finally {
+      await refreshAfterSaleSurface(detail.id)
       refundOperating.value = false
     }
   }
@@ -2234,7 +2297,7 @@
     if (!detail || !canRetryClosedRefund(detail)) return
     const { value } = await ElMessageBox.prompt(
       '微信已明确关闭原退款。本操作会保留原记录，并使用新的商户退款单号重新发起退款。请输入已排除失败原因后的操作说明。',
-      'CLOSED 新单重试',
+      '新单重试退款',
       {
         type: 'warning',
         confirmButtonText: '确认新单重试',
@@ -2291,29 +2354,88 @@
 
     auditing.value = true
     try {
+      let result: Api.AfterSale.Item
       if (isApprove) {
-        await approveAfterSale(target.id, {
+        result = await approveAfterSale(target.id, {
           auditNote,
           returnAddressId:
             target.afterSaleType === 'RETURN_REFUND' ? auditForm.returnAddressId : undefined,
           items: auditForm.itemApprovals
         })
       } else {
-        await rejectAfterSale(target.id, { auditNote })
+        result = await rejectAfterSale(target.id, { auditNote })
       }
 
+      applyAfterSaleResult(result)
       auditDialogVisible.value = false
-      await handleRefresh()
-      if (detailDrawerVisible.value && currentDetail.value?.id === target.id) {
-        await openDetail(target.id)
-      }
+      ElMessage.success(
+        afterSaleAuditSuccessMessage({
+          approved: isApprove,
+          afterSaleType: target.afterSaleType
+        })
+      )
     } finally {
+      await refreshAfterSaleSurface(target.id)
       auditing.value = false
     }
   }
 
-  onMounted(() => void loadStatusCounts())
-  onBeforeUnmount(clearEvidencePreviews)
+  let unsubscribeAfterSaleRealtime: (() => void) | null = null
+  let unsubscribeAfterSaleConnectionState: (() => void) | null = null
+  let realtimeAfterSaleRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  let hasConnectedOnce = false
+
+  const scheduleAfterSaleRefresh = (afterSaleId?: number) => {
+    if (realtimeAfterSaleRefreshTimer) clearTimeout(realtimeAfterSaleRefreshTimer)
+    realtimeAfterSaleRefreshTimer = setTimeout(() => {
+      realtimeAfterSaleRefreshTimer = null
+      void refreshAfterSaleSurface(afterSaleId)
+    }, 300)
+  }
+
+  const handleAfterSaleRealtimeEvent = (event: RealtimeEvent) => {
+    if (event.type !== 'AFTER_SALE_CHANGED') return
+    const eventData = event.data as unknown as Api.Realtime.AfterSaleChangedData
+    const afterSaleId = Number(eventData.afterSaleId)
+    if (eventData.eventType === 'AFTER_SALE_REQUESTED') {
+      ElNotification({
+        title: '收到新的售后申请',
+        message: `售后单 ID：${afterSaleId}`,
+        type: 'warning',
+        duration: 6000
+      })
+    }
+    scheduleAfterSaleRefresh(Number.isSafeInteger(afterSaleId) ? afterSaleId : undefined)
+  }
+
+  const handleAfterSaleConnectionState = (state: RealtimeConnectionState) => {
+    if (state !== 'CONNECTED') return
+    if (hasConnectedOnce) scheduleAfterSaleRefresh(currentDetail.value?.id)
+    hasConnectedOnce = true
+  }
+
+  const handleDocumentVisibility = () => {
+    if (document.visibilityState === 'visible') {
+      scheduleAfterSaleRefresh(currentDetail.value?.id)
+    }
+  }
+
+  onMounted(() => {
+    void loadStatusCounts()
+    unsubscribeAfterSaleRealtime = realtimeClient.subscribe(handleAfterSaleRealtimeEvent)
+    unsubscribeAfterSaleConnectionState = realtimeClient.subscribeConnectionState(
+      handleAfterSaleConnectionState
+    )
+    document.addEventListener('visibilitychange', handleDocumentVisibility)
+  })
+
+  onBeforeUnmount(() => {
+    clearEvidencePreviews()
+    unsubscribeAfterSaleRealtime?.()
+    unsubscribeAfterSaleConnectionState?.()
+    document.removeEventListener('visibilitychange', handleDocumentVisibility)
+    if (realtimeAfterSaleRefreshTimer) clearTimeout(realtimeAfterSaleRefreshTimer)
+  })
 </script>
 
 <style scoped lang="scss">

@@ -1092,7 +1092,11 @@
   import { useAuth } from '@/hooks/core/useAuth'
   import { useTable } from '@/hooks/core/useTable'
   import { orderStatusGroupFromQuery } from '@/utils/business-route-query'
-  import { realtimeClient, type RealtimeEvent } from '@/utils/realtime'
+  import {
+    realtimeClient,
+    type RealtimeConnectionState,
+    type RealtimeEvent
+  } from '@/utils/realtime'
   import {
     closeOrder,
     fetchOrderDetail,
@@ -1937,7 +1941,7 @@
 
   const applyCurrentSearch = async () => {
     replaceSearchParams(normalizeSearchParams())
-    await Promise.all([getData(), loadStatusCounts()])
+    await Promise.allSettled([getData(), loadStatusCounts()])
   }
 
   const handleSearch = async () => {
@@ -1957,11 +1961,11 @@
 
   const handleStatusChange = async () => {
     replaceSearchParams(normalizeSearchParams())
-    await getData()
+    await Promise.allSettled([getData(), loadStatusCounts()])
   }
 
   const handleRefresh = async () => {
-    await Promise.all([refreshData(), loadStatusCounts()])
+    await Promise.allSettled([refreshData(), loadStatusCounts()])
   }
 
   watch(
@@ -2004,17 +2008,11 @@
   }
 
   let unsubscribeOrderRealtime: (() => void) | null = null
+  let unsubscribeOrderConnectionState: (() => void) | null = null
   let realtimeOrderRefreshTimer: ReturnType<typeof setTimeout> | null = null
+  let hasConnectedOnce = false
 
-  const handleOrderRealtimeEvent = (event: RealtimeEvent) => {
-    if (event.type !== 'ORDER_PAID') return
-    const data = event.data as unknown as Api.Realtime.OrderPaidData
-    ElNotification({
-      title: '新订单已支付',
-      message: `${data.orderNo} · ¥${(data.paidAmountCent / 100).toFixed(2)}`,
-      type: 'success',
-      duration: 8000
-    })
+  const scheduleOrderRefresh = () => {
     if (realtimeOrderRefreshTimer) clearTimeout(realtimeOrderRefreshTimer)
     realtimeOrderRefreshTimer = setTimeout(() => {
       realtimeOrderRefreshTimer = null
@@ -2022,14 +2020,45 @@
     }, 300)
   }
 
+  const handleOrderRealtimeEvent = (event: RealtimeEvent) => {
+    if (event.type === 'ORDER_PAID') {
+      const data = event.data as unknown as Api.Realtime.OrderPaidData
+      ElNotification({
+        title: '新订单已支付',
+        message: `${data.orderNo} · ¥${(data.paidAmountCent / 100).toFixed(2)}`,
+        type: 'success',
+        duration: 8000
+      })
+      scheduleOrderRefresh()
+      return
+    }
+    if (event.type === 'AFTER_SALE_CHANGED') scheduleOrderRefresh()
+  }
+
+  const handleOrderConnectionState = (state: RealtimeConnectionState) => {
+    if (state !== 'CONNECTED') return
+    if (hasConnectedOnce) scheduleOrderRefresh()
+    hasConnectedOnce = true
+  }
+
+  const handleDocumentVisibility = () => {
+    if (document.visibilityState === 'visible') scheduleOrderRefresh()
+  }
+
   onMounted(() => {
     void loadStatusCounts()
     unsubscribeOrderRealtime = realtimeClient.subscribe(handleOrderRealtimeEvent)
+    unsubscribeOrderConnectionState = realtimeClient.subscribeConnectionState(
+      handleOrderConnectionState
+    )
+    document.addEventListener('visibilitychange', handleDocumentVisibility)
   })
 
   onBeforeUnmount(() => {
     trackingRequestSeq.value += 1
     unsubscribeOrderRealtime?.()
+    unsubscribeOrderConnectionState?.()
+    document.removeEventListener('visibilitychange', handleDocumentVisibility)
     if (realtimeOrderRefreshTimer) clearTimeout(realtimeOrderRefreshTimer)
   })
 

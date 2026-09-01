@@ -8,6 +8,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -56,6 +57,38 @@ class RealtimeSessionHubTest {
         verify(app, never()).sendMessage(any());
         verify(otherApp, never()).sendMessage(any());
         verify(nonReader, never()).sendMessage(any());
+    }
+
+    @Test
+    void routesAfterSaleChangesToAfterSaleAndOrderReadersOnly() throws Exception {
+        RealtimeSessionHub hub = new RealtimeSessionHub(objectMapper);
+        WebSocketSession afterSaleReader = session("after-sale-reader");
+        WebSocketSession orderReader = session("order-reader");
+        WebSocketSession unrelatedAdmin = session("unrelated-admin");
+        WebSocketSession app = session("after-sale-app");
+        hub.register(afterSaleReader, principal(TokenKind.ADMIN, 7L, List.of("aftersale:read")));
+        hub.register(orderReader, principal(TokenKind.ADMIN, 8L, List.of("order:read")));
+        hub.register(unrelatedAdmin, principal(TokenKind.ADMIN, 9L, List.of("system:menu:read")));
+        hub.register(app, principal(TokenKind.APP, 42L, List.of()));
+
+        AfterSaleChangedRealtimeListener listener = new AfterSaleChangedRealtimeListener(hub);
+        listener.onAfterSaleChanged(new AfterSaleChangedRealtimeEvent(
+                91L,
+                "",
+                "REQUESTED",
+                "AFTER_SALE_REQUESTED",
+                LocalDateTime.of(2026, 9, 1, 10, 30)
+        ));
+
+        JsonNode envelope = objectMapper.readTree(captureMessage(afterSaleReader).getPayload());
+        assertThat(envelope.path("type").asText()).isEqualTo("AFTER_SALE_CHANGED");
+        assertThat(envelope.path("data").path("afterSaleId").asLong()).isEqualTo(91L);
+        assertThat(envelope.path("data").path("eventType").asText())
+                .isEqualTo("AFTER_SALE_REQUESTED");
+        assertThat(objectMapper.readTree(captureMessage(orderReader).getPayload())
+                .path("type").asText()).isEqualTo("AFTER_SALE_CHANGED");
+        verify(unrelatedAdmin, never()).sendMessage(any());
+        verify(app, never()).sendMessage(any());
     }
 
     @Test

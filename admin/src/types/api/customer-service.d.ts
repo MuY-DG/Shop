@@ -332,6 +332,14 @@ declare namespace Api {
       paidAt: string
     }
 
+    interface AfterSaleChangedData {
+      afterSaleId: number
+      fromStatus: string
+      toStatus: string
+      eventType: string
+      occurredAt: string
+    }
+
     interface CustomerServiceChangedData {
       conversationId: number
       appUserId: string

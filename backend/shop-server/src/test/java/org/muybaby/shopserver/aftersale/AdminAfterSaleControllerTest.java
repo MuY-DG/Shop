@@ -199,6 +199,8 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.all").value(3))
                 .andExpect(jsonPath("$.data.pendingReview").value(1))
+                .andExpect(jsonPath("$.data.returnProcessing").value(0))
+                .andExpect(jsonPath("$.data.pendingInspection").value(0))
                 .andExpect(jsonPath("$.data.refunding").value(2))
                 .andExpect(jsonPath("$.data.refunded").value(0))
                 .andExpect(jsonPath("$.data.rejected").value(0))
@@ -1112,9 +1114,25 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                         .content("""
                                 {"note":"   "}
                                 """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.result").value("NOT_FOUND"))
+                .andExpect(jsonPath("$.data.resubmitted").value(false));
+        verify(refundProvider, times(1)).queryRefund(any(), any());
+        verify(refundProvider, never()).requestRefund(any(), any());
+
+        clearInvocations(refundProvider);
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-resubmit",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"   "}
+                                """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100400));
         verify(refundProvider, never()).queryRefund(any(), any());
+        verify(refundProvider, never()).requestRefund(any(), any());
 
         mockMvc.perform(post(
                         "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/provider-resubmit",
@@ -1218,6 +1236,17 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                                 {"note":"无权限操作"}
                                 """))
                 .andExpect(status().isForbidden());
+
+        mockMvc.perform(post(
+                        "/admin/after-sales/{afterSaleId}/refunds/{refundOrderId}/manual-intervention",
+                        afterSaleId, refundOrderId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"note":"   "}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(100400));
 
         jdbcClient.sql("""
                         update refund_order

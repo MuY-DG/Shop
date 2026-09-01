@@ -37,7 +37,7 @@ export function approveAfterSale(afterSaleId: number, data: Api.AfterSale.AuditP
   return request.post<Api.AfterSale.Item>({
     url: `/admin/after-sales/${afterSaleId}/approve`,
     data,
-    showSuccessMessage: true
+    showSuccessMessage: false
   })
 }
 
@@ -45,7 +45,7 @@ export function rejectAfterSale(afterSaleId: number, data: Api.AfterSale.AuditPa
   return request.post<Api.AfterSale.Item>({
     url: `/admin/after-sales/${afterSaleId}/reject`,
     data,
-    showSuccessMessage: true
+    showSuccessMessage: false
   })
 }
 
@@ -111,12 +111,12 @@ export function retryClosedRefund(afterSaleId: number, data: Api.AfterSale.Refun
 export function queryRefundProvider(
   afterSaleId: number,
   refundOrderId: number | string,
-  data: Api.AfterSale.RefundOperationPayload
+  data: Api.AfterSale.RefundOperationPayload = {}
 ) {
   return request.post<Api.AfterSale.RefundOperationResponse>({
     url: `/admin/after-sales/${afterSaleId}/refunds/${refundOrderId}/provider-query`,
     data,
-    showSuccessMessage: true
+    showSuccessMessage: false
   })
 }
 
@@ -128,7 +128,7 @@ export function resubmitRefundProvider(
   return request.post<Api.AfterSale.RefundOperationResponse>({
     url: `/admin/after-sales/${afterSaleId}/refunds/${refundOrderId}/provider-resubmit`,
     data,
-    showSuccessMessage: true
+    showSuccessMessage: false
   })
 }
 
@@ -140,6 +140,6 @@ export function markRefundManualIntervention(
   return request.post<Api.AfterSale.RefundOperationResponse>({
     url: `/admin/after-sales/${afterSaleId}/refunds/${refundOrderId}/manual-intervention`,
     data,
-    showSuccessMessage: true
+    showSuccessMessage: false
   })
 }

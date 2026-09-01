@@ -1594,6 +1594,8 @@ declare namespace Api {
     type AdminAfterSaleStatusGroup =
       | 'ALL'
       | 'PENDING_REVIEW'
+      | 'RETURN_PROCESSING'
+      | 'PENDING_INSPECTION'
       | 'REFUNDING'
       | 'REFUNDED'
       | 'REJECTED'
@@ -1619,6 +1621,8 @@ declare namespace Api {
     interface StatusCounts {
       all: number
       pendingReview: number
+      returnProcessing: number
+      pendingInspection: number
       refunding: number
       refunded: number
       rejected: number
@@ -1810,7 +1814,7 @@ declare namespace Api {
     }
 
     interface RefundOperationPayload {
-      note: string
+      note?: string
     }
 
     interface RefundOperationResponse {

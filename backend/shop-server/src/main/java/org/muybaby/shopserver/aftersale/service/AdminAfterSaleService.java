@@ -289,6 +289,8 @@ public class AdminAfterSaleService {
         return new AdminAfterSaleStatusCountsResponse(
                 countForGroup(counts, AdminAfterSaleStatusGroup.ALL),
                 countForGroup(counts, AdminAfterSaleStatusGroup.PENDING_REVIEW),
+                countForGroup(counts, AdminAfterSaleStatusGroup.RETURN_PROCESSING),
+                countForGroup(counts, AdminAfterSaleStatusGroup.PENDING_INSPECTION),
                 countForGroup(counts, AdminAfterSaleStatusGroup.REFUNDING),
                 countForGroup(counts, AdminAfterSaleStatusGroup.REFUNDED),
                 countForGroup(counts, AdminAfterSaleStatusGroup.REJECTED),
@@ -522,8 +524,7 @@ public class AdminAfterSaleService {
             Long refundOrderId,
             AdminRefundOperationRequest request
     ) {
-        return executeRefundProviderOperation(
-                principal, afterSaleId, refundOrderId, request, false);
+        return executeRefundProviderOperation(principal, afterSaleId, refundOrderId, request, false);
     }
 
     public AdminRefundOperationResponse resubmitRefundProvider(
@@ -655,7 +656,9 @@ public class AdminAfterSaleService {
             boolean resubmitWhenMissing
     ) {
         Long adminUserId = requireAdminUser(principal);
-        String note = requireRefundOperationNote(request);
+        String note = resubmitWhenMissing
+                ? requireRefundOperationNote(request)
+                : refundOperationNote(request, "管理员手动刷新退款状态");
         RefundOperationTarget target = transactionTemplate.execute(status -> {
             RefundOperationTarget current = findRefundOperationTargetForUpdate(
                     afterSaleId, refundOrderId);
@@ -1499,11 +1502,19 @@ public class AdminAfterSaleService {
     }
 
     private String requireRefundOperationNote(AdminRefundOperationRequest request) {
-        String note = request == null || request.note() == null ? "" : request.note().trim();
+        String note = refundOperationNote(request, "");
         if (!StringUtils.hasText(note) || note.length() > 180) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         return note;
+    }
+
+    private String refundOperationNote(AdminRefundOperationRequest request, String fallback) {
+        String note = request == null || request.note() == null ? "" : request.note().trim();
+        if (note.length() > 180) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return StringUtils.hasText(note) ? note : fallback;
     }
 
     private RefundOperationTarget findRefundOperationTarget(Long afterSaleId, Long refundOrderId) {

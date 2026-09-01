@@ -19,6 +19,8 @@ const orderStatusGroups = new Set<Api.Order.AdminOrderStatusGroup>([
 const afterSaleStatusGroups = new Set<Api.AfterSale.AdminAfterSaleStatusGroup>([
   'ALL',
   'PENDING_REVIEW',
+  'RETURN_PROCESSING',
+  'PENDING_INSPECTION',
   'REFUNDING',
   'REFUNDED',
   'REJECTED',

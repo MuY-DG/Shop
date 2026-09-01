@@ -57,6 +57,7 @@ test('business pages accept only their documented route-query filters', () => {
   assert.equal(orderStatusGroupFromQuery('FAILED'), undefined)
 
   assert.equal(afterSaleStatusGroupFromQuery('PENDING_REVIEW'), 'PENDING_REVIEW')
+  assert.equal(afterSaleStatusGroupFromQuery('PENDING_INSPECTION'), 'PENDING_INSPECTION')
   assert.equal(afterSaleStatusGroupFromQuery('REFUND_FAILED'), 'REFUND_FAILED')
   assert.equal(afterSaleStatusGroupFromQuery('FAILED'), undefined)
 
