@@ -31,6 +31,35 @@
     "pages/compliance/merchant/merchant",
     "pages/compliance/document/document"
   ],
+  "subPackages": [
+    {
+      "name": "logistics",
+      "root": "packages/logistics",
+      "pages": [
+        "loader/loader"
+      ],
+      "plugins": {
+        "logisticsPlugin": {
+          "version": "2.3.0",
+          "provider": "wx9ad912bf20548d92"
+        }
+      }
+    }
+  ],
+  "preloadRule": {
+    "pages/order/list/list": {
+      "network": "all",
+      "packages": [
+        "logistics"
+      ]
+    },
+    "pages/order/detail/detail": {
+      "network": "all",
+      "packages": [
+        "logistics"
+      ]
+    }
+  },
   "window": {
     "navigationBarTextStyle": "black",
     "navigationStyle": "custom",
@@ -46,12 +75,6 @@
     "chooseLocation",
     "chooseAddress"
   ],
-  "plugins": {
-    "logisticsPlugin": {
-      "version": "2.3.0",
-      "provider": "wx9ad912bf20548d92"
-    }
-  },
   "style": "v2",
   "componentFramework": "glass-easel",
   "lazyCodeLoading": "requiredComponents",

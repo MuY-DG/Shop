@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "node:test";
 
@@ -11,17 +11,55 @@ import {
 } from "../miniprogram/features/order-logistics";
 import type { ShipmentTrackingResponse } from "../miniprogram/types/order";
 
-test("小程序声明官方物流查询插件", () => {
+test("官方物流查询插件只声明在预下载分包中", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(process.cwd(), "miniprogram/app.json"), "utf8")
   ) as {
     plugins?: Record<string, { version?: string; provider?: string }>;
+    subPackages?: Array<{
+      name?: string;
+      root: string;
+      pages: string[];
+      plugins?: Record<string, { version?: string; provider?: string }>;
+    }>;
+    preloadRule?: Record<string, { network?: string; packages?: string[] }>;
   };
 
-  assert.deepEqual(appConfig.plugins?.logisticsPlugin, {
+  const logisticsPackage = appConfig.subPackages?.find(({ name }) => name === "logistics");
+  assert.equal(appConfig.plugins, undefined);
+  assert.equal(logisticsPackage?.root, "packages/logistics");
+  assert.deepEqual(logisticsPackage?.pages, ["loader/loader"]);
+  ["json", "less", "ts", "wxml"].forEach((extension) => {
+    assert.equal(
+      existsSync(resolve(
+        process.cwd(),
+        `miniprogram/packages/logistics/loader/loader.${extension}`
+      )),
+      true
+    );
+  });
+  assert.deepEqual(logisticsPackage?.plugins?.logisticsPlugin, {
     version: "2.3.0",
     provider: "wx9ad912bf20548d92"
   });
+  assert.deepEqual(appConfig.preloadRule?.["pages/order/list/list"], {
+    network: "all",
+    packages: ["logistics"]
+  });
+  assert.deepEqual(appConfig.preloadRule?.["pages/order/detail/detail"], {
+    network: "all",
+    packages: ["logistics"]
+  });
+});
+
+test("物流插件通过分包异步接口加载", () => {
+  const feature = readFileSync(
+    resolve(process.cwd(), "miniprogram/features/order-logistics.ts"),
+    "utf8"
+  );
+
+  assert.match(feature, /requirePlugin\.async\("logisticsPlugin"\)/);
+  assert.doesNotMatch(feature, /requirePlugin\("logisticsPlugin"\)/);
 });
 
 test("物流 token 端点定位到订单下的指定包裹", () => {
@@ -102,7 +140,7 @@ test("有效 token 只以规范后的值调起一次官方物流插件", async (
 
   const opened = await openOrderLogistics({
     requestWaybillToken: async () => ({ waybillToken: "  token-123  " }),
-    loadPlugin: () => plugin
+    loadPlugin: async () => plugin
   });
 
   assert.equal(opened, true);

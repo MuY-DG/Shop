@@ -13,7 +13,7 @@ export interface LogisticsPluginRuntime {
 
 export interface OpenOrderLogisticsOptions {
   requestWaybillToken: () => Promise<OrderWaybillTokenResponse>;
-  loadPlugin?: () => unknown;
+  loadPlugin?: () => unknown | Promise<unknown>;
 }
 
 export interface OrderTrackingEventView {
@@ -118,8 +118,16 @@ export function buildOrderTrackingView(
   };
 }
 
-function defaultPluginLoader(): unknown {
-  return requirePlugin("logisticsPlugin") as unknown;
+let pluginPromise: Promise<unknown> | null = null;
+
+function defaultPluginLoader(): Promise<unknown> {
+  if (!pluginPromise) {
+    pluginPromise = requirePlugin.async("logisticsPlugin").catch((error: unknown) => {
+      pluginPromise = null;
+      throw error;
+    });
+  }
+  return pluginPromise;
 }
 
 function logisticsPlugin(value: unknown): LogisticsPluginRuntime | null {
@@ -143,7 +151,7 @@ export async function openOrderLogistics(
     if (!waybillToken) {
       return false;
     }
-    const plugin = logisticsPlugin((options.loadPlugin || defaultPluginLoader)());
+    const plugin = logisticsPlugin(await (options.loadPlugin || defaultPluginLoader)());
     if (!plugin) {
       return false;
     }

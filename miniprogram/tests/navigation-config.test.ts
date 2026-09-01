@@ -11,8 +11,17 @@ import {
 interface AppConfig {
   pages: string[];
   subPackages?: Array<{
+    name?: string;
     root: string;
     pages: string[];
+    plugins?: Record<string, {
+      version?: string;
+      provider?: string;
+    }>;
+  }>;
+  preloadRule?: Record<string, {
+    network?: string;
+    packages?: string[];
   }>;
   lazyCodeLoading?: string;
   plugins?: Record<string, {
@@ -75,7 +84,29 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
   assert.equal(appConfig.tabBar?.color, "#000000");
   assert.equal(appConfig.tabBar?.selectedColor, "#FF172B");
   assert.equal(appConfig.lazyCodeLoading, "requiredComponents");
-  assert.equal(appConfig.subPackages, undefined);
+  assert.deepEqual(appConfig.subPackages, [
+    {
+      name: "logistics",
+      root: "packages/logistics",
+      pages: ["loader/loader"],
+      plugins: {
+        logisticsPlugin: {
+          version: "2.3.0",
+          provider: "wx9ad912bf20548d92"
+        }
+      }
+    }
+  ]);
+  assert.deepEqual(appConfig.preloadRule, {
+    "pages/order/list/list": {
+      network: "all",
+      packages: ["logistics"]
+    },
+    "pages/order/detail/detail": {
+      network: "all",
+      packages: ["logistics"]
+    }
+  });
   assert.equal(appConfig.pages.length, 30);
   assert.deepEqual(
     appConfig.tabBar?.list?.map((item) => [item.pagePath, item.text]),
@@ -1823,7 +1854,8 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
 
   assert.ok(pagePaths.includes("pages/order/list/list"));
   assert.ok(pagePaths.includes("pages/order/detail/detail"));
-  assert.deepEqual(appConfig.plugins?.logisticsPlugin, {
+  assert.equal(appConfig.plugins, undefined);
+  assert.deepEqual(appConfig.subPackages?.[0]?.plugins?.logisticsPlugin, {
     version: "2.3.0",
     provider: "wx9ad912bf20548d92"
   });
@@ -1907,7 +1939,7 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(detailLogic, /finally\s*\{\s*this\.setData\(\{ logisticsOpening: false \}\)/);
   assert.doesNotMatch(detailLogic, /setData\(\{[^}]*waybillToken/);
   assert.match(orderService, /shipmentWaybillToken\(orderId, shipmentId\)[\s\S]*method:\s*"POST"/);
-  assert.match(logisticsFeature, /requirePlugin\("logisticsPlugin"\)/);
+  assert.match(logisticsFeature, /requirePlugin\.async\("logisticsPlugin"\)/);
   assert.doesNotMatch(logisticsFeature, /setStorage|globalData|console\./);
   assert.match(detailLogic, /buildCustomerServiceUrl\("ORDER", detail\.orderId\)/);
   assert.equal(detailConfig.disableScroll, true);
